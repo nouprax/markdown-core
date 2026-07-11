@@ -1,0 +1,139 @@
+---
+title: LaTeX formula compatibility extension test
+author: Dongyu Zhao
+version: 0.1
+date: '2026-05-09'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## LaTeX formula compatibility
+
+These examples define the opt-in LaTeX delimiter surface supported by
+the `formula` extension when `--latex-formula-delimiters` is enabled, alongside
+the dollar delimiter surface enabled by `--dollar-formula-delimiters`.
+
+```````````````````````````````` example
+Inline \\(x+y\\) end.
+.
+Document scope=1:1..1:21 children=1
+└── Paragraph scope=1:1..1:21 children=3
+    ├── Text scope=1:1..1:7 literal="Inline " children=0
+    ├── Formula scope=1:8..1:16 mode=embedded literal="x+y" children=0
+    └── Text scope=1:17..1:21 literal=" end." children=0
+````````````````````````````````
+
+Single-backslash LaTeX-looking delimiters are ordinary Markdown escapes, not
+formula delimiters.
+
+```````````````````````````````` example
+Inline \(x+y\) end.
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=1
+    └── Text scope=1:1..1:19 literal="Inline (x+y) end." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Display \\[x+y\\] end.
+.
+Document scope=1:1..1:22 children=1
+└── Paragraph scope=1:1..1:22 children=3
+    ├── Text scope=1:1..1:8 literal="Display " children=0
+    ├── Formula scope=1:9..1:17 mode=standalone literal="x+y" children=0
+    └── Text scope=1:18..1:22 literal=" end." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Display \[x+y\] end.
+.
+Document scope=1:1..1:20 children=1
+└── Paragraph scope=1:1..1:20 children=1
+    └── Text scope=1:1..1:20 literal="Display [x+y] end." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+\\[x+y\\]
+.
+Document scope=1:1..1:9 children=1
+└── FormulaBlock scope=1:1..1:9 mode=standalone literal="x+y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+\\[
+x+y
+\\]
+.
+Document scope=1:1..3:3 children=1
+└── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
+````````````````````````````````
+
+Display formula blocks bind before Markdown block syntax inside the body.
+
+```````````````````````````````` example
+\\[
+\\nabla \\times \\boldsymbol{E}
+=
+-\\frac{\\partial \\boldsymbol{B}}{\\partial t}
+\\]
+.
+Document scope=1:1..5:3 children=1
+└── FormulaBlock scope=1:1..5:3 mode=standalone literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Text $$x+y$$ end.
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=3
+    ├── Text scope=1:1..1:5 literal="Text " children=0
+    ├── Formula scope=1:6..1:12 mode=standalone literal="x+y" children=0
+    └── Text scope=1:13..1:17 literal=" end." children=0
+````````````````````````````````
+
+Dollar display formula blocks bind before Markdown block syntax inside the body.
+
+```````````````````````````````` example
+$$
+\\nabla \\times \\boldsymbol{E}
+=
+-\\frac{\\partial \\boldsymbol{B}}{\\partial t}
+$$
+.
+Document scope=1:1..5:2 children=1
+└── FormulaBlock scope=1:1..5:2 mode=standalone literal="\\\\nabla \\\\times \\\\boldsymbol{E}\n=\n-\\\\frac{\\\\partial \\\\boldsymbol{B}}{\\\\partial t}" children=0
+````````````````````````````````
+
+Escaped backslash closers are body text, not delimiters.
+
+```````````````````````````````` example
+Text \\(a \) b\\) end.
+.
+Document scope=1:1..1:22 children=1
+└── Paragraph scope=1:1..1:22 children=3
+    ├── Text scope=1:1..1:5 literal="Text " children=0
+    ├── Formula scope=1:6..1:17 mode=embedded literal="a ) b" children=0
+    └── Text scope=1:18..1:22 literal=" end." children=0
+````````````````````````````````
+
+When a body contains the matching backslash delimiter, render with dollar
+delimiters so LaTeX does not close early.
+
+```````````````````````````````` example
+Text $a\\)b$ end.
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=3
+    ├── Text scope=1:1..1:5 literal="Text " children=0
+    ├── Formula scope=1:6..1:12 mode=embedded literal="a\\\\)b" children=0
+    └── Text scope=1:13..1:17 literal=" end." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Text $$a\\]b$$ end.
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=3
+    ├── Text scope=1:1..1:5 literal="Text " children=0
+    ├── Formula scope=1:6..1:14 mode=standalone literal="a\\\\]b" children=0
+    └── Text scope=1:15..1:19 literal=" end." children=0
+````````````````````````````````

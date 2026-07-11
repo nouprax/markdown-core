@@ -1,0 +1,67 @@
+# OS, editors, and local workspace state
+.DS_Store
+.idea/
+.tools/
+.vscode/
+*.iml
+*.py[cod]
+*.swp
+*~
+__pycache__/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+*.pem
+local.properties
+
+# CMake, native, and compiler output
+.cache/
+.cxx/
+CMakeCache.txt
+CMakeFiles/
+Testing/
+build/
+cmake-build-*/
+compile_commands.json
+*.a
+*.dll
+*.dylib
+*.elf
+*.exe
+*.ko
+*.lib
+*.o
+*.obj
+*.out
+*.so
+*.so.*
+
+# SwiftPM and Xcode output
+.build/
+.swiftpm/
+DerivedData/
+*.dSYM/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Gradle, Kotlin, and Android output
+.gradle/
+.kotlin/
+**/build/
+captures/
+target/
+
+# Node, pnpm, WASM, and test output
+.pnpm-store/
+coverage/
+dist/
+node_modules/
+playwright-report/
+test-results/
+*.lcov
+*.log
