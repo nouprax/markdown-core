@@ -187,12 +187,19 @@ val generatedCanonicalAstSource =
         "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/CanonicalAstCases.kt",
     )
 val hostOs = System.getProperty("os.name").lowercase()
+val hostArchitecture = System.getProperty("os.arch").lowercase()
+val androidManagedDeviceTestAbi =
+    when (hostArchitecture) {
+        "aarch64", "arm64" -> "arm64-v8a"
+        "amd64", "x86_64" -> "x86_64"
+        else -> error("Unsupported Android managed-device host architecture: $hostArchitecture")
+    }
 val jvmNativeBuildDirectory = layout.buildDirectory.dir("native/jvm")
 val jvmNativeResourceDirectory = layout.buildDirectory.dir("generated/jvmResources")
 val desktopPlatform =
     when {
         System.getProperty("os.name").lowercase().contains("mac") &&
-            System.getProperty("os.arch").lowercase() in setOf("aarch64", "arm64") -> "macos-arm64"
+            hostArchitecture in setOf("aarch64", "arm64") -> "macos-arm64"
 
         System.getProperty("os.name").lowercase().contains("mac") -> "macos-x64"
 
@@ -379,7 +386,7 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
-                        testedAbi = "x86_64"
+                        testedAbi = androidManagedDeviceTestAbi
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment
@@ -389,7 +396,7 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
-                        testedAbi = "x86_64"
+                        testedAbi = androidManagedDeviceTestAbi
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment

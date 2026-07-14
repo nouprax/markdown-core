@@ -247,6 +247,13 @@ if [[ $(grep -c 'android.experimental.testOptions.managedDevices.maxConcurrentDe
 else
     note "Android page-size managed devices run one at a time"
 fi
+if ! grep -q 'val androidManagedDeviceTestAbi =' packages/kotlin-markdown-core/build.gradle.kts \
+    || [[ $(grep -c 'testedAbi = androidManagedDeviceTestAbi' packages/kotlin-markdown-core/build.gradle.kts) -ne 2 ]] \
+    || grep -q 'testedAbi = "x86_64"' packages/kotlin-markdown-core/build.gradle.kts; then
+    fail "Android managed devices do not select their tested ABI from the host architecture"
+else
+    note "Android managed devices select x86_64 or arm64-v8a from the host architecture"
+fi
 if ! grep -q 'pnpm test:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm conformance:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm test:kotlin-android-emulator' .github/workflows/ci.yml \

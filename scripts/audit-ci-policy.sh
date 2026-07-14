@@ -45,10 +45,10 @@ for workflow in "$ci" "$codeql"; do
     fi
 done
 
-if ! search '^        branches: \[main\]$' <(
+if search '^        branches:' <(
     sed -n '/^    push:$/,/^    merge_group:$/p' "$ci"
 ); then
-    echo "blocking CI push trigger must be limited to main" >&2
+    echo "blocking CI push trigger must cover development branches" >&2
     exit 1
 fi
 
@@ -57,6 +57,14 @@ search '^        name: Required gates$' "$ci"
 search '^                  pnpm audit:repository:clean$' "$ci"
 search '^            - name: Verify Kotlin publication consumers$' "$ci"
 search '^              run: pnpm check:kotlin-consumers$' "$ci"
+grep -Fq 'runs-on: ${{ matrix.runner }}' "$ci"
+search '^                    - runner: ubuntu-24\.04$' "$ci"
+search '^                    - runner: ubuntu-24\.04-arm$' "$ci"
+search '^                      abi: x86_64$' "$ci"
+search '^                      abi: arm64-v8a$' "$ci"
+grep -Fq '"system-images;android-36;google_apis;${{ matrix.abi }}"' "$ci"
+grep -Fq '"system-images;android-36;google_apis_ps16k;${{ matrix.abi }}"' "$ci"
+search '^            - name: Verify runner architecture and emulator acceleration$' "$ci"
 search '^    codeql-gate:$' "$codeql"
 search '^        name: CodeQL gate$' "$codeql"
 search '^distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip$' "$maven_wrapper"
