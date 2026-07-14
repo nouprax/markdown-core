@@ -10,7 +10,11 @@ permissions:
     contents: read
 
 concurrency:
-    group: ci-${{ github.event.pull_request.head.sha || github.sha }}
+    # Keep push, pull-request, and merge-queue runs in separate lanes. GitHub
+    # can leave a cancelled runner in teardown indefinitely; cross-event SHA
+    # deduplication would then prevent the required PR run from ever starting.
+    # Newer runs still replace older runs for the same PR or ref.
+    group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
     cancel-in-progress: true
 
 jobs:
@@ -371,10 +375,8 @@ jobs:
               run: ctest --preset correctness-tsan
 
     required-gates:
-        # Push and pull_request runs can share the same head SHA. Cancelling
-        # the redundant push run still executes this always() job with
-        # cancelled dependencies, so it must not publish the ruleset's
-        # required context. PR and merge-queue runs alone own that name.
+        # Push runs use an independent, non-required context. PR and
+        # merge-queue runs alone own the name referenced by the ruleset.
         name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
         if: ${{ always() }}
         needs:

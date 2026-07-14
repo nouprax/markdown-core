@@ -54,7 +54,7 @@ fi
 
 search '^    required-gates:$' "$ci"
 grep -Fq "name: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}" "$ci"
-grep -Fq 'group: ci-${{ github.event.pull_request.head.sha || github.sha }}' "$ci"
+grep -Fq 'group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}' "$ci"
 search '^    cancel-in-progress: true$' "$ci"
 search '^                  pnpm audit:repository:clean$' "$ci"
 search '^            - name: Verify Kotlin publication consumers$' "$ci"
