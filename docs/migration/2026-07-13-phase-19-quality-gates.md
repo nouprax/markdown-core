@@ -220,4 +220,9 @@ ruleset 识别。修复后只有 `pull_request`/`merge_group` 拥有 `Required g
 setup 仍同时启动，一个 snapshot 创建超时，另一个等待 device lock 600 秒后失败。根
 Android emulator 入口因此改为两个独立 Gradle invocation，先完整运行 4 KB task，再运行
 16 KB task；host-derived `testedAbi` 也在所有 device 属性配置完成后通过 `configureEach`
-显式覆盖，远端日志必须不再出现 unspecified-ABI warning。
+显式覆盖。
+
+远端成功日志随后证明 AGP 9.2.1 的 KMP setup-task `CreationAction` 没有把公开 DSL 的
+`testedAbi` 复制到 task input：两个设备仍打印 unspecified-ABI warning。仓库在保留公开
+DSL 声明的同时，对 pinned AGP 的 `ManagedDeviceInstrumentationTestSetupTask` 显式设置同一
+host-derived input；升级 AGP 时必须以远端日志证明 upstream 已修复后才能移除该兼容层。

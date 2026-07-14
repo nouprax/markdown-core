@@ -254,6 +254,8 @@ else
 fi
 if ! grep -q 'val androidManagedDeviceTestAbi =' packages/kotlin-markdown-core/build.gradle.kts \
     || [[ $(grep -c 'configureEach { testedAbi = androidManagedDeviceTestAbi }' packages/kotlin-markdown-core/build.gradle.kts) -ne 1 ]] \
+    || ! grep -q 'ManagedDeviceInstrumentationTestSetupTask>().configureEach' packages/kotlin-markdown-core/build.gradle.kts \
+    || ! grep -q 'testedAbi.set(androidManagedDeviceTestAbi)' packages/kotlin-markdown-core/build.gradle.kts \
     || grep -q 'testedAbi = "x86_64"' packages/kotlin-markdown-core/build.gradle.kts; then
     fail "Android managed devices do not select their tested ABI from the host architecture"
 else

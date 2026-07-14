@@ -558,6 +558,14 @@ ktlint {
     ignoreFailures.set(false)
 }
 
+// AGP 9.2.1 exposes testedAbi in the managed-device DSL but its setup-task
+// CreationAction does not copy that value into the task input. Keep the public
+// DSL declaration above, and bridge the pinned plugin's missing assignment
+// until an AGP upgrade proves that the workaround is no longer required.
+tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask>().configureEach {
+    testedAbi.set(androidManagedDeviceTestAbi)
+}
+
 tasks.register("kotlinTest") {
     group = "verification"
     description = "Runs JVM, Android host, and the current host's Kotlin/Native correctness suites."
