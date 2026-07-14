@@ -45,6 +45,13 @@ for workflow in "$ci" "$codeql"; do
     fi
 done
 
+if ! search '^        branches: \[main\]$' <(
+    sed -n '/^    push:$/,/^    merge_group:$/p' "$ci"
+); then
+    echo "blocking CI push trigger must be limited to main" >&2
+    exit 1
+fi
+
 search '^    required-gates:$' "$ci"
 search '^        name: Required gates$' "$ci"
 search '^                  pnpm audit:repository:clean$' "$ci"

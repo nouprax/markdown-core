@@ -1,8 +1,8 @@
 /* Directive attribute scanner complexity suite.
  *
- * Measures parse time for directive attribute inputs across widely separated
- * sizes and asserts near-linear scaling with relative ratios only; no absolute
- * wall-clock thresholds.
+ * Measures parse time for directive attribute inputs at 4 KiB and 128 MiB,
+ * then compares time per input byte.  The 32768x span makes n log n growth
+ * visible without relying on absolute wall-clock thresholds.
  *
  *   complexity_runner --list
  *   complexity_runner --case NAME
@@ -13,15 +13,14 @@
 
 #include "test_support.h"
 
-static const size_t SCALING_SIZES[] = {4096, 65536, 1048576, 16777216};
+static const size_t SCALING_SIZES[] = {4096, 134217728};
 #define SCALING_STEPS (sizeof(SCALING_SIZES) / sizeof(SCALING_SIZES[0]))
 #define SCALING_REPEATS 3
 #define MIN_SAMPLE_NS 25000000ULL
-/* A linear parser has constant time per input byte.  Judge only the endpoints:
- * adjacent ratios remain sensitive to a scheduler pause in one short sample,
- * while the 4096x range leaves orders of magnitude between this allowance and
- * quadratic growth.  Intermediate timings remain useful diagnostics. */
-static const double MAX_NORMALIZED_SLOWDOWN = 4.0;
+/* A linear parser has constant time per input byte.  Across 4 KiB -> 128 MiB,
+ * n log n growth makes time per byte roughly 2.25x slower.  Reject at 1.75x:
+ * this leaves room for cache and allocator effects without admitting n log n. */
+static const double MAX_NORMALIZED_SLOWDOWN = 1.75;
 
 typedef char *(*cc_builder)(size_t size, size_t *length);
 
@@ -168,14 +167,14 @@ static int cc_run(const cc_case_entry *entry) {
     {
         double input_growth = (double)lengths[SCALING_STEPS - 1] / (double)lengths[0];
         double time_growth = timings[SCALING_STEPS - 1] / timings[0];
-        if (time_growth > input_growth * MAX_NORMALIZED_SLOWDOWN)
+        double normalized_slowdown = time_growth / input_growth;
+        if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN)
             failed = 1;
+        printf("%s ... %s (", entry->name, failed ? "[FAILED non-linear scaling]" : "[PASSED]");
+        for (step = 0; step < SCALING_STEPS; step++)
+            printf("%s%zu bytes: %.6fs", step ? ", " : "", lengths[step], timings[step]);
+        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
     }
-
-    printf("%s ... %s (", entry->name, failed ? "[FAILED non-linear scaling]" : "[PASSED]");
-    for (step = 0; step < SCALING_STEPS; step++)
-        printf("%s%zu bytes: %.6fs", step ? ", " : "", lengths[step], timings[step]);
-    printf(")\n");
     return failed ? -1 : 0;
 }
 

@@ -170,3 +170,8 @@ Phase 19 关闭前使用一个同仓、非功能性文档 PR 验证真实 pull-r
 只有同仓绿色 PR、故意失败 blocking、latest-base policy、最小 bypass ownership、fork metrics
 comment 均有远端证据后，才能关闭 Phase 19；若仓库启用 merge queue，还必须补充
 `merge_group` 上两个稳定 gates 的绿色证据。
+
+2026-07-14 的验证 PR 将 complexity gate 收紧为 4 KiB → 128 MiB（32768 倍），直接比较
+端点的每字节耗时，并以 1.75 倍作为拒绝线。首次本机运行 6 个 case 中 5 个通过；
+`many_duplicate_attributes` 的归一化 slowdown 为 4.442 倍，证明当前重复属性归一化路径
+存在真实超线性增长，不能通过放宽阈值关闭 Phase 19。

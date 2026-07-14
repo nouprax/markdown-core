@@ -379,6 +379,7 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
+                        testedAbi = "x86_64"
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment
@@ -388,6 +389,7 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
+                        testedAbi = "x86_64"
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment

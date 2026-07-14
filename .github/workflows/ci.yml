@@ -3,6 +3,7 @@ name: CI
 on:
     pull_request:
     push:
+        branches: [main]
     merge_group:
     workflow_dispatch:
 
@@ -213,7 +214,14 @@ jobs:
                   version: 11.7.0
             - uses: android-actions/setup-android@v3
             - name: Install Android build dependencies
-              run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358" "emulator"
+              run: |
+                  sdkmanager \
+                      "platforms;android-36" \
+                      "cmake;3.22.1" \
+                      "ndk;28.2.13676358" \
+                      "emulator" \
+                      "system-images;android-36;google_apis;x86_64" \
+                      "system-images;android-36;google_apis_ps16k;x86_64"
             - name: Publish coordinated Kotlin artifacts locally
               run: scripts/gradle.sh :packages:kotlin-markdown-core:publishKotlinToMavenLocal
             - name: Enable KVM
