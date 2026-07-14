@@ -386,7 +386,6 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
-                        testedAbi = androidManagedDeviceTestAbi
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment
@@ -396,12 +395,12 @@ kotlin {
                         device = "Pixel 10 Pro XL"
                         apiLevel = 36
                         systemImageSource = "google"
-                        testedAbi = androidManagedDeviceTestAbi
                         require64Bit = true
                         pageAlignment =
                             com.android.build.api.dsl.ManagedVirtualDevice.PageAlignment
                                 .FORCE_16KB_PAGES
                     }
+                    configureEach { testedAbi = androidManagedDeviceTestAbi }
                 }
                 groups {
                     create("markdownCoreAndroidPageSizes") {

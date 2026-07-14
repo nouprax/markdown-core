@@ -139,13 +139,14 @@ large-document/deep-nesting benchmarks；Swift macOS 与 iOS Simulator 分别通
 Kotlin JVM、Android host、macOS ARM64 的配对 correctness/conformance tasks 通过，
 JUnit reports 证明 `AstTest` 只出现在 conformance target；ES Node correctness 9 项、
 conformance 2 项、browser correctness 与两项 benchmark workloads 通过；topology
-audit 通过。Gradle DSL 固定声明 Pixel 10 Pro XL/64-bit Google APIs Managed Devices
-group；`markdownCoreAndroidPageSizesGroupAndroidDeviceTest` 分别 provision API 36/
-4 KB 与 API 37/16 KB system images；每个 emulator 分别通过 10 项 correctness 和
-2 项 conformance，因此 group 总计执行 20 项 correctness 和 4 项 conformance，
-第二次执行复用 configuration cache。该 target 不读取 Android Studio 已有 AVD 或
-serial，根入口与 required CI 均直接调用它。Linux x64 不在本机模拟，由 Phase 19
-在 required CI 的 `ubuntu-latest` platform job 验收。GMD 自动停止运行实例并恢复
+audit 通过。Gradle DSL 固定声明 Pixel 10 Pro XL/64-bit Google APIs Managed Devices；
+根入口分别、顺序调用 `markdownCoreApi36Page4kAndroidDeviceTest` 与
+`markdownCoreApi36Page16kAndroidDeviceTest`，provision API 36 的 4 KB/16 KB system
+images。每个 emulator 分别通过 10 项 correctness 和 2 项 conformance，因此合计执行
+20 项 correctness 和 4 项 conformance，后续执行可复用 configuration/device cache。
+入口不读取 Android Studio 已有 AVD 或 serial；required CI 使用同一路由。Linux x64
+不在本机模拟，由 Phase 19 在 required CI 的 `ubuntu-latest` platform job 验收。GMD
+自动停止运行实例并恢复
 干净 snapshot；`clean:kotlin-android-emulator` 仅作为按需清理 managed AVD cache
 的显式 maintenance task，不挂到 correctness/conformance lifecycle。
 

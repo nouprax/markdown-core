@@ -44,6 +44,10 @@
   pnpm conformance:kotlin-android-emulator
   ```
 
+  两个入口都以独立 Gradle invocation 依次运行 4 KB 与 16 KB managed-device task；不得
+  用 device group 并发 setup 再以 `maxConcurrentDevices=1` 等锁，因为 snapshot setup
+  仍可能并发并造成 lock/snapshot timeout。
+
   GMD 在 test 完成后停止 emulator，并以 snapshot 恢复干净状态；可复用的 managed
   AVD/snapshot cache 默认保留。需要回收时只通过显式 maintenance task
   `pnpm clean:kotlin-android-emulator` 委托原生 `cleanManagedDevices`；test 与

@@ -215,3 +215,9 @@ expected-linear 则由共享 hash 实现、64-probe 上界、collision fallback 
 ruleset 识别。修复后只有 `pull_request`/`merge_group` 拥有 `Required gates` 名称，push
 汇总改名为 `Development branch gates`；最终远端验收必须确认 required check 列表不再包含
 被取消 push run 的失败 context。
+
+下一轮验证又证明 group task 加 `maxConcurrentDevices=1` 并非真正串行：4 KB 与 16 KB
+setup 仍同时启动，一个 snapshot 创建超时，另一个等待 device lock 600 秒后失败。根
+Android emulator 入口因此改为两个独立 Gradle invocation，先完整运行 4 KB task，再运行
+16 KB task；host-derived `testedAbi` 也在所有 device 属性配置完成后通过 `configureEach`
+显式覆盖，远端日志必须不再出现 unspecified-ABI warning。

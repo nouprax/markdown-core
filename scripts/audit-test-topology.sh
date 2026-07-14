@@ -204,8 +204,10 @@ check_script() {
 
 check_script benchmark:c-host "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark"
 check_script clean:kotlin-android-emulator "scripts/gradle.sh :packages:kotlin-markdown-core:cleanManagedDevices"
+check_script conformance:kotlin-android-emulator "scripts/run-kotlin-android-emulator-tests.sh conformance"
 check_script conformance:c-host "cmake --preset default && cmake --build --preset default --parallel && ctest --preset conformance"
 check_script test:c-host "cmake --preset default && cmake --build --preset default --parallel && ctest --preset correctness"
+check_script test:kotlin-android-emulator "scripts/run-kotlin-android-emulator-tests.sh correctness"
 check_script conformance:es-node "pnpm --dir packages/es-markdown-core run conformance"
 note "platform tasks delegate directly to named native targets"
 
@@ -232,7 +234,8 @@ NODE
 note "ES correctness and conformance discovery are disjoint"
 
 if ! grep -q 'xcodebuild test' package.json \
-    || ! grep -q 'markdownCoreAndroidPageSizesGroupAndroidDeviceTest' package.json \
+    || ! grep -q 'markdownCoreApi36Page4kAndroidDeviceTest' scripts/run-kotlin-android-emulator-tests.sh \
+    || ! grep -q 'markdownCoreApi36Page16kAndroidDeviceTest' scripts/run-kotlin-android-emulator-tests.sh \
     || ! grep -q 'managedDevices' packages/kotlin-markdown-core/build.gradle.kts; then
     fail "platform tasks do not invoke real iOS Simulator and Android emulator targets"
 elif grep -q 'connectedAndroidDeviceTest' package.json \
@@ -242,13 +245,15 @@ elif grep -q 'connectedAndroidDeviceTest' package.json \
 else
     note "iOS Simulator and repo-managed Android emulator targets use native test runners"
 fi
-if [[ $(grep -c 'android.experimental.testOptions.managedDevices.maxConcurrentDevices=1' package.json) -ne 2 ]]; then
+if grep -q 'markdownCoreAndroidPageSizesGroupAndroidDeviceTest\|maxConcurrentDevices' package.json \
+    || ! grep -q '^for task in' \
+        scripts/run-kotlin-android-emulator-tests.sh; then
     fail "Android page-size managed devices are not serialized for CI runner capacity"
 else
-    note "Android page-size managed devices run one at a time"
+    note "Android page-size managed devices use separate sequential Gradle invocations"
 fi
 if ! grep -q 'val androidManagedDeviceTestAbi =' packages/kotlin-markdown-core/build.gradle.kts \
-    || [[ $(grep -c 'testedAbi = androidManagedDeviceTestAbi' packages/kotlin-markdown-core/build.gradle.kts) -ne 2 ]] \
+    || [[ $(grep -c 'configureEach { testedAbi = androidManagedDeviceTestAbi }' packages/kotlin-markdown-core/build.gradle.kts) -ne 1 ]] \
     || grep -q 'testedAbi = "x86_64"' packages/kotlin-markdown-core/build.gradle.kts; then
     fail "Android managed devices do not select their tested ABI from the host architecture"
 else
