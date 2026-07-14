@@ -20,6 +20,50 @@ static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
     return hash ? hash : 1;
 }
 
+static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot *slots, size_t capacity, uint64_t hash,
+                                                   const unsigned char *key, bufsize_t key_len) {
+    size_t position = (size_t)hash & (capacity - 1);
+    size_t probe;
+    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+        markdown_core_key_index_slot *slot = &slots[position];
+        if (!slot->key ||
+            (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0))
+            return slot;
+        position = (position + 1) & (capacity - 1);
+    }
+    return NULL;
+}
+
+static int grow_key_index(markdown_core_key_index *index) {
+    markdown_core_key_index_slot *slots;
+    size_t capacity;
+    size_t i;
+    if (index->capacity > SIZE_MAX / 2)
+        return 0;
+    capacity = index->capacity * 2;
+    if (capacity > SIZE_MAX / sizeof(*slots))
+        return 0;
+    slots = (markdown_core_key_index_slot *)index->mem->calloc(capacity, sizeof(*slots));
+    if (!slots)
+        return 0;
+    for (i = 0; i < index->capacity; i++) {
+        markdown_core_key_index_slot *source = &index->slots[i];
+        markdown_core_key_index_slot *destination;
+        if (!source->key)
+            continue;
+        destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
+        if (!destination) {
+            index->mem->free(slots);
+            return 0;
+        }
+        *destination = *source;
+    }
+    index->mem->free(index->slots);
+    index->slots = slots;
+    index->capacity = capacity;
+    return 1;
+}
+
 int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size) {
     size_t capacity = KEY_INDEX_MIN_CAPACITY;
     memset(index, 0, sizeof(*index));
@@ -49,30 +93,32 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
 int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
                                    void *value, int replace, void **existing) {
     uint64_t hash = hash_key(key, key_len);
-    size_t position = (size_t)hash & (index->capacity - 1);
-    size_t probe;
+    markdown_core_key_index_slot *slot;
     if (existing)
         *existing = NULL;
-    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
-        markdown_core_key_index_slot *slot = &index->slots[position];
-        if (!slot->key) {
-            slot->hash = hash;
-            slot->key = key;
-            slot->key_len = key_len;
+    slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+    if (!slot)
+        return 0;
+    if (slot->key) {
+        if (existing)
+            *existing = slot->value;
+        if (replace)
             slot->value = value;
-            index->size++;
-            return 1;
-        }
-        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
-            if (existing)
-                *existing = slot->value;
-            if (replace)
-                slot->value = value;
-            return 1;
-        }
-        position = (position + 1) & (index->capacity - 1);
+        return 1;
     }
-    return 0;
+    if (index->size + 1 > index->capacity / 2) {
+        if (!grow_key_index(index))
+            return 0;
+        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+        if (!slot)
+            return 0;
+    }
+    slot->hash = hash;
+    slot->key = key;
+    slot->key_len = key_len;
+    slot->value = value;
+    index->size++;
+    return 1;
 }
 
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,

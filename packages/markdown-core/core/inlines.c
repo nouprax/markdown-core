@@ -832,9 +832,25 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
 
 // Parse backslash-escape or just a backslash, returning an inline.
 static markdown_core_node *handle_backslash(markdown_core_parser *parser, subject *subj) {
+    bufsize_t start = subj->pos;
     advance(subj);
     unsigned char nextchar = peek_char(subj);
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
+        if (nextchar == '\\' && get_extension_for_special_char(parser, '\\') == NULL) {
+            bufsize_t end = start;
+            while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\')
+                end += 2;
+            if (end - start >= 4) {
+                bufsize_t output_len = (end - start) / 2;
+                unsigned char *output = (unsigned char *)subj->mem->calloc((size_t)output_len + 1, 1);
+                if (output) {
+                    markdown_core_chunk contents = {output, output_len, 1};
+                    memset(output, '\\', (size_t)output_len);
+                    subj->pos = end;
+                    return make_str(subj, start, end - 1, contents);
+                }
+            }
+        }
         // only ascii symbols and newline can be escaped
         advance(subj);
         return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));

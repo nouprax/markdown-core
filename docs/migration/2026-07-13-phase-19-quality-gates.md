@@ -183,7 +183,16 @@ depth 超限时回退到原有 pointer sort，将刻意 hash collision 的退化
 O(n²)。directive 同时移除 HTML-style `#id`/`.class` shortcut 与 id/class 特判，所有普通
 key 统一 last-wins。complexity suite 增加 unique/duplicate references，共 8 个 case。
 
-本机 4 KiB → 128 MiB 复测全部通过：约 60.4 MB unique attributes 为 1.164×、32.7 MB
-duplicate attributes 为 1.075×、61.8 MB unique references 为 1.037×、41.3 MB duplicate
-references 为 1.004× normalized slowdown。Release correctness 59/59、ASan 51/51、UBSan
-51/51 通过；这些本地证据仍需由更新后的 PR required checks 复验。
+首次远端复验还暴露出两个常数因子问题。duplicate-heavy directive 输入只有 64 个唯一键，
+index 却按全部 source occurrences 预分配；共享 index 现支持渐进扩容，directive 从 64 个
+expected keys 起步。未闭合 directive 回落到 CommonMark inline parser 后，连续 `\\` pairs
+曾逐对创建数千万个 Text node，再在 `parser_finish` 合并；在没有 extension 接管 backslash
+时，core 现将连续 pairs 批量解码为一个最终本就会得到的 Text node。
+
+修复后本机复测全部通过：约 60.4 MB unique attributes 为 1.312×、32.7 MB duplicate
+attributes 为 1.127×、61.8 MB unique references 为 0.969×、41.3 MB duplicate references
+为 0.966× normalized slowdown；128 MiB unclosed-backslash 从约 2.49 秒降至 0.189 秒，
+normalized slowdown 为 0.979×。
+本地 Release correctness 59/59、C conformance 2/2、ASan/UBSan/TSan 各 51/51、Swift、
+Kotlin JVM/Android host、ES Node correctness/conformance 及 repository verify 均通过；PR
+required checks 仍需复验。

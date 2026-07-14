@@ -284,9 +284,12 @@ static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directi
 static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attribute *head, size_t count) {
     markdown_core_key_index index;
     directive_attribute *attr;
+    size_t initial_size = count < 64 ? count : 64;
     if (count < 2)
         return 1;
-    if (!markdown_core_key_index_init(&index, mem, count))
+    /* Duplicate-heavy inputs should pay for their unique key count, not for
+     * every source occurrence. The shared index grows as new keys appear. */
+    if (!markdown_core_key_index_init(&index, mem, initial_size))
         return normalize_duplicate_attributes_sorted(mem, head, count);
     for (attr = head; attr; attr = attr->next) {
         if (!markdown_core_key_index_insert(&index, attr->name.data, attr->name.len, attr, 0, NULL)) {
