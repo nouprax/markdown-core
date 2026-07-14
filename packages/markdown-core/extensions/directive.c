@@ -281,14 +281,36 @@ static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directi
     return 1;
 }
 
+static size_t attribute_index_expected_size(markdown_core_mem *mem, directive_attribute *head, size_t count) {
+    const size_t sample_limit = 1024;
+    markdown_core_key_index sample;
+    directive_attribute *attr;
+    size_t sampled = 0;
+    size_t unique;
+    if (count <= sample_limit)
+        return count;
+    if (!markdown_core_key_index_init(&sample, mem, sample_limit))
+        return count;
+    for (attr = head; attr && sampled < sample_limit; attr = attr->next, sampled++) {
+        if (!markdown_core_key_index_insert(&sample, attr->name.data, attr->name.len, attr, 0, NULL)) {
+            markdown_core_key_index_free(&sample);
+            return count;
+        }
+    }
+    unique = sample.size;
+    markdown_core_key_index_free(&sample);
+    return unique > sampled / 2 ? count : unique;
+}
+
 static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attribute *head, size_t count) {
     markdown_core_key_index index;
     directive_attribute *attr;
-    size_t initial_size = count < 64 ? count : 64;
+    size_t initial_size;
     if (count < 2)
         return 1;
-    /* Duplicate-heavy inputs should pay for their unique key count, not for
-     * every source occurrence. The shared index grows as new keys appear. */
+    /* Unique-heavy inputs avoid repeated growth, while duplicate-heavy inputs
+     * pay for sampled unique keys rather than every source occurrence. */
+    initial_size = attribute_index_expected_size(mem, head, count);
     if (!markdown_core_key_index_init(&index, mem, initial_size))
         return normalize_duplicate_attributes_sorted(mem, head, count);
     for (attr = head; attr; attr = attr->next) {
