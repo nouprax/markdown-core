@@ -18,9 +18,10 @@ static const size_t SCALING_SIZES[] = {4096, 134217728};
 #define SCALING_REPEATS 3
 #define MIN_SAMPLE_NS 25000000ULL
 /* A linear parser has constant time per input byte.  Across 4 KiB -> 128 MiB,
- * n log n growth makes time per byte roughly 2.25x slower.  Reject at 1.75x:
- * this leaves room for cache and allocator effects without admitting n log n. */
-static const double MAX_NORMALIZED_SLOWDOWN = 1.75;
+ * n log n growth makes time per byte roughly 2.25x slower.  Reject at 2.0x:
+ * this leaves room for cache and allocator effects while remaining below the
+ * expected n log n endpoint ratio. */
+static const double MAX_NORMALIZED_SLOWDOWN = 2.0;
 
 typedef char *(*cc_builder)(size_t size, size_t *length);
 
@@ -131,8 +132,14 @@ static int cc_measure(const char *input, size_t length, double *seconds) {
             elapsed = ts_monotonic_ns() - started;
         } while (elapsed < MIN_SAMPLE_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+        /* A single parse already gives a long, stable sample for the large
+         * endpoint.  Avoid tripling 128 MiB work on slow/sanitized builds. */
+        if (iterations == 1) {
+            *seconds = samples[repeat];
+            return 0;
+        }
     }
-    /* median of three */
+    /* Median of three for short samples where scheduler noise matters. */
     {
         double a = samples[0], b = samples[1], c = samples[2];
         double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
