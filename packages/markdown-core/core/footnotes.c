@@ -23,7 +23,7 @@ void markdown_core_footnote_create(markdown_core_map *map, markdown_core_node *n
     if (reflabel == NULL)
         return;
 
-    assert(map->sorted == NULL);
+    assert(!map->prepared);
 
     ref = (markdown_core_footnote *)map->mem->calloc(1, sizeof(*ref));
     ref->entry.label = reflabel;

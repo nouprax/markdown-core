@@ -329,8 +329,15 @@ foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()
 
-set(MARKDOWN_CORE_COMPLEXITY_CASES valid_long_quoted_value valid_consecutive_backslashes unclosed_long_quoted_value
-                                   unclosed_backslash_value many_unique_attributes many_duplicate_attributes)
+set(MARKDOWN_CORE_COMPLEXITY_CASES
+    valid_long_quoted_value
+    valid_consecutive_backslashes
+    unclosed_long_quoted_value
+    unclosed_backslash_value
+    many_unique_attributes
+    many_duplicate_attributes
+    many_unique_references
+    many_duplicate_references)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})

@@ -176,3 +176,14 @@ comment 均有远端证据后，才能关闭 Phase 19；若仓库启用 merge qu
 `many_duplicate_attributes` 的归一化 slowdown 为 4.442 倍，证明当前重复属性归一化路径
 存在真实超线性增长，不能通过放宽阈值关闭 Phase 19。该 wall-clock gate 只在普通构建运行；
 sanitizer presets 排除 `complexity` label，避免 instrumentation 成本被误判为产品复杂度。
+
+随后将 cmark-gfm 继承的 reference/footnote map 与 directive duplicate normalization
+迁移到共享 byte-key open-addressing hash index。普通输入使用 expected-linear lookup；probe
+depth 超限时回退到原有 pointer sort，将刻意 hash collision 的退化限制在 O(n log n)，而非
+O(n²)。directive 同时移除 HTML-style `#id`/`.class` shortcut 与 id/class 特判，所有普通
+key 统一 last-wins。complexity suite 增加 unique/duplicate references，共 8 个 case。
+
+本机 4 KiB → 128 MiB 复测全部通过：约 60.4 MB unique attributes 为 1.164×、32.7 MB
+duplicate attributes 为 1.075×、61.8 MB unique references 为 1.037×、41.3 MB duplicate
+references 为 1.004× normalized slowdown。Release correctness 59/59、ASan 51/51、UBSan
+51/51 通过；这些本地证据仍需由更新后的 PR required checks 复验。

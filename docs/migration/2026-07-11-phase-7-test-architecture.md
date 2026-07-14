@@ -56,7 +56,7 @@ correctness + 6 项 benchmark),无 Python、无网络、无降级 skip:
 | `option_full_info_string` | `extensions_option_full_info_string`(extensions) | fixture 内含 NUL 字节;runner 按 byte length 传参 |
 | `regressiontest_executable` | `regression_commonmark`(regression) | |
 | `pathological_tests_library`(21 cases,单进程) | `pathological_<case>` ×21(pathological) | 逐 case 注册,CTest TIMEOUT 30s;正则断言移植为 repeated-segment 匹配 |
-| `directive_pathological_executable`(5 cases + 6 scaling) | `pathological_directive_*` ×5、`pathological_complexity_*` ×6 | complexity 保持 median-of-3 与 3.5×/12× 相对比率断言,`RUN_SERIAL` |
+| `directive_pathological_executable`(5 cases + 6 original scaling cases) | `pathological_directive_*` ×5、`pathological_complexity_*` ×8 | complexity 扩展为 6 个 directive scanner/attribute case 加 2 个 reference-map case，使用 4 KiB → 128 MiB endpoint 每字节成本与 2.0× 拒绝线，`RUN_SERIAL` |
 | `inline_delimiter_stack_tests_executable`(4 checks) | `pathological_formula_*` ×4 | |
 | (无;fuzztest 用 /dev/urandom) | `fuzz_smoke`(fuzz) | 确定性:固定种子 xorshift 生成 + tracked corpora;parse/traverse/dump×2/free,断言 dump 确定性 |
 | (无) | `packaging_corpus_guard`(packaging)、`benchmark_corpus_guard`(benchmark) | corpus/workspace 政策 guard |

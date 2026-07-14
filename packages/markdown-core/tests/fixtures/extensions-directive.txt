@@ -17,16 +17,16 @@ Bare, unquoted, single-quoted, and double-quoted values all become strings.
 The empty object is valid.
 
 ```````````````````````````````` example
-Use :cite[Smith *et al.*]{#smith .paper data-kind=ref} here.
+Use :cite[Smith *et al.*]{id=smith class=paper data-kind=ref} here.
 .
-Document scope=1:1..1:60 children=1
-└── Paragraph scope=1:1..1:60 children=3
+Document scope=1:1..1:67 children=1
+└── Paragraph scope=1:1..1:67 children=3
     ├── Text scope=1:1..1:4 literal="Use " children=0
-    ├── Directive scope=1:5..1:54 mode=embedded name="cite" attributes="{\"id\":\"smith\",\"class\":\"paper\",\"data-kind\":\"ref\"}" label=2 children=2
+    ├── Directive scope=1:5..1:61 mode=embedded name="cite" attributes="{\"id\":\"smith\",\"class\":\"paper\",\"data-kind\":\"ref\"}" label=2 children=2
     │   ├── Text scope=1:11..1:16 literal="Smith " children=0
     │   └── Emphasis scope=1:17..1:24 children=1
     │       └── Text scope=1:18..1:23 literal="et al." children=0
-    └── Text scope=1:55..1:60 literal=" here." children=0
+    └── Text scope=1:62..1:67 literal=" here." children=0
 ````````````````````````````````
 
 Numeric- and boolean-looking values remain strings in the normalized AST/API
@@ -63,16 +63,16 @@ Document scope=1:1..1:74 children=1
         └── Text scope=1:7..1:11 literal="label" children=0
 ````````````````````````````````
 
-The standard `#id` and `.class` shortcuts are supported. The last id wins and
-classes are combined, but these names still have no automatic HTML behavior.
+`id` and `class` are ordinary keys. Like every repeated key, their last value
+wins while their first source position is retained.
 
 ```````````````````````````````` example
-:legacy[label]{#first.red class=green .blue #last key=value}
+:ordinary[label]{id=first class=red class=green class=blue id=last key=value}
 .
-Document scope=1:1..1:60 children=1
-└── Paragraph scope=1:1..1:60 children=1
-    └── Directive scope=1:1..1:60 mode=embedded name="legacy" attributes="{\"id\":\"last\",\"class\":\"red green blue\",\"key\":\"value\"}" label=1 children=1
-        └── Text scope=1:9..1:13 literal="label" children=0
+Document scope=1:1..1:77 children=1
+└── Paragraph scope=1:1..1:77 children=1
+    └── Directive scope=1:1..1:77 mode=embedded name="ordinary" attributes="{\"id\":\"last\",\"class\":\"blue\",\"key\":\"value\"}" label=1 children=1
+        └── Text scope=1:11..1:15 literal="label" children=0
 ````````````````````````````````
 
 Malformed and unclosed attribute lists are not consumed as directive
@@ -87,6 +87,20 @@ Document scope=1:1..2:19 children=1
     ├── Text scope=1:1..1:16 literal=":invalid{=value}" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
     └── Text scope=2:1..2:19 literal=":open{title=\"value}" children=0
+````````````````````````````````
+
+HTML-style `#id` and `.class` shortcuts are outside this extension's generic
+key-value grammar and remain ordinary Markdown text.
+
+```````````````````````````````` example
+:shortcut{#identifier}
+:shortcut{.class}
+.
+Document scope=1:1..2:17 children=1
+└── Paragraph scope=1:1..2:17 children=3
+    ├── Text scope=1:1..1:22 literal=":shortcut{#identifier}" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=2:1..2:17 literal=":shortcut{.class}" children=0
 ````````````````````````````````
 
 Text directive labels can contain links.
@@ -184,15 +198,14 @@ Document scope=1:1..3:5 children=1
     └── Directive scope=3:1..3:5 mode=embedded name="_a" attributes=null label=0 children=0
 ````````````````````````````````
 
-Leaf directives use two colons on their own line. Class metadata from shortcuts
-and explicit class fields is combined in normalized AST/API JSON, but is not
-projected onto HTML.
+Leaf directives use two colons on their own line. Repeated metadata keys use
+their last value and are not projected onto HTML.
 
 ```````````````````````````````` example
-::youtube[Video of a *cat*]{vid=01ab2cd3efg .embed class=featured}
+::youtube[Video of a *cat*]{vid=01ab2cd3efg class=embed class=featured}
 .
-Document scope=1:1..1:66 children=1
-└── DirectiveBlock scope=1:1..1:66 mode=standalone name="youtube" attributes="{\"class\":\"embed featured\",\"vid\":\"01ab2cd3efg\"}" label=2 children=2
+Document scope=1:1..1:71 children=1
+└── DirectiveBlock scope=1:1..1:71 mode=standalone name="youtube" attributes="{\"vid\":\"01ab2cd3efg\",\"class\":\"featured\"}" label=2 children=2
     ├── Text scope=1:11..1:21 literal="Video of a " children=0
     └── Emphasis scope=1:22..1:26 children=1
         └── Text scope=1:23..1:25 literal="cat" children=0
@@ -202,7 +215,7 @@ Container directives use three or more colons on their own line. A closing
 fence must have at least the opening fence length.
 
 ```````````````````````````````` example
-::::spoiler{#outer .red class=green .blue}
+::::spoiler{id=outer class=red class=green class=blue}
 He dies.
 
 :::spoiler
@@ -211,7 +224,7 @@ She is born.
 ::::
 .
 Document scope=1:1..7:4 children=1
-└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"red green blue\"}" label=null children=2
+└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"blue\"}" label=null children=2
     ├── Paragraph scope=2:1..2:8 children=1
     │   └── Text scope=2:1..2:8 literal="He dies." children=0
     └── DirectiveBlock scope=4:1..7:4 mode=standalone name="spoiler" attributes=null label=null children=1

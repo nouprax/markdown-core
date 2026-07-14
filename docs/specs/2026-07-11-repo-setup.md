@@ -515,12 +515,12 @@ Directive label 不引入 synthetic `DirectiveLabel` Markup；
 保留它，并区分 label 缺失与显式空 label。标准 Walker 负责穿过这些 typed
 properties，consumer 不需要检查 node kind 来发现结构。
 
-Directive attributes 的 Markdown source grammar 遵循 generic directive attribute-list
-语义：`{key=value}`、bare attributes、single/double quoted values、`#id` 和 `.class`
-shortcuts 均有效。所有解析结果都是 string-to-string mapping；例如
+Directive attributes 的 Markdown source grammar 使用 generic key-value attribute-list
+语义：支持 `{key=value}`、bare attributes 和 single/double quoted values；不支持
+HTML-style `#id` 和 `.class` shortcuts。所有解析结果都是 string-to-string mapping；例如
 `{id=123 muted=true title="My Video"}` 对 consumer 表示为
 `{"id":"123","muted":"true","title":"My Video"}`，其中 `true` 仍是字符串。
-重复普通 key 取最后一个值，重复 id 取最后一个值，class values 按出现顺序合并。
+所有重复 key 均取最后一个值；`id` 和 `class` 是没有特殊行为的普通 key。
 
 跨 C API 和各平台 binding 的表示是 optional normalized JSON string，不是源文本，
 也不是跨端 `JSONValue` tree。JSON object 只包含 string key 和 string value；不得产生
@@ -1128,18 +1128,18 @@ Acceptance：
 
 Tasks：
 
-- [x] 建立 directive standard behavior inventory，覆盖 bare/key-value attributes、single/double quotes、`#id`、`.class`、duplicate rules、C API、render callbacks、fixtures 和 packaged headers。
+- [x] 建立 directive behavior inventory，覆盖 bare/key-value attributes、single/double quotes、拒绝 HTML-style shortcuts、统一 duplicate rules、C API、render callbacks、fixtures 和 packaged headers。
 - [x] 冻结 source attribute-list → normalized string-map JSON contract，并明确 absent/`{}`、ownership 和 deterministic serialization 规则。
 - [x] 冻结 inline、leaf block、container block 在 invalid/truncated attribute list 下的 reviewed fallback fixtures。
 - [x] 定义 non-recursive attribute-list scanner/parser 的 length、overflow、transactional failure 和 leak-free resource-safety contract。
 - [x] 使用 typed `directive_attribute` payload 保存解析结果，并维护 normalized JSON/XML cache，不保留 Markdown attribute-list 原始文本。
-- [x] 实现 bare、unquoted、single/double quoted values、`#id`、`.class`、last-id/last-duplicate 和 ordered class merge 语义。
+- [x] 实现 bare、unquoted、single/double quoted values、统一 last-duplicate 语义，并将 `id`/`class` 作为普通 key。
 - [x] 将 inline、leaf block、container block 和 label-associated attributes parser paths 统一迁移到 attribute-list contract。
 - [x] 修改 directive attributes getter，使 absent 返回 `NULL`，present 返回 normalized string-map JSON，并记录 lifetime/ownership。
 - [x] 修改 directive attributes setter，使其只接受完整 string-map JSON、规范化成功输入，并在失败时保持 node 不变。
 - [x] 禁止 directive HTML attribute projection；CommonMark 输出规范化 attribute-list，XML 仅 transport-escape normalized JSON。
 - [x] 同步 public、SPM、Android Prefab、install 和 package headers，并审计删除错误的 opaque-source 文案。
-- [x] 重写 directive spec fixtures，覆盖所有 directive shapes、absent/`{}`、bare/quoted values、shortcuts、duplicates、Unicode 和 malformed fallback。
+- [x] 重写 directive spec fixtures，覆盖所有 directive shapes、absent/`{}`、bare/quoted values、shortcut rejection、duplicates、Unicode 和 malformed fallback。
 - [x] 扩充 C API tests，覆盖 source-to-JSON normalization、transactional failure、ownership、replacement、escaped NUL、duplicate rules 和错误 node kinds。
 - [x] 增加 invalid/pathological tests，覆盖 malformed/truncated/unclosed attributes 和 sanitizer failure modes。
 - [x] 增加 size-doubling complexity suite，覆盖 valid/unclosed 长值、连续 backslashes、many unique keys 和 many duplicate keys，排除 O(n²) 扫描/去重。
@@ -1655,6 +1655,6 @@ Acceptance：
 9. TypeScript 使用递归 `readonly`，但不实施任何 runtime freeze。
 10. C facade 使用 length-delimited UTF-8 string view 与显式 error/free model；不承诺跨 release C binary ABI compatibility，每次 release clean rebuild，不提供兼容 shim。
 11. 原生 AST dump 使用 canonical UTF-8 file-tree 文本，以 `├──`、`└──` 和 `│` 直观表达真实 parent/child 关系。每个节点占一行，依次输出 kind、严格 `Scope`、全部 behavior-bearing fields 和 child count；字段顺序由 schema 固定，默认值和 null/empty 状态不得省略。相同 source/options 的 byte-for-byte diff 必须能暴露公共 AST behavior drift；有意变化须人工评审 golden diff，不保留隐藏差异的兼容模式。
-12. Directive Markdown source 使用标准 `{key=value}` attribute-list grammar，支持 bare/quoted values、`#id` 与 `.class`；parser 将其规范化为只含 string key/value 的 JSON object string 交给 consumer。duplicate/id/class 依标准合并，禁止 HTML projection 和 nested/non-string JSON values，并由 complexity tests 排除 O(n²) 扫描与去重。
+12. Directive Markdown source 使用 `{key=value}` attribute-list grammar，支持 bare/quoted values，不支持 HTML-style `#id`/`.class` shortcuts；parser 将其规范化为只含 string key/value 的 JSON object string 交给 consumer。所有 duplicate key 统一 last-wins，`id`/`class` 不含特殊语义，禁止 HTML projection 和 nested/non-string JSON values，并由 complexity tests 排除非线性常规扫描与 O(n²) 去重。
 
 若实现审计发现这些决策无法满足，必须先修改并评审本需求文档，再改变实现方向。

@@ -562,10 +562,21 @@ static void process_footnotes(markdown_core_parser *parser) {
 
     markdown_core_iter_free(iter);
 
-    if (map->sorted) {
-        qsort(map->sorted, map->size, sizeof(markdown_core_map_entry *), sort_footnote_by_ix);
+    if (map->prepared) {
+        markdown_core_map_entry **footnotes = map->sorted;
+        if (map->indexed) {
+            size_t slot;
+            size_t count = 0;
+            footnotes = (markdown_core_map_entry **)parser->mem->calloc(map->size, sizeof(*footnotes));
+            for (slot = 0; slot < map->index.capacity; slot++) {
+                if (map->index.slots[slot].key)
+                    footnotes[count++] = (markdown_core_map_entry *)map->index.slots[slot].value;
+            }
+            assert(count == map->size);
+        }
+        qsort(footnotes, map->size, sizeof(markdown_core_map_entry *), sort_footnote_by_ix);
         for (unsigned int i = 0; i < map->size; ++i) {
-            markdown_core_footnote *footnote = (markdown_core_footnote *)map->sorted[i];
+            markdown_core_footnote *footnote = (markdown_core_footnote *)footnotes[i];
             if (!footnote->ix) {
                 markdown_core_node_unlink(footnote->node);
                 continue;
@@ -573,6 +584,8 @@ static void process_footnotes(markdown_core_parser *parser) {
             markdown_core_node_append_child(parser->root, footnote->node);
             footnote->node = NULL;
         }
+        if (map->indexed)
+            parser->mem->free(footnotes);
     }
 
     markdown_core_unlink_footnotes_map(map);

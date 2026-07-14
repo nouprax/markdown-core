@@ -390,11 +390,11 @@ static void formula_extension_accessors(test_batch_runner *runner) {
 }
 
 static void directive_extension_accessors(test_batch_runner *runner) {
-    const char *source_attributes = "{\"id\":\"123\",\"class\":\"red green blue\",\"muted\":\"true\","
-                                    "\"title\":\"My Video\",\"bare\":\"\",\"dup\":\"last\"}";
+    const char *source_attributes = "{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\","
+                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"blue\"}";
     markdown_core_node *doc =
-        parse_with_directive_extension(":-a[]{id=123 muted=true title=\"My Video\" bare dup=first dup=last #first.red "
-                                       "class=green .blue #123}\n");
+        parse_with_directive_extension(":-a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
+                                       "class=red class=green class=blue id=123}\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *directive = markdown_core_node_first_child(paragraph);
     const char *invalid_attributes[] = {
@@ -462,7 +462,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     paragraph = markdown_core_node_first_child(doc);
     directive = markdown_core_node_first_child(paragraph);
     STR_EQ(runner, markdown_core_extensions_get_directive_attributes(directive),
-           "{\"class\":\"ordinary\",\"data-x\":\"1\"}", "directive attribute list normalizes class shortcut ordering");
+           "{\"data-x\":\"1\",\"class\":\"ordinary\"}", "directive attributes retain first-key source order");
     markdown_core_node_free(doc);
 }
 

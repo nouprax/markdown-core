@@ -9,6 +9,7 @@
 #include <chunk.h>
 #include <markdown-core.h>
 #include <inlines.h>
+#include <map.h>
 #include <node.h>
 #include <parser.h>
 #include <utf8.h>
@@ -249,7 +250,7 @@ static int compare_attribute_ptrs(const void *left, const void *right) {
     return a->index < b->index ? -1 : a->index > b->index;
 }
 
-static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attribute *head, size_t count) {
+static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directive_attribute *head, size_t count) {
     directive_attribute **sorted;
     directive_attribute *attr;
     size_t i = 0;
@@ -277,6 +278,34 @@ static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attr
         i = end;
     }
     mem->free(sorted);
+    return 1;
+}
+
+static int normalize_duplicate_attributes(markdown_core_mem *mem, directive_attribute *head, size_t count) {
+    markdown_core_key_index index;
+    directive_attribute *attr;
+    if (count < 2)
+        return 1;
+    if (!markdown_core_key_index_init(&index, mem, count))
+        return normalize_duplicate_attributes_sorted(mem, head, count);
+    for (attr = head; attr; attr = attr->next) {
+        if (!markdown_core_key_index_insert(&index, attr->name.data, attr->name.len, attr, 0, NULL)) {
+            markdown_core_key_index_free(&index);
+            return normalize_duplicate_attributes_sorted(mem, head, count);
+        }
+    }
+    for (attr = head; attr; attr = attr->next) {
+        directive_attribute *first =
+            (directive_attribute *)markdown_core_key_index_lookup(&index, attr->name.data, attr->name.len);
+        assert(first);
+        if (first != attr) {
+            markdown_core_chunk previous = first->value;
+            first->value = attr->value;
+            attr->value = previous;
+            attr->active = 0;
+        }
+    }
+    markdown_core_key_index_free(&index);
     return 1;
 }
 
@@ -615,27 +644,6 @@ static int is_attr_name_char(unsigned char c) {
     return c > 0x20 && c != '=' && c != '"' && c != '\'' && c != '<' && c != '>' && c != '/' && c != '{' && c != '}';
 }
 
-static int attr_name_matches(const unsigned char *data, bufsize_t len, const char *name) {
-    return strlen(name) == (size_t)len && memcmp(data, name, (size_t)len) == 0;
-}
-
-static void append_class_value(markdown_core_strbuf *classes, const unsigned char *data, bufsize_t len) {
-    bufsize_t pos = 0;
-    while (pos < len) {
-        bufsize_t start;
-        while (pos < len && ascii_is_space(data[pos]))
-            pos++;
-        start = pos;
-        while (pos < len && !ascii_is_space(data[pos]))
-            pos++;
-        if (pos > start) {
-            if (classes->size)
-                markdown_core_strbuf_putc(classes, ' ');
-            markdown_core_strbuf_put(classes, data + start, pos - start);
-        }
-    }
-}
-
 static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t *pos, const unsigned char **value,
                             bufsize_t *value_len) {
     bufsize_t start;
@@ -669,21 +677,13 @@ static int parse_attr_value(const unsigned char *data, bufsize_t len, bufsize_t 
 
 static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, bufsize_t len,
                             directive_attribute **result) {
-    markdown_core_strbuf id;
-    markdown_core_strbuf classes;
     directive_attribute *attrs = NULL;
     directive_attribute *tail = NULL;
-    directive_attribute *final_attrs = NULL;
-    directive_attribute *final_tail = NULL;
     bufsize_t pos = 0;
     size_t count = 0;
-    int has_id = 0;
-    int has_class = 0;
     int ok = 1;
 
     *result = NULL;
-    markdown_core_strbuf_init(mem, &id, 0);
-    markdown_core_strbuf_init(mem, &classes, 0);
     while (pos < len) {
         bufsize_t start;
         bufsize_t name_len;
@@ -693,32 +693,9 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
             pos++;
         if (pos >= len)
             break;
-        if (data[pos] == '#') {
-            pos++;
-            start = pos;
-            while (pos < len && !ascii_is_space(data[pos]) && data[pos] != '#' && data[pos] != '.')
-                pos++;
-            if (pos == start) {
-                ok = 0;
-                break;
-            }
-            markdown_core_strbuf_clear(&id);
-            markdown_core_strbuf_put(&id, data + start, pos - start);
-            has_id = 1;
-            continue;
-        }
-        if (data[pos] == '.') {
-            pos++;
-            start = pos;
-            while (pos < len && !ascii_is_space(data[pos]) && data[pos] != '#' && data[pos] != '.')
-                pos++;
-            if (pos == start) {
-                ok = 0;
-                break;
-            }
-            append_class_value(&classes, data + start, pos - start);
-            has_class = 1;
-            continue;
+        if (data[pos] == '#' || data[pos] == '.') {
+            ok = 0;
+            break;
         }
         start = pos;
         while (pos < len && is_attr_name_char(data[pos]))
@@ -737,14 +714,7 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
                 break;
             }
         }
-        if (attr_name_matches(data + start, name_len, "id")) {
-            markdown_core_strbuf_clear(&id);
-            markdown_core_strbuf_put(&id, value, value_len);
-            has_id = 1;
-        } else if (attr_name_matches(data + start, name_len, "class")) {
-            append_class_value(&classes, value, value_len);
-            has_class = 1;
-        } else if (!append_attribute(mem, &attrs, &tail, data + start, name_len, value, value_len, count++)) {
+        if (!append_attribute(mem, &attrs, &tail, data + start, name_len, value, value_len, count++)) {
             ok = 0;
             break;
         }
@@ -752,26 +722,11 @@ static int parse_attributes(markdown_core_mem *mem, const unsigned char *data, b
 
     if (ok && !normalize_duplicate_attributes(mem, attrs, count))
         ok = 0;
-    if (ok && has_id &&
-        !append_attribute(mem, &final_attrs, &final_tail, (const unsigned char *)"id", 2, id.ptr, id.size, 0))
-        ok = 0;
-    if (ok && has_class &&
-        !append_attribute(mem, &final_attrs, &final_tail, (const unsigned char *)"class", 5, classes.ptr, classes.size,
-                          1))
-        ok = 0;
     if (ok) {
-        if (final_tail)
-            final_tail->next = attrs;
-        else
-            final_attrs = attrs;
+        *result = attrs;
         attrs = NULL;
-        *result = final_attrs;
-        final_attrs = NULL;
     }
     free_attribute_list(mem, attrs);
-    free_attribute_list(mem, final_attrs);
-    markdown_core_strbuf_free(&id);
-    markdown_core_strbuf_free(&classes);
     return ok;
 }
 

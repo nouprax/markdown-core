@@ -2,6 +2,95 @@
 #include "utf8.h"
 #include "parser.h"
 
+#define KEY_INDEX_MIN_CAPACITY 16
+#define KEY_INDEX_MAX_PROBES 64
+
+static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    bufsize_t i;
+    for (i = 0; i < key_len; i++) {
+        hash ^= key[i];
+        hash *= UINT64_C(1099511628211);
+    }
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    hash ^= hash >> 33;
+    hash *= UINT64_C(0xc4ceb9fe1a85ec53);
+    hash ^= hash >> 33;
+    return hash ? hash : 1;
+}
+
+int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size) {
+    size_t capacity = KEY_INDEX_MIN_CAPACITY;
+    memset(index, 0, sizeof(*index));
+    index->mem = mem;
+    if (expected_size > SIZE_MAX / 2)
+        return 0;
+    while (capacity < expected_size * 2) {
+        if (capacity > SIZE_MAX / 2)
+            return 0;
+        capacity *= 2;
+    }
+    if (capacity > SIZE_MAX / sizeof(*index->slots))
+        return 0;
+    index->slots = (markdown_core_key_index_slot *)mem->calloc(capacity, sizeof(*index->slots));
+    if (!index->slots)
+        return 0;
+    index->capacity = capacity;
+    return 1;
+}
+
+void markdown_core_key_index_free(markdown_core_key_index *index) {
+    if (index->slots)
+        index->mem->free(index->slots);
+    memset(index, 0, sizeof(*index));
+}
+
+int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
+                                   void *value, int replace, void **existing) {
+    uint64_t hash = hash_key(key, key_len);
+    size_t position = (size_t)hash & (index->capacity - 1);
+    size_t probe;
+    if (existing)
+        *existing = NULL;
+    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+        markdown_core_key_index_slot *slot = &index->slots[position];
+        if (!slot->key) {
+            slot->hash = hash;
+            slot->key = key;
+            slot->key_len = key_len;
+            slot->value = value;
+            index->size++;
+            return 1;
+        }
+        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
+            if (existing)
+                *existing = slot->value;
+            if (replace)
+                slot->value = value;
+            return 1;
+        }
+        position = (position + 1) & (index->capacity - 1);
+    }
+    return 0;
+}
+
+void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
+                                     bufsize_t key_len) {
+    uint64_t hash = hash_key(key, key_len);
+    size_t position = (size_t)hash & (index->capacity - 1);
+    size_t probe;
+    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+        const markdown_core_key_index_slot *slot = &index->slots[position];
+        if (!slot->key)
+            return NULL;
+        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0)
+            return slot->value;
+        position = (position + 1) & (index->capacity - 1);
+    }
+    return NULL;
+}
+
 // normalize map label:  collapse internal whitespace to single space,
 // remove leading/trailing whitespace, case fold
 // Return NULL if the label is actually empty (i.e. composed solely from
@@ -64,6 +153,26 @@ static void sort_map(markdown_core_map *map) {
 
     map->sorted = sorted;
     map->size = last + 1;
+    map->prepared = 1;
+}
+
+static int index_map(markdown_core_map *map) {
+    markdown_core_map_entry *ref;
+    if (!markdown_core_key_index_init(&map->index, map->mem, map->size))
+        return 0;
+    /* Entries are linked newest-first. Replacing while traversing therefore
+     * leaves the oldest (first source) definition in each slot. */
+    for (ref = map->refs; ref; ref = ref->next) {
+        if (!markdown_core_key_index_insert(&map->index, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 1,
+                                            NULL)) {
+            markdown_core_key_index_free(&map->index);
+            return 0;
+        }
+    }
+    map->size = map->index.size;
+    map->prepared = 1;
+    map->indexed = 1;
+    return 1;
 }
 
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
@@ -81,15 +190,20 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     if (norm == NULL)
         return NULL;
 
-    if (!map->sorted)
+    if (!map->prepared && !index_map(map))
         sort_map(map);
 
-    ref =
-        (markdown_core_map_entry **)bsearch(norm, map->sorted, map->size, sizeof(markdown_core_map_entry *), refsearch);
+    if (map->indexed)
+        r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm,
+                                                                      (bufsize_t)strlen((char *)norm));
+    else
+        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->size, sizeof(markdown_core_map_entry *),
+                                                  refsearch);
     map->mem->free(norm);
 
-    if (ref != NULL) {
-        r = ref[0];
+    if (r != NULL || ref != NULL) {
+        if (!r)
+            r = ref[0];
         /* Check for expansion limit */
         if (r->size > map->max_ref_size - map->ref_size)
             return NULL;
@@ -113,6 +227,7 @@ void markdown_core_map_free(markdown_core_map *map) {
     }
 
     map->mem->free(map->sorted);
+    markdown_core_key_index_free(&map->index);
     map->mem->free(map);
 }
 

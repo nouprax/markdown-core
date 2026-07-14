@@ -24,7 +24,7 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
     if (reflabel == NULL)
         return;
 
-    assert(map->sorted == NULL);
+    assert(!map->prepared);
 
     ref = (markdown_core_reference *)map->mem->calloc(1, sizeof(*ref));
     ref->entry.label = reflabel;

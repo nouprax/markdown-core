@@ -201,9 +201,10 @@ IDE state。
   程残留;CLI 测试通过管道等待退出)。
 - 串行/资源锁:benchmark 与 complexity 测试标记 `RUN_SERIAL`;benchmark preset
   以单 job 执行。
-- Performance 测量固定 warmup/repeat(complexity:median-of-3;benchmark:
-  warmup 1 + repeats 5 取中位数),只断言完成性与 doubling 相对比率,不使用绝
-  对 wall-clock 阈值。
+- Performance 测量固定 warmup/repeat(complexity:短样本 median-of-3、长样本
+  单次完整 parse;benchmark:warmup 1 + repeats 5 取中位数)。complexity 以
+  4 KiB → 128 MiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling
+  相对比率；均不使用绝对 wall-clock 阈值。
 - 诊断输出确定性:不输出指针、环境路径、locale 或时间戳(benchmark 的时间数
   值除外,其格式固定)。
 - 各平台 helper 使用本平台原生实现(C:`packages/markdown-core/tests/support/`;Swift:test target 内

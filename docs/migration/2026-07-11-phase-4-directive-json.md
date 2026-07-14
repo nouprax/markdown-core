@@ -18,15 +18,14 @@ boolean-looking source values remain strings.
 
 ## Source grammar and normalization
 
-The parser accepts bare attributes, unquoted values, single-quoted values,
-double-quoted values, `#id`, and `.class` shortcuts. A bare attribute has an
-empty-string value. The last repeated ordinary key or id wins. Class values
-are split on ASCII whitespace and combined in source order.
+The parser accepts bare attributes and unquoted, single-quoted, or
+double-quoted values. A bare attribute has an empty-string value. HTML-style
+`#id` and `.class` shortcuts are outside the supported grammar. `id` and
+`class` are ordinary keys, and every repeated key uses its last value.
 
-The normalized JSON output is deterministic. `id` and `class` are emitted
-first when present; remaining keys retain first-appearance order while a
-repeated key updates its value. An explicit `{}` returns `"{}"`; an absent
-attribute list returns `NULL`.
+The normalized JSON output is deterministic. Keys retain first-appearance
+order while a repeated key updates its value. An explicit `{}` returns
+`"{}"`; an absent attribute list returns `NULL`.
 
 These syntax rules do not give attributes HTML behavior. Safe and unsafe HTML
 rendering never projects directive members to wrapper attributes. CommonMark
@@ -50,9 +49,10 @@ payload unchanged.
 
 The outer attribute-list scanner is non-recursive and scans quoted and
 unquoted content once to find the matching closing brace. Attribute parsing
-allocates one bounded record per source member. Duplicate resolution sorts an
-array of record pointers by key and source index, giving O(n log n) worst-case
-normalization instead of repeated O(n²) linked-list lookup.
+allocates one bounded record per source member. Duplicate resolution uses the
+core byte-key hash index for expected linear normalization. Excessive probe
+depth falls back to pointer sorting, bounding adversarial collision behavior
+at O(n log n) instead of O(n²).
 
 The size-doubling suite covers long quoted values, consecutive backslashes,
 unclosed quoted values, many unique attributes, and many duplicate attributes.
@@ -63,8 +63,8 @@ or duplicate handling.
 
 Directive spec and API tests cover inline, leaf, and container directives;
 labels; absent and empty attributes; bare/unquoted/single-quoted/double-quoted
-values; numeric- and boolean-looking strings; id/class shortcuts; duplicate
-resolution; class merging; Unicode; JSON setter normalization; escaped NUL;
+values; numeric- and boolean-looking strings; rejected HTML-style shortcuts;
+ordinary id/class keys; duplicate resolution; Unicode; JSON setter normalization; escaped NUL;
 transactional failures; malformed and unclosed fallback; non-directive error
 paths; HTML non-projection; and CommonMark/XML transport.
 

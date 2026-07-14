@@ -76,11 +76,12 @@ invalid. `null` means no attributes container was present; `"{}"` means an
 explicit empty map.
 
 Markdown source uses `{key=value}` attribute-list syntax, not JSON syntax.
-Bare attributes, unquoted values, single/double quoted values, `#id`, and
-`.class` shortcuts are supported. Values that look like booleans or numbers
-remain strings. Repeated ordinary keys and ids use the last value; class values
-are combined in source order. JSON serialization is deterministic and is the
-value passed to consumers for decoding.
+Bare attributes and unquoted, single-quoted, or double-quoted values are
+supported. HTML-style `#id` and `.class` shortcuts are not supported; `id` and
+`class` written as ordinary keys have no special behavior. Values that look
+like booleans or numbers remain strings. Every repeated key uses its last
+value while retaining its first source position. JSON serialization is
+deterministic and is the value passed to consumers for decoding.
 
 Attribute names have no HTML semantics and are never projected to HTML
 attributes. For example:

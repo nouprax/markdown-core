@@ -1,4 +1,4 @@
-/* Directive attribute scanner complexity suite.
+/* Parser complexity suite.
  *
  * Measures parse time for directive attribute inputs at 4 KiB and 128 MiB,
  * then compares time per input byte.  The 32768x span makes n log n growth
@@ -100,6 +100,26 @@ static char *cc_unique_attributes(size_t size, size_t *length) { return cc_attri
 
 static char *cc_duplicate_attributes(size_t size, size_t *length) { return cc_attributes(size, length, 1); }
 
+static char *cc_references(size_t size, size_t *length, int duplicates) {
+    size_t reference_count = size / 32 ? size / 32 : 1;
+    size_t capacity = reference_count * 32 + 16;
+    char *input = (char *)malloc(capacity);
+    size_t written = 0;
+    size_t index;
+    if (!input)
+        return NULL;
+    for (index = 0; index < reference_count; index++)
+        written +=
+            (size_t)snprintf(input + written, capacity - written, "[k%zu]: /u\n", duplicates ? index % 64 : index);
+    written += (size_t)snprintf(input + written, capacity - written, "\n[k0]\n");
+    *length = written;
+    return input;
+}
+
+static char *cc_unique_references(size_t size, size_t *length) { return cc_references(size, length, 0); }
+
+static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
@@ -109,6 +129,7 @@ static const cc_case_entry CC_CASES[] = {
     {"valid_long_quoted_value", cc_quoted_value},       {"valid_consecutive_backslashes", cc_backslashes},
     {"unclosed_long_quoted_value", cc_unclosed_quoted}, {"unclosed_backslash_value", cc_unclosed_backslashes},
     {"many_unique_attributes", cc_unique_attributes},   {"many_duplicate_attributes", cc_duplicate_attributes},
+    {"many_unique_references", cc_unique_references},   {"many_duplicate_references", cc_duplicate_references},
 };
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
