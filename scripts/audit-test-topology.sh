@@ -242,6 +242,11 @@ elif grep -q 'connectedAndroidDeviceTest' package.json \
 else
     note "iOS Simulator and repo-managed Android emulator targets use native test runners"
 fi
+if [[ $(grep -c 'android.experimental.testOptions.managedDevices.maxConcurrentDevices=1' package.json) -ne 2 ]]; then
+    fail "Android page-size managed devices are not serialized for CI runner capacity"
+else
+    note "Android page-size managed devices run one at a time"
+fi
 if ! grep -q 'pnpm test:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm conformance:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm test:kotlin-android-emulator' .github/workflows/ci.yml \
