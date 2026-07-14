@@ -254,6 +254,11 @@ if ! grep -q 'val androidManagedDeviceTestAbi =' packages/kotlin-markdown-core/b
 else
     note "Android managed devices select x86_64 or arm64-v8a from the host architecture"
 fi
+if ! grep -q '^android.testoptions.manageddevices.emulator.gpu=swiftshader$' gradle.properties; then
+    fail "Android managed devices do not pin a headless GPU mode supported by current emulators"
+else
+    note "Android managed devices use the current swiftshader headless GPU mode"
+fi
 if ! grep -q 'pnpm test:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm conformance:swift-macos' .github/workflows/ci.yml \
     || ! grep -q 'pnpm test:kotlin-android-emulator' .github/workflows/ci.yml \
