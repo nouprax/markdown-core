@@ -1,12 +1,13 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec extensions regression pathological fuzz
-#   packaging benchmark
+#   api facade consumer spec extensions regression pathological complexity
+#   fuzz packaging benchmark
 #
-# The correctness presets exclude the `benchmark` label; the benchmark preset
-# selects only it.  Every suite is native (C/C++); the test tree has no
-# scripting-language dependency and never touches the network.
+# The default correctness preset excludes conformance and benchmark; sanitizer
+# correctness presets also exclude wall-clock complexity gates.  The benchmark
+# preset selects only its label.  Every suite is native (C/C++); the test tree
+# has no scripting-language dependency and never touches the network.
 
 set(MARKDOWN_CORE_TEST_FIXTURES_DIR "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures")
 set(MARKDOWN_CORE_CANONICAL_AST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../specs/canonical-ast")
@@ -331,7 +332,8 @@ endforeach()
 set(MARKDOWN_CORE_COMPLEXITY_CASES valid_long_quoted_value valid_consecutive_backslashes unclosed_long_quoted_value
                                    unclosed_backslash_value many_unique_attributes many_duplicate_attributes)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
-    markdown_core_add_test(pathological_complexity_${case} pathological 120 complexity_runner --case ${case})
+    markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
+                           ${case})
     set_tests_properties(pathological_complexity_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 

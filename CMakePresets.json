@@ -70,24 +70,24 @@
         },
         {
             "name": "correctness-asan",
-            "displayName": "Correctness suites under AddressSanitizer",
+            "displayName": "Correctness suites under AddressSanitizer (excludes timing gates)",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
         },
         {
             "name": "correctness-ubsan",
-            "displayName": "Correctness suites under UndefinedBehaviorSanitizer",
+            "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
             "configurePreset": "ubsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
         },
         {
             "name": "correctness-tsan",
-            "displayName": "Correctness suites under ThreadSanitizer",
+            "displayName": "Correctness suites under ThreadSanitizer (excludes timing gates)",
             "configurePreset": "tsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
         }
     ]
 }

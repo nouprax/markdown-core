@@ -274,7 +274,7 @@ if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
 fi
 
 tests_all=$("ctest" --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
-for label in api facade conformance consumer spec extensions regression pathological fuzz packaging benchmark; do
+for label in api facade conformance consumer spec extensions regression pathological complexity fuzz packaging benchmark; do
     count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
     if [ "${count:-0}" -lt 1 ]; then
         fail "no CTest tests carry label '$label'"
@@ -294,6 +294,14 @@ if echo "$correctness_list" | grep -Eq '^(benchmark_|facade_native$|facade_dump_
 else
     note "correctness selection excludes conformance and benchmark"
 fi
+
+for preset in correctness-asan correctness-ubsan correctness-tsan; do
+    if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
+        fail "$preset includes wall-clock complexity gates"
+    fi
+done
+note "sanitizer presets exclude wall-clock complexity gates"
+
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native
 facade_dump_cli" ]; then
