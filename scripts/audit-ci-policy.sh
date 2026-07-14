@@ -54,16 +54,18 @@ fi
 
 search '^    required-gates:$' "$ci"
 search '^        name: Required gates$' "$ci"
+grep -Fq 'group: ci-${{ github.event.pull_request.head.sha || github.sha }}' "$ci"
+search '^    cancel-in-progress: true$' "$ci"
 search '^                  pnpm audit:repository:clean$' "$ci"
 search '^            - name: Verify Kotlin publication consumers$' "$ci"
 search '^              run: pnpm check:kotlin-consumers$' "$ci"
-grep -Fq 'runs-on: ${{ matrix.runner }}' "$ci"
-search '^                    - runner: ubuntu-24\.04$' "$ci"
-search '^                    - runner: ubuntu-24\.04-arm$' "$ci"
-search '^                      abi: x86_64$' "$ci"
-search '^                      abi: arm64-v8a$' "$ci"
-grep -Fq '"system-images;android-36;google_apis;${{ matrix.abi }}"' "$ci"
-grep -Fq '"system-images;android-36;google_apis_ps16k;${{ matrix.abi }}"' "$ci"
+search '^        name: Kotlin Android emulator \(x86_64\)$' "$ci"
+grep -Fq '"system-images;android-36;google_apis;x86_64"' "$ci"
+grep -Fq '"system-images;android-36;google_apis_ps16k;x86_64"' "$ci"
+if search 'ubuntu-24\.04-arm|system-images;android-36;[^;]+;arm64-v8a' "$ci"; then
+    echo "blocking CI requests an Android Emulator package unavailable on Linux ARM64" >&2
+    exit 1
+fi
 search '^            - name: Verify runner architecture and emulator acceleration$' "$ci"
 search '^    codeql-gate:$' "$codeql"
 search '^        name: CodeQL gate$' "$codeql"
