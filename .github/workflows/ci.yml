@@ -371,7 +371,11 @@ jobs:
               run: ctest --preset correctness-tsan
 
     required-gates:
-        name: Required gates
+        # Push and pull_request runs can share the same head SHA. Cancelling
+        # the redundant push run still executes this always() job with
+        # cancelled dependencies, so it must not publish the ruleset's
+        # required context. PR and merge-queue runs alone own that name.
+        name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
         if: ${{ always() }}
         needs:
             - hygiene
