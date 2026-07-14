@@ -155,3 +155,18 @@ Gradle keyring 的导出与本地-only keyserver 配置遵循
 仍未完成的远端验收是：以故意失败 PR 验证 merge blocking/latest-base policy 并记录最小
 bypass ownership；在同仓 PR 与 fork PR 验证单条更新式 metrics comment；若启用 merge
 queue，在 `merge_group` 上验证两个稳定 gates 均产生且成功。
+
+## PR validation protocol
+
+Phase 19 关闭前使用一个同仓、非功能性文档 PR 验证真实 pull-request pipeline。该 PR
+必须同时满足以下条件：
+
+- `Required gates` 与 `CodeQL gate` 均出现并成功，且 ruleset 将它们识别为 required；
+- PR metrics workflow 运行但不参与 merge 决策，commenter 只创建或更新一条 metrics comment；
+- 未满足 required checks 时 PR 不可合并，base 更新后 required checks 必须针对最新 revision
+  重新成功；
+- fork PR 与故意失败 PR 的安全和 blocking 验证仍需单独留证，不能由同仓绿色 PR 代替。
+
+只有同仓绿色 PR、故意失败 blocking、latest-base policy、最小 bypass ownership、fork metrics
+comment 均有远端证据后，才能关闭 Phase 19；若仓库启用 merge queue，还必须补充
+`merge_group` 上两个稳定 gates 的绿色证据。
