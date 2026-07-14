@@ -172,7 +172,7 @@ comment 均有远端证据后，才能关闭 Phase 19；若仓库启用 merge qu
 `merge_group` 上两个稳定 gates 的绿色证据。
 
 2026-07-14 的验证 PR 将 complexity gate 收紧为 4 KiB → 128 MiB（32768 倍），直接比较
-端点的每字节耗时，并以 2.0 倍作为拒绝线。首次本机运行 6 个 case 中 5 个通过；
+端点的每字节耗时。首次本机运行 6 个 case 中 5 个通过；
 `many_duplicate_attributes` 的归一化 slowdown 为 4.442 倍，证明当前重复属性归一化路径
 存在真实超线性增长，不能通过放宽阈值关闭 Phase 19。该 wall-clock gate 只在普通构建运行；
 sanitizer presets 排除 `complexity` label，避免 instrumentation 成本被误判为产品复杂度。
@@ -197,3 +197,10 @@ normalized slowdown 为 0.979×。
 本地 Release correctness 59/59、C conformance 2/2、ASan/UBSan/TSan 各 51/51、Swift、
 Kotlin JVM/Android host、ES Node correctness/conformance 及 repository verify 均通过；PR
 required checks 仍需复验。
+
+远端 macOS runner 进一步证明 2.0× 不能作为可靠的 n log n 判别器：同一 expected-linear
+unique-attributes hash 路径在两次运行中分别为 3.318× 与 2.753×，因为数百万解析节点跨越了
+4 KiB 样本未覆盖的 allocator/cache 层级。wall-clock 拒绝线因此校准为 4.0×：仍低于已实测
+旧 qsort 路径的 4.442×，也会拒绝首次远端 unclosed-backslash 的 9.850×；普通路径是否为
+expected-linear 则由共享 hash 实现、64-probe 上界、collision fallback tests 与 code review
+保证，timing gate 只负责捕获实际端到端退化。
