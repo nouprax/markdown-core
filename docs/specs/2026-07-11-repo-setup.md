@@ -1570,17 +1570,17 @@ Tasks：
 - [x] 为 blocking CI 与 CodeQL 分别建立稳定、唯一的 `Required gates` 与 `CodeQL gate` 汇总 checks；汇总 job 必须在任一依赖失败、取消或跳过时失败，ruleset 不直接依赖易变的 matrix job names。
 - [x] 让所有 blocking workflows 同时监听 `pull_request` 与 `merge_group`，使同一 required checks contract 可安全启用 GitHub merge queue。
 - [x] 提交可导入的 default-branch ruleset recipe，只要求 `Required gates` 与 `CodeQL gate`；禁止把 benchmark、binary size、coverage trend 或其他 informational pipeline 加入 required status checks。
-- [ ] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
+- [x] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
 - [x] 建立非阻塞 PR metrics workflow，运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告 C shared library、Kotlin/JVM JAR 与 ES/WASM binary sizes；任何 metrics 缺失或回归都只能提示，不能改变 required gate 结论。
 - [x] 使用 fork-safe 的两段式 PR comment：只读 `pull_request` workflow 执行不可信代码并上传纯数值 artifact，具有写权限的 `workflow_run` commenter 不 checkout、不执行 artifact/PR code，只校验 allowlist 数值并创建或更新单条 PR comment。
 - [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、metrics 非阻塞边界、commenter 权限分离与 scheduled benchmark 不进入 PR gate。
 
 Acceptance：
 
-- [ ] Default branch ruleset 已启用，且只把 `Required gates` 与 `CodeQL gate` 作为 required status checks。
-- [ ] 完整 correctness/conformance/sanitizer/consumer/package/security matrix 在 `pull_request` 与 `merge_group` 上 fail-closed，失败或缺失 checks 会阻止 merge。
-- [ ] Benchmark 与 binary-size pipeline 始终 non-blocking，并能为同仓和 fork PR 安全更新一条 informational comment。
-- [ ] Privileged commenter 从不执行不可信代码或 artifact。
+- [x] Default branch ruleset 已启用，且只把 `Required gates` 与 `CodeQL gate` 作为 required status checks。
+- [x] 完整 correctness/conformance/sanitizer/consumer/package/security matrix 在 `pull_request` 与 `merge_group` 上 fail-closed，失败或缺失 checks 会阻止 merge。
+- [x] Benchmark 与 binary-size pipeline 始终 non-blocking，并能为同仓和 fork PR 安全更新一条 informational comment。
+- [x] Privileged commenter 从不执行不可信代码或 artifact。
 
 配置、权限边界、required/non-required 清单与启用步骤见 `docs/migration/2026-07-13-phase-19-quality-gates.md`。
 

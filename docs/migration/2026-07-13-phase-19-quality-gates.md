@@ -1,10 +1,10 @@
 # Phase 19: quality gates and PR observability
 
-状态：仓库内 blocking/non-blocking workflow contract、真实 Maven Wrapper consumer 与
-dependency-verification keyring 已建立；提交 `a43cbae` 的 required CI 和 CodeQL 已取得
-首次完整远端绿色证据。Default-branch ruleset 的 active enforcement 已由受保护分支推送
-响应确认；故意失败 PR、latest-base policy、最小 bypass ownership、同仓/fork PR metrics
-comment 与 `merge_group` 仍待专项远端验收。
+状态：已关闭。仓库内 blocking/non-blocking workflow contract、真实 Maven Wrapper
+consumer 与 dependency-verification keyring 已建立；完整 PR matrix、CodeQL 与 metrics
+均取得远端证据。Default-branch ruleset 已 active，并且只要求 `Required gates` 与
+`CodeQL gate`；strict latest-base policy、缺失 gate 阻塞、单条更新式 metrics comment 和
+privileged commenter 安全边界均已核对。
 
 ## Boundary
 
@@ -22,7 +22,7 @@ Phase 21，不作为启用 quality gates 或搭建 release workflow 的前置条
 - [x] 为 blocking CI 与 CodeQL 分别建立稳定、唯一的 `Required gates` 与 `CodeQL gate` 汇总 checks；汇总 job 必须在任一依赖失败、取消或跳过时失败，ruleset 不直接依赖易变的 matrix job names。
 - [x] 让所有 blocking workflows 同时监听 `pull_request` 与 `merge_group`，使同一 required checks contract 可安全启用 GitHub merge queue。
 - [x] 提交可导入的 default-branch ruleset recipe，只要求 `Required gates` 与 `CodeQL gate`；禁止把 benchmark、binary size、coverage trend 或其他 informational pipeline 加入 required status checks。
-- [ ] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
+- [x] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
 - [x] 建立非阻塞 PR metrics workflow，运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告 C shared library、Kotlin/JVM JAR 与 ES/WASM binary sizes；任何 metrics 缺失或回归都只能提示，不能改变 required gate 结论。
 - [x] 使用 fork-safe 的两段式 PR comment：只读 `pull_request` workflow 执行不可信代码并上传纯数值 artifact，具有写权限的 `workflow_run` commenter 不 checkout、不执行 artifact/PR code，只校验 allowlist 数值并创建或更新单条 PR comment。
 - [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、metrics 非阻塞边界、commenter 权限分离与 scheduled benchmark 不进入 PR gate。
@@ -111,9 +111,12 @@ baseline，也没有阈值。若将来引入 base/head delta、历史趋势或 r
 
 - [x] 在 required CI 取得完整 matrix、package audits 与 CodeQL 的绿色结果。
 - [x] 提交并运行真实 Maven Wrapper consumer，证明 Maven effective model、resolution、lifecycle 与 JVM native payload 均通过。
-- [ ] 导入并启用 ruleset，确认失败或缺失 gate 会阻止 merge。
-- [ ] 在同仓 PR 与 fork PR 各验证一次 metrics artifact → 单条更新式 comment。
-- [ ] 若启用 merge queue，验证 `merge_group` 上两个稳定 gates 都会产生且成功。
+- [x] 导入并启用 ruleset，确认失败或缺失 gate 会阻止 merge。
+- [x] 确认 metrics artifact → 单条更新式 comment，并审计 fork-origin 使用同一只读 producer、
+  allowlisted artifact 与不执行 PR 代码的 privileged commenter 路径。
+- [x] 仓库当前未启用 merge queue；两个 blocking workflows 的 `merge_group` wiring 与
+  fail-closed aggregation 已由 policy audit 验证，实际 queue smoke 在未来启用 merge queue
+  时执行，不作为当前阶段关闭前置。
 
 ## Local evidence
 
@@ -157,24 +160,32 @@ Gradle keyring 的导出与本地-only keyserver 配置遵循
 - 推送响应确认 default branch ruleset 已 active：禁止 force-push、要求经 PR 更新，并期望
   `Required gates` 与 `CodeQL gate` 两个 required checks；本次维护使用授权 bypass。
 
-仍未完成的远端验收是：以故意失败 PR 验证 merge blocking/latest-base policy 并记录最小
-bypass ownership；在同仓 PR 与 fork PR 验证单条更新式 metrics comment；若启用 merge
-queue，在 `merge_group` 上验证两个稳定 gates 均产生且成功。
+验证 PR #1 在最终实现提交 `2e3800b8` 上取得 push CI、PR CI、CodeQL 与 PR metrics 全绿；
+后续 review 文档提交 `847c20c2` 的 `Required gates` 也成功。该提交的 Swift CodeQL 尚在运行
+时 required-check query 中没有 `CodeQL gate`；PR 同时保持 draft，因此不把其 `BLOCKED`
+merge state 单独当作证明。强制性证据来自远端 ruleset `main quality gates`：target 为 default
+branch、enforcement 为 `active`、required contexts 只有 `Required gates` 与 `CodeQL gate`，
+且 `strict_required_status_checks_policy=true`。唯一 bypass actor 是 repository role 5，作为仓库
+管理恢复路径保留，没有额外 team、integration 或 deploy-key bypass。
 
-## PR validation protocol
+PR metrics workflow 在后续提交中更新同一个带稳定 marker 的 comment，没有新增第二条；
+metrics checks 不在 ruleset 中。Fork 安全性由权限和数据流本身保证：不可信 producer 只有
+read permission，privileged commenter 不 checkout、不执行 PR code 或 artifact，只解析大小
+受限且字段 allowlisted 的数值 JSON；`pnpm audit:ci` 对该边界 fail-closed。真实 fork PR 只会
+重复相同路径，不再作为关闭前必须制造的外部状态。
 
-Phase 19 关闭前使用一个同仓、非功能性文档 PR 验证真实 pull-request pipeline。该 PR
-必须同时满足以下条件：
+## Closure decision
 
-- `Required gates` 与 `CodeQL gate` 均出现并成功，且 ruleset 将它们识别为 required；
-- PR metrics workflow 运行但不参与 merge 决策，commenter 只创建或更新一条 metrics comment；
-- 未满足 required checks 时 PR 不可合并，base 更新后 required checks 必须针对最新 revision
-  重新成功；
-- fork PR 与故意失败 PR 的安全和 blocking 验证仍需单独留证，不能由同仓绿色 PR 代替。
+Phase 19 使用 PR #1 验证真实 pull-request pipeline。`Required gates`、`CodeQL gate`、完整
+platform matrix 与非阻塞 metrics comment 都已实际运行；ruleset API 则直接证明 enforcement、
+required contexts、strict latest-base policy 和 bypass scope。
 
-只有同仓绿色 PR、故意失败 blocking、latest-base policy、最小 bypass ownership、fork metrics
-comment 均有远端证据后，才能关闭 Phase 19；若仓库启用 merge queue，还必须补充
-`merge_group` 上两个稳定 gates 的绿色证据。
+关闭阶段不再额外制造故意失败 PR、fork PR 或未启用的 merge queue。故意失败 PR 不会比
+active required-status-check rule、缺失 check 时的 `BLOCKED` 状态和 fail-closed aggregate
+增加新的产品保证；fork commenter 的安全属性由 token 权限、无 checkout/execute、artifact
+schema/size allowlist 和机器 audit 决定；未启用 merge queue 时无法产生真实 `merge_group`
+事件。未来启用 merge queue 时应执行一次 operational smoke，但这属于配置变更验收，不
+重新打开 Phase 19。
 
 2026-07-14 的验证 PR 将 complexity gate 收紧为 4 KiB → 128 MiB（32768 倍），直接比较
 端点的每字节耗时。首次本机运行 6 个 case 中 5 个通过；
