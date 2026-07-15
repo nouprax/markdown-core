@@ -1,0 +1,206 @@
+name: Release dry run
+
+on:
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: release-dry-run-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    validate:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - name: Validate coordinated release version and tag namespace
+              run: node scripts/check-release-version.mjs --skip-swift
+            - name: Prove dry run has no release credentials
+              run: |
+                  test -z "${MAVEN_CENTRAL_USERNAME:-}"
+                  test -z "${MAVEN_CENTRAL_PASSWORD:-}"
+                  test -z "${MAVEN_SIGNING_KEY:-}"
+                  test -z "${MAVEN_SIGNING_PASSWORD:-}"
+
+    c-artifacts:
+        needs: validate
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-26]
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v7
+            - name: Build and audit C release artifact
+              run: scripts/stage-c-release.sh build/release-c
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-c-${{ matrix.os }}
+                  path: build/release-c/*.tar.gz
+                  if-no-files-found: error
+
+    swift-source:
+        needs: validate
+        runs-on: macos-26
+        steps:
+            - uses: actions/checkout@v7
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - name: Check prepared Swift release environment
+              run: scripts/init-environment.sh --check wrappers swift
+            - name: Validate Swift source archive and product consumer
+              run: scripts/check-swift-source-archive.sh build/release-swift
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-swift-source
+                  path: build/release-swift/*.zip
+                  if-no-files-found: error
+
+    npm-package:
+        needs: validate
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v6
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: emscripten-core/setup-emsdk@v16
+              with:
+                  version: 4.0.23
+            - run: pnpm install --frozen-lockfile
+            - name: Check prepared npm release environment
+              run: scripts/init-environment.sh --check node emscripten dependencies
+            - name: Build, pack, and run the npm artifact consumer
+              run: scripts/stage-npm-release.sh build/release-npm
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-npm-package
+                  path: build/release-npm/*.tgz
+                  if-no-files-found: error
+
+    maven-linux:
+        needs: validate
+        runs-on: ubuntu-latest
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v4
+            - name: Install Android publication dependencies
+              run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared Android release environment
+              run: scripts/init-environment.sh --check java wrappers android
+            - name: Build Linux, root, JVM, and Android Maven publications
+              run: scripts/stage-maven-publications.sh build/release-maven-linux linux-release
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-linux
+                  path: build/release-maven-linux
+                  if-no-files-found: error
+
+    maven-macos:
+        needs: validate
+        runs-on: macos-26
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - name: Check prepared macOS publication environment
+              run: scripts/init-environment.sh --check java wrappers
+            - name: Build macOS Native publication and JVM payload
+              run: scripts/stage-maven-publications.sh build/release-maven-macos macos-native
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-macos
+                  path: build/release-maven-macos
+                  if-no-files-found: error
+
+    maven-aggregate:
+        needs: [maven-linux, maven-macos]
+        runs-on: ubuntu-latest
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v4
+            - name: Install staged-consumer dependencies
+              run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared staged-consumer environment
+              run: scripts/init-environment.sh --check java wrappers android
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-linux
+                  path: build/release-maven-linux
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-macos
+                  path: build/release-maven-macos
+            - name: Aggregate host publications and JVM native payloads
+              run: |
+                  node scripts/merge-maven-publications.mjs \
+                      build/release-maven-linux \
+                      build/release-maven-macos \
+                      build/release-maven-central
+            - name: Sign with a disposable dry-run key and audit the Central bundle
+              run: |
+                  env -u MAVEN_SIGNING_KEY -u MAVEN_SIGNING_PASSWORD \
+                      scripts/sign-maven-publications.sh build/release-maven-central --ephemeral
+            - name: Run consumers from the signed staged repository
+              run: scripts/check-kotlin-consumers.sh --repository build/release-maven-central
+            - name: Audit the consumer-validated Central bundle
+              run: |
+                  node scripts/audit-maven-publications.mjs \
+                      build/release-maven-central --full --signed
+            - name: Create independently verifiable Central bundle
+              run: (cd build/release-maven-central && zip -qr ../markdown-core-maven-central-dry-run.zip com/nouprax)
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-central-dry-run
+                  path: build/markdown-core-maven-central-dry-run.zip
+                  if-no-files-found: error
+
+    dry-run-gate:
+        name: Release dry-run gate
+        if: ${{ always() }}
+        needs: [validate, c-artifacts, swift-source, npm-package, maven-aggregate]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Require every release dry-run artifact
+              env:
+                  VALIDATE: ${{ needs.validate.result }}
+                  C_ARTIFACTS: ${{ needs['c-artifacts'].result }}
+                  SWIFT_SOURCE: ${{ needs['swift-source'].result }}
+                  NPM_PACKAGE: ${{ needs['npm-package'].result }}
+                  MAVEN_AGGREGATE: ${{ needs['maven-aggregate'].result }}
+              run: |
+                  for result in "$VALIDATE" "$C_ARTIFACTS" "$SWIFT_SOURCE" "$NPM_PACKAGE" "$MAVEN_AGGREGATE"; do
+                      test "$result" = success
+                  done

@@ -1,0 +1,348 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*.*.*"
+    workflow_dispatch:
+        inputs:
+            release-tag:
+                description: Existing protected release tag to finish
+                required: true
+                type: string
+            source-run-id:
+                description: Tag release run containing the validated artifacts
+                required: true
+                type: string
+
+permissions:
+    actions: read
+    contents: read
+
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    validate:
+        if: github.event_name == 'push'
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - name: Validate exact SemVer tag and coordinated versions
+              run: node scripts/check-release-version.mjs --skip-swift --tag="$GITHUB_REF_NAME"
+            - name: Validate curated release notes
+              run: test -s "docs/releases/$(cat VERSION).md"
+
+    quality:
+        needs: validate
+        permissions:
+            contents: read
+        uses: ./.github/workflows/ci.yml
+
+    c-artifacts:
+        needs: quality
+        strategy:
+            fail-fast: false
+            matrix:
+                os: [ubuntu-latest, macos-26]
+        runs-on: ${{ matrix.os }}
+        steps:
+            - uses: actions/checkout@v7
+            - name: Build and audit C release artifact
+              run: scripts/stage-c-release.sh build/release-c
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-c-${{ matrix.os }}
+                  path: build/release-c/*.tar.gz
+                  if-no-files-found: error
+
+    swift-source:
+        needs: quality
+        runs-on: macos-26
+        steps:
+            - uses: actions/checkout@v7
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - name: Check prepared Swift release environment
+              run: scripts/init-environment.sh --check wrappers swift
+            - name: Validate Swift source archive and product consumer
+              run: scripts/check-swift-source-archive.sh build/release-swift
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-swift-source
+                  path: build/release-swift/*.zip
+                  if-no-files-found: error
+
+    npm-package:
+        needs: quality
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v6
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: emscripten-core/setup-emsdk@v16
+              with:
+                  version: 4.0.23
+            - run: pnpm install --frozen-lockfile
+            - name: Check prepared npm release environment
+              run: scripts/init-environment.sh --check node emscripten dependencies
+            - name: Build, pack, and run the npm artifact consumer
+              run: scripts/stage-npm-release.sh build/release-npm
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-npm-package
+                  path: build/release-npm/*.tgz
+                  if-no-files-found: error
+
+    maven-linux:
+        needs: quality
+        runs-on: ubuntu-latest
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v4
+            - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared Android release environment
+              run: scripts/init-environment.sh --check java wrappers android
+            - name: Build Linux, root, JVM, and Android Maven publications
+              run: scripts/stage-maven-publications.sh build/release-maven-linux linux-release
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-linux
+                  path: build/release-maven-linux
+                  if-no-files-found: error
+
+    maven-macos:
+        needs: quality
+        runs-on: macos-26
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - name: Check prepared macOS publication environment
+              run: scripts/init-environment.sh --check java wrappers
+            - name: Build macOS Native publication and JVM payload
+              run: scripts/stage-maven-publications.sh build/release-maven-macos macos-native
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-macos
+                  path: build/release-maven-macos
+                  if-no-files-found: error
+
+    maven-stage:
+        needs: [maven-linux, maven-macos]
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            contents: read
+        outputs:
+            deployment-id: ${{ steps.central.outputs['deployment-id'] }}
+        env:
+            GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - uses: actions/setup-java@v5
+              with:
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v4
+            - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared staged-consumer environment
+              run: scripts/init-environment.sh --check java wrappers android
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-linux
+                  path: build/release-maven-linux
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-macos
+                  path: build/release-maven-macos
+            - name: Aggregate the complete deployment
+              run: |
+                  node scripts/merge-maven-publications.mjs \
+                      build/release-maven-linux \
+                      build/release-maven-macos \
+                      build/release-maven-central
+            - name: Sign the Maven deployment
+              env:
+                  MAVEN_SIGNING_KEY: ${{ secrets.MAVEN_SIGNING_KEY }}
+                  MAVEN_SIGNING_PASSWORD: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
+              run: scripts/sign-maven-publications.sh build/release-maven-central
+            - name: Run staged consumers and audit the final bundle
+              run: |
+                  scripts/check-kotlin-consumers.sh --repository build/release-maven-central
+                  node scripts/audit-maven-publications.mjs \
+                      build/release-maven-central --full --signed
+                  (cd build/release-maven-central && zip -qr ../markdown-core-maven-central.zip com/nouprax)
+            - name: Upload a user-managed Central deployment
+              id: central
+              env:
+                  MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+                  MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+              run: |
+                  deployment=$(scripts/central-portal.sh upload build/markdown-core-maven-central.zip)
+                  echo "deployment-id=$deployment" >>"$GITHUB_OUTPUT"
+                  scripts/wait-central-deployment.sh "$deployment" VALIDATED
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-central
+                  path: build/markdown-core-maven-central.zip
+                  if-no-files-found: error
+
+    npm-publish:
+        needs: [npm-package, maven-stage]
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            contents: read
+            id-token: write
+        steps:
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+                  registry-url: https://registry.npmjs.org
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-npm-package
+                  path: release-npm
+            - name: Publish through the npm trusted publisher
+              run: npm publish ./release-npm/*.tgz --access public
+
+    maven-publish:
+        needs: [maven-stage, npm-publish]
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            contents: read
+        steps:
+            - uses: actions/checkout@v7
+            - name: Publish the validated Central deployment
+              env:
+                  DEPLOYMENT_ID: ${{ needs['maven-stage'].outputs['deployment-id'] }}
+                  MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+                  MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+              run: |
+                  scripts/central-portal.sh publish "$DEPLOYMENT_ID"
+                  scripts/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED
+
+    github-release:
+        needs: [c-artifacts, swift-source, npm-publish, maven-publish]
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            contents: write
+            id-token: write
+            attestations: write
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/download-artifact@v8
+              with:
+                  pattern: release-c-*
+                  path: release-files
+                  merge-multiple: true
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-swift-source
+                  path: release-files
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-npm-package
+                  path: release-files
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-central
+                  path: release-files
+            - name: Create release checksums
+              run: scripts/create-release-checksums.sh release-files
+            - name: Attest release artifact provenance
+              uses: actions/attest-build-provenance@v3
+              with:
+                  subject-path: release-files/*
+            - name: Create the GitHub Release from the protected tag
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  gh release create "$GITHUB_REF_NAME" \
+                      --verify-tag \
+                      --title "Markdown Core $(cat VERSION)" \
+                      --notes-file "docs/releases/$(cat VERSION).md" \
+                      release-files/*
+
+    resume-publish:
+        if: github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            actions: read
+            contents: write
+            id-token: write
+            attestations: write
+        env:
+            GH_TOKEN: ${{ github.token }}
+            RELEASE_TAG: ${{ inputs.release-tag }}
+            SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  ref: ${{ inputs.release-tag }}
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+                  registry-url: https://registry.npmjs.org
+            - name: Validate the protected release tag
+              run: |
+                  node scripts/check-release-version.mjs --skip-swift --tag="$RELEASE_TAG"
+                  test -s "docs/releases/$(cat VERSION).md"
+            - name: Download the validated release artifacts
+              run: |
+                  mkdir -p release-npm release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-npm-package --dir release-npm
+                  gh run download "$SOURCE_RUN_ID" --name release-c-ubuntu-latest --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-c-macos-26 --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-swift-source --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-maven-central --dir release-files
+                  cp release-npm/*.tgz release-files/
+            - name: Publish through the npm trusted publisher
+              run: |
+                  version=$(cat VERSION)
+                  if npm view "@nouprax/es-markdown-core@$version" version \
+                      --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+                      echo "@nouprax/es-markdown-core@$version is already published"
+                  else
+                      npm publish ./release-npm/*.tgz --access public
+                  fi
+            - name: Create release checksums
+              run: scripts/create-release-checksums.sh release-files
+            - name: Attest release artifact provenance
+              uses: actions/attest-build-provenance@v3
+              with:
+                  subject-path: release-files/*
+            - name: Create the GitHub Release from the protected tag
+              run: |
+                  gh release create "$RELEASE_TAG" \
+                      --verify-tag \
+                      --title "Markdown Core $(cat VERSION)" \
+                      --notes-file "docs/releases/$(cat VERSION).md" \
+                      release-files/*

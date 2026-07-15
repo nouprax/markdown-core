@@ -1,0 +1,17 @@
+Document scope=1:1..17:17 children=7
+├── Heading scope=1:1..1:9 level=1 children=1
+│   └── Text scope=1:3..1:9 literal="Heading" children=0
+├── BlockQuote scope=3:1..3:7 children=1
+│   └── Paragraph scope=3:3..3:7 children=1
+│       └── Text scope=3:3..3:7 literal="Quote" children=0
+├── ThematicBreak scope=5:1..6:0 children=0
+├── List scope=7:1..8:0 flavor=ordered start=3 tight=true children=1
+│   └── ListItem scope=7:1..8:0 checked=null children=1
+│       └── Paragraph scope=7:4..7:10 children=1
+│           └── Text scope=7:4..7:10 literal="ordered" children=0
+├── List scope=9:1..10:0 flavor=bullet start=null tight=true children=1
+│   └── ListItem scope=9:1..10:0 checked=true children=1
+│       └── Paragraph scope=9:7..9:10 children=1
+│           └── Text scope=9:7..9:10 literal="task" children=0
+├── CodeBlock scope=11:1..13:3 mode=standalone info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
+└── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0

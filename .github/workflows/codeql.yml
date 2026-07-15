@@ -1,0 +1,86 @@
+name: CodeQL
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    merge_group:
+    schedule:
+        - cron: "45 14 * * 3"
+
+jobs:
+    analyze:
+        name: Analyze (${{ matrix.language }})
+        runs-on: ${{ matrix.os }}
+        permissions:
+            actions: read
+            contents: read
+            security-events: write
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - language: c-cpp
+                      build-mode: manual
+                      os: ubuntu-latest
+                    - language: java-kotlin
+                      build-mode: manual
+                      os: ubuntu-latest
+                    - language: javascript-typescript
+                      build-mode: none
+                      os: ubuntu-latest
+                    - language: swift
+                      build-mode: manual
+                      os: macos-26
+        steps:
+            - uses: actions/checkout@v7
+            - name: Set up JDK 26
+              if: matrix.language == 'java-kotlin'
+              uses: actions/setup-java@v5
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - name: Select Xcode 26.6
+              if: matrix.language == 'swift'
+              uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - name: Initialize CodeQL
+              uses: github/codeql-action/init@v4
+              with:
+                  build-mode: ${{ matrix.build-mode }}
+                  languages: ${{ matrix.language }}
+            - name: Build C/C++ product
+              if: matrix.language == 'c-cpp'
+              run: |
+                  cmake -S . -B build/codeql -DMARKDOWN_CORE_TESTS=OFF
+                  cmake --build build/codeql --parallel
+            - name: Build Kotlin product
+              if: matrix.language == 'java-kotlin'
+              run: scripts/gradle.sh --no-build-cache --rerun-tasks :packages:kotlin-markdown-core:compileKotlinJvm
+            - name: Build Swift product
+              if: matrix.language == 'swift'
+              run: swift build --target MarkdownCore
+            - name: Perform CodeQL analysis
+              uses: github/codeql-action/analyze@v4
+              with:
+                  category: /language:${{ matrix.language }}
+
+    codeql-gate:
+        name: CodeQL gate
+        if: ${{ always() }}
+        needs: analyze
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - name: Require every CodeQL language
+              env:
+                  RESULT: ${{ needs.analyze.result }}
+              run: |
+                  if [ "$RESULT" != success ]; then
+                      echo "CodeQL matrix concluded: $RESULT" >&2
+                      exit 1
+                  fi
