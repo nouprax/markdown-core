@@ -1,0 +1,232 @@
+## Smart punctuation
+
+Open quotes are matched with closed quotes.
+The same method is used for matching openers and closers
+as is used in emphasis parsing:
+
+```````````````````````````````` example
+"Hello," said the spider.
+"'Shelob' is my name."
+.
+Document scope=1:1..2:22 children=1
+└── Paragraph scope=1:1..2:22 children=3
+    ├── Text scope=1:1..1:25 literal="“Hello,” said the spider." children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=2:1..2:22 literal="“‘Shelob’ is my name.”" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+'A', 'B', and 'C' are letters.
+.
+Document scope=1:1..1:30 children=1
+└── Paragraph scope=1:1..1:30 children=1
+    └── Text scope=1:1..1:30 literal="‘A’, ‘B’, and ‘C’ are letters." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+'Oak,' 'elm,' and 'beech' are names of trees.
+So is 'pine.'
+.
+Document scope=1:1..2:13 children=1
+└── Paragraph scope=1:1..2:13 children=3
+    ├── Text scope=1:1..1:45 literal="‘Oak,’ ‘elm,’ and ‘beech’ are names of trees." children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=2:1..2:13 literal="So is ‘pine.’" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+'He said, "I want to go."'
+.
+Document scope=1:1..1:26 children=1
+└── Paragraph scope=1:1..1:26 children=1
+    └── Text scope=1:1..1:26 literal="‘He said, “I want to go.”’" children=0
+````````````````````````````````
+
+A single quote that isn't an open quote matched
+with a close quote will be treated as an
+apostrophe:
+
+```````````````````````````````` example
+Were you alive in the 70's?
+.
+Document scope=1:1..1:27 children=1
+└── Paragraph scope=1:1..1:27 children=1
+    └── Text scope=1:1..1:27 literal="Were you alive in the 70’s?" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Here is some quoted '`code`' and a "[quoted link](url)".
+.
+Document scope=1:1..1:56 children=1
+└── Paragraph scope=1:1..1:56 children=5
+    ├── Text scope=1:1..1:21 literal="Here is some quoted ‘" children=0
+    ├── Code scope=1:23..1:26 mode=embedded literal="code" children=0
+    ├── Text scope=1:28..1:36 literal="’ and a “" children=0
+    ├── Link scope=1:37..1:54 destination="url" title=null children=1
+    │   └── Text scope=1:38..1:48 literal="quoted link" children=0
+    └── Text scope=1:55..1:56 literal="”." children=0
+````````````````````````````````
+
+Here the first `'` is treated as an apostrophe, not
+an open quote, because the final single quote is matched
+by the single quote before `jolly`:
+
+```````````````````````````````` example
+'tis the season to be 'jolly'
+.
+Document scope=1:1..1:29 children=1
+└── Paragraph scope=1:1..1:29 children=1
+    └── Text scope=1:1..1:29 literal="’tis the season to be ‘jolly’" children=0
+````````````````````````````````
+
+Multiple apostrophes should not be marked as open/closing quotes.
+
+```````````````````````````````` example
+'We'll use Jane's boat and John's truck,' Jenna said.
+.
+Document scope=1:1..1:53 children=1
+└── Paragraph scope=1:1..1:53 children=1
+    └── Text scope=1:1..1:53 literal="‘We’ll use Jane’s boat and John’s truck,’ Jenna said." children=0
+````````````````````````````````
+
+An unmatched double quote will be interpreted as a
+left double quote, to facilitate this style:
+
+```````````````````````````````` example
+"A paragraph with no closing quote.
+
+"Second paragraph by same speaker, in fiction."
+.
+Document scope=1:1..3:47 children=2
+├── Paragraph scope=1:1..1:35 children=1
+│   └── Text scope=1:1..1:35 literal="“A paragraph with no closing quote." children=0
+└── Paragraph scope=3:1..3:47 children=1
+    └── Text scope=3:1..3:47 literal="“Second paragraph by same speaker, in fiction.”" children=0
+````````````````````````````````
+
+A quote following a `]` or `)` character cannot
+be an open quote:
+
+```````````````````````````````` example
+[a]'s b'
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=1
+    └── Text scope=1:1..1:8 literal="[a]’s b’" children=0
+````````````````````````````````
+
+Quotes that are escaped come out as literal straight
+quotes:
+
+```````````````````````````````` example
+\"This is not smart.\"
+This isn\'t either.
+5\'8\"
+.
+Document scope=1:1..3:6 children=1
+└── Paragraph scope=1:1..3:6 children=5
+    ├── Text scope=1:1..1:22 literal="\"This is not smart.\"" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:19 literal="This isn't either." children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=3:1..3:6 literal="5'8\"" children=0
+````````````````````````````````
+
+Two hyphens form an en-dash, three an em-dash.
+
+```````````````````````````````` example
+Some dashes:  em---em
+en--en
+em --- em
+en -- en
+2--3
+.
+Document scope=1:1..5:4 children=1
+└── Paragraph scope=1:1..5:4 children=9
+    ├── Text scope=1:1..1:21 literal="Some dashes:  em—em" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:6 literal="en–en" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=3:1..3:9 literal="em — em" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=4:1..4:8 literal="en – en" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=5:1..5:4 literal="2–3" children=0
+````````````````````````````````
+
+A sequence of more than three hyphens is
+parsed as a sequence of em and/or en dashes,
+with no hyphens. If possible, a homogeneous
+sequence of dashes is used (so, 10 hyphens
+= 5 en dashes, and 9 hyphens = 3 em dashes).
+When a heterogeneous sequence must be used,
+the em dashes come first, followed by the en
+dashes, and as few en dashes as possible are
+used (so, 7 hyphens = 2 em dashes an 1 en
+dash).
+
+```````````````````````````````` example
+one-
+two--
+three---
+four----
+five-----
+six------
+seven-------
+eight--------
+nine---------
+thirteen-------------.
+.
+Document scope=1:1..10:22 children=1
+└── Paragraph scope=1:1..10:22 children=19
+    ├── Text scope=1:1..1:4 literal="one-" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:5 literal="two–" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=3:1..3:8 literal="three—" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=4:1..4:8 literal="four––" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=5:1..5:9 literal="five—–" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=6:1..6:9 literal="six——" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=7:1..7:12 literal="seven—––" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=8:1..8:13 literal="eight––––" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=9:1..9:13 literal="nine———" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=10:1..10:22 literal="thirteen———––." children=0
+````````````````````````````````
+
+Hyphens can be escaped:
+
+```````````````````````````````` example
+Escaped hyphens: \-- \-\-\-.
+.
+Document scope=1:1..1:28 children=1
+└── Paragraph scope=1:1..1:28 children=1
+    └── Text scope=1:1..1:28 literal="Escaped hyphens: -- ---." children=0
+````````````````````````````````
+
+Three periods form an ellipsis:
+
+```````````````````````````````` example
+Ellipses...and...and....
+.
+Document scope=1:1..1:24 children=1
+└── Paragraph scope=1:1..1:24 children=1
+    └── Text scope=1:1..1:24 literal="Ellipses…and…and…." children=0
+````````````````````````````````
+
+Periods can be escaped if ellipsis-formation
+is not wanted:
+
+```````````````````````````````` example
+No ellipses\.\.\.
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=1
+    └── Text scope=1:1..1:17 literal="No ellipses..." children=0
+````````````````````````````````

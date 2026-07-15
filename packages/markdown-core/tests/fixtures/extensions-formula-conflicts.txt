@@ -1,0 +1,93 @@
+---
+title: Formula syntax conflict extension test
+author: Dongyu Zhao
+version: 0.1
+date: '2026-05-09'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## Formula syntax conflict behavior
+
+These examples define precedence where GitHub formula compatibility and LaTeX
+compatibility touch existing Markdown syntax or each other.
+
+Code spans bind before formula delimiters inside the span.
+
+```````````````````````````````` example
+Code `$x$` and formula $x$.
+.
+Document scope=1:1..1:27 children=1
+└── Paragraph scope=1:1..1:27 children=5
+    ├── Text scope=1:1..1:5 literal="Code " children=0
+    ├── Code scope=1:7..1:9 mode=embedded literal="$x$" children=0
+    ├── Text scope=1:11..1:23 literal=" and formula " children=0
+    ├── Formula scope=1:24..1:26 mode=embedded literal="x" children=0
+    └── Text scope=1:27..1:27 literal="." children=0
+````````````````````````````````
+
+The GitHub `$`...`$` formula form binds as formula, not as a code span.
+
+```````````````````````````````` example
+Formula $`x`$ not code.
+.
+Document scope=1:1..1:23 children=1
+└── Paragraph scope=1:1..1:23 children=3
+    ├── Text scope=1:1..1:8 literal="Formula " children=0
+    ├── Formula scope=1:9..1:13 mode=embedded literal="x" children=0
+    └── Text scope=1:14..1:23 literal=" not code." children=0
+````````````````````````````````
+
+A same-line display close followed by non-whitespace trailing text is inline
+display formula inside a paragraph, not a formula block.
+
+```````````````````````````````` example
+$$x$$ trailing
+.
+Document scope=1:1..1:14 children=1
+└── Paragraph scope=1:1..1:14 children=2
+    ├── Formula scope=1:1..1:5 mode=standalone literal="x" children=0
+    └── Text scope=1:6..1:14 literal=" trailing" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+\\[x\\] trailing
+.
+Document scope=1:1..1:16 children=1
+└── Paragraph scope=1:1..1:16 children=2
+    ├── Formula scope=1:1..1:7 mode=standalone literal="x" children=0
+    └── Text scope=1:8..1:16 literal=" trailing" children=0
+````````````````````````````````
+
+Indented code takes precedence over formula block openers.
+
+```````````````````````````````` example
+    $$x$$
+.
+Document scope=1:1..1:9 children=1
+└── CodeBlock scope=1:5..1:9 mode=standalone info=null language=null literal="$$x$$\n" fenced=false closed=true children=0
+````````````````````````````````
+
+Non-`formula` fenced code remains ordinary code.
+
+```````````````````````````````` example
+```js
+$x$
+```
+.
+Document scope=1:1..3:3 children=1
+└── CodeBlock scope=1:1..3:3 mode=standalone info="js" language="js" literal="$x$\n" fenced=true closed=true children=0
+````````````````````````````````
+
+Code spans also bind before LaTeX backslash delimiters.
+
+```````````````````````````````` example
+Code `\\(x\\)` and formula \\(x\\).
+.
+Document scope=1:1..1:35 children=1
+└── Paragraph scope=1:1..1:35 children=5
+    ├── Text scope=1:1..1:5 literal="Code " children=0
+    ├── Code scope=1:7..1:13 mode=embedded literal="\\\\(x\\\\)" children=0
+    ├── Text scope=1:15..1:27 literal=" and formula " children=0
+    ├── Formula scope=1:28..1:34 mode=embedded literal="x" children=0
+    └── Text scope=1:35..1:35 literal="." children=0
+````````````````````````````````

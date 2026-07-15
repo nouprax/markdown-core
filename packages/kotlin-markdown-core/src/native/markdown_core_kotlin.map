@@ -1,0 +1,6 @@
+{
+    global:
+        Java_com_nouprax_markdown_core_JvmNative_parse;
+    local:
+        *;
+};

@@ -1,0 +1,436 @@
+name: CI
+
+on:
+    workflow_call:
+    pull_request:
+    push:
+        branches:
+            - "**"
+    merge_group:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    # Keep push, pull-request, and merge-queue runs in separate lanes. GitHub
+    # can leave a cancelled runner in teardown indefinitely; cross-event SHA
+    # deduplication would then prevent the required PR run from ever starting.
+    # Newer runs still replace older runs for the same PR or ref.
+    group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    hygiene:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: actions/setup-java@v4
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - name: Install clang-format
+              run: python3 -m pip install clang-format==22.1.8
+            - name: Install JavaScript dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Check formatting
+              run: |
+                  pnpm format:c:check
+                  pnpm format:cmake:check
+                  pnpm format:kotlin:check
+                  pnpm format:es:check
+            - name: Lint
+              run: |
+                  pnpm lint:c
+                  pnpm lint:kotlin
+                  pnpm lint:es
+            - name: Check cross-platform contracts
+              run: pnpm check:contracts
+            - name: Load Gradle model
+              run: pnpm check:gradle-model
+            - name: Audit test topology and public surface
+              run: |
+                  pnpm audit:repository:clean
+                  pnpm audit:ci
+                  pnpm audit:tests
+                  pnpm audit:surface
+
+    package-audit:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: actions/setup-java@v4
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v3
+            - uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: 4.0.23
+            - name: Install package-audit dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install --yes pkg-config
+                  sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+                  pnpm install --frozen-lockfile
+            - name: Audit installed and published package contents
+              run: pnpm audit:packages
+
+    swift:
+        runs-on: macos-26
+        steps:
+            - uses: actions/checkout@v4
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - name: Check Swift formatting
+              run: scripts/format-swift.sh --check
+            - name: Lint Swift
+              run: scripts/lint-swift.sh
+            - name: Run macOS and iOS Simulator Swift correctness
+              run: pnpm test:swift-macos && pnpm test:swift-ios-simulator
+            - name: Run macOS and iOS Simulator Swift conformance
+              run: pnpm conformance:swift-macos && pnpm conformance:swift-ios-simulator
+
+    swift-deployment-contract:
+        name: Swift deployment (${{ matrix.platform }} ${{ matrix.version }})
+        runs-on: macos-26
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - platform: iOS
+                      version: "18.0"
+                    - platform: iOS
+                      version: "26.0"
+                    - platform: macOS
+                      version: "15.0"
+                    - platform: macOS
+                      version: "26.0"
+        steps:
+            - uses: actions/checkout@v4
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - name: Build declared deployment target
+              env:
+                  PLATFORM: ${{ matrix.platform }}
+                  VERSION: ${{ matrix.version }}
+              run: scripts/build-swift-deployment.sh "$PLATFORM" "$VERSION"
+
+    kotlin:
+        name: Kotlin (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      target: linux-x64
+                    - os: macos-latest
+                      target: macos-arm64
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: android-actions/setup-android@v3
+            - name: Install Android build dependencies
+              run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Run Kotlin correctness on ${{ matrix.target }}
+              run: pnpm run test:kotlin-${{ matrix.target }}
+            - name: Run Kotlin conformance on ${{ matrix.target }}
+              run: pnpm run conformance:kotlin-${{ matrix.target }}
+            - name: Run Kotlin correctness on Android host
+              if: matrix.os == 'ubuntu-latest'
+              run: pnpm test:kotlin-android-host
+            - name: Run Kotlin conformance on Android host
+              if: matrix.os == 'ubuntu-latest'
+              run: pnpm conformance:kotlin-android-host
+
+    kotlin-consumers:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: android-actions/setup-android@v3
+            - name: Install Android build dependencies
+              run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Run JVM correctness and native packaging
+              run: pnpm test:kotlin-jvm
+            - name: Run JVM conformance
+              run: pnpm conformance:kotlin-jvm
+            - name: Verify Kotlin publication consumers
+              run: pnpm check:kotlin-consumers
+
+    kotlin-android-emulator:
+        # Google publishes Linux Android Emulator binaries for x86_64 only.
+        # Local managed devices select arm64-v8a automatically on ARM hosts.
+        name: Kotlin Android emulator (x86_64)
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: android-actions/setup-android@v3
+            - name: Install Android build dependencies
+              run: |
+                  sdkmanager \
+                      "platforms;android-36" \
+                      "cmake;3.22.1" \
+                      "ndk;28.2.13676358" \
+                      "emulator" \
+                      "system-images;android-36;google_apis;x86_64" \
+                      "system-images;android-36;google_apis_ps16k;x86_64"
+            - name: Publish coordinated Kotlin artifacts locally
+              run: scripts/gradle.sh :packages:kotlin-markdown-core:publishKotlinToMavenLocal
+            - name: Enable KVM
+              run: |
+                  echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+                  sudo udevadm control --reload-rules
+                  sudo udevadm trigger --name-match=kvm
+            - name: Verify runner architecture and emulator acceleration
+              run: |
+                  test "${{ runner.arch }}" = "X64"
+                  test -c /dev/kvm
+                  test -r /dev/kvm
+                  test -w /dev/kvm
+                  "$ANDROID_HOME/emulator/emulator" -accel-check
+            - name: Run Android managed-emulator correctness
+              run: pnpm test:kotlin-android-emulator
+            - name: Run Android managed-emulator conformance
+              run: pnpm conformance:kotlin-android-emulator
+
+    es:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v4
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: 4.0.23
+            - uses: browser-actions/setup-chrome@v2
+            - name: Install JavaScript dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Run Node and browser correctness
+              run: pnpm test:es-node && pnpm test:es-browser
+            - name: Run Node conformance
+              run: pnpm conformance:es-node
+
+    c-tests:
+        name: C tests (${{ matrix.os }}, ${{ matrix.compiler }}, shared=${{ matrix.shared }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      compiler: clang
+                      cc: clang
+                      cxx: clang++
+                      shared: "ON"
+                    - os: ubuntu-latest
+                      compiler: gcc
+                      cc: gcc
+                      cxx: g++
+                      shared: "OFF"
+                    - os: macos-latest
+                      compiler: clang
+                      cc: clang
+                      cxx: clang++
+                      shared: "ON"
+        env:
+            CC: ${{ matrix.cc }}
+            CXX: ${{ matrix.cxx }}
+        steps:
+            - uses: actions/checkout@v4
+            - name: Configure
+              run: cmake --preset default -DMARKDOWN_CORE_SHARED=${{ matrix.shared }}
+            - name: Build
+              run: cmake --build --preset default --parallel
+            - name: Test (correctness preset)
+              run: ctest --preset correctness
+            - name: Test public contract conformance
+              run: ctest --preset conformance
+            - name: Audit test topology
+              if: matrix.os == 'ubuntu-latest' && matrix.compiler == 'clang'
+              run: scripts/audit-test-topology.sh
+
+    c-tests-windows:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v4
+            - name: Configure
+              run: cmake --preset default -DMARKDOWN_CORE_SHARED=OFF
+            - name: Build
+              run: cmake --build --preset default --config Release --parallel
+            - name: Test (correctness preset)
+              run: ctest --preset correctness -C Release
+            - name: Test public contract conformance
+              run: ctest --preset conformance -C Release
+
+    asan:
+        runs-on: ubuntu-latest
+        env:
+            ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:detect_leaks=1
+            CC: clang
+            CXX: clang++
+        steps:
+            - uses: actions/checkout@v4
+            - name: Configure
+              run: cmake --preset asan
+            - name: Build
+              run: cmake --build --preset asan --parallel
+            - name: Test (correctness preset under ASan)
+              run: ctest --preset correctness-asan
+
+    ubsan:
+        runs-on: ubuntu-latest
+        env:
+            UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
+            CC: clang
+            CXX: clang++
+        steps:
+            - uses: actions/checkout@v4
+            - name: Configure
+              run: cmake --preset ubsan
+            - name: Build
+              run: cmake --build --preset ubsan --parallel
+            - name: Test (correctness preset under UBSan)
+              run: ctest --preset correctness-ubsan
+
+    # ThreadSanitizer gates the frozen concurrency contract: concurrent first
+    # parse, steady-state stress, and registry lifecycle run with full
+    # instrumentation.  Platforms without TSan still execute the same native
+    # concurrency regressions through the default-preset test jobs above.
+    tsan:
+        runs-on: ubuntu-latest
+        env:
+            TSAN_OPTIONS: halt_on_error=1:abort_on_error=1
+            CC: clang
+            CXX: clang++
+        steps:
+            - uses: actions/checkout@v4
+            - name: Configure
+              run: cmake --preset tsan
+            - name: Build
+              run: cmake --build --preset tsan --parallel
+            - name: Test (correctness preset under TSan)
+              run: ctest --preset correctness-tsan
+
+    required-gates:
+        # Push runs use an independent, non-required context. PR and
+        # merge-queue runs alone own the name referenced by the ruleset.
+        name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
+        if: ${{ always() }}
+        needs:
+            - hygiene
+            - package-audit
+            - swift
+            - swift-deployment-contract
+            - kotlin
+            - kotlin-consumers
+            - kotlin-android-emulator
+            - es
+            - c-tests
+            - c-tests-windows
+            - asan
+            - ubsan
+            - tsan
+        runs-on: ubuntu-latest
+        steps:
+            - name: Require every blocking CI job
+              env:
+                  HYGIENE: ${{ needs.hygiene.result }}
+                  PACKAGE_AUDIT: ${{ needs.package-audit.result }}
+                  SWIFT: ${{ needs.swift.result }}
+                  SWIFT_DEPLOYMENT: ${{ needs.swift-deployment-contract.result }}
+                  KOTLIN: ${{ needs.kotlin.result }}
+                  KOTLIN_CONSUMERS: ${{ needs.kotlin-consumers.result }}
+                  KOTLIN_ANDROID_EMULATOR: ${{ needs.kotlin-android-emulator.result }}
+                  ES: ${{ needs.es.result }}
+                  C_TESTS: ${{ needs.c-tests.result }}
+                  C_TESTS_WINDOWS: ${{ needs.c-tests-windows.result }}
+                  ASAN: ${{ needs.asan.result }}
+                  UBSAN: ${{ needs.ubsan.result }}
+                  TSAN: ${{ needs.tsan.result }}
+              run: |
+                  for result in \
+                      "$HYGIENE" \
+                      "$PACKAGE_AUDIT" \
+                      "$SWIFT" \
+                      "$SWIFT_DEPLOYMENT" \
+                      "$KOTLIN" \
+                      "$KOTLIN_CONSUMERS" \
+                      "$KOTLIN_ANDROID_EMULATOR" \
+                      "$ES" \
+                      "$C_TESTS" \
+                      "$C_TESTS_WINDOWS" \
+                      "$ASAN" \
+                      "$UBSAN" \
+                      "$TSAN"
+                  do
+                      if [ "$result" != success ]; then
+                          echo "A required CI dependency concluded: $result" >&2
+                          exit 1
+                      fi
+                  done
