@@ -67,7 +67,7 @@ if (unexpected.length > 0) {
 }
 const manifest = JSON.parse(fs.readFileSync("packages/es-markdown-core/package.json", "utf8"));
 if (manifest.private !== false) {
-    throw new Error("ES package must be publishable after Phase 13");
+    throw new Error("ES package must be publishable");
 }
 NODE
 
