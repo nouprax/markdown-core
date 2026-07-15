@@ -108,7 +108,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(cons
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos,
                                                                         bufsize_t len) {
-    markdown_core_chunk c = {ch->data + pos, len, 0};
+    markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
     return c;
 }
 

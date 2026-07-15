@@ -136,6 +136,9 @@ static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned cha
     markdown_core_strbuf_put(res, string, len);
     markdown_core_strbuf_putc(res, '\0');
 
+    if (res->oom)
+        return res;
+
     for (r = 0, w = 0; r < len; ++r) {
         if (res->ptr[r] == '\\' && res->ptr[r + 1] == '|')
             r++;

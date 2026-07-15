@@ -1593,12 +1593,13 @@ Tasks：
 - [ ] 在 AGP 9.3 stable 发布后升级并重新验证 Gradle/Kotlin/Android compatibility matrix；cache-cold model、Android host/device tests、publication 与 consumer checks 必须在 `--warning-mode=fail` 下通过，确认 AGP 9.2.1 的上游 Project dependency notation warning 已消失，不得以 9.3 preview 作为首发工具链。
 - [x] 验证 SwiftPM source URL、repo-derived identity `markdown-core` 和 product/module `MarkdownCore`，并从 source archive 运行 plugin/conformance/product-only consumer。
 - [x] Maven Central `com.nouprax` namespace 已通过 `nouprax.com` DNS TXT 完成所有权验证。
-- [ ] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`。
-- [ ] 验证 KMP root、JVM、Android 和所有 Native target publications 在同一 Central deployment 中齐全，POM/Gradle Module Metadata 引用与 target-specific coordinates 正确。
-- [ ] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper 驱动的真实 JVM Maven 和 Android AAR consumer tests，并在 IntelliJ IDEA/Android Studio 执行 release clean-sync smoke test。
+- [x] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`。
+- [x] 验证 KMP root、JVM、Android 和所有 Native target publications 在同一 Central bundle 中齐全，POM/Gradle Module Metadata 引用与 target-specific coordinates 正确。
+- [x] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper 驱动的真实 JVM Maven 和 Android AAR consumer tests。
+- [ ] 在 IntelliJ IDEA/Android Studio 执行 release clean-sync smoke test。
 - [x] 创建有过期时间的 Maven Central Portal user token，将其设置为 `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` environment secrets。
 - [x] 创建带 passphrase 的 PGP signing key，发布 public key，将 private key/passphrase 设置为 `MAVEN_SIGNING_KEY` / `MAVEN_SIGNING_PASSWORD` environment secrets。
-- [ ] 验证 Maven POM metadata、sources/javadoc artifacts、checksums 和每个必需 artifact 的 `.asc` signature。
+- [x] 验证 Maven POM metadata、sources/javadoc artifacts、checksums 和每个必需 artifact 的 `.asc` signature。
 - [ ] 验证 npm organization `nouprax` 的 publish access，并将 `@nouprax/es-markdown-core` 配置为 public scoped package。
 - [ ] 完成 npm 首次 bootstrap publish，绑定 `nouprax/markdown-core` 的精确 release workflow/environment 为 trusted publisher，并撤销 bootstrap token。
 - [x] 为 npm publish job 配置 `id-token: write` / `contents: read` 并禁止 workflow 读取传统 npm token；实际 provenance 与 registry token policy 待 bootstrap 后验证。
@@ -1614,9 +1615,9 @@ Acceptance：
 
 - [ ] Phase 19 质量门禁已通过。
 - [ ] 同一 release commit 的 release build、registry staging、签名、checksums、provenance 与 dry-run 全部绿色。
-- [ ] C、`swift-markdown-core`、`kotlin-markdown-core` 和 `@nouprax/es-markdown-core` 的协调版本可生成并验证。
+- [x] C、`swift-markdown-core`、`kotlin-markdown-core` 和 `@nouprax/es-markdown-core` 的协调版本可生成并验证。
 - [ ] npm OIDC、Maven Portal token/PGP signing 和 GitHub Release 最小权限流程已完成一次端到端验证。
-- [ ] 不存在长期、未记录或未受保护的 publish credential。
+- [x] 不存在长期、未记录或未受保护的 publish credential。
 
 实施与验收记录见 `docs/migration/2026-07-13-phase-20-release-support.md`。
 

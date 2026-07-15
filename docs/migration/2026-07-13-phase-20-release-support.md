@@ -1,8 +1,9 @@
 # Phase 20: release support and release CI
 
 状态：实施中。仓库内版本合同、AGP 9.3 升级、四端 staging、Maven 聚合/签名审计、
-无 secret dry-run、正式发布 workflow、发布手册及受保护 GitHub release environment/tag
-ruleset 已落地；设备/IDE、远端 dry-run、registry bootstrap、Maven secrets 与 PGP 外部配置仍待完成。
+无 secret dry-run、正式发布 workflow、发布手册、受保护 GitHub release environment/tag
+ruleset、Maven secrets 与 PGP 外部配置均已落地并取得远端 dry-run 证据；设备/IDE、npm
+registry bootstrap 和正式对外发布仍待完成。
 
 ## Boundary
 
@@ -19,9 +20,10 @@ onboarding 和跨阶段总复验属于 Phase 21。
 - [x] 验证 SwiftPM source URL、repo-derived identity `markdown-core` 和 product/module `MarkdownCore`。
 - [x] 从 `swift package archive-source` 解包到 repo 外目录，验证 root canonical contract、SwiftPM build-tool plugin、provider conformance 和只依赖 `MarkdownCore` product 的独立 consumer；source archive 必须保留测试合同，但 consumer build 不得执行测试插件或携带 derived fixture。
 - [x] Maven Central `com.nouprax` namespace 已通过 `nouprax.com` DNS TXT 完成所有权验证。
-- [ ] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`，并确保 KMP root、JVM、Android 和所有 Native target publications 在同一 Central deployment 中齐全；host staging 已通过，完整 Linux/macOS 聚合待远端 dry-run 取证。
-- [ ] 验证 POM、Gradle Module Metadata、sources/javadoc artifacts、checksums、signatures、target-specific coordinates 与 native payload 完整一致；本地 metadata/content 审计已通过，完整一次性 PGP 签名审计待远端 dry-run 取证。
-- [ ] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper JVM Maven 与 Android AAR consumers，并在 IntelliJ IDEA/Android Studio 执行 release clean-sync smoke test。
+- [x] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`，并确保 KMP root、JVM、Android 和所有 Native target publications 在同一 Central bundle 中齐全；Linux/macOS host staging 与聚合已由远端 dry-run 验证。
+- [x] 验证 POM、Gradle Module Metadata、sources/javadoc artifacts、checksums、signatures、target-specific coordinates 与 native payload 完整一致；完整一次性 PGP 签名审计已由远端 dry-run 验证。
+- [x] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper JVM Maven 与 Android AAR consumers。
+- [ ] 在 IntelliJ IDEA/Android Studio 执行 release clean-sync smoke test。
 - [x] 创建有过期时间的 Maven Central Portal user token，并通过受保护 `release` GitHub environment 提供 `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`。
 - [x] 创建带 passphrase 的 PGP signing key、发布 public key，并通过受保护 environment 提供 `MAVEN_SIGNING_KEY`/`MAVEN_SIGNING_PASSWORD`；key、双 keyserver 发布、environment secrets 和离线 private-key/revocation-certificate 备份已完成。
 - [ ] 验证 npm organization `nouprax` 的 public scoped publish access，完成首次 bootstrap publish，将精确 release workflow/environment 绑定为 trusted publisher，并撤销 bootstrap token。
@@ -54,12 +56,18 @@ onboarding 和跨阶段总复验属于 Phase 21。
   当前仍为 enabled，增加独立 reviewer team 时一并关闭。
 - 本地已通过 `pnpm verify`、CI/repository/public-surface/package-content audits、C/npm/Swift
   staging、macOS host Maven audit，以及 KMP、JVM Gradle、JVM Maven Wrapper、Android staged
-  consumers。完整跨 host 签名 dry-run 需由新增 workflow 在提交后执行。
+  consumers。
+- draft PR [#2](https://github.com/nouprax/markdown-core/pull/2) 的 release dry-run
+  [run 29386638494](https://github.com/nouprax/markdown-core/actions/runs/29386638494) 在 commit
+  `757060ec02f6e48d810ee4be9dc01a3d0333ffa6` 上通过：Linux/macOS C artifacts、Swift source
+  archive/product consumer、npm tarball consumer、Linux/macOS Maven staging、跨 host 聚合、一次性
+  PGP 签名与审计、KMP/JVM Gradle/JVM Maven/Android staged consumers、可独立复验的 Central
+  bundle 和最终 fail-closed gate 全绿；dry-run 未读取 release environment 或 secrets。
 
 ## Acceptance
 
 - [ ] Phase 19 required gates 已绿色且 ruleset 已启用；release workflow 只接受受保护 tag/environment，并对同一 commit 生成四端协调版本。
-- [ ] C、SwiftPM、Maven/KMP 和 npm staged artifacts 的内容、metadata、checksums、签名与 provenance 全部可独立复验；所有声明的 consumers 从 staged artifacts 实际运行。
+- [x] C、SwiftPM、Maven/KMP 和 npm staged artifacts 的内容、metadata、checksums、签名与 provenance inputs 全部可独立复验；所有声明的 consumers 从 staged artifacts 实际运行。
 - [ ] npm 使用 OIDC trusted publishing，Maven 使用最小范围且有过期时间的 Portal token 与 PGP signing；不存在长期、未记录或未受保护的 publish credential。
-- [ ] Release dry-run 不读取 secrets，正式 workflow 的权限按 job 最小化，GitHub Release 只发布经过同 commit 验证的 artifacts。
-- [ ] 二进制与安装型发布内容不携带 root shared spec、test corpus、private implementation target、renderer 或任何未在 Phase 16 public-surface allowlist 中批准的文件或符号；SwiftPM source distribution 例外地保留测试合同源，并证明它不进入 consumer product graph。
+- [x] Release dry-run 不读取 secrets，正式 workflow 的权限按 job 最小化，GitHub Release 只发布经过同 commit 验证的 artifacts。
+- [x] 二进制与安装型发布内容不携带 root shared spec、test corpus、private implementation target、renderer 或任何未在 Phase 16 public-surface allowlist 中批准的文件或符号；SwiftPM source distribution 例外地保留测试合同源，并证明它不进入 consumer product graph。
