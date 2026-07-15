@@ -1,0 +1,7 @@
+#ifndef MARKDOWN_CORE_VERSION_H
+#define MARKDOWN_CORE_VERSION_H
+
+#define MARKDOWN_CORE_VERSION ((1 << 16) | (0 << 8) | 0)
+#define MARKDOWN_CORE_VERSION_STRING "1.0.1"
+
+#endif
