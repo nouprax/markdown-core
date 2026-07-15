@@ -184,10 +184,10 @@ jobs:
             - name: Require every release dry-run artifact
               env:
                   VALIDATE: ${{ needs.validate.result }}
-                  C_ARTIFACTS: ${{ needs.c-artifacts.result }}
-                  SWIFT_SOURCE: ${{ needs.swift-source.result }}
-                  NPM_PACKAGE: ${{ needs.npm-package.result }}
-                  MAVEN_AGGREGATE: ${{ needs.maven-aggregate.result }}
+                  C_ARTIFACTS: ${{ needs['c-artifacts'].result }}
+                  SWIFT_SOURCE: ${{ needs['swift-source'].result }}
+                  NPM_PACKAGE: ${{ needs['npm-package'].result }}
+                  MAVEN_AGGREGATE: ${{ needs['maven-aggregate'].result }}
               run: |
                   for result in "$VALIDATE" "$C_ARTIFACTS" "$SWIFT_SOURCE" "$NPM_PACKAGE" "$MAVEN_AGGREGATE"; do
                       test "$result" = success

@@ -139,7 +139,7 @@ jobs:
         permissions:
             contents: read
         outputs:
-            deployment-id: ${{ steps.central.outputs.deployment-id }}
+            deployment-id: ${{ steps.central.outputs['deployment-id'] }}
         env:
             GRADLE_USER_HOME: ${{ runner.temp }}/gradle-user-home
         steps:
@@ -222,7 +222,7 @@ jobs:
             - uses: actions/checkout@v4
             - name: Publish the validated Central deployment
               env:
-                  DEPLOYMENT_ID: ${{ needs.maven-stage.outputs.deployment-id }}
+                  DEPLOYMENT_ID: ${{ needs['maven-stage'].outputs['deployment-id'] }}
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
                   MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
               run: |
