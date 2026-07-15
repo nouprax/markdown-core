@@ -142,6 +142,11 @@ after all access to that document has finished. The complete C contract is in
 
 ## Build
 
+Set up or validate the pinned contributor toolchain with
+[`docs/development-environment.md`](docs/development-environment.md). The
+non-interactive entry points are `scripts/init-environment.sh --check` and
+`scripts/init-environment.sh --install`.
+
 Install the pinned JavaScript development dependencies before using the root
 `pnpm` tasks:
 

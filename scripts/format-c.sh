@@ -2,7 +2,14 @@
 set -eu
 
 EXPECTED_VERSION="22.1.8"
-CLANG_FORMAT=${CLANG_FORMAT:-clang-format}
+REPO_CLANG_FORMAT="$PWD/.tools/clang-format/$EXPECTED_VERSION/venv/bin/clang-format"
+if [ -n "${CLANG_FORMAT:-}" ]; then
+    :
+elif [ -x "$REPO_CLANG_FORMAT" ]; then
+    CLANG_FORMAT=$REPO_CLANG_FORMAT
+else
+    CLANG_FORMAT=clang-format
+fi
 
 actual_version=$($CLANG_FORMAT --version | sed -E 's/.*version ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 if [ "$actual_version" != "$EXPECTED_VERSION" ]; then

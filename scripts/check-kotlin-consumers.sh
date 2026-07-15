@@ -5,7 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 repository="$root/build/kotlin-consumer-repository"
 gradle="$root/scripts/gradle.sh"
 property="-Dmaven.repo.local=$repository"
-maven_repository_args=()
+maven_repository_arg=
 publish=true
 
 if [ "${1:-}" = "--repository" ]; then
@@ -18,7 +18,7 @@ if [ "${1:-}" = "--repository" ]; then
     rm -rf "$consumer_local_repository"
     mkdir -p "$consumer_local_repository"
     property="-Dmaven.repo.local=$consumer_local_repository"
-    maven_repository_args=("-Dmarkdown.core.consumer.repository=file://$repository")
+    maven_repository_arg="-Dmarkdown.core.consumer.repository=file://$repository"
     publish=false
 fi
 
@@ -44,6 +44,6 @@ MAVEN_USER_HOME="$root/build/maven-user-home" \
     MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }--enable-native-access=ALL-UNNAMED" \
     "$root/mvnw" --batch-mode --no-transfer-progress \
     "$property" \
-    "${maven_repository_args[@]}" \
+    ${maven_repository_arg:+"$maven_repository_arg"} \
     -f packages/kotlin-markdown-core/consumers/jvm-maven/pom.xml \
     verify

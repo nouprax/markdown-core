@@ -1632,19 +1632,19 @@ Acceptance：
 
 Tasks：
 
-- [ ] 完成 Git/物理工作区收尾：逐项审查所有 tracked deletions 与 untracked package sources，确保应交付文件全部记录且没有意外删除；此项只审查和记录最终 snapshot，不重开 Phase 17 的实现决策。
-- [ ] 在安装依赖前清除 `.build/`、`build/`、`.gradle/`、`.pnpm-store/`、`.swiftpm/`、`.tools/`、`node_modules/`、package `build/dist/.cxx` 等 ignored 产物，并以 `scripts/audit-repository.sh --physical` 拒绝 empty directory、build/cache/dependency/IDE 残留。
-- [ ] 使用 `pnpm audit:repository:clean` 重新执行 clean Git snapshot、secret、large-file、symlink/broken-link、file-mode、final-newline、package-coordinate 和 license audits；随后从 clean checkout 安装固定依赖并复跑 root `verify`、public-header/symbol、package-content、test/CI topology、consumer 与 release dry-run checks。
-- [ ] 完成开发/CI 环境收尾：README 链接到 `docs/development-environment.md`；该文档以 required、platform-specific、repo-managed/optional 分类列出并固定 C/C++ compiler、CMake/Ninja/pkg-config、Xcode/Swift、JDK、Android SDK/NDK/emulator images、Gradle Wrapper、Maven Wrapper、Node.js、pnpm、Emscripten、Python formatter tooling 等全部依赖、版本来源和验证命令；提供幂等、非交互的 `scripts/init-environment.sh`（至少支持只读 `--check` 与受支持 host 的 `--install`/bootstrap），quality/release CI 在官方 setup actions 后复用同一检查入口，脚本不得安装 Xcode、读取 release secrets 或把全局 Gradle/Maven 当成前置条件。
-- [ ] 汇总 Phase 0–20 的关闭状态、已接受例外、远端 CI/ruleset/release evidence 与最终 artifact coordinates，确保没有未归属的 TODO、临时 credential、preview toolchain 或仅存在于本机的验收条件。
+- [x] 完成 Git/物理工作区收尾：逐项审查所有 tracked deletions 与 untracked package sources，确保应交付文件全部记录且没有意外删除；此项只审查和记录最终 snapshot，不重开 Phase 17 的实现决策。
+- [x] 在安装依赖前清除 `.build/`、`build/`、`.gradle/`、`.pnpm-store/`、`.swiftpm/`、`.tools/`、`node_modules/`、package `build/dist/.cxx` 等 ignored 产物，并以 `scripts/audit-repository.sh --physical` 拒绝 empty directory、build/cache/dependency/IDE 残留。
+- [x] 使用 `pnpm audit:repository:clean` 重新执行 clean Git snapshot、secret、large-file、symlink/broken-link、file-mode、final-newline、package-coordinate 和 license audits；随后从 clean checkout 安装固定依赖并复跑 root `verify`、public-header/symbol、package-content、test/CI topology、consumer 与 release dry-run checks。
+- [x] 完成开发/CI 环境收尾：README 链接到 `docs/development-environment.md`；该文档以 required、platform-specific、repo-managed/optional 分类列出并固定 C/C++ compiler、CMake/Ninja/pkg-config、Xcode/Swift、JDK、Android SDK/NDK/emulator images、Gradle Wrapper、Maven Wrapper、Node.js、pnpm、Emscripten等全部依赖、版本来源和验证命令；提供幂等、非交互的 `scripts/init-environment.sh`（至少支持只读 `--check` 与受支持 host 的 `--install`/bootstrap），quality/release CI 在官方 setup actions 后复用同一检查入口，脚本不得安装 Xcode、读取 release secrets 或把全局 Gradle/Maven 当成前置条件。
+- [x] 汇总 Phase 0–20 的关闭状态、已接受例外、远端 CI/ruleset/release evidence 与最终 artifact coordinates，确保没有未归属的 TODO、临时 credential、preview toolchain 或仅存在于本机的验收条件。
 
 Acceptance：
 
-- [ ] Phase 19 质量门禁和 Phase 20 发布支持均已完成。
-- [ ] 最终 Git snapshot 经审查，物理 checkout 在依赖安装前无 generated、cache 或 IDE 残留。
-- [ ] 统一环境入口能从 clean host 复现 quality/release toolchain。
-- [ ] 安装固定依赖后全仓 verify、consumer、package、security 与 release dry-run checks 全绿。
-- [ ] README 和关闭报告可作为新 contributor 与发布维护者的唯一入口。
+- [x] Phase 19 质量门禁和 Phase 20 发布支持均已完成。
+- [x] 最终 Git snapshot 经审查，物理 checkout 在依赖安装前无 generated、cache 或 IDE 残留。
+- [x] 统一环境入口能从 clean host 复现 quality/release toolchain。
+- [x] 安装固定依赖后全仓 verify、consumer、package、security 与 release dry-run checks 全绿。
+- [x] README 和关闭报告可作为新 contributor 与发布维护者的唯一入口。
 
 实施与验收记录见 `docs/migration/2026-07-13-phase-21-final-closure.md`。
 

@@ -41,6 +41,8 @@ jobs:
               run: python3 -m pip install clang-format==22.1.8
             - name: Install JavaScript dependencies
               run: pnpm install --frozen-lockfile
+            - name: Check prepared build environment
+              run: scripts/init-environment.sh --check node java wrappers dependencies
             - name: Check formatting
               run: |
                   pnpm format:c:check
@@ -89,6 +91,8 @@ jobs:
                   sudo apt-get install --yes pkg-config
                   sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
                   pnpm install --frozen-lockfile
+            - name: Check prepared package-audit environment
+              run: scripts/init-environment.sh --check core node java wrappers android emscripten dependencies
             - name: Audit installed and published package contents
               run: pnpm audit:packages
 
@@ -106,6 +110,8 @@ jobs:
               with:
                   run_install: false
                   version: 11.7.0
+            - name: Check prepared Swift environment
+              run: scripts/init-environment.sh --check node wrappers swift
             - name: Check Swift formatting
               run: scripts/format-swift.sh --check
             - name: Lint Swift

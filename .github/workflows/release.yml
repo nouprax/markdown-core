@@ -68,6 +68,8 @@ jobs:
             - uses: maxim-lobanov/setup-xcode@v1
               with:
                   xcode-version: "26.6"
+            - name: Check prepared Swift release environment
+              run: scripts/init-environment.sh --check wrappers swift
             - name: Validate Swift source archive and product consumer
               run: scripts/check-swift-source-archive.sh build/release-swift
             - uses: actions/upload-artifact@v7
@@ -92,6 +94,8 @@ jobs:
               with:
                   version: 4.0.23
             - run: pnpm install --frozen-lockfile
+            - name: Check prepared npm release environment
+              run: scripts/init-environment.sh --check node emscripten dependencies
             - name: Build, pack, and run the npm artifact consumer
               run: scripts/stage-npm-release.sh build/release-npm
             - uses: actions/upload-artifact@v7
@@ -113,6 +117,8 @@ jobs:
                   java-version: 26
             - uses: android-actions/setup-android@v4
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared Android release environment
+              run: scripts/init-environment.sh --check java wrappers android
             - name: Build Linux, root, JVM, and Android Maven publications
               run: scripts/stage-maven-publications.sh build/release-maven-linux linux-release
             - uses: actions/upload-artifact@v7
@@ -132,6 +138,8 @@ jobs:
               with:
                   distribution: temurin
                   java-version: 26
+            - name: Check prepared macOS publication environment
+              run: scripts/init-environment.sh --check java wrappers
             - name: Build macOS Native publication and JVM payload
               run: scripts/stage-maven-publications.sh build/release-maven-macos macos-native
             - uses: actions/upload-artifact@v7
@@ -161,6 +169,8 @@ jobs:
                   java-version: 26
             - uses: android-actions/setup-android@v4
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
+            - name: Check prepared staged-consumer environment
+              run: scripts/init-environment.sh --check java wrappers android
             - uses: actions/download-artifact@v8
               with:
                   name: release-maven-linux

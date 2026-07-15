@@ -105,7 +105,7 @@ grep -q 'name: "swift-markdown-core"' Package.swift \
 
 if [ "$physical" = true ]; then
     generated=$(find . -type d \
-        \( -name .build -o -name .cxx -o -name .gradle -o -name .idea \
+        \( -name .build -o -name .cxx -o -name .gradle \
         -o -name .kotlin -o -name .pnpm-store -o -name .swiftpm -o -name .tools \
         -o -name .vscode -o -name build -o -name DerivedData -o -name dist \
         -o -name node_modules -o -name target \) \
@@ -113,6 +113,17 @@ if [ "$physical" = true ]; then
     if [ -n "$generated" ]; then
         printf '%s\n' "$generated" >&2
         fail "generated, cache, dependency, or IDE directories remain"
+    fi
+
+    idea_residue=$(
+        {
+            git ls-files --others --exclude-standard -- .idea
+            git ls-files --others --ignored --exclude-standard -- .idea
+        } | sort -u
+    )
+    if [ -n "$idea_residue" ]; then
+        printf '%s\n' "$idea_residue" >&2
+        fail "untracked or ignored IDE state remains"
     fi
 
     empty_dirs=$(find . -type d -empty -not -path './.git/*' -print | sort)
