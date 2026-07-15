@@ -1,10 +1,10 @@
 # Phase 20: release support and release CI
 
-状态：实施中。仓库内版本合同、AGP 9.3 升级、四端 staging、Maven 聚合/签名审计、
+状态：完成。仓库内版本合同、AGP 9.3 升级、四端 staging、Maven 聚合/签名审计、
 无 secret dry-run、正式发布 workflow、发布手册、受保护 GitHub release environment/tag
 ruleset、Maven secrets、PGP 外部配置、npm registry bootstrap/trusted publisher 与 JetBrains
 Gradle/KMP clean-import 均已落地；受保护 `v1.0.1` 在产物构建前 fail-closed 且未发布，
-协调版本 `1.0.2` 的首次 OIDC provenance 和完整正式 release 仍待完成。
+协调版本 `1.0.2` 已通过 npm OIDC、Maven Central 和 GitHub Release 完成端到端发布。
 
 ## Boundary
 
@@ -32,7 +32,7 @@ onboarding 和跨阶段总复验属于 Phase 21。
 - [x] 创建有过期时间的 Maven Central Portal user token，并通过受保护 `release` GitHub environment 提供 `MAVEN_CENTRAL_USERNAME`/`MAVEN_CENTRAL_PASSWORD`。
 - [x] 创建带 passphrase 的 PGP signing key、发布 public key，并通过受保护 environment 提供 `MAVEN_SIGNING_KEY`/`MAVEN_SIGNING_PASSWORD`；key、双 keyserver 发布、environment secrets 和离线 private-key/revocation-certificate 备份已完成。
 - [x] 验证 npm organization `nouprax` 的 public scoped publish access，完成首次 bootstrap publish，将精确 release workflow/environment 绑定为 trusted publisher，并撤销 bootstrap CLI session/token。
-- [x] 为 npm publish job 配置最小 `id-token: write`/`contents: read`，在 workflow policy 中禁止传统 npm token，并在 registry 要求 2FA 且禁止 token；实际 OIDC provenance 待首次 GitHub Actions publication 验证。
+- [x] 为 npm publish job 配置最小 `id-token: write`/`contents: read`，在 workflow policy 中禁止传统 npm token，并在 registry 要求 2FA 且禁止 token；`1.0.2` 已由 GitHub Actions OIDC 发布并生成 SLSA provenance。
 - [x] 创建受保护 `release` environment，配置 required reviewer、tag/branch restrictions 和 Maven-only secrets；environment、tag-only policy、active ruleset、GitHub Release 最小权限与四个 Maven environment secrets 已完成。
 - [x] 添加完全不读取 release secrets 的 release dry-run，验证 artifact contents、versions、metadata、checksums、signatures 和 provenance inputs。
 - [x] 创建 `docs/releasing.md`，记录认证、secret names、轮换、撤销、trusted publishing、offline signing-key backup、泄漏响应、changelog、release notes 和发布前检查。
@@ -118,11 +118,25 @@ onboarding 和跨阶段总复验属于 Phase 21。
   已分别证明 Phase 19 review gates、四端 build/conformance/consumer/package/security matrix，
   以及 artifact staging、一次性 dry-run signing、checksums 和 provenance inputs。正式
   release 不复用这些 run 的 SHA，而是在 tag snapshot 上重新执行 required build/test gate。
+- 受保护 `v1.0.2` 的正式
+  [release run 29444753606](https://github.com/nouprax/markdown-core/actions/runs/29444753606)
+  在 tag snapshot 上通过完整 quality gates、四端 artifact staging、Maven signing、staged
+  consumers 和最终 Central bundle 审计；最终 bundle 只包含 `com/nouprax/**`，10/10 Central
+  components 验证成功。发布恢复
+  [run 29447029321](https://github.com/nouprax/markdown-core/actions/runs/29447029321)
+  只复用该 run 的已验证 artifacts，未重新运行 build/test matrix，并通过 trusted publisher
+  发布 [`@nouprax/es-markdown-core@1.0.2`](https://www.npmjs.com/package/@nouprax/es-markdown-core/v/1.0.2)
+  及其 SLSA provenance，随后创建带 checksums 和 artifact attestations 的
+  [GitHub Release v1.0.2](https://github.com/nouprax/markdown-core/releases/tag/v1.0.2)。Maven
+  deployment `7b529f7f-156a-481a-9245-367ebb97fba1` 已转为 `PUBLISHED`，公开
+  [`com.nouprax:kotlin-markdown-core:1.0.2`](https://repo1.maven.org/maven2/com/nouprax/kotlin-markdown-core/1.0.2/)；
+  污染的失败 deployment 已删除，临时恢复所需的 `main` environment policy 也已撤销，
+  `release` environment 恢复为只接受 `v*.*.*` tag。
 
 ## Acceptance
 
 - [x] Phase 19 required gates 已绿色且 ruleset 已启用；release workflow 只接受受保护 tag/environment，并对同一 commit 生成四端协调版本。
 - [x] C、SwiftPM、Maven/KMP 和 npm staged artifacts 的内容、metadata、checksums、签名与 provenance inputs 全部可独立复验；所有声明的 consumers 从 staged artifacts 实际运行。
-- [ ] npm 使用 OIDC trusted publishing，Maven 使用最小范围且有过期时间的 Portal token 与 PGP signing；不存在长期、未记录或未受保护的 publish credential。
+- [x] npm 使用 OIDC trusted publishing，Maven 使用最小范围且有过期时间的 Portal token 与 PGP signing；不存在长期、未记录或未受保护的 publish credential。
 - [x] Release dry-run 不读取 secrets，正式 workflow 的权限按 job 最小化，GitHub Release 只发布经过同 commit 验证的 artifacts。
 - [x] 二进制与安装型发布内容不携带 root shared spec、test corpus、private implementation target、renderer 或任何未在 Phase 16 public-surface allowlist 中批准的文件或符号；SwiftPM source distribution 例外地保留测试合同源，并证明它不进入 consumer product graph。

@@ -1609,7 +1609,7 @@ Tasks：
 - [x] 验证 Maven POM metadata、sources/javadoc artifacts、checksums 和每个必需 artifact 的 `.asc` signature。
 - [x] 验证 npm organization `nouprax` 的 publish access，并将 `@nouprax/es-markdown-core` 配置为 public scoped package。
 - [x] 完成 npm 首次 bootstrap publish，绑定 `nouprax/markdown-core` 的精确 release workflow/environment 为 trusted publisher，并撤销 bootstrap CLI session/token。
-- [x] 为 npm publish job 配置 `id-token: write` / `contents: read` 并禁止 workflow 读取传统 npm token；registry 已要求 2FA 且禁止 token，实际 OIDC provenance 待首次 GitHub Actions publication 验证。
+- [x] 为 npm publish job 配置 `id-token: write` / `contents: read` 并禁止 workflow 读取传统 npm token；registry 已要求 2FA 且禁止 token，`1.0.2` 已由 GitHub Actions OIDC 发布并生成 SLSA provenance。
 - [x] 创建受保护 `release` GitHub environment，配置 required reviewer、tag/branch restrictions 和 Maven-only environment secrets；environment、`v*.*.*` tag-only policy、active release-tag ruleset 与四个 Maven secrets 已启用。
 - [x] 确保 GitHub Release job 仅在必要时使用 `contents: write` 的 workflow-provided `GITHUB_TOKEN`。
 - [x] 添加不读取 release secrets 的发布 dry-run，验证产物内容、版本、签名、checksums 和 registry metadata。
@@ -1623,7 +1623,7 @@ Acceptance：
 - [x] Phase 19 质量门禁已通过。
 - [x] 同一 release commit 的 release build、registry staging、签名、checksums、provenance 与 dry-run 全部绿色。
 - [x] C、`swift-markdown-core`、`kotlin-markdown-core` 和 `@nouprax/es-markdown-core` 的协调版本可生成并验证。
-- [ ] npm OIDC、Maven Portal token/PGP signing 和 GitHub Release 最小权限流程已完成一次端到端验证。
+- [x] npm OIDC、Maven Portal token/PGP signing 和 GitHub Release 最小权限流程已完成一次端到端验证。
 - [x] 不存在长期、未记录或未受保护的 publish credential。
 
 实施与验收记录见 `docs/migration/2026-07-13-phase-20-release-support.md`。
