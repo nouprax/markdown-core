@@ -19,7 +19,7 @@ jobs:
         steps:
             - name: Validate artifact metadata before download
               id: artifacts
-              uses: actions/github-script@v7
+              uses: actions/github-script@v9
               with:
                   script: |
                       const allowedNames = new Set(["pr-metrics-linux", "pr-metrics-macos"]);
@@ -55,7 +55,7 @@ jobs:
             - name: Download untrusted metrics as data
               if: ${{ steps.artifacts.outputs.safe == 'true' }}
               continue-on-error: true
-              uses: actions/download-artifact@v4
+              uses: actions/download-artifact@v8
               with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
                   run-id: ${{ github.event.workflow_run.id }}
@@ -63,7 +63,7 @@ jobs:
                   path: metrics
                   merge-multiple: true
             - name: Create or update the metrics comment
-              uses: actions/github-script@v7
+              uses: actions/github-script@v9
               with:
                   script: |
                       const fs = require("node:fs");

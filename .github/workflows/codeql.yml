@@ -34,10 +34,10 @@ jobs:
                       build-mode: manual
                       os: macos-26
         steps:
-            - uses: actions/checkout@v4
+            - uses: actions/checkout@v7
             - name: Set up JDK 26
               if: matrix.language == 'java-kotlin'
-              uses: actions/setup-java@v4
+              uses: actions/setup-java@v5
               with:
                   cache: gradle
                   distribution: temurin

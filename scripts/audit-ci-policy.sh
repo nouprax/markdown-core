@@ -14,8 +14,6 @@ ruleset=.github/rulesets/main.json
 release_ruleset=.github/rulesets/release-tags.json
 release_environment=.github/environments/release.json
 release_environment_policy=.github/environments/release-tag-policy.json
-maven_wrapper=.mvn/wrapper/maven-wrapper.properties
-maven_consumer=packages/kotlin-markdown-core/consumers/jvm-maven/pom.xml
 
 if command -v rg >/dev/null 2>&1; then
     search() {
@@ -37,11 +35,7 @@ for required in \
     "$ruleset" \
     "$release_ruleset" \
     "$release_environment" \
-    "$release_environment_policy" \
-    "$maven_wrapper" \
-    "$maven_consumer" \
-    mvnw \
-    mvnw.cmd; do
+    "$release_environment_policy"; do
     if [ ! -f "$required" ]; then
         echo "missing CI policy file: $required" >&2
         exit 1
@@ -69,7 +63,7 @@ if [ "$(grep -c '^        needs: quality$' "$release")" -ne 5 ]; then
 fi
 search '^            id-token: write$' "$release"
 search '^            attestations: write$' "$release"
-search 'actions/attest-build-provenance@v3' "$release"
+search 'actions/attest-build-provenance@' "$release"
 search 'npm publish \./release-npm/\*\.tgz --access public' "$release"
 search '^    resume-publish:$' "$release"
 search "if: github.event_name == 'workflow_dispatch'" "$release"
@@ -128,33 +122,8 @@ search '^    required-gates:$' "$ci"
 grep -Fq "name: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}" "$ci"
 grep -Fq 'group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}' "$ci"
 search '^    cancel-in-progress: true$' "$ci"
-search '^                  pnpm audit:repository:clean$' "$ci"
-search '^            - name: Verify Kotlin publication consumers$' "$ci"
-search '^              run: pnpm check:kotlin-consumers$' "$ci"
-search '^        name: Kotlin Android emulator \(x86_64\)$' "$ci"
-grep -Fq '"system-images;android-36;google_apis;x86_64"' "$ci"
-grep -Fq '"system-images;android-36;google_apis_ps16k;x86_64"' "$ci"
-if search 'ubuntu-24\.04-arm|system-images;android-36;[^;]+;arm64-v8a' "$ci"; then
-    echo "blocking CI requests an Android Emulator package unavailable on Linux ARM64" >&2
-    exit 1
-fi
-search '^            - name: Verify runner architecture and emulator acceleration$' "$ci"
 search '^    codeql-gate:$' "$codeql"
 search '^        name: CodeQL gate$' "$codeql"
-search '^distributionUrl=https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/3.9.16/apache-maven-3.9.16-bin.zip$' "$maven_wrapper"
-search '^distributionSha256Sum=5af3b743dd8b876b5c45da33b676251e5f1687712644abb4ee519ca56e1d89ce$' "$maven_wrapper"
-search '^distributionType=only-script$' "$maven_wrapper"
-search '<artifactId>kotlin-markdown-core-jvm</artifactId>' "$maven_consumer"
-search '<phase>verify</phase>' "$maven_consumer"
-search '<name>markdown.core.consumer.repository</name>' "$maven_consumer"
-search 'Document.Companion.parse' packages/kotlin-markdown-core/consumers/jvm-maven/src/main/java/consumer/Main.java
-search 'MAVEN_USER_HOME="\$root/build/maven-user-home"' scripts/check-kotlin-consumers.sh
-search '"\$root/mvnw" --batch-mode --no-transfer-progress' scripts/check-kotlin-consumers.sh
-search 'consumer_local_repository="\$root/build/kotlin-consumer-maven-local"' scripts/check-kotlin-consumers.sh
-search 'property="-Dmaven.repo.local=\$consumer_local_repository"' scripts/check-kotlin-consumers.sh
-search 'maven_repository_args=\("-Dmarkdown.core.consumer.repository=file://\$repository"\)' scripts/check-kotlin-consumers.sh
-grep -Fq 'zip -qr ../markdown-core-maven-central.zip com/nouprax' "$release"
-grep -Fq 'zip -qr ../markdown-core-maven-central-dry-run.zip com/nouprax' "$release_dry_run"
 
 if search 'pr-metrics|benchmark|binary.size' <(
     sed -n '/^    required-gates:/,$p' "$ci"

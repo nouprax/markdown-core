@@ -4,6 +4,11 @@ This document records the tool versions selected for the initial Markdown Core
 monorepo setup. Upgrades must be reviewed together with lockfiles, Gradle
 verification metadata, formatter output, and the full validation matrix.
 
+GitHub Action revisions are repository-maintenance choices rather than product
+contracts. Review runtime deprecation warnings when updating workflows, but do
+not encode current or obsolete Action majors as CI allowlists/denylists. CI
+validates the workflow's build, test, security, and release outcomes instead.
+
 ## Version matrix
 
 | Area | Version | Policy |
