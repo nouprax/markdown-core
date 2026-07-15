@@ -222,8 +222,13 @@ static table_row *row_from_string(markdown_core_syntax_extension *self, markdown
                 int_overflow_abort = 1;
                 break;
             }
-            if (cell_buf->oom)
+            if (cell_buf->oom) {
                 parser->oom = true;
+                int_overflow_abort = 1;
+                markdown_core_strbuf_free(cell_buf);
+                parser->mem->free(cell_buf);
+                break;
+            }
             markdown_core_strbuf_trim(cell_buf);
 
             {
