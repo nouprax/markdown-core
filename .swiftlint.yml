@@ -1,0 +1,42 @@
+included:
+    - Package.swift
+    - packages/swift-markdown-core
+    - tests/consumers/swift
+
+excluded:
+    - .build
+    - "**/.build"
+    - packages/swift-markdown-core/Sources/Generated
+
+# swift-format owns layout; SwiftLint covers correctness and API conventions.
+disabled_rules:
+    - closing_brace
+    - colon
+    - comma
+    - leading_whitespace
+    - opening_brace
+    - operator_usage_whitespace
+    - return_arrow_whitespace
+    - statement_position
+    - trailing_comma
+    - trailing_newline
+    - trailing_semicolon
+    - trailing_whitespace
+    - vertical_whitespace
+
+opt_in_rules:
+    - empty_count
+    - empty_string
+    - first_where
+    - modifier_order
+    - overridden_super_call
+    - redundant_nil_coalescing
+    - unavailable_function
+    - unowned_variable_capture
+
+reporter: xcode
+
+file_length:
+    warning: 400
+    error: 600
+    ignore_comment_only_lines: true

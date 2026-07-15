@@ -1,0 +1,242 @@
+name: PR metrics comment
+
+on:
+    workflow_run:
+        workflows: [PR metrics]
+        types: [completed]
+
+permissions:
+    actions: read
+    contents: read
+    issues: write
+    pull-requests: write
+
+jobs:
+    comment:
+        name: Update PR metrics comment
+        if: ${{ github.event.workflow_run.event == 'pull_request' }}
+        runs-on: ubuntu-latest
+        steps:
+            - name: Validate artifact metadata before download
+              id: artifacts
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const allowedNames = new Set(["pr-metrics-linux", "pr-metrics-macos"]);
+                      const artifacts = await github.paginate(
+                          github.rest.actions.listWorkflowRunArtifacts,
+                          {
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              run_id: context.payload.workflow_run.id,
+                              per_page: 100,
+                          },
+                      );
+                      const candidates = artifacts.filter((artifact) =>
+                          artifact.name.startsWith("pr-metrics-"),
+                      );
+                      const selected = candidates.filter(
+                          (artifact) => allowedNames.has(artifact.name) && !artifact.expired,
+                      );
+                      const names = new Set(selected.map((artifact) => artifact.name));
+                      const totalBytes = selected.reduce(
+                          (total, artifact) => total + artifact.size_in_bytes,
+                          0,
+                      );
+                      const safe =
+                          selected.length > 0 &&
+                          candidates.length === selected.length &&
+                          selected.length <= allowedNames.size &&
+                          names.size === selected.length &&
+                          selected.every((artifact) => artifact.size_in_bytes <= 65536) &&
+                          totalBytes <= 131072;
+                      core.setOutput("safe", safe ? "true" : "false");
+                      if (!safe) core.warning("Metrics artifacts failed name/count/size validation.");
+            - name: Download untrusted metrics as data
+              if: ${{ steps.artifacts.outputs.safe == 'true' }}
+              continue-on-error: true
+              uses: actions/download-artifact@v4
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+                  pattern: pr-metrics-*
+                  path: metrics
+                  merge-multiple: true
+            - name: Create or update the metrics comment
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      const fs = require("node:fs");
+                      const path = require("node:path");
+
+                      const marker = "<!-- markdown-core-pr-metrics -->";
+                      let pullRequests = context.payload.workflow_run.pull_requests ?? [];
+                      if (pullRequests.length !== 1) {
+                          const associated =
+                              await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                                  owner: context.repo.owner,
+                                  repo: context.repo.repo,
+                                  commit_sha: context.payload.workflow_run.head_sha,
+                              });
+                          pullRequests = associated.data.filter(
+                              (pullRequest) => pullRequest.base.repo.full_name === context.payload.repository.full_name,
+                          );
+                      }
+                      if (pullRequests.length !== 1) {
+                          core.notice("No unique pull request is associated with this run.");
+                          return;
+                      }
+
+                      const allowedPlatforms = new Set(["linux", "macos"]);
+                      const allowedRuntimes = new Set(["c", "swift", "kotlin", "es"]);
+                      const allowedWorkloads = new Set([
+                          "representative_large",
+                          "large_document",
+                          "deep_nesting",
+                      ]);
+                      const allowedSizes = new Set([
+                          "c-shared-library",
+                          "kotlin-jvm-jar",
+                          "es-wasm",
+                      ]);
+                      const documents = [];
+
+                      function visit(directory) {
+                          if (!fs.existsSync(directory)) return;
+                          for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+                              const entryPath = path.join(directory, entry.name);
+                              if (entry.isDirectory()) visit(entryPath);
+                              else if (entry.isFile() && entry.name.endsWith(".json")) {
+                                  try {
+                                      if (fs.statSync(entryPath).size > 65536 || documents.length >= 2) {
+                                          core.warning(`Ignored oversized or excess metrics file: ${entry.name}`);
+                                          continue;
+                                      }
+                                      documents.push(JSON.parse(fs.readFileSync(entryPath, "utf8")));
+                                  } catch {
+                                      core.warning(`Ignored malformed metrics file: ${entry.name}`);
+                                  }
+                              }
+                          }
+                      }
+                      visit("metrics");
+
+                      const benchmarkRows = [];
+                      const sizeRows = [];
+                      for (const document of documents) {
+                          if (
+                              document?.schema !== 1 ||
+                              !allowedPlatforms.has(document.platform) ||
+                              !Array.isArray(document.benchmarks) ||
+                              !Array.isArray(document.sizes)
+                          ) {
+                              continue;
+                          }
+                          for (const metric of document.benchmarks) {
+                              if (
+                                  !allowedRuntimes.has(metric?.runtime) ||
+                                  !allowedWorkloads.has(metric?.workload) ||
+                                  !Number.isSafeInteger(metric?.medianNs) ||
+                                  metric.medianNs < 0 ||
+                                  !(metric.memoryKiB === null ||
+                                      (Number.isSafeInteger(metric.memoryKiB) && metric.memoryKiB >= 0))
+                              ) {
+                                  continue;
+                              }
+                              benchmarkRows.push(metric);
+                          }
+                          for (const metric of document.sizes) {
+                              if (
+                                  !allowedSizes.has(metric?.name) ||
+                                  !Number.isSafeInteger(metric?.bytes) ||
+                                  metric.bytes < 0
+                              ) {
+                                  continue;
+                              }
+                              sizeRows.push(metric);
+                          }
+                      }
+
+                      benchmarkRows.sort((a, b) =>
+                          `${a.runtime}:${a.workload}`.localeCompare(`${b.runtime}:${b.workload}`),
+                      );
+                      sizeRows.sort((a, b) => a.name.localeCompare(b.name));
+
+                      const lines = [
+                          marker,
+                          "## PR performance and binary-size snapshot",
+                          "",
+                          "> Informational only. These metrics are intentionally excluded from required quality gates.",
+                          "",
+                      ];
+                      if (benchmarkRows.length > 0) {
+                          lines.push(
+                              "### Benchmarks",
+                              "",
+                              "| Runtime | Workload | Median | Memory |",
+                              "| --- | --- | ---: | ---: |",
+                          );
+                          for (const metric of benchmarkRows) {
+                              const milliseconds = (metric.medianNs / 1e6).toFixed(3);
+                              const memory =
+                                  metric.memoryKiB === null
+                                      ? "n/a"
+                                      : `${metric.memoryKiB.toLocaleString("en-US")} KiB`;
+                              lines.push(
+                                  `| ${metric.runtime} | ${metric.workload} | ${milliseconds} ms | ${memory} |`,
+                              );
+                          }
+                          lines.push("");
+                      }
+                      if (sizeRows.length > 0) {
+                          lines.push(
+                              "### Binary sizes",
+                              "",
+                              "| Artifact | Bytes | KiB |",
+                              "| --- | ---: | ---: |",
+                          );
+                          for (const metric of sizeRows) {
+                              lines.push(
+                                  `| ${metric.name} | ${metric.bytes.toLocaleString("en-US")} | ${(metric.bytes / 1024).toFixed(1)} |`,
+                              );
+                          }
+                          lines.push("");
+                      }
+                      if (benchmarkRows.length === 0 && sizeRows.length === 0) {
+                          lines.push(
+                              "No validated metrics were produced. Inspect the non-blocking workflow logs.",
+                              "",
+                          );
+                      }
+                      lines.push(
+                          `[Workflow run](${context.payload.workflow_run.html_url})`,
+                          "",
+                          "Measurements are single-run snapshots on hosted runners; use them for review context, not pass/fail decisions.",
+                      );
+                      const body = lines.join("\n");
+                      const issueNumber = pullRequests[0].number;
+                      const comments = await github.paginate(github.rest.issues.listComments, {
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          issue_number: issueNumber,
+                          per_page: 100,
+                      });
+                      const previous = comments.find(
+                          (comment) =>
+                              comment.user?.type === "Bot" && comment.body?.includes(marker),
+                      );
+                      if (previous) {
+                          await github.rest.issues.updateComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              comment_id: previous.id,
+                              body,
+                          });
+                      } else {
+                          await github.rest.issues.createComment({
+                              owner: context.repo.owner,
+                              repo: context.repo.repo,
+                              issue_number: issueNumber,
+                              body,
+                          });
+                      }

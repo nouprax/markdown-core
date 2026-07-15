@@ -1,0 +1,93 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "default",
+            "displayName": "Release",
+            "binaryDir": "${sourceDir}/build/cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "asan",
+            "displayName": "AddressSanitizer",
+            "binaryDir": "${sourceDir}/build/asan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Asan",
+                "MARKDOWN_CORE_SHARED": "OFF"
+            }
+        },
+        {
+            "name": "ubsan",
+            "displayName": "UndefinedBehaviorSanitizer",
+            "binaryDir": "${sourceDir}/build/ubsan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Ubsan",
+                "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined",
+                "MARKDOWN_CORE_SHARED": "OFF"
+            }
+        },
+        {
+            "name": "tsan",
+            "displayName": "ThreadSanitizer",
+            "binaryDir": "${sourceDir}/build/tsan",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Tsan",
+                "MARKDOWN_CORE_SHARED": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "default", "configurePreset": "default" },
+        { "name": "asan", "configurePreset": "asan" },
+        { "name": "ubsan", "configurePreset": "ubsan" },
+        { "name": "tsan", "configurePreset": "tsan" }
+    ],
+    "testPresets": [
+        {
+            "name": "correctness",
+            "displayName": "Correctness suites (excludes conformance and benchmark)",
+            "configurePreset": "default",
+            "output": { "outputOnFailure": true },
+            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+        },
+        {
+            "name": "conformance",
+            "displayName": "Public contract and schema conformance",
+            "configurePreset": "default",
+            "output": { "outputOnFailure": true },
+            "filter": { "include": { "label": "^conformance$" } }
+        },
+        {
+            "name": "benchmark",
+            "displayName": "Benchmark workloads (benchmark label only, serial)",
+            "configurePreset": "default",
+            "output": { "outputOnFailure": true, "verbosity": "verbose" },
+            "filter": { "include": { "label": "^benchmark$" } },
+            "execution": { "jobs": 1 }
+        },
+        {
+            "name": "correctness-asan",
+            "displayName": "Correctness suites under AddressSanitizer (excludes timing gates)",
+            "configurePreset": "asan",
+            "output": { "outputOnFailure": true },
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+        },
+        {
+            "name": "correctness-ubsan",
+            "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
+            "configurePreset": "ubsan",
+            "output": { "outputOnFailure": true },
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+        },
+        {
+            "name": "correctness-tsan",
+            "displayName": "Correctness suites under ThreadSanitizer (excludes timing gates)",
+            "configurePreset": "tsan",
+            "output": { "outputOnFailure": true },
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+        }
+    ]
+}

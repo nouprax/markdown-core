@@ -1,0 +1,26 @@
+* text=auto eol=lf
+
+*.a binary
+*.aar binary
+*.class binary
+*.dll binary
+*.dylib binary
+*.gif binary
+*.ico binary
+*.jar binary
+*.jpeg binary
+*.jpg binary
+*.keystore binary
+*.klib binary
+*.o binary
+*.pdf binary
+*.png binary
+*.so binary
+*.wasm binary
+*.webp binary
+*.zip binary
+
+# Canonical fixtures and AST goldens are byte-exact UTF-8 text.
+packages/markdown-core/tests/fixtures/** text eol=lf
+packages/markdown-core/tests/fixtures/regression.txt -text
+packages/markdown-core/tests/canonical-ast/** text eol=lf
