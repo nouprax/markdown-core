@@ -1,0 +1,10 @@
+BasedOnStyle: LLVM
+Language: Cpp
+ColumnLimit: 120
+ContinuationIndentWidth: 4
+DerivePointerAlignment: false
+IndentWidth: 4
+PointerAlignment: Right
+SortIncludes: Never
+TabWidth: 4
+UseTab: Never
