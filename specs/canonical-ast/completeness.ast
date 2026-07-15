@@ -1,0 +1,32 @@
+Document scope=1:1..18:8 children=6
+├── CodeBlock scope=1:5..2:0 mode=standalone info=null language=null literal="indented\n" fenced=false closed=true children=0
+├── List scope=3:1..8:0 flavor=bullet start=null tight=false children=2
+│   ├── ListItem scope=3:1..4:0 checked=false children=1
+│   │   └── Paragraph scope=3:7..3:15 children=1
+│   │       └── Text scope=3:7..3:15 literal="unchecked" children=0
+│   └── ListItem scope=5:1..8:0 checked=null children=2
+│       ├── Paragraph scope=5:3..5:11 children=1
+│       │   └── Text scope=5:3..5:11 literal="loose one" children=0
+│       └── Paragraph scope=7:3..7:11 children=1
+│           └── Text scope=7:3..7:11 literal="loose two" children=0
+├── Paragraph scope=9:1..9:40 children=5
+│   ├── Link scope=9:1..9:14 destination="/a" title=null children=1
+│   │   └── Text scope=9:2..9:9 literal="no title" children=0
+│   ├── Text scope=9:15..9:15 literal=" " children=0
+│   ├── Link scope=9:16..9:29 destination="/b" title="" children=1
+│   │   └── Text scope=9:17..9:21 literal="empty" children=0
+│   ├── Text scope=9:30..9:30 literal=" " children=0
+│   └── Image scope=9:31..9:40 source="/i" title=null children=1
+│       └── Text scope=9:33..9:35 literal="alt" children=0
+├── Paragraph scope=11:1..11:17 children=3
+│   ├── Directive scope=11:1..11:6 mode=embedded name="plain" attributes=null label=null children=0
+│   ├── Text scope=11:7..11:7 literal=" " children=0
+│   └── Directive scope=11:8..11:17 mode=embedded name="empty" attributes="{}" label=0 children=0
+├── Table scope=13:1..15:8 alignments=[none] children=2
+│   ├── TableRow scope=13:1..13:8 isHeader=true children=1
+│   │   └── TableCell scope=13:2..13:7 children=1
+│   │       └── Text scope=13:3..13:6 literal="none" children=0
+│   └── TableRow scope=15:1..15:8 isHeader=false children=1
+│       └── TableCell scope=15:2..15:7 children=1
+│           └── Text scope=15:3..15:6 literal="cell" children=0
+└── CodeBlock scope=17:1..18:8 mode=standalone info="txt" language="txt" literal="unclosed\n" fenced=true closed=false children=0

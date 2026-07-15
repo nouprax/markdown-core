@@ -1,0 +1,4 @@
+Document scope=1:1..4:0 children=2
+├── ThematicBreak scope=1:1..2:0 children=0
+└── Paragraph scope=3:1..3:9 children=1
+    └── Text scope=3:1..3:9 literal="paragraph" children=0

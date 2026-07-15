@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$root"
+
+ci=.github/workflows/ci.yml
+codeql=.github/workflows/codeql.yml
+metrics=.github/workflows/pr-metrics.yml
+comment=.github/workflows/pr-metrics-comment.yml
+release=.github/workflows/release.yml
+release_dry_run=.github/workflows/release-dry-run.yml
+ruleset=.github/rulesets/main.json
+release_ruleset=.github/rulesets/release-tags.json
+release_environment=.github/environments/release.json
+release_environment_policy=.github/environments/release-tag-policy.json
+
+if command -v rg >/dev/null 2>&1; then
+    search() {
+        rg -q "$@"
+    }
+else
+    search() {
+        grep -Eq "$@"
+    }
+fi
+
+for required in \
+    "$ci" \
+    "$codeql" \
+    "$metrics" \
+    "$comment" \
+    "$release" \
+    "$release_dry_run" \
+    "$ruleset" \
+    "$release_ruleset" \
+    "$release_environment" \
+    "$release_environment_policy"; do
+    if [ ! -f "$required" ]; then
+        echo "missing CI policy file: $required" >&2
+        exit 1
+    fi
+done
+
+search '^    push:$' "$release"
+search '^        tags:$' "$release"
+search '^    workflow_dispatch:$' "$release"
+if search '^    pull_request:$' "$release"; then
+    echo "formal release workflow may not accept pull requests" >&2
+    exit 1
+fi
+search '^    contents: read$' "$release"
+search '^        environment: release$' "$release"
+search '^    quality:$' "$release"
+search '^        uses: \./\.github/workflows/ci\.yml$' "$release"
+if search 'GITHUB_SHA|check-runs|merge-base|CodeQL gate|Required gates|Development branch gates' "$release"; then
+    echo "formal release must run tag-local quality gates instead of querying historical checks" >&2
+    exit 1
+fi
+if [ "$(grep -c '^        needs: quality$' "$release")" -ne 5 ]; then
+    echo "every initial release artifact job must wait for tag-local quality gates" >&2
+    exit 1
+fi
+search '^            id-token: write$' "$release"
+search '^            attestations: write$' "$release"
+search 'actions/attest-build-provenance@' "$release"
+search 'npm publish \./release-npm/\*\.tgz --access public' "$release"
+search '^    resume-publish:$' "$release"
+search "if: github.event_name == 'workflow_dispatch'" "$release"
+search 'gh run download "\$SOURCE_RUN_ID" --name release-npm-package' "$release"
+grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
+grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
+if search -- '--generate-notes' "$release"; then
+    echo "formal release workflow must use curated release notes" >&2
+    exit 1
+fi
+search 'publishingType=USER_MANAGED' scripts/central-portal.sh
+for secret in \
+    MAVEN_CENTRAL_USERNAME \
+    MAVEN_CENTRAL_PASSWORD \
+    MAVEN_SIGNING_KEY \
+    MAVEN_SIGNING_PASSWORD; do
+    search "secrets\.$secret" "$release"
+done
+if search 'NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.NPM' "$release"; then
+    echo "npm release job must use OIDC rather than a registry token" >&2
+    exit 1
+fi
+
+search '^    pull_request:$' "$release_dry_run"
+search '^    workflow_dispatch:$' "$release_dry_run"
+search '^    contents: read$' "$release_dry_run"
+search '^        name: Release dry-run gate$' "$release_dry_run"
+search 'sign-maven-publications\.sh build/release-maven-central --ephemeral' "$release_dry_run"
+search 'audit-maven-publications\.mjs' "$release_dry_run"
+search 'build/release-maven-central --full --signed' "$release_dry_run"
+if search 'secrets\.|environment: release|contents: write|id-token: write' "$release_dry_run"; then
+    echo "release dry run may not read secrets or request publish permissions" >&2
+    exit 1
+fi
+
+for workflow in "$ci" "$codeql"; do
+    if ! search '^    merge_group:$' "$workflow"; then
+        echo "blocking workflow lacks merge_group support: $workflow" >&2
+        exit 1
+    fi
+done
+search '^    workflow_call:$' "$ci"
+
+ci_push_trigger=$(sed -n '/^    push:$/,/^    merge_group:$/p' "$ci")
+if ! grep -Fqx '        branches:' <<<"$ci_push_trigger" ||
+    ! grep -Fqx '            - "**"' <<<"$ci_push_trigger"; then
+    echo "blocking CI push trigger must cover every development branch" >&2
+    exit 1
+fi
+if search '^        tags(-ignore)?:' <<<"$ci_push_trigger"; then
+    echo "blocking CI push trigger must not run on release tags" >&2
+    exit 1
+fi
+
+search '^    required-gates:$' "$ci"
+grep -Fq "name: \${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}" "$ci"
+grep -Fq 'group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}' "$ci"
+search '^    cancel-in-progress: true$' "$ci"
+search '^    codeql-gate:$' "$codeql"
+search '^        name: CodeQL gate$' "$codeql"
+
+if search 'pr-metrics|benchmark|binary.size' <(
+    sed -n '/^    required-gates:/,$p' "$ci"
+); then
+    echo "non-blocking metrics leaked into the required gate" >&2
+    exit 1
+fi
+
+if search '^    (issues|pull-requests|checks|statuses): write$' "$metrics"; then
+    echo "the untrusted pull_request metrics workflow has write permission" >&2
+    exit 1
+fi
+search '^    contents: read$' "$metrics"
+search '^    workflow_run:$' "$comment"
+search '^    issues: write$' "$comment"
+search '^    pull-requests: write$' "$comment"
+search 'listWorkflowRunArtifacts' "$comment"
+search 'artifact\.size_in_bytes <= 65536' "$comment"
+if search 'actions/checkout|github\.event\.pull_request\.head|gh pr checkout|git fetch' "$comment"; then
+    echo "the privileged metrics commenter may not fetch or execute PR code" >&2
+    exit 1
+fi
+
+node --input-type=module - "$ruleset" <<'NODE'
+import fs from "node:fs";
+
+const ruleset = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const required = ruleset.rules.find((rule) => rule.type === "required_status_checks");
+const contexts = required?.parameters?.required_status_checks?.map((check) => check.context).sort();
+const expected = ["CodeQL gate", "Required gates"];
+if (JSON.stringify(contexts) !== JSON.stringify(expected)) {
+    throw new Error(`ruleset required checks changed: ${JSON.stringify(contexts)}`);
+}
+if (ruleset.conditions?.ref_name?.include?.join(",") !== "~DEFAULT_BRANCH") {
+    throw new Error("ruleset must target only the default branch");
+}
+NODE
+
+node --input-type=module - "$release_ruleset" "$release_environment" "$release_environment_policy" <<'NODE'
+import fs from "node:fs";
+
+const releaseRuleset = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const environment = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const deploymentPolicy = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
+
+if (releaseRuleset.target !== "tag" || releaseRuleset.enforcement !== "active") {
+    throw new Error("release tag ruleset must be active and target tags");
+}
+if (releaseRuleset.conditions?.ref_name?.include?.join(",") !== "refs/tags/v*.*.*") {
+    throw new Error("release tag ruleset must target only v*.*.* tags");
+}
+const releaseRuleTypes = releaseRuleset.rules.map((rule) => rule.type).sort();
+if (JSON.stringify(releaseRuleTypes) !== JSON.stringify(["creation", "deletion", "update"])) {
+    throw new Error(`release tag rules changed: ${JSON.stringify(releaseRuleTypes)}`);
+}
+if (
+    releaseRuleset.bypass_actors?.length !== 1 ||
+    releaseRuleset.bypass_actors[0]?.actor_id !== 8455725 ||
+    releaseRuleset.bypass_actors[0]?.actor_type !== "User" ||
+    releaseRuleset.bypass_actors[0]?.bypass_mode !== "always"
+) {
+    throw new Error("release tag ruleset bypass must remain scoped to DongyuZhao");
+}
+if (
+    environment.wait_timer !== 0 ||
+    environment.prevent_self_review !== false ||
+    environment.reviewers?.length !== 1 ||
+    environment.reviewers[0]?.type !== "User" ||
+    environment.reviewers[0]?.id !== 8455725
+) {
+    throw new Error("release environment reviewer policy changed");
+}
+if (
+    environment.deployment_branch_policy?.protected_branches !== false ||
+    environment.deployment_branch_policy?.custom_branch_policies !== true
+) {
+    throw new Error("release environment must use a custom deployment policy");
+}
+if (deploymentPolicy.name !== "v*.*.*" || deploymentPolicy.type !== "tag") {
+    throw new Error("release environment must accept only v*.*.* tags");
+}
+NODE
+
+if search '^    pull_request:$' .github/workflows/benchmark.yml; then
+    echo "scheduled benchmark workflow must not become a pull-request gate" >&2
+    exit 1
+fi
+
+echo "CI policy audit passed"

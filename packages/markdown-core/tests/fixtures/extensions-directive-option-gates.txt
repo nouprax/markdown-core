@@ -1,0 +1,28 @@
+---
+title: Directive option gate extension test
+author: Dongyu Zhao
+version: 0.1
+date: '2026-06-22'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## Directive option gates
+
+These examples attach the directive extension without enabling its
+parser option. The extension syntax remains ordinary Markdown.
+
+```````````````````````````````` example
+Use :cite[smith04] here.
+.
+Document scope=1:1..1:24 children=1
+└── Paragraph scope=1:1..1:24 children=1
+    └── Text scope=1:1..1:24 literal="Use :cite[smith04] here." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+::youtube[Video]{vid=01ab2cd3efg}
+.
+Document scope=1:1..1:33 children=1
+└── Paragraph scope=1:1..1:33 children=1
+    └── Text scope=1:1..1:33 literal="::youtube[Video]{vid=01ab2cd3efg}" children=0
+````````````````````````````````

@@ -1,0 +1,30 @@
+# Language-specific formatters
+**/*.c
+**/*.cc
+**/*.cmake
+**/*.cpp
+**/*.h
+**/*.hpp
+**/*.kt
+**/*.kts
+**/*.swift
+**/*.xsl
+CMakeLists.txt
+Makefile
+
+# Documentation and byte-exact fixtures/goldens
+**/*.md
+packages/markdown-core/tests/fixtures/
+packages/markdown-core/tests/canonical-ast/
+
+# Generated, copied, and package-manager content
+packages/markdown-core/core/case_fold_switch.inc
+packages/markdown-core/core/entities.inc
+packages/markdown-core/core/scanners.c
+packages/markdown-core/extensions/ext_scanners.c
+node_modules/
+dist/
+build/
+.build/
+.gradle/
+pnpm-lock.yaml
