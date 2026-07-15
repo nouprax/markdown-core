@@ -48,6 +48,8 @@ export default defineConfig(
         files: ["scripts/**/*.{js,mjs,cjs}"],
         languageOptions: {
             globals: {
+                URL: "readonly",
+                console: "readonly",
                 process: "readonly"
             }
         }

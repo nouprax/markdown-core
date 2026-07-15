@@ -1588,27 +1588,27 @@ Acceptance：
 
 Tasks：
 
-- [ ] 准备首个 `1.0.0` release，确认新 repo 不包含旧 tags，且发布文档明确不承诺 C ABI compatibility。
-- [ ] 对齐 C、SwiftPM、Maven 和 npm 版本。
+- [x] 准备首个 `1.0.0` release，确认新 repo 不包含旧 tags，且发布文档明确不承诺 C ABI compatibility。
+- [x] 对齐 C、SwiftPM、Maven 和 npm 版本，并以根 `VERSION` 拒绝 artifact version 漂移。
 - [ ] 在 AGP 9.3 stable 发布后升级并重新验证 Gradle/Kotlin/Android compatibility matrix；cache-cold model、Android host/device tests、publication 与 consumer checks 必须在 `--warning-mode=fail` 下通过，确认 AGP 9.2.1 的上游 Project dependency notation warning 已消失，不得以 9.3 preview 作为首发工具链。
-- [ ] 验证 SwiftPM source URL、repo-derived identity `markdown-core` 和 product/module `MarkdownCore`。
+- [x] 验证 SwiftPM source URL、repo-derived identity `markdown-core` 和 product/module `MarkdownCore`，并从 source archive 运行 plugin/conformance/product-only consumer。
 - [x] Maven Central `com.nouprax` namespace 已通过 `nouprax.com` DNS TXT 完成所有权验证。
 - [ ] 验证 Maven publication coordinate 为 `com.nouprax:kotlin-markdown-core:<version>`。
 - [ ] 验证 KMP root、JVM、Android 和所有 Native target publications 在同一 Central deployment 中齐全，POM/Gradle Module Metadata 引用与 target-specific coordinates 正确。
 - [ ] 从 staged/local Maven repository 运行 KMP Gradle、JVM Gradle Module Metadata、repo-owned Maven Wrapper 驱动的真实 JVM Maven 和 Android AAR consumer tests，并在 IntelliJ IDEA/Android Studio 执行 release clean-sync smoke test。
-- [ ] 创建有过期时间的 Maven Central Portal user token，将其设置为 `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` environment secrets。
-- [ ] 创建带 passphrase 的 PGP signing key，发布 public key，将 private key/passphrase 设置为 `MAVEN_SIGNING_KEY` / `MAVEN_SIGNING_PASSWORD` environment secrets。
+- [x] 创建有过期时间的 Maven Central Portal user token，将其设置为 `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` environment secrets。
+- [x] 创建带 passphrase 的 PGP signing key，发布 public key，将 private key/passphrase 设置为 `MAVEN_SIGNING_KEY` / `MAVEN_SIGNING_PASSWORD` environment secrets。
 - [ ] 验证 Maven POM metadata、sources/javadoc artifacts、checksums 和每个必需 artifact 的 `.asc` signature。
 - [ ] 验证 npm organization `nouprax` 的 publish access，并将 `@nouprax/es-markdown-core` 配置为 public scoped package。
 - [ ] 完成 npm 首次 bootstrap publish，绑定 `nouprax/markdown-core` 的精确 release workflow/environment 为 trusted publisher，并撤销 bootstrap token。
-- [ ] 为 npm publish job 配置 `id-token: write` / `contents: read`，验证 provenance，然后禁用传统 token publishing。
-- [ ] 创建受保护 `release` GitHub environment，配置 required reviewer、tag/branch restrictions 和 Maven-only environment secrets。
-- [ ] 确保 GitHub Release job 仅在必要时使用 `contents: write` 的 workflow-provided `GITHUB_TOKEN`。
-- [ ] 添加不读取 release secrets 的发布 dry-run，验证产物内容、版本、签名、checksums 和 registry metadata。
-- [ ] 创建 `docs/releasing.md`，记录认证配置、secret names、轮换、撤销、离线 signing-key 备份和泄漏响应。
-- [ ] 建立 changelog、release notes 和发布前检查。
+- [x] 为 npm publish job 配置 `id-token: write` / `contents: read` 并禁止 workflow 读取传统 npm token；实际 provenance 与 registry token policy 待 bootstrap 后验证。
+- [x] 创建受保护 `release` GitHub environment，配置 required reviewer、tag/branch restrictions 和 Maven-only environment secrets；environment、`v*.*.*` tag-only policy、active release-tag ruleset 与四个 Maven secrets 已启用。
+- [x] 确保 GitHub Release job 仅在必要时使用 `contents: write` 的 workflow-provided `GITHUB_TOKEN`。
+- [x] 添加不读取 release secrets 的发布 dry-run，验证产物内容、版本、签名、checksums 和 registry metadata。
+- [x] 创建 `docs/releasing.md`，记录认证配置、secret names、轮换、撤销、离线 signing-key 备份和泄漏响应。
+- [x] 建立 changelog、release notes 和发布前检查。
 - [ ] 从 clean checkout 运行全量 build/test/conformance/consumer checks。
-- [ ] 验证发布产物不包含未预期 public headers、symbols、renderer 或 runtime files。
+- [x] 验证发布产物不包含未预期 public headers、symbols、renderer 或 runtime files。
 
 Acceptance：
 

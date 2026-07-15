@@ -174,7 +174,7 @@ plugins {
 }
 
 group = "com.nouprax"
-version = "1.0.0"
+version = rootProject.file("VERSION").readText().trim()
 
 dependencyLocking {
     lockAllConfigurations()
@@ -530,6 +530,14 @@ val javadocJar =
     }
 
 publishing {
+    repositories {
+        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
+            maven {
+                name = "releaseStaging"
+                url = uri(repositoryDirectory)
+            }
+        }
+    }
     publications.withType<MavenPublication>().configureEach {
         pom {
             name.set("Kotlin Markdown Core")
@@ -546,6 +554,13 @@ publishing {
                 developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
                 url.set("https://github.com/nouprax/markdown-core")
             }
+            developers {
+                developer {
+                    id.set("nouprax")
+                    name.set("Nouprax")
+                    url.set("https://github.com/nouprax")
+                }
+            }
         }
         artifact(javadocJar)
     }
@@ -558,10 +573,10 @@ ktlint {
     ignoreFailures.set(false)
 }
 
-// AGP 9.2.1 exposes testedAbi in the managed-device DSL but its setup-task
-// CreationAction does not copy that value into the task input. Keep the public
-// DSL declaration above, and bridge the pinned plugin's missing assignment
-// until an AGP upgrade proves that the workaround is no longer required.
+// AGP 9.2.1 exposed testedAbi in the managed-device DSL but its setup-task
+// CreationAction did not copy that value into the task input. Keep the public
+// DSL declaration above and the explicit task input on AGP 9.3.0 until the
+// two-device remote smoke proves the upstream assignment on both page sizes.
 tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask>().configureEach {
     testedAbi.set(androidManagedDeviceTestAbi)
 }

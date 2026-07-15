@@ -235,6 +235,15 @@ Packaging and isolated consumer checks are available through
 part of `pnpm test:swift-macos`, and the installed C consumer is exercised by
 the C test suite.
 
+## Contributing and releasing
+
+Pinned compiler, SDK, runtime, and IDE versions are documented in
+[docs/toolchains.md](docs/toolchains.md). Release maintainers must follow
+[docs/releasing.md](docs/releasing.md), including the no-secret release dry run,
+protected tag/environment approval, Maven signing, npm OIDC, artifact
+attestation, and post-publication verification. Release notes start from
+[CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 Markdown Core preserves all applicable upstream copyright and license notices.

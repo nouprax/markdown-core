@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.nouprax"
-version = "1.0.0"
+version = rootProject.file("VERSION").readText().trim()
 
 dependencyLocking {
     lockAllConfigurations()
@@ -72,6 +72,24 @@ components.withType<SoftwareComponent>().matching { it.name == "release" }.all {
                 connection.set("scm:git:https://github.com/nouprax/markdown-core.git")
                 developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
                 url.set("https://github.com/nouprax/markdown-core")
+            }
+            developers {
+                developer {
+                    id.set("nouprax")
+                    name.set("Nouprax")
+                    url.set("https://github.com/nouprax")
+                }
+            }
+        }
+    }
+}
+
+publishing {
+    repositories {
+        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
+            maven {
+                name = "releaseStaging"
+                url = uri(repositoryDirectory)
             }
         }
     }

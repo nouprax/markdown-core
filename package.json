@@ -50,6 +50,8 @@
         "lint:es": "eslint .",
         "lint:kotlin": "scripts/gradle.sh ktlintCheck",
         "lint:swift": "scripts/lint-swift.sh",
+        "release:check-version": "node scripts/check-release-version.mjs",
+        "release:dry-run": "scripts/release-dry-run.sh",
         "test:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset correctness",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
         "test:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreTests",
@@ -60,7 +62,7 @@
         "test:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64Test",
         "test:es-node": "node packages/es-markdown-core/scripts/run-tests.mjs --target node",
         "test:es-browser": "node packages/es-markdown-core/scripts/run-tests.mjs --target browser",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run audit:packages"
+        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run audit:packages"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

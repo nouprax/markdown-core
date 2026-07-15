@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
 if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
-    project(markdown-core VERSION 1.0.0)
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../../VERSION" MARKDOWN_CORE_VERSION LIMIT_COUNT 1)
+    if(NOT MARKDOWN_CORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+        message(FATAL_ERROR "VERSION must contain a stable semantic version")
+    endif()
+    project(markdown-core VERSION "${MARKDOWN_CORE_VERSION}")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

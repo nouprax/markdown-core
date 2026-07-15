@@ -6,7 +6,9 @@ pluginManagement {
 }
 dependencyResolutionManagement {
     repositories {
-        mavenLocal()
+        providers.gradleProperty("consumerRepository").orNull?.let { repositoryDirectory ->
+            maven { url = uri(repositoryDirectory) }
+        } ?: mavenLocal()
         mavenCentral()
     }
 }

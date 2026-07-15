@@ -13,7 +13,7 @@ verification metadata, formatter output, and the full validation matrix.
 | Gradle daemon JDK | 26 | Foojay-provisioned criteria in `gradle/gradle-daemon-jvm.properties` |
 | JVM bytecode | 17 | Explicit Android compile target |
 | Kotlin/KMP plugin | 2.4.0 | Stable release; applied when the KMP package is introduced |
-| Android Gradle Plugin | 9.2.1 | Stable combination validated with Gradle 9.6.1 and JDK 21 |
+| Android Gradle Plugin | 9.3.0 | Stable release; Phase 20 validates Gradle 9.6.1, Kotlin 2.4.0, JDK 26, publication, and Android consumers together |
 | Android SDK | compile 36, target 36, min 21 | Values live in the version catalog and consumer manifests |
 | ktlint plugin / CLI | 14.2.0 / 1.8.0 | Official code style; no experimental rules or baseline |
 | Xcode | 26.6 | Selected explicitly in Swift CI |
@@ -58,15 +58,12 @@ scripts/gradle-model-smoke.sh
 
 Project dependencies use `project.dependencies.project(...)`; the deprecated
 Project-object dependency notation is forbidden because Gradle 10 removes it.
-The repository declaration no longer passes a `Project` object. A remaining
-warning is emitted by AGP 9.2.1 while creating the KMP Android host-test
-component (`VariantDependencies.createForKotlinMultiplatform`). Android's AGP
-9.3 release notes record the upstream migration away from Project dependency
-notation, but 9.3 is not yet stable. Phase 20 must adopt AGP 9.3 stable before
-the first release and run cache-cold model, host-test, device-test, publication,
-and consumer checks with `--warning-mode=fail`. Phase 17 does not adopt a preview
-AGP merely to hide a warning whose repository-owned source has already been
-removed.
+AGP 9.3.0 is now stable and the earlier AGP 9.2.1 host-test dependency warning
+is absent. Phase 20 runs the cache-cold model, host/device tests, publication,
+and consumer checks with `--warning-mode=fail`. Kotlin's published compatibility
+table had not yet listed AGP 9.3.0 when the upgrade landed, so repository and
+remote matrix evidence—not an assumption of upstream support—is mandatory for
+the first release.
 
 ## Common commands
 

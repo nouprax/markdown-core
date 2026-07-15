@@ -1,0 +1,29 @@
+{
+    "name": "release tag protection",
+    "target": "tag",
+    "enforcement": "active",
+    "conditions": {
+        "ref_name": {
+            "exclude": [],
+            "include": ["refs/tags/v*.*.*"]
+        }
+    },
+    "rules": [
+        {
+            "type": "creation"
+        },
+        {
+            "type": "update"
+        },
+        {
+            "type": "deletion"
+        }
+    ],
+    "bypass_actors": [
+        {
+            "actor_id": 8455725,
+            "actor_type": "User",
+            "bypass_mode": "always"
+        }
+    ]
+}
