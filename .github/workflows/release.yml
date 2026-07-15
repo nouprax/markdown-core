@@ -4,8 +4,19 @@ on:
     push:
         tags:
             - "v*.*.*"
+    workflow_dispatch:
+        inputs:
+            release-tag:
+                description: Existing protected release tag to finish
+                required: true
+                type: string
+            source-run-id:
+                description: Tag release run containing the validated artifacts
+                required: true
+                type: string
 
 permissions:
+    actions: read
     contents: read
 
 concurrency:
@@ -14,6 +25,7 @@ concurrency:
 
 jobs:
     validate:
+        if: github.event_name == 'push'
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
@@ -206,7 +218,7 @@ jobs:
                   name: release-npm-package
                   path: release-npm
             - name: Publish through the npm trusted publisher
-              run: npm publish release-npm/*.tgz --access public
+              run: npm publish ./release-npm/*.tgz --access public
 
     maven-publish:
         needs: [maven-stage, npm-publish]
@@ -263,6 +275,63 @@ jobs:
                   GH_TOKEN: ${{ github.token }}
               run: |
                   gh release create "$GITHUB_REF_NAME" \
+                      --verify-tag \
+                      --title "Markdown Core $(cat VERSION)" \
+                      --notes-file "docs/releases/$(cat VERSION).md" \
+                      release-files/*
+
+    resume-publish:
+        if: github.event_name == 'workflow_dispatch'
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            actions: read
+            contents: write
+            id-token: write
+            attestations: write
+        env:
+            GH_TOKEN: ${{ github.token }}
+            RELEASE_TAG: ${{ inputs.release-tag }}
+            SOURCE_RUN_ID: ${{ inputs.source-run-id }}
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ inputs.release-tag }}
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 26.5.0
+                  registry-url: https://registry.npmjs.org
+            - name: Validate the protected release tag
+              run: |
+                  node scripts/check-release-version.mjs --skip-swift --tag="$RELEASE_TAG"
+                  test -s "docs/releases/$(cat VERSION).md"
+            - name: Download the validated release artifacts
+              run: |
+                  mkdir -p release-npm release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-npm-package --dir release-npm
+                  gh run download "$SOURCE_RUN_ID" --name release-c-ubuntu-latest --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-c-macos-26 --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-swift-source --dir release-files
+                  gh run download "$SOURCE_RUN_ID" --name release-maven-central --dir release-files
+                  cp release-npm/*.tgz release-files/
+            - name: Publish through the npm trusted publisher
+              run: |
+                  version=$(cat VERSION)
+                  if npm view "@nouprax/es-markdown-core@$version" version \
+                      --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+                      echo "@nouprax/es-markdown-core@$version is already published"
+                  else
+                      npm publish ./release-npm/*.tgz --access public
+                  fi
+            - name: Create release checksums
+              run: scripts/create-release-checksums.sh release-files
+            - name: Attest release artifact provenance
+              uses: actions/attest-build-provenance@v3
+              with:
+                  subject-path: release-files/*
+            - name: Create the GitHub Release from the protected tag
+              run: |
+                  gh release create "$RELEASE_TAG" \
                       --verify-tag \
                       --title "Markdown Core $(cat VERSION)" \
                       --notes-file "docs/releases/$(cat VERSION).md" \

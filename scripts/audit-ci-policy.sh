@@ -50,8 +50,9 @@ done
 
 search '^    push:$' "$release"
 search '^        tags:$' "$release"
-if search '^    (pull_request|workflow_dispatch):$' "$release"; then
-    echo "formal release workflow must only accept a protected tag event" >&2
+search '^    workflow_dispatch:$' "$release"
+if search '^    pull_request:$' "$release"; then
+    echo "formal release workflow may not accept pull requests" >&2
     exit 1
 fi
 search '^    contents: read$' "$release"
@@ -69,7 +70,10 @@ fi
 search '^            id-token: write$' "$release"
 search '^            attestations: write$' "$release"
 search 'actions/attest-build-provenance@v3' "$release"
-search 'npm publish release-npm/\*\.tgz --access public' "$release"
+search 'npm publish \./release-npm/\*\.tgz --access public' "$release"
+search '^    resume-publish:$' "$release"
+search "if: github.event_name == 'workflow_dispatch'" "$release"
+search 'gh run download "\$SOURCE_RUN_ID" --name release-npm-package' "$release"
 grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
 grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
 if search -- '--generate-notes' "$release"; then
