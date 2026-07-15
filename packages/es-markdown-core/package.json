@@ -1,0 +1,39 @@
+{
+    "name": "@nouprax/es-markdown-core",
+    "version": "1.0.1",
+    "private": false,
+    "description": "ECMAScript and TypeScript bindings for Markdown Core",
+    "type": "module",
+    "sideEffects": false,
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./markdown-core.wasm": "./dist/markdown-core.wasm"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nouprax/markdown-core.git",
+        "directory": "packages/es-markdown-core"
+    },
+    "scripts": {
+        "build": "node scripts/build.mjs",
+        "test": "node scripts/run-tests.mjs --target node",
+        "test:browser": "node scripts/run-tests.mjs --target browser",
+        "bundle:conformance-fixtures": "node scripts/bundle-conformance-fixtures.mjs",
+        "preconformance": "pnpm run bundle:conformance-fixtures",
+        "conformance": "node scripts/run-conformance.mjs",
+        "benchmark": "node scripts/build.mjs && node scripts/benchmark.mjs"
+    }
+}

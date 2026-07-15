@@ -1,0 +1,140 @@
+---
+title: GitHub formula compatibility extension test
+author: Dongyu Zhao
+version: 0.1
+date: '2026-05-09'
+license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
+...
+
+## GitHub formula compatibility
+
+These examples define the GitHub Docs dollar formula-expression surface
+supported by the `formula` extension when `--dollar-formula-delimiters` is
+enabled. The HTML wrapper is markdown-core's stable representation; the wrapped
+delimiter/body text is the payload handed to LaTeX/KaTeX.
+
+```````````````````````````````` example
+Inline $x+y$ end.
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=3
+    ├── Text scope=1:1..1:7 literal="Inline " children=0
+    ├── Formula scope=1:8..1:12 mode=embedded literal="x+y" children=0
+    └── Text scope=1:13..1:17 literal=" end." children=0
+````````````````````````````````
+
+Formula expressions parse as inline content inside table cells.
+
+```````````````````````````````` example table
+| expr |
+| --- |
+| $x+y$ |
+.
+Document scope=1:1..3:9 children=1
+└── Table scope=1:1..3:9 alignments=[none] children=2
+    ├── TableRow scope=1:1..1:8 isHeader=true children=1
+    │   └── TableCell scope=1:2..1:7 children=1
+    │       └── Text scope=1:3..1:6 literal="expr" children=0
+    └── TableRow scope=3:1..3:9 isHeader=false children=1
+        └── TableCell scope=3:2..3:8 children=1
+            └── Formula scope=3:3..3:7 mode=embedded literal="x+y" children=0
+````````````````````````````````
+
+GitHub's `$`...`$` form treats the backticks as formula delimiters, not as body
+bytes.
+
+```````````````````````````````` example
+Inline $`x+y`$ end.
+.
+Document scope=1:1..1:19 children=1
+└── Paragraph scope=1:1..1:19 children=3
+    ├── Text scope=1:1..1:7 literal="Inline " children=0
+    ├── Formula scope=1:8..1:14 mode=embedded literal="x+y" children=0
+    └── Text scope=1:15..1:19 literal=" end." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Escaped dollar $`\sqrt{\$4}`$ end.
+.
+Document scope=1:1..1:34 children=1
+└── Paragraph scope=1:1..1:34 children=3
+    ├── Text scope=1:1..1:15 literal="Escaped dollar " children=0
+    ├── Formula scope=1:16..1:29 mode=embedded literal="\\sqrt{\\$4}" children=0
+    └── Text scope=1:30..1:34 literal=" end." children=0
+````````````````````````````````
+
+Dollar formula delimiters do not open before whitespace.
+
+```````````````````````````````` example
+Inline $ x$ end.
+.
+Document scope=1:1..1:16 children=1
+└── Paragraph scope=1:1..1:16 children=1
+    └── Text scope=1:1..1:16 literal="Inline $ x$ end." children=0
+````````````````````````````````
+
+Dollar formula delimiters do not close after whitespace.
+
+```````````````````````````````` example
+Inline $x $ end.
+.
+Document scope=1:1..1:16 children=1
+└── Paragraph scope=1:1..1:16 children=1
+    └── Text scope=1:1..1:16 literal="Inline $x $ end." children=0
+````````````````````````````````
+
+Dollar formula delimiters do not close before digits.
+
+```````````````````````````````` example
+Value $300B and ~$100B.
+.
+Document scope=1:1..1:23 children=1
+└── Paragraph scope=1:1..1:23 children=1
+    └── Text scope=1:1..1:23 literal="Value $300B and ~$100B." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+$$x+y$$
+.
+Document scope=1:1..1:7 children=1
+└── FormulaBlock scope=1:1..1:7 mode=standalone literal="x+y" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+$$
+x+y
+$$
+.
+Document scope=1:1..3:2 children=1
+└── FormulaBlock scope=1:1..3:2 mode=standalone literal="x+y" children=0
+````````````````````````````````
+
+Backslash formula delimiters are not enabled by default.
+
+```````````````````````````````` example
+Inline \\(x+y\\) and \(a+b\).
+.
+Document scope=1:1..1:29 children=1
+└── Paragraph scope=1:1..1:29 children=1
+    └── Text scope=1:1..1:29 literal="Inline \\(x+y\\) and (a+b)." children=0
+````````````````````````````````
+
+```````````````````````````````` example
+Display \\[x+y\\] and \[a+b\].
+.
+Document scope=1:1..1:30 children=1
+└── Paragraph scope=1:1..1:30 children=1
+    └── Text scope=1:1..1:30 literal="Display \\[x+y\\] and [a+b]." children=0
+````````````````````````````````
+
+GitHub's ```formula fenced-code form is a formula block; the fence delimiters and
+`formula` info string are not part of the formula body.
+
+```````````````````````````````` example
+```formula
+x+y
+```
+.
+Document scope=1:1..3:3 children=1
+└── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
+````````````````````````````````

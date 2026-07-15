@@ -1,0 +1,4 @@
+#!/bin/bash -eu
+MARKDOWN_CORE_FUZZ="$1"
+shift
+ASAN_OPTIONS="quarantine_size_mb=10:detect_leaks=1" "${MARKDOWN_CORE_FUZZ}" -max_len=256 -timeout=1 -dict=packages/markdown-core/tests/core/fuzzing_dictionary "$@"
