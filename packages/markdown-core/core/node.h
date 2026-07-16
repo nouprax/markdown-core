@@ -49,10 +49,18 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Extension-owned flags are compile-time constants starting at (1 << 3);
+    // Set at seal time (session commit): start_line holds a delta from the
+    // raw parent's absolute start line (root keeps its absolute), end_line a
+    // delta from the node's own absolute start line; columns stay line-local.
+    // The parser and raw one-shot parses keep absolute lines and never set
+    // this. Trees are sealed uniformly: an ancestor of a sealed node is
+    // always sealed.
+    MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
+
+    // Extension-owned flags are compile-time constants starting at (1 << 4);
     // each owning extension defines its own bits (see extensions/table.c).
     // The engine holds no runtime flag registry.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 3),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 4),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
