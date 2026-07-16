@@ -241,11 +241,26 @@ jobs:
                           return `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`;
                       }
 
+                      function latencyDelta(current, baseline) {
+                          if (!Number.isFinite(baseline) || baseline === 0) return "n/a";
+                          const percent = ((current - baseline) / baseline) * 100;
+                          const indicator = percent <= 0 ? "✅" : "⚠️";
+                          return `${indicator} ${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`;
+                      }
+
+                      function memoryDelta(current, baseline) {
+                          if (!Number.isFinite(baseline) || baseline === 0) return "n/a";
+                          const percent = ((current - baseline) / baseline) * 100;
+                          const indicator = percent < 5 ? "✅" : "⚠️";
+                          return `${indicator} ${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`;
+                      }
+
                       function byteDelta(current, baseline) {
                           if (!Number.isSafeInteger(baseline)) return "n/a";
                           const delta = current - baseline;
+                          const indicator = Math.abs(delta) < 50 * 1024 ? "✅" : "⚠️";
                           const sign = delta > 0 ? "+" : "";
-                          return `${sign}${delta.toLocaleString("en-US")} B (${percentDelta(current, baseline)})`;
+                          return `${indicator} ${sign}${delta.toLocaleString("en-US")} B (${percentDelta(current, baseline)})`;
                       }
 
                       const head = collect(readDocuments("metrics/head", process.env.HEAD_SHA));
@@ -293,9 +308,9 @@ jobs:
                               const memoryDiff =
                                   metric.memoryKiB === null || baseline?.memoryKiB === null
                                       ? "n/a"
-                                      : percentDelta(metric.memoryKiB, baseline?.memoryKiB);
+                                      : memoryDelta(metric.memoryKiB, baseline?.memoryKiB);
                               lines.push(
-                                  `| ${metric.runtime} | ${metric.workload} | ${milliseconds} ms | ${percentDelta(metric.medianNs, baseline?.medianNs)} | ${memory} | ${memoryDiff} |`,
+                                  `| ${metric.runtime} | ${metric.workload} | ${milliseconds} ms | ${latencyDelta(metric.medianNs, baseline?.medianNs)} | ${memory} | ${memoryDiff} |`,
                               );
                           }
                           lines.push("");

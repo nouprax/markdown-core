@@ -396,6 +396,9 @@ search 'listWorkflowRunsForRepo' "$comment"
 grep -Fq 'run.head_sha === baseSha' "$comment"
 grep -Fq 'document?.sourceSha !== expectedSha' "$comment"
 search 'artifact\.size_in_bytes <= 65536' "$comment"
+grep -Fq 'const indicator = percent <= 0 ? "✅" : "⚠️";' "$comment"
+grep -Fq 'const indicator = percent < 5 ? "✅" : "⚠️";' "$comment"
+grep -Fq 'const indicator = Math.abs(delta) < 50 * 1024 ? "✅" : "⚠️";' "$comment"
 if search 'actions/checkout|github\.event\.pull_request\.head|gh pr checkout|git fetch' "$comment"; then
     echo "the privileged metrics commenter may not fetch or execute PR code" >&2
     exit 1
