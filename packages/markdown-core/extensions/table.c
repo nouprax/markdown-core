@@ -8,14 +8,13 @@
 #include "strikethrough.h"
 #include "table.h"
 #include "markdown-core-extensions.h"
+#include "extension.h"
 
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
 
-// Custom node flag, initialized in `create_table_extension`.
-static markdown_core_node_internal_flags MARKDOWN_CORE_NODE__TABLE_VISITED;
-
-markdown_core_node_type MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_TABLE_ROW, MARKDOWN_CORE_NODE_TABLE_CELL;
+// Extension-owned node flag; the first (and only) compile-time extension bit.
+#define MARKDOWN_CORE_NODE__TABLE_VISITED ((markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__EXTENSION_FIRST)
 
 typedef struct {
     markdown_core_strbuf *buf;
@@ -53,8 +52,9 @@ static void free_row_cells(markdown_core_mem *mem, table_row *row) {
 }
 
 static void free_table_row(markdown_core_mem *mem, table_row *row) {
-    if (!row)
+    if (!row) {
         return;
+    }
 
     free_row_cells(mem, row);
     mem->free(row);
@@ -69,15 +69,17 @@ static void free_node_table(markdown_core_mem *mem, void *ptr) {
 static void free_node_table_row(markdown_core_mem *mem, void *ptr) { mem->free(ptr); }
 
 static int get_n_table_columns(markdown_core_node *node) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return -1;
+    }
 
     return (int)((node_table *)node->as.opaque)->n_columns;
 }
 
 static int set_n_table_columns(markdown_core_node *node, uint16_t n_columns) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table *)node->as.opaque)->n_columns = n_columns;
     return 1;
@@ -111,16 +113,18 @@ static int get_n_autocompleted_cells(markdown_core_node *node) {
 }
 
 static int set_table_alignments(markdown_core_node *node, uint8_t *alignments) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table *)node->as.opaque)->alignments = alignments;
     return 1;
 }
 
 static int set_cell_index(markdown_core_node *node, int i) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_CELL) {
         return 0;
+    }
 
     node->as.cell_index = i;
     return 1;
@@ -130,18 +134,21 @@ static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned cha
     markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(1, sizeof(markdown_core_strbuf));
     bufsize_t r, w;
 
-    if (!res)
+    if (!res) {
         return NULL;
+    }
     markdown_core_strbuf_init(mem, res, len + 1);
     markdown_core_strbuf_put(res, string, len);
     markdown_core_strbuf_putc(res, '\0');
 
-    if (res->oom)
+    if (res->oom) {
         return res;
+    }
 
     for (r = 0, w = 0; r < len; ++r) {
-        if (res->ptr[r] == '\\' && res->ptr[r + 1] == '|')
+        if (res->ptr[r] == '\\' && res->ptr[r + 1] == '|') {
             r++;
+        }
 
         res->ptr[w++] = res->ptr[r];
     }
@@ -176,8 +183,8 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
     return &row->cells[n_columns - 1];
 }
 
-static table_row *row_from_string(markdown_core_syntax_extension *self, markdown_core_parser *parser,
-                                  unsigned char *string, int len) {
+static table_row *row_from_string(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *string,
+                                  int len) {
     // Parses a single table row. It has the following form:
     // `delim? table_cell (delim table_cell)* delim? newline`
     // Note that cells are allowed to be empty.
@@ -234,8 +241,9 @@ static table_row *row_from_string(markdown_core_syntax_extension *self, markdown
             {
                 int cell_oom = 0;
                 node_cell *cell = append_row_cell(parser->mem, row, &cell_oom);
-                if (cell_oom)
+                if (cell_oom) {
                     parser->oom = true;
+                }
                 if (!cell) {
                     int_overflow_abort = 1;
                     markdown_core_strbuf_free(cell_buf);
@@ -311,7 +319,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     }
 }
 
-static markdown_core_node *try_opening_table_header(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *try_opening_table_header(markdown_core_extension *self, markdown_core_parser *parser,
                                                     markdown_core_node *parent_container, unsigned char *input,
                                                     int len) {
     markdown_core_node *table_header;
@@ -339,8 +347,6 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
 
     assert(delimiter_row);
 
-    markdown_core_arena_push();
-
     // Check for a matching header row. We call `row_from_string` with the entire
     // (potentially long) parent container as input, but this should be safe since
     // `row_from_string` bails out early if it does not find a row.
@@ -349,21 +355,8 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
     if (!header_row || header_row->n_columns != delimiter_row->n_columns) {
         free_table_row(parser->mem, delimiter_row);
         free_table_row(parser->mem, header_row);
-        markdown_core_arena_pop();
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
         return parent_container;
-    }
-
-    if (markdown_core_arena_pop()) {
-        delimiter_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
-                                        len - markdown_core_parser_get_first_nonspace(parser));
-        header_row = row_from_string(self, parser, (unsigned char *)parent_string, (int)strlen(parent_string));
-        // row_from_string can return NULL, add additional check to ensure n_columns match
-        if (!delimiter_row || !header_row || header_row->n_columns != delimiter_row->n_columns) {
-            free_table_row(parser->mem, delimiter_row);
-            free_table_row(parser->mem, header_row);
-            return parent_container;
-        }
     }
 
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
@@ -381,7 +374,7 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
      * allocation failure the half-converted node stays behind with a NULL
      * payload -- every table helper tolerates that -- and the sticky flag
      * makes the parse fail, so nothing downstream trusts the node. */
-    markdown_core_node_set_syntax_extension(parent_container, self);
+    markdown_core_node_set_extension(parent_container, self);
     parent_container->as.opaque = parser->mem->calloc(1, sizeof(node_table));
     if (!parent_container->as.opaque) {
         parser->oom = true;
@@ -404,12 +397,13 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         node_cell *node = &delimiter_row->cells[i];
         bool left = node->buf->ptr[0] == ':', right = node->buf->ptr[node->buf->size - 1] == ':';
 
-        if (left && right)
+        if (left && right) {
             alignments[i] = 'c';
-        else if (left)
+        } else if (left) {
             alignments[i] = 'l';
-        else if (right)
+        } else if (right) {
             alignments[i] = 'r';
+        }
     }
     set_table_alignments(parent_container, alignments);
 
@@ -420,7 +414,7 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         free_table_row(parser->mem, delimiter_row);
         return parent_container;
     }
-    markdown_core_node_set_syntax_extension(table_header, self);
+    markdown_core_node_set_extension(table_header, self);
     table_header->end_column = parent_container->start_column + (int)strlen(parent_string) - 2;
     table_header->start_line = table_header->end_line = parent_container->start_line;
 
@@ -437,13 +431,14 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
         node_cell *cell = &header_row->cells[i];
         markdown_core_node *header_cell = markdown_core_parser_add_child(
             parser, table_header, MARKDOWN_CORE_NODE_TABLE_CELL, parent_container->start_column + cell->start_offset);
-        if (!header_cell)
+        if (!header_cell) {
             break;
+        }
         header_cell->start_line = header_cell->end_line = parent_container->start_line;
         header_cell->internal_offset = cell->internal_offset;
         header_cell->end_column = parent_container->start_column + cell->end_offset;
         markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
-        markdown_core_node_set_syntax_extension(header_cell, self);
+        markdown_core_node_set_extension(header_cell, self);
         set_cell_index(header_cell, i);
     }
 
@@ -457,13 +452,14 @@ static markdown_core_node *try_opening_table_header(markdown_core_syntax_extensi
     return parent_container;
 }
 
-static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension *self, markdown_core_parser *parser,
+static markdown_core_node *try_opening_table_row(markdown_core_extension *self, markdown_core_parser *parser,
                                                  markdown_core_node *parent_container, unsigned char *input, int len) {
     markdown_core_node *table_row_block;
     table_row *row;
 
-    if (markdown_core_parser_is_blank(parser))
+    if (markdown_core_parser_is_blank(parser)) {
         return NULL;
+    }
 
     if (get_n_autocompleted_cells(parent_container) > MAX_AUTOCOMPLETED_CELLS) {
         return NULL;
@@ -471,9 +467,10 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
 
     table_row_block = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
                                                      parent_container->start_column);
-    if (!table_row_block)
+    if (!table_row_block) {
         return NULL;
-    markdown_core_node_set_syntax_extension(table_row_block, self);
+    }
+    markdown_core_node_set_extension(table_row_block, self);
     table_row_block->end_column = parent_container->end_column;
     table_row_block->as.opaque = parser->mem->calloc(1, sizeof(node_table_row));
     if (!table_row_block->as.opaque) {
@@ -499,12 +496,13 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
             markdown_core_node *node =
                 markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL,
                                                parent_container->start_column + cell->start_offset);
-            if (!node)
+            if (!node) {
                 break;
+            }
             node->internal_offset = cell->internal_offset;
             node->end_column = parent_container->start_column + cell->end_offset;
             markdown_core_node_set_string_content(node, (char *)cell->buf->ptr);
-            markdown_core_node_set_syntax_extension(node, self);
+            markdown_core_node_set_extension(node, self);
             set_cell_index(node, i);
         }
 
@@ -513,9 +511,10 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
         for (; i < table_columns; ++i) {
             markdown_core_node *node =
                 markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL, 0);
-            if (!node)
+            if (!node) {
                 break;
-            markdown_core_node_set_syntax_extension(node, self);
+            }
+            markdown_core_node_set_extension(node, self);
             set_cell_index(node, i);
         }
     }
@@ -528,7 +527,7 @@ static markdown_core_node *try_opening_table_row(markdown_core_syntax_extension 
     return table_row_block;
 }
 
-static markdown_core_node *try_opening_table_block(markdown_core_syntax_extension *self, int indented,
+static markdown_core_node *try_opening_table_block(markdown_core_extension *self, int indented,
                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
                                                    unsigned char *input, int len) {
     markdown_core_node_type parent_type = markdown_core_node_get_type(parent_container);
@@ -542,31 +541,31 @@ static markdown_core_node *try_opening_table_block(markdown_core_syntax_extensio
     return NULL;
 }
 
-static int matches(markdown_core_syntax_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
+static int matches(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
                    markdown_core_node *parent_container) {
     int res = 0;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        markdown_core_arena_push();
         table_row *new_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
                                              len - markdown_core_parser_get_first_nonspace(parser));
-        if (new_row && new_row->n_columns)
+        if (new_row && new_row->n_columns) {
             res = 1;
+        }
         free_table_row(parser->mem, new_row);
-        markdown_core_arena_pop();
     }
 
     return res;
 }
 
-static const char *get_type_string(markdown_core_syntax_extension *self, markdown_core_node *node) {
+static const char *get_type_string(markdown_core_extension *self, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return "table";
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        if (node->as.opaque && ((node_table_row *)node->as.opaque)->is_header)
+        if (node->as.opaque && ((node_table_row *)node->as.opaque)->is_header) {
             return "table_header";
-        else
+        } else {
             return "table_row";
+        }
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
         return "table_cell";
     }
@@ -574,7 +573,7 @@ static const char *get_type_string(markdown_core_syntax_extension *self, markdow
     return "<unknown>";
 }
 
-static int can_contain(markdown_core_syntax_extension *extension, markdown_core_node *node,
+static int can_contain(markdown_core_extension *extension, markdown_core_node *node,
                        markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
@@ -586,11 +585,11 @@ static int can_contain(markdown_core_syntax_extension *extension, markdown_core_
     return false;
 }
 
-static int contains_inlines(markdown_core_syntax_extension *extension, markdown_core_node *node) {
+static int contains_inlines(markdown_core_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
-static void opaque_alloc(markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload is tolerated by every table property helper; the node
      * then reports zero columns/alignments. */
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
@@ -602,7 +601,7 @@ static void opaque_alloc(markdown_core_syntax_extension *self, markdown_core_mem
     }
 }
 
-static void opaque_free(markdown_core_syntax_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
+static void opaque_free(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         free_node_table(mem, node->as.opaque);
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
@@ -610,34 +609,35 @@ static void opaque_free(markdown_core_syntax_extension *self, markdown_core_mem 
     }
 }
 
-markdown_core_syntax_extension *create_table_extension(void) {
-    markdown_core_syntax_extension *self = markdown_core_syntax_extension_new("table");
+static const markdown_core_extension table_extension = {
+    .name = "table",
+    .last_block_matches = matches,
+    .try_opening_block = try_opening_table_block,
+    .get_type_string_func = get_type_string,
+    .can_contain_func = can_contain,
+    .contains_inlines_func = contains_inlines,
+    .opaque_alloc_func = opaque_alloc,
+    .opaque_free_func = opaque_free,
+};
 
-    markdown_core_register_node_flag(&MARKDOWN_CORE_NODE__TABLE_VISITED);
-    markdown_core_syntax_extension_set_match_block_func(self, matches);
-    markdown_core_syntax_extension_set_open_block_func(self, try_opening_table_block);
-    markdown_core_syntax_extension_set_get_type_string_func(self, get_type_string);
-    markdown_core_syntax_extension_set_can_contain_func(self, can_contain);
-    markdown_core_syntax_extension_set_contains_inlines_func(self, contains_inlines);
-    markdown_core_syntax_extension_set_opaque_alloc_func(self, opaque_alloc);
-    markdown_core_syntax_extension_set_opaque_free_func(self, opaque_free);
-    MARKDOWN_CORE_NODE_TABLE = markdown_core_syntax_extension_add_node(0);
-    MARKDOWN_CORE_NODE_TABLE_ROW = markdown_core_syntax_extension_add_node(0);
-    MARKDOWN_CORE_NODE_TABLE_CELL = markdown_core_syntax_extension_add_node(0);
-
-    return self;
+markdown_core_extension *markdown_core_table_extension(void) {
+    // Immutable descriptor; the cast keeps the pre-existing pointer plumbing
+    // without permitting writes (see extension.h).
+    return (markdown_core_extension *)&table_extension;
 }
 
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node) {
-    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table *)node->as.opaque)->n_columns;
 }
 
 uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node) {
-    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque)
+    if (node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table *)node->as.opaque)->alignments;
 }
@@ -648,22 +648,25 @@ int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_
 
 int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments) {
     uint8_t *a = (uint8_t *)markdown_core_node_mem(node)->calloc(1, ncols);
-    if (!a)
+    if (!a) {
         return 0;
+    }
     memcpy(a, alignments, ncols);
     return set_table_alignments(node, a);
 }
 
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
         return 0;
+    }
 
     return ((node_table_row *)node->as.opaque)->is_header;
 }
 
 int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header) {
-    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque)
+    if (!node || node->type != MARKDOWN_CORE_NODE_TABLE_ROW || !node->as.opaque) {
         return 0;
+    }
 
     ((node_table_row *)node->as.opaque)->is_header = (is_header != 0);
     return 1;

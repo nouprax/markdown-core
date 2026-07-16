@@ -3,9 +3,11 @@
 
 #include "markdown-core-extensions.h"
 
-extern markdown_core_node_type MARKDOWN_CORE_NODE_FORMULA;
-extern markdown_core_node_type MARKDOWN_CORE_NODE_FORMULA_BLOCK;
+// Compile-time extension node types; see table.h/strikethrough.h for the
+// value-range convention.
+#define MARKDOWN_CORE_NODE_FORMULA ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000c))
+#define MARKDOWN_CORE_NODE_FORMULA_BLOCK ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000e))
 
-markdown_core_syntax_extension *create_formula_extension(void);
+markdown_core_extension *markdown_core_formula_extension(void);
 
 #endif

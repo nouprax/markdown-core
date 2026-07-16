@@ -11,7 +11,7 @@ on:
 
 jobs:
     analyze:
-        name: Analyze (${{ matrix.language }})
+        name: Security Scan - ${{ matrix.label }}
         runs-on: ${{ matrix.os }}
         permissions:
             actions: read
@@ -22,15 +22,19 @@ jobs:
             matrix:
                 include:
                     - language: c-cpp
+                      label: C and C++
                       build-mode: manual
                       os: ubuntu-latest
                     - language: java-kotlin
+                      label: Java and Kotlin
                       build-mode: manual
                       os: ubuntu-latest
                     - language: javascript-typescript
+                      label: JavaScript and TypeScript
                       build-mode: none
                       os: ubuntu-latest
                     - language: swift
+                      label: Swift
                       build-mode: manual
                       os: macos-26
         steps:

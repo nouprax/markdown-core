@@ -34,8 +34,9 @@ static char *run_cli(const char *program, const char *markdown_path, size_t *out
     snprintf(command, sizeof(command), "\"%s\" \"%s\"", program, markdown_path);
 #endif
     pipe = ts_popen(command, "r");
-    if (!pipe)
+    if (!pipe) {
         return NULL;
+    }
     output = (char *)malloc(capacity);
     if (!output) {
         ts_pclose(pipe);
@@ -56,8 +57,9 @@ static char *run_cli(const char *program, const char *markdown_path, size_t *out
         }
         bytes = fread(output + length, 1, 4096, pipe);
         length += bytes;
-        if (bytes < 4096)
+        if (bytes < 4096) {
             break;
+        }
     }
     if (ts_pclose(pipe) != 0) {
         free(output);

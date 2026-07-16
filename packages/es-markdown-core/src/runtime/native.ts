@@ -41,7 +41,17 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
         if (!response.ok) throw new Error(`failed to load Markdown Core WASM: ${response.status}`);
         bytes = await response.arrayBuffer();
     }
+    const memoryHolder: { memory?: WebAssembly.Memory } = {};
     const wasi = {
+        // Supplies wall-clock time (u64 nanoseconds at timePtr) for the
+        // engine's per-session identity entropy; any clock id gets the same
+        // source. Calls only happen after instantiation fills the holder.
+        clock_time_get: (_clockId: number, _precision: bigint, timePtr: number): number => {
+            const memory = memoryHolder.memory;
+            if (!memory) return 28; // WASI EINVAL; unreachable in practice
+            new DataView(memory.buffer).setBigUint64(timePtr, BigInt(Date.now()) * 1_000_000n, true);
+            return 0;
+        },
         fd_close: (): number => 0,
         fd_seek: (): number => 0,
         fd_write: (): number => 0,
@@ -49,7 +59,9 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             throw new Error(`Markdown Core WASM exited with status ${code}`);
         }
     };
-    return (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env: {} })).instance;
+    const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env: {} })).instance;
+    memoryHolder.memory = instance.exports["memory"] as WebAssembly.Memory;
+    return instance;
 }
 
 // Top-level initialization keeps Document.parse synchronous in Node and browsers.

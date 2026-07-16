@@ -23,15 +23,17 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
 
     /* The parser tolerates a missing reference map (map_new failure under a
      * NULL-returning allocator); definitions are then dropped. */
-    if (map == NULL)
+    if (map == NULL) {
         return;
+    }
 
     reflabel = normalize_map_label(map->mem, label, &lost);
 
     /* empty reference name, or composed from only whitespace */
     if (reflabel == NULL) {
-        if (lost)
+        if (lost) {
             map->oom = 1;
+        }
         return;
     }
 
@@ -47,8 +49,9 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
     lost = 0;
     ref->url = markdown_core_clean_url(map->mem, url, &lost);
     ref->title = markdown_core_clean_title(map->mem, title, &lost);
-    if (lost)
+    if (lost) {
         map->oom = 1;
+    }
     ref->entry.age = map->size;
     ref->entry.next = map->refs;
     ref->entry.size = ref->url.len + ref->title.len;

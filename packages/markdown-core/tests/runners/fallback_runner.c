@@ -89,8 +89,9 @@ static markdown_core_chunk fb_chunk(const char *text) {
 static char *fb_strdup(const char *text) {
     size_t length = strlen(text);
     char *copy = (char *)malloc(length + 1);
-    if (copy)
+    if (copy) {
         memcpy(copy, text, length + 1);
+    }
     return copy;
 }
 
@@ -146,11 +147,13 @@ static int fb_check_reference_map(markdown_core_map *map, const char *context) {
     for (i = 0; i < FB_UNIQUE_REFERENCES; i++) {
         snprintf(label, sizeof(label), "ref%d", i);
         snprintf(url, sizeof(url), "/u%d", i);
-        if (fb_expect_url(map, label, url, context) != 0)
+        if (fb_expect_url(map, label, url, context) != 0) {
             return -1;
+        }
     }
-    if (fb_expect_url(map, "dup", "/first", context) != 0)
+    if (fb_expect_url(map, "dup", "/first", context) != 0) {
         return -1;
+    }
     return fb_expect_url(map, "missing", NULL, context);
 }
 
@@ -167,11 +170,13 @@ static int case_reference_sorted_fallback(void) {
     fb_populate_reference_map(fallback_map);
 
     fb_block_slot_tables = 1;
-    if (fb_check_reference_map(fallback_map, "sorted fallback") != 0)
+    if (fb_check_reference_map(fallback_map, "sorted fallback") != 0) {
         goto done;
+    }
     fb_block_slot_tables = 0;
-    if (fb_check_reference_map(hash_map, "hash path") != 0)
+    if (fb_check_reference_map(hash_map, "hash path") != 0) {
         goto done;
+    }
 
     if (!hash_map->indexed) {
         fputs("control map did not take the hash path\n", stderr);
@@ -203,16 +208,18 @@ static int case_map_prepare_oom(void) {
 
     fb_block_slot_tables = 1;
     fb_block_pointer_arrays = 1;
-    if (fb_expect_url(map, "ref1", NULL, "prepare under OOM") != 0)
+    if (fb_expect_url(map, "ref1", NULL, "prepare under OOM") != 0) {
         goto done;
+    }
     if (map->prepared) {
         fputs("map reported prepared after failed preparation\n", stderr);
         goto done;
     }
     fb_block_slot_tables = 0;
     fb_block_pointer_arrays = 0;
-    if (fb_expect_url(map, "ref1", "/u1", "recovery after OOM") != 0)
+    if (fb_expect_url(map, "ref1", "/u1", "recovery after OOM") != 0) {
         goto done;
+    }
     if (!map->indexed) {
         fputs("recovered map did not take the hash path\n", stderr);
         goto done;
@@ -260,7 +267,7 @@ static int case_constructor_oom(void) {
 }
 
 static char *fb_parse_directive_attributes(const char *input, markdown_core_mem *mem) {
-    markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension("directive");
+    markdown_core_extension *extension = markdown_core_find_extension("directive");
     markdown_core_parser *parser;
     markdown_core_node *document;
     markdown_core_iter *iter;
@@ -272,17 +279,19 @@ static char *fb_parse_directive_attributes(const char *input, markdown_core_mem 
         return NULL;
     }
     parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DIRECTIVE, mem);
-    if (!parser)
+    if (!parser) {
         return NULL;
-    if (!markdown_core_parser_attach_syntax_extension(parser, extension)) {
+    }
+    if (!markdown_core_parser_attach_extension(parser, extension)) {
         markdown_core_parser_free(parser);
         return NULL;
     }
     markdown_core_parser_feed(parser, input, strlen(input));
     document = markdown_core_parser_finish(parser);
     markdown_core_parser_free(parser);
-    if (!document)
+    if (!document) {
         return NULL;
+    }
 
     iter = markdown_core_iter_new(document);
     while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -349,10 +358,10 @@ static int case_directive_sorted_fallback(void) {
     size_t i;
     int result = -1;
 
-    markdown_core_core_extensions_ensure_registered();
-
-    if (fb_compare_directive_paths(":x{a=1 b=2 a=3 c=4 b=5}\n", "{\"a\":\"3\",\"b\":\"5\",\"c\":\"4\"}", "small") != 0)
+    if (fb_compare_directive_paths(":x{a=1 b=2 a=3 c=4 b=5}\n", "{\"a\":\"3\",\"b\":\"5\",\"c\":\"4\"}", "small") !=
+        0) {
         return -1;
+    }
 
     /* Above 1024 attributes the capacity estimate samples; the injected
      * failure covers the sample-index failure route as well. */
@@ -364,8 +373,9 @@ static int case_directive_sorted_fallback(void) {
         return -1;
     }
     input_length += (size_t)snprintf(input + input_length, 8, ":x{");
-    for (i = 0; i < FB_ATTRIBUTE_COUNT; i++)
+    for (i = 0; i < FB_ATTRIBUTE_COUNT; i++) {
         input_length += (size_t)snprintf(input + input_length, 24, "%sk%zu=v%zu", i ? " " : "", i % FB_UNIQUE_KEYS, i);
+    }
     input_length += (size_t)snprintf(input + input_length, 8, "}\n");
     expected_length += (size_t)snprintf(expected + expected_length, 8, "{");
     for (i = 0; i < FB_UNIQUE_KEYS; i++) {
@@ -417,8 +427,9 @@ static int case_key_index_probe_growth(void) {
         uint64_t hash;
         snprintf(name, sizeof(name), "p%lu", candidate++);
         hash = fb_hash(name);
-        if ((hash & 255) != FB_WINDOW)
+        if ((hash & 255) != FB_WINDOW) {
             continue;
+        }
         if ((hash & 511) == FB_WINDOW && low < FB_HALF) {
             snprintf(keys[total++], sizeof(keys[0]), "%s", name);
             low++;
@@ -543,11 +554,12 @@ static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
     markdown_core_node *root;
     size_t i;
 
-    if (!parser)
+    if (!parser) {
         return NULL;
+    }
     for (i = 0; i < sizeof(FB_SWEEP_EXTENSIONS) / sizeof(FB_SWEEP_EXTENSIONS[0]); i++) {
-        markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension(FB_SWEEP_EXTENSIONS[i]);
-        if (!extension || !markdown_core_parser_attach_syntax_extension(parser, extension)) {
+        markdown_core_extension *extension = markdown_core_find_extension(FB_SWEEP_EXTENSIONS[i]);
+        if (!extension || !markdown_core_parser_attach_extension(parser, extension)) {
             markdown_core_parser_free(parser);
             return NULL;
         }
@@ -562,22 +574,27 @@ static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
  * comparing, so the comparator must not allocate (public literal accessors
  * do). */
 static int fb_chunk_equal(const markdown_core_chunk *a, const markdown_core_chunk *b) {
-    if (a->len != b->len)
+    if (a->len != b->len) {
         return 0;
-    if (a->len == 0)
+    }
+    if (a->len == 0) {
         return 1;
-    if (!a->data || !b->data)
+    }
+    if (!a->data || !b->data) {
         return a->data == b->data;
+    }
     return memcmp(a->data, b->data, (size_t)a->len) == 0;
 }
 
 static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
     markdown_core_node_type type = markdown_core_node_get_type(a);
     if (type == MARKDOWN_CORE_NODE_TEXT || type == MARKDOWN_CORE_NODE_CODE || type == MARKDOWN_CORE_NODE_HTML ||
-        type == MARKDOWN_CORE_NODE_CODE_BLOCK || type == MARKDOWN_CORE_NODE_HTML_BLOCK)
+        type == MARKDOWN_CORE_NODE_CODE_BLOCK || type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
         return fb_chunk_equal(&a->as.literal, &b->as.literal);
-    if (type == MARKDOWN_CORE_NODE_LINK || type == MARKDOWN_CORE_NODE_IMAGE)
+    }
+    if (type == MARKDOWN_CORE_NODE_LINK || type == MARKDOWN_CORE_NODE_IMAGE) {
         return fb_chunk_equal(&a->as.link.url, &b->as.link.url) && fb_chunk_equal(&a->as.link.title, &b->as.link.title);
+    }
     return 1;
 }
 
@@ -609,8 +626,9 @@ static int fb_tree_equal(markdown_core_node *a, markdown_core_node *b) {
             fb_describe_node("sweep", b);
             return 0;
         }
-        if (!fb_tree_equal(markdown_core_node_first_child(a), markdown_core_node_first_child(b)))
+        if (!fb_tree_equal(markdown_core_node_first_child(a), markdown_core_node_first_child(b))) {
             return 0;
+        }
         a = markdown_core_node_next(a);
         b = markdown_core_node_next(b);
     }
@@ -627,8 +645,6 @@ static int case_oom_sweep(void) {
     unsigned long k;
     int result = -1;
 
-    markdown_core_core_extensions_ensure_registered();
-
     control = fb_sweep_parse(markdown_core_get_default_mem_allocator());
     if (!control) {
         fputs("control parse failed\n", stderr);
@@ -641,8 +657,9 @@ static int case_oom_sweep(void) {
         markdown_core_node *counted = fb_sweep_parse(&fb_sweep_mem);
         if (!counted || !fb_tree_equal(control, counted)) {
             fputs("counting parse diverged from control\n", stderr);
-            if (counted)
+            if (counted) {
                 markdown_core_node_free(counted);
+            }
             goto done;
         }
         markdown_core_node_free(counted);
@@ -695,19 +712,20 @@ int main(int argc, char **argv) {
     size_t i;
 
     for (i = 1; i < (size_t)argc; i++) {
-        if (strcmp(argv[i], "--list") == 0)
+        if (strcmp(argv[i], "--list") == 0) {
             list_only = 1;
-        else if (strcmp(argv[i], "--case") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--case") == 0 && i + 1 < (size_t)argc) {
             case_name = argv[++i];
-        else {
+        } else {
             fputs("usage: fallback_runner [--list] [--case NAME]\n", stderr);
             return 2;
         }
     }
 
     if (list_only) {
-        for (i = 0; i < sizeof(FB_CASES) / sizeof(FB_CASES[0]); i++)
+        for (i = 0; i < sizeof(FB_CASES) / sizeof(FB_CASES[0]); i++) {
             puts(FB_CASES[i].name);
+        }
         return 0;
     }
     if (!case_name) {

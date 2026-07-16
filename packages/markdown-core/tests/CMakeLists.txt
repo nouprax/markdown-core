@@ -187,6 +187,11 @@ markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_t
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
+# facade multi-session contract: isolated sessions streaming concurrently
+# with per-byte commits must never interfere, and one session's document
+# must support concurrent read-only access between mutating calls.
+markdown_core_add_test(facade_concurrent_sessions facade 600 concurrency_runner --case sessions)
+
 # regression: registry lifecycle stays immutable across parse/free cycles
 # and facade failure paths.
 markdown_core_add_test(regression_registry_lifecycle regression 240 concurrency_runner --case lifecycle)

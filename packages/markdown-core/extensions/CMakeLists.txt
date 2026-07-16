@@ -1,11 +1,11 @@
 set(LIBRARY "libmarkdown-core-extensions")
 set(STATICLIBRARY "libmarkdown-core-extensions_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
-if(NOT WIN32)
-    find_package(Threads REQUIRED)
-endif()
 set(LIBRARY_SOURCES
     ast.c
+    session.c
+    adopt.c
+    changeset.c
     core-extensions.c
     table.c
     strikethrough.c
@@ -103,9 +103,6 @@ if(MARKDOWN_CORE_STATIC)
         PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    if(NOT WIN32)
-        target_link_libraries(${PUBLIC_STATIC_LIBRARY} PUBLIC Threads::Threads)
-    endif()
     list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})

@@ -49,9 +49,10 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Extensions can register custom flags by calling `markdown_core_register_node_flag`.
-    // This is the starting value for the custom flags.
-    MARKDOWN_CORE_NODE__REGISTER_FIRST = (1 << 3),
+    // Extension-owned flags are compile-time constants starting at (1 << 3);
+    // each owning extension defines its own bits (see extensions/table.c).
+    // The engine holds no runtime flag registry.
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 3),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -65,6 +66,14 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
+    // Session-assigned identity: `id` is unique within the owning session and
+    // stable across incremental commits while the node remains "the same
+    // thing"; `last_changed_rev` is the session revision at which the node's
+    // own fields, child list, or any descendant last changed. Both stay 0 for
+    // parses that never pass through a session's adoption walk.
+    uint64_t id;
+    uint64_t last_changed_rev;
+
     void *user_data;
     markdown_core_free_func user_data_free_func;
 
@@ -76,7 +85,7 @@ struct markdown_core_node {
     uint16_t type;
     markdown_core_node_internal_flags flags;
 
-    markdown_core_syntax_extension *extension;
+    markdown_core_extension *extension;
 
     union {
         int ref_ix;
@@ -96,26 +105,6 @@ struct markdown_core_node {
         void *opaque;
     } as;
 };
-
-/**
- * Syntax extensions can use this function to register a custom node
- * flag. The flags are stored in the `flags` field of the `markdown_core_node`
- * struct. The `flags` parameter should be the address of a global variable
- * which will store the flag value.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_register_node_flag(markdown_core_node_internal_flags *flags);
-
-/**
- * DEPRECATED.
- *
- * This function predates the Markdown Core 1.0.0 release and was
- * required to be called at program start time, which caused
- * backwards-compatibility issues in applications that use markdown-core as a
- * library. It is now a no-op.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_init_standard_node_flags(void);
 
 static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_core_node *node) {
     return node->content.mem;
@@ -140,13 +129,6 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
-
-/**
- * Enable (or disable) extra safety checks. These extra checks cause
- * extra performance overhead (in some cases quadratic), so they are only
- * intended to be used during testing.
- */
-MARKDOWN_CORE_EXPORT void markdown_core_enable_safety_checks(bool enable);
 
 #ifdef __cplusplus
 }

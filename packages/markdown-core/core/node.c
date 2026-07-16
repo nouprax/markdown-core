@@ -3,41 +3,11 @@
 
 #include "config.h"
 #include "node.h"
-#include "syntax_extension.h"
-
-/**
- * Expensive safety checks are off by default, but can be enabled
- * by calling markdown_core_enable_safety_checks().
- */
-static bool enable_safety_checks = false;
-
-void markdown_core_enable_safety_checks(bool enable) { enable_safety_checks = enable; }
+#include "extension.h"
 
 static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
-
-void markdown_core_register_node_flag(markdown_core_node_internal_flags *flags) {
-    static markdown_core_node_internal_flags nextflag = MARKDOWN_CORE_NODE__REGISTER_FIRST;
-
-    // flags should be a pointer to a global variable and this function
-    // should only be called once to initialize its value.
-    if (*flags) {
-        fprintf(stderr, "flag initialization error in markdown_core_register_node_flag\n");
-        abort();
-    }
-
-    // Check that we haven't run out of bits.
-    if (nextflag == 0) {
-        fprintf(stderr, "too many flags in markdown_core_register_node_flag\n");
-        abort();
-    }
-
-    *flags = nextflag;
-    nextflag <<= 1;
-}
-
-void markdown_core_init_standard_node_flags(void) {}
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
@@ -81,25 +51,24 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
         return 0;
     }
 
-    if (enable_safety_checks) {
-        // Verify that child is not an ancestor of node or equal to node.
-        markdown_core_node *cur = node;
-        do {
-            if (cur == child) {
-                return false;
-            }
-            cur = cur->parent;
-        } while (cur != NULL);
+    // Verify that child is not an ancestor of node or equal to node. This is
+    // O(depth) but only runs on the explicit node-mutation paths, never on
+    // the per-line parsing hot path.
+    for (markdown_core_node *cur = node; cur != NULL; cur = cur->parent) {
+        if (cur == child) {
+            return false;
+        }
     }
 
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                                            markdown_core_syntax_extension *extension) {
+                                                            markdown_core_extension *extension) {
     markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
-    if (!node)
+    if (!node) {
         return NULL;
+    }
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->type = (uint16_t)type;
     node->extension = extension;
@@ -128,10 +97,8 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
     return node;
 }
 
-markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                    markdown_core_syntax_extension *extension) {
-    extern markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
-    return markdown_core_node_new_with_mem_and_ext(type, &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR, extension);
+markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, markdown_core_extension *extension) {
+    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
@@ -172,11 +139,13 @@ static void S_free_nodes(markdown_core_node *e) {
     while (e != NULL) {
         markdown_core_strbuf_free(&e->content);
 
-        if (e->user_data && e->user_data_free_func)
+        if (e->user_data && e->user_data_free_func) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
+        }
 
-        if (e->as.opaque && e->extension && e->extension->opaque_free_func)
+        if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
             e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
+        }
 
         free_node_as(e);
 
@@ -208,8 +177,9 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
 
-    if (type == node->type)
+    if (type == node->type) {
         return 1;
+    }
 
     initial_type = (markdown_core_node_type)node->type;
     node->type = (uint16_t)type;
@@ -704,7 +674,7 @@ int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
     return 0;
 }
 
-markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node) {
+markdown_core_extension *markdown_core_node_get_extension(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
     }
@@ -712,7 +682,7 @@ markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown
     return node->extension;
 }
 
-int markdown_core_node_set_syntax_extension(markdown_core_node *node, markdown_core_syntax_extension *extension) {
+int markdown_core_node_set_extension(markdown_core_node *node, markdown_core_extension *extension) {
     if (node == NULL) {
         return 0;
     }

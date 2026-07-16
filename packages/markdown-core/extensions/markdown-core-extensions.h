@@ -17,9 +17,6 @@ typedef enum {
 } markdown_core_formula_mode;
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_core_extensions_ensure_registered(void);
-
-MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
 
 /** Sets the number of columns for the table, returning 1 on success and 0 on error.
