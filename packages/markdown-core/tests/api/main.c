@@ -1499,8 +1499,81 @@ static void session_directive_label_parent(test_batch_runner *runner) {
            "label child's canonical parent is the directive");
         OK(runner, markdown_core_node_get_parent(root) == NULL, "root has no parent");
         OK(runner, markdown_core_node_get_id(directive) != 0, "one-shot documents carry ids");
+        if (label) {
+            /* Scope resolution walks the raw parent chain, which passes
+             * through the hidden label wrapper: ":video[" puts the label text
+             * at columns 8..15 of line 1. */
+            markdown_core_scope scope = markdown_core_node_scope(label);
+            INT_EQ(runner, (int)scope.start.line, 1, "label scope resolves through the hidden wrapper");
+            INT_EQ(runner, (int)scope.start.column, 8, "label start column is absolute");
+            INT_EQ(runner, (int)scope.end.line, 1, "label end line is absolute");
+            INT_EQ(runner, (int)scope.end.column, 15, "label end column is absolute");
+        }
     }
     markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
+static void session_scope_shift_invariance(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    const char *source = "# Title\n\nHello *world*\n";
+    const char *prefix = "Zero\n\n";
+    markdown_core_node_id paragraph_id = 0, emphasis_id = 0;
+    uint64_t paragraph_rev = 0;
+    markdown_core_scope paragraph_before = {{0, 0}, {0, 0}};
+    markdown_core_scope emphasis_before = {{0, 0}, {0, 0}};
+
+    OK(runner, session != NULL, "scope session opens");
+    if (!session) {
+        return;
+    }
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "scope baseline commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *heading = markdown_core_node_get_first_child(root);
+        const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
+        const markdown_core_node *emphasis =
+            markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(paragraph));
+        paragraph_before = markdown_core_node_scope(paragraph);
+        emphasis_before = markdown_core_node_scope(emphasis);
+        paragraph_id = markdown_core_node_get_id(paragraph);
+        paragraph_rev = markdown_core_node_get_revision(paragraph);
+        emphasis_id = markdown_core_node_get_id(emphasis);
+        INT_EQ(runner, (int)paragraph_before.start.line, 3, "paragraph scope resolves an absolute start line");
+        INT_EQ(runner, (int)paragraph_before.end.line, 3, "paragraph scope resolves an absolute end line");
+        INT_EQ(runner, (int)emphasis_before.start.line, 3, "inline scope resolves through the parent chain");
+    }
+
+    /* Insert a paragraph above: every downstream scope shifts by two lines
+     * while ids and revisions stay put (shift-invariant equality). */
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)prefix, strlen(prefix), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "scope shift commit succeeds");
+
+    {
+        const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_id);
+        const markdown_core_node *emphasis = markdown_core_session_node_by_id(session, emphasis_id);
+        OK(runner, paragraph != NULL && emphasis != NULL, "shifted nodes keep their ids");
+        if (paragraph && emphasis) {
+            markdown_core_scope after = markdown_core_node_scope(paragraph);
+            INT_EQ(runner, (int)after.start.line, (int)paragraph_before.start.line + 2,
+                   "paragraph scope shifts with the insert");
+            INT_EQ(runner, (int)after.end.line, (int)paragraph_before.end.line + 2,
+                   "paragraph end line shifts with the insert");
+            INT_EQ(runner, (int)after.start.column, (int)paragraph_before.start.column, "columns are shift-invariant");
+            OK(runner, markdown_core_node_get_revision(paragraph) == paragraph_rev,
+               "a pure line shift does not advance the revision");
+            after = markdown_core_node_scope(emphasis);
+            INT_EQ(runner, (int)after.start.line, (int)emphasis_before.start.line + 2,
+                   "inline scope shifts with the insert");
+            INT_EQ(runner, (int)after.start.column, (int)emphasis_before.start.column,
+                   "inline columns are shift-invariant");
+        }
+    }
+
+    markdown_core_session_free(session);
     markdown_core_error_free(error);
 }
 
@@ -1537,6 +1610,7 @@ int main(void) {
     session_utf8_split_append(runner);
     session_edit_errors(runner);
     session_directive_label_parent(runner);
+    session_scope_shift_invariance(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

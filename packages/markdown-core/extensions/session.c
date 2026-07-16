@@ -147,6 +147,37 @@ static bool attach_extension_named(markdown_core_parser *parser, const char *nam
     return extension && markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
+// Seals a freshly parsed tree: line positions convert from absolute to
+// parent-relative deltas (columns are line-local already) and every node
+// gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Post-order, so each conversion
+// still reads its parent's absolute start; pointer-walk iterative, because
+// adversarial inputs nest too deep for native recursion.
+static void seal_positions(markdown_core_node *root) {
+    markdown_core_node *node = root;
+    for (;;) {
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        for (;;) {
+            int start_line = node->start_line;
+            if (node->parent) {
+                node->start_line = start_line - node->parent->start_line;
+            }
+            node->end_line -= start_line;
+            node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
+            if (node == root) {
+                return;
+            }
+            if (node->next) {
+                node = node->next;
+                break;
+            }
+            node = node->parent;
+        }
+    }
+}
+
 // Parses the session's current text from scratch. Returns NULL with *error
 // set on failure; the session state is untouched.
 static markdown_core_node *parse_text(markdown_core_session *session, markdown_core_error **error) {
@@ -178,7 +209,9 @@ static markdown_core_node *parse_text(markdown_core_session *session, markdown_c
     markdown_core_parser_free(parser);
     if (!root) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "parser did not produce a document");
+        return NULL;
     }
+    seal_positions(root);
     return root;
 }
 

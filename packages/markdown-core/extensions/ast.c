@@ -284,12 +284,26 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
 
 markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     markdown_core_scope scope = {{0, 0}, {0, 0}};
-    if (node) {
-        scope.start.line = node->start_line;
-        scope.start.column = node->start_column;
-        scope.end.line = node->end_line;
-        scope.end.column = node->end_column;
+    const markdown_core_node *ancestor;
+    int start_line, end_line;
+    if (!node) {
+        return scope;
     }
+    start_line = node->start_line;
+    end_line = node->end_line;
+    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+        // Sealed storage is parent-relative (see node.h); every ancestor of a
+        // sealed node is sealed, and the root's start line stays absolute, so
+        // summing the raw parent chain resolves the absolute start.
+        for (ancestor = node->parent; ancestor; ancestor = ancestor->parent) {
+            start_line += ancestor->start_line;
+        }
+        end_line += start_line;
+    }
+    scope.start.line = start_line;
+    scope.start.column = node->start_column;
+    scope.end.line = end_line;
+    scope.end.column = node->end_column;
     return scope;
 }
 
@@ -870,16 +884,36 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     return equal;
 }
 
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth) {
+// `parent_start_line` is the absolute start line of the node's canonical
+// parent (0 for the root call): resolving sealed parent-relative lines with a
+// running accumulator keeps the dump linear instead of walking the parent
+// chain per node.
+static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, int parent_start_line) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_scope scope = markdown_core_node_scope(node);
+    markdown_core_scope scope;
     const markdown_core_node *child;
     size_t count = markdown_core_node_child_count(node);
     size_t i;
+    int start_line = node->start_line;
+    int end_line = node->end_line;
     if (kind == MARKDOWN_CORE_KIND_NONE) {
         buffer->failed = true;
         return;
     }
+    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+        // The canonical traversal hides directive-label wrappers, so a hidden
+        // wrapper between this node and its canonical parent contributes its
+        // own delta.
+        start_line += parent_start_line;
+        if (is_label(node->parent)) {
+            start_line += node->parent->start_line;
+        }
+        end_line += start_line;
+    }
+    scope.start.line = start_line;
+    scope.start.column = node->start_column;
+    scope.end.line = end_line;
+    scope.end.column = node->end_column;
     if (depth) {
         for (i = 0; i + 1 < depth; i++) {
             buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
@@ -907,7 +941,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
             return;
         }
         buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1);
+        dump_node(buffer, child, depth + 1, start_line);
         child = next;
     }
 }
@@ -922,7 +956,7 @@ bool markdown_core_document_dump(const markdown_core_document *document, uint8_t
     }
     *output = NULL;
     *length = 0;
-    dump_node(&buffer, document->root, 0);
+    dump_node(&buffer, document->root, 0, 0);
     free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);
