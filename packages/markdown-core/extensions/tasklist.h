@@ -3,6 +3,6 @@
 
 #include "markdown-core-extensions.h"
 
-markdown_core_syntax_extension *create_tasklist_extension(void);
+markdown_core_extension *markdown_core_tasklist_extension(void);
 
 #endif

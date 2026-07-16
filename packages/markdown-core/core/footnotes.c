@@ -9,8 +9,9 @@ static void footnote_free(markdown_core_map *map, markdown_core_map_entry *_ref)
     markdown_core_mem *mem = map->mem;
     if (ref != NULL) {
         mem->free(ref->entry.label);
-        if (ref->node)
+        if (ref->node) {
             markdown_core_node_free(ref->node);
+        }
         mem->free(ref);
     }
 }
@@ -20,15 +21,17 @@ void markdown_core_footnote_create(markdown_core_map *map, markdown_core_node *n
     unsigned char *reflabel;
     int lost = 0;
 
-    if (map == NULL)
+    if (map == NULL) {
         return;
+    }
 
     reflabel = normalize_map_label(map->mem, &node->as.literal, &lost);
 
     /* empty footnote name, or composed from only whitespace */
     if (reflabel == NULL) {
-        if (lost)
+        if (lost) {
             map->oom = 1;
+        }
         return;
     }
 

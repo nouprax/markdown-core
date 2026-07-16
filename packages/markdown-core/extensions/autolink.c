@@ -1,4 +1,5 @@
 #include "autolink.h"
+#include "extension.h"
 #include <iterator.h>
 #include <parser.h>
 #include <string.h>
@@ -14,8 +15,9 @@
 static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
     int32_t ch;
     int r = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
-    if (r < 0)
+    if (r < 0) {
         return 0;
+    }
     return !markdown_core_utf8proc_is_space(ch) && !markdown_core_utf8proc_is_punctuation(ch);
 }
 
@@ -29,8 +31,9 @@ static int sd_autolink_issafe(const uint8_t *link, size_t link_len) {
         size_t len = strlen(valid_uris[i]);
 
         if (link_len > len && strncasecmp((char *)link, valid_uris[i], len) == 0 &&
-            is_valid_hostchar(link + len, link_len - len))
+            is_valid_hostchar(link + len, link_len - len)) {
             return 1;
+        }
     }
 
     return 0;
@@ -96,13 +99,15 @@ static size_t autolink_delim(uint8_t *data, size_t link_end) {
         case ';': {
             size_t new_end = link_end - 2;
 
-            while (new_end > 0 && markdown_core_isalpha(data[new_end]))
+            while (new_end > 0 && markdown_core_isalpha(data[new_end])) {
                 new_end--;
+            }
 
-            if (new_end < link_end - 2 && data[new_end] == '&')
+            if (new_end < link_end - 2 && data[new_end] == '&') {
                 link_end = new_end;
-            else
+            } else {
                 link_end--;
+            }
             break;
         }
 
@@ -129,16 +134,18 @@ static size_t check_domain(uint8_t *data, size_t size, int allow_short) {
      * but host names are not. See: https://stackoverflow.com/a/2183140
      */
     for (i = 1; i < size - 1; i++) {
-        if (data[i] == '\\' && i < size - 2)
+        if (data[i] == '\\' && i < size - 2) {
             i++;
-        if (data[i] == '_')
+        }
+        if (data[i] == '_') {
             uscore2++;
-        else if (data[i] == '.') {
+        } else if (data[i] == '.') {
             uscore1 = uscore2;
             uscore2 = 0;
             np++;
-        } else if (!is_valid_hostchar(data + i, size - i) && data[i] != '-')
+        } else if (!is_valid_hostchar(data + i, size - i) && data[i] != '-') {
             break;
+        }
     }
 
     if (uscore1 > 0 || uscore2 > 0) {
@@ -177,8 +184,9 @@ static void set_sourcepos_from_range(markdown_core_node *node, int source_start_
                                      markdown_core_chunk *source, size_t start, size_t len) {
     clear_sourcepos(node);
 
-    if (source_start_line == 0 || len == 0)
+    if (source_start_line == 0 || len == 0) {
         return;
+    }
 
     int line = source_start_line;
     int column = source_start_column;
@@ -219,24 +227,29 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
 
     size_t link_end;
 
-    if (max_rewind > 0 && strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1]))
+    if (max_rewind > 0 && strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
         return 0;
+    }
 
-    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0)
+    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
         return 0;
+    }
 
     link_end = check_domain(data, size, 0);
 
-    if (link_end == 0)
+    if (link_end == 0) {
         return NULL;
+    }
 
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<')
+    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
         link_end++;
+    }
 
     link_end = autolink_delim(data, link_end);
 
-    if (link_end == 0)
+    if (link_end == 0) {
         return NULL;
+    }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)(max_rewind + link_end));
 
@@ -251,8 +264,9 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     markdown_core_strbuf_puts(&buf, "http://");
     markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
     node->as.link.url = markdown_core_chunk_buf_detach(&buf);
-    if (!node->as.link.url.data)
+    if (!node->as.link.url.data) {
         parser->oom = true;
+    }
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
     if (!text) {
@@ -283,31 +297,37 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     size_t size = chunk->len - max_rewind;
     int start_column;
 
-    if (size < 4 || data[1] != '/' || data[2] != '/')
+    if (size < 4 || data[1] != '/' || data[2] != '/') {
         return 0;
+    }
 
-    while (rewind < max_rewind && markdown_core_isalpha(data[-rewind - 1]))
+    while (rewind < max_rewind && markdown_core_isalpha(data[-rewind - 1])) {
         rewind++;
+    }
     start_column = markdown_core_inline_parser_get_column(inline_parser) - rewind;
 
-    if (!sd_autolink_issafe(data - rewind, size + rewind))
+    if (!sd_autolink_issafe(data - rewind, size + rewind)) {
         return 0;
+    }
 
     link_end = strlen("://");
 
     domain_len = check_domain(data + link_end, size - link_end, 1);
 
-    if (domain_len == 0)
+    if (domain_len == 0) {
         return 0;
+    }
 
     link_end += domain_len;
-    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<')
+    while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
         link_end++;
+    }
 
     link_end = autolink_delim(data, link_end);
 
-    if (link_end == 0)
+    if (link_end == 0) {
         return NULL;
+    }
 
     markdown_core_inline_parser_set_offset(inline_parser, (int)(max_rewind + link_end));
     markdown_core_node_unput(parent, rewind);
@@ -339,18 +359,20 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *match(markdown_core_syntax_extension *ext, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char c,
-                                 markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *match(markdown_core_extension *ext, markdown_core_parser *parser, markdown_core_node *parent,
+                                 unsigned char c, markdown_core_inline_parser *inline_parser) {
     if (markdown_core_inline_parser_in_bracket(inline_parser, false) ||
-        markdown_core_inline_parser_in_bracket(inline_parser, true))
+        markdown_core_inline_parser_in_bracket(inline_parser, true)) {
         return NULL;
+    }
 
-    if (c == ':')
+    if (c == ':') {
         return url_match(parser, parent, inline_parser);
+    }
 
-    if (c == 'w')
+    if (c == 'w') {
         return www_match(parser, parent, inline_parser);
+    }
 
     return NULL;
 
@@ -408,12 +430,14 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         size_t max_rewind;
         size_t np = 0;
 
-        if (offset >= remaining)
+        if (offset >= remaining) {
             break;
+        }
 
         at = (uint8_t *)memchr(data + start + offset, '@', remaining - offset);
-        if (!at)
+        if (!at) {
             break;
+        }
 
         max_rewind = at - (data + start + offset);
 
@@ -421,11 +445,13 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         for (rewind = 0; rewind < max_rewind; ++rewind) {
             uint8_t c = data[start + offset + max_rewind - rewind - 1];
 
-            if (markdown_core_isalnum(c))
+            if (markdown_core_isalnum(c)) {
                 continue;
+            }
 
-            if (strchr(".+-_", c) != NULL)
+            if (strchr(".+-_", c) != NULL) {
                 continue;
+            }
 
             if (strchr(":", c) != NULL) {
                 if (validate_protocol("mailto:", data + start + offset + max_rewind, rewind, max_rewind)) {
@@ -452,8 +478,9 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         for (link_end = 1; link_end < remaining - offset - max_rewind; ++link_end) {
             uint8_t c = data[start + offset + max_rewind + link_end];
 
-            if (markdown_core_isalnum(c))
+            if (markdown_core_isalnum(c)) {
                 continue;
+            }
 
             if (c == '@') {
                 // Found another '@', so go back and try again with an updated offset and
@@ -462,12 +489,13 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
                 max_rewind = link_end - 1;
                 goto found_at;
             } else if (c == '.' && link_end < remaining - offset - max_rewind - 1 &&
-                       markdown_core_isalnum(data[start + offset + max_rewind + link_end + 1]))
+                       markdown_core_isalnum(data[start + offset + max_rewind + link_end + 1])) {
                 np++;
-            else if (c == '/' && is_xmpp)
+            } else if (c == '/' && is_xmpp) {
                 continue;
-            else if (c != '-' && c != '_')
+            } else if (c != '-' && c != '_') {
                 break;
+            }
         }
 
         if (link_end < 2 || np == 0 ||
@@ -497,12 +525,14 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         size_t post_len = remaining - offset - max_rewind - link_end;
         markdown_core_strbuf buf;
         markdown_core_strbuf_init(parser->mem, &buf, 10);
-        if (auto_mailto)
+        if (auto_mailto) {
             markdown_core_strbuf_puts(&buf, "mailto:");
+        }
         markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
         link_node->as.link.url = markdown_core_chunk_buf_detach(&buf);
-        if (!link_node->as.link.url.data)
+        if (!link_node->as.link.url.data) {
             parser->oom = true;
+        }
         set_sourcepos_from_range(link_node, source_start_line, source_start_column, &detached_chunk, link_start,
                                  link_len);
 
@@ -561,15 +591,16 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *postprocess(markdown_core_syntax_extension *ext, markdown_core_parser *parser,
+static markdown_core_node *postprocess(markdown_core_extension *ext, markdown_core_parser *parser,
                                        markdown_core_node *root) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
     markdown_core_node *node;
     bool in_link = false;
 
-    if (!markdown_core_consolidate_text_nodes(root))
+    if (!markdown_core_consolidate_text_nodes(root)) {
         parser->oom = true;
+    }
     iter = markdown_core_iter_new(root);
     if (!iter) {
         parser->oom = true;
@@ -600,17 +631,18 @@ static markdown_core_node *postprocess(markdown_core_syntax_extension *ext, mark
     return root;
 }
 
-markdown_core_syntax_extension *create_autolink_extension(void) {
-    markdown_core_syntax_extension *ext = markdown_core_syntax_extension_new("autolink");
-    markdown_core_llist *special_chars = NULL;
+static const unsigned char autolink_special_chars[] = {':', 'w'};
 
-    markdown_core_syntax_extension_set_match_inline_func(ext, match);
-    markdown_core_syntax_extension_set_postprocess_func(ext, postprocess);
+static const markdown_core_extension autolink_extension = {
+    .name = "autolink",
+    .match_inline = match,
+    .postprocess_func = postprocess,
+    .special_inline_chars = autolink_special_chars,
+    .special_inline_char_count = sizeof(autolink_special_chars),
+};
 
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)':');
-    special_chars = markdown_core_llist_append(mem, special_chars, (void *)'w');
-    markdown_core_syntax_extension_set_special_inline_chars(ext, special_chars);
-
-    return ext;
+markdown_core_extension *markdown_core_autolink_extension(void) {
+    // Immutable descriptor; the cast keeps the pre-existing pointer plumbing
+    // without permitting writes (see extension.h).
+    return (markdown_core_extension *)&autolink_extension;
 }

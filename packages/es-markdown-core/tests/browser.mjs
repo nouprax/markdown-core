@@ -42,8 +42,10 @@ const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body i
 </script>`;
 
 let reportBrowserResult;
+const requests = [];
 const server = createServer(async (request, response) => {
     try {
+        requests.push(request.url);
         if (request.url === "/") {
             response.setHeader("content-type", "text/html; charset=utf-8");
             response.end(html);
@@ -84,18 +86,27 @@ try {
         };
         reportBrowserResult = (status) => finish(resolve, status);
         child = spawn(chrome, [
-            "--headless",
+            "--headless=new",
             "--disable-gpu",
             "--no-sandbox",
             "--disable-dev-shm-usage",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--no-first-run",
             `http://127.0.0.1:${port}/`
         ]);
         child.stderr.setEncoding("utf8").on("data", (chunk) => {
             stderr += chunk;
         });
         const timeout = setTimeout(() => {
-            finish(reject, new Error(`Chrome browser test timed out\n${stderr}`));
-        }, 30_000);
+            finish(
+                reject,
+                new Error(
+                    `Chrome browser test timed out\nexecutable: ${chrome}\nrequests: ${requests.join(", ")}\n${stderr}`
+                )
+            );
+        }, 60_000);
         child.on("error", (error) => finish(reject, error));
         child.on("close", (status) => {
             finish(reject, new Error(stderr || `Chrome exited with ${status}`));

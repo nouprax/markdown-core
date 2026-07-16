@@ -83,10 +83,12 @@ static char *build_sample_block(const bench_options *options, size_t *length) {
 static char *repeat_block(const char *block, size_t block_length, size_t times, size_t *length) {
     char *buffer = (char *)malloc(block_length * times + 1);
     size_t i;
-    if (!buffer)
+    if (!buffer) {
         return NULL;
-    for (i = 0; i < times; i++)
+    }
+    for (i = 0; i < times; i++) {
         memcpy(buffer + i * block_length, block, block_length);
+    }
     buffer[block_length * times] = 0;
     *length = block_length * times;
     return buffer;
@@ -118,8 +120,9 @@ static int bench_measure(const char *name, const char *input, size_t length, con
     uint64_t elapsed;
     int i;
     int repeats = options->repeats;
-    if (repeats > BENCH_MAX_REPEATS)
+    if (repeats > BENCH_MAX_REPEATS) {
         repeats = BENCH_MAX_REPEATS;
+    }
     for (i = 0; i < options->warmup; i++) {
         if (bench_parse_once(input, length, &elapsed) != 0) {
             fprintf(stderr, "%s: parse failed\n", name);
@@ -192,12 +195,14 @@ static int workload_representative(const bench_options *options) {
         }
         input = repeat_block(sample, sample_length, 200, &input_length);
         free(sample);
-        if (!input)
+        if (!input) {
             return -1;
+        }
         result = bench_measure(BENCH_SAMPLES[i], input, input_length, options, &median_ms);
         free(input);
-        if (result != 0)
+        if (result != 0) {
             return -1;
+        }
     }
     return 0;
 }
@@ -205,8 +210,9 @@ static int workload_representative(const bench_options *options) {
 static long peak_rss_kib(void) {
 #ifndef _WIN32
     struct rusage usage;
-    if (getrusage(RUSAGE_SELF, &usage) != 0)
+    if (getrusage(RUSAGE_SELF, &usage) != 0) {
         return -1;
+    }
 #ifdef __APPLE__
     return usage.ru_maxrss / 1024;
 #else
@@ -223,14 +229,16 @@ static int workload_binding_baseline(const bench_options *options) {
     char *input = repeat_block(unit, sizeof(unit) - 1, 2000, &length);
     double median_ms = 0.0;
     int result;
-    if (!input)
+    if (!input) {
         return -1;
+    }
     result = bench_measure("binding_baseline", input, length, options, &median_ms);
     free(input);
-    if (result == 0)
+    if (result == 0) {
         printf("baseline runtime=c boundary=native_parse workload=representative_large"
                " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
                length, options->warmup, options->repeats, median_ms * 1e6, peak_rss_kib());
+    }
     return result;
 }
 
@@ -238,8 +246,9 @@ static char *build_large_document(const bench_options *options, size_t scale, si
     size_t block_length = 0;
     char *block = build_sample_block(options, &block_length);
     char *input;
-    if (!block)
+    if (!block) {
         return NULL;
+    }
     input = repeat_block(block, block_length, scale, length);
     free(block);
     return input;
@@ -256,8 +265,9 @@ static char *build_deep_nesting(const bench_options *options, size_t scale, size
     (void)options;
     char *quotes = ts_repeat("> ", scale, length);
     char *input;
-    if (!quotes)
+    if (!quotes) {
         return NULL;
+    }
     input = (char *)malloc(*length + 2);
     if (!input) {
         free(quotes);
@@ -280,8 +290,9 @@ static char *build_extension_document(const bench_options *options, size_t scale
     size_t sample_length = 0;
     char *sample = load_sample(options, "directive.md", &sample_length);
     char *input;
-    if (!sample)
+    if (!sample) {
         return NULL;
+    }
     input = repeat_block(sample, sample_length, scale, length);
     free(sample);
     return input;
@@ -304,8 +315,9 @@ static char *build_adversarial_emphasis(const bench_options *options, size_t sca
 
 static int workload_adversarial(const bench_options *options) {
     static const size_t scales[] = {16384, 32768, 65536};
-    if (bench_doubling("adversarial_links", options, build_adversarial_links, scales, 3) != 0)
+    if (bench_doubling("adversarial_links", options, build_adversarial_links, scales, 3) != 0) {
         return -1;
+    }
     return bench_doubling("adversarial_emphasis", options, build_adversarial_emphasis, scales, 3);
 }
 
@@ -334,17 +346,17 @@ int main(int argc, char **argv) {
     options.warmup = BENCH_DEFAULT_WARMUP;
 
     for (i = 1; i < (size_t)argc; i++) {
-        if (strcmp(argv[i], "--list") == 0)
+        if (strcmp(argv[i], "--list") == 0) {
             list_only = 1;
-        else if (strcmp(argv[i], "--workload") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--workload") == 0 && i + 1 < (size_t)argc) {
             workload_name = argv[++i];
-        else if (strcmp(argv[i], "--samples") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--samples") == 0 && i + 1 < (size_t)argc) {
             options.samples_dir = argv[++i];
-        else if (strcmp(argv[i], "--repeats") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--repeats") == 0 && i + 1 < (size_t)argc) {
             options.repeats = atoi(argv[++i]);
-        else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc) {
             options.warmup = atoi(argv[++i]);
-        else {
+        } else {
             fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
                   " [--repeats N] [--warmup N]\n",
                   stderr);
@@ -353,8 +365,9 @@ int main(int argc, char **argv) {
     }
 
     if (list_only) {
-        for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++)
+        for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {
             puts(WORKLOADS[i].name);
+        }
         return 0;
     }
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
@@ -364,8 +377,9 @@ int main(int argc, char **argv) {
         return 2;
     }
     for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {
-        if (strcmp(WORKLOADS[i].name, workload_name) == 0)
+        if (strcmp(WORKLOADS[i].name, workload_name) == 0) {
             return WORKLOADS[i].run(&options) == 0 ? 0 : 1;
+        }
     }
     fprintf(stderr, "unknown workload: %s\n", workload_name);
     return 2;

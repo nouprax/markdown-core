@@ -15,8 +15,9 @@ uint8_t *ts_read_file(const char *path, size_t *length) {
     FILE *file = fopen(path, "rb");
     long size;
     uint8_t *bytes;
-    if (!file)
+    if (!file) {
         return NULL;
+    }
     if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) < 0 || fseek(file, 0, SEEK_SET) != 0) {
         fclose(file);
         return NULL;
@@ -48,11 +49,13 @@ static int ts_buffer_append(ts_buffer *buffer, const char *text, size_t length) 
     if (buffer->length + length + 1 > buffer->capacity) {
         size_t capacity = buffer->capacity ? buffer->capacity : 256;
         char *grown;
-        while (capacity < buffer->length + length + 1)
+        while (capacity < buffer->length + length + 1) {
             capacity *= 2;
+        }
         grown = (char *)realloc(buffer->data, capacity);
-        if (!grown)
+        if (!grown) {
             return -1;
+        }
         buffer->data = grown;
         buffer->capacity = capacity;
     }
@@ -69,19 +72,23 @@ static char *ts_replace_arrows(const char *text, size_t length, size_t *out_leng
     while (i < length) {
         if (i + 2 < length && (unsigned char)text[i] == 0xE2 && (unsigned char)text[i + 1] == 0x86 &&
             (unsigned char)text[i + 2] == 0x92) {
-            if (ts_buffer_append(&buffer, "\t", 1) != 0)
+            if (ts_buffer_append(&buffer, "\t", 1) != 0) {
                 goto fail;
+            }
             i += 3;
         } else {
-            if (ts_buffer_append(&buffer, text + i, 1) != 0)
+            if (ts_buffer_append(&buffer, text + i, 1) != 0) {
                 goto fail;
+            }
             i += 1;
         }
     }
-    if (!buffer.data && ts_buffer_append(&buffer, "", 0) != 0)
+    if (!buffer.data && ts_buffer_append(&buffer, "", 0) != 0) {
         goto fail;
-    if (out_length)
+    }
+    if (out_length) {
         *out_length = buffer.length;
+    }
     return buffer.data;
 fail:
     free(buffer.data);
@@ -94,11 +101,13 @@ static const char TS_EXAMPLE_FENCE[] = "````````````````````````````````"; /* 32
 
 static int ts_case_push_extension(ts_spec_case *test_case, const char *name, size_t length) {
     char *copy;
-    if (test_case->extension_count >= TS_MAX_EXTENSIONS)
+    if (test_case->extension_count >= TS_MAX_EXTENSIONS) {
         return -1;
+    }
     copy = (char *)malloc(length + 1);
-    if (!copy)
+    if (!copy) {
         return -1;
+    }
     memcpy(copy, name, length);
     copy[length] = 0;
     test_case->extensions[test_case->extension_count++] = copy;
@@ -110,8 +119,9 @@ static void ts_case_free(ts_spec_case *test_case) {
     free(test_case->markdown);
     free(test_case->expected);
     free(test_case->section);
-    for (i = 0; i < test_case->extension_count; i++)
+    for (i = 0; i < test_case->extension_count; i++) {
         free(test_case->extensions[i]);
+    }
 }
 
 int ts_spec_load(const char *path, ts_spec_file *out) {
@@ -133,23 +143,27 @@ int ts_spec_load(const char *path, ts_spec_file *out) {
     memset(&pending, 0, sizeof(pending));
     out->cases = NULL;
     out->count = 0;
-    if (!bytes)
+    if (!bytes) {
         return -1;
+    }
 
     while (line_start <= length) {
         size_t line_end = line_start;
         size_t content_end;
         const char *line = text + line_start;
         size_t line_length;
-        while (line_end < length && text[line_end] != '\n')
+        while (line_end < length && text[line_end] != '\n') {
             line_end++;
-        if (line_start == length && line_end == length && line_start != 0 && text[line_start - 1] == '\n')
+        }
+        if (line_start == length && line_end == length && line_start != 0 && text[line_start - 1] == '\n') {
             break;
+        }
         line_number++;
         content_end = line_end;
         while (content_end > line_start &&
-               (text[content_end - 1] == '\r' || text[content_end - 1] == ' ' || text[content_end - 1] == '\t'))
+               (text[content_end - 1] == '\r' || text[content_end - 1] == ' ' || text[content_end - 1] == '\t')) {
             content_end--;
+        }
         line_length = content_end - line_start;
 
         if (line_length >= 40 && strncmp(line, TS_EXAMPLE_FENCE, 32) == 0 && strncmp(line + 32, " example", 8) == 0) {
@@ -162,16 +176,19 @@ int ts_spec_load(const char *path, ts_spec_file *out) {
             memset(&pending, 0, sizeof(pending));
             while (cursor < end) {
                 const char *word_start;
-                while (cursor < end && *cursor == ' ')
+                while (cursor < end && *cursor == ' ') {
                     cursor++;
+                }
                 word_start = cursor;
-                while (cursor < end && *cursor != ' ')
+                while (cursor < end && *cursor != ' ') {
                     cursor++;
+                }
                 if (cursor > word_start) {
-                    if (cursor - word_start == 8 && strncmp(word_start, "disabled", 8) == 0)
+                    if (cursor - word_start == 8 && strncmp(word_start, "disabled", 8) == 0) {
                         disabled = 1;
-                    else if (ts_case_push_extension(&pending, word_start, (size_t)(cursor - word_start)) != 0)
+                    } else if (ts_case_push_extension(&pending, word_start, (size_t)(cursor - word_start)) != 0) {
                         goto fail;
+                    }
                 }
             }
         } else if (line_length == 32 && strncmp(line, TS_EXAMPLE_FENCE, 32) == 0 && state != 0) {
@@ -211,41 +228,49 @@ int ts_spec_load(const char *path, ts_spec_file *out) {
                 memset(&pending, 0, sizeof(pending));
             }
             markdown.length = 0;
-            if (markdown.data)
+            if (markdown.data) {
                 markdown.data[0] = 0;
+            }
             expected.length = 0;
-            if (expected.data)
+            if (expected.data) {
                 expected.data[0] = 0;
+            }
             state = 0;
         } else if (state != 0 && line_length == 1 && line[0] == '.') {
             state = 2;
         } else if (state == 1) {
             if (ts_buffer_append(&markdown, line, line_end - line_start) != 0 ||
-                ts_buffer_append(&markdown, "\n", 1) != 0)
+                ts_buffer_append(&markdown, "\n", 1) != 0) {
                 goto fail;
+            }
         } else if (state == 2) {
             if (ts_buffer_append(&expected, line, line_end - line_start) != 0 ||
-                ts_buffer_append(&expected, "\n", 1) != 0)
+                ts_buffer_append(&expected, "\n", 1) != 0) {
                 goto fail;
+            }
         } else if (state == 0 && line_length > 0 && line[0] == '#') {
             const char *cursor = line;
             const char *end = line + line_length;
             size_t copy_length;
-            while (cursor < end && *cursor == '#')
+            while (cursor < end && *cursor == '#') {
                 cursor++;
+            }
             if (cursor < end && *cursor == ' ') {
-                while (cursor < end && *cursor == ' ')
+                while (cursor < end && *cursor == ' ') {
                     cursor++;
+                }
                 copy_length = (size_t)(end - cursor);
-                if (copy_length >= sizeof(section))
+                if (copy_length >= sizeof(section)) {
                     copy_length = sizeof(section) - 1;
+                }
                 memcpy(section, cursor, copy_length);
                 section[copy_length] = 0;
             }
         }
 
-        if (line_end >= length)
+        if (line_end >= length) {
             break;
+        }
         line_start = line_end + 1;
     }
 
@@ -266,8 +291,9 @@ fail:
 
 void ts_spec_free(ts_spec_file *file) {
     size_t i;
-    for (i = 0; i < file->count; i++)
+    for (i = 0; i < file->count; i++) {
         ts_case_free(&file->cases[i]);
+    }
     free(file->cases);
     file->cases = NULL;
     file->count = 0;
@@ -278,30 +304,31 @@ void ts_spec_free(ts_spec_file *file) {
 void ts_ast_options_none(markdown_core_parse_options *options) { memset(options, 0, sizeof(*options)); }
 
 int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
-    if (strcmp(name, "smart") == 0)
+    if (strcmp(name, "smart") == 0) {
         options->smart_punctuation = true;
-    else if (strcmp(name, "footnotes") == 0)
+    } else if (strcmp(name, "footnotes") == 0) {
         options->footnotes = true;
-    else if (strcmp(name, "strip-html-comments") == 0)
+    } else if (strcmp(name, "strip-html-comments") == 0) {
         options->strip_html_comments = true;
-    else if (strcmp(name, "table") == 0 || strcmp(name, "tables") == 0)
+    } else if (strcmp(name, "table") == 0 || strcmp(name, "tables") == 0) {
         options->tables = true;
-    else if (strcmp(name, "strikethrough") == 0)
+    } else if (strcmp(name, "strikethrough") == 0) {
         options->strikethrough = true;
-    else if (strcmp(name, "autolink") == 0 || strcmp(name, "autolinks") == 0)
+    } else if (strcmp(name, "autolink") == 0 || strcmp(name, "autolinks") == 0) {
         options->autolinks = true;
-    else if (strcmp(name, "tasklist") == 0 || strcmp(name, "task-lists") == 0)
+    } else if (strcmp(name, "tasklist") == 0 || strcmp(name, "task-lists") == 0) {
         options->task_lists = true;
-    else if (strcmp(name, "formula") == 0 || strcmp(name, "formulas") == 0)
+    } else if (strcmp(name, "formula") == 0 || strcmp(name, "formulas") == 0) {
         options->formulas = true;
-    else if (strcmp(name, "dollar-formula-delimiters") == 0)
+    } else if (strcmp(name, "dollar-formula-delimiters") == 0) {
         options->dollar_formula_delimiters = true;
-    else if (strcmp(name, "latex-formula-delimiters") == 0)
+    } else if (strcmp(name, "latex-formula-delimiters") == 0) {
         options->latex_formula_delimiters = true;
-    else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0)
+    } else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0) {
         options->directives = true;
-    else
+    } else {
         return -1;
+    }
     return 0;
 }
 
@@ -312,8 +339,9 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const 
         markdown_core_string_view message =
             error ? markdown_core_error_get_message(error) : (markdown_core_string_view){NULL, 0};
         fprintf(stderr, "facade parse failed: ");
-        if (message.data)
+        if (message.data) {
             fwrite(message.data, 1, message.length, stderr);
+        }
         fputc('\n', stderr);
         markdown_core_error_free(error);
         return NULL;
@@ -329,19 +357,22 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
     size_t capacity = 256;
     int result = 0;
 
-    if (!root)
+    if (!root) {
         return 0;
+    }
     stack = (const markdown_core_node **)malloc(capacity * sizeof(*stack));
-    if (!stack)
+    if (!stack) {
         return -1;
+    }
     stack[depth++] = root;
     while (depth > 0) {
         const markdown_core_node *node = stack[--depth];
         const markdown_core_node *sibling = markdown_core_node_get_next_sibling(node);
         const markdown_core_node *child = markdown_core_node_get_first_child(node);
         result = visit(node, context);
-        if (result != 0)
+        if (result != 0) {
             break;
+        }
         if (depth + 2 > capacity) {
             const markdown_core_node **grown;
             capacity *= 2;
@@ -353,10 +384,12 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
             stack = grown;
         }
         /* Push the sibling first so the child is visited before it. */
-        if (sibling)
+        if (sibling) {
             stack[depth++] = sibling;
-        if (child)
+        }
+        if (child) {
             stack[depth++] = child;
+        }
     }
     free((void *)stack);
     return result;
@@ -365,8 +398,9 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
 static int ts_count_visit(const markdown_core_node *node, void *context) {
     size_t *counts = (size_t *)context;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    if ((size_t)kind < TS_KIND_COUNT)
+    if ((size_t)kind < TS_KIND_COUNT) {
         counts[kind]++;
+    }
     return 0;
 }
 
@@ -380,8 +414,9 @@ static int ts_concat_visit(const markdown_core_node *node, void *context) {
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
         markdown_core_string_view literal;
         if (markdown_core_node_literal(node, &literal) && literal.data) {
-            if (ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0)
+            if (ts_buffer_append(buffer, (const char *)literal.data, literal.length) != 0) {
                 return -1;
+            }
         }
     }
     return 0;
@@ -389,14 +424,16 @@ static int ts_concat_visit(const markdown_core_node *node, void *context) {
 
 char *ts_ast_concat_text(const markdown_core_node *root, size_t *length) {
     ts_buffer buffer = {NULL, 0, 0};
-    if (ts_buffer_append(&buffer, "", 0) != 0)
+    if (ts_buffer_append(&buffer, "", 0) != 0) {
         return NULL;
+    }
     if (ts_ast_walk(root, ts_concat_visit, &buffer) != 0) {
         free(buffer.data);
         return NULL;
     }
-    if (length)
+    if (length) {
         *length = buffer.length;
+    }
     return buffer.data;
 }
 
@@ -424,8 +461,9 @@ void ts_print_line_diff(FILE *stream, const char *expected, const char *actual) 
             ts_print_annotated_line(stream, "  actual:   ", actual_cursor, actual_length);
             return;
         }
-        if (!expected_end && !actual_end)
+        if (!expected_end && !actual_end) {
             break;
+        }
         expected_cursor = expected_end ? expected_end + 1 : expected_cursor + expected_length;
         actual_cursor = actual_end ? actual_end + 1 : actual_cursor + actual_length;
         line++;
@@ -451,13 +489,16 @@ char *ts_repeat(const char *unit, size_t count, size_t *length) {
     size_t total = unit_length * count;
     char *buffer = (char *)malloc(total + 1);
     size_t i;
-    if (!buffer)
+    if (!buffer) {
         return NULL;
-    for (i = 0; i < count; i++)
+    }
+    for (i = 0; i < count; i++) {
         memcpy(buffer + i * unit_length, unit, unit_length);
+    }
     buffer[total] = 0;
-    if (length)
+    if (length) {
         *length = total;
+    }
     return buffer;
 }
 
@@ -465,8 +506,9 @@ uint64_t ts_monotonic_ns(void) {
 #if defined(_WIN32)
     static LARGE_INTEGER frequency;
     LARGE_INTEGER counter;
-    if (frequency.QuadPart == 0)
+    if (frequency.QuadPart == 0) {
         QueryPerformanceFrequency(&frequency);
+    }
     QueryPerformanceCounter(&counter);
     return (uint64_t)((counter.QuadPart * 1000000000.0) / frequency.QuadPart);
 #else

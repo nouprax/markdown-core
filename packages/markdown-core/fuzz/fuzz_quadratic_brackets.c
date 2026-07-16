@@ -15,10 +15,7 @@ const char *extension_names[] = {
     NULL,
 };
 
-int LLVMFuzzerInitialize(int *argc, char ***argv) {
-    markdown_core_core_extensions_ensure_registered();
-    return 0;
-}
+int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
@@ -84,12 +81,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             for (const char **it = extension_names; *it; ++it) {
                 const char *extension_name = *it;
-                markdown_core_syntax_extension *syntax_extension = markdown_core_find_syntax_extension(extension_name);
-                if (!syntax_extension) {
+                markdown_core_extension *extension = markdown_core_find_extension(extension_name);
+                if (!extension) {
                     fprintf(stderr, "%s is not a valid syntax extension\n", extension_name);
                     abort();
                 }
-                markdown_core_parser_attach_syntax_extension(parser, syntax_extension);
+                markdown_core_parser_attach_extension(parser, extension);
             }
 
             markdown_core_parser_feed(parser, markdown, markdown_size);

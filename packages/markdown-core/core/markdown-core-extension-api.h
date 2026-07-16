@@ -35,27 +35,24 @@ struct markdown_core_chunk;
  * desirable.
  */
 
-typedef struct markdown_core_plugin markdown_core_plugin;
-
 /** A syntax extension that can be attached to a markdown_core_parser
- * with markdown_core_parser_attach_syntax_extension().
+ * with markdown_core_parser_attach_extension().
  *
- * Extension writers should assign functions matching
- * the signature of the following 'virtual methods' to
- * implement new functionality.
+ * An extension is an immutable compile-time descriptor whose fields are
+ * functions matching the signature of the following 'virtual methods'.
  *
  * Their calling order and expected behaviour match the procedure outlined
  * at <http://spec.commonmark.org/0.24/#phase-1-block-structure>:
  *
- * During step 1, markdown_core will call the function provided through
- * 'markdown_core_syntax_extension_set_match_block_func' when it
+ * During step 1, markdown_core will call the descriptor's
+ * 'last_block_matches' function when it
  * iterates over an open block created by this extension,
  * to determine  whether it could contain the new line.
  * If no function was provided, markdown_core will close the block.
  *
  * During step 2, if and only if the new line doesn't match any
- * of the standard syntax rules, markdown_core will call the function
- * provided through 'markdown_core_syntax_extension_set_open_block_func'
+ * of the standard syntax rules, markdown_core will call the descriptor's
+ * 'try_opening_block' function
  * to let the extension determine whether that new line matches
  * one of its syntax rules.
  * It is the responsibility of the parser to create and add the
@@ -65,10 +62,10 @@ typedef struct markdown_core_plugin markdown_core_plugin;
  *
  * #### Inline parsing phase hooks
  *
- * For each character provided by the extension through
- * 'markdown_core_syntax_extension_set_special_inline_chars',
- * the function provided by the extension through
- * 'markdown_core_syntax_extension_set_match_inline_func'
+ * For each character listed in the descriptor's
+ * 'special_inline_chars' array,
+ * the descriptor's
+ * 'match_inline' function
  * will get called, it is the responsibility of the extension
  * to scan the characters located at the current inline parsing offset
  * with the markdown_core_inline_parser API.
@@ -87,8 +84,8 @@ typedef struct markdown_core_plugin markdown_core_plugin;
  *   inlines were implemented as an extension.
  *
  * When an extension has pushed delimiters on the stack,
- * the function provided through
- * 'markdown_core_syntax_extension_set_inline_from_delim_func'
+ * the descriptor's
+ * 'insert_inline_from_delim' function
  * will get called in a latter phase,
  * when the inline parser has matched opener and closer delimiters
  * created by the extension together.
@@ -100,9 +97,6 @@ typedef struct markdown_core_plugin markdown_core_plugin;
  * Finally, the extension should return NULL if its scan didn't
  * match its syntax rules.
  *
- * The extension can store whatever private data it might need
- * with 'markdown_core_syntax_extension_set_private',
- * and optionally define a free function for this data.
  */
 typedef struct subject markdown_core_inline_parser;
 
@@ -119,66 +113,20 @@ typedef struct delimiter {
     int can_close;
 } delimiter;
 
-/**
- * ### Plugin API.
- *
- * Extensions should be distributed as dynamic libraries,
- * with a single exported function named after the distributed
- * filename.
- *
- * When discovering extensions (see markdown_core_init), markdown_core will
- * try to load a symbol named "init_{{filename}}" in all the
- * dynamic libraries it encounters.
- *
- * For example, given a dynamic library named myextension.so
- * (or myextension.dll), markdown_core will try to load the symbol
- * named "init_myextension". This means that the filename
- * must lend itself to forming a valid C identifier, with
- * the notable exception of dashes, which will be translated
- * to underscores, which means markdown_core will look for a function
- * named "init_my_extension" if it encounters a dynamic library
- * named "my-extension.so".
- *
- * See the 'markdown_core_plugin_init_func' typedef for the exact prototype
- * this function should follow.
- *
- * For now the extensibility of markdown_core is not complete, as
- * it only offers API to hook into the block parsing phase
- * (<http://spec.commonmark.org/0.24/#phase-1-block-structure>).
- *
- * See 'markdown_core_plugin_register_syntax_extension' for more information.
- */
-
-/** The prototype plugins' init function should follow.
- */
-typedef int (*markdown_core_plugin_init_func)(markdown_core_plugin *plugin);
-
-/** Register a syntax 'extension' with the 'plugin', it will be made
- * available as an extension and, if attached to a markdown_core_parser
- * with 'markdown_core_parser_attach_syntax_extension', it will contribute
- * to the block parsing process.
- *
- * See the documentation for 'markdown_core_syntax_extension' for information
- * on how to implement one.
- *
- * This function will typically be called from the init function
- * of external modules.
- *
- * This takes ownership of 'extension', one should not call
- * 'markdown_core_syntax_extension_free' on a registered extension.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_plugin_register_syntax_extension(markdown_core_plugin *plugin,
-                                                   markdown_core_syntax_extension *extension);
-
 /** This will search for the syntax extension named 'name' among the
- *  registered syntax extensions.
+ *  bundled syntax extensions (immutable compile-time descriptors; there is
+ *  no runtime registration).
  *
  *  It can then be attached to a markdown_core_parser
- *  with the markdown_core_parser_attach_syntax_extension method.
+ *  with the markdown_core_parser_attach_extension method.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_syntax_extension *markdown_core_find_syntax_extension(const char *name);
+markdown_core_extension *markdown_core_find_extension(const char *name);
+
+/** Returns a caller-owned list of the bundled syntax extensions.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_llist *markdown_core_list_extensions(markdown_core_mem *mem);
 
 /** Should create and add a new open block to 'parent_container' if
  * 'input' matches a syntax rule for that block type. It is allowed
@@ -187,17 +135,17 @@ markdown_core_syntax_extension *markdown_core_find_syntax_extension(const char *
  * Should return the newly created block if there is one, or
  * 'parent_container' if its type was modified, or NULL.
  */
-typedef markdown_core_node *(*markdown_core_open_block_func)(markdown_core_syntax_extension *extension, int indented,
+typedef markdown_core_node *(*markdown_core_open_block_func)(markdown_core_extension *extension, int indented,
                                                              markdown_core_parser *parser,
                                                              markdown_core_node *parent_container, unsigned char *input,
                                                              int len);
 
-typedef markdown_core_node *(*markdown_core_match_inline_func)(markdown_core_syntax_extension *extension,
+typedef markdown_core_node *(*markdown_core_match_inline_func)(markdown_core_extension *extension,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                unsigned char character,
                                                                markdown_core_inline_parser *inline_parser);
 
-typedef delimiter *(*markdown_core_inline_from_delim_func)(markdown_core_syntax_extension *extension,
+typedef delimiter *(*markdown_core_inline_from_delim_func)(markdown_core_extension *extension,
                                                            markdown_core_parser *parser,
                                                            markdown_core_inline_parser *inline_parser,
                                                            delimiter *opener, delimiter *closer);
@@ -205,130 +153,30 @@ typedef delimiter *(*markdown_core_inline_from_delim_func)(markdown_core_syntax_
 /** Should return 'true' if 'input' can be contained in 'container',
  *  'false' otherwise.
  */
-typedef int (*markdown_core_match_block_func)(markdown_core_syntax_extension *extension, markdown_core_parser *parser,
+typedef int (*markdown_core_match_block_func)(markdown_core_extension *extension, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);
 
-typedef const char *(*markdown_core_get_type_string_func)(markdown_core_syntax_extension *extension,
-                                                          markdown_core_node *node);
+typedef const char *(*markdown_core_get_type_string_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-typedef int (*markdown_core_can_contain_func)(markdown_core_syntax_extension *extension, markdown_core_node *node,
+typedef int (*markdown_core_can_contain_func)(markdown_core_extension *extension, markdown_core_node *node,
                                               markdown_core_node_type child);
 
-typedef int (*markdown_core_contains_inlines_func)(markdown_core_syntax_extension *extension, markdown_core_node *node);
+typedef int (*markdown_core_contains_inlines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-typedef int (*markdown_core_accepts_lines_func)(markdown_core_syntax_extension *extension, markdown_core_node *node);
+typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-typedef markdown_core_node *(*markdown_core_postprocess_func)(markdown_core_syntax_extension *extension,
+typedef markdown_core_node *(*markdown_core_postprocess_func)(markdown_core_extension *extension,
                                                               markdown_core_parser *parser, markdown_core_node *root);
 
 typedef int (*markdown_core_ispunct_func)(char c);
 
-typedef void (*markdown_core_opaque_alloc_func)(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+typedef void (*markdown_core_opaque_alloc_func)(markdown_core_extension *extension, markdown_core_mem *mem,
                                                 markdown_core_node *node);
 
-typedef void (*markdown_core_opaque_free_func)(markdown_core_syntax_extension *extension, markdown_core_mem *mem,
+typedef void (*markdown_core_opaque_free_func)(markdown_core_extension *extension, markdown_core_mem *mem,
                                                markdown_core_node *node);
 
-/** Free a markdown_core_syntax_extension.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_free(markdown_core_mem *mem, markdown_core_syntax_extension *extension);
-
-/** Return a newly-constructed markdown_core_syntax_extension, named 'name'.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_syntax_extension *markdown_core_syntax_extension_new(const char *name);
-
-MARKDOWN_CORE_EXPORT
-markdown_core_node_type markdown_core_syntax_extension_add_node(int is_inline);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_emphasis(markdown_core_syntax_extension *extension, int emphasis);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_open_block_func(markdown_core_syntax_extension *extension,
-                                                        markdown_core_open_block_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_match_block_func(markdown_core_syntax_extension *extension,
-                                                         markdown_core_match_block_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_match_inline_func(markdown_core_syntax_extension *extension,
-                                                          markdown_core_match_inline_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_inline_from_delim_func(markdown_core_syntax_extension *extension,
-                                                               markdown_core_inline_from_delim_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_special_inline_chars(markdown_core_syntax_extension *extension,
-                                                             markdown_core_llist *special_chars);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_get_type_string_func(markdown_core_syntax_extension *extension,
-                                                             markdown_core_get_type_string_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_can_contain_func(markdown_core_syntax_extension *extension,
-                                                         markdown_core_can_contain_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_contains_inlines_func(markdown_core_syntax_extension *extension,
-                                                              markdown_core_contains_inlines_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_accepts_lines_func(markdown_core_syntax_extension *extension,
-                                                           markdown_core_accepts_lines_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_private(markdown_core_syntax_extension *extension, void *priv,
-                                                markdown_core_free_func free_func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void *markdown_core_syntax_extension_get_private(markdown_core_syntax_extension *extension);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_postprocess_func(markdown_core_syntax_extension *extension,
-                                                         markdown_core_postprocess_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_opaque_alloc_func(markdown_core_syntax_extension *extension,
-                                                          markdown_core_opaque_alloc_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_syntax_extension_set_opaque_free_func(markdown_core_syntax_extension *extension,
-                                                         markdown_core_opaque_free_func func);
-
-/** See the documentation for 'markdown_core_syntax_extension'
+/** See the documentation for 'markdown_core_extension'
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func);
@@ -487,14 +335,13 @@ void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const cha
 
 /** Attach the syntax 'extension' to the 'parser', to provide extra syntax
  *  rules.
- *  See the documentation for markdown_core_syntax_extension for more information.
+ *  See the documentation for markdown_core_extension for more information.
  *
  *  Returns 'true' if the 'extension' was successfully attached,
  *  'false' otherwise.
  */
 MARKDOWN_CORE_EXPORT
-int markdown_core_parser_attach_syntax_extension(markdown_core_parser *parser,
-                                                 markdown_core_syntax_extension *extension);
+int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown_core_extension *extension);
 
 /** Change the type of 'node'.
  *
@@ -515,12 +362,11 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_string_content(markdown_core_nod
 /** Get the syntax extension responsible for the creation of 'node'.
  *  Return NULL if 'node' was created because it matched standard syntax rules.
  */
-MARKDOWN_CORE_EXPORT markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node);
+MARKDOWN_CORE_EXPORT markdown_core_extension *markdown_core_node_get_extension(markdown_core_node *node);
 
 /** Set the syntax extension responsible for creating 'node'.
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_syntax_extension(markdown_core_node *node,
-                                                                 markdown_core_syntax_extension *extension);
+MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *node, markdown_core_extension *extension);
 
 /**
  * ## Inline syntax extension helpers
@@ -630,13 +476,7 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add);
 
 MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_parser_get_syntax_extensions(markdown_core_parser *parser);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_arena_push(void);
-
-MARKDOWN_CORE_EXPORT
-int markdown_core_arena_pop(void);
+markdown_core_llist *markdown_core_parser_get_extensions(markdown_core_parser *parser);
 
 #ifdef __cplusplus
 }

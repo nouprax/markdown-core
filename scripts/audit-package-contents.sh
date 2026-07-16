@@ -13,7 +13,7 @@ if grep -R -I -n -E "$legacy_ms_pattern" \
     exit 1
 fi
 
-renderer_api_pattern='markdown_core_(markdown_to_html|render_)|markdown_core_syntax_extension_set_(commonmark_render|plaintext_render|latex_render|xml_attr|man_render|html_render|html_filter|commonmark_escape)'
+renderer_api_pattern='markdown_core_(markdown_to_html|render_)|markdown_core_(syntax_)?extension_set_(commonmark_render|plaintext_render|latex_render|xml_attr|man_render|html_render|html_filter|commonmark_escape)'
 if grep -R -I -n -E "$renderer_api_pattern" \
     packages/markdown-core/core packages/markdown-core/extensions \
     packages/markdown-core/include Package.swift Makefile scripts; then
@@ -219,6 +219,8 @@ for prefix in "$temp_dir/cmake-prefix" "$temp_dir/cmake-prefix-static"; do
     fi
 done
 
+# pkg-config intentionally returns separate compiler/linker arguments.
+# shellcheck disable=SC2046
 PKG_CONFIG_PATH="$temp_dir/cmake-prefix/lib/pkgconfig" \
     cc packages/markdown-core/tests/consumers/c/main.c \
     -o "$temp_dir/pkg-config-consumer-shared" \
@@ -228,6 +230,8 @@ DYLD_LIBRARY_PATH="$temp_dir/cmake-prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY
     LD_LIBRARY_PATH="$temp_dir/cmake-prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
     "$temp_dir/pkg-config-consumer-shared"
 
+# pkg-config intentionally returns separate compiler/linker arguments.
+# shellcheck disable=SC2046
 PKG_CONFIG_PATH="$temp_dir/cmake-prefix-static/lib/pkgconfig" \
     cc packages/markdown-core/tests/consumers/c/main.c \
     -o "$temp_dir/pkg-config-consumer-static" \
@@ -286,6 +290,56 @@ if ! cmp "$temp_dir/c-expected-exports.txt" "$temp_dir/c-actual-exports.txt"; th
     diff -u "$temp_dir/c-expected-exports.txt" "$temp_dir/c-actual-exports.txt" >&2 || true
     exit 1
 fi
+
+# The engine holds no process-level mutable state by contract: every object
+# in the installed static archives must be free of writable data/bss/common/
+# TLS definitions. Classification prefers the SysV section column: ELF const
+# data that contains relocations (function-pointer tables, string-pointer
+# arrays) is emitted into .data.rel.ro, which the loader write-protects
+# right after relocation — immutable by contract and therefore allowed.
+# Mach-O nm leaves the SysV section column empty, but its class letters
+# already separate const data ('s'/'S') from writable data, so the letters
+# decide there; the plain-format letter scan remains as the fallback for nm
+# implementations without SysV support.
+find "$temp_dir/cmake-prefix-static/lib" -type f -name '*.a' >"$temp_dir/c-static-archives.txt"
+if ! [ -s "$temp_dir/c-static-archives.txt" ]; then
+    echo "Installed C static archives were not found for the global-state audit" >&2
+    exit 1
+fi
+while IFS= read -r archive; do
+    sysv_output=$("$nm_tool" --format=sysv "$archive" 2>/dev/null || true)
+    case "$sysv_output" in
+    *'|'*)
+        writable_symbols=$(printf '%s\n' "$sysv_output" | awk -F'|' '
+            NF >= 6 {
+                name = $1
+                gsub(/^[ \t]+|[ \t]+$/, "", name)
+                class = $3
+                gsub(/^[ \t]+|[ \t]+$/, "", class)
+                section = (NF >= 7) ? $7 : ""
+                gsub(/^[ \t]+|[ \t]+$/, "", section)
+                if (name == "")
+                    next
+                if (section != "") {
+                    if (section ~ /^\.data\.rel\.ro/)
+                        next
+                    if (section ~ /^(\.data|\.bss|\.tdata|\.tbss)/ || section ~ /COM/)
+                        print name " [" section "]"
+                } else if (class ~ /^[dDbBC]$/) {
+                    print name " [" class "]"
+                }
+            }' | sort -u)
+        ;;
+    *)
+        writable_symbols=$("$nm_tool" "$archive" 2>/dev/null | awk '$2 ~ /^[dDbBC]$/ { print $NF }' | sort -u)
+        ;;
+    esac
+    if [ -n "$writable_symbols" ]; then
+        echo "Writable global state found in $archive:" >&2
+        echo "$writable_symbols" >&2
+        exit 1
+    fi
+done <"$temp_dir/c-static-archives.txt"
 
 scripts/gradle.sh :packages:kotlin-markdown-core:verifyKotlinNativePackaging >/dev/null
 kotlin_jvm_jar=$(find packages/kotlin-markdown-core/build/libs -maxdepth 1 -type f \

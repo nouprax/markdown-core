@@ -15,6 +15,11 @@ val isIdeSync =
         .systemProperty("idea.sync.active")
         .map(String::toBoolean)
         .getOrElse(false)
+val requestedAndroidAbis =
+    providers.gradleProperty("markdownCore.android.abis").orNull
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
 
 dependencyLocking {
     lockAllConfigurations()
@@ -41,6 +46,9 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.android.min.sdk.get().toInt()
+        requestedAndroidAbis?.let { abis ->
+            ndk { abiFilters += abis }
+        }
         if (!isIdeSync) {
             externalNativeBuild {
                 cmake { arguments += "-DANDROID_STL=none" }

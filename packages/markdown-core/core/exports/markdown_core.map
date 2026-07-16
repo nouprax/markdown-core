@@ -31,6 +31,24 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_footnote_id;
     markdown_core_document_dump;
     markdown_core_dump_free;
+    markdown_core_session_open;
+    markdown_core_session_free;
+    markdown_core_session_edit;
+    markdown_core_session_commit;
+    markdown_core_session_document;
+    markdown_core_session_revision;
+    markdown_core_session_lineage;
+    markdown_core_session_length;
+    markdown_core_session_node_by_id;
+    markdown_core_node_get_id;
+    markdown_core_node_get_revision;
+    markdown_core_node_get_parent;
+    markdown_core_changeset_revisions;
+    markdown_core_changeset_added;
+    markdown_core_changeset_removed;
+    markdown_core_changeset_changed;
+    markdown_core_changeset_bubbled;
+    markdown_core_changeset_free;
   local:
     *;
 };

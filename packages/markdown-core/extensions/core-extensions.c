@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "markdown-core-extensions.h"
 #include "autolink.h"
 #include "strikethrough.h"
@@ -5,27 +7,46 @@
 #include "tasklist.h"
 #include "formula.h"
 #include "directive.h"
-#include "once.h"
-#include "registry.h"
-#include "plugin.h"
+#include "extension.h"
 
-static int core_extensions_registration(markdown_core_plugin *plugin) {
-    markdown_core_plugin_register_syntax_extension(plugin, create_table_extension());
-    markdown_core_plugin_register_syntax_extension(plugin, create_strikethrough_extension());
-    markdown_core_plugin_register_syntax_extension(plugin, create_autolink_extension());
-    markdown_core_plugin_register_syntax_extension(plugin, create_tasklist_extension());
-    markdown_core_plugin_register_syntax_extension(plugin, create_formula_extension());
-    markdown_core_plugin_register_syntax_extension(plugin, create_directive_extension());
-    return 1;
+// The bundled extensions are immutable compile-time descriptors; lookup is a
+// plain scan with no registration step and no process-global state.
+#define CORE_EXTENSION_COUNT 6
+
+static markdown_core_extension *core_extension_at(size_t index) {
+    switch (index) {
+    case 0:
+        return markdown_core_table_extension();
+    case 1:
+        return markdown_core_strikethrough_extension();
+    case 2:
+        return markdown_core_autolink_extension();
+    case 3:
+        return markdown_core_tasklist_extension();
+    case 4:
+        return markdown_core_formula_extension();
+    case 5:
+        return markdown_core_directive_extension();
+    default:
+        return NULL;
+    }
 }
 
-static void core_extensions_register_once(void) { markdown_core_register_plugin(core_extensions_registration); }
+markdown_core_extension *markdown_core_find_extension(const char *name) {
+    for (size_t i = 0; i < CORE_EXTENSION_COUNT; i++) {
+        markdown_core_extension *extension = core_extension_at(i);
+        if (!strcmp(extension->name, name)) {
+            return extension;
+        }
+    }
+    return NULL;
+}
 
-// The whole registration transaction — extension node-type allocation, node
-// flag registration, and the registry append — mutates process-global state,
-// so it runs under a process-level once.  After it completes the registry is
-// immutable for the lifetime of the process; there is no release path.
-void markdown_core_core_extensions_ensure_registered(void) {
-    static markdown_core_once once = MARKDOWN_CORE_ONCE_INIT;
-    markdown_core_once_run(&once, core_extensions_register_once);
+markdown_core_llist *markdown_core_list_extensions(markdown_core_mem *mem) {
+    markdown_core_llist *res = NULL;
+
+    for (size_t i = 0; i < CORE_EXTENSION_COUNT; i++) {
+        res = markdown_core_llist_append(mem, res, core_extension_at(i));
+    }
+    return res;
 }

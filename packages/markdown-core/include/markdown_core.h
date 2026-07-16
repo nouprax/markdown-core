@@ -9,16 +9,23 @@
  * Thread safety and ownership contract
  * ====================================
  *
- * Initialization: the library initializes itself inside
- * markdown_core_document_parse under a process-level once. Concurrent first
- * calls from any number of threads are safe; no warmup, external lock, or
- * explicit init call is required. The extension registry established by that
- * initialization is immutable for the remainder of the process; there is no
- * teardown or re-initialization path.
+ * Initialization: none. The library holds no process-level mutable state —
+ * no registry, no locks, no lazy initialization. Concurrent first calls from
+ * any number of threads are safe by construction; no warmup, external lock,
+ * or explicit init call is required.
  *
- * Distinct documents: parse, traversal, dump, and free of *different*
- * documents may run fully concurrently. A parse call shares no mutable state
- * with other parse calls.
+ * Distinct documents and sessions: parse, traversal, dump, and free of
+ * *different* documents, and every operation on *different* sessions, may
+ * run fully concurrently. A parse call or session shares no mutable state
+ * with any other.
+ *
+ * A single session: calls on one session must be externally synchronized
+ * (one writer at a time). Between mutating calls (edit, commit, free), the
+ * session's document view, its nodes, and lookups are safe for concurrent
+ * reads from any thread. The document view borrowed from a session is valid
+ * until the next mutating call on that session. Changesets are caller-owned
+ * plain data: they survive the session and are released with
+ * markdown_core_changeset_free.
  *
  * A single document: after markdown_core_document_parse returns, the document
  * and its nodes are logically immutable through this API. Concurrent
@@ -60,6 +67,13 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
+typedef struct markdown_core_session markdown_core_session;
+typedef struct markdown_core_changeset markdown_core_changeset;
+
+/** Session-assigned node identity: unique within a session, never reused,
+ * stable across incremental commits while the node remains the same kind of
+ * thing at the same place. 0 is never a valid id. */
+typedef uint64_t markdown_core_node_id;
 
 typedef struct markdown_core_string_view {
     const uint8_t *data;
@@ -224,6 +238,86 @@ MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *
 MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,
                                                    size_t *length, markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
+
+/*
+ * Incremental sessions
+ * ====================
+ *
+ * A session owns one Markdown text and its living AST. Apply edits (append
+ * is an edit at end-of-text), then commit: the session reparses, reuses node
+ * identity wherever the content is unchanged, and reports exactly what
+ * changed. After any sequence of edits and commits the document is
+ * semantically identical to a one-shot parse of the same final text.
+ *
+ * The stored text is the raw bytes exactly as edited; NUL and invalid UTF-8
+ * are replaced with U+FFFD during parsing, per line, exactly as
+ * markdown_core_document_parse does. A streamed append may therefore
+ * complete a multi-byte character whose first bytes arrived earlier.
+ *
+ * Commits are transactional: on failure the session stays valid at its
+ * previous revision and the commit may be retried (applied edits are
+ * retained — the text advances, the tree does not).
+ */
+
+/** Opens an empty session at revision 0. `options == NULL` selects the
+ * defaults; options are immutable for the session lifetime. */
+MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(const markdown_core_parse_options *options,
+                                                                    markdown_core_error **error);
+MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
+
+/** Replaces bytes [byte_start, byte_end) of the stored text with
+ * `bytes[0..length)`. Append passes byte_start == byte_end ==
+ * markdown_core_session_length. Edits only update the text; parsing happens
+ * at commit. */
+MARKDOWN_CORE_API bool markdown_core_session_edit(markdown_core_session *session, size_t byte_start, size_t byte_end,
+                                                  const uint8_t *bytes, size_t length, markdown_core_error **error);
+
+/** Reparses the pending text and advances the revision. When `changes` is
+ * non-NULL it receives a caller-owned changeset (release with
+ * markdown_core_changeset_free). */
+MARKDOWN_CORE_API bool markdown_core_session_commit(markdown_core_session *session, markdown_core_changeset **changes,
+                                                    markdown_core_error **error);
+
+/** Borrowed view of the last committed document; valid until the next
+ * mutating call on the session. */
+MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
+MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_session *session);
+
+/** Per-session random salt; nodes from different sessions never share
+ * identity even when ids collide numerically. */
+MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
+MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(const markdown_core_session *session,
+                                                                             markdown_core_node_id id);
+
+/** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
+ * commit revision at which the node's own fields, child list, or any
+ * descendant last changed — two nodes of one session with equal (id,
+ * revision) have identical content. A pure positional shift never changes a
+ * node's revision. */
+MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
+MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_node *node);
+
+/** Canonical parent: NULL for the root; a directive-label child's parent is
+ * its owning directive (label wrappers are never exposed). */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
+
+/** Changeset accessors. The four arrays are disjoint: `added` and `removed`
+ * list nodes that appeared/disappeared, `changed` lists nodes whose own
+ * fields or direct child list changed, and `bubbled` lists ancestors whose
+ * revision advanced only because a descendant changed. Ids of removed nodes
+ * are retired and never reused. */
+MARKDOWN_CORE_API void markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before,
+                                                         uint64_t *after);
+MARKDOWN_CORE_API size_t markdown_core_changeset_added(const markdown_core_changeset *changes,
+                                                       const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t markdown_core_changeset_removed(const markdown_core_changeset *changes,
+                                                         const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t markdown_core_changeset_changed(const markdown_core_changeset *changes,
+                                                         const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t markdown_core_changeset_bubbled(const markdown_core_changeset *changes,
+                                                         const markdown_core_node_id **ids);
+MARKDOWN_CORE_API void markdown_core_changeset_free(markdown_core_changeset *changes);
 
 #ifdef __cplusplus
 }

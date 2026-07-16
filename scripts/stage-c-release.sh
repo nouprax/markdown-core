@@ -56,10 +56,14 @@ DYLD_LIBRARY_PATH="$prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
     "$temporary/consumer-build/markdown-core-installed-consumer"
 
 if command -v pkg-config >/dev/null 2>&1; then
+    read -r -a pkg_config_flags <<<"$(
+        PKG_CONFIG_PATH="$prefix/lib/pkgconfig" \
+            pkg-config --cflags --libs markdown-core
+    )"
     PKG_CONFIG_PATH="$prefix/lib/pkgconfig" \
         cc "$root/packages/markdown-core/tests/consumers/c/main.c" \
         -o "$temporary/pkg-config-consumer" \
-        $(PKG_CONFIG_PATH="$prefix/lib/pkgconfig" pkg-config --cflags --libs markdown-core)
+        "${pkg_config_flags[@]}"
     DYLD_LIBRARY_PATH="$prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
         LD_LIBRARY_PATH="$prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
         "$temporary/pkg-config-consumer"

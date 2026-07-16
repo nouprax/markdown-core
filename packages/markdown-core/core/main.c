@@ -6,9 +6,8 @@
 #include "markdown-core.h"
 #include "node.h"
 #include "markdown-core-extension-api.h"
-#include "syntax_extension.h"
+#include "extension.h"
 #include "parser.h"
-#include "registry.h"
 
 #include "../extensions/markdown-core-extensions.h"
 #include "../extensions/ast_internal.h"
@@ -53,36 +52,39 @@ void print_usage(void) {
     printf("  --version        Print version\n");
 }
 
-static bool parser_has_syntax_extension(markdown_core_parser *parser, const char *name) {
+static bool parser_has_extension(markdown_core_parser *parser, const char *name) {
     markdown_core_llist *tmp;
 
-    for (tmp = parser->syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
-        if (strcmp(ext->name, name) == 0)
+    for (tmp = parser->extensions; tmp; tmp = tmp->next) {
+        markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
+        if (strcmp(ext->name, name) == 0) {
             return true;
+        }
     }
 
     return false;
 }
 
-static bool attach_syntax_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_syntax_extension *syntax_extension;
+static bool attach_extension(markdown_core_parser *parser, const char *name) {
+    markdown_core_extension *extension;
 
-    if (parser_has_syntax_extension(parser, name))
+    if (parser_has_extension(parser, name)) {
         return true;
+    }
 
-    syntax_extension = markdown_core_find_syntax_extension(name);
-    if (!syntax_extension) {
+    extension = markdown_core_find_extension(name);
+    if (!extension) {
         fprintf(stderr, "Unknown extension %s\n", name);
         return false;
     }
 
-    return markdown_core_parser_attach_syntax_extension(parser, syntax_extension) != 0;
+    return markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
 static bool attach_option_extensions(markdown_core_parser *parser, int options) {
-    if ((options & MARKDOWN_CORE_OPT_DIRECTIVE) && !attach_syntax_extension(parser, "directive"))
+    if ((options & MARKDOWN_CORE_OPT_DIRECTIVE) && !attach_extension(parser, "directive")) {
         return false;
+    }
 
     return true;
 }
@@ -107,19 +109,19 @@ static bool print_document(markdown_core_node *document) {
 }
 
 static void print_extensions(void) {
-    markdown_core_llist *syntax_extensions;
+    markdown_core_llist *extensions;
     markdown_core_llist *tmp;
 
     printf("Available extensions:\nfootnotes\n");
 
     markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    syntax_extensions = markdown_core_list_syntax_extensions(mem);
-    for (tmp = syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
+    extensions = markdown_core_list_extensions(mem);
+    for (tmp = extensions; tmp; tmp = tmp->next) {
+        markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
         printf("%s\n", ext->name);
     }
 
-    markdown_core_llist_free(mem, syntax_extensions);
+    markdown_core_llist_free(mem, extensions);
 }
 
 int main(int argc, char *argv[]) {
@@ -140,8 +142,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 #endif
-
-    markdown_core_core_extensions_ensure_registered();
 
 #ifdef USE_PLEDGE
     if (pledge("stdio rpath", NULL) != 0) {
@@ -200,19 +200,17 @@ int main(int argc, char *argv[]) {
         }
     }
 
-#if DEBUG
     parser = markdown_core_parser_new(options);
-#else
-    parser = markdown_core_parser_new_with_mem(options, markdown_core_get_arena_mem_allocator());
-#endif
 
-    if (!attach_option_extensions(parser, options))
+    if (!attach_option_extensions(parser, options)) {
         goto failure;
+    }
 
-    if (!attach_syntax_extension(parser, "table") || !attach_syntax_extension(parser, "strikethrough") ||
-        !attach_syntax_extension(parser, "autolink") || !attach_syntax_extension(parser, "tasklist") ||
-        !attach_syntax_extension(parser, "formula") || !attach_syntax_extension(parser, "directive"))
+    if (!attach_extension(parser, "table") || !attach_extension(parser, "strikethrough") ||
+        !attach_extension(parser, "autolink") || !attach_extension(parser, "tasklist") ||
+        !attach_extension(parser, "formula") || !attach_extension(parser, "directive")) {
         goto failure;
+    }
 
     for (i = 1; i < argc; i++) {
         if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
@@ -221,7 +219,7 @@ int main(int argc, char *argv[]) {
                 if (strcmp(argv[i], "footnotes") == 0) {
                     continue;
                 }
-                if (!attach_syntax_extension(parser, argv[i])) {
+                if (!attach_extension(parser, argv[i])) {
                     goto failure;
                 }
             } else {
@@ -266,26 +264,22 @@ int main(int argc, char *argv[]) {
 
     document = markdown_core_parser_finish(parser);
 
-    if (!document || !print_document(document))
+    if (!document || !print_document(document)) {
         goto failure;
+    }
 
 success:
     res = 0;
 
 failure:
 
-#if DEBUG
-    if (parser)
+    if (parser) {
         markdown_core_parser_free(parser);
+    }
 
-    if (document)
+    if (document) {
         markdown_core_node_free(document);
-#else
-    markdown_core_arena_reset();
-#endif
-
-    // Registered extensions are process-lifetime by contract; the OS reclaims
-    // them at exit.
+    }
 
     free(files);
 
