@@ -131,7 +131,7 @@ source index 排序的 `qsort` 只决定最终输出顺序，与 map lookup/dupl
   容量采样降级），此时输出与未注入时逐字节一致。
 
 公开 API 直接内建失败报告：`parser_new`/`map_new`/`iter_new` 返回 NULL；
-`markdown_core_consolidate_text_nodes`、`markdown_core_node_own` 与各 setter 返回
+`markdown_core_node_consolidate_texts`、`markdown_core_node_own` 与各 setter 返回
 int；`markdown_core_node_own` 在复制失败时清空 chunk 而不是留下借用指针。
 
 该契约由 fallback_runner 的 `oom_sweep` 回归把守：对覆盖全部特性的语料，逐一令第

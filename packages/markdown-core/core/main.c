@@ -72,7 +72,7 @@ static bool attach_extension(markdown_core_parser *parser, const char *name) {
         return true;
     }
 
-    extension = markdown_core_find_extension(name);
+    extension = markdown_core_extension_find(name);
     if (!extension) {
         fprintf(stderr, "Unknown extension %s\n", name);
         return false;
@@ -114,8 +114,8 @@ static void print_extensions(void) {
 
     printf("Available extensions:\nfootnotes\n");
 
-    markdown_core_mem *mem = markdown_core_get_default_mem_allocator();
-    extensions = markdown_core_list_extensions(mem);
+    markdown_core_mem *mem = markdown_core_mem_default();
+    extensions = markdown_core_extension_list(mem);
     for (tmp = extensions; tmp; tmp = tmp->next) {
         markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
         printf("%s\n", ext->name);

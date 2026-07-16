@@ -59,7 +59,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             for (const char **it = extension_names; *it; ++it) {
                 const char *extension_name = *it;
-                markdown_core_extension *extension = markdown_core_find_extension(extension_name);
+                markdown_core_extension *extension = markdown_core_extension_find(extension_name);
                 if (!extension) {
                     fprintf(stderr, "%s is not a valid syntax extension\n", extension_name);
                     abort();

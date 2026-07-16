@@ -6,7 +6,7 @@
 // advances or is freed, so they use the system allocator like the facade's
 // error and dump buffers do.
 
-bool mkc_id_array_push(mkc_id_array *array, markdown_core_node_id id) {
+bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id) {
     if (array->count == array->capacity) {
         size_t capacity = array->capacity ? array->capacity * 2 : 16;
         markdown_core_node_id *grown = (markdown_core_node_id *)realloc(array->ids, capacity * sizeof(*grown));
@@ -29,7 +29,7 @@ void markdown_core_changeset_revisions(const markdown_core_changeset *changes, u
     }
 }
 
-static size_t array_view(const mkc_id_array *array, const markdown_core_node_id **ids) {
+static size_t array_view(const markdown_core_id_array *array, const markdown_core_node_id **ids) {
     if (ids) {
         *ids = array->ids;
     }

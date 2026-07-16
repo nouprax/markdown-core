@@ -18,13 +18,13 @@ struct markdown_core_extension {
     size_t special_inline_char_count;
     const char *name;
     bool emphasis;
-    markdown_core_get_type_string_func get_type_string_func;
-    markdown_core_can_contain_func can_contain_func;
-    markdown_core_contains_inlines_func contains_inlines_func;
-    markdown_core_accepts_lines_func accepts_lines_func;
-    markdown_core_postprocess_func postprocess_func;
-    markdown_core_opaque_alloc_func opaque_alloc_func;
-    markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_get_type_string_func get_type_string;
+    markdown_core_can_contain_func can_contain;
+    markdown_core_contains_inlines_func contains_inlines;
+    markdown_core_accepts_lines_func accepts_lines;
+    markdown_core_postprocess_block_func postprocess_block;
+    markdown_core_alloc_opaque_func alloc_opaque;
+    markdown_core_free_opaque_func free_opaque;
 };
 
 #endif

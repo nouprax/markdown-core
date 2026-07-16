@@ -33,6 +33,4 @@ static void xfree(void *ptr) { free(ptr); }
  * accept caller-owned allocators; writes through it would fault. */
 static const markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR = {xcalloc, xrealloc, xfree};
 
-markdown_core_mem *markdown_core_get_default_mem_allocator(void) {
-    return (markdown_core_mem *)&MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
-}
+markdown_core_mem *markdown_core_mem_default(void) { return (markdown_core_mem *)&MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR; }

@@ -101,8 +101,8 @@ static const unsigned char strikethrough_special_chars[] = {'~'};
 
 static const markdown_core_extension strikethrough_extension = {
     .name = "strikethrough",
-    .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
+    .get_type_string = get_type_string,
+    .can_contain = can_contain,
     .match_inline = match,
     .insert_inline_from_delim = insert,
     .special_inline_chars = strikethrough_special_chars,

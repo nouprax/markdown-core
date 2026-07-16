@@ -161,7 +161,7 @@ static int fb_check_reference_map(markdown_core_map *map, const char *context) {
  * through the allocation-failure pointer-sort fallback, including
  * first-definition-wins for duplicate labels. */
 static int case_reference_sorted_fallback(void) {
-    markdown_core_map *hash_map = markdown_core_reference_map_new(markdown_core_get_default_mem_allocator());
+    markdown_core_map *hash_map = markdown_core_reference_map_new(markdown_core_mem_default());
     markdown_core_map *fallback_map = markdown_core_reference_map_new(&fb_failing_mem);
     size_t blocked_before = fb_blocked_allocations;
     int result = -1;
@@ -267,7 +267,7 @@ static int case_constructor_oom(void) {
 }
 
 static char *fb_parse_directive_attributes(const char *input, markdown_core_mem *mem) {
-    markdown_core_extension *extension = markdown_core_find_extension("directive");
+    markdown_core_extension *extension = markdown_core_extension_find("directive");
     markdown_core_parser *parser;
     markdown_core_node *document;
     markdown_core_iter *iter;
@@ -314,7 +314,7 @@ static int fb_compare_directive_paths(const char *input, const char *expected, c
     size_t blocked_before;
     int result = -1;
 
-    control = fb_parse_directive_attributes(input, markdown_core_get_default_mem_allocator());
+    control = fb_parse_directive_attributes(input, markdown_core_mem_default());
     if (!control) {
         fprintf(stderr, "%s: control parse produced no attributes\n", context);
         return -1;
@@ -391,6 +391,140 @@ static int case_directive_sorted_fallback(void) {
     return result;
 }
 
+/* v2 definition-map semantics through one lookup path: definitions may be
+ * added after lookups (no freeze), duplicate labels keep every definition
+ * with the minimum document order winning, and owner-tagged definitions
+ * retract with winner re-election. */
+static int fb_check_map_v2_path(markdown_core_mem *mem, const char *context) {
+    markdown_core_map *map = markdown_core_reference_map_new(mem);
+    int result = -1;
+
+    if (!map) {
+        fprintf(stderr, "%s: map constructor failed\n", context);
+        return -1;
+    }
+
+    /* Winner is the first (minimum document order) definition. */
+    fb_create_reference(map, "a", "/a1");
+    fb_create_reference(map, "b", "/b1");
+    if (fb_expect_url(map, "a", "/a1", context) != 0) {
+        goto done;
+    }
+
+    /* Inserts after a lookup land without a freeze; the winner stays the
+     * older definition, and brand-new labels resolve. */
+    fb_create_reference(map, "a", "/a2");
+    fb_create_reference(map, "c", "/c1");
+    if (fb_expect_url(map, "a", "/a1", context) != 0 || fb_expect_url(map, "b", "/b1", context) != 0 ||
+        fb_expect_url(map, "c", "/c1", context) != 0) {
+        goto done;
+    }
+
+    /* Retracting the winning definition's owner re-elects the survivor;
+     * retracting a label's only definition removes the label. */
+    map->pending_owner = 7;
+    fb_create_reference(map, "d", "/d-owned");
+    fb_create_reference(map, "only", "/only-owned");
+    map->pending_owner = 0;
+    fb_create_reference(map, "d", "/d-survivor");
+    if (fb_expect_url(map, "d", "/d-owned", context) != 0 || fb_expect_url(map, "only", "/only-owned", context) != 0) {
+        goto done;
+    }
+    markdown_core_map_remove_owned(map, 7);
+    if (fb_expect_url(map, "d", "/d-survivor", context) != 0 || fb_expect_url(map, "only", NULL, context) != 0 ||
+        fb_expect_url(map, "a", "/a1", context) != 0) {
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_map_free(map);
+    return result;
+}
+
+/* Backward-shift deletion keeps the probe runs of the shared byte-key index
+ * intact across interleaved removals and re-inserts. */
+static int fb_check_key_index_remove(void) {
+    markdown_core_key_index index;
+    char keys[10][8];
+    size_t i;
+    int result = -1;
+
+    if (!markdown_core_key_index_init(&index, markdown_core_mem_default(), 8)) {
+        fputs("key index initialization failed\n", stderr);
+        return -1;
+    }
+    for (i = 0; i < 10; i++) {
+        snprintf(keys[i], sizeof(keys[i]), "k%zu", i);
+        if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]),
+                                            (void *)(uintptr_t)(i + 1), 0, NULL)) {
+            fprintf(stderr, "key index insert %zu failed\n", i);
+            goto done;
+        }
+    }
+    if (markdown_core_key_index_remove(&index, (const unsigned char *)"absent", 6) != 0) {
+        fputs("removing an absent key reported success\n", stderr);
+        goto done;
+    }
+    /* Remove every even key, then verify the odd ones still resolve through
+     * the shifted probe runs. */
+    for (i = 0; i < 10; i += 2) {
+        if (!markdown_core_key_index_remove(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]))) {
+            fprintf(stderr, "key index remove %zu failed\n", i);
+            goto done;
+        }
+    }
+    if (index.size != 5) {
+        fprintf(stderr, "expected 5 keys after removal, found %zu\n", index.size);
+        goto done;
+    }
+    for (i = 0; i < 10; i++) {
+        void *value =
+            markdown_core_key_index_lookup(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        void *expected = (i % 2 == 0) ? NULL : (void *)(uintptr_t)(i + 1);
+        if (value != expected) {
+            fprintf(stderr, "lookup %zu after removal returned the wrong value\n", i);
+            goto done;
+        }
+    }
+    /* Removed keys can come back. */
+    if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0]),
+                                        (void *)(uintptr_t)99, 0, NULL) ||
+        markdown_core_key_index_lookup(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0])) !=
+            (void *)(uintptr_t)99) {
+        fputs("re-insert after removal failed\n", stderr);
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_key_index_free(&index);
+    return result;
+}
+
+/* v2 map semantics resolve identically through the hash index and through
+ * the allocation-failure pointer-sort fallback, and the byte-key index
+ * survives removals. */
+static int case_reference_map_v2(void) {
+    size_t blocked_before;
+
+    if (fb_check_map_v2_path(markdown_core_mem_default(), "v2 hash path") != 0) {
+        return -1;
+    }
+
+    blocked_before = fb_blocked_allocations;
+    fb_block_slot_tables = 1;
+    if (fb_check_map_v2_path(&fb_failing_mem, "v2 sorted fallback") != 0) {
+        fb_block_slot_tables = 0;
+        return -1;
+    }
+    fb_block_slot_tables = 0;
+    if (fb_blocked_allocations == blocked_before) {
+        fputs("injected allocator never fired\n", stderr);
+        return -1;
+    }
+
+    return fb_check_key_index_remove();
+}
+
 /* Mirrors hash_key in core/map.c.  If that hash ever changes, the keys found
  * below stop clustering, the capacity assertions fail loudly, and this case
  * must be retuned together with the hash. */
@@ -452,7 +586,7 @@ static int case_key_index_probe_growth(void) {
     }
 
     /* expected_size 128 selects the 256-slot table the cluster targets. */
-    if (!markdown_core_key_index_init(&index, markdown_core_get_default_mem_allocator(), 128)) {
+    if (!markdown_core_key_index_init(&index, markdown_core_mem_default(), 128)) {
         fputs("index initialization failed\n", stderr);
         return -1;
     }
@@ -558,7 +692,7 @@ static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
         return NULL;
     }
     for (i = 0; i < sizeof(FB_SWEEP_EXTENSIONS) / sizeof(FB_SWEEP_EXTENSIONS[0]); i++) {
-        markdown_core_extension *extension = markdown_core_find_extension(FB_SWEEP_EXTENSIONS[i]);
+        markdown_core_extension *extension = markdown_core_extension_find(FB_SWEEP_EXTENSIONS[i]);
         if (!extension || !markdown_core_parser_attach_extension(parser, extension)) {
             markdown_core_parser_free(parser);
             return NULL;
@@ -645,7 +779,7 @@ static int case_oom_sweep(void) {
     unsigned long k;
     int result = -1;
 
-    control = fb_sweep_parse(markdown_core_get_default_mem_allocator());
+    control = fb_sweep_parse(markdown_core_mem_default());
     if (!control) {
         fputs("control parse failed\n", stderr);
         return -1;
@@ -699,6 +833,7 @@ typedef struct fb_case_entry {
 
 static const fb_case_entry FB_CASES[] = {
     {"reference_sorted_fallback", case_reference_sorted_fallback},
+    {"reference_map_v2", case_reference_map_v2},
     {"directive_sorted_fallback", case_directive_sorted_fallback},
     {"key_index_probe_growth", case_key_index_probe_growth},
     {"map_prepare_oom", case_map_prepare_oom},

@@ -93,7 +93,7 @@ markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *i
 
 markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
 
-int markdown_core_consolidate_text_nodes(markdown_core_node *root) {
+int markdown_core_node_consolidate_texts(markdown_core_node *root) {
     if (root == NULL) {
         return 1;
     }

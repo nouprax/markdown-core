@@ -14,21 +14,21 @@ typedef struct {
     markdown_core_node **values;
     size_t capacity; // power of two, 0 when unallocated
     size_t count;
-} mkc_id_table;
+} markdown_core_id_table;
 
 typedef struct {
     markdown_core_node_id *ids;
     size_t count;
     size_t capacity;
-} mkc_id_array;
+} markdown_core_id_array;
 
 struct markdown_core_changeset {
     uint64_t before;
     uint64_t after;
-    mkc_id_array added;
-    mkc_id_array removed;
-    mkc_id_array changed;
-    mkc_id_array bubbled;
+    markdown_core_id_array added;
+    markdown_core_id_array removed;
+    markdown_core_id_array changed;
+    markdown_core_id_array bubbled;
 };
 
 struct markdown_core_session {
@@ -39,7 +39,7 @@ struct markdown_core_session {
     uint64_t next_id;            // monotonic, starts at 1, never reused
     uint64_t lineage;
     uint64_t revision;
-    mkc_id_table ids;
+    markdown_core_id_table ids;
 };
 
 /** Internal constructor used by allocation-injection tests; the public
@@ -62,6 +62,6 @@ bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_n
                                  markdown_core_node *new_root, uint64_t new_rev, markdown_core_changeset *changes);
 
 /** Appends an id to a changeset array; plain-malloc grow. */
-bool mkc_id_array_push(mkc_id_array *array, markdown_core_node_id id);
+bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
 
 #endif

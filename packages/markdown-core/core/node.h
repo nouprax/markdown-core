@@ -138,6 +138,12 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
 MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
                                                               markdown_core_node_type child_type);
 
+/** True when `node` directly owns inline content (paragraph, heading, or an
+ * extension node whose contains_inlines hook claims it, e.g. a table cell or
+ * directive label wrapper). These nodes are the units of the per-block
+ * postprocess pipeline. */
+MARKDOWN_CORE_EXPORT bool markdown_core_node_owns_inlines(markdown_core_node *node);
+
 #ifdef __cplusplus
 }
 #endif

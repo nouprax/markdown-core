@@ -124,7 +124,8 @@ static void accessors(test_batch_runner *runner) {
                                    "\n"
                                    "[link](url 'title')\n";
 
-    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc =
+        markdown_core_node_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
 
     // Getters
 
@@ -154,7 +155,7 @@ static void accessors(test_batch_runner *runner) {
     static const char unclosed_markdown[] = "``` lang\n"
                                             "unclosed\n";
     markdown_core_node *unclosed_doc =
-        markdown_core_parse_document(unclosed_markdown, sizeof(unclosed_markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        markdown_core_node_parse_document(unclosed_markdown, sizeof(unclosed_markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *unclosed = markdown_core_node_first_child(unclosed_doc);
     INT_EQ(runner, markdown_core_node_get_fence_closed(unclosed), 0, "get_fence_closed unclosed fenced code");
     markdown_core_node_free(unclosed_doc);
@@ -253,7 +254,7 @@ static void accessors(test_batch_runner *runner) {
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
 
     markdown_core_parser *parser = markdown_core_parser_new(options);
-    markdown_core_extension *formula = markdown_core_find_extension("formula");
+    markdown_core_extension *formula = markdown_core_extension_find("formula");
 
     if (formula) {
         markdown_core_parser_attach_extension(parser, formula);
@@ -278,7 +279,7 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
 
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
-    markdown_core_extension *directive = markdown_core_find_extension("directive");
+    markdown_core_extension *directive = markdown_core_extension_find("directive");
 
     if (directive) {
         markdown_core_parser_attach_extension(parser, directive);
@@ -479,7 +480,7 @@ static void node_check(test_batch_runner *runner) {
 }
 
 static void iterator(test_batch_runner *runner) {
-    markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_node_parse_document("> a *b*\n\nc", 10, MARKDOWN_CORE_OPT_DEFAULT);
     int parnodes = 0;
     markdown_core_event_type ev_type;
     markdown_core_iter *iter = markdown_core_iter_new(doc);
@@ -507,7 +508,7 @@ static void iterator_delete(test_batch_runner *runner) {
                              "\n"
                              "* item1\n"
                              "* item2\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_node_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_iter *iter = markdown_core_iter_new(doc);
     markdown_core_event_type ev_type;
 
@@ -735,8 +736,8 @@ static void utf8(test_batch_runner *runner) {
 
     // Test NUL followed by newline
     static const char string_with_nul_lf[] = "```\n\0\n```\n";
-    markdown_core_node *doc =
-        markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc = markdown_core_node_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1,
+                                                                MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
            "utf8 with \\0\\n parses a code block");
@@ -745,7 +746,7 @@ static void utf8(test_batch_runner *runner) {
 
     // Test byte-order marker
     static const char string_with_bom[] = "\xef\xbb\xbf# Hello\n";
-    doc = markdown_core_parse_document(string_with_bom, sizeof(string_with_bom) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_node_parse_document(string_with_bom, sizeof(string_with_bom) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *heading = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(heading), MARKDOWN_CORE_NODE_HEADING, "utf8 with BOM parses a heading");
     STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(heading)), "Hello", "utf8 with BOM");
@@ -797,7 +798,7 @@ static void line_endings(test_batch_runner *runner) {
     static const char list_with_endings[] = "- a\n- b\r\n- c\r- d";
     static const char *const expected_items[] = {"a", "b", "c", "d"};
     markdown_core_node *doc =
-        markdown_core_parse_document(list_with_endings, sizeof(list_with_endings) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+        markdown_core_node_parse_document(list_with_endings, sizeof(list_with_endings) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *list = markdown_core_node_first_child(doc);
     markdown_core_node *item = markdown_core_node_first_child(list);
     INT_EQ(runner, markdown_core_node_get_type(list), MARKDOWN_CORE_NODE_LIST,
@@ -817,7 +818,7 @@ static void line_endings(test_batch_runner *runner) {
     // OPT_HARDBREAKS/OPT_NOBREAKS only changed the retired renderers; in the
     // AST a CRLF line ending is always a SoftBreak between the two texts.
     static const char crlf_lines[] = "line\r\nline\r\n";
-    doc = markdown_core_parse_document(crlf_lines, sizeof(crlf_lines) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_node_parse_document(crlf_lines, sizeof(crlf_lines) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *middle = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_literal(markdown_core_node_first_child(paragraph)), "line",
@@ -829,7 +830,7 @@ static void line_endings(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     static const char no_line_ending[] = "```\nline\n```";
-    doc = markdown_core_parse_document(no_line_ending, sizeof(no_line_ending) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    doc = markdown_core_node_parse_document(no_line_ending, sizeof(no_line_ending) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_node *code_block = markdown_core_node_first_child(doc);
     INT_EQ(runner, markdown_core_node_get_type(code_block), MARKDOWN_CORE_NODE_CODE_BLOCK,
            "fenced code block with no final newline parses");
@@ -883,11 +884,12 @@ static void strip_html_comments(test_batch_runner *runner) {
                                    "\n"
                                    "<div>raw</div>\n";
 
-    markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *doc =
+        markdown_core_node_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
     INT_EQ(runner, count_html_comment_nodes(doc), 2, "default parse preserves HTML comment nodes");
     markdown_core_node_free(doc);
 
-    doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS);
+    doc = markdown_core_node_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS);
     INT_EQ(runner, count_html_comment_nodes(doc), 0, "strip-html-comments option removes HTML comment nodes");
 
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
@@ -916,7 +918,7 @@ static void strip_html_comments(test_batch_runner *runner) {
  * escaping. */
 static void test_md_paragraph_text_options(test_batch_runner *runner, const char *markdown, size_t markdown_length,
                                            int options, const char *expected_text, const char *msg) {
-    markdown_core_node *doc = markdown_core_parse_document(markdown, markdown_length, options);
+    markdown_core_node *doc = markdown_core_node_parse_document(markdown, markdown_length, options);
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     char text[4096] = "";
     size_t length = 0;
@@ -996,7 +998,7 @@ static void test_pathological_regressions(test_batch_runner *runner) {
 
         START_TIMING();
         markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+            markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
         END_TIMING();
         markdown_core_node_free(doc);
         free(input);
@@ -1013,7 +1015,7 @@ static void test_pathological_regressions(test_batch_runner *runner) {
 
         START_TIMING();
         markdown_core_node *doc =
-            markdown_core_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+            markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
         END_TIMING();
         markdown_core_node_free(doc);
         free(input);

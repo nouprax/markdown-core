@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include "ext_scanners.h"
 
-bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset)
+bufsize_t markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset)
 {
 	bufsize_t res;
 
@@ -45,7 +45,7 @@ bufsize_t _ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned cha
   directive_name = directive_name_char+;
 */
 
-bufsize_t _scan_table_start(const unsigned char *p)
+bufsize_t markdown_core_scan_table_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -57,7 +57,7 @@ bufsize_t _scan_table_start(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_table_cell(const unsigned char *p)
+bufsize_t markdown_core_scan_table_cell(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -70,7 +70,7 @@ bufsize_t _scan_table_cell(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_table_cell_end(const unsigned char *p)
+bufsize_t markdown_core_scan_table_cell_end(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
@@ -79,7 +79,7 @@ bufsize_t _scan_table_cell_end(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_table_row_end(const unsigned char *p)
+bufsize_t markdown_core_scan_table_row_end(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -89,7 +89,7 @@ bufsize_t _scan_table_row_end(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_tasklist(const unsigned char *p)
+bufsize_t markdown_core_scan_tasklist(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -99,7 +99,7 @@ bufsize_t _scan_tasklist(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p)
+bufsize_t markdown_core_scan_formula_dollar_inline_open(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
@@ -108,7 +108,7 @@ bufsize_t _scan_formula_dollar_inline_open(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p)
+bufsize_t markdown_core_scan_formula_dollar_backtick_open(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
@@ -117,7 +117,7 @@ bufsize_t _scan_formula_dollar_backtick_open(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_formula_dollar_display_open(const unsigned char *p)
+bufsize_t markdown_core_scan_formula_dollar_display_open(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
@@ -126,7 +126,7 @@ bufsize_t _scan_formula_dollar_display_open(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p)
+bufsize_t markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -136,7 +136,7 @@ bufsize_t _scan_formula_latex_backslash_inline_open(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p)
+bufsize_t markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -146,7 +146,7 @@ bufsize_t _scan_formula_latex_backslash_display_open(const unsigned char *p)
   */
 }
 
-bufsize_t _scan_directive_name(const unsigned char *p)
+bufsize_t markdown_core_scan_directive_name(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
