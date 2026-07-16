@@ -251,13 +251,12 @@ static void accessors(test_batch_runner *runner) {
 }
 
 static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
-    markdown_core_core_extensions_ensure_registered();
 
     markdown_core_parser *parser = markdown_core_parser_new(options);
-    markdown_core_syntax_extension *formula = markdown_core_find_syntax_extension("formula");
+    markdown_core_extension *formula = markdown_core_find_extension("formula");
 
     if (formula) {
-        markdown_core_parser_attach_syntax_extension(parser, formula);
+        markdown_core_parser_attach_extension(parser, formula);
     }
 
     markdown_core_parser_feed(parser, markdown, strlen(markdown));
@@ -277,13 +276,12 @@ static markdown_core_node *parse_with_dollar_formula_extension(const char *markd
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
-    markdown_core_core_extensions_ensure_registered();
 
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DIRECTIVE);
-    markdown_core_syntax_extension *directive = markdown_core_find_syntax_extension("directive");
+    markdown_core_extension *directive = markdown_core_find_extension("directive");
 
     if (directive) {
-        markdown_core_parser_attach_syntax_extension(parser, directive);
+        markdown_core_parser_attach_extension(parser, directive);
     }
 
     markdown_core_parser_feed(parser, markdown, strlen(markdown));
@@ -678,9 +676,11 @@ static void test_content(test_batch_runner *runner, markdown_core_node_type type
 
         int got = markdown_core_node_append_child(node, child);
         int expected = 0;
-        if (allowed_content)
-            for (unsigned int *p = allowed_content; *p; ++p)
+        if (allowed_content) {
+            for (unsigned int *p = allowed_content; *p; ++p) {
                 expected |= *p == (unsigned int)child_type;
+            }
+        }
 
         INT_EQ(runner, got, expected, "add %d as child of %d", child_type, type);
 
@@ -990,8 +990,9 @@ static void test_pathological_regressions(test_batch_runner *runner) {
         // I don't care what the output is, so long as it doesn't take too long.
         char path[] = "[a](b";
         char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i)
+        for (int i = 0; i < 50000; ++i) {
             memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
+        }
 
         START_TIMING();
         markdown_core_node *doc =
@@ -1006,8 +1007,9 @@ static void test_pathological_regressions(test_batch_runner *runner) {
     {
         char path[] = "[a](<b";
         char *input = (char *)calloc(1, (sizeof(path) - 1) * 50000);
-        for (int i = 0; i < 50000; ++i)
+        for (int i = 0; i < 50000; ++i) {
             memcpy(input + i * (sizeof(path) - 1), path, sizeof(path) - 1);
+        }
 
         START_TIMING();
         markdown_core_node *doc =
@@ -1179,11 +1181,333 @@ static void autolink_source_pos(test_batch_runner *runner) {
                      "email autolink scopes are as expected");
 }
 
+/* ---------------- incremental sessions ---------------- */
+
+static char *dump_document_cstr(const markdown_core_document *document) {
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    markdown_core_error *error = NULL;
+    char *copy;
+    if (!markdown_core_document_dump(document, &dump, &length, &error)) {
+        markdown_core_error_free(error);
+        return NULL;
+    }
+    copy = (char *)malloc(length + 1);
+    if (copy) {
+        memcpy(copy, dump, length);
+        copy[length] = 0;
+    }
+    markdown_core_dump_free(dump);
+    return copy;
+}
+
+static int changeset_contains(const markdown_core_node_id *ids, size_t count, markdown_core_node_id id) {
+    size_t i;
+    for (i = 0; i < count; i++) {
+        if (ids[i] == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char SESSION_RICH_SOURCE[] = "# Title\n"
+                                          "\n"
+                                          "Intro with *emphasis*, **strong**, ~~gone~~, `code`, a [ref][label],\n"
+                                          "https://example.com autolink, $x^2$ formula, and :note[hi]{k=v}.\n"
+                                          "\n"
+                                          "- [ ] task one\n"
+                                          "- [x] task two\n"
+                                          "\n"
+                                          "| a | b |\n"
+                                          "| --- | ---: |\n"
+                                          "| 1 | 2 |\n"
+                                          "\n"
+                                          "```c\n"
+                                          "int main(void);\n"
+                                          "```\n"
+                                          "\n"
+                                          "> quoted with a footnote[^fn]\n"
+                                          "\n"
+                                          "$$\n"
+                                          "\\sum_i i\n"
+                                          "$$\n"
+                                          "\n"
+                                          "[label]: https://example.org \"t\"\n"
+                                          "\n"
+                                          "[^fn]: footnote body\n";
+
+static void session_streaming_equivalence(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *reference =
+        markdown_core_document_parse((const uint8_t *)SESSION_RICH_SOURCE, strlen(SESSION_RICH_SOURCE), NULL, &error);
+    char *expected = reference ? dump_document_cstr(reference) : NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    size_t length = strlen(SESSION_RICH_SOURCE);
+    size_t offset;
+    int all_edits_ok = 1, all_commits_ok = 1;
+
+    OK(runner, reference != NULL && expected != NULL, "session equivalence reference parse");
+    OK(runner, session != NULL, "session_open succeeds");
+    if (!reference || !expected || !session) {
+        goto cleanup;
+    }
+
+    /* Byte-at-a-time token stream with a commit after every byte. */
+    for (offset = 0; offset < length; offset++) {
+        if (!markdown_core_session_edit(session, offset, offset, (const uint8_t *)SESSION_RICH_SOURCE + offset, 1,
+                                        &error)) {
+            all_edits_ok = 0;
+        }
+        if (!markdown_core_session_commit(session, NULL, &error)) {
+            all_commits_ok = 0;
+        }
+    }
+    OK(runner, all_edits_ok, "per-byte appends all succeed");
+    OK(runner, all_commits_ok, "per-byte commits all succeed");
+    INT_EQ(runner, (int)markdown_core_session_length(session), (int)length, "session_length tracks the text");
+
+    {
+        char *streamed = dump_document_cstr(markdown_core_session_document(session));
+        OK(runner, streamed != NULL, "session dump succeeds");
+        if (streamed) {
+            STR_EQ(runner, streamed, expected, "byte-streamed session dump equals one-shot dump");
+        }
+        free(streamed);
+    }
+
+cleanup:
+    free(expected);
+    markdown_core_document_free(reference);
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_append_id_stability(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    const char *part_one = "# Title\n\nHello ";
+    const char *part_two = "world **bold**";
+    markdown_core_node_id heading_id, paragraph_id, text_id, root_id;
+    uint64_t heading_rev, root_rev_before;
+    markdown_core_changeset *changes = NULL;
+
+    OK(runner, session != NULL, "id-stability session opens");
+    if (!session) {
+        return;
+    }
+
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)part_one, strlen(part_one), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "first commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *heading = markdown_core_node_get_first_child(root);
+        const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
+        const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
+        root_id = markdown_core_node_get_id(root);
+        heading_id = markdown_core_node_get_id(heading);
+        heading_rev = markdown_core_node_get_revision(heading);
+        paragraph_id = markdown_core_node_get_id(paragraph);
+        text_id = markdown_core_node_get_id(text);
+        root_rev_before = markdown_core_node_get_revision(root);
+        OK(runner, heading_id != 0 && paragraph_id != 0 && text_id != 0, "committed nodes carry nonzero ids");
+        OK(runner, markdown_core_node_get_parent(heading) == root, "node_get_parent reaches the root");
+    }
+
+    markdown_core_session_edit(session, markdown_core_session_length(session), markdown_core_session_length(session),
+                               (const uint8_t *)part_two, strlen(part_two), &error);
+    OK(runner, markdown_core_session_commit(session, &changes, &error), "second commit succeeds");
+    OK(runner, changes != NULL, "changeset is produced on request");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *heading = markdown_core_node_get_first_child(root);
+        const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
+        const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *strong = markdown_core_node_get_next_sibling(text);
+        uint64_t before = 0, after = 0;
+        const markdown_core_node_id *ids;
+        size_t count;
+
+        OK(runner, markdown_core_node_get_id(heading) == heading_id, "frontier append keeps the heading id");
+        OK(runner, markdown_core_node_get_revision(heading) == heading_rev, "untouched heading keeps its revision");
+        OK(runner, markdown_core_node_get_id(paragraph) == paragraph_id, "open paragraph keeps its id");
+        OK(runner, markdown_core_node_get_id(text) == text_id, "trailing text keeps its id");
+        OK(runner, strong != NULL && markdown_core_node_get_kind(strong) == MARKDOWN_CORE_KIND_STRONG,
+           "appended strong exists");
+
+        markdown_core_changeset_revisions(changes, &before, &after);
+        OK(runner, before + 1 == after, "changeset revisions are consecutive");
+        OK(runner, markdown_core_session_revision(session) == after, "session revision matches the changeset");
+
+        count = markdown_core_changeset_changed(changes, &ids);
+        OK(runner, changeset_contains(ids, count, paragraph_id), "paragraph is reported changed");
+        OK(runner, changeset_contains(ids, count, text_id), "grown text is reported changed");
+        OK(runner, !changeset_contains(ids, count, heading_id), "heading is not reported changed");
+        count = markdown_core_changeset_added(changes, &ids);
+        OK(runner, changeset_contains(ids, count, markdown_core_node_get_id(strong)), "strong is reported added");
+        count = markdown_core_changeset_bubbled(changes, &ids);
+        OK(runner, changeset_contains(ids, count, root_id), "root revision bubbles");
+        count = markdown_core_changeset_removed(changes, &ids);
+        INT_EQ(runner, (int)count, 0, "append removes nothing");
+
+        OK(runner, markdown_core_node_get_revision(root) == after && root_rev_before < after,
+           "root revision advances by bubbling");
+        OK(runner, markdown_core_session_node_by_id(session, paragraph_id) == paragraph,
+           "node_by_id resolves the paragraph");
+        OK(runner, markdown_core_session_node_by_id(session, 0) == NULL, "node_by_id rejects id 0");
+        OK(runner, markdown_core_session_lineage(session) != 0, "session lineage is nonzero");
+    }
+
+    markdown_core_changeset_free(changes);
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_suffix_id_stability(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    const char *source = "para one\n\npara two\n\npara three\n";
+    markdown_core_node_id ids[3];
+    uint64_t revs[3];
+
+    OK(runner, session != NULL, "suffix-stability session opens");
+    if (!session) {
+        return;
+    }
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "suffix baseline commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *child = markdown_core_node_get_first_child(root);
+        int i;
+        for (i = 0; i < 3 && child; i++) {
+            ids[i] = markdown_core_node_get_id(child);
+            revs[i] = markdown_core_node_get_revision(child);
+            child = markdown_core_node_get_next_sibling(child);
+        }
+    }
+
+    /* Replace "one" (bytes 5..8) with "1!" — only the first paragraph. */
+    markdown_core_session_edit(session, 5, 8, (const uint8_t *)"1!", 2, &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "mid-document edit commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *first = markdown_core_node_get_first_child(root);
+        const markdown_core_node *second = markdown_core_node_get_next_sibling(first);
+        const markdown_core_node *third = markdown_core_node_get_next_sibling(second);
+        OK(runner, markdown_core_node_get_id(first) == ids[0], "edited paragraph keeps its id");
+        OK(runner, markdown_core_node_get_revision(first) > revs[0], "edited paragraph revision advances");
+        OK(runner, markdown_core_node_get_id(second) == ids[1] && markdown_core_node_get_revision(second) == revs[1],
+           "second paragraph is untouched");
+        OK(runner, markdown_core_node_get_id(third) == ids[2] && markdown_core_node_get_revision(third) == revs[2],
+           "third paragraph is untouched");
+    }
+
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_utf8_split_append(test_batch_runner *runner) {
+    /* A streamed token may split a multi-byte character; the completing
+     * append must yield the same tree as a one-shot parse. */
+    static const uint8_t euro_doc[] = {'p', ' ', 0xE2, 0x82, 0xAC, '\n'};
+    markdown_core_error *error = NULL;
+    markdown_core_document *reference = markdown_core_document_parse(euro_doc, sizeof(euro_doc), NULL, &error);
+    char *expected = reference ? dump_document_cstr(reference) : NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+
+    OK(runner, session != NULL && expected != NULL, "utf8-split session and reference exist");
+    if (session && expected) {
+        char *streamed;
+        markdown_core_session_edit(session, 0, 0, euro_doc, 3, &error); /* 'p', ' ', 0xE2 */
+        OK(runner, markdown_core_session_commit(session, NULL, &error), "commit with a dangling lead byte succeeds");
+        markdown_core_session_edit(session, 3, 3, euro_doc + 3, 3, &error);
+        OK(runner, markdown_core_session_commit(session, NULL, &error), "completing commit succeeds");
+        streamed = dump_document_cstr(markdown_core_session_document(session));
+        if (streamed) {
+            STR_EQ(runner, streamed, expected, "split multi-byte character parses whole");
+        }
+        free(streamed);
+    }
+    free(expected);
+    markdown_core_document_free(reference);
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_edit_errors(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+
+    OK(runner, session != NULL, "error-case session opens");
+    if (!session) {
+        return;
+    }
+
+    OK(runner, markdown_core_session_revision(session) == 0, "fresh session is at revision 0");
+    {
+        const markdown_core_document *view = markdown_core_session_document(session);
+        const markdown_core_node *root = markdown_core_document_root(view);
+        OK(runner, root != NULL && markdown_core_node_child_count(root) == 0, "fresh session document is empty");
+        OK(runner, markdown_core_node_get_id(root) != 0, "fresh root already has an id");
+    }
+
+    OK(runner, !markdown_core_session_edit(session, 5, 2, NULL, 0, &error), "inverted range is rejected");
+    INT_EQ(runner, (int)markdown_core_error_get_code(error), (int)MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+           "inverted range reports invalid argument");
+    markdown_core_error_free(error);
+    error = NULL;
+
+    OK(runner, !markdown_core_session_edit(session, 0, 1, NULL, 0, &error), "out-of-range end is rejected");
+    markdown_core_error_free(error);
+    error = NULL;
+
+    OK(runner, !markdown_core_session_edit(session, 0, 0, NULL, 3, &error), "null bytes with length are rejected");
+    markdown_core_error_free(error);
+    error = NULL;
+
+    /* An edit whose total length would overflow size_t must fail cleanly
+     * before any byte of the (impossible) source buffer is read. */
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)"x", 1, &error);
+    OK(runner, !markdown_core_session_edit(session, 1, 1, (const uint8_t *)"y", (size_t)-1, &error),
+       "overflowing edit length is rejected");
+    markdown_core_error_free(error);
+    error = NULL;
+    OK(runner, markdown_core_session_length(session) == 1, "rejected edit leaves the text unchanged");
+
+    markdown_core_session_free(session);
+}
+
+static void session_directive_label_parent(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_parse((const uint8_t *)":video[watch me]{k=v}\n",
+                                                                    strlen(":video[watch me]{k=v}\n"), NULL, &error);
+    OK(runner, document != NULL, "directive document parses");
+    if (document) {
+        const markdown_core_node *root = markdown_core_document_root(document);
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *label = markdown_core_node_directive_first_label_child(directive);
+        OK(runner, directive != NULL && markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_DIRECTIVE,
+           "directive node found");
+        OK(runner, label != NULL, "directive label child exists");
+        OK(runner, markdown_core_node_get_parent(label) == directive,
+           "label child's canonical parent is the directive");
+        OK(runner, markdown_core_node_get_parent(root) == NULL, "root has no parent");
+        OK(runner, markdown_core_node_get_id(directive) != 0, "one-shot documents carry ids");
+    }
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
 
-    markdown_core_enable_safety_checks(true);
     version(runner);
     node_type_values(runner);
     constructor(runner);
@@ -1207,6 +1531,12 @@ int main(void) {
     source_pos_inlines(runner);
     ref_source_pos(runner);
     autolink_source_pos(runner);
+    session_streaming_equivalence(runner);
+    session_append_id_stability(runner);
+    session_suffix_id_stability(runner);
+    session_utf8_split_append(runner);
+    session_edit_errors(runner);
+    session_directive_label_parent(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

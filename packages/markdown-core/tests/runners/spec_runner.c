@@ -41,8 +41,9 @@ static uint8_t *dump_example(const ts_spec_case *test_case, const markdown_core_
         }
     }
     document = ts_ast_parse((const uint8_t *)test_case->markdown, test_case->markdown_length, &options);
-    if (!document)
+    if (!document) {
         return NULL;
+    }
     if (!markdown_core_document_dump(document, &dump, dump_length, &error)) {
         fprintf(stderr, "example %d: dump failed\n", test_case->example);
         markdown_core_error_free(error);
@@ -76,13 +77,16 @@ static int line_has_disabled_tag(const char *line, size_t line_length) {
     const char *end = line + line_length;
     while (cursor < end) {
         const char *word;
-        while (cursor < end && *cursor == ' ')
+        while (cursor < end && *cursor == ' ') {
             cursor++;
+        }
         word = cursor;
-        while (cursor < end && *cursor != ' ')
+        while (cursor < end && *cursor != ' ') {
             cursor++;
-        if (cursor - word == 8 && strncmp(word, "disabled", 8) == 0)
+        }
+        if (cursor - word == 8 && strncmp(word, "disabled", 8) == 0) {
             return 1;
+        }
     }
     return 0;
 }
@@ -102,8 +106,9 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
     size_t case_index = 0;
     int result = -1;
 
-    if (!bytes)
+    if (!bytes) {
         return -1;
+    }
     if (ts_spec_load(path, &spec) != 0) {
         free(bytes);
         return -1;
@@ -121,15 +126,18 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
         size_t raw_length;
         size_t content_end;
         size_t line_length;
-        while (line_end < length && bytes[line_end] != '\n')
+        while (line_end < length && bytes[line_end] != '\n') {
             line_end++;
-        if (line_start == length && line_end == length && line_start != 0 && bytes[line_start - 1] == '\n')
+        }
+        if (line_start == length && line_end == length && line_start != 0 && bytes[line_start - 1] == '\n') {
             break;
+        }
         raw_length = line_end - line_start;
         content_end = line_end;
         while (content_end > line_start &&
-               (bytes[content_end - 1] == '\r' || bytes[content_end - 1] == ' ' || bytes[content_end - 1] == '\t'))
+               (bytes[content_end - 1] == '\r' || bytes[content_end - 1] == ' ' || bytes[content_end - 1] == '\t')) {
             content_end--;
+        }
         line_length = content_end - line_start;
 
         if (line_length >= 40 && strncmp(line, "````````````````````````````````", 32) == 0 &&
@@ -161,8 +169,9 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
                     goto done;
                 }
                 dump = dump_example(&spec.cases[case_index], base, &dump_length);
-                if (!dump)
+                if (!dump) {
                     goto done;
+                }
                 fwrite(dump, 1, dump_length, output);
                 markdown_core_dump_free(dump);
                 case_index++;
@@ -175,8 +184,9 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
             fputc('\n', output);
         }
 
-        if (line_end >= length)
+        if (line_end >= length) {
             break;
+        }
         line_start = line_end + 1;
     }
 
@@ -282,8 +292,9 @@ int main(int argc, char **argv) {
     }
 
     ts_spec_free(&spec);
-    if (list_only)
+    if (list_only) {
         return 0;
+    }
     printf("%zu passed, %zu failed, %zu errored, %zu skipped\n", passed, failed, errored, skipped);
     return (failed + errored) ? 1 : 0;
 }

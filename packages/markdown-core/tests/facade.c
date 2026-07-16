@@ -17,8 +17,9 @@ static uint8_t *read_file(const char *path, size_t *length) {
     FILE *file = fopen(path, "rb");
     long size;
     uint8_t *bytes;
-    if (!file)
+    if (!file) {
         return NULL;
+    }
     if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) < 0 || fseek(file, 0, SEEK_SET) != 0) {
         fclose(file);
         return NULL;
@@ -51,11 +52,13 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
                       &options->latex_formula_delimiters,
                       &options->directives};
     size_t i;
-    if (strlen(mask) != sizeof(fields) / sizeof(fields[0]))
+    if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
+    }
     for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
-        if (mask[i] != '0' && mask[i] != '1')
+        if (mask[i] != '0' && mask[i] != '1') {
             return 0;
+        }
         *fields[i] = mask[i] == '1';
     }
     return 1;
@@ -77,15 +80,17 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
     markdown = read_file(markdown_path, &markdown_length);
     expected = read_file(ast_path, &expected_length);
     check(markdown != NULL && expected != NULL, "fixture files are readable");
-    if (!markdown || !expected)
+    if (!markdown || !expected) {
         goto done;
+    }
 
     markdown_core_parse_options_init(&options);
     check(parse_option_mask(option_mask, &options), "manifest parse option mask is valid");
     document = markdown_core_document_parse(markdown, markdown_length, &options, &error);
     check(document != NULL && error == NULL, "manifest-configured facade parse succeeds");
-    if (!document)
+    if (!document) {
         goto done;
+    }
     check(markdown_core_document_dump(document, &actual, &actual_length, &error), "native AST dump succeeds");
     check(error == NULL, "successful dump has no error");
     if (actual && (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0)) {
@@ -148,11 +153,13 @@ static void check_option_gate(option_gate gate, const char *source, const char *
     }
     document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &options, &error);
     check(document != NULL && error == NULL, "disabled-option parse succeeds");
-    if (!document)
+    if (!document) {
         goto done;
+    }
     check(markdown_core_document_dump(document, &dump, &length, &error), "disabled-option dump succeeds");
-    if (dump)
+    if (dump) {
         check(strstr((const char *)dump, forbidden) == NULL, "disabled parse option falls back to the core AST");
+    }
 done:
     markdown_core_dump_free(dump);
     markdown_core_document_free(document);
@@ -219,8 +226,9 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
-    for (i = 3; i < argc; i += 2)
+    for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
+    }
     if (failures) {
         fprintf(stderr, "%d facade test(s) failed\n", failures);
         return 1;

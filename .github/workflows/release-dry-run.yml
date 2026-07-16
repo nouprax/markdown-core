@@ -1,4 +1,4 @@
-name: Release dry run
+name: Release Dry Run
 
 on:
     pull_request:
@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
     validate:
+        name: Health Check - Release Dry Run / Version and Credentials
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v7
@@ -31,11 +32,18 @@ jobs:
                   test -z "${MAVEN_SIGNING_PASSWORD:-}"
 
     c-artifacts:
+        name: Build Release - C / ${{ matrix.label }} · Dry Run
         needs: validate
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, macos-26]
+                include:
+                    - os: ubuntu-latest
+                      label: Linux
+                      artifact-label: ubuntu-latest
+                    - os: macos-26
+                      label: macOS
+                      artifact-label: macos-26
         runs-on: ${{ matrix.os }}
         steps:
             - uses: actions/checkout@v7
@@ -43,11 +51,12 @@ jobs:
               run: scripts/stage-c-release.sh build/release-c
             - uses: actions/upload-artifact@v7
               with:
-                  name: release-c-${{ matrix.os }}
+                  name: release-c-${{ matrix.artifact-label }}
                   path: build/release-c/*.tar.gz
                   if-no-files-found: error
 
     swift-source:
+        name: Build Release - Swift / Product Source · Dry Run
         needs: validate
         runs-on: macos-26
         steps:
@@ -66,6 +75,7 @@ jobs:
                   if-no-files-found: error
 
     npm-package:
+        name: Build Release - ES / npm Package · Dry Run
         needs: validate
         runs-on: ubuntu-latest
         steps:
@@ -92,6 +102,7 @@ jobs:
                   if-no-files-found: error
 
     maven-linux:
+        name: Build Release - Kotlin / Linux Publications · Dry Run
         needs: validate
         runs-on: ubuntu-latest
         env:
@@ -116,6 +127,7 @@ jobs:
                   if-no-files-found: error
 
     maven-macos:
+        name: Build Release - Kotlin / macOS Publications · Dry Run
         needs: validate
         runs-on: macos-26
         env:
@@ -137,6 +149,7 @@ jobs:
                   if-no-files-found: error
 
     maven-aggregate:
+        name: Assemble Release - Maven Central / Dry Run
         needs: [maven-linux, maven-macos]
         runs-on: ubuntu-latest
         env:
@@ -188,7 +201,7 @@ jobs:
                   if-no-files-found: error
 
     dry-run-gate:
-        name: Release dry-run gate
+        name: Release Dry Run - Ready
         if: ${{ always() }}
         needs: [validate, c-artifacts, swift-source, npm-package, maven-aggregate]
         runs-on: ubuntu-latest

@@ -12,7 +12,7 @@
 #include "utf8.h"
 #include "scanners.h"
 #include "inlines.h"
-#include "syntax_extension.h"
+#include "extension.h"
 
 static const char *EMDASH = "\xE2\x80\x94";
 static const char *ENDASH = "\xE2\x80\x93";
@@ -119,8 +119,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, mark
 // Create an inline with no value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_simple(markdown_core_mem *mem, markdown_core_node_type t) {
     markdown_core_node *e = (markdown_core_node *)mem->calloc(1, sizeof(*e));
-    if (!e)
+    if (!e) {
         return NULL;
+    }
     markdown_core_strbuf_init(mem, &e->content, 0);
     e->type = (uint16_t)t;
     return e;
@@ -130,8 +131,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_simple(markdown_core_mem *m
  * before creating the node. */
 static MARKDOWN_CORE_INLINE markdown_core_node *make_simple_subj(subject *subj, markdown_core_node_type t) {
     markdown_core_node *e = make_simple(subj->mem, t);
-    if (!e)
+    if (!e) {
         subj->oom = 1;
+    }
     return e;
 }
 
@@ -141,8 +143,9 @@ static markdown_core_node *make_str_with_entities(subject *subj, int start_colum
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
     if (houdini_unescape_html(&unescaped, content->data, content->len)) {
-        if (unescaped.oom)
+        if (unescaped.oom) {
             subj->oom = 1;
+        }
         return make_str(subj, start_column, end_column, markdown_core_chunk_buf_detach(&unescaped));
     } else {
         return make_str(subj, start_column, end_column, *content);
@@ -181,8 +184,9 @@ static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) 
         return empty;
     }
     c.alloc = 1;
-    if (len)
+    if (len) {
         memcpy(c.data, src->data, len);
+    }
     c.data[len] = '\0';
 
     return c;
@@ -198,12 +202,14 @@ static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_
         return result;
     }
 
-    if (is_email)
+    if (is_email) {
         markdown_core_strbuf_puts(&buf, "mailto:");
+    }
 
     houdini_unescape_html_f(&buf, url->data, url->len);
-    if (buf.oom)
+    if (buf.oom) {
         subj->oom = 1;
+    }
     return markdown_core_chunk_buf_detach(&buf);
 }
 
@@ -221,8 +227,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     link->start_column = start_column + 1;
     link->end_column = end_column + 1;
     text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
-    if (text)
+    if (text) {
         append_child(link, text);
+    }
     return link;
 }
 
@@ -320,8 +327,9 @@ static int count_newlines(subject *subj, bufsize_t from, bufsize_t len, int *sin
         }
     }
 
-    if (!nls)
+    if (!nls) {
         return 0;
+    }
 
     *since_newline = since_nl;
     return nls;
@@ -437,13 +445,15 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
 
         markdown_core_strbuf_set(&buf, subj->input.data + startpos, endpos - startpos - openticks.len);
         S_normalize_code(&buf);
-        if (buf.oom)
+        if (buf.oom) {
             subj->oom = 1;
+        }
 
         markdown_core_node *node =
             make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
-        if (!node)
+        if (!node) {
             return NULL;
+        }
         adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len, options);
         return node;
     }
@@ -535,8 +545,9 @@ static void print_delimiters(subject *subj)
 */
 
 static void remove_delimiter(subject *subj, delimiter *delim) {
-    if (delim == NULL)
+    if (delim == NULL) {
         return;
+    }
     if (delim->next == NULL) {
         // end of list:
         assert(delim == subj->last_delim);
@@ -552,8 +563,9 @@ static void remove_delimiter(subject *subj, delimiter *delim) {
 
 static void pop_bracket(subject *subj) {
     bracket *b;
-    if (subj->last_bracket == NULL)
+    if (subj->last_bracket == NULL) {
         return;
+    }
     b = subj->last_bracket;
     subj->last_bracket = subj->last_bracket->previous;
     subj->mem->free(b);
@@ -682,8 +694,9 @@ static markdown_core_node *handle_hyphen(subject *subj, bool smart) {
         markdown_core_strbuf_puts(&buf, ENDASH);
     }
 
-    if (buf.oom)
+    if (buf.oom) {
         subj->oom = 1;
+    }
     return make_str(subj, startpos, subj->pos - 1, markdown_core_chunk_buf_detach(&buf));
 }
 
@@ -703,26 +716,24 @@ static markdown_core_node *handle_period(subject *subj, bool smart) {
     }
 }
 
-static int extension_has_special_char(markdown_core_syntax_extension *ext, unsigned char c) {
-    markdown_core_llist *tmp_char;
-
-    for (tmp_char = ext->special_inline_chars; tmp_char; tmp_char = tmp_char->next) {
-        unsigned char tmp_c = (unsigned char)(size_t)tmp_char->data;
-
-        if (tmp_c == c)
+static int extension_has_special_char(markdown_core_extension *ext, unsigned char c) {
+    for (size_t i = 0; i < ext->special_inline_char_count; i++) {
+        if (ext->special_inline_chars[i] == c) {
             return 1;
+        }
     }
 
     return 0;
 }
 
-static markdown_core_syntax_extension *get_extension_for_special_char(markdown_core_parser *parser, unsigned char c) {
+static markdown_core_extension *get_extension_for_special_char(markdown_core_parser *parser, unsigned char c) {
     markdown_core_llist *tmp_ext;
 
-    for (tmp_ext = parser->inline_syntax_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp_ext->data;
-        if (extension_has_special_char(ext, c))
+    for (tmp_ext = parser->inline_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
+        markdown_core_extension *ext = (markdown_core_extension *)tmp_ext->data;
+        if (extension_has_special_char(ext, c)) {
             return ext;
+        }
     }
 
     return NULL;
@@ -755,7 +766,7 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
 
     // now move forward, looking for closers, and handling each
     while (closer != NULL) {
-        markdown_core_syntax_extension *extension = get_extension_for_special_char(parser, closer->delim_char);
+        markdown_core_extension *extension = get_extension_for_special_char(parser, closer->delim_char);
         if (closer->can_close) {
             // Now look backwards for first matching opener:
             opener = closer->previous;
@@ -776,10 +787,11 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, bufsiz
             old_closer = closer;
 
             if (extension) {
-                if (opener_found)
+                if (opener_found) {
                     closer = extension->insert_inline_from_delim(extension, parser, subj, opener, closer);
-                else
+                } else {
                     closer = closer->next;
+                }
             } else if (closer->delim_char == '*' || closer->delim_char == '_') {
                 if (opener_found) {
                     closer = S_insert_emph(subj, opener, closer);
@@ -902,8 +914,9 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
     if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
         if (nextchar == '\\' && get_extension_for_special_char(parser, '\\') == NULL) {
             bufsize_t end = start;
-            while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\')
+            while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
                 end += 2;
+            }
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
                 unsigned char *output = (unsigned char *)subj->mem->calloc((size_t)output_len + 1, 1);
@@ -935,12 +948,14 @@ static markdown_core_node *handle_entity(subject *subj) {
 
     len = houdini_unescape_ent(&ent, subj->input.data + subj->pos, subj->input.len - subj->pos);
 
-    if (len == 0)
+    if (len == 0) {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("&"));
+    }
 
     subj->pos += len;
-    if (ent.oom)
+    if (ent.oom) {
         subj->oom = 1;
+    }
     return make_str(subj, subj->pos - 1 - len, subj->pos - 1, markdown_core_chunk_buf_detach(&ent));
 }
 
@@ -959,8 +974,9 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
     houdini_unescape_html_f(&buf, url->data, url->len);
 
     markdown_core_strbuf_unescape(&buf);
-    if (buf.oom && lost)
+    if (buf.oom && lost) {
         *lost = 1;
+    }
     return markdown_core_chunk_buf_detach(&buf);
 }
 
@@ -984,8 +1000,9 @@ markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_c
     }
 
     markdown_core_strbuf_unescape(&buf);
-    if (buf.oom && lost)
+    if (buf.oom && lost) {
         *lost = 1;
+    }
     return markdown_core_chunk_buf_detach(&buf);
 }
 
@@ -1145,16 +1162,18 @@ static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t of
     size_t nb_p = 0;
 
     while (i < input->len) {
-        if (input->data[i] == '\\' && i + 1 < input->len && markdown_core_ispunct(input->data[i + 1]))
+        if (input->data[i] == '\\' && i + 1 < input->len && markdown_core_ispunct(input->data[i + 1])) {
             i += 2;
-        else if (input->data[i] == '(') {
+        } else if (input->data[i] == '(') {
             ++nb_p;
             ++i;
-            if (nb_p > 32)
+            if (nb_p > 32) {
                 return -1;
+            }
         } else if (input->data[i] == ')') {
-            if (nb_p == 0)
+            if (nb_p == 0) {
                 break;
+            }
             --nb_p;
             ++i;
         } else if (markdown_core_isspace(input->data[i])) {
@@ -1167,8 +1186,9 @@ static bufsize_t manual_scan_link_url_2(markdown_core_chunk *input, bufsize_t of
         }
     }
 
-    if (i >= input->len)
+    if (i >= input->len) {
         return -1;
+    }
 
     {
         markdown_core_chunk result = {input->data + offset, i - offset, 0};
@@ -1186,19 +1206,21 @@ static bufsize_t manual_scan_link_url(markdown_core_chunk *input, bufsize_t offs
             if (input->data[i] == '>') {
                 ++i;
                 break;
-            } else if (input->data[i] == '\\')
+            } else if (input->data[i] == '\\') {
                 i += 2;
-            else if (input->data[i] == '\n' || input->data[i] == '<')
+            } else if (input->data[i] == '\n' || input->data[i] == '<') {
                 return -1;
-            else
+            } else {
                 ++i;
+            }
         }
     } else {
         return manual_scan_link_url_2(input, offset, output);
     }
 
-    if (i >= input->len)
+    if (i >= input->len) {
         return -1;
+    }
 
     {
         markdown_core_chunk result = {input->data + offset + 1, i - 2 - offset, 0};
@@ -1265,8 +1287,9 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
                 int lost = 0;
                 url = markdown_core_clean_url(subj->mem, &url_chunk, &lost);
                 title = markdown_core_clean_title(subj->mem, &title_chunk, &lost);
-                if (lost)
+                if (lost) {
                     subj->oom = 1;
+                }
             }
             markdown_core_chunk_free(subj->mem, &url_chunk);
             markdown_core_chunk_free(subj->mem, &title_chunk);
@@ -1474,10 +1497,12 @@ static bufsize_t subject_find_special_char(subject *subj, int options) {
     bufsize_t n = subj->pos + 1;
 
     while (n < subj->input.len) {
-        if (subj->special_chars[subj->input.data[n]])
+        if (subj->special_chars[subj->input.data[n]]) {
             return n;
-        if (options & MARKDOWN_CORE_OPT_SMART && SMART_PUNCT_CHARS[subj->input.data[n]])
+        }
+        if (options & MARKDOWN_CORE_OPT_SMART && SMART_PUNCT_CHARS[subj->input.data[n]]) {
             return n;
+        }
         n++;
     }
 
@@ -1509,21 +1534,25 @@ void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser) {
 }
 
 void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
-    if (is_core_special_character(c))
+    if (is_core_special_character(c)) {
         return;
+    }
 
     parser->special_chars[c] = 1;
-    if (emphasis)
+    if (emphasis) {
         parser->skip_chars[c] = 1;
+    }
 }
 
 void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
-    if (is_core_special_character(c))
+    if (is_core_special_character(c)) {
         return;
+    }
 
     parser->special_chars[c] = 0;
-    if (emphasis)
+    if (emphasis) {
         parser->skip_chars[c] = 0;
+    }
 }
 
 static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
@@ -1531,16 +1560,18 @@ static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown
     markdown_core_node *res = NULL;
     markdown_core_llist *tmp;
 
-    for (tmp = parser->inline_syntax_extensions; tmp; tmp = tmp->next) {
-        markdown_core_syntax_extension *ext = (markdown_core_syntax_extension *)tmp->data;
+    for (tmp = parser->inline_extensions; tmp; tmp = tmp->next) {
+        markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
 
-        if (!extension_has_special_char(ext, c))
+        if (!extension_has_special_char(ext, c)) {
             continue;
+        }
 
         res = ext->match_inline(ext, parser, parent, c, subj);
 
-        if (res)
+        if (res) {
             break;
+        }
     }
 
     return res;
@@ -1553,16 +1584,17 @@ static delimiter *find_extension_opener_for_special_char(markdown_core_parser *p
     memset(closer_count, 0, sizeof(closer_count));
 
     while (delim) {
-        markdown_core_syntax_extension *extension = get_extension_for_special_char(parser, delim->delim_char);
+        markdown_core_extension *extension = get_extension_for_special_char(parser, delim->delim_char);
 
         if (extension && extension_has_special_char(extension, c)) {
             if (delim->can_close) {
                 closer_count[delim->delim_char]++;
             } else if (delim->can_open) {
-                if (closer_count[delim->delim_char] > 0)
+                if (closer_count[delim->delim_char] > 0) {
                     closer_count[delim->delim_char]--;
-                else
+                } else {
                     return delim;
+                }
             }
         }
 
@@ -1599,8 +1631,9 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         break;
     case '\\':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl == NULL)
+        if (new_inl == NULL) {
             new_inl = handle_backslash(parser, subj);
+        }
         break;
     case '&':
         new_inl = handle_entity(subj);
@@ -1623,8 +1656,9 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
     case '[':
         advance(subj);
         new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("["));
-        if (new_inl)
+        if (new_inl) {
             push_bracket(subj, false, new_inl);
+        }
         break;
     case ']':
         if (bracket_takes_close_bracket(parser, subj)) {
@@ -1632,28 +1666,32 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
             break;
         }
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl == NULL)
+        if (new_inl == NULL) {
             new_inl = handle_close_bracket(parser, subj);
+        }
         break;
     case '!':
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL)
+        if (new_inl != NULL) {
             break;
+        }
 
         advance(subj);
         if (peek_char(subj) == '[' && peek_char_n(subj, 1) != '^') {
             advance(subj);
             new_inl = make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal("!["));
-            if (new_inl)
+            if (new_inl) {
                 push_bracket(subj, true, new_inl);
+            }
         } else {
             new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("!"));
         }
         break;
     default:
         new_inl = try_extensions(parser, parent, c, subj);
-        if (new_inl != NULL)
+        if (new_inl != NULL) {
             break;
+        }
 
         endpos = subject_find_special_char(subj, options);
         contents = markdown_core_chunk_dup(&subj->input, subj->pos, endpos - subj->pos);
@@ -1695,8 +1733,9 @@ void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_nod
         pop_bracket(&subj);
     }
 
-    if (subj.oom)
+    if (subj.oom) {
         parser->oom = true;
+    }
 }
 
 // Parse zero or more space characters, including at most one newline.
@@ -1725,8 +1764,9 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     subject_from_buf(NULL, mem, -1, 0, &subj, input, NULL);
 
     // parse label:
-    if (!link_label(&subj, &lab) || lab.len == 0)
+    if (!link_label(&subj, &lab) || lab.len == 0) {
         return 0;
+    }
 
     // colon:
     if (peek_char(&subj) == ':') {
@@ -1770,8 +1810,9 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_
     }
     // insert reference into refmap
     markdown_core_reference_create(refmap, &lab, &url, &title);
-    if (subj.oom && refmap)
+    if (subj.oom && refmap) {
         refmap->oom = 1;
+    }
     return subj.pos;
 }
 
@@ -1787,12 +1828,14 @@ static char *my_strndup(const char *s, size_t n) {
     char *result;
     size_t len = strlen(s);
 
-    if (n < len)
+    if (n < len) {
         len = n;
+    }
 
     result = (char *)malloc(len + 1);
-    if (!result)
+    if (!result) {
         return 0;
+    }
 
     result[len] = '\0';
     return (char *)memcpy(result, s, len);
@@ -1896,8 +1939,9 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
 }
 
 static void S_update_text_sourcepos(markdown_core_node *node) {
-    if (node->start_line == 0)
+    if (node->start_line == 0) {
         return;
+    }
 
     if (node->as.literal.len == 0) {
         node->start_line = 0;

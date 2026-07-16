@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
     validate:
+        name: Health Check - Release / Tag and Versions
         if: github.event_name == 'push'
         runs-on: ubuntu-latest
         steps:
@@ -38,17 +39,25 @@ jobs:
               run: test -s "docs/releases/$(cat VERSION).md"
 
     quality:
+        name: Quality Gate - Release
         needs: validate
         permissions:
             contents: read
         uses: ./.github/workflows/ci.yml
 
     c-artifacts:
+        name: Build Release - C / ${{ matrix.label }}
         needs: quality
         strategy:
             fail-fast: false
             matrix:
-                os: [ubuntu-latest, macos-26]
+                include:
+                    - os: ubuntu-latest
+                      label: Linux
+                      artifact-label: ubuntu-latest
+                    - os: macos-26
+                      label: macOS
+                      artifact-label: macos-26
         runs-on: ${{ matrix.os }}
         steps:
             - uses: actions/checkout@v7
@@ -56,11 +65,12 @@ jobs:
               run: scripts/stage-c-release.sh build/release-c
             - uses: actions/upload-artifact@v7
               with:
-                  name: release-c-${{ matrix.os }}
+                  name: release-c-${{ matrix.artifact-label }}
                   path: build/release-c/*.tar.gz
                   if-no-files-found: error
 
     swift-source:
+        name: Build Release - Swift / Product Source
         needs: quality
         runs-on: macos-26
         steps:
@@ -79,6 +89,7 @@ jobs:
                   if-no-files-found: error
 
     npm-package:
+        name: Build Release - ES / npm Package
         needs: quality
         runs-on: ubuntu-latest
         steps:
@@ -105,6 +116,7 @@ jobs:
                   if-no-files-found: error
 
     maven-linux:
+        name: Build Release - Kotlin / Linux Publications
         needs: quality
         runs-on: ubuntu-latest
         env:
@@ -128,6 +140,7 @@ jobs:
                   if-no-files-found: error
 
     maven-macos:
+        name: Build Release - Kotlin / macOS Publications
         needs: quality
         runs-on: macos-26
         env:
@@ -148,14 +161,13 @@ jobs:
                   path: build/release-maven-macos
                   if-no-files-found: error
 
-    maven-stage:
+    maven-assemble:
+        name: Assemble Release - Maven Central
         needs: [maven-linux, maven-macos]
         runs-on: ubuntu-latest
         environment: release
         permissions:
             contents: read
-        outputs:
-            deployment-id: ${{ steps.central.outputs['deployment-id'] }}
         env:
             GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
         steps:
@@ -196,7 +208,45 @@ jobs:
                   node scripts/audit-maven-publications.mjs \
                       build/release-maven-central --full --signed
                   (cd build/release-maven-central && zip -qr ../markdown-core-maven-central.zip com/nouprax)
-            - name: Upload a user-managed Central deployment
+            - uses: actions/upload-artifact@v7
+              with:
+                  name: release-maven-central
+                  path: build/markdown-core-maven-central.zip
+                  if-no-files-found: error
+
+    release-artifacts-ready:
+        name: Release Artifacts - Ready
+        if: ${{ github.event_name == 'push' && always() }}
+        needs: [c-artifacts, swift-source, npm-package, maven-assemble]
+        runs-on: ubuntu-latest
+        steps:
+            - name: Require every audited release artifact
+              env:
+                  C: ${{ needs['c-artifacts'].result }}
+                  SWIFT: ${{ needs['swift-source'].result }}
+                  NPM: ${{ needs['npm-package'].result }}
+                  MAVEN: ${{ needs['maven-assemble'].result }}
+              run: |
+                  for result in "$C" "$SWIFT" "$NPM" "$MAVEN"; do
+                      test "$result" = success
+                  done
+
+    maven-stage:
+        name: Publish Release - Maven Central / Stage
+        needs: release-artifacts-ready
+        runs-on: ubuntu-latest
+        environment: release
+        permissions:
+            contents: read
+        outputs:
+            deployment-id: ${{ steps.central.outputs['deployment-id'] }}
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/download-artifact@v8
+              with:
+                  name: release-maven-central
+                  path: build
+            - name: Upload the audited user-managed Central deployment
               id: central
               env:
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -205,14 +255,10 @@ jobs:
                   deployment=$(scripts/central-portal.sh upload build/markdown-core-maven-central.zip)
                   echo "deployment-id=$deployment" >>"$GITHUB_OUTPUT"
                   scripts/wait-central-deployment.sh "$deployment" VALIDATED
-            - uses: actions/upload-artifact@v7
-              with:
-                  name: release-maven-central
-                  path: build/markdown-core-maven-central.zip
-                  if-no-files-found: error
 
     npm-publish:
-        needs: [npm-package, maven-stage]
+        name: Publish Release - ES / npm
+        needs: [release-artifacts-ready, maven-stage]
         runs-on: ubuntu-latest
         environment: release
         permissions:
@@ -231,6 +277,7 @@ jobs:
               run: npm publish ./release-npm/*.tgz --access public
 
     maven-publish:
+        name: Publish Release - Maven Central / Commit
         needs: [maven-stage, npm-publish]
         runs-on: ubuntu-latest
         environment: release
@@ -248,6 +295,7 @@ jobs:
                   scripts/wait-central-deployment.sh "$DEPLOYMENT_ID" PUBLISHED
 
     github-release:
+        name: Publish Release - GitHub
         needs: [c-artifacts, swift-source, npm-publish, maven-publish]
         runs-on: ubuntu-latest
         environment: release
@@ -291,6 +339,7 @@ jobs:
                       release-files/*
 
     resume-publish:
+        name: Resume Release - Published Artifacts
         if: github.event_name == 'workflow_dispatch'
         runs-on: ubuntu-latest
         environment: release

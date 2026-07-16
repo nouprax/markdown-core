@@ -53,8 +53,10 @@ typedef enum {
     MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
 } markdown_core_node_type;
 
-extern markdown_core_node_type MARKDOWN_CORE_NODE_LAST_BLOCK;
-extern markdown_core_node_type MARKDOWN_CORE_NODE_LAST_INLINE;
+/* Extension node types are compile-time constants defined in the owning
+ * extension headers (extensions/table.h, strikethrough.h, formula.h,
+ * directive.h). They continue the block/inline value ranges above; the
+ * engine holds no runtime node-type registry. */
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;
 
@@ -66,7 +68,7 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
-typedef struct markdown_core_syntax_extension markdown_core_syntax_extension;
+typedef struct markdown_core_extension markdown_core_extension;
 
 /**
  * ## Custom memory allocator support
@@ -86,18 +88,6 @@ typedef struct markdown_core_mem {
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_mem *markdown_core_get_default_mem_allocator(void);
-
-/** An arena allocator; uses system calloc to allocate large
- * slabs of memory.  Memory in these slabs is not reused at all.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_mem *markdown_core_get_arena_mem_allocator(void);
-
-/** Resets the arena allocator, quickly returning all used memory
- * to the operating system.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_arena_reset(void);
 
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
@@ -157,11 +147,11 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdow
                                                                          markdown_core_mem *mem);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                                         markdown_core_syntax_extension *extension);
+                                                                         markdown_core_extension *extension);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *
-markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
-                                        markdown_core_syntax_extension *extension);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type,
+                                                                                 markdown_core_mem *mem,
+                                                                                 markdown_core_extension *extension);
 
 /** Frees the memory allocated for a node and any children.
  */

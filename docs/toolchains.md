@@ -91,20 +91,27 @@ scripts/gradle.sh ktlintCheck
 scripts/lint-c.sh
 ```
 
-Android emulator configuration is repository-owned. Gradle Managed Devices
-provisions the declared Pixel 10 Pro XL/64-bit Google APIs images at API 36 with
-both 4 KB and 16 KB page sizes, then runs the two separate
-native instrumentation selections:
+Android emulator configuration is repository-owned. Local development uses the
+Gradle Managed Devices Pixel 10 Pro XL/API 36 definitions for 4 KB and 16 KB:
 
 ```sh
 pnpm test:kotlin-android-emulator
 pnpm conformance:kotlin-android-emulator
 ```
 
-Neither command reads an Android Studio AVD or device serial. The first run may
-download the declared system image into the Android SDK cache. GMD stops the
-emulators and restores clean snapshots automatically while retaining reusable
-AVD/snapshot caches. Reclaim those managed AVD caches explicitly when needed:
+Both commands run 4 KB and 16 KB devices sequentially by default. Required CI
+uses a stricter build-once/test-many boundary instead:
+
+```sh
+scripts/build-kotlin-android-test-artifact.sh
+scripts/run-kotlin-android-test-artifact.sh \
+    build/ci-artifacts/kotlin-android-x86_64 correctness 4k
+```
+
+The producer builds one x86_64 APK and digest. Four independent CI consumers run
+correctness/conformance on 4 KB/16 KB images without Gradle, NDK, CMake,
+publication, GMD snapshots, or another suite on the same runner. Reclaim local
+managed-device caches explicitly when needed:
 
 ```sh
 pnpm clean:kotlin-android-emulator

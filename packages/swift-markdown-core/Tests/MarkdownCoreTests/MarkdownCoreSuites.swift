@@ -63,6 +63,73 @@ import Testing
         #expect(node is Paragraph)
         for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").children.count == 2) }
     }
+
+    @Test("simultaneous parses with disagreeing options never interfere")
+    func concurrentParses() async throws {
+        // The engine holds no process-global state: parses that disagree
+        // about extension special characters ('~', '$', ':') must never
+        // observe each other. Dumps are compared byte-for-byte against
+        // single-threaded references.
+        let combos = try makeConcurrencyCombos()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for worker in 0..<8 {
+                group.addTask {
+                    for iteration in 0..<25 {
+                        let combo = combos[(worker + iteration) % combos.count]
+                        let dump = try Document.parse(combo.source, options: combo.options).dump()
+                        #expect(dump == combo.reference)
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+    }
+}
+
+private struct ConcurrencyCombo: Sendable {
+    let source: String
+    let options: ParseOptions
+    let reference: String
+}
+
+private func makeConcurrencyCombos() throws -> [ConcurrencyCombo] {
+    let sources = [
+        "# Heading\n\nPlain *emphasis* and **strong** text with `code`.\n",
+        "| a | b |\n| --- | :-: |\n| 1 | 2 |\n\n~~struck~~ and *a~b*c~ mix.\n",
+        "Formula $x^2$ inline and *a$b*c$ flanking.\n\n$$\nx = y\n$$\n",
+        ":::note[Label]{id=1 title=\"T\"}\ncontent *here*\n:::\n\nInline :dir[text]{k=v} tail.\n",
+    ]
+    let variants = [
+        ParseOptions(),
+        ParseOptions(
+            smartPunctuation: false,
+            footnotes: false,
+            stripHTMLComments: false,
+            tables: false,
+            strikethrough: false,
+            autolinks: false,
+            taskLists: false,
+            formulas: false,
+            dollarFormulaDelimiters: false,
+            latexFormulaDelimiters: false,
+            directives: false
+        ),
+        ParseOptions(
+            strikethrough: false,
+            formulas: false,
+            dollarFormulaDelimiters: false,
+            latexFormulaDelimiters: false
+        ),
+    ]
+    return try sources.flatMap { source in
+        try variants.map { options in
+            ConcurrencyCombo(
+                source: source,
+                options: options,
+                reference: try Document.parse(source, options: options).dump()
+            )
+        }
+    }
 }
 
 private struct KindVisitor: MarkupVisitor {

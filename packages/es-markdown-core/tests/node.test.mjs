@@ -79,3 +79,55 @@ test("robustness: repeated parse and release remains stable", () => {
         assert.equal(Document.parse("# Copy\n\n- [x] item 🚀\n").content.length, 2);
     }
 });
+
+test("robustness: worker threads own isolated engine instances", async () => {
+    // The engine holds no process-global state and the module instantiates
+    // one WASM instance per JS context: workers parsing with disagreeing
+    // option sets must reproduce the main thread's dumps byte-for-byte.
+    const { Worker } = await import("node:worker_threads");
+    const sources = [
+        "# Heading\n\nPlain *emphasis* and **strong** text with `code`.\n",
+        "| a | b |\n| --- | :-: |\n| 1 | 2 |\n\n~~struck~~ and *a~b*c~ mix.\n",
+        "Formula $x^2$ inline and *a$b*c$ flanking.\n\n$$\nx = y\n$$\n",
+        ':::note[Label]{id=1 title="T"}\ncontent *here*\n:::\n\nInline :dir[text]{k=v} tail.\n'
+    ];
+    const variants = [
+        undefined,
+        {
+            smartPunctuation: false,
+            footnotes: false,
+            stripHTMLComments: false,
+            tables: false,
+            strikethrough: false,
+            autolinks: false,
+            taskLists: false,
+            formulas: false,
+            dollarFormulaDelimiters: false,
+            latexFormulaDelimiters: false,
+            directives: false
+        },
+        {
+            strikethrough: false,
+            formulas: false,
+            dollarFormulaDelimiters: false,
+            latexFormulaDelimiters: false
+        }
+    ];
+    const jobs = sources.flatMap((source) => variants.map((options) => ({ source, options })));
+    const references = jobs.map(({ source, options }) => Document.parse(source, options).dump());
+
+    const workers = Array.from(
+        { length: 4 },
+        () =>
+            new Promise((resolve, reject) => {
+                const worker = new Worker(new URL("./worker-parse.mjs", import.meta.url), {
+                    workerData: { jobs }
+                });
+                worker.once("message", resolve);
+                worker.once("error", reject);
+            })
+    );
+    for (const dumps of await Promise.all(workers)) {
+        assert.deepEqual(dumps, references);
+    }
+});

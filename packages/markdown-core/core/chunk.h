@@ -17,8 +17,9 @@ typedef struct markdown_core_chunk {
 } markdown_core_chunk;
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
-    if (c->alloc)
+    if (c->alloc) {
         mem->free(c->data);
+    }
 
     c->data = NULL;
     c->alloc = 0;
@@ -38,8 +39,9 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_rtrim(markdown_core_chunk *
     assert(!c->alloc);
 
     while (c->len > 0) {
-        if (!markdown_core_isspace(c->data[c->len - 1]))
+        if (!markdown_core_isspace(c->data[c->len - 1])) {
             break;
+        }
 
         c->len--;
     }
@@ -63,8 +65,9 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
     }
     str = (unsigned char *)mem->calloc(c->len + 1, 1);
     /* NULL reports allocation failure; the chunk keeps its borrowed bytes. */
-    if (!str)
+    if (!str) {
         return NULL;
+    }
     if (c->len > 0) {
         memcpy(str, c->data, c->len);
     }
@@ -87,8 +90,9 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_mem *
     } else {
         bufsize_t len = (bufsize_t)strlen(str);
         unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
-        if (!copy)
+        if (!copy) {
             return 0;
+        }
         c->len = len;
         c->data = copy;
         c->alloc = 1;

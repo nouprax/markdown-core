@@ -1,8 +1,8 @@
-name: PR metrics comment
+name: PR Metrics Comment
 
 on:
     workflow_run:
-        workflows: [PR metrics]
+        workflows: [CI]
         types: [completed]
 
 permissions:
@@ -13,80 +13,147 @@ permissions:
 
 jobs:
     comment:
-        name: Update PR metrics comment
+        name: Report - PR Metrics / Comment
         if: ${{ github.event.workflow_run.event == 'pull_request' }}
         runs-on: ubuntu-latest
         steps:
-            - name: Validate artifact metadata before download
+            - name: Resolve exact base run and validate artifact metadata
               id: artifacts
               uses: actions/github-script@v9
               with:
                   script: |
-                      const allowedNames = new Set(["pr-metrics-linux", "pr-metrics-macos"]);
-                      const artifacts = await github.paginate(
-                          github.rest.actions.listWorkflowRunArtifacts,
-                          {
-                              owner: context.repo.owner,
-                              repo: context.repo.repo,
-                              run_id: context.payload.workflow_run.id,
-                              per_page: 100,
-                          },
-                      );
-                      const candidates = artifacts.filter((artifact) =>
-                          artifact.name.startsWith("pr-metrics-"),
-                      );
-                      const selected = candidates.filter(
-                          (artifact) => allowedNames.has(artifact.name) && !artifact.expired,
-                      );
-                      const names = new Set(selected.map((artifact) => artifact.name));
-                      const totalBytes = selected.reduce(
-                          (total, artifact) => total + artifact.size_in_bytes,
-                          0,
-                      );
-                      const safe =
-                          selected.length > 0 &&
-                          candidates.length === selected.length &&
-                          selected.length <= allowedNames.size &&
-                          names.size === selected.length &&
-                          selected.every((artifact) => artifact.size_in_bytes <= 65536) &&
-                          totalBytes <= 131072;
-                      core.setOutput("safe", safe ? "true" : "false");
-                      if (!safe) core.warning("Metrics artifacts failed name/count/size validation.");
-            - name: Download untrusted metrics as data
-              if: ${{ steps.artifacts.outputs.safe == 'true' }}
-              continue-on-error: true
-              uses: actions/download-artifact@v8
-              with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
-                  run-id: ${{ github.event.workflow_run.id }}
-                  pattern: pr-metrics-*
-                  path: metrics
-                  merge-multiple: true
-            - name: Create or update the metrics comment
-              uses: actions/github-script@v9
-              with:
-                  script: |
-                      const fs = require("node:fs");
-                      const path = require("node:path");
+                      const allowedNames = new Set([
+                          "pr-metrics-c-linux",
+                          "pr-metrics-kotlin-jvm",
+                          "pr-metrics-es-node",
+                          "pr-metrics-swift-macos",
+                      ]);
 
-                      const marker = "<!-- markdown-core-pr-metrics -->";
-                      let pullRequests = context.payload.workflow_run.pull_requests ?? [];
+                      async function validateMetricsArtifacts(runId) {
+                          const artifacts = await github.paginate(
+                              github.rest.actions.listWorkflowRunArtifacts,
+                              {
+                                  owner: context.repo.owner,
+                                  repo: context.repo.repo,
+                                  run_id: runId,
+                                  per_page: 100,
+                              },
+                          );
+                          const candidates = artifacts.filter((artifact) =>
+                              artifact.name.startsWith("pr-metrics-"),
+                          );
+                          const selected = candidates.filter(
+                              (artifact) => allowedNames.has(artifact.name) && !artifact.expired,
+                          );
+                          const names = new Set(selected.map((artifact) => artifact.name));
+                          const totalBytes = selected.reduce(
+                              (total, artifact) => total + artifact.size_in_bytes,
+                              0,
+                          );
+                          return (
+                              selected.length > 0 &&
+                              candidates.length === selected.length &&
+                              selected.length <= allowedNames.size &&
+                              names.size === selected.length &&
+                              selected.every((artifact) => artifact.size_in_bytes <= 65536) &&
+                              totalBytes <= 262144
+                          );
+                      }
+
+                      const headRun = context.payload.workflow_run;
+                      const headSafe = await validateMetricsArtifacts(headRun.id);
+                      core.setOutput("head_safe", headSafe ? "true" : "false");
+                      core.setOutput("head_sha", headRun.head_sha);
+                      if (!headSafe) core.warning("Head metrics artifacts failed name/count/size validation.");
+
+                      let pullRequests = headRun.pull_requests ?? [];
                       if (pullRequests.length !== 1) {
                           const associated =
                               await github.rest.repos.listPullRequestsAssociatedWithCommit({
                                   owner: context.repo.owner,
                                   repo: context.repo.repo,
-                                  commit_sha: context.payload.workflow_run.head_sha,
+                                  commit_sha: headRun.head_sha,
                               });
                           pullRequests = associated.data.filter(
                               (pullRequest) => pullRequest.base.repo.full_name === context.payload.repository.full_name,
                           );
                       }
                       if (pullRequests.length !== 1) {
-                          core.notice("No unique pull request is associated with this run.");
+                          core.warning("No unique pull request is associated with this CI run.");
+                          core.setOutput("base_safe", "false");
                           return;
                       }
 
+                      const pullRequest = await github.rest.pulls.get({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          pull_number: pullRequests[0].number,
+                      });
+                      const baseSha = pullRequest.data.base.sha;
+                      core.setOutput("pull_number", pullRequest.data.number);
+                      core.setOutput("base_sha", baseSha);
+
+                      const runsResponse = await github.rest.actions.listWorkflowRunsForRepo({
+                          owner: context.repo.owner,
+                          repo: context.repo.repo,
+                          branch: pullRequest.data.base.ref,
+                          event: "push",
+                          status: "success",
+                          per_page: 100,
+                      });
+                      const baseRun = runsResponse.data.workflow_runs.find(
+                          (run) =>
+                              run.name === "CI" &&
+                              run.head_sha === baseSha &&
+                              run.conclusion === "success",
+                      );
+                      if (!baseRun) {
+                          core.notice(`No successful main CI run exists for exact base ${baseSha}.`);
+                          core.setOutput("base_safe", "false");
+                          return;
+                      }
+
+                      const baseSafe = await validateMetricsArtifacts(baseRun.id);
+                      core.setOutput("base_safe", baseSafe ? "true" : "false");
+                      core.setOutput("base_run_id", baseRun.id);
+                      core.setOutput("base_run_url", baseRun.html_url);
+                      if (!baseSafe) core.warning("Base metrics artifacts failed name/count/size validation.");
+
+            - name: Download head metrics as untrusted data
+              if: ${{ steps.artifacts.outputs.head_safe == 'true' }}
+              continue-on-error: true
+              uses: actions/download-artifact@v8
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ github.event.workflow_run.id }}
+                  pattern: pr-metrics-*
+                  path: metrics/head
+                  merge-multiple: true
+
+            - name: Download exact-base metrics as untrusted data
+              if: ${{ steps.artifacts.outputs.base_safe == 'true' }}
+              continue-on-error: true
+              uses: actions/download-artifact@v8
+              with:
+                  github-token: ${{ secrets.GITHUB_TOKEN }}
+                  run-id: ${{ steps.artifacts.outputs.base_run_id }}
+                  pattern: pr-metrics-*
+                  path: metrics/base
+                  merge-multiple: true
+
+            - name: Create or update the metrics diff comment
+              uses: actions/github-script@v9
+              env:
+                  BASE_RUN_URL: ${{ steps.artifacts.outputs.base_run_url }}
+                  BASE_SHA: ${{ steps.artifacts.outputs.base_sha }}
+                  HEAD_SHA: ${{ steps.artifacts.outputs.head_sha }}
+                  PULL_NUMBER: ${{ steps.artifacts.outputs.pull_number }}
+              with:
+                  script: |
+                      const fs = require("node:fs");
+                      const path = require("node:path");
+
+                      const marker = "<!-- markdown-core-pr-metrics -->";
                       const allowedPlatforms = new Set(["linux", "macos"]);
                       const allowedRuntimes = new Set(["c", "swift", "kotlin", "es"]);
                       const allowedWorkloads = new Set([
@@ -99,122 +166,173 @@ jobs:
                           "kotlin-jvm-jar",
                           "es-wasm",
                       ]);
-                      const documents = [];
 
-                      function visit(directory) {
-                          if (!fs.existsSync(directory)) return;
-                          for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-                              const entryPath = path.join(directory, entry.name);
-                              if (entry.isDirectory()) visit(entryPath);
-                              else if (entry.isFile() && entry.name.endsWith(".json")) {
-                                  try {
-                                      if (fs.statSync(entryPath).size > 65536 || documents.length >= 2) {
-                                          core.warning(`Ignored oversized or excess metrics file: ${entry.name}`);
-                                          continue;
+                      function readDocuments(directory, expectedSha) {
+                          const documents = [];
+                          function visit(current) {
+                              if (!fs.existsSync(current)) return;
+                              for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+                                  const entryPath = path.join(current, entry.name);
+                                  if (entry.isDirectory()) visit(entryPath);
+                                  else if (entry.isFile() && entry.name.endsWith(".json")) {
+                                      try {
+                                          if (fs.statSync(entryPath).size > 65536 || documents.length >= 4) {
+                                              core.warning(`Ignored oversized or excess metrics file: ${entry.name}`);
+                                              continue;
+                                          }
+                                          const document = JSON.parse(fs.readFileSync(entryPath, "utf8"));
+                                          if (document?.sourceSha !== expectedSha) {
+                                              core.warning(`Ignored metrics with unexpected source SHA: ${entry.name}`);
+                                              continue;
+                                          }
+                                          documents.push(document);
+                                      } catch {
+                                          core.warning(`Ignored malformed metrics file: ${entry.name}`);
                                       }
-                                      documents.push(JSON.parse(fs.readFileSync(entryPath, "utf8")));
-                                  } catch {
-                                      core.warning(`Ignored malformed metrics file: ${entry.name}`);
                                   }
                               }
                           }
+                          visit(directory);
+                          return documents;
                       }
-                      visit("metrics");
 
-                      const benchmarkRows = [];
-                      const sizeRows = [];
-                      for (const document of documents) {
-                          if (
-                              document?.schema !== 1 ||
-                              !allowedPlatforms.has(document.platform) ||
-                              !Array.isArray(document.benchmarks) ||
-                              !Array.isArray(document.sizes)
-                          ) {
-                              continue;
-                          }
-                          for (const metric of document.benchmarks) {
+                      function collect(documents) {
+                          const benchmarks = new Map();
+                          const sizes = new Map();
+                          for (const document of documents) {
                               if (
-                                  !allowedRuntimes.has(metric?.runtime) ||
-                                  !allowedWorkloads.has(metric?.workload) ||
-                                  !Number.isSafeInteger(metric?.medianNs) ||
-                                  metric.medianNs < 0 ||
-                                  !(metric.memoryKiB === null ||
-                                      (Number.isSafeInteger(metric.memoryKiB) && metric.memoryKiB >= 0))
+                                  document?.schema !== 1 ||
+                                  !allowedPlatforms.has(document.platform) ||
+                                  !Array.isArray(document.benchmarks) ||
+                                  !Array.isArray(document.sizes)
                               ) {
                                   continue;
                               }
-                              benchmarkRows.push(metric);
-                          }
-                          for (const metric of document.sizes) {
-                              if (
-                                  !allowedSizes.has(metric?.name) ||
-                                  !Number.isSafeInteger(metric?.bytes) ||
-                                  metric.bytes < 0
-                              ) {
-                                  continue;
+                              for (const metric of document.benchmarks) {
+                                  if (
+                                      !allowedRuntimes.has(metric?.runtime) ||
+                                      !allowedWorkloads.has(metric?.workload) ||
+                                      !Number.isSafeInteger(metric?.medianNs) ||
+                                      metric.medianNs < 0 ||
+                                      !(metric.memoryKiB === null ||
+                                          (Number.isSafeInteger(metric.memoryKiB) && metric.memoryKiB >= 0))
+                                  ) {
+                                      continue;
+                                  }
+                                  benchmarks.set(`${metric.runtime}:${metric.workload}`, metric);
                               }
-                              sizeRows.push(metric);
+                              for (const metric of document.sizes) {
+                                  if (
+                                      !allowedSizes.has(metric?.name) ||
+                                      !Number.isSafeInteger(metric?.bytes) ||
+                                      metric.bytes < 0
+                                  ) {
+                                      continue;
+                                  }
+                                  sizes.set(metric.name, metric);
+                              }
                           }
+                          return { benchmarks, sizes };
                       }
 
-                      benchmarkRows.sort((a, b) =>
-                          `${a.runtime}:${a.workload}`.localeCompare(`${b.runtime}:${b.workload}`),
+                      function percentDelta(current, baseline) {
+                          if (!Number.isFinite(baseline) || baseline === 0) return "n/a";
+                          const percent = ((current - baseline) / baseline) * 100;
+                          return `${percent > 0 ? "+" : ""}${percent.toFixed(1)}%`;
+                      }
+
+                      function byteDelta(current, baseline) {
+                          if (!Number.isSafeInteger(baseline)) return "n/a";
+                          const delta = current - baseline;
+                          const sign = delta > 0 ? "+" : "";
+                          return `${sign}${delta.toLocaleString("en-US")} B (${percentDelta(current, baseline)})`;
+                      }
+
+                      const head = collect(readDocuments("metrics/head", process.env.HEAD_SHA));
+                      const base = collect(readDocuments("metrics/base", process.env.BASE_SHA));
+                      const benchmarkRows = [...head.benchmarks.entries()].sort(([left], [right]) =>
+                          left.localeCompare(right),
                       );
-                      sizeRows.sort((a, b) => a.name.localeCompare(b.name));
+                      const sizeRows = [...head.sizes.entries()].sort(([left], [right]) =>
+                          left.localeCompare(right),
+                      );
 
                       const lines = [
                           marker,
-                          "## PR performance and binary-size snapshot",
+                          "## PR performance and binary-size diff",
                           "",
-                          "> Informational only. These metrics are intentionally excluded from required quality gates.",
+                          "> Benchmark execution is required; hosted-runner timing, memory, and size deltas are informational only.",
                           "",
                       ];
+                      if (process.env.BASE_RUN_URL && base.benchmarks.size + base.sizes.size > 0) {
+                          lines.push(
+                              `Baseline: exact PR base \`${process.env.BASE_SHA.slice(0, 12)}\` ([successful main CI](${process.env.BASE_RUN_URL})).`,
+                              "",
+                          );
+                      } else {
+                          lines.push(
+                              `Baseline unavailable for exact PR base \`${(process.env.BASE_SHA || "unknown").slice(0, 12)}\`; current values are shown without a diff.`,
+                              "",
+                          );
+                      }
+
                       if (benchmarkRows.length > 0) {
                           lines.push(
-                              "### Benchmarks",
+                              "### Performance",
                               "",
-                              "| Runtime | Workload | Median | Memory |",
-                              "| --- | --- | ---: | ---: |",
+                              "| Runtime | Workload | Median | Perf diff | Memory | Memory diff |",
+                              "| --- | --- | ---: | ---: | ---: | ---: |",
                           );
-                          for (const metric of benchmarkRows) {
+                          for (const [key, metric] of benchmarkRows) {
+                              const baseline = base.benchmarks.get(key);
                               const milliseconds = (metric.medianNs / 1e6).toFixed(3);
                               const memory =
                                   metric.memoryKiB === null
                                       ? "n/a"
                                       : `${metric.memoryKiB.toLocaleString("en-US")} KiB`;
+                              const memoryDiff =
+                                  metric.memoryKiB === null || baseline?.memoryKiB === null
+                                      ? "n/a"
+                                      : percentDelta(metric.memoryKiB, baseline?.memoryKiB);
                               lines.push(
-                                  `| ${metric.runtime} | ${metric.workload} | ${milliseconds} ms | ${memory} |`,
+                                  `| ${metric.runtime} | ${metric.workload} | ${milliseconds} ms | ${percentDelta(metric.medianNs, baseline?.medianNs)} | ${memory} | ${memoryDiff} |`,
                               );
                           }
                           lines.push("");
                       }
                       if (sizeRows.length > 0) {
                           lines.push(
-                              "### Binary sizes",
+                              "### Binary size",
                               "",
-                              "| Artifact | Bytes | KiB |",
-                              "| --- | ---: | ---: |",
+                              "| Artifact | Bytes | KiB | Size diff |",
+                              "| --- | ---: | ---: | ---: |",
                           );
-                          for (const metric of sizeRows) {
+                          for (const [key, metric] of sizeRows) {
+                              const baseline = base.sizes.get(key);
                               lines.push(
-                                  `| ${metric.name} | ${metric.bytes.toLocaleString("en-US")} | ${(metric.bytes / 1024).toFixed(1)} |`,
+                                  `| ${metric.name} | ${metric.bytes.toLocaleString("en-US")} | ${(metric.bytes / 1024).toFixed(1)} | ${byteDelta(metric.bytes, baseline?.bytes)} |`,
                               );
                           }
                           lines.push("");
                       }
                       if (benchmarkRows.length === 0 && sizeRows.length === 0) {
                           lines.push(
-                              "No validated metrics were produced. Inspect the non-blocking workflow logs.",
+                              "No validated metrics were produced. Inspect the benchmark jobs in the CI workflow.",
                               "",
                           );
                       }
                       lines.push(
-                          `[Workflow run](${context.payload.workflow_run.html_url})`,
+                          `[Head CI run](${context.payload.workflow_run.html_url})`,
                           "",
-                          "Measurements are single-run snapshots on hosted runners; use them for review context, not pass/fail decisions.",
+                          "Size deltas are deterministic for identical build inputs. Performance deltas compare separate hosted runners and should be treated as directional evidence, not a pass/fail threshold.",
                       );
+
+                      const issueNumber = Number(process.env.PULL_NUMBER);
+                      if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+                          core.notice("No validated pull request number is available.");
+                          return;
+                      }
                       const body = lines.join("\n");
-                      const issueNumber = pullRequests[0].number;
                       const comments = await github.paginate(github.rest.issues.listComments, {
                           owner: context.repo.owner,
                           repo: context.repo.repo,

@@ -29,12 +29,14 @@ typedef char *(*cc_builder)(size_t size, size_t *length);
 static char *cc_quoted_value(size_t size, size_t *length) {
     char *value = ts_repeat("a", size, NULL);
     char *input = NULL;
-    if (!value)
+    if (!value) {
         return NULL;
+    }
     *length = 8 + size + 2;
     input = (char *)malloc(*length + 1);
-    if (input)
+    if (input) {
         snprintf(input, *length + 1, ":x{key=\"%s\"}", value);
+    }
     free(value);
     return input;
 }
@@ -42,12 +44,14 @@ static char *cc_quoted_value(size_t size, size_t *length) {
 static char *cc_backslashes(size_t size, size_t *length) {
     char *value = ts_repeat("\\", size, NULL);
     char *input = NULL;
-    if (!value)
+    if (!value) {
         return NULL;
+    }
     *length = 8 + size + 2;
     input = (char *)malloc(*length + 1);
-    if (input)
+    if (input) {
         snprintf(input, *length + 1, ":x{key=\"%s\"}", value);
+    }
     free(value);
     return input;
 }
@@ -55,12 +59,14 @@ static char *cc_backslashes(size_t size, size_t *length) {
 static char *cc_unclosed_quoted(size_t size, size_t *length) {
     char *value = ts_repeat("a", size, NULL);
     char *input = NULL;
-    if (!value)
+    if (!value) {
         return NULL;
+    }
     *length = 8 + size;
     input = (char *)malloc(*length + 1);
-    if (input)
+    if (input) {
         snprintf(input, *length + 1, ":x{key=\"%s", value);
+    }
     free(value);
     return input;
 }
@@ -68,12 +74,14 @@ static char *cc_unclosed_quoted(size_t size, size_t *length) {
 static char *cc_unclosed_backslashes(size_t size, size_t *length) {
     char *value = ts_repeat("\\", size, NULL);
     char *input = NULL;
-    if (!value)
+    if (!value) {
         return NULL;
+    }
     *length = 8 + size;
     input = (char *)malloc(*length + 1);
-    if (input)
+    if (input) {
         snprintf(input, *length + 1, ":x{key=\"%s", value);
+    }
     free(value);
     return input;
 }
@@ -84,14 +92,16 @@ static char *cc_attributes(size_t size, size_t *length, int duplicates) {
     char *input = (char *)malloc(capacity);
     size_t written = 0;
     size_t index;
-    if (!input)
+    if (!input) {
         return NULL;
+    }
     /* Each attribute needs at most strlen(" k<20 digits>=v") < 24 bytes, so
      * the initial capacity always suffices. */
     written += (size_t)snprintf(input + written, capacity - written, ":x{");
-    for (index = 0; index < attribute_count; index++)
+    for (index = 0; index < attribute_count; index++) {
         written += (size_t)snprintf(input + written, capacity - written, "%sk%zu=v", index ? " " : "",
                                     duplicates ? index % 64 : index);
+    }
     written += (size_t)snprintf(input + written, capacity - written, "}");
     *length = written;
     return input;
@@ -107,11 +117,13 @@ static char *cc_references(size_t size, size_t *length, int duplicates) {
     char *input = (char *)malloc(capacity);
     size_t written = 0;
     size_t index;
-    if (!input)
+    if (!input) {
         return NULL;
-    for (index = 0; index < reference_count; index++)
+    }
+    for (index = 0; index < reference_count; index++) {
         written +=
             (size_t)snprintf(input + written, capacity - written, "[k%zu]: /u\n", duplicates ? index % 64 : index);
+    }
     written += (size_t)snprintf(input + written, capacity - written, "\n[k0]\n");
     *length = written;
     return input;
@@ -138,8 +150,9 @@ static int cc_measure(const char *input, size_t length, double *seconds) {
     int repeat;
     markdown_core_parse_options options;
     ts_ast_options_none(&options);
-    if (ts_ast_enable(&options, "directive") != 0)
+    if (ts_ast_enable(&options, "directive") != 0) {
         return -1;
+    }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started;
         uint64_t elapsed;
@@ -147,8 +160,9 @@ static int cc_measure(const char *input, size_t length, double *seconds) {
         started = ts_monotonic_ns();
         do {
             markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
-            if (!document)
+            if (!document) {
                 return -1;
+            }
             markdown_core_document_free(document);
             iterations++;
             elapsed = ts_monotonic_ns() - started;
@@ -197,11 +211,13 @@ static int cc_run(const cc_case_entry *entry) {
         double input_growth = (double)lengths[SCALING_STEPS - 1] / (double)lengths[0];
         double time_growth = timings[SCALING_STEPS - 1] / timings[0];
         double normalized_slowdown = time_growth / input_growth;
-        if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN)
+        if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN) {
             failed = 1;
+        }
         printf("%s ... %s (", entry->name, failed ? "[FAILED non-linear scaling]" : "[PASSED]");
-        for (step = 0; step < SCALING_STEPS; step++)
+        for (step = 0; step < SCALING_STEPS; step++) {
             printf("%s%zu bytes: %.6fs", step ? ", " : "", lengths[step], timings[step]);
+        }
         printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
     }
     return failed ? -1 : 0;
@@ -213,19 +229,20 @@ int main(int argc, char **argv) {
     size_t i;
 
     for (i = 1; i < (size_t)argc; i++) {
-        if (strcmp(argv[i], "--list") == 0)
+        if (strcmp(argv[i], "--list") == 0) {
             list_only = 1;
-        else if (strcmp(argv[i], "--case") == 0 && i + 1 < (size_t)argc)
+        } else if (strcmp(argv[i], "--case") == 0 && i + 1 < (size_t)argc) {
             case_name = argv[++i];
-        else {
+        } else {
             fputs("usage: complexity_runner [--list] [--case NAME]\n", stderr);
             return 2;
         }
     }
 
     if (list_only) {
-        for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++)
+        for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++) {
             puts(CC_CASES[i].name);
+        }
         return 0;
     }
     if (!case_name) {
@@ -233,8 +250,9 @@ int main(int argc, char **argv) {
         return 2;
     }
     for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++) {
-        if (strcmp(CC_CASES[i].name, case_name) == 0)
+        if (strcmp(CC_CASES[i].name, case_name) == 0) {
             return cc_run(&CC_CASES[i]) == 0 ? 0 : 1;
+        }
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;

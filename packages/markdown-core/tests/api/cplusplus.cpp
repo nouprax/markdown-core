@@ -17,10 +17,9 @@ void test_cplusplus(test_batch_runner *runner) {
 
     static const char directive_markdown[] = ":cpp{id=ordinary title=\"My Video\" muted=true}\n";
     static const char directive_attributes[] = "{\"id\":\"ordinary\",\"title\":\"My Video\",\"muted\":\"true\"}";
-    markdown_core_core_extensions_ensure_registered();
     markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DIRECTIVE);
-    markdown_core_syntax_extension *extension = markdown_core_find_syntax_extension("directive");
-    markdown_core_parser_attach_syntax_extension(parser, extension);
+    markdown_core_extension *extension = markdown_core_find_extension("directive");
+    markdown_core_parser_attach_extension(parser, extension);
     markdown_core_parser_feed(parser, directive_markdown, sizeof(directive_markdown) - 1);
     markdown_core_node *document = markdown_core_parser_finish(parser);
     markdown_core_node *paragraph = markdown_core_node_first_child(document);

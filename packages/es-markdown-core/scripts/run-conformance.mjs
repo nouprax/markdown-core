@@ -9,5 +9,5 @@ function run(command, args) {
     if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-run("node", ["scripts/build.mjs"]);
+if (!process.argv.includes("--skip-build")) run("node", ["scripts/build.mjs"]);
 run("node", ["--test", "tests/conformance.test.mjs"]);

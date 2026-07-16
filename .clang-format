@@ -4,6 +4,7 @@ ColumnLimit: 120
 ContinuationIndentWidth: 4
 DerivePointerAlignment: false
 IndentWidth: 4
+InsertBraces: true
 PointerAlignment: Right
 SortIncludes: Never
 TabWidth: 4

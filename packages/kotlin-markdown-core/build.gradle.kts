@@ -462,6 +462,23 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 }
 
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
+val jvmMainCompilation = jvmTarget.compilations.getByName("main")
+val jvmTestCompilation = jvmTarget.compilations.getByName("test")
+tasks.register<Sync>("stageJvmTestArtifact") {
+    dependsOn("jvmTestClasses", "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.output.allOutputs) { into("classes") }
+    from(jvmTestCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
+}
+
+val stageAndroidHostTestArtifact =
+    tasks.register<Sync>("stageAndroidHostTestArtifact") {
+        dependsOn(buildJvmNative, "compileAndroidHostTest")
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        into(layout.buildDirectory.dir("ci-test-artifact/android-host"))
+        from(nativeOutputDirectory) { into("native") }
+    }
 val benchmarkCompilation =
     jvmTarget.compilations.create("benchmark") {
         associateWith(jvmTarget.compilations.getByName("main"))
@@ -479,6 +496,14 @@ tasks.register<JavaExec>("kotlinBenchmark") {
         benchmarkCompilation.runtimeDependencyFiles
     mainClass.set("com.nouprax.markdown.core.benchmark.BenchmarkKt")
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+tasks.register<Sync>("stageJvmBenchmarkArtifact") {
+    dependsOn(benchmarkCompilation.compileTaskProvider, "jvmProcessResources")
+    into(layout.buildDirectory.dir("ci-test-artifact/jvm-benchmark"))
+    from(jvmMainCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.output.allOutputs) { into("classes") }
+    from(benchmarkCompilation.runtimeDependencyFiles.filter(File::isFile)) { into("lib") }
 }
 
 tasks.withType<Test>().configureEach {
@@ -525,6 +550,11 @@ afterEvaluate {
     androidHostConformanceTest.configure {
         testClassesDirs = sourceTask.testClassesDirs
         classpath = sourceTask.classpath
+    }
+    stageAndroidHostTestArtifact.configure {
+        from(sourceTask.testClassesDirs) { into("classes") }
+        from(sourceTask.classpath.filter(File::isDirectory)) { into("classes") }
+        from(sourceTask.classpath.filter(File::isFile)) { into("lib") }
     }
 }
 

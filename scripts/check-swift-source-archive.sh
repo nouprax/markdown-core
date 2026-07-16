@@ -11,28 +11,43 @@ package="$unpacked/markdown-core"
 consumer="$temporary/consumer"
 
 cd "$root"
-swift package archive-source --output "$archive"
-mkdir -p "$unpacked"
-unzip -q "$archive" -d "$unpacked"
+mkdir -p \
+    "$package/packages/markdown-core" \
+    "$package/packages/swift-markdown-core/Sources"
+cp packages/swift-markdown-core/Package.release.swift "$package/Package.swift"
+cp LICENSE README.md VERSION "$package/"
+cp -R packages/markdown-core/core "$package/packages/markdown-core/core"
+cp -R packages/markdown-core/extensions "$package/packages/markdown-core/extensions"
+cp -R packages/markdown-core/include "$package/packages/markdown-core/include"
+cp -R packages/swift-markdown-core/Sources/MarkdownCore \
+    "$package/packages/swift-markdown-core/Sources/MarkdownCore"
+
+(cd "$unpacked" && zip -qr "$archive" markdown-core)
 
 for required in \
     Package.swift \
-    specs/canonical-ast/manifest.json \
-    packages/swift-markdown-core/Tests/MarkdownCoreConformanceTests/ConformanceSuite.swift \
-    packages/swift-markdown-core/Plugins/GenerateCanonicalASTResources/plugin.swift \
-    packages/swift-markdown-core/Tools/CanonicalASTResourceGenerator/CanonicalASTResourceGenerator.swift; do
+    LICENSE \
+    README.md \
+    VERSION \
+    packages/markdown-core/include/markdown_core.h \
+    packages/swift-markdown-core/Sources/MarkdownCore/Document.swift; do
     [ -f "$package/$required" ] || { echo "Swift source archive is missing $required" >&2; exit 1; }
 done
 
-if find "$package" -type d \( -name .build -o -name build -o -name dist -o -name node_modules \) -print | grep -q .; then
-    echo "Swift source archive contains derived build or dependency output" >&2
+if find "$package" -type d \
+    \( -iname test -o -iname tests -o -iname benchmarks -o -iname fixtures \
+    -o -name .build -o -name build -o -name dist -o -name node_modules \) \
+    -print | grep -q .; then
+    echo "Swift source archive contains test, benchmark, fixture, build, or dependency content" >&2
     exit 1
 fi
 
-node "$package/scripts/check-canonical-ast-fixtures.mjs"
-CLANG_MODULE_CACHE_PATH="$temporary/archive-module-cache" \
-    swift test --disable-sandbox --package-path "$package" \
-    --filter '^MarkdownCoreConformanceTests\.'
+if unzip -Z1 "$archive" | grep -E -i \
+    '(^|/)(Tests?|Benchmarks?|Fixtures?|Plugins?|Tools?)(/|$)|canonical-ast|\.ast$'; then
+    echo "Swift release archive contains non-product source" >&2
+    exit 1
+fi
+
 CLANG_MODULE_CACHE_PATH="$temporary/product-module-cache" \
     swift build --disable-sandbox --package-path "$package" --target MarkdownCore
 
@@ -62,8 +77,9 @@ printf '%s\n' \
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
     swift run --disable-sandbox --package-path "$consumer" Consumer >/dev/null
 if find "$consumer/.build" -type f \
-    \( -name 'CanonicalAstCases.swift' -o -name manifest.json -o -name '*.ast' \) -print | grep -q .; then
-    echo "product-only Swift consumer built or carried conformance fixtures" >&2
+    \( -iname '*test*' -o -iname '*benchmark*' -o -name 'CanonicalAstCases.swift' \
+    -o -name manifest.json -o -name '*.ast' \) -print | grep -q .; then
+    echo "product-only Swift consumer built or carried test or benchmark content" >&2
     exit 1
 fi
 
@@ -72,4 +88,4 @@ if [ -n "$destination" ]; then
     cp "$archive" "$destination/markdown-core-source-$(cat "$root/VERSION").zip"
 fi
 
-echo "Swift source archive, build-tool plugin, conformance, and product-only consumer passed."
+echo "Product-only Swift source archive and external consumer passed."

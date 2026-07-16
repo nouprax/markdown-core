@@ -88,7 +88,7 @@ const sizeDefinitions =
               },
               {
                   name: "kotlin-jvm-jar",
-                  root: "packages/kotlin-markdown-core/build/libs",
+                  root: "packages/kotlin-markdown-core/build",
                   matches: (file) =>
                       /kotlin-markdown-core-jvm-[^/]+\.jar$/u.test(file) &&
                       !/(?:sources|javadoc|metadata)\.jar$/u.test(file)
@@ -121,4 +121,17 @@ const uniqueBenchmarks = [
 ].sort((left, right) => `${left.runtime}:${left.workload}`.localeCompare(`${right.runtime}:${right.workload}`));
 
 await mkdir(path.dirname(output), { recursive: true });
-await writeFile(output, `${JSON.stringify({ schema: 1, platform, benchmarks: uniqueBenchmarks, sizes }, null, 2)}\n`);
+await writeFile(
+    output,
+    `${JSON.stringify(
+        {
+            schema: 1,
+            sourceSha: process.env.SOURCE_SHA ?? process.env.GITHUB_SHA ?? null,
+            platform,
+            benchmarks: uniqueBenchmarks,
+            sizes
+        },
+        null,
+        2
+    )}\n`
+);

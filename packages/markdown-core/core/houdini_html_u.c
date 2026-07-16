@@ -16,13 +16,15 @@ static const unsigned char *S_lookup(int i, int low, int hi, const unsigned char
         return (const unsigned char *)markdown_core_entities[i].bytes;
     } else if (cmp <= 0 && i > low) {
         j = i - ((i - low) / 2);
-        if (j == i)
+        if (j == i) {
             j -= 1;
+        }
         return S_lookup(j, low, i - 1, s, len);
     } else if (cmp > 0 && i < hi) {
         j = i + ((hi - i) / 2);
-        if (j == i)
+        if (j == i) {
             j += 1;
+        }
         return S_lookup(j, i + 1, hi, s, len);
     } else {
         return NULL;
@@ -78,12 +80,14 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
     }
 
     else {
-        if (size > MARKDOWN_CORE_ENTITY_MAX_LENGTH)
+        if (size > MARKDOWN_CORE_ENTITY_MAX_LENGTH) {
             size = MARKDOWN_CORE_ENTITY_MAX_LENGTH;
+        }
 
         for (i = MARKDOWN_CORE_ENTITY_MIN_LENGTH; i < size; ++i) {
-            if (src[i] == ' ')
+            if (src[i] == ' ') {
                 break;
+            }
 
             if (src[i] == ';') {
                 const unsigned char *entity = S_lookup_entity(src, i);
@@ -106,13 +110,15 @@ int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_
 
     while (i < size) {
         org = i;
-        while (i < size && src[i] != '&')
+        while (i < size && src[i] != '&') {
             i++;
+        }
 
         if (likely(i > org)) {
             if (unlikely(org == 0)) {
-                if (i >= size)
+                if (i >= size) {
                     return 0;
+                }
 
                 markdown_core_strbuf_grow(ob, HOUDINI_UNESCAPED_SIZE(size));
             }
@@ -121,8 +127,9 @@ int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_
         }
 
         /* escaping */
-        if (i >= size)
+        if (i >= size) {
             break;
+        }
 
         i++;
 
@@ -130,14 +137,16 @@ int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_
         i += ent;
 
         /* not really an entity */
-        if (ent == 0)
+        if (ent == 0) {
             markdown_core_strbuf_putc(ob, '&');
+        }
     }
 
     return 1;
 }
 
 void houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
-    if (!houdini_unescape_html(ob, src, size))
+    if (!houdini_unescape_html(ob, src, size)) {
         markdown_core_strbuf_put(ob, src, size);
+    }
 }

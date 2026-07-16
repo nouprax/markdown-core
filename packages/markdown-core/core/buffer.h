@@ -29,9 +29,9 @@ typedef struct {
     int oom;
 } markdown_core_strbuf;
 
-extern unsigned char markdown_core_strbuf__initbuf[];
+extern const unsigned char markdown_core_strbuf__initbuf[1];
 
-#define MARKDOWN_CORE_BUF_INIT(mem) {mem, markdown_core_strbuf__initbuf, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT(mem) {mem, (unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
 
 /**
  * Initialize a markdown_core_strbuf structure.

@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const repository = path.resolve(process.argv[2] ?? "");
@@ -84,6 +85,9 @@ if (full) {
 }
 
 const repositoryFiles = walk(repository);
+for (const archive of repositoryFiles.filter((file) => /\.(?:aar|jar|klib)$/u.test(file))) {
+    auditProductArchive(path.join(repository, archive), archive);
+}
 const namespace = path.join("com", "nouprax") + path.sep;
 assert.ok(
     repositoryFiles.every((file) => file.startsWith(namespace)),
@@ -142,6 +146,11 @@ function auditPom(file, coordinate) {
         assert.ok(pom.includes(expected), `${path.basename(file)} is missing POM metadata: ${expected}`);
     }
     assert.ok(!pom.includes("SNAPSHOT"), `${path.basename(file)} contains a snapshot version`);
+    assert.ok(!/<scope>test<\/scope>/iu.test(pom), `${path.basename(file)} publishes a test-scoped dependency`);
+    assert.ok(
+        !/(?:junit|kotlin-test|testng|mockito|kotest|hamcrest|opentest4j)/iu.test(pom),
+        `${path.basename(file)} publishes a test framework dependency`
+    );
 }
 
 function auditModule(file) {
@@ -164,6 +173,46 @@ function auditModule(file) {
             for (const algorithm of ["sha512", "sha256", "sha1", "md5"]) {
                 assert.equal(artifact[algorithm], digest(algorithm, bytes), `${artifact.url} ${algorithm} drifted`);
             }
+        }
+        for (const dependency of variant.dependencies ?? []) {
+            const coordinate = `${dependency.group ?? ""}:${dependency.module ?? ""}`;
+            assert.ok(
+                !/(?:junit|kotlin-test|testng|mockito|kotest|hamcrest|opentest4j)/iu.test(coordinate),
+                `${path.basename(file)} publishes test dependency ${coordinate}`
+            );
+        }
+    }
+}
+
+function auditProductArchive(file, displayName) {
+    if (statSync(file).size === 0) return;
+    let listing;
+    try {
+        listing = execFileSync("unzip", ["-Z1", file], { encoding: "utf8" });
+    } catch (error) {
+        if (String(error.stdout ?? "").trim() === "Empty zipfile.") return;
+        throw error;
+    }
+    const entries = listing.trim().split("\n").filter(Boolean);
+    const forbidden = entries.filter(
+        (entry) =>
+            /(^|\/)(?:tests?|testfixtures?|androidtest|commontest|jvmtest|linuxx64test|macosarm64test|fixtures?|benchmarks?|consumers?)(\/|$)/iu.test(
+                entry
+            ) ||
+            /(^|\/)[^/]*(?:test|tests|benchmark)[^/]*\.(?:class|java|kt|kotlin_metadata)$/iu.test(entry) ||
+            /(^|\/)(?:canonical-ast|manifest\.json)(\/|$)|\.ast$/iu.test(entry)
+    );
+    assert.deepEqual(forbidden, [], `${displayName} contains test-only entries: ${forbidden.join(", ")}`);
+
+    if (file.endsWith(".aar")) {
+        const extracted = mkdtempSync(path.join(tmpdir(), "markdown-core-aar-audit-"));
+        try {
+            execFileSync("unzip", ["-qq", file, "-d", extracted]);
+            for (const nested of walk(extracted).filter((entry) => entry.endsWith(".jar"))) {
+                auditProductArchive(path.join(extracted, nested), `${displayName}!/${nested}`);
+            }
+        } finally {
+            rmSync(extracted, { recursive: true, force: true });
         }
     }
 }

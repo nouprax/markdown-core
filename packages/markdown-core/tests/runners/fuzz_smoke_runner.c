@@ -27,21 +27,25 @@ static int traverse(const markdown_core_node *node) {
     int32_t level;
     bool flag;
 
-    if (!node)
+    if (!node) {
         return 0;
+    }
     nodes_visited++;
     (void)markdown_core_node_get_kind(node);
     (void)markdown_core_node_kind_name(markdown_core_node_get_kind(node));
     scope = markdown_core_node_scope(node);
-    if (scope.start.line < 0 || scope.end.line < 0)
+    if (scope.start.line < 0 || scope.end.line < 0) {
         return -1;
+    }
     (void)markdown_core_node_literal(node, &view);
     (void)markdown_core_node_heading_level(node, &level);
     (void)markdown_core_node_list_item_checked(node, &checked);
     (void)markdown_core_node_table_row_is_header(node, &flag);
-    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child))
-        if (traverse(child) != 0)
+    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
+        if (traverse(child) != 0) {
             return -1;
+        }
+    }
     return 0;
 }
 
@@ -109,8 +113,9 @@ int main(int argc, char **argv) {
                 failures++;
                 continue;
             }
-            if (smoke(bytes, length, path) != 0)
+            if (smoke(bytes, length, path) != 0) {
                 failures++;
+            }
             free(bytes);
         } else if (strcmp(argv[i], "--generated") == 0 && i + 1 < argc) {
             generated = (size_t)atoi(argv[++i]);
@@ -137,8 +142,9 @@ int main(int argc, char **argv) {
         }
         bytes[length] = 0;
         snprintf(label, sizeof(label), "generated[%d]", i);
-        if (smoke(bytes, length, label) != 0)
+        if (smoke(bytes, length, label) != 0) {
             failures++;
+        }
         free(bytes);
     }
 
