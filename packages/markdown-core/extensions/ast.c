@@ -96,6 +96,9 @@ markdown_core_document *markdown_core_document_parse(const uint8_t *source, size
     if (!session) {
         return NULL;
     }
+    // A one-shot parse never commits again, so per-unit lookup records would
+    // be pure overhead.
+    session->record_lookups = false;
     if (length && (!markdown_core_session_edit(session, 0, 0, source, length, error) ||
                    !markdown_core_session_commit(session, NULL, error))) {
         markdown_core_session_free(session);

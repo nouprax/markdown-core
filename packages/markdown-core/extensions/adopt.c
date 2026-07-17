@@ -272,3 +272,10 @@ bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_n
     adopt_pair(&ctx, old_root, new_root);
     return !ctx.failed;
 }
+
+bool markdown_core_session_record_removed(markdown_core_session *session, const markdown_core_node *root,
+                                          markdown_core_changeset *changes) {
+    adopt_ctx ctx = {session, changes, 0, false};
+    record_removed_subtree(&ctx, root);
+    return !ctx.failed;
+}

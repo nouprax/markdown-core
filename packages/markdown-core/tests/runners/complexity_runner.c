@@ -148,35 +148,59 @@ static const cc_case_entry CC_CASES[] = {
 /* --- session commit-cost cases -------------------------------------------
  *
  * Incremental commits must cost O(damaged region), independent of document
- * size.  Both cases compare seconds-per-commit between a small and a large
- * session (1024x more text): streaming appends at the tail and an edit storm
- * of byte replacements spread across the document.  A per-commit cost that
- * scales with the document (the pre-M3 full-reparse behavior) shows up as a
- * ~1024x ratio against the same 4.0x bound the parse-scaling cases use. */
+ * size.  Every case compares seconds-per-commit between a small and a large
+ * session (1024x more text): streaming appends at the tail, an edit storm of
+ * byte replacements spread across the document, and definition retargeting
+ * that re-refines a fixed set of dependent units.  A per-commit cost that
+ * scales with the document (the full-reparse behavior) shows up as a ~1024x
+ * ratio against the same 4.0x bound the parse-scaling cases use. */
 
 #define CC_SESSION_STANZA "para *text* [ref] line\n\n### head\n\n- item one\n- item two\n\n"
+/* The retarget corpus keeps its bracket-free bulk out of the lookup records
+ * so the dependent set stays a constant eight units. */
+#define CC_SESSION_PLAIN_STANZA "para *text* line\n\n### head\n\n- item one\n- item two\n\n"
+#define CC_SESSION_DEFINITION "[l]: /aaaa\n\n"
+#define CC_SESSION_USE "uses [u][l] here\n\n"
+#define CC_SESSION_USES 8
 #define CC_SESSION_OPS 64
 static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
 
-static markdown_core_session *cc_session_build(size_t size, size_t *stanza_count) {
+enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET };
+
+static markdown_core_session *cc_session_build(size_t size, int mode, size_t *stanza_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
-    size_t stanza_length = strlen(CC_SESSION_STANZA);
+    const char *stanza = mode == CC_SESSION_RETARGET ? CC_SESSION_PLAIN_STANZA : CC_SESSION_STANZA;
+    size_t stanza_length = strlen(stanza);
     size_t count = size / stanza_length ? size / stanza_length : 1;
-    char *text = (char *)malloc(count * stanza_length + 1);
+    size_t extras =
+        mode == CC_SESSION_RETARGET ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE) : 0;
+    char *text = (char *)malloc(count * stanza_length + extras + 1);
+    char *fill = text;
     size_t i;
 
     if (!text) {
         return NULL;
     }
-    for (i = 0; i < count; i++) {
-        memcpy(text + i * stanza_length, CC_SESSION_STANZA, stanza_length);
+    if (mode == CC_SESSION_RETARGET) {
+        memcpy(fill, CC_SESSION_DEFINITION, strlen(CC_SESSION_DEFINITION));
+        fill += strlen(CC_SESSION_DEFINITION);
     }
-    text[count * stanza_length] = '\0';
+    for (i = 0; i < count; i++) {
+        memcpy(fill, stanza, stanza_length);
+        fill += stanza_length;
+    }
+    if (mode == CC_SESSION_RETARGET) {
+        for (i = 0; i < CC_SESSION_USES; i++) {
+            memcpy(fill, CC_SESSION_USE, strlen(CC_SESSION_USE));
+            fill += strlen(CC_SESSION_USE);
+        }
+    }
+    *fill = '\0';
 
     ts_ast_options_none(&options);
     session = markdown_core_session_open(&options, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, count * stanza_length, NULL) ||
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
         !markdown_core_session_commit(session, NULL, NULL)) {
         markdown_core_session_free(session);
         session = NULL;
@@ -188,18 +212,22 @@ static markdown_core_session *cc_session_build(size_t size, size_t *stanza_count
     return session;
 }
 
-/* One timed block of commits; `storm` spreads single-byte edits across the
- * stanzas, otherwise every commit appends one line at the tail. */
-static int cc_session_block(markdown_core_session *session, int storm, size_t stanza_count, size_t *op_counter) {
+/* One timed block of commits: appends at the tail, a storm of byte
+ * replacements across the stanzas, or a rewrite of the lone definition's
+ * destination (a winner-delta commit re-refining the dependent units). */
+static int cc_session_block(markdown_core_session *session, int mode, size_t stanza_count, size_t *op_counter) {
     size_t stanza_length = strlen(CC_SESSION_STANZA);
     int op;
     for (op = 0; op < CC_SESSION_OPS; op++) {
         bool ok;
-        if (storm) {
+        if (mode == CC_SESSION_STORM) {
             size_t index = (size_t)((*op_counter * UINT64_C(2654435761)) % stanza_count);
             uint8_t byte = (*op_counter & 1) ? 'x' : 'y';
             ok = markdown_core_session_edit(session, index * stanza_length + 1, index * stanza_length + 2, &byte, 1,
                                             NULL);
+        } else if (mode == CC_SESSION_RETARGET) {
+            const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
+            ok = markdown_core_session_edit(session, 6, 10, url, 4, NULL);
         } else {
             static const uint8_t line[] = "appended stream line\n";
             size_t length = markdown_core_session_length(session);
@@ -213,11 +241,11 @@ static int cc_session_block(markdown_core_session *session, int storm, size_t st
     return 0;
 }
 
-static int cc_session_measure(size_t size, int storm, double *seconds_per_commit) {
+static int cc_session_measure(size_t size, int mode, double *seconds_per_commit) {
     double samples[SCALING_REPEATS];
     size_t stanza_count = 0;
     size_t op_counter = 0;
-    markdown_core_session *session = cc_session_build(size, &stanza_count);
+    markdown_core_session *session = cc_session_build(size, mode, &stanza_count);
     int repeat;
 
     if (!session) {
@@ -228,7 +256,7 @@ static int cc_session_measure(size_t size, int storm, double *seconds_per_commit
         uint64_t elapsed;
         size_t commits = 0;
         do {
-            if (cc_session_block(session, storm, stanza_count, &op_counter) != 0) {
+            if (cc_session_block(session, mode, stanza_count, &op_counter) != 0) {
                 markdown_core_session_free(session);
                 return -1;
             }
@@ -247,13 +275,13 @@ static int cc_session_measure(size_t size, int storm, double *seconds_per_commit
     return 0;
 }
 
-static int cc_run_session(const char *name, int storm) {
+static int cc_run_session(const char *name, int mode) {
     double timings[SCALING_STEPS];
     size_t step;
     int failed = 0;
 
     for (step = 0; step < SCALING_STEPS; step++) {
-        if (cc_session_measure(CC_SESSION_SIZES[step], storm, &timings[step]) != 0) {
+        if (cc_session_measure(CC_SESSION_SIZES[step], mode, &timings[step]) != 0) {
             fprintf(stderr, "session run failed for %s\n", name);
             return -1;
         }
@@ -272,7 +300,7 @@ static int cc_run_session(const char *name, int storm) {
     return failed ? -1 : 0;
 }
 
-static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm"};
+static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm", "session_ref_retarget"};
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];
@@ -387,10 +415,13 @@ int main(int argc, char **argv) {
         }
     }
     if (strcmp(case_name, "session_stream_flat") == 0) {
-        return cc_run_session(case_name, 0) == 0 ? 0 : 1;
+        return cc_run_session(case_name, CC_SESSION_STREAM) == 0 ? 0 : 1;
     }
     if (strcmp(case_name, "session_edit_storm") == 0) {
-        return cc_run_session(case_name, 1) == 0 ? 0 : 1;
+        return cc_run_session(case_name, CC_SESSION_STORM) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_ref_retarget") == 0) {
+        return cc_run_session(case_name, CC_SESSION_RETARGET) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;

@@ -917,6 +917,58 @@ static const eq_script_step EQ_TAIL_DELETE_STEPS[] = {
     {"gamma", 0, (size_t)-1, ""},
 };
 
+/* Winner-delta commits: retargeting the only definition must re-refine the
+ * dependent units in place — a quoted paragraph and a heading among them
+ * (ancestor revision bubbling) — deleting it degrades every dependent to
+ * literal text, and a later definition resolves the recorded misses. */
+static const eq_script_step EQ_REF_RETARGET_STEPS[] = {
+    {"/one", 0, 4, "/two"},
+    {"tail", 0, 4, "coda"},
+    {"[l]: /two\n", 0, 10, ""},
+    {NULL, 0, 0, "[l]: /three\n"},
+};
+
+/* A label that resolves nowhere at first: the miss against an empty map must
+ * still record the dependency, so the definition's arrival re-refines the
+ * paragraph, and its departure degrades it again. */
+static const eq_script_step EQ_REF_NEW_LABEL_STEPS[] = {
+    {NULL, (size_t)-1, 0, "\n[x]: /url \"t\"\n"},
+    {"/url", 0, 4, "/other"},
+    {"\n[x]: /other \"t\"\n", 0, (size_t)-1, ""},
+};
+
+/* Editing a losing duplicate changes the definition sequence but not the
+ * winner: the commit reconciles with no dependent re-runs. Deleting the
+ * winner then re-elects the edited duplicate. */
+static const eq_script_step EQ_REF_LOSING_DUP_STEPS[] = {
+    {"/lose", 0, 5, "/altered"},
+    {"[l]: /win\n", 0, 10, ""},
+    {"[l]: /altered", 0, 0, "x "},
+};
+
+/* Inserting more definitions than the stale region held exhausts the vacated
+ * order span and renumbers the whole map; the new [c] definition also
+ * resolves a recorded miss. */
+static const eq_script_step EQ_REF_RENUMBER_STEPS[] = {
+    {"middle", 0, 0, "[c]: /3\n[d]: /4\n[e]: /5\n\n"},
+    {"[c]: /3", 6, 1, "9"},
+};
+
+/* A dependent inside a table cell cannot be rebuilt per-unit; the commit
+ * must fall back to a full reparse and still match one-shot output. */
+static const eq_script_step EQ_REF_TABLE_CELL_STEPS[] = {
+    {"/one", 0, 4, "/two"},
+    {"[l]: /two\n", 0, 10, ""},
+};
+
+/* With footnotes enabled, a definition whose label normalizes to "^n" decides
+ * whether [^n] parses as a link or as a footnote reference: the winner delta
+ * must flip the node kind both ways and keep the footnote index honest. */
+static const eq_script_step EQ_REF_CARET_FLIP_STEPS[] = {
+    {"[ ^n]: /url\n", 0, 12, ""},
+    {NULL, (size_t)-1, 0, "[ ^n]: /url\n"},
+};
+
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
     {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
@@ -947,6 +999,47 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      sizeof(EQ_TRANSPLANT_END_STEPS) / sizeof(*EQ_TRANSPLANT_END_STEPS)},
     {"tail_delete", "alpha\n\nbeta\n", EQ_TAIL_DELETE_STEPS,
      sizeof(EQ_TAIL_DELETE_STEPS) / sizeof(*EQ_TAIL_DELETE_STEPS)},
+    {"ref_retarget",
+     "[l]: /one\n"
+     "\n"
+     "alpha [a][l]\n"
+     "\n"
+     "> beta [b][l]\n"
+     "\n"
+     "# head [h][l]\n"
+     "\n"
+     "tail\n",
+     EQ_REF_RETARGET_STEPS, sizeof(EQ_REF_RETARGET_STEPS) / sizeof(*EQ_REF_RETARGET_STEPS)},
+    {"ref_new_label", "alpha [x]\n\nbeta\n", EQ_REF_NEW_LABEL_STEPS,
+     sizeof(EQ_REF_NEW_LABEL_STEPS) / sizeof(*EQ_REF_NEW_LABEL_STEPS)},
+    {"ref_losing_dup",
+     "[l]: /win\n"
+     "\n"
+     "see [s][l]\n"
+     "\n"
+     "[l]: /lose\n",
+     EQ_REF_LOSING_DUP_STEPS, sizeof(EQ_REF_LOSING_DUP_STEPS) / sizeof(*EQ_REF_LOSING_DUP_STEPS)},
+    {"ref_renumber",
+     "[a]: /1\n"
+     "\n"
+     "middle [r][c]\n"
+     "\n"
+     "[b]: /2\n"
+     "\n"
+     "para [p][a] [q][b]\n",
+     EQ_REF_RENUMBER_STEPS, sizeof(EQ_REF_RENUMBER_STEPS) / sizeof(*EQ_REF_RENUMBER_STEPS)},
+    {"ref_table_cell",
+     "[l]: /one\n"
+     "\n"
+     "| h |\n"
+     "| - |\n"
+     "| [x][l] |\n",
+     EQ_REF_TABLE_CELL_STEPS, sizeof(EQ_REF_TABLE_CELL_STEPS) / sizeof(*EQ_REF_TABLE_CELL_STEPS)},
+    {"ref_caret_flip",
+     "body [^n]\n"
+     "\n"
+     "[ ^n]: /url\n",
+     EQ_REF_CARET_FLIP_STEPS, sizeof(EQ_REF_CARET_FLIP_STEPS) / sizeof(*EQ_REF_CARET_FLIP_STEPS)},
 };
 
 static int eq_run_script(const eq_script *script) {
