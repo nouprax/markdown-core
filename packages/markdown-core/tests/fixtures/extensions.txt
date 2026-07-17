@@ -940,7 +940,7 @@ Hi!
 
 [^unused]: This is unused.
 .
-Document scope=1:1..26:26 children=9
+Document scope=1:1..26:26 children=10
 ├── Paragraph scope=1:1..1:47 children=5
 │   ├── Text scope=1:1..1:18 literal="This is some text!" children=0
 │   ├── FootnoteReference scope=1:19..1:22 id="1" children=0
@@ -955,16 +955,23 @@ Document scope=1:1..26:26 children=9
 │   ├── Text scope=5:1..5:17 literal="And another thing" children=0
 │   ├── FootnoteReference scope=5:18..5:34 id="codeblock-note" children=0
 │   └── Text scope=5:35..5:35 literal="." children=0
-├── Paragraph scope=7:1..7:36 children=1
-│   └── Text scope=7:1..7:36 literal="This doesn't have a referent[^nope]." children=0
-├── Paragraph scope=17:1..17:3 children=1
-│   └── Text scope=17:1..17:3 literal="Hi!" children=0
+├── Paragraph scope=7:1..7:36 children=3
+│   ├── Text scope=7:1..7:28 literal="This doesn't have a referent" children=0
+│   ├── FootnoteReference scope=7:29..7:35 id="nope" children=0
+│   └── Text scope=7:36..7:36 literal="." children=0
+├── FootnoteDefinition scope=10:22..11:0 id="other-note" children=1
+│   └── Paragraph scope=10:22..10:66 children=1
+│       └── Text scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
+├── FootnoteDefinition scope=12:19..14:0 id="codeblock-note" children=1
+│   └── CodeBlock scope=13:9..14:0 mode=standalone info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
 ├── FootnoteDefinition scope=15:7..16:0 id="1" children=1
 │   └── Paragraph scope=15:7..15:40 children=3
 │       ├── Text scope=15:7..15:11 literal="Some " children=0
 │       ├── Emphasis scope=15:12..15:19 children=1
 │       │   └── Text scope=15:13..15:18 literal="bolded" children=0
 │       └── Text scope=15:20..15:40 literal=" footnote definition." children=0
+├── Paragraph scope=17:1..17:3 children=1
+│   └── Text scope=17:1..17:3 literal="Hi!" children=0
 ├── FootnoteDefinition scope=19:13..25:0 id="footnote" children=3
 │   ├── BlockQuote scope=20:5..20:39 children=1
 │   │   └── Paragraph scope=20:7..20:39 children=1
@@ -972,11 +979,9 @@ Document scope=1:1..26:26 children=9
 │   ├── CodeBlock scope=22:9..23:0 mode=standalone info=null language=null literal="as well as code blocks\n" fenced=false closed=true children=0
 │   └── Paragraph scope=24:5..24:37 children=1
 │       └── Text scope=24:5..24:37 literal="or, naturally, simple paragraphs." children=0
-├── FootnoteDefinition scope=10:22..11:0 id="other-note" children=1
-│   └── Paragraph scope=10:22..10:66 children=1
-│       └── Text scope=10:22..10:66 literal="no code block here (spaces are stripped away)" children=0
-└── FootnoteDefinition scope=12:19..14:0 id="codeblock-note" children=1
-    └── CodeBlock scope=13:9..14:0 mode=standalone info=null language=null literal="this is now a code block (8 spaces indentation)\n" fenced=false closed=true children=0
+└── FootnoteDefinition scope=26:12..26:26 id="unused" children=1
+    └── Paragraph scope=26:12..26:26 children=1
+        └── Text scope=26:12..26:26 literal="This is unused." children=0
 ````````````````````````````````
 
 ## When a footnote is used multiple times, we insert multiple backrefs.

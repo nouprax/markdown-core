@@ -584,18 +584,13 @@ bool markdown_core_node_image_properties(const markdown_core_node *node, markdow
 }
 
 bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id) {
-    const markdown_core_node *definition;
     if (!node || !id ||
         (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION && node->type != MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE)) {
         return false;
     }
-    definition = node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE ? node->parent_footnote_def : node;
-    if (!definition) {
-        id->data = NULL;
-        id->length = 0;
-        return false;
-    }
-    view_chunk(id, &definition->as.literal);
+    // Both kinds carry their own label exactly as written in the source;
+    // resolution and numbering are session queries, not node content.
+    view_chunk(id, &node->as.literal);
     return true;
 }
 

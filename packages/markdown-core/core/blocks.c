@@ -23,7 +23,6 @@
 #include "inlines.h"
 #include "houdini.h"
 #include "buffer.h"
-#include "footnotes.h"
 #include "iterator.h"
 
 #define CODE_INDENT 4
@@ -699,9 +698,6 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
     }
 
     process_inlines(parser, parser->refmap, parser->options);
-    if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) {
-        markdown_core_process_footnotes(parser);
-    }
 
     return parser->root;
 }
