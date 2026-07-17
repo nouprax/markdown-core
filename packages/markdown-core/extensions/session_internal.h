@@ -54,6 +54,48 @@ typedef struct {
     size_t *reference_offsets;         // in_use_count + 1 entries
 } markdown_core_footnote_index;
 
+// Per-unit record of the normalized labels the unit's inline parse looked up
+// (hits and misses alike: every lookup is an answer a definition edit can
+// change). Labels are owned NUL-terminated strings.
+typedef struct {
+    unsigned char **labels;
+    size_t count;
+} markdown_core_lookup_record;
+
+// Open-addressing unit-id -> lookup-record table, persistent across commits
+// (0 marks an empty slot, ids start at 1). A commit whose definition
+// reconciliation changed per-label winners scans it for the dependent units.
+typedef struct {
+    markdown_core_node_id *keys;
+    markdown_core_lookup_record *records;
+    size_t capacity; // power of two, 0 when unallocated
+    size_t count;
+} markdown_core_lookup_table;
+
+// One observed lookup, keyed by the attribution node pointer while ids are
+// still unassigned (adoption resolves them later, like definition owners).
+typedef struct {
+    markdown_core_node *unit;
+    unsigned char *label; // owned
+} markdown_core_lookup_event;
+
+// Append-only observation list for one staged parse. `lost` poisons the
+// recording: a commit that cannot trust its records must not commit
+// incrementally.
+typedef struct {
+    markdown_core_mem *mem;
+    markdown_core_lookup_event *items;
+    size_t count;
+    size_t capacity;
+    bool lost;
+} markdown_core_lookup_recording;
+
+// A bundled per-unit record ready to install once the unit's id is final.
+typedef struct {
+    markdown_core_node *unit;
+    markdown_core_lookup_record record;
+} markdown_core_unit_lookups;
+
 // One CLEAN_START document child of the committed tree, in document order.
 // These are the only safe incremental restart and resync points; children
 // without the flag are fused to their predecessor and always reparse with it.
@@ -96,6 +138,16 @@ struct markdown_core_session {
     // reparses. At rest every entry's `order` stems from the most recent
     // full parse, so per-label winner election sees true document order.
     markdown_core_map *refmap;
+    // Persistent unit-id -> looked-up-labels table backing per-unit re-runs
+    // when a commit changes per-label winners. Maintained by both commit
+    // paths; skipped entirely for the one-shot convenience parse.
+    markdown_core_lookup_table lookups;
+    bool record_lookups;
+    // The incremental pipeline reconciled definitions in place and then could
+    // not finish: the map no longer matches the committed tree, so the next
+    // commit must take the full path (which rebuilds the map and clears
+    // this).
+    bool refmap_stale;
     markdown_core_clean_index clean;
     markdown_core_edit_summary pending;
     int total_lines;      // parser line count of the committed text
@@ -126,6 +178,11 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
  */
 bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_node *old_root,
                                  markdown_core_node *new_root, uint64_t new_rev, markdown_core_changeset *changes);
+
+/** Records every facade-visible node of `root`'s subtree as removed in
+ * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
+bool markdown_core_session_record_removed(markdown_core_session *session, const markdown_core_node *root,
+                                          markdown_core_changeset *changes);
 
 /** Appends an id to a changeset array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
@@ -188,6 +245,43 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
  * with `out` released. Defined in incremental.c. */
 bool markdown_core_session_index_clean_children(markdown_core_session *session, markdown_core_node *root,
                                                 markdown_core_clean_index *out);
+
+// --- lookup records (lookups.c) ---------------------------------------------
+
+/** Prepares an empty recording bound to `mem`. */
+void markdown_core_lookup_recording_init(markdown_core_lookup_recording *recording, markdown_core_mem *mem);
+
+/** Frees the recording's events and any labels not yet moved out. */
+void markdown_core_lookup_recording_release(markdown_core_lookup_recording *recording);
+
+/** The map lookup sink (markdown_core_map_lookup_sink); `context` is the
+ * recording, `unit` the attribution node. Consecutive same-unit duplicates
+ * are dropped; allocation loss sets `lost` instead of failing the parse. */
+void markdown_core_lookup_recording_sink(void *context, void *unit, const unsigned char *label);
+
+/** Groups the recording into per-unit bundles, moving label ownership.
+ * Returns false on allocation failure; releasing the recording and any
+ * partial bundles stays safe either way. */
+bool markdown_core_lookup_recording_bundle(markdown_core_lookup_recording *recording, markdown_core_unit_lookups **out,
+                                           size_t *out_count);
+
+/** Frees `count` bundles and every label still owned by them. */
+void markdown_core_unit_lookups_free(markdown_core_mem *mem, markdown_core_unit_lookups *bundles, size_t count);
+
+/** Frees every record and the table's storage; zeroes the table. */
+void markdown_core_lookup_table_release(markdown_core_mem *mem, markdown_core_lookup_table *table);
+
+/** Grows the table so the next `extra` puts cannot fail. */
+bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lookup_table *table, size_t extra);
+
+/** Installs `record` for `id`, replacing (and freeing) any previous record.
+ * Never fails within a reserved budget; the table takes ownership. */
+void markdown_core_lookup_table_put(markdown_core_mem *mem, markdown_core_lookup_table *table, markdown_core_node_id id,
+                                    markdown_core_lookup_record record);
+
+/** Drops `id`'s record (backward-shift deletion; missing ids are a no-op). */
+void markdown_core_lookup_table_remove(markdown_core_mem *mem, markdown_core_lookup_table *table,
+                                       markdown_core_node_id id);
 
 typedef enum {
     MARKDOWN_CORE_INCREMENTAL_COMMITTED, // committed; *changes filled when requested

@@ -28,6 +28,7 @@ const extensions = [
     "session.c",
     "adopt.c",
     "incremental.c",
+    "lookups.c",
     "footnote.c",
     "changeset.c",
     "table.c",

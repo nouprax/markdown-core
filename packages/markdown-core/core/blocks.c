@@ -595,6 +595,29 @@ void markdown_core_parser_manage_extensions_special_characters(markdown_core_par
     }
 }
 
+/* The node a lookup observed during `node`'s inline parse is attributed to:
+ * the outermost inline-owning node of the parent chain (the unit the
+ * per-block postprocess pipeline visits). The sink may re-attribute units it
+ * knows to be facade-invisible (directive-label wrappers). */
+static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
+    markdown_core_node *unit = node;
+    markdown_core_node *up;
+    for (up = node->parent; up; up = up->parent) {
+        if (contains_inlines(up)) {
+            unit = up;
+        }
+    }
+    return unit;
+}
+
+static void S_parse_node_inlines(markdown_core_parser *parser, markdown_core_node *cur, markdown_core_map *refmap,
+                                 int options) {
+    if (refmap && refmap->lookup_sink) {
+        refmap->lookup_unit = S_lookup_attribution(cur);
+    }
+    markdown_core_parse_inlines(parser, cur, refmap, options);
+}
+
 // Walk through node and all children, recursively, parsing
 // string content into inline content where appropriate.
 static void process_inlines(markdown_core_parser *parser, markdown_core_map *refmap, int options) {
@@ -613,7 +636,7 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             if (contains_inlines(cur)) {
-                markdown_core_parse_inlines(parser, cur, refmap, options);
+                S_parse_node_inlines(parser, cur, refmap, options);
             }
         }
     }
@@ -1630,8 +1653,10 @@ finished:
  * consolidation, extension block postprocess hooks in attachment order, and
  * HTML-comment strip. Effects never leave the unit's subtree, and the unit
  * may end up replaced (formula promotion) or removed (comment HTML block);
- * the caller must precompute its traversal successor. */
-static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
+ * the caller must precompute its traversal successor. Returns the node the
+ * unit became (the unit itself when nothing replaced it). */
+static markdown_core_node *S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit,
+                                              bool owns_inlines) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_START;
 
@@ -1659,6 +1684,7 @@ static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node 
             parser->oom = true;
         }
     }
+    return unit;
 }
 
 /* Drives S_postprocess_unit over every block and inline-owning node in
@@ -1689,6 +1715,27 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
         S_postprocess_unit(parser, node, owns_inlines);
         node = next;
     }
+}
+
+markdown_core_node *markdown_core_parser_refine_unit(markdown_core_parser *parser, markdown_core_map *refmap,
+                                                     markdown_core_node *unit) {
+    markdown_core_iter *iter = markdown_core_iter_new(unit);
+    markdown_core_node *cur;
+    markdown_core_event_type ev_type;
+
+    if (!iter) {
+        parser->oom = true;
+        return unit;
+    }
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        cur = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && contains_inlines(cur)) {
+            S_parse_node_inlines(parser, cur, refmap, parser->options);
+        }
+    }
+    markdown_core_iter_free(iter);
+
+    return S_postprocess_unit(parser, unit, contains_inlines(unit));
 }
 
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {

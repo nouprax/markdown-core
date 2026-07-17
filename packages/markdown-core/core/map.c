@@ -383,6 +383,16 @@ static int index_map(markdown_core_map *map) {
 
 static int prepare_map(markdown_core_map *map) { return map->prepared || index_map(map) || sort_map(map); }
 
+int markdown_core_map_ensure_index(markdown_core_map *map) {
+    if (map->prepared && map->indexed) {
+        return 1;
+    }
+    if (map->prepared) {
+        unprepare_map(map);
+    }
+    return index_map(map);
+}
+
 /* Leftmost entry of the label's run in the sorted array: the winner. */
 static markdown_core_map_entry *sorted_winner(markdown_core_map *map, const unsigned char *label) {
     markdown_core_map_entry **ref = (markdown_core_map_entry **)bsearch(label, map->sorted, map->size,
@@ -400,11 +410,13 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     markdown_core_map_entry *r = NULL;
     unsigned char *norm;
 
+    /* Labels over the scanner cap can never match any definition, so they are
+     * not dependencies either and stay unobserved. */
     if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
         return NULL;
     }
 
-    if (map == NULL || !map->size) {
+    if (map == NULL || (!map->size && !map->lookup_sink)) {
         return NULL;
     }
 
@@ -417,6 +429,16 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
             }
             return NULL;
         }
+    }
+
+    /* A miss against an empty map is still an answer a later definition can
+     * change; the sink sees it before the empty-map shortcut returns. */
+    if (map->lookup_sink) {
+        map->lookup_sink(map->lookup_context, map->lookup_unit, norm);
+    }
+    if (!map->size) {
+        map->mem->free(norm);
+        return NULL;
     }
 
     if (!prepare_map(map)) {

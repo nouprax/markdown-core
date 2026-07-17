@@ -408,7 +408,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_unique_references
     many_duplicate_references
     session_stream_flat
-    session_edit_storm)
+    session_edit_storm
+    session_ref_retarget)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})
