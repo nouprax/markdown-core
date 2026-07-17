@@ -283,6 +283,7 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
 markdown_core_add_test(equivalence_footnote_edits equivalence 120 equivalence_runner --case footnote_edits)
+markdown_core_add_test(equivalence_boundary_edits equivalence 120 equivalence_runner --case boundary_edits)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(
@@ -405,7 +406,9 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_unique_attributes
     many_duplicate_attributes
     many_unique_references
-    many_duplicate_references)
+    many_duplicate_references
+    session_stream_flat
+    session_edit_storm)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})

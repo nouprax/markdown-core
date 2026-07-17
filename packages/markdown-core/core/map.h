@@ -80,6 +80,11 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
 /* Removes and frees every entry stamped with `owner`. Winners for the
  * affected labels are re-elected automatically. */
 void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner);
+/* Removes and frees every entry newer than `until` (the head run of the live
+ * chain added since the caller snapshotted map->refs; NULL empties the map).
+ * Winners for the affected labels are re-elected automatically, and no path
+ * through here allocates, so the removal itself cannot fail. */
+void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_entry *until);
 /* Returns a calloc'd array of the winning entry per distinct label (array
  * order unspecified) or NULL with map->oom set on allocation failure.
  * *count receives the number of distinct labels. */

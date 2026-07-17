@@ -50,17 +50,28 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
     // Set at seal time (session commit): start_line holds a delta from the
-    // raw parent's absolute start line (root keeps its absolute), end_line a
+    // raw parent's resolved start line (root keeps its absolute), end_line a
     // delta from the node's own absolute start line; columns stay line-local.
     // The parser and raw one-shot parses keep absolute lines and never set
-    // this. Trees are sealed uniformly: an ancestor of a sealed node is
-    // always sealed.
+    // this. Position-free nodes (start_line 0: soft/hard breaks, synthesized
+    // blocks) stay raw and unsealed so incremental line shifts of an
+    // ancestor cannot move their zero markers; resolution treats an unsealed
+    // node's fields as final.
     MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
 
-    // Extension-owned flags are compile-time constants starting at (1 << 4);
-    // each owning extension defines its own bits (see extensions/table.c).
-    // The engine holds no runtime flag registry.
+    // Extension-owned flags are compile-time constants in the range
+    // (1 << 4)..(1 << 14); each owning extension defines its own bits (see
+    // extensions/table.c). The engine holds no runtime flag registry.
     MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 4),
+
+    // Set on a direct document child whose first line arrived while the
+    // document was the only open block. Such a child is a safe incremental
+    // restart point: reparsing the source from its start line under a fresh
+    // parser reproduces it and everything after it, because no construct
+    // (setext underline, lazy continuation, table delimiter look-back,
+    // paragraph interruption) can reach back across the boundary — those all
+    // attach to a block that was still open, which this flag rules out.
+    MARKDOWN_CORE_NODE__CLEAN_START = (1 << 15),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

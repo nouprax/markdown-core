@@ -5,6 +5,7 @@ set(LIBRARY_SOURCES
     ast.c
     session.c
     adopt.c
+    incremental.c
     footnote.c
     changeset.c
     core-extensions.c

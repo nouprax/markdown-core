@@ -20,6 +20,26 @@ bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_no
     return true;
 }
 
+bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra) {
+    size_t needed = array->count + extra;
+    markdown_core_node_id *grown;
+    size_t capacity;
+    if (needed <= array->capacity) {
+        return true;
+    }
+    capacity = array->capacity ? array->capacity : 16;
+    while (capacity < needed) {
+        capacity *= 2;
+    }
+    grown = (markdown_core_node_id *)realloc(array->ids, capacity * sizeof(*grown));
+    if (!grown) {
+        return false;
+    }
+    array->ids = grown;
+    array->capacity = capacity;
+    return true;
+}
+
 void markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before, uint64_t *after) {
     if (before) {
         *before = changes ? changes->before : 0;

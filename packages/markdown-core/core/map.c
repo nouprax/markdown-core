@@ -501,6 +501,23 @@ static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry)
     return 1;
 }
 
+void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_entry *until) {
+    if (map == NULL) {
+        return;
+    }
+    while (map->refs && map->refs != until) {
+        markdown_core_map_entry *entry = map->refs;
+        map->refs = entry->next;
+        if (map->prepared) {
+            if (!map->indexed || !bucket_detach(map, entry)) {
+                unprepare_map(map);
+            }
+        }
+        map->size--;
+        map->free(map, entry);
+    }
+}
+
 void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner) {
     markdown_core_map_entry **link;
 

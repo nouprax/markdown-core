@@ -8,12 +8,14 @@
 
 #include <iterator.h>
 #include <node.h>
+#include <parser.h>
 
 // A session is a purely local object: it owns its text, its committed tree,
-// and its id table, and shares no state with any other session or any global.
-// Every commit currently performs a full staged reparse of the stored text;
-// the incremental damage/resync machinery replaces the staging step later
-// without changing this API or the id/changeset semantics.
+// its reference map, and its id table, and shares no state with any other
+// session or any global. Commits route through the incremental pipeline in
+// incremental.c when the edits allow it and fall back to a full staged reparse
+// (this file) otherwise; both produce identical observable results, which the
+// equivalence suite enforces.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -49,20 +51,99 @@ static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *tab
     table->count = 0;
 }
 
-static bool id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
+static void id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
     size_t mask = table->capacity - 1;
     size_t slot = (size_t)mix64(id) & mask;
     while (table->keys[slot] != 0) {
         if (table->keys[slot] == id) {
             table->values[slot] = node;
-            return true;
+            return;
         }
         slot = (slot + 1) & mask;
     }
     table->keys[slot] = id;
     table->values[slot] = node;
     table->count++;
+}
+
+// Allocates a table for at least `entries` ids at <= 50% load.
+static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core_id_table *out) {
+    size_t capacity = 16;
+    while (capacity < entries * 2) {
+        capacity *= 2;
+    }
+    out->keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(markdown_core_node_id));
+    out->values = (markdown_core_node **)mem->calloc(capacity, sizeof(markdown_core_node *));
+    out->count = 0;
+    if (!out->keys || !out->values) {
+        id_table_release(mem, out);
+        return false;
+    }
+    out->capacity = capacity;
     return true;
+}
+
+bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra) {
+    markdown_core_id_table *table = &session->ids;
+    markdown_core_id_table grown = {NULL, NULL, 0, 0};
+    size_t i;
+
+    if (table->capacity && (table->count + extra) * 2 <= table->capacity) {
+        return true;
+    }
+    if (!id_table_alloc(session->mem, table->count + extra, &grown)) {
+        return false;
+    }
+    for (i = 0; i < table->capacity; i++) {
+        if (table->keys[i] != 0) {
+            id_table_insert(&grown, table->keys[i], table->values[i]);
+        }
+    }
+    id_table_release(session->mem, table);
+    *table = grown;
+    return true;
+}
+
+void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node) {
+    id_table_insert(&session->ids, id, node);
+}
+
+void markdown_core_session_ids_remove(markdown_core_session *session, markdown_core_node_id id) {
+    markdown_core_id_table *table = &session->ids;
+    size_t mask;
+    size_t slot;
+    size_t gap;
+    size_t scan;
+
+    if (table->capacity == 0) {
+        return;
+    }
+    mask = table->capacity - 1;
+    slot = (size_t)mix64(id) & mask;
+    while (table->keys[slot] != id) {
+        if (table->keys[slot] == 0) {
+            return;
+        }
+        slot = (slot + 1) & mask;
+    }
+
+    // Backward-shift deletion: pull every entry of the collision run whose
+    // home slot lies at or before the gap into it. The load-factor bound
+    // guarantees an empty slot, so the walk terminates.
+    gap = slot;
+    scan = (gap + 1) & mask;
+    while (table->keys[scan] != 0) {
+        size_t home = (size_t)mix64(table->keys[scan]) & mask;
+        if (((scan - home) & mask) >= ((scan - gap) & mask)) {
+            table->keys[gap] = table->keys[scan];
+            table->values[gap] = table->values[scan];
+            gap = scan;
+        }
+        scan = (scan + 1) & mask;
+    }
+    table->keys[gap] = 0;
+    table->values[gap] = NULL;
+    table->count--;
 }
 
 // Builds a fresh id table for `root` into `out` (owned by the caller on
@@ -83,19 +164,9 @@ static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, mar
     }
     markdown_core_iter_free(iter);
 
-    size_t capacity = 16;
-    while (capacity < nodes * 2) {
-        capacity *= 2;
-    }
-
-    out->keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(markdown_core_node_id));
-    out->values = (markdown_core_node **)mem->calloc(capacity, sizeof(markdown_core_node *));
-    out->count = 0;
-    if (!out->keys || !out->values) {
-        id_table_release(mem, out);
+    if (!id_table_alloc(mem, nodes, out)) {
         return false;
     }
-    out->capacity = capacity;
 
     iter = markdown_core_iter_new(root);
     if (!iter) {
@@ -147,40 +218,7 @@ static bool attach_extension_named(markdown_core_parser *parser, const char *nam
     return extension && markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
-// Seals a freshly parsed tree: line positions convert from absolute to
-// parent-relative deltas (columns are line-local already) and every node
-// gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Post-order, so each conversion
-// still reads its parent's absolute start; pointer-walk iterative, because
-// adversarial inputs nest too deep for native recursion.
-static void seal_positions(markdown_core_node *root) {
-    markdown_core_node *node = root;
-    for (;;) {
-        if (node->first_child) {
-            node = node->first_child;
-            continue;
-        }
-        for (;;) {
-            int start_line = node->start_line;
-            if (node->parent) {
-                node->start_line = start_line - node->parent->start_line;
-            }
-            node->end_line -= start_line;
-            node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
-            if (node == root) {
-                return;
-            }
-            if (node->next) {
-                node = node->next;
-                break;
-            }
-            node = node->parent;
-        }
-    }
-}
-
-// Parses the session's current text from scratch. Returns NULL with *error
-// set on failure; the session state is untouched.
-static markdown_core_node *parse_text(markdown_core_session *session, markdown_core_error **error) {
+markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *session, markdown_core_error **error) {
     markdown_core_parser *parser =
         markdown_core_parser_new_with_mem(native_options_from(&session->options), session->mem);
     if (!parser) {
@@ -200,58 +238,119 @@ static markdown_core_node *parse_text(markdown_core_session *session, markdown_c
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
         return NULL;
     }
+    return parser;
+}
+
+// Seals a freshly parsed tree: line positions convert from absolute to
+// parent-relative deltas (columns are line-local already) and every node
+// gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Post-order, so each conversion
+// still reads its parent's absolute start; pointer-walk iterative, because
+// adversarial inputs nest too deep for native recursion.
+//
+// Position-free nodes (start_line 0: soft/hard breaks and synthesized blocks
+// like a table's split-off header paragraph) stay raw and unsealed. Their
+// zeros are markers, not places: relativizing them would make them move when
+// an incremental commit line-shifts a transplanted ancestor. Resolution
+// treats an unsealed node's fields as final, so the markers stay zero and
+// their descendants' deltas (computed against the raw zero here) still
+// resolve exactly as a fresh parse would.
+void markdown_core_session_seal_positions(markdown_core_node *root) {
+    markdown_core_node *node = root;
+    for (;;) {
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        for (;;) {
+            int start_line = node->start_line;
+            if (start_line != 0) {
+                if (node->parent) {
+                    node->start_line = start_line - node->parent->start_line;
+                }
+                node->end_line -= start_line;
+                node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
+            }
+            if (node == root) {
+                return;
+            }
+            if (node->next) {
+                node = node->next;
+                break;
+            }
+            node = node->parent;
+        }
+    }
+}
+
+void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
+    markdown_core_map_entry *entry;
+    for (entry = map->refs; entry; entry = entry->next) {
+        if (entry->owner != 0) {
+            entry->owner = ((const markdown_core_node *)(uintptr_t)entry->owner)->id;
+        }
+    }
+}
+
+// Full staged reparse: parses the whole stored text with a fresh parser and
+// reference map, adopts ids from the previous tree, and replaces every piece
+// of session state at once. The staging never touches the committed state,
+// so any failure leaves the session valid at its previous revision.
+static bool commit_full(markdown_core_session *session, bool initial, markdown_core_changeset *changes,
+                        markdown_core_error **error) {
+    markdown_core_parser *parser;
+    markdown_core_node *root;
+    markdown_core_map *map;
+    int total_lines;
+    int last_line_length;
+    uint64_t new_rev = initial ? 0 : session->revision + 1;
+
+    parser = markdown_core_session_new_parser(session, error);
+    if (!parser) {
+        return false;
+    }
 
     size_t length = markdown_core_text_length(&session->text);
     if (length) {
         markdown_core_parser_feed(parser, (const char *)markdown_core_text_bytes(&session->text), length);
     }
-    markdown_core_node *root = markdown_core_parser_finish(parser);
-    markdown_core_parser_free(parser);
+    markdown_core_parser_finalize_blocks(parser);
+    total_lines = parser->line_number;
+    last_line_length = parser->last_line_length;
+    root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "parser did not produce a document");
-        return NULL;
-    }
-    seal_positions(root);
-    return root;
-}
-
-static bool commit_internal(markdown_core_session *session, bool initial, markdown_core_changeset **changes_out,
-                            markdown_core_error **error) {
-    markdown_core_changeset *changes = NULL;
-
-    markdown_core_node *root = parse_text(session, error);
-    if (!root) {
+        markdown_core_parser_free(parser); // frees the staged map with it
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not parse the session text");
         return false;
     }
+    map = parser->refmap;
+    parser->refmap = NULL;
+    markdown_core_parser_free(parser);
 
-    uint64_t new_rev = initial ? 0 : session->revision + 1;
+    markdown_core_session_seal_positions(root);
 
-    if (changes_out) {
-        changes = (markdown_core_changeset *)calloc(1, sizeof(*changes));
-        if (!changes) {
-            markdown_core_node_free(root);
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate changeset");
-            return false;
-        }
+    if (changes) {
         changes->before = session->revision;
         changes->after = new_rev;
     }
 
     if (!markdown_core_session_adopt(session, session->view.root, root, new_rev, changes)) {
-        markdown_core_changeset_free(changes);
+        markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the changeset");
         return false;
     }
+    // Ids exist now; definitions recorded against anchor node pointers can
+    // take their retraction ids.
+    markdown_core_session_resolve_definition_owners(map);
 
     // Footnote numbering, resolution state, and back-reference ordinals are
     // index-backed queries; a commit that changes only those answers bumps
     // the affected revisions without any dump-visible change.
     markdown_core_footnote_index footnotes = {NULL, 0, NULL, 0, NULL, NULL};
     if (!markdown_core_footnote_index_build(session->mem, root, &footnotes) ||
-        !markdown_core_footnote_index_diff(&session->footnotes, &footnotes, new_rev, changes)) {
+        !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes)) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
-        markdown_core_changeset_free(changes);
+        markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
                                     "could not index the document's footnotes");
@@ -261,9 +360,12 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, NULL, 0, 0};
-    if (!id_table_build(session->mem, root, &ids)) {
+    markdown_core_clean_index clean = {NULL, 0, 0};
+    if (!id_table_build(session->mem, root, &ids) ||
+        !markdown_core_session_index_clean_children(session, root, &clean)) {
+        id_table_release(session->mem, &ids);
         markdown_core_footnote_index_release(session->mem, &footnotes);
-        markdown_core_changeset_free(changes);
+        markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
                                     "could not index the committed document");
@@ -275,11 +377,71 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
     }
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
+    markdown_core_map_free(session->refmap);
+    if (session->clean.items) {
+        session->mem->free(session->clean.items);
+    }
     session->view.root = root;
     session->ids = ids;
     session->footnotes = footnotes;
+    session->refmap = map;
+    session->clean = clean;
+    session->total_lines = total_lines;
+    session->last_line_length = last_line_length;
+    session->expansion_estimate = map->ref_size;
     session->revision = new_rev;
+    session->pending.dirty = false;
+    session->pending.new_lo = 0;
+    session->pending.new_hi = 0;
+    session->pending.delta = 0;
+    return true;
+}
 
+static bool commit_internal(markdown_core_session *session, bool initial, markdown_core_changeset **changes_out,
+                            markdown_core_error **error) {
+    markdown_core_changeset *changes = NULL;
+
+    if (changes_out) {
+        changes = (markdown_core_changeset *)calloc(1, sizeof(*changes));
+        if (!changes) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate changeset");
+            return false;
+        }
+        changes->before = session->revision;
+        changes->after = initial ? 0 : session->revision + 1;
+    }
+
+    // A commit with no pending edits advances the revision with an empty
+    // changeset; nothing else can have changed.
+    if (!initial && session->view.root && !session->pending.dirty) {
+        session->revision++;
+        if (changes_out) {
+            *changes_out = changes;
+        }
+        return true;
+    }
+
+    if (!initial && session->view.root && session->refmap && !session->refmap->oom) {
+        switch (markdown_core_session_commit_incremental(session, session->revision + 1, changes, error)) {
+        case MARKDOWN_CORE_INCREMENTAL_COMMITTED:
+            if (changes_out) {
+                *changes_out = changes;
+            }
+            return true;
+        case MARKDOWN_CORE_INCREMENTAL_FAILED:
+            markdown_core_changeset_free(changes);
+            return false;
+        case MARKDOWN_CORE_INCREMENTAL_FALLBACK:
+            // The changeset may hold nothing yet (the pipeline records only
+            // after its point of no return), so it is reusable as-is.
+            break;
+        }
+    }
+
+    if (!commit_full(session, initial, changes, error)) {
+        markdown_core_changeset_free(changes);
+        return false;
+    }
     if (changes_out) {
         *changes_out = changes;
     }
@@ -337,6 +499,10 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_text_release(&session->text);
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
+    markdown_core_map_free(session->refmap);
+    if (session->clean.items) {
+        session->mem->free(session->clean.items);
+    }
     free(session);
 }
 
@@ -360,6 +526,29 @@ bool markdown_core_session_edit(markdown_core_session *session, size_t byte_star
     if (!markdown_core_text_edit(&session->text, byte_start, byte_end, bytes, length)) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
         return false;
+    }
+
+    // Coalesce into the pending summary. The stored range lives in
+    // current-text coordinates, so first map the existing range through this
+    // edit, then union in the freshly written bytes.
+    {
+        markdown_core_edit_summary *pending = &session->pending;
+        size_t removed = byte_end - byte_start;
+        if (pending->dirty) {
+            size_t hi = pending->new_hi;
+            if (hi > byte_start) {
+                hi = hi <= byte_end ? byte_start + length : hi + length - removed;
+            }
+            if (pending->new_lo > byte_start) {
+                pending->new_lo = byte_start;
+            }
+            pending->new_hi = hi > byte_start + length ? hi : byte_start + length;
+        } else {
+            pending->dirty = true;
+            pending->new_lo = byte_start;
+            pending->new_hi = byte_start + length;
+        }
+        pending->delta += (ptrdiff_t)length - (ptrdiff_t)removed;
     }
     return true;
 }

@@ -145,6 +145,135 @@ static const cc_case_entry CC_CASES[] = {
     {"many_unique_references", cc_unique_references},   {"many_duplicate_references", cc_duplicate_references},
 };
 
+/* --- session commit-cost cases -------------------------------------------
+ *
+ * Incremental commits must cost O(damaged region), independent of document
+ * size.  Both cases compare seconds-per-commit between a small and a large
+ * session (1024x more text): streaming appends at the tail and an edit storm
+ * of byte replacements spread across the document.  A per-commit cost that
+ * scales with the document (the pre-M3 full-reparse behavior) shows up as a
+ * ~1024x ratio against the same 4.0x bound the parse-scaling cases use. */
+
+#define CC_SESSION_STANZA "para *text* [ref] line\n\n### head\n\n- item one\n- item two\n\n"
+#define CC_SESSION_OPS 64
+static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
+
+static markdown_core_session *cc_session_build(size_t size, size_t *stanza_count) {
+    markdown_core_parse_options options;
+    markdown_core_session *session;
+    size_t stanza_length = strlen(CC_SESSION_STANZA);
+    size_t count = size / stanza_length ? size / stanza_length : 1;
+    char *text = (char *)malloc(count * stanza_length + 1);
+    size_t i;
+
+    if (!text) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(text + i * stanza_length, CC_SESSION_STANZA, stanza_length);
+    }
+    text[count * stanza_length] = '\0';
+
+    ts_ast_options_none(&options);
+    session = markdown_core_session_open(&options, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, count * stanza_length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        markdown_core_session_free(session);
+        session = NULL;
+    }
+    free(text);
+    if (stanza_count) {
+        *stanza_count = count;
+    }
+    return session;
+}
+
+/* One timed block of commits; `storm` spreads single-byte edits across the
+ * stanzas, otherwise every commit appends one line at the tail. */
+static int cc_session_block(markdown_core_session *session, int storm, size_t stanza_count, size_t *op_counter) {
+    size_t stanza_length = strlen(CC_SESSION_STANZA);
+    int op;
+    for (op = 0; op < CC_SESSION_OPS; op++) {
+        bool ok;
+        if (storm) {
+            size_t index = (size_t)((*op_counter * UINT64_C(2654435761)) % stanza_count);
+            uint8_t byte = (*op_counter & 1) ? 'x' : 'y';
+            ok = markdown_core_session_edit(session, index * stanza_length + 1, index * stanza_length + 2, &byte, 1,
+                                            NULL);
+        } else {
+            static const uint8_t line[] = "appended stream line\n";
+            size_t length = markdown_core_session_length(session);
+            ok = markdown_core_session_edit(session, length, length, line, sizeof(line) - 1, NULL);
+        }
+        if (!ok || !markdown_core_session_commit(session, NULL, NULL)) {
+            return -1;
+        }
+        (*op_counter)++;
+    }
+    return 0;
+}
+
+static int cc_session_measure(size_t size, int storm, double *seconds_per_commit) {
+    double samples[SCALING_REPEATS];
+    size_t stanza_count = 0;
+    size_t op_counter = 0;
+    markdown_core_session *session = cc_session_build(size, &stanza_count);
+    int repeat;
+
+    if (!session) {
+        return -1;
+    }
+    for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t commits = 0;
+        do {
+            if (cc_session_block(session, storm, stanza_count, &op_counter) != 0) {
+                markdown_core_session_free(session);
+                return -1;
+            }
+            commits += CC_SESSION_OPS;
+            elapsed = ts_monotonic_ns() - started;
+        } while (elapsed < MIN_SAMPLE_NS);
+        samples[repeat] = (double)elapsed / (1e9 * (double)commits);
+    }
+    markdown_core_session_free(session);
+    {
+        double a = samples[0], b = samples[1], c = samples[2];
+        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+        *seconds_per_commit = a + b + c - high - low;
+    }
+    return 0;
+}
+
+static int cc_run_session(const char *name, int storm) {
+    double timings[SCALING_STEPS];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < SCALING_STEPS; step++) {
+        if (cc_session_measure(CC_SESSION_SIZES[step], storm, &timings[step]) != 0) {
+            fprintf(stderr, "session run failed for %s\n", name);
+            return -1;
+        }
+    }
+    {
+        double slowdown = timings[SCALING_STEPS - 1] / timings[0];
+        if (slowdown > MAX_NORMALIZED_SLOWDOWN) {
+            failed = 1;
+        }
+        printf("%s ... %s (", name, failed ? "[FAILED per-commit cost scales with document]" : "[PASSED]");
+        for (step = 0; step < SCALING_STEPS; step++) {
+            printf("%s%zu bytes: %.9fs/commit", step ? ", " : "", CC_SESSION_SIZES[step], timings[step]);
+        }
+        printf(", slowdown: %.3fx)\n", slowdown);
+    }
+    return failed ? -1 : 0;
+}
+
+static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm"};
+
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];
     int repeat;
@@ -243,6 +372,9 @@ int main(int argc, char **argv) {
         for (i = 0; i < sizeof(CC_CASES) / sizeof(CC_CASES[0]); i++) {
             puts(CC_CASES[i].name);
         }
+        for (i = 0; i < sizeof(CC_SESSION_CASES) / sizeof(CC_SESSION_CASES[0]); i++) {
+            puts(CC_SESSION_CASES[i]);
+        }
         return 0;
     }
     if (!case_name) {
@@ -253,6 +385,12 @@ int main(int argc, char **argv) {
         if (strcmp(CC_CASES[i].name, case_name) == 0) {
             return cc_run(&CC_CASES[i]) == 0 ? 0 : 1;
         }
+    }
+    if (strcmp(case_name, "session_stream_flat") == 0) {
+        return cc_run_session(case_name, 0) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_edit_storm") == 0) {
+        return cc_run_session(case_name, 1) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;
