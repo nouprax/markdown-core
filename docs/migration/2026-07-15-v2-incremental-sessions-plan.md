@@ -365,9 +365,32 @@ Equality everywhere is `(lineage, id, revision)`.
     footnotes-enabled `[^n]` link/footnote-reference kind flip) and the
     `session_ref_retarget` complexity case (definition-edit commits flat
     across a 1024x document-size spread).
-  - The footnote index is still rebuilt by a whole-tree walk per commit
-    when footnotes are enabled (skipped entirely otherwise). Bounding the
-    refresh by #refs + #defs is open.
+  - ~~The footnote index is still rebuilt by a whole-tree walk per commit~~
+    — resolved 2026-07-17 (session-persistent footnote sites): the index
+    keeps its definition and reference nodes as document-ordered site lists
+    (node, anchoring document child, owning inline unit), collected by the
+    full path's walk and merged in place by incremental commits before
+    adoption: sites anchored in the graveyard leave and the staged region's
+    freshly collected sites take their place (classified against surviving
+    anchors' restart-relative lines), a rebuilt unit's sites are replaced by
+    its clone's at the same position, and everything else survives
+    untouched. Numbering, grouping, and the revision diff then rebuild from
+    the sites alone — O(#refs + #defs) per commit, never the tree. A clone
+    that gains footnote sites where its unit had none (the `[^n]`
+    link/footnote-reference kind flip) has no merge position and falls back
+    to the full path. Gates: the equivalence runner's footnote-query check
+    (every footnote-enabled commit's numbering, resolution, and
+    back-reference answers must equal a fresh session's on the same text,
+    node identity mapped positionally over the already-dump-equal trees),
+    the `footnote_sites` boundary script (empty staged runs, ordinal
+    cascades through arriving/departing mid-document sites, top-level and
+    quoted dependent rebuilds carrying references, a combined commit whose
+    staged sites must precede the rebuilt suffix units' runs, tail-cluster
+    definition deletion), the widened session oom_sweep stage (a dependent rebuild
+    carrying footnote sites under allocation injection), and the
+    `session_footnote_shift` complexity case (label-flip commits against a
+    fixed footnote cluster flat across a 1024x document-size spread —
+    552x before this change).
   - The text store stays contiguous; the chunked line records were not
     needed because restart planning derives geometry from the clean-child
     index (start bytes and lines of CLEAN_START document children,
@@ -379,6 +402,19 @@ Equality everywhere is `(lineage, id, revision)`.
     one-shot expansion total proves the equivalent one-shot parse would not
     have denied any lookup either, and commits past the bound fall back to
     a full reparse (which re-measures it).
+  - Deferred to issue #15 (restart locality): a definition-only paragraph
+    is consumed into the refmap and leaves no tree node, so no clean-child
+    entry anchors its bytes and nearby edits restart at the previous clean
+    child — byte 0 for head-region clusters, O(#head definitions) per
+    commit in def-front-loaded documents. Direction: restart geometry for
+    consumed definitions (sentinel clean-index entries or per-definition
+    byte/line stamps) plus a head-region split for definition
+    reconciliation, which today classifies every owner-0 entry wholesale.
+    The issue also carries the resync-delay behaviors (blockquotes
+    observed non-CLEAN_START, footnote definitions open across blank
+    lines) and the inventory of surviving full-path fallbacks, so
+    degraded-to-full-reparse cases stay counted instead of accumulating
+    silently.
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta

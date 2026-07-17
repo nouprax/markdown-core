@@ -828,13 +828,16 @@ done:
     return result;
 }
 
-/* Session OOM sweep: every allocation of an open + edit + commit + edit +
- * commit script fails exactly once. A failed commit must be transactional —
- * the session stays at its previous revision with its previous view — and a
- * retry must converge on the control result, footnote index included. */
+/* Session OOM sweep: every allocation of an open + three edit/commit stages
+ * fails exactly once. A failed commit must be transactional — the session
+ * stays at its previous revision with its previous view — and a retry must
+ * converge on the control result, footnote index included. Stage 3's
+ * definition retargets the recorded [s][x] miss, so its commit rebuilds a
+ * dependent paragraph that carries footnote sites (the clone-run merge). */
 
-static const char FB_SESSION_STAGE1[] = "alpha[^a] and beta[^b]\n\n[^b]: b body\n";
+static const char FB_SESSION_STAGE1[] = "alpha[^a] sees [s][x] and beta[^b]\n\n[^b]: b body\n";
 static const char FB_SESSION_STAGE2[] = "# zero[^b]\n\n[^a]: a body\n\n";
+static const char FB_SESSION_STAGE3[] = "[x]: /url\n\n";
 
 /* Dumps through the facade (plain malloc, uncounted by the sweep). Returns
  * NULL only on dump failure. */
@@ -853,8 +856,8 @@ static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) 
  * i's commit; failed commits are checked against the last committed dump. */
 static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t *stage_lengths) {
     markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, NULL);
-    const char *stages[2] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2};
-    size_t inserts[2] = {0, 0};
+    const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
+    size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;
     size_t committed_length = 0;
     int stage;
@@ -868,7 +871,7 @@ static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t 
         goto done;
     }
 
-    for (stage = 0; stage < 2; stage++) {
+    for (stage = 0; stage < 3; stage++) {
         size_t length = strlen(stages[stage]);
         if (!markdown_core_session_edit(session, inserts[stage], inserts[stage], (const uint8_t *)stages[stage], length,
                                         NULL) &&
@@ -938,10 +941,10 @@ done:
 }
 
 static int case_session_oom_sweep(void) {
-    uint8_t *control_dumps[2] = {NULL, NULL};
-    size_t control_lengths[2] = {0, 0};
-    uint8_t *counted_dumps[2] = {NULL, NULL};
-    size_t counted_lengths[2] = {0, 0};
+    uint8_t *control_dumps[3] = {NULL, NULL, NULL};
+    size_t control_lengths[3] = {0, 0, 0};
+    uint8_t *counted_dumps[3] = {NULL, NULL, NULL};
+    size_t counted_lengths[3] = {0, 0, 0};
     unsigned long total;
     unsigned long k;
     int result = -1;
@@ -954,8 +957,8 @@ static int case_session_oom_sweep(void) {
     fb_sweep_count = 0;
     fb_sweep_fail_at = 0;
     if (fb_session_run(&fb_sweep_mem, counted_dumps, counted_lengths) != 0 ||
-        counted_lengths[1] != control_lengths[1] ||
-        memcmp(counted_dumps[1], control_dumps[1], control_lengths[1]) != 0) {
+        counted_lengths[2] != control_lengths[2] ||
+        memcmp(counted_dumps[2], control_dumps[2], control_lengths[2]) != 0) {
         fputs("counting session run diverged from control\n", stderr);
         goto done;
     }
@@ -966,8 +969,8 @@ static int case_session_oom_sweep(void) {
     }
 
     for (k = 1; k <= total; k++) {
-        uint8_t *final_dumps[2] = {NULL, NULL};
-        size_t final_lengths[2] = {0, 0};
+        uint8_t *final_dumps[3] = {NULL, NULL, NULL};
+        size_t final_lengths[3] = {0, 0, 0};
         int run;
         fb_sweep_count = 0;
         fb_sweep_fail_at = k;
@@ -977,25 +980,30 @@ static int case_session_oom_sweep(void) {
             fprintf(stderr, "allocation %lu / %lu: session script broke\n", k, total);
             free(final_dumps[0]);
             free(final_dumps[1]);
+            free(final_dumps[2]);
             goto done;
         }
-        if (run == 0 && (final_lengths[1] != control_lengths[1] ||
-                         memcmp(final_dumps[1], control_dumps[1], control_lengths[1]) != 0)) {
+        if (run == 0 && (final_lengths[2] != control_lengths[2] ||
+                         memcmp(final_dumps[2], control_dumps[2], control_lengths[2]) != 0)) {
             fprintf(stderr, "allocation %lu / %lu: retried session diverged from control\n", k, total);
             free(final_dumps[0]);
             free(final_dumps[1]);
+            free(final_dumps[2]);
             goto done;
         }
         free(final_dumps[0]);
         free(final_dumps[1]);
+        free(final_dumps[2]);
     }
     result = 0;
 done:
     fb_sweep_fail_at = 0;
     free(control_dumps[0]);
     free(control_dumps[1]);
+    free(control_dumps[2]);
     free(counted_dumps[0]);
     free(counted_dumps[1]);
+    free(counted_dumps[2]);
     return result;
 }
 
