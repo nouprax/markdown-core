@@ -231,6 +231,183 @@ static int eq_apply_changeset(eq_replay *replay, markdown_core_changeset *change
     return 0;
 }
 
+/* --- footnote query equivalence ------------------------------------------ */
+
+typedef struct eq_id_list {
+    markdown_core_node_id *ids;
+    size_t count;
+    size_t capacity;
+    int failed;
+} eq_id_list;
+
+static int eq_id_collect_visit(const markdown_core_node *node, void *context) {
+    eq_id_list *list = (eq_id_list *)context;
+    if (list->count == list->capacity) {
+        size_t capacity = list->capacity ? list->capacity * 2 : 64;
+        markdown_core_node_id *grown = (markdown_core_node_id *)realloc(list->ids, capacity * sizeof(*grown));
+        if (!grown) {
+            list->failed = 1;
+            return 1;
+        }
+        list->ids = grown;
+        list->capacity = capacity;
+    }
+    list->ids[list->count++] = markdown_core_node_get_id(node);
+    return 0;
+}
+
+typedef struct eq_ordinal {
+    markdown_core_node_id id;
+    size_t position;
+} eq_ordinal;
+
+static int eq_ordinal_compare(const void *a, const void *b) {
+    markdown_core_node_id ia = ((const eq_ordinal *)a)->id;
+    markdown_core_node_id ib = ((const eq_ordinal *)b)->id;
+    return ia < ib ? -1 : (ia > ib ? 1 : 0);
+}
+
+/* Walk position of `id`, or SIZE_MAX for id 0 and ids outside the tree. */
+static size_t eq_position_of(const eq_ordinal *ordinals, size_t count, markdown_core_node_id id) {
+    size_t lo = 0;
+    size_t hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (ordinals[mid].id == id) {
+            return ordinals[mid].position;
+        }
+        if (ordinals[mid].id < id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static eq_ordinal *eq_ordinals_build(const eq_id_list *list) {
+    eq_ordinal *ordinals = (eq_ordinal *)malloc((list->count ? list->count : 1) * sizeof(*ordinals));
+    size_t i;
+    if (!ordinals) {
+        return NULL;
+    }
+    for (i = 0; i < list->count; i++) {
+        ordinals[i].id = list->ids[i];
+        ordinals[i].position = i;
+    }
+    qsort(ordinals, list->count, sizeof(*ordinals), eq_ordinal_compare);
+    return ordinals;
+}
+
+/* With footnotes enabled, every commit's numbering, resolution, and
+ * back-reference answers must equal a fresh session's on the same text.
+ * Node identity maps positionally: the dumps already compared equal, so both
+ * trees walk the same shape and the i-th node of one corresponds to the i-th
+ * node of the other. */
+static int eq_check_footnote_queries(eq_replay *replay) {
+    markdown_core_session *fresh = NULL;
+    markdown_core_error *error = NULL;
+    eq_id_list mine = {NULL, 0, 0, 0};
+    eq_id_list theirs = {NULL, 0, 0, 0};
+    eq_ordinal *mine_ordinals = NULL;
+    eq_ordinal *theirs_ordinals = NULL;
+    int result = -1;
+    size_t i;
+
+    fresh = markdown_core_session_open(replay->options, &error);
+    if (!fresh || !markdown_core_session_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
+        !markdown_core_session_commit(fresh, NULL, &error)) {
+        markdown_core_error_free(error);
+        eq_fail(replay->context, "fresh footnote reference session failed");
+        goto done;
+    }
+    if (ts_ast_walk(markdown_core_document_root(markdown_core_session_document(replay->session)), eq_id_collect_visit,
+                    &mine) < 0 ||
+        mine.failed ||
+        ts_ast_walk(markdown_core_document_root(markdown_core_session_document(fresh)), eq_id_collect_visit, &theirs) <
+            0 ||
+        theirs.failed) {
+        eq_fail(replay->context, "footnote walk failed to allocate");
+        goto done;
+    }
+    if (mine.count != theirs.count) {
+        eq_fail(replay->context, "footnote sessions walk different node counts");
+        goto done;
+    }
+    mine_ordinals = eq_ordinals_build(&mine);
+    theirs_ordinals = eq_ordinals_build(&theirs);
+    if (!mine_ordinals || !theirs_ordinals) {
+        eq_fail(replay->context, "footnote ordinal map failed to allocate");
+        goto done;
+    }
+
+    for (i = 0; i < mine.count; i++) {
+        markdown_core_footnote_info a;
+        markdown_core_footnote_info b;
+        bool found_a = markdown_core_session_footnote_info(replay->session, mine.ids[i], &a);
+        bool found_b = markdown_core_session_footnote_info(fresh, theirs.ids[i], &b);
+        if (found_a != found_b) {
+            eq_fail(replay->context, "footnote info presence diverged from a fresh session");
+            goto done;
+        }
+        if (!found_a) {
+            continue;
+        }
+        if (a.number != b.number || a.reference_ordinal != b.reference_ordinal ||
+            a.reference_count != b.reference_count ||
+            eq_position_of(mine_ordinals, mine.count, a.definition) !=
+                eq_position_of(theirs_ordinals, theirs.count, b.definition)) {
+            eq_fail(replay->context, "footnote info diverged from a fresh session");
+            goto done;
+        }
+    }
+
+    {
+        const markdown_core_node_id *a_ids;
+        const markdown_core_node_id *b_ids;
+        size_t a_count = markdown_core_session_footnotes(replay->session, &a_ids);
+        size_t b_count = markdown_core_session_footnotes(fresh, &b_ids);
+        if (a_count != b_count) {
+            eq_fail(replay->context, "footnote first-use list length diverged from a fresh session");
+            goto done;
+        }
+        for (i = 0; i < a_count; i++) {
+            const markdown_core_node_id *a_refs;
+            const markdown_core_node_id *b_refs;
+            size_t a_refs_count;
+            size_t b_refs_count;
+            size_t k;
+            if (eq_position_of(mine_ordinals, mine.count, a_ids[i]) !=
+                eq_position_of(theirs_ordinals, theirs.count, b_ids[i])) {
+                eq_fail(replay->context, "footnote first-use order diverged from a fresh session");
+                goto done;
+            }
+            a_refs_count = markdown_core_session_footnote_references(replay->session, a_ids[i], &a_refs);
+            b_refs_count = markdown_core_session_footnote_references(fresh, b_ids[i], &b_refs);
+            if (a_refs_count != b_refs_count) {
+                eq_fail(replay->context, "footnote back-reference count diverged from a fresh session");
+                goto done;
+            }
+            for (k = 0; k < a_refs_count; k++) {
+                if (eq_position_of(mine_ordinals, mine.count, a_refs[k]) !=
+                    eq_position_of(theirs_ordinals, theirs.count, b_refs[k])) {
+                    eq_fail(replay->context, "footnote back-reference order diverged from a fresh session");
+                    goto done;
+                }
+            }
+        }
+    }
+
+    result = 0;
+done:
+    markdown_core_session_free(fresh);
+    free(mine.ids);
+    free(theirs.ids);
+    free(mine_ordinals);
+    free(theirs_ordinals);
+    return result;
+}
+
 typedef struct eq_walk_state {
     eq_replay *replay;
     size_t seen;
@@ -330,6 +507,10 @@ static int eq_replay_commit(eq_replay *replay) {
         memcmp(session_dump, reference_dump, reference_dump_length) != 0) {
         eq_fail(replay->context, "session dump diverged from the one-shot parse");
         ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)session_dump);
+        goto done;
+    }
+
+    if (replay->options->footnotes && eq_check_footnote_queries(replay) != 0) {
         goto done;
     }
 
@@ -969,6 +1150,27 @@ static const eq_script_step EQ_REF_CARET_FLIP_STEPS[] = {
     {NULL, (size_t)-1, 0, "[ ^n]: /url\n"},
 };
 
+/* Incremental footnote-site maintenance: an interior edit between the
+ * reference clusters (an empty staged run classified between prefix and
+ * suffix sites), a mid-document reference and definition whose arrival and
+ * departure cascade every later ordinal through the staged run, a combined
+ * commit whose staged region introduces sites while suffix dependents
+ * rebuild (the staged run must precede the clone runs), winner-delta
+ * rebuilds of paragraphs holding references (top-level and quoted), and a
+ * definition deleted from the tail cluster. The staged insert ends in a
+ * plain paragraph so the resync lands right after it rather than riding an
+ * open footnote definition past the dependents. */
+static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
+    {"filler", 0, 6, "middle"},
+    {"middle", 0, 0, "lead[^n]\n\n[^n]: new\n\n"},
+    {"lead[^n]", 0, 21, ""},
+    {"/one", 0, 4, "/two\n\nmid[^m]\n\n[^m]: m body\n\nplain"},
+    {"[l]: /two\n", 0, 10, ""},
+    {NULL, (size_t)-1, 0, "\n[l]: /three\n"},
+    {"[^b]: second\n", 0, 13, ""},
+    {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
+};
+
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
     {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
@@ -1040,6 +1242,25 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "\n"
      "[ ^n]: /url\n",
      EQ_REF_CARET_FLIP_STEPS, sizeof(EQ_REF_CARET_FLIP_STEPS) / sizeof(*EQ_REF_CARET_FLIP_STEPS)},
+    {"footnote_sites",
+     "head\n"
+     "\n"
+     "[l]: /one\n"
+     "\n"
+     "alpha[^a] uses [u][l]\n"
+     "\n"
+     "> quote[^q] sees [q][l]\n"
+     "\n"
+     "filler\n"
+     "\n"
+     "omega[^b] and again[^b]\n"
+     "\n"
+     "[^a]: first\n"
+     "\n"
+     "[^b]: second\n"
+     "\n"
+     "[^q]: quoted\n",
+     EQ_FOOTNOTE_SITES_STEPS, sizeof(EQ_FOOTNOTE_SITES_STEPS) / sizeof(*EQ_FOOTNOTE_SITES_STEPS)},
 };
 
 static int eq_run_script(const eq_script *script) {
