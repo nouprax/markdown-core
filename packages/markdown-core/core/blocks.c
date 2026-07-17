@@ -360,11 +360,29 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
+/* The document-child anchor a definition retracts with: the direct document
+ * child containing `b`. Sessions reparse whole document children at a
+ * time, so a
+ * definition stamped with its anchor is re-harvested exactly when its bytes
+ * are reparsed. Anchors are stamped as node pointers here and rewritten to
+ * node ids once the session's adoption walk has assigned them; the map is
+ * parse-local everywhere else, so the stamp is inert outside sessions. */
+static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_node *anchor = b;
+    while (anchor->parent && anchor->parent != parser->root) {
+        anchor = anchor->parent;
+    }
+    return anchor;
+}
+
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    if (parser->refmap) {
+        parser->refmap->pending_owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, b);
+    }
     while (chunk.len && chunk.data[0] == '[' &&
            (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
 
@@ -373,6 +391,26 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     }
     markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
     return !is_blank(&b->content, 0);
+}
+
+/* When a definition-only paragraph is about to be freed, its own pointer can
+ * no longer anchor the definitions it produced. Re-anchor them to the
+ * previous surviving sibling (already finalized, so never itself about to
+ * vanish), or to owner 0: the region before the first document child. Only a
+ * top-level paragraph anchors to itself, so nested vanishing paragraphs
+ * never reach this. Freshly added entries sit at the head of the live chain,
+ * so the walk stops at the first entry with another owner. */
+static void S_reanchor_vanishing_definitions(markdown_core_parser *parser, markdown_core_node *b) {
+    uint64_t vanishing = (uint64_t)(uintptr_t)b;
+    uint64_t replacement = (uint64_t)(uintptr_t)b->prev;
+    markdown_core_map_entry *entry;
+
+    if (!parser->refmap) {
+        return;
+    }
+    for (entry = parser->refmap->refs; entry && entry->owner == vanishing; entry = entry->next) {
+        entry->owner = replacement;
+    }
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
@@ -413,6 +451,9 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         has_content = resolve_reference_link_definitions(parser, b);
         if (!has_content) {
             // remove blank node (former reference def)
+            if (b->parent == parser->root) {
+                S_reanchor_vanishing_definitions(parser, b);
+            }
             markdown_core_node_free(b);
         }
         break;
@@ -519,6 +560,13 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
         return NULL;
     }
     child->parent = parent;
+
+    /* Direct document children born on a clean line are incremental restart
+     * points; every other child attaches under (or next to) a block that was
+     * open when the line began and stays fused to it. */
+    if (parent == parser->root && parser->line_began_clean) {
+        child->flags |= MARKDOWN_CORE_NODE__CLEAN_START;
+    }
 
     if (parent->last_child) {
         parent->last_child->next = child;
@@ -680,7 +728,16 @@ static int lists_match(markdown_core_list *list_data, markdown_core_list *item_d
             list_data->bullet_char == item_data->bullet_char);
 }
 
-static markdown_core_node *finalize_document(markdown_core_parser *parser) {
+void markdown_core_parser_finalize_blocks(markdown_core_parser *parser) {
+    if (parser->root == NULL) {
+        return;
+    }
+
+    if (parser->linebuf.size) {
+        S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
+        markdown_core_strbuf_clear(&parser->linebuf);
+    }
+
     while (parser->current != parser->root) {
         parser->current = finalize(parser, parser->current);
     }
@@ -696,10 +753,6 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
             parser->refmap->max_ref_size = 100000;
         }
     }
-
-    process_inlines(parser, parser->refmap, parser->options);
-
-    return parser->root;
 }
 
 markdown_core_node *markdown_core_node_parse_file(FILE *f, int options) {
@@ -1538,6 +1591,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     }
 
     parser->line_number++;
+    parser->line_began_clean = !S_last_child_is_open(parser->root);
 
     last_matched_container = check_open_blocks(parser, &input, &all_matched);
 
@@ -1579,6 +1633,7 @@ finished:
  * the caller must precompute its traversal successor. */
 static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
+    markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_START;
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
@@ -1589,7 +1644,11 @@ static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node 
         if (ext->postprocess_block) {
             markdown_core_node *processed = ext->postprocess_block(ext, parser, unit);
             if (processed) {
+                /* A replacement unit (formula promotion) still starts at the
+                 * replaced unit's first line, so it inherits the incremental
+                 * restart mark. */
                 unit = processed;
+                unit->flags |= clean_start;
                 owns_inlines = contains_inlines(unit);
             }
         }
@@ -1632,29 +1691,14 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
     }
 }
 
-markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
+markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {
     markdown_core_node *res;
 
-    /* Parser was already finished once */
     if (parser->root == NULL) {
         return NULL;
     }
 
-    if (parser->linebuf.size) {
-        S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
-        markdown_core_strbuf_clear(&parser->linebuf);
-    }
-
-    finalize_document(parser);
-
-    markdown_core_strbuf_free(&parser->curline);
-    markdown_core_strbuf_free(&parser->linebuf);
-
-#if MARKDOWN_CORE_DEBUG_NODES
-    if (markdown_core_node_check(parser->root, stderr)) {
-        abort();
-    }
-#endif
+    process_inlines(parser, parser->refmap, parser->options);
 
     S_postprocess_blocks(parser);
 
@@ -1666,12 +1710,35 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     if (parser->oom) {
         markdown_core_node_free(parser->root);
         parser->root = NULL;
-        markdown_core_parser_reset(parser);
         return NULL;
     }
 
     res = parser->root;
     parser->root = NULL;
+
+    return res;
+}
+
+markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
+    markdown_core_node *res;
+
+    /* Parser was already finished once */
+    if (parser->root == NULL) {
+        return NULL;
+    }
+
+    markdown_core_parser_finalize_blocks(parser);
+
+    markdown_core_strbuf_free(&parser->curline);
+    markdown_core_strbuf_free(&parser->linebuf);
+
+#if MARKDOWN_CORE_DEBUG_NODES
+    if (markdown_core_node_check(parser->root, stderr)) {
+        abort();
+    }
+#endif
+
+    res = markdown_core_parser_refine_blocks(parser);
 
     markdown_core_parser_reset(parser);
 

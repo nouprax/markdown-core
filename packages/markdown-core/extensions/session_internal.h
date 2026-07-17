@@ -4,6 +4,7 @@
 #include "../include/markdown_core.h"
 #include "ast_internal.h"
 
+#include <map.h>
 #include <markdown-core.h>
 #include <text.h>
 
@@ -53,6 +54,32 @@ typedef struct {
     size_t *reference_offsets;         // in_use_count + 1 entries
 } markdown_core_footnote_index;
 
+// One CLEAN_START document child of the committed tree, in document order.
+// These are the only safe incremental restart and resync points; children
+// without the flag are fused to their predecessor and always reparse with it.
+typedef struct {
+    size_t start_byte;        // byte offset of the child's first line, current text
+    int start_line;           // absolute 1-based first line
+    markdown_core_node *node; // borrowed from the committed tree
+} markdown_core_clean_child;
+
+typedef struct {
+    markdown_core_clean_child *items;
+    size_t count;
+    size_t capacity;
+} markdown_core_clean_index;
+
+// Coalesced summary of the edits since the last successful commit: one dirty
+// byte range in current-text coordinates plus the net length delta. Bytes
+// before `new_lo` and at/after `new_hi` are byte-identical to the committed
+// text (the old range is [new_lo, new_hi - delta)).
+typedef struct {
+    bool dirty;
+    size_t new_lo;
+    size_t new_hi;
+    ptrdiff_t delta;
+} markdown_core_edit_summary;
+
 struct markdown_core_session {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
@@ -63,6 +90,22 @@ struct markdown_core_session {
     uint64_t revision;
     markdown_core_id_table ids;
     markdown_core_footnote_index footnotes;
+    // Session-persistent reference map (refmap v2): definitions carry the id
+    // of the document child anchoring them (0 = the region before the first
+    // child), so a commit retracts exactly the definitions whose bytes it
+    // reparses. At rest every entry's `order` stems from the most recent
+    // full parse, so per-label winner election sees true document order.
+    markdown_core_map *refmap;
+    markdown_core_clean_index clean;
+    markdown_core_edit_summary pending;
+    int total_lines;      // parser line count of the committed text
+    int last_line_length; // parser's final-line length of the committed text
+    // Upper bound on the reference expansion a one-shot parse of the current
+    // text would accumulate. While it stays within the one-shot budget,
+    // incremental inline phases can run unlimited and still match the
+    // one-shot dump byte for byte; beyond it commits fall back to a full
+    // reparse, which resets the bound to the measured value.
+    size_t expansion_estimate;
 };
 
 /** Internal constructor used by allocation-injection tests; the public
@@ -87,6 +130,9 @@ bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_n
 /** Appends an id to a changeset array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
 
+/** Grows a changeset array so the next `extra` pushes cannot fail. */
+bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra);
+
 /** Builds the footnote index for `root` into `index` (zeroed on entry by the
  * caller). Returns false on allocation failure with `index` fully released. */
 bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_node *root,
@@ -98,9 +144,65 @@ void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_
 /** Diffs `next` against `previous` by node id and bumps the revision of
  * every node whose query answers changed but whose dump content did not:
  * the node is recorded as `changed`, untouched ancestors as `bubbled`.
- * Returns false when a changeset array could not grow. */
-bool markdown_core_footnote_index_diff(const markdown_core_footnote_index *previous,
+ * Two-phase and transactional: on false (an allocation could not grow) no
+ * node has been touched, so the diff may run against the live committed
+ * tree. */
+bool markdown_core_footnote_index_diff(markdown_core_mem *mem, const markdown_core_footnote_index *previous,
                                        const markdown_core_footnote_index *next, uint64_t new_rev,
                                        markdown_core_changeset *changes);
+
+/** Creates a parser configured with the session's options and extensions.
+ * Returns NULL on allocation or extension-registry failure with *error set
+ * when non-NULL. Defined in session.c. */
+markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *session, markdown_core_error **error);
+
+/** Seals a freshly parsed tree: positions become parent-relative deltas and
+ * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Defined in
+ * session.c. */
+void markdown_core_session_seal_positions(markdown_core_node *root);
+
+/** Grows the id table so the next `extra` markdown_core_session_ids_put
+ * calls cannot fail. */
+bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra);
+
+/** Points `id` at `node`, inserting or repointing. Never fails within a
+ * reserved budget. Directive-label wrappers are not addressable and must not
+ * be put. */
+void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node);
+
+/** Drops `id` from the table (backward-shift deletion; missing ids are a
+ * no-op). */
+void markdown_core_session_ids_remove(markdown_core_session *session, markdown_core_node_id id);
+
+/** Rewrites every definition owner stamped as a node pointer during the
+ * just-adopted parse to that node's session id (owner 0 stays 0: the region
+ * before the first document child). Owners already holding ids are never
+ * present when this runs — full parses replace the whole map, incremental
+ * commits remove pointer-stamped duplicates instead. */
+void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
+
+/** Builds the clean-child index for a freshly sealed tree into `out` (zeroed
+ * by the caller) by scanning the session's stored text for line starts.
+ * O(text); used by full commits only — incremental commits update the index
+ * from their own restart bookkeeping. Returns false on allocation failure
+ * with `out` released. Defined in incremental.c. */
+bool markdown_core_session_index_clean_children(markdown_core_session *session, markdown_core_node *root,
+                                                markdown_core_clean_index *out);
+
+typedef enum {
+    MARKDOWN_CORE_INCREMENTAL_COMMITTED, // committed; *changes filled when requested
+    MARKDOWN_CORE_INCREMENTAL_FALLBACK,  // not applicable; run the full path
+    MARKDOWN_CORE_INCREMENTAL_FAILED     // allocation loss; session intact at the previous revision
+} markdown_core_incremental_result;
+
+/** Attempts the incremental commit pipeline (restart plan, staged reparse
+ * with resync, suffix transplant, id adoption, footnote refresh, seal).
+ * Transactional: on FAILED or FALLBACK the committed tree, id table, refmap,
+ * footnote index, and geometry are exactly as before the call. Defined in
+ * incremental.c. */
+markdown_core_incremental_result markdown_core_session_commit_incremental(markdown_core_session *session,
+                                                                          uint64_t new_rev,
+                                                                          markdown_core_changeset *changes,
+                                                                          markdown_core_error **error);
 
 #endif

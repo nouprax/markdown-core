@@ -518,6 +518,27 @@ void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer,
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 
+/** Session staging, first half of a split markdown_core_parser_finish:
+ * flushes any buffered partial line and finalizes every open block without
+ * running the inline phase. Afterwards the tree is block-complete and the
+ * parser's reference map holds every harvested definition, so a session can
+ * inspect and reconcile definitions before deciding to run (or abandon) the
+ * inline phase.
+ */
+MARKDOWN_CORE_EXPORT
+void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);
+
+/** Session staging, second half of a split markdown_core_parser_finish: runs
+ * the inline phase and the per-block postprocess pipeline over the finalized
+ * tree, then detaches and returns it. Unlike markdown_core_parser_finish the
+ * parser is not reset and no longer owns its reference map afterwards: the
+ * caller keeps both the returned tree and parser->refmap (clear the field
+ * before markdown_core_parser_free). Returns NULL on allocation loss; the
+ * tree is freed but the reference map is only flagged, never freed.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser);
+
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for
  * the node tree should be released using 'markdown_core_node_free'

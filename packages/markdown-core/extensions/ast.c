@@ -292,11 +292,16 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     start_line = node->start_line;
     end_line = node->end_line;
     if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        // Sealed storage is parent-relative (see node.h); every ancestor of a
-        // sealed node is sealed, and the root's start line stays absolute, so
-        // summing the raw parent chain resolves the absolute start.
+        // Sealed storage is parent-relative (see node.h); the root's start
+        // line stays absolute, so summing the parent chain resolves the
+        // absolute start. An unsealed ancestor (a position-free node keeping
+        // raw zeros) resolves to its own raw fields, so it contributes once
+        // and ends the walk — exactly how the dump's accumulator resolves.
         for (ancestor = node->parent; ancestor; ancestor = ancestor->parent) {
             start_line += ancestor->start_line;
+            if (!(ancestor->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE)) {
+                break;
+            }
         }
         end_line += start_line;
     }
