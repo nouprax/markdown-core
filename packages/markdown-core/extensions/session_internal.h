@@ -41,11 +41,30 @@ typedef struct {
     size_t group;
 } markdown_core_footnote_record;
 
+// One footnote node with the containment facts the incremental merge
+// classifies by: the document child whose subtree holds it, and (for
+// references) the inline-owning leaf whose parse produced it.
+typedef struct {
+    markdown_core_node *node;   // borrowed from the committed tree
+    markdown_core_node *anchor; // document child whose subtree holds `node`
+    markdown_core_node *unit;   // nearest block ancestor for references, NULL for definitions
+} markdown_core_footnote_site;
+
+typedef struct {
+    markdown_core_footnote_site *items;
+    size_t count;
+    size_t capacity;
+} markdown_core_footnote_site_list;
+
 // Session-maintained footnote index: numbering, first-use order, resolution
 // state, and back-reference ordinals are answered from here; the tree stays
-// source-faithful. Rebuilt on every commit and diffed against the previous
-// index to bump the revisions of nodes whose query answers changed.
+// source-faithful. Rebuilt every commit from the document-ordered site
+// lists — collected by a tree walk on the full path, merged in place by
+// incremental commits — and diffed against the previous index to bump the
+// revisions of nodes whose query answers changed.
 typedef struct {
+    markdown_core_footnote_site_list defs;  // definition sites in document order
+    markdown_core_footnote_site_list refs;  // reference sites in document order
     markdown_core_footnote_record *records; // sorted by node id
     size_t record_count;
     markdown_core_node_id *in_use; // winning definitions in first-use order
@@ -194,6 +213,28 @@ bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra)
  * caller). Returns false on allocation failure with `index` fully released. */
 bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_node *root,
                                         markdown_core_footnote_index *index);
+
+/** Appends a site; plain doubling grow. */
+bool markdown_core_footnote_site_push(markdown_core_mem *mem, markdown_core_footnote_site_list *list,
+                                      markdown_core_footnote_site site);
+
+/** Frees the list's storage and zeroes it (the nodes are borrowed). */
+void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_core_footnote_site_list *list);
+
+/** Appends every footnote node of `root`'s subtree to `defs`/`refs` in
+ * document order. Sites take `anchor` when non-NULL (a subtree that will sit
+ * under one document child), or their own top-level ancestor below `root`.
+ * Returns false on allocation failure; the lists stay releasable. */
+bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root, markdown_core_node *anchor,
+                                          markdown_core_footnote_site_list *defs,
+                                          markdown_core_footnote_site_list *refs);
+
+/** Builds the index from document-ordered site lists, taking ownership of
+ * both lists' storage (they are zeroed; on failure the storage is freed with
+ * the rest of the index). Node ids must be final. */
+bool markdown_core_footnote_index_build_sites(markdown_core_mem *mem, markdown_core_footnote_site_list *defs,
+                                              markdown_core_footnote_site_list *refs,
+                                              markdown_core_footnote_index *index);
 
 /** Releases everything owned by `index` and zeroes it. */
 void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);

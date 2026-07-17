@@ -393,7 +393,8 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     // Footnote numbering, resolution state, and back-reference ordinals are
     // index-backed queries; a commit that changes only those answers bumps
     // the affected revisions without any dump-visible change.
-    markdown_core_footnote_index footnotes = {NULL, 0, NULL, 0, NULL, NULL};
+    markdown_core_footnote_index footnotes;
+    memset(&footnotes, 0, sizeof(footnotes));
     if (!markdown_core_footnote_index_build(session->mem, root, &footnotes) ||
         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes)) {
         markdown_core_footnote_index_release(session->mem, &footnotes);

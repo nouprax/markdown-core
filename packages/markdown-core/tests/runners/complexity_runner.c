@@ -162,19 +162,31 @@ static const cc_case_entry CC_CASES[] = {
 #define CC_SESSION_DEFINITION "[l]: /aaaa\n\n"
 #define CC_SESSION_USE "uses [u][l] here\n\n"
 #define CC_SESSION_USES 8
+/* The footnote corpus appends a fixed reference/definition cluster after the
+ * plain bulk; the edit toggles the first reference's label, so first-use
+ * numbering reorders across the cluster every commit. */
+#define CC_SESSION_FOOTNOTE_CLUSTER                                                                                    \
+    "note [^a] then [^b] again\n\n"                                                                                    \
+    "more [^c] and [^d] close\n\n"                                                                                     \
+    "[^a]: alpha body\n\n"                                                                                             \
+    "[^b]: beta body\n\n"                                                                                              \
+    "[^c]: c body\n\n"                                                                                                 \
+    "[^d]: d body\n"
 #define CC_SESSION_OPS 64
 static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
 
-enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET };
+enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET, CC_SESSION_FOOTNOTE };
 
 static markdown_core_session *cc_session_build(size_t size, int mode, size_t *stanza_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
-    const char *stanza = mode == CC_SESSION_RETARGET ? CC_SESSION_PLAIN_STANZA : CC_SESSION_STANZA;
+    const char *stanza =
+        mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE ? CC_SESSION_PLAIN_STANZA : CC_SESSION_STANZA;
     size_t stanza_length = strlen(stanza);
     size_t count = size / stanza_length ? size / stanza_length : 1;
-    size_t extras =
-        mode == CC_SESSION_RETARGET ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE) : 0;
+    size_t extras = mode == CC_SESSION_RETARGET
+                        ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE)
+                        : (mode == CC_SESSION_FOOTNOTE ? strlen(CC_SESSION_FOOTNOTE_CLUSTER) : 0);
     char *text = (char *)malloc(count * stanza_length + extras + 1);
     char *fill = text;
     size_t i;
@@ -196,9 +208,16 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
             fill += strlen(CC_SESSION_USE);
         }
     }
+    if (mode == CC_SESSION_FOOTNOTE) {
+        memcpy(fill, CC_SESSION_FOOTNOTE_CLUSTER, strlen(CC_SESSION_FOOTNOTE_CLUSTER));
+        fill += strlen(CC_SESSION_FOOTNOTE_CLUSTER);
+    }
     *fill = '\0';
 
     ts_ast_options_none(&options);
+    if (mode == CC_SESSION_FOOTNOTE) {
+        options.footnotes = true;
+    }
     session = markdown_core_session_open(&options, NULL);
     if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
         !markdown_core_session_commit(session, NULL, NULL)) {
@@ -213,8 +232,10 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
 }
 
 /* One timed block of commits: appends at the tail, a storm of byte
- * replacements across the stanzas, or a rewrite of the lone definition's
- * destination (a winner-delta commit re-refining the dependent units). */
+ * replacements across the stanzas, a rewrite of the lone definition's
+ * destination (a winner-delta commit re-refining the dependent units), or a
+ * flip of the first footnote reference's label (a first-use renumbering
+ * across the fixed cluster). */
 static int cc_session_block(markdown_core_session *session, int mode, size_t stanza_count, size_t *op_counter) {
     size_t stanza_length = strlen(CC_SESSION_STANZA);
     int op;
@@ -228,6 +249,10 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
         } else if (mode == CC_SESSION_RETARGET) {
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(session, 6, 10, url, 4, NULL);
+        } else if (mode == CC_SESSION_FOOTNOTE) {
+            size_t base = stanza_count * strlen(CC_SESSION_PLAIN_STANZA);
+            uint8_t label = (*op_counter & 1) ? 'b' : 'a';
+            ok = markdown_core_session_edit(session, base + 7, base + 8, &label, 1, NULL);
         } else {
             static const uint8_t line[] = "appended stream line\n";
             size_t length = markdown_core_session_length(session);
@@ -300,7 +325,8 @@ static int cc_run_session(const char *name, int mode) {
     return failed ? -1 : 0;
 }
 
-static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm", "session_ref_retarget"};
+static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm", "session_ref_retarget",
+                                               "session_footnote_shift"};
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];
@@ -422,6 +448,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_ref_retarget") == 0) {
         return cc_run_session(case_name, CC_SESSION_RETARGET) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_footnote_shift") == 0) {
+        return cc_run_session(case_name, CC_SESSION_FOOTNOTE) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;
