@@ -11,8 +11,12 @@ static int parse_and_release(const uint8_t *source, size_t length) {
     markdown_core_document *document = markdown_core_document_parse(source, length, NULL, &error);
     if (!document) {
         markdown_core_string_view message = markdown_core_error_get_message(error);
-        fprintf(stderr, "stress parse failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown");
+        fprintf(
+            stderr,
+            "stress parse failed: %.*s\n",
+            (int)message.length,
+            message.data ? (const char *)message.data : "unknown"
+        );
         markdown_core_error_free(error);
         return 1;
     }

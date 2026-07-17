@@ -295,8 +295,12 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
 // reference map, adopts ids from the previous tree, and replaces every piece
 // of session state at once. The staging never touches the committed state,
 // so any failure leaves the session valid at its previous revision.
-static bool commit_full(markdown_core_session *session, bool initial, markdown_core_changeset *changes,
-                        markdown_core_error **error) {
+static bool commit_full(
+    markdown_core_session *session,
+    bool initial,
+    markdown_core_changeset *changes,
+    markdown_core_error **error
+) {
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_map *map;
@@ -341,8 +345,11 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
         markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_lookup_recording_release(&recording);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                                    "could not record the document's reference lookups");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            "could not record the document's reference lookups"
+        );
         return false;
     }
 
@@ -377,8 +384,11 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
             markdown_core_lookup_table_release(session->mem, &lookups);
             markdown_core_map_free(map);
             markdown_core_node_free(root);
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                                        "could not index the document's reference lookups");
+            markdown_core_ast_set_error(
+                error,
+                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                "could not index the document's reference lookups"
+            );
             return false;
         }
         for (i = 0; i < bundle_count; i++) {
@@ -401,8 +411,11 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
         markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
         markdown_core_node_free(root);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                                    "could not index the document's footnotes");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            "could not index the document's footnotes"
+        );
         return false;
     }
 
@@ -417,8 +430,11 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
         markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
         markdown_core_node_free(root);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                                    "could not index the committed document");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            "could not index the committed document"
+        );
         return false;
     }
 
@@ -450,8 +466,12 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     return true;
 }
 
-static bool commit_internal(markdown_core_session *session, bool initial, markdown_core_changeset **changes_out,
-                            markdown_core_error **error) {
+static bool commit_internal(
+    markdown_core_session *session,
+    bool initial,
+    markdown_core_changeset **changes_out,
+    markdown_core_error **error
+) {
     markdown_core_changeset *changes = NULL;
 
     if (changes_out) {
@@ -503,8 +523,11 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
 
 // --- public API -------------------------------------------------------------
 
-markdown_core_session *markdown_core_session_open_with_mem(const markdown_core_parse_options *options,
-                                                           markdown_core_mem *mem, markdown_core_error **error) {
+markdown_core_session *markdown_core_session_open_with_mem(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    markdown_core_error **error
+) {
     clear_error(error);
 
     markdown_core_session *session = (markdown_core_session *)calloc(1, sizeof(*session));
@@ -538,8 +561,8 @@ markdown_core_session *markdown_core_session_open_with_mem(const markdown_core_p
     return session;
 }
 
-markdown_core_session *markdown_core_session_open(const markdown_core_parse_options *options,
-                                                  markdown_core_error **error) {
+markdown_core_session *
+markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error) {
     return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), error);
 }
 
@@ -561,21 +584,33 @@ void markdown_core_session_free(markdown_core_session *session) {
     free(session);
 }
 
-bool markdown_core_session_edit(markdown_core_session *session, size_t byte_start, size_t byte_end,
-                                const uint8_t *bytes, size_t length, markdown_core_error **error) {
+bool markdown_core_session_edit(
+    markdown_core_session *session,
+    size_t byte_start,
+    size_t byte_end,
+    const uint8_t *bytes,
+    size_t length,
+    markdown_core_error **error
+) {
     clear_error(error);
     if (!session) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "session must not be null");
         return false;
     }
     if (byte_start > byte_end || byte_end > markdown_core_text_length(&session->text)) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-                                    "edit range is outside the current text");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "edit range is outside the current text"
+        );
         return false;
     }
     if (!bytes && length != 0) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-                                    "bytes must not be null when length is nonzero");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "bytes must not be null when length is nonzero"
+        );
         return false;
     }
     if (!markdown_core_text_edit(&session->text, byte_start, byte_end, bytes, length)) {
@@ -608,8 +643,11 @@ bool markdown_core_session_edit(markdown_core_session *session, size_t byte_star
     return true;
 }
 
-bool markdown_core_session_commit(markdown_core_session *session, markdown_core_changeset **changes,
-                                  markdown_core_error **error) {
+bool markdown_core_session_commit(
+    markdown_core_session *session,
+    markdown_core_changeset **changes,
+    markdown_core_error **error
+) {
     clear_error(error);
     if (changes) {
         *changes = NULL;
@@ -635,8 +673,8 @@ size_t markdown_core_session_length(const markdown_core_session *session) {
     return session ? markdown_core_text_length(&session->text) : 0;
 }
 
-const markdown_core_node *markdown_core_session_node_by_id(const markdown_core_session *session,
-                                                           markdown_core_node_id id) {
+const markdown_core_node *
+markdown_core_session_node_by_id(const markdown_core_session *session, markdown_core_node_id id) {
     if (!session || id == 0) {
         return NULL;
     }

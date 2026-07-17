@@ -183,8 +183,8 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
     return &row->cells[n_columns - 1];
 }
 
-static table_row *row_from_string(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *string,
-                                  int len) {
+static table_row *
+row_from_string(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *string, int len) {
     // Parses a single table row. It has the following form:
     // `delim? table_cell (delim table_cell)* delim? newline`
     // Note that cells are allowed to be empty.
@@ -297,8 +297,12 @@ static table_row *row_from_string(markdown_core_extension *self, markdown_core_p
     return row;
 }
 
-static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                 unsigned char *parent_string, int paragraph_offset) {
+static void try_inserting_table_header_paragraph(
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *parent_string,
+    int paragraph_offset
+) {
     markdown_core_node *paragraph;
     markdown_core_strbuf *paragraph_content;
 
@@ -319,9 +323,13 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     }
 }
 
-static markdown_core_node *try_opening_table_header(markdown_core_extension *self, markdown_core_parser *parser,
-                                                    markdown_core_node *parent_container, unsigned char *input,
-                                                    int len) {
+static markdown_core_node *try_opening_table_header(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *input,
+    int len
+) {
     markdown_core_node *table_header;
     table_row *header_row = NULL;
     table_row *delimiter_row = NULL;
@@ -338,8 +346,12 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     }
 
     // Since scan_table_start was successful, we must have a delimiter row.
-    delimiter_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
-                                    len - markdown_core_parser_get_first_nonspace(parser));
+    delimiter_row = row_from_string(
+        self,
+        parser,
+        input + markdown_core_parser_get_first_nonspace(parser),
+        len - markdown_core_parser_get_first_nonspace(parser)
+    );
     // assert may be optimized out, don't rely on it for security boundaries
     if (!delimiter_row) {
         return parent_container;
@@ -366,8 +378,12 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     }
 
     if (header_row->paragraph_offset) {
-        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
-                                             header_row->paragraph_offset);
+        try_inserting_table_header_paragraph(
+            parser,
+            parent_container,
+            (unsigned char *)parent_string,
+            header_row->paragraph_offset
+        );
         /* The split-off paragraph shares the retyped node's original span, so
          * the table's first line no longer begins a document child: it must
          * not remain an incremental restart point. */
@@ -411,8 +427,12 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     }
     set_table_alignments(parent_container, alignments);
 
-    table_header = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
-                                                  parent_container->start_column);
+    table_header = markdown_core_parser_add_child(
+        parser,
+        parent_container,
+        MARKDOWN_CORE_NODE_TABLE_ROW,
+        parent_container->start_column
+    );
     if (!table_header) {
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
@@ -434,7 +454,11 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     for (i = 0; i < header_row->n_columns; ++i) {
         node_cell *cell = &header_row->cells[i];
         markdown_core_node *header_cell = markdown_core_parser_add_child(
-            parser, table_header, MARKDOWN_CORE_NODE_TABLE_CELL, parent_container->start_column + cell->start_offset);
+            parser,
+            table_header,
+            MARKDOWN_CORE_NODE_TABLE_CELL,
+            parent_container->start_column + cell->start_offset
+        );
         if (!header_cell) {
             break;
         }
@@ -449,15 +473,24 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     incr_table_row_count(parent_container, i);
 
     markdown_core_parser_advance_offset(
-        parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
+        parser,
+        (char *)input,
+        (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser),
+        false
+    );
 
     free_table_row(parser->mem, header_row);
     free_table_row(parser->mem, delimiter_row);
     return parent_container;
 }
 
-static markdown_core_node *try_opening_table_row(markdown_core_extension *self, markdown_core_parser *parser,
-                                                 markdown_core_node *parent_container, unsigned char *input, int len) {
+static markdown_core_node *try_opening_table_row(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *input,
+    int len
+) {
     markdown_core_node *table_row_block;
     table_row *row;
 
@@ -469,8 +502,12 @@ static markdown_core_node *try_opening_table_row(markdown_core_extension *self, 
         return NULL;
     }
 
-    table_row_block = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW,
-                                                     parent_container->start_column);
+    table_row_block = markdown_core_parser_add_child(
+        parser,
+        parent_container,
+        MARKDOWN_CORE_NODE_TABLE_ROW,
+        parent_container->start_column
+    );
     if (!table_row_block) {
         return NULL;
     }
@@ -483,8 +520,12 @@ static markdown_core_node *try_opening_table_row(markdown_core_extension *self, 
         return NULL;
     }
 
-    row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
-                          len - markdown_core_parser_get_first_nonspace(parser));
+    row = row_from_string(
+        self,
+        parser,
+        input + markdown_core_parser_get_first_nonspace(parser),
+        len - markdown_core_parser_get_first_nonspace(parser)
+    );
 
     if (!row) {
         // clean up the dangling node
@@ -497,9 +538,12 @@ static markdown_core_node *try_opening_table_row(markdown_core_extension *self, 
 
         for (i = 0; i < row->n_columns && i < table_columns; ++i) {
             node_cell *cell = &row->cells[i];
-            markdown_core_node *node =
-                markdown_core_parser_add_child(parser, table_row_block, MARKDOWN_CORE_NODE_TABLE_CELL,
-                                               parent_container->start_column + cell->start_offset);
+            markdown_core_node *node = markdown_core_parser_add_child(
+                parser,
+                table_row_block,
+                MARKDOWN_CORE_NODE_TABLE_CELL,
+                parent_container->start_column + cell->start_offset
+            );
             if (!node) {
                 break;
             }
@@ -525,15 +569,24 @@ static markdown_core_node *try_opening_table_row(markdown_core_extension *self, 
 
     free_table_row(parser->mem, row);
 
-    markdown_core_parser_advance_offset(parser, (char *)input, len - 1 - markdown_core_parser_get_offset(parser),
-                                        false);
+    markdown_core_parser_advance_offset(
+        parser,
+        (char *)input,
+        len - 1 - markdown_core_parser_get_offset(parser),
+        false
+    );
 
     return table_row_block;
 }
 
-static markdown_core_node *try_opening_table_block(markdown_core_extension *self, int indented,
-                                                   markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                   unsigned char *input, int len) {
+static markdown_core_node *try_opening_table_block(
+    markdown_core_extension *self,
+    int indented,
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *input,
+    int len
+) {
     markdown_core_node_type parent_type = markdown_core_node_get_type(parent_container);
 
     if (!indented && parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
@@ -545,13 +598,22 @@ static markdown_core_node *try_opening_table_block(markdown_core_extension *self
     return NULL;
 }
 
-static int matches(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
-                   markdown_core_node *parent_container) {
+static int matches(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    unsigned char *input,
+    int len,
+    markdown_core_node *parent_container
+) {
     int res = 0;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        table_row *new_row = row_from_string(self, parser, input + markdown_core_parser_get_first_nonspace(parser),
-                                             len - markdown_core_parser_get_first_nonspace(parser));
+        table_row *new_row = row_from_string(
+            self,
+            parser,
+            input + markdown_core_parser_get_first_nonspace(parser),
+            len - markdown_core_parser_get_first_nonspace(parser)
+        );
         if (new_row && new_row->n_columns) {
             res = 1;
         }
@@ -577,8 +639,8 @@ static const char *get_type_string(markdown_core_extension *self, markdown_core_
     return "<unknown>";
 }
 
-static int can_contain(markdown_core_extension *extension, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
+static int
+can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {

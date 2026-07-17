@@ -81,9 +81,12 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->directives = true;
 }
 
-markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                     const markdown_core_parse_options *options,
-                                                     markdown_core_error **error) {
+markdown_core_document *markdown_core_document_parse(
+    const uint8_t *source,
+    size_t length,
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+) {
     markdown_core_session *session;
     markdown_core_document *document;
 
@@ -382,8 +385,12 @@ bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *l
     return true;
 }
 
-bool markdown_core_node_list_properties(const markdown_core_node *node, markdown_core_list_flavor *flavor,
-                                        markdown_core_optional_i64 *start, bool *tight) {
+bool markdown_core_node_list_properties(
+    const markdown_core_node *node,
+    markdown_core_list_flavor *flavor,
+    markdown_core_optional_i64 *start,
+    bool *tight
+) {
     if (!node || node->type != MARKDOWN_CORE_NODE_LIST || !flavor || !start || !tight) {
         return false;
     }
@@ -410,9 +417,14 @@ static void view_chunk(markdown_core_string_view *view, const markdown_core_chun
     view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
-bool markdown_core_node_code_block_properties(const markdown_core_node *node, markdown_core_string_view *info,
-                                              markdown_core_string_view *language, markdown_core_string_view *literal,
-                                              bool *fenced, bool *closed) {
+bool markdown_core_node_code_block_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *info,
+    markdown_core_string_view *language,
+    markdown_core_string_view *literal,
+    bool *fenced,
+    bool *closed
+) {
     size_t start = 0;
     size_t end;
     if (!node || node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !info || !language || !literal || !fenced || !closed) {
@@ -459,8 +471,11 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
     }
 }
 
-bool markdown_core_node_formula_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                           markdown_core_string_view *literal) {
+bool markdown_core_node_formula_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string_view *literal
+) {
     const char *value;
     markdown_core_formula_mode native_mode;
     if (!node || !mode || !literal ||
@@ -484,8 +499,11 @@ bool markdown_core_node_table_column_count(const markdown_core_node *node, size_
     return true;
 }
 
-bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                           markdown_core_table_alignment *alignment) {
+bool markdown_core_node_table_alignment_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_table_alignment *alignment
+) {
     uint16_t count;
     uint8_t *alignments;
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !alignment) {
@@ -528,9 +546,14 @@ static const markdown_core_node *directive_label_node(const markdown_core_node *
     return is_label(node->first_child) ? node->first_child : NULL;
 }
 
-bool markdown_core_node_directive_properties(const markdown_core_node *node, markdown_core_placement_mode *mode,
-                                             markdown_core_string_view *name, markdown_core_string_view *attributes,
-                                             bool *has_label, size_t *label_count) {
+bool markdown_core_node_directive_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string_view *name,
+    markdown_core_string_view *attributes,
+    bool *has_label,
+    size_t *label_count
+) {
     const char *value;
     const markdown_core_node *label;
     const markdown_core_node *child;
@@ -571,8 +594,12 @@ const markdown_core_node *markdown_core_node_directive_first_content_child(const
     return label ? label->next : node->first_child;
 }
 
-static bool link_properties(const markdown_core_node *node, uint16_t expected, markdown_core_string_view *url,
-                            markdown_core_string_view *title) {
+static bool link_properties(
+    const markdown_core_node *node,
+    uint16_t expected,
+    markdown_core_string_view *url,
+    markdown_core_string_view *title
+) {
     if (!node || node->type != expected || !url || !title) {
         return false;
     }
@@ -581,13 +608,19 @@ static bool link_properties(const markdown_core_node *node, uint16_t expected, m
     return true;
 }
 
-bool markdown_core_node_link_properties(const markdown_core_node *node, markdown_core_string_view *destination,
-                                        markdown_core_string_view *title) {
+bool markdown_core_node_link_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *destination,
+    markdown_core_string_view *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
-bool markdown_core_node_image_properties(const markdown_core_node *node, markdown_core_string_view *source,
-                                         markdown_core_string_view *title) {
+bool markdown_core_node_image_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *source,
+    markdown_core_string_view *title
+) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
@@ -949,8 +982,12 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_
     }
 }
 
-bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output, size_t *length,
-                                 markdown_core_error **error) {
+bool markdown_core_document_dump(
+    const markdown_core_document *document,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+) {
     dump_buffer buffer = {0};
     clear_error(error);
     if (!document || !document->root || !output || !length) {

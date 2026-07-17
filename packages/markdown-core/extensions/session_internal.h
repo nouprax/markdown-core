@@ -181,8 +181,11 @@ struct markdown_core_session {
 
 /** Internal constructor used by allocation-injection tests; the public
  * markdown_core_session_open uses the default allocator. */
-markdown_core_session *markdown_core_session_open_with_mem(const markdown_core_parse_options *options,
-                                                           markdown_core_mem *mem, markdown_core_error **error);
+markdown_core_session *markdown_core_session_open_with_mem(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    markdown_core_error **error
+);
 
 /** Compares the canonical dump fields of two nodes of the same raw type,
  * excluding scope. Allocation failure reports "not equal" so a revision bump
@@ -195,13 +198,21 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
  * into `changes` when non-NULL. Returns false on allocation failure while
  * recording (the trees are left consistent; the caller discards `new_root`).
  */
-bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_node *old_root,
-                                 markdown_core_node *new_root, uint64_t new_rev, markdown_core_changeset *changes);
+bool markdown_core_session_adopt(
+    markdown_core_session *session,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    uint64_t new_rev,
+    markdown_core_changeset *changes
+);
 
 /** Records every facade-visible node of `root`'s subtree as removed in
  * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
-bool markdown_core_session_record_removed(markdown_core_session *session, const markdown_core_node *root,
-                                          markdown_core_changeset *changes);
+bool markdown_core_session_record_removed(
+    markdown_core_session *session,
+    const markdown_core_node *root,
+    markdown_core_changeset *changes
+);
 
 /** Appends an id to a changeset array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
@@ -211,12 +222,18 @@ bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra)
 
 /** Builds the footnote index for `root` into `index` (zeroed on entry by the
  * caller). Returns false on allocation failure with `index` fully released. */
-bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_node *root,
-                                        markdown_core_footnote_index *index);
+bool markdown_core_footnote_index_build(
+    markdown_core_mem *mem,
+    markdown_core_node *root,
+    markdown_core_footnote_index *index
+);
 
 /** Appends a site; plain doubling grow. */
-bool markdown_core_footnote_site_push(markdown_core_mem *mem, markdown_core_footnote_site_list *list,
-                                      markdown_core_footnote_site site);
+bool markdown_core_footnote_site_push(
+    markdown_core_mem *mem,
+    markdown_core_footnote_site_list *list,
+    markdown_core_footnote_site site
+);
 
 /** Frees the list's storage and zeroes it (the nodes are borrowed). */
 void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_core_footnote_site_list *list);
@@ -225,16 +242,23 @@ void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_c
  * document order. Sites take `anchor` when non-NULL (a subtree that will sit
  * under one document child), or their own top-level ancestor below `root`.
  * Returns false on allocation failure; the lists stay releasable. */
-bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root, markdown_core_node *anchor,
-                                          markdown_core_footnote_site_list *defs,
-                                          markdown_core_footnote_site_list *refs);
+bool markdown_core_footnote_collect_sites(
+    markdown_core_mem *mem,
+    markdown_core_node *root,
+    markdown_core_node *anchor,
+    markdown_core_footnote_site_list *defs,
+    markdown_core_footnote_site_list *refs
+);
 
 /** Builds the index from document-ordered site lists, taking ownership of
  * both lists' storage (they are zeroed; on failure the storage is freed with
  * the rest of the index). Node ids must be final. */
-bool markdown_core_footnote_index_build_sites(markdown_core_mem *mem, markdown_core_footnote_site_list *defs,
-                                              markdown_core_footnote_site_list *refs,
-                                              markdown_core_footnote_index *index);
+bool markdown_core_footnote_index_build_sites(
+    markdown_core_mem *mem,
+    markdown_core_footnote_site_list *defs,
+    markdown_core_footnote_site_list *refs,
+    markdown_core_footnote_index *index
+);
 
 /** Releases everything owned by `index` and zeroes it. */
 void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);
@@ -245,9 +269,13 @@ void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_
  * Two-phase and transactional: on false (an allocation could not grow) no
  * node has been touched, so the diff may run against the live committed
  * tree. */
-bool markdown_core_footnote_index_diff(markdown_core_mem *mem, const markdown_core_footnote_index *previous,
-                                       const markdown_core_footnote_index *next, uint64_t new_rev,
-                                       markdown_core_changeset *changes);
+bool markdown_core_footnote_index_diff(
+    markdown_core_mem *mem,
+    const markdown_core_footnote_index *previous,
+    const markdown_core_footnote_index *next,
+    uint64_t new_rev,
+    markdown_core_changeset *changes
+);
 
 /** Creates a parser configured with the session's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
@@ -284,8 +312,11 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
  * O(text); used by full commits only — incremental commits update the index
  * from their own restart bookkeeping. Returns false on allocation failure
  * with `out` released. Defined in incremental.c. */
-bool markdown_core_session_index_clean_children(markdown_core_session *session, markdown_core_node *root,
-                                                markdown_core_clean_index *out);
+bool markdown_core_session_index_clean_children(
+    markdown_core_session *session,
+    markdown_core_node *root,
+    markdown_core_clean_index *out
+);
 
 // --- lookup records (lookups.c) ---------------------------------------------
 
@@ -303,8 +334,11 @@ void markdown_core_lookup_recording_sink(void *context, void *unit, const unsign
 /** Groups the recording into per-unit bundles, moving label ownership.
  * Returns false on allocation failure; releasing the recording and any
  * partial bundles stays safe either way. */
-bool markdown_core_lookup_recording_bundle(markdown_core_lookup_recording *recording, markdown_core_unit_lookups **out,
-                                           size_t *out_count);
+bool markdown_core_lookup_recording_bundle(
+    markdown_core_lookup_recording *recording,
+    markdown_core_unit_lookups **out,
+    size_t *out_count
+);
 
 /** Frees `count` bundles and every label still owned by them. */
 void markdown_core_unit_lookups_free(markdown_core_mem *mem, markdown_core_unit_lookups *bundles, size_t count);
@@ -317,12 +351,19 @@ bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lo
 
 /** Installs `record` for `id`, replacing (and freeing) any previous record.
  * Never fails within a reserved budget; the table takes ownership. */
-void markdown_core_lookup_table_put(markdown_core_mem *mem, markdown_core_lookup_table *table, markdown_core_node_id id,
-                                    markdown_core_lookup_record record);
+void markdown_core_lookup_table_put(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    markdown_core_node_id id,
+    markdown_core_lookup_record record
+);
 
 /** Drops `id`'s record (backward-shift deletion; missing ids are a no-op). */
-void markdown_core_lookup_table_remove(markdown_core_mem *mem, markdown_core_lookup_table *table,
-                                       markdown_core_node_id id);
+void markdown_core_lookup_table_remove(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    markdown_core_node_id id
+);
 
 typedef enum {
     MARKDOWN_CORE_INCREMENTAL_COMMITTED, // committed; *changes filled when requested
@@ -335,9 +376,11 @@ typedef enum {
  * Transactional: on FAILED or FALLBACK the committed tree, id table, refmap,
  * footnote index, and geometry are exactly as before the call. Defined in
  * incremental.c. */
-markdown_core_incremental_result markdown_core_session_commit_incremental(markdown_core_session *session,
-                                                                          uint64_t new_rev,
-                                                                          markdown_core_changeset *changes,
-                                                                          markdown_core_error **error);
+markdown_core_incremental_result markdown_core_session_commit_incremental(
+    markdown_core_session *session,
+    uint64_t new_rev,
+    markdown_core_changeset *changes,
+    markdown_core_error **error
+);
 
 #endif
