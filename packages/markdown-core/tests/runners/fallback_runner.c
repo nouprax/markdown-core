@@ -112,8 +112,15 @@ static int fb_expect_url(markdown_core_map *map, const char *label, const char *
         return -1;
     }
     if (ref->url.len != (bufsize_t)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
-        fprintf(stderr, "%s: label '%s' resolved to '%.*s', expected '%s'\n", context, label, (int)ref->url.len,
-                ref->url.data, url);
+        fprintf(
+            stderr,
+            "%s: label '%s' resolved to '%.*s', expected '%s'\n",
+            context,
+            label,
+            (int)ref->url.len,
+            ref->url.data,
+            url
+        );
         return -1;
     }
     return 0;
@@ -457,8 +464,14 @@ static int fb_check_key_index_remove(void) {
     }
     for (i = 0; i < 10; i++) {
         snprintf(keys[i], sizeof(keys[i]), "k%zu", i);
-        if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]),
-                                            (void *)(uintptr_t)(i + 1), 0, NULL)) {
+        if (!markdown_core_key_index_insert(
+                &index,
+                (const unsigned char *)keys[i],
+                (bufsize_t)strlen(keys[i]),
+                (void *)(uintptr_t)(i + 1),
+                0,
+                NULL
+            )) {
             fprintf(stderr, "key index insert %zu failed\n", i);
             goto done;
         }
@@ -489,8 +502,14 @@ static int fb_check_key_index_remove(void) {
         }
     }
     /* Removed keys can come back. */
-    if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0]),
-                                        (void *)(uintptr_t)99, 0, NULL) ||
+    if (!markdown_core_key_index_insert(
+            &index,
+            (const unsigned char *)keys[0],
+            (bufsize_t)strlen(keys[0]),
+            (void *)(uintptr_t)99,
+            0,
+            NULL
+        ) ||
         markdown_core_key_index_lookup(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0])) !=
             (void *)(uintptr_t)99) {
         fputs("re-insert after removal failed\n", stderr);
@@ -597,8 +616,14 @@ static int case_key_index_probe_growth(void) {
         goto done;
     }
     for (i = 0; i < FB_CLUSTER; i++) {
-        if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]),
-                                            (void *)(uintptr_t)(i + 1), 0, NULL)) {
+        if (!markdown_core_key_index_insert(
+                &index,
+                (const unsigned char *)keys[i],
+                (bufsize_t)strlen(keys[i]),
+                (void *)(uintptr_t)(i + 1),
+                0,
+                NULL
+            )) {
             fprintf(stderr, "cluster insert %zu failed\n", i);
             goto done;
         }
@@ -607,15 +632,24 @@ static int case_key_index_probe_growth(void) {
         fputs("cluster did not fill the table as constructed; retune with core/map.c hash\n", stderr);
         goto done;
     }
-    if (!markdown_core_key_index_insert(&index, (const unsigned char *)keys[FB_CLUSTER],
-                                        (bufsize_t)strlen(keys[FB_CLUSTER]), (void *)(uintptr_t)(FB_CLUSTER + 1), 0,
-                                        NULL)) {
+    if (!markdown_core_key_index_insert(
+            &index,
+            (const unsigned char *)keys[FB_CLUSTER],
+            (bufsize_t)strlen(keys[FB_CLUSTER]),
+            (void *)(uintptr_t)(FB_CLUSTER + 1),
+            0,
+            NULL
+        )) {
         fputs("probe-exhausted insert failed instead of growing\n", stderr);
         goto done;
     }
     if (index.capacity != 512 || index.size != FB_CLUSTER + 1) {
-        fprintf(stderr, "expected one growth to capacity 512, found capacity %zu size %zu\n", index.capacity,
-                index.size);
+        fprintf(
+            stderr,
+            "expected one growth to capacity 512, found capacity %zu size %zu\n",
+            index.capacity,
+            index.size
+        );
         goto done;
     }
     for (i = 0; i < FB_CLUSTER + 1; i++) {
@@ -746,9 +780,15 @@ static void fb_describe_node(const char *side, markdown_core_node *node) {
         return;
     }
     if (fb_node_has_literal(node) && node->as.literal.data && node->as.literal.len >= 0) {
-        fprintf(stderr, "  %s: type=%d literal='%.*s' (len %d)\n", side, (int)markdown_core_node_get_type(node),
-                (int)(node->as.literal.len < 40 ? node->as.literal.len : 40), (const char *)node->as.literal.data,
-                (int)node->as.literal.len);
+        fprintf(
+            stderr,
+            "  %s: type=%d literal='%.*s' (len %d)\n",
+            side,
+            (int)markdown_core_node_get_type(node),
+            (int)(node->as.literal.len < 40 ? node->as.literal.len : 40),
+            (const char *)node->as.literal.data,
+            (int)node->as.literal.len
+        );
     } else {
         fprintf(stderr, "  %s: type=%d\n", side, (int)markdown_core_node_get_type(node));
     }
@@ -873,10 +913,22 @@ static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t 
 
     for (stage = 0; stage < 3; stage++) {
         size_t length = strlen(stages[stage]);
-        if (!markdown_core_session_edit(session, inserts[stage], inserts[stage], (const uint8_t *)stages[stage], length,
-                                        NULL) &&
-            !markdown_core_session_edit(session, inserts[stage], inserts[stage], (const uint8_t *)stages[stage], length,
-                                        NULL)) {
+        if (!markdown_core_session_edit(
+                session,
+                inserts[stage],
+                inserts[stage],
+                (const uint8_t *)stages[stage],
+                length,
+                NULL
+            ) &&
+            !markdown_core_session_edit(
+                session,
+                inserts[stage],
+                inserts[stage],
+                (const uint8_t *)stages[stage],
+                length,
+                NULL
+            )) {
             fputs("session edit failed twice\n", stderr);
             goto done;
         }

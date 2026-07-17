@@ -80,8 +80,11 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     return ev_type;
 }
 
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
-                              markdown_core_event_type event_type) {
+void markdown_core_iter_reset(
+    markdown_core_iter *iter,
+    markdown_core_node *current,
+    markdown_core_event_type event_type
+) {
     iter->next.ev_type = event_type;
     iter->next.node = current;
     markdown_core_iter_next(iter);

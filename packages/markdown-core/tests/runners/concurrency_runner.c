@@ -379,8 +379,13 @@ static int run_threads_and_verify(int iterations) {
                 }
                 if (workers[index].lengths[combined] != reference_length ||
                     memcmp(workers[index].dumps[combined], reference, reference_length) != 0) {
-                    fprintf(stderr, "concurrency: thread %d dump diverges (input %zu variant %d)\n", index, input,
-                            variant);
+                    fprintf(
+                        stderr,
+                        "concurrency: thread %d dump diverges (input %zu variant %d)\n",
+                        index,
+                        input,
+                        variant
+                    );
                     failures += 1;
                 }
             }
@@ -407,8 +412,8 @@ typedef struct session_worker {
 
 // Clears the session text, then streams `input` byte-by-byte with a commit
 // (and discarded changeset) per byte. Hands back a determinism-checked dump.
-static int session_stream_once(markdown_core_session *session, const char *input, uint8_t **dump_out,
-                               size_t *length_out) {
+static int
+session_stream_once(markdown_core_session *session, const char *input, uint8_t **dump_out, size_t *length_out) {
     markdown_core_error *error = NULL;
     size_t existing = markdown_core_session_length(session);
 

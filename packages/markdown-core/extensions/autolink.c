@@ -181,8 +181,14 @@ static void clear_sourcepos(markdown_core_node *node) {
     node->end_column = 0;
 }
 
-static void set_sourcepos_from_range(markdown_core_node *node, int source_start_line, int source_start_column,
-                                     markdown_core_chunk *source, size_t start, size_t len) {
+static void set_sourcepos_from_range(
+    markdown_core_node *node,
+    int source_start_line,
+    int source_start_column,
+    markdown_core_chunk *source,
+    size_t start,
+    size_t len
+) {
     clear_sourcepos(node);
 
     if (source_start_line == 0 || len == 0) {
@@ -218,8 +224,8 @@ static void set_sourcepos_from_range(markdown_core_node *node, int source_start_
     node->end_column = end_column;
 }
 
-static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core_node *parent,
-                                     markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *
+www_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_inline_parser *inline_parser) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     size_t max_rewind = markdown_core_inline_parser_get_offset(inline_parser);
     uint8_t *data = chunk->data + max_rewind;
@@ -287,8 +293,8 @@ static markdown_core_node *www_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core_node *parent,
-                                     markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *
+url_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_inline_parser *inline_parser) {
     size_t link_end, domain_len;
     int rewind = 0;
 
@@ -360,8 +366,13 @@ static markdown_core_node *url_match(markdown_core_parser *parser, markdown_core
     return node;
 }
 
-static markdown_core_node *match(markdown_core_extension *ext, markdown_core_parser *parser, markdown_core_node *parent,
-                                 unsigned char c, markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *match(
+    markdown_core_extension *ext,
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    unsigned char c,
+    markdown_core_inline_parser *inline_parser
+) {
     if (markdown_core_inline_parser_in_bracket(inline_parser, false) ||
         markdown_core_inline_parser_in_bracket(inline_parser, true)) {
         return NULL;
@@ -489,8 +500,10 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
                 offset += max_rewind + 1;
                 max_rewind = link_end - 1;
                 goto found_at;
-            } else if (c == '.' && link_end < remaining - offset - max_rewind - 1 &&
-                       markdown_core_isalnum(data[start + offset + max_rewind + link_end + 1])) {
+            } else if (
+                c == '.' && link_end < remaining - offset - max_rewind - 1 &&
+                markdown_core_isalnum(data[start + offset + max_rewind + link_end + 1])
+            ) {
                 np++;
             } else if (c == '/' && is_xmpp) {
                 continue;
@@ -534,8 +547,14 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         if (!link_node->as.link.url.data) {
             parser->oom = true;
         }
-        set_sourcepos_from_range(link_node, source_start_line, source_start_column, &detached_chunk, link_start,
-                                 link_len);
+        set_sourcepos_from_range(
+            link_node,
+            source_start_line,
+            source_start_column,
+            &detached_chunk,
+            link_start,
+            link_len
+        );
 
         markdown_core_node *link_text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
         if (!link_text) {
@@ -544,15 +563,24 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             break;
         }
         markdown_core_chunk email = markdown_core_chunk_dup(
-            &detached_chunk, (bufsize_t)(start + offset + max_rewind - rewind), (bufsize_t)(link_end + rewind));
+            &detached_chunk,
+            (bufsize_t)(start + offset + max_rewind - rewind),
+            (bufsize_t)(link_end + rewind)
+        );
         /* The copy must own its bytes before detached_chunk is freed below. */
         if (!markdown_core_chunk_to_cstr(parser->mem, &email)) {
             parser->oom = true;
             markdown_core_chunk_set_cstr(parser->mem, &email, NULL);
         }
         link_text->as.literal = email;
-        set_sourcepos_from_range(link_text, source_start_line, source_start_column, &detached_chunk, link_start,
-                                 link_len);
+        set_sourcepos_from_range(
+            link_text,
+            source_start_line,
+            source_start_column,
+            &detached_chunk,
+            link_start,
+            link_len
+        );
         markdown_core_node_append_child(link_node, link_text);
 
         markdown_core_node_insert_after(text, link_node);
@@ -572,8 +600,14 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             markdown_core_chunk_set_cstr(parser->mem, &text->as.literal, NULL);
         }
-        set_sourcepos_from_range(text, source_start_line, source_start_column, &detached_chunk, prefix_start,
-                                 prefix_len);
+        set_sourcepos_from_range(
+            text,
+            source_start_line,
+            source_start_column,
+            &detached_chunk,
+            prefix_start,
+            prefix_len
+        );
 
         text = post;
         start += offset + max_rewind + link_end;
@@ -592,8 +626,8 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *postprocess_block(markdown_core_extension *ext, markdown_core_parser *parser,
-                                             markdown_core_node *block) {
+static markdown_core_node *
+postprocess_block(markdown_core_extension *ext, markdown_core_parser *parser, markdown_core_node *block) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
     markdown_core_node *node;

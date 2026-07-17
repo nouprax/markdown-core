@@ -15,8 +15,12 @@ struct markdown_core_reference {
 
 typedef struct markdown_core_reference markdown_core_reference;
 
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, markdown_core_chunk *url,
-                                    markdown_core_chunk *title);
+void markdown_core_reference_create(
+    markdown_core_map *map,
+    markdown_core_chunk *label,
+    markdown_core_chunk *url,
+    markdown_core_chunk *title
+);
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
 
 #ifdef __cplusplus

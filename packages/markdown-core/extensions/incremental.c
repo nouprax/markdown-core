@@ -119,8 +119,11 @@ static bool offset_push(markdown_core_mem *mem, offset_list *list, size_t offset
     return true;
 }
 
-bool markdown_core_session_index_clean_children(markdown_core_session *session, markdown_core_node *root,
-                                                markdown_core_clean_index *out) {
+bool markdown_core_session_index_clean_children(
+    markdown_core_session *session,
+    markdown_core_node *root,
+    markdown_core_clean_index *out
+) {
     const unsigned char *bytes = markdown_core_text_bytes(&session->text);
     size_t length = markdown_core_text_length(&session->text);
     markdown_core_node *child;
@@ -219,8 +222,12 @@ static bool reference_push(markdown_core_mem *mem, reference_list *list, markdow
 
 /* Entries the staged block phase added: the head run of the live chain down
  * to (excluding) the pre-parse head, reversed into document order. */
-static bool collect_new_definitions(markdown_core_mem *mem, markdown_core_map *map,
-                                    const markdown_core_map_entry *previous_head, reference_list *out) {
+static bool collect_new_definitions(
+    markdown_core_mem *mem,
+    markdown_core_map *map,
+    const markdown_core_map_entry *previous_head,
+    reference_list *out
+) {
     markdown_core_map_entry *entry;
     size_t i;
     for (entry = map->refs; entry && entry != previous_head; entry = entry->next) {
@@ -271,9 +278,15 @@ static int order_compare(const void *a, const void *b) {
 /* Entries anchored in the stale region, in document order. At rest every
  * entry order stems from the most recent full parse, so sorting by order is
  * sorting by document position. */
-static bool collect_stale_definitions(markdown_core_mem *mem, markdown_core_map *map,
-                                      const markdown_core_map_entry *previous_head, const uint64_t *stale_ids,
-                                      size_t stale_count, bool include_head_region, reference_list *out) {
+static bool collect_stale_definitions(
+    markdown_core_mem *mem,
+    markdown_core_map *map,
+    const markdown_core_map_entry *previous_head,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    bool include_head_region,
+    reference_list *out
+) {
     markdown_core_map_entry *entry = map->refs;
     while (entry && entry != previous_head) {
         entry = entry->next; // skip this parse's own additions
@@ -332,9 +345,14 @@ typedef enum {
 /* Places an at-rest entry relative to the stale region. Anchors are direct
  * document children with sealed document-relative lines, so one comparison
  * against the restart line settles prefix versus suffix. */
-static def_region classify_definition(markdown_core_session *session, const markdown_core_map_entry *entry,
-                                      const uint64_t *stale_ids, size_t stale_count, bool include_head_region,
-                                      int restart_line) {
+static def_region classify_definition(
+    markdown_core_session *session,
+    const markdown_core_map_entry *entry,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    bool include_head_region,
+    int restart_line
+) {
     const markdown_core_node *anchor;
     if (entry->owner == 0) {
         return include_head_region ? DEF_REGION_STALE : DEF_REGION_PREFIX;
@@ -405,11 +423,20 @@ static bool reference_payloads_equal(const markdown_core_map_entry *a, const mar
  * false with *fallback set when only a full reparse can settle the commit
  * (index build failure, an anchor that defies classification), and false
  * with *fallback clear on allocation loss. */
-static bool reconcile_prepare(markdown_core_session *session, markdown_core_map *map, uint64_t order_floor,
-                              const markdown_core_map_entry *previous_head, const uint64_t *stale_ids,
-                              size_t stale_count, bool include_head_region, int restart_line,
-                              const reference_list *old_defs, const reference_list *new_defs, reconcile_state *state,
-                              bool *fallback) {
+static bool reconcile_prepare(
+    markdown_core_session *session,
+    markdown_core_map *map,
+    uint64_t order_floor,
+    const markdown_core_map_entry *previous_head,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    bool include_head_region,
+    int restart_line,
+    const reference_list *old_defs,
+    const reference_list *new_defs,
+    reconcile_state *state,
+    bool *fallback
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_map_entry *entry;
     size_t affected_upper = old_defs->count + new_defs->count;
@@ -577,10 +604,17 @@ static int reference_order_compare(const void *a, const void *b) {
  * assigns the staged orders (spreading into the vacated span, or renumbering
  * everything in document order), and relinks every affected bucket. Nothing
  * here can fail; from the first unlink onward the map only converges. */
-static void reconcile_apply(markdown_core_session *session, markdown_core_map *map,
-                            const markdown_core_map_entry *previous_head, const uint64_t *stale_ids, size_t stale_count,
-                            bool include_head_region, int restart_line, const reference_list *new_defs,
-                            reconcile_state *state) {
+static void reconcile_apply(
+    markdown_core_session *session,
+    markdown_core_map *map,
+    const markdown_core_map_entry *previous_head,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    bool include_head_region,
+    int restart_line,
+    const reference_list *new_defs,
+    reconcile_state *state
+) {
     markdown_core_map_entry **link = &map->refs;
     size_t i;
 
@@ -670,8 +704,9 @@ static void reconcile_apply(markdown_core_session *session, markdown_core_map *m
             if (entry == previous_head) {
                 at_rest = true;
             }
-            if (at_rest && classify_definition(session, entry, stale_ids, stale_count, include_head_region,
-                                               restart_line) == DEF_REGION_STALE) {
+            if (at_rest &&
+                classify_definition(session, entry, stale_ids, stale_count, include_head_region, restart_line) ==
+                    DEF_REGION_STALE) {
                 *link = entry->next;
                 map->size--;
                 map->free(map, entry);
@@ -844,9 +879,15 @@ static markdown_core_node *clone_unit_shell(markdown_core_session *session, mark
  * false with *fallback set when a dependent cannot be rebuilt per-unit (an
  * extension-owned unit, or a record that no longer matches the tree), and
  * false with *fallback clear on allocation loss. */
-static bool collect_dependents(markdown_core_session *session, const markdown_core_key_index *dirty,
-                               const uint64_t *stale_ids, size_t stale_count, dependent_unit **out, size_t *out_count,
-                               bool *fallback) {
+static bool collect_dependents(
+    markdown_core_session *session,
+    const markdown_core_key_index *dirty,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    dependent_unit **out,
+    size_t *out_count,
+    bool *fallback
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_lookup_table *table = &session->lookups;
     markdown_core_node *doc = session->view.root;
@@ -872,8 +913,11 @@ static bool collect_dependents(markdown_core_session *session, const markdown_co
             continue;
         }
         for (i = 0; i < record->count && !depends; i++) {
-            depends = markdown_core_key_index_lookup(dirty, record->labels[i],
-                                                     (bufsize_t)strlen((const char *)record->labels[i])) != NULL;
+            depends = markdown_core_key_index_lookup(
+                          dirty,
+                          record->labels[i],
+                          (bufsize_t)strlen((const char *)record->labels[i])
+                      ) != NULL;
         }
         if (!depends) {
             continue;
@@ -933,8 +977,11 @@ fall_back:
 // against the restart line. The merge runs before adoption, while falling
 // back is still free, and costs O(previous sites + staged material).
 
-static bool site_run_append(markdown_core_mem *mem, markdown_core_footnote_site_list *out,
-                            const markdown_core_footnote_site_list *run) {
+static bool site_run_append(
+    markdown_core_mem *mem,
+    markdown_core_footnote_site_list *out,
+    const markdown_core_footnote_site_list *run
+) {
     size_t i;
     for (i = 0; i < run->count; i++) {
         if (!markdown_core_footnote_site_push(mem, out, run->items[i])) {
@@ -982,12 +1029,19 @@ static size_t clone_key_find(const clone_key *keys, size_t count, const markdown
  * every surviving suffix child. Returns FALLBACK when an anchor no longer
  * parents to the document (the lists no longer describe the tree), FAILED on
  * allocation loss. */
-static markdown_core_incremental_result
-merge_site_list(markdown_core_session *session, const markdown_core_footnote_site_list *old_sites,
-                const uint64_t *stale_ids, size_t stale_count, int restart_line,
-                const markdown_core_footnote_site_list *staged_run, const clone_key *clone_keys,
-                markdown_core_footnote_site_list *clone_runs, bool *clone_emitted, size_t clone_count,
-                markdown_core_footnote_site_list *out) {
+static markdown_core_incremental_result merge_site_list(
+    markdown_core_session *session,
+    const markdown_core_footnote_site_list *old_sites,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    int restart_line,
+    const markdown_core_footnote_site_list *staged_run,
+    const clone_key *clone_keys,
+    markdown_core_footnote_site_list *clone_runs,
+    bool *clone_emitted,
+    size_t clone_count,
+    markdown_core_footnote_site_list *out
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_node *doc = session->view.root;
     bool staged_emitted = false;
@@ -1043,10 +1097,17 @@ merge_site_list(markdown_core_session *session, const markdown_core_footnote_sit
  * out lists hold the merged document order; otherwise they are released. A
  * clone that gains footnote sites where its unit had none has no merge
  * position and returns FALLBACK (the link/footnote-reference kind flip). */
-static markdown_core_incremental_result
-footnote_sites_merge(markdown_core_session *session, markdown_core_node *root, const uint64_t *stale_ids,
-                     size_t stale_count, int restart_line, dependent_unit *dependents, size_t dependent_count,
-                     markdown_core_footnote_site_list *out_defs, markdown_core_footnote_site_list *out_refs) {
+static markdown_core_incremental_result footnote_sites_merge(
+    markdown_core_session *session,
+    markdown_core_node *root,
+    const uint64_t *stale_ids,
+    size_t stale_count,
+    int restart_line,
+    dependent_unit *dependents,
+    size_t dependent_count,
+    markdown_core_footnote_site_list *out_defs,
+    markdown_core_footnote_site_list *out_refs
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_node *doc = session->view.root;
     markdown_core_footnote_site_list staged_defs = {NULL, 0, 0};
@@ -1100,11 +1161,33 @@ footnote_sites_merge(markdown_core_session *session, markdown_core_node *root, c
         qsort(clone_keys, dependent_count, sizeof(*clone_keys), clone_key_compare);
     }
 
-    result = merge_site_list(session, &session->footnotes.defs, stale_ids, stale_count, restart_line, &staged_defs,
-                             NULL, NULL, NULL, 0, out_defs);
+    result = merge_site_list(
+        session,
+        &session->footnotes.defs,
+        stale_ids,
+        stale_count,
+        restart_line,
+        &staged_defs,
+        NULL,
+        NULL,
+        NULL,
+        0,
+        out_defs
+    );
     if (result == MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
-        result = merge_site_list(session, &session->footnotes.refs, stale_ids, stale_count, restart_line, &staged_refs,
-                                 clone_keys, clone_runs, clone_emitted, dependent_count, out_refs);
+        result = merge_site_list(
+            session,
+            &session->footnotes.refs,
+            stale_ids,
+            stale_count,
+            restart_line,
+            &staged_refs,
+            clone_keys,
+            clone_runs,
+            clone_emitted,
+            dependent_count,
+            out_refs
+        );
     }
     for (i = 0; result == MARKDOWN_CORE_INCREMENTAL_COMMITTED && i < dependent_count; i++) {
         if (!clone_emitted[i] && clone_runs[i].count) {
@@ -1157,10 +1240,12 @@ static void splice_replace(markdown_core_node *unit, markdown_core_node *staged)
 
 // --- the pipeline --------------------------------------------------------------
 
-markdown_core_incremental_result markdown_core_session_commit_incremental(markdown_core_session *session,
-                                                                          uint64_t new_rev,
-                                                                          markdown_core_changeset *changes,
-                                                                          markdown_core_error **error) {
+markdown_core_incremental_result markdown_core_session_commit_incremental(
+    markdown_core_session *session,
+    uint64_t new_rev,
+    markdown_core_changeset *changes,
+    markdown_core_error **error
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_map *map = session->refmap;
     const unsigned char *bytes = markdown_core_text_bytes(&session->text);
@@ -1330,10 +1415,29 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(markdo
         if (!defs_equal) {
             bool fallback = false;
             size_t i;
-            if (!reconcile_prepare(session, map, order_floor, previous_head, stale_ids, stale_count, restart_pos < 0,
-                                   restart_line, &old_defs, &new_defs, &reconcile, &fallback) ||
-                !collect_dependents(session, &reconcile.dirty, stale_ids, stale_count, &dependents, &dependent_count,
-                                    &fallback)) {
+            if (!reconcile_prepare(
+                    session,
+                    map,
+                    order_floor,
+                    previous_head,
+                    stale_ids,
+                    stale_count,
+                    restart_pos < 0,
+                    restart_line,
+                    &old_defs,
+                    &new_defs,
+                    &reconcile,
+                    &fallback
+                ) ||
+                !collect_dependents(
+                    session,
+                    &reconcile.dirty,
+                    stale_ids,
+                    stale_count,
+                    &dependents,
+                    &dependent_count,
+                    &fallback
+                )) {
                 if (fallback) {
                     result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
                 }
@@ -1362,8 +1466,17 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(markdo
             }
             // The last allocation-bearing step is behind; reconcile the map
             // in place so the inline phase resolves the final winners.
-            reconcile_apply(session, map, previous_head, stale_ids, stale_count, restart_pos < 0, restart_line,
-                            &new_defs, &reconcile);
+            reconcile_apply(
+                session,
+                map,
+                previous_head,
+                stale_ids,
+                stale_count,
+                restart_pos < 0,
+                restart_line,
+                &new_defs,
+                &reconcile
+            );
         }
     }
 
@@ -1430,7 +1543,16 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(markdo
     // free: adoption has not run, so the changeset holds nothing yet.
     if (session->options.footnotes) {
         markdown_core_incremental_result merged = footnote_sites_merge(
-            session, root, stale_ids, stale_count, restart_line, dependents, dependent_count, &def_sites, &ref_sites);
+            session,
+            root,
+            stale_ids,
+            stale_count,
+            restart_line,
+            dependents,
+            dependent_count,
+            &def_sites,
+            &ref_sites
+        );
         if (merged != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
             result = merged;
             goto failed;
@@ -1472,8 +1594,9 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(markdo
         // (prefix untouched, stale run replaced, suffix slid or biased),
         // so any growth it needs happens here, while failing is still free.
         if (clean_count > session->clean.capacity) {
-            markdown_core_clean_child *grown = (markdown_core_clean_child *)mem->realloc(
-                session->clean.items, clean_count * sizeof(*session->clean.items));
+            markdown_core_clean_child *grown =
+                (markdown_core_clean_child *)
+                    mem->realloc(session->clean.items, clean_count * sizeof(*session->clean.items));
             if (!grown) {
                 goto failed;
             }
@@ -1960,8 +2083,11 @@ failed:
         markdown_core_node_free(root);
     }
     if (result == MARKDOWN_CORE_INCREMENTAL_FAILED && error && !*error) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                                    "could not commit the session incrementally");
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            "could not commit the session incrementally"
+        );
     }
 
 done:

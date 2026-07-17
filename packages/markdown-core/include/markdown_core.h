@@ -178,9 +178,12 @@ MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_opti
  * The returned document owns all nodes and borrowed string views. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.
  */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(const uint8_t *source, size_t length,
-                                                                       const markdown_core_parse_options *options,
-                                                                       markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(
+    const uint8_t *source,
+    size_t length,
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
@@ -199,44 +202,66 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
-MARKDOWN_CORE_API bool markdown_core_node_list_properties(const markdown_core_node *node,
-                                                          markdown_core_list_flavor *flavor,
-                                                          markdown_core_optional_i64 *start, bool *tight);
-MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(const markdown_core_node *node,
-                                                            markdown_core_optional_bool *checked);
-MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(const markdown_core_node *node,
-                                                                markdown_core_string_view *info,
-                                                                markdown_core_string_view *language,
-                                                                markdown_core_string_view *literal, bool *fenced,
-                                                                bool *closed);
+MARKDOWN_CORE_API bool markdown_core_node_list_properties(
+    const markdown_core_node *node,
+    markdown_core_list_flavor *flavor,
+    markdown_core_optional_i64 *start,
+    bool *tight
+);
+MARKDOWN_CORE_API bool
+markdown_core_node_list_item_checked(const markdown_core_node *node, markdown_core_optional_bool *checked);
+MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *info,
+    markdown_core_string_view *language,
+    markdown_core_string_view *literal,
+    bool *fenced,
+    bool *closed
+);
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
-MARKDOWN_CORE_API bool markdown_core_node_formula_properties(const markdown_core_node *node,
-                                                             markdown_core_placement_mode *mode,
-                                                             markdown_core_string_view *literal);
+MARKDOWN_CORE_API bool markdown_core_node_formula_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string_view *literal
+);
 MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
-MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(const markdown_core_node *node, size_t index,
-                                                             markdown_core_table_alignment *alignment);
+MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_table_alignment *alignment
+);
 MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
-MARKDOWN_CORE_API bool markdown_core_node_directive_properties(const markdown_core_node *node,
-                                                               markdown_core_placement_mode *mode,
-                                                               markdown_core_string_view *name,
-                                                               markdown_core_string_view *attributes, bool *has_label,
-                                                               size_t *label_count);
+MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
+    const markdown_core_node *node,
+    markdown_core_placement_mode *mode,
+    markdown_core_string_view *name,
+    markdown_core_string_view *attributes,
+    bool *has_label,
+    size_t *label_count
+);
 MARKDOWN_CORE_API const markdown_core_node *
 markdown_core_node_directive_first_label_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *
 markdown_core_node_directive_first_content_child(const markdown_core_node *node);
-MARKDOWN_CORE_API bool markdown_core_node_link_properties(const markdown_core_node *node,
-                                                          markdown_core_string_view *destination,
-                                                          markdown_core_string_view *title);
-MARKDOWN_CORE_API bool markdown_core_node_image_properties(const markdown_core_node *node,
-                                                           markdown_core_string_view *source,
-                                                           markdown_core_string_view *title);
+MARKDOWN_CORE_API bool markdown_core_node_link_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *destination,
+    markdown_core_string_view *title
+);
+MARKDOWN_CORE_API bool markdown_core_node_image_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *source,
+    markdown_core_string_view *title
+);
 MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
-MARKDOWN_CORE_API bool markdown_core_document_dump(const markdown_core_document *document, uint8_t **output,
-                                                   size_t *length, markdown_core_error **error);
+MARKDOWN_CORE_API bool markdown_core_document_dump(
+    const markdown_core_document *document,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+);
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /*
@@ -261,22 +286,31 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /** Opens an empty session at revision 0. `options == NULL` selects the
  * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(const markdown_core_parse_options *options,
-                                                                    markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_session *
+markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error);
 MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
 
 /** Replaces bytes [byte_start, byte_end) of the stored text with
  * `bytes[0..length)`. Append passes byte_start == byte_end ==
  * markdown_core_session_length. Edits only update the text; parsing happens
  * at commit. */
-MARKDOWN_CORE_API bool markdown_core_session_edit(markdown_core_session *session, size_t byte_start, size_t byte_end,
-                                                  const uint8_t *bytes, size_t length, markdown_core_error **error);
+MARKDOWN_CORE_API bool markdown_core_session_edit(
+    markdown_core_session *session,
+    size_t byte_start,
+    size_t byte_end,
+    const uint8_t *bytes,
+    size_t length,
+    markdown_core_error **error
+);
 
 /** Reparses the pending text and advances the revision. When `changes` is
  * non-NULL it receives a caller-owned changeset (release with
  * markdown_core_changeset_free). */
-MARKDOWN_CORE_API bool markdown_core_session_commit(markdown_core_session *session, markdown_core_changeset **changes,
-                                                    markdown_core_error **error);
+MARKDOWN_CORE_API bool markdown_core_session_commit(
+    markdown_core_session *session,
+    markdown_core_changeset **changes,
+    markdown_core_error **error
+);
 
 /** Borrowed view of the last committed document; valid until the next
  * mutating call on the session. */
@@ -287,8 +321,8 @@ MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_se
  * identity even when ids collide numerically. */
 MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
 MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(const markdown_core_session *session,
-                                                                             markdown_core_node_id id);
+MARKDOWN_CORE_API const markdown_core_node *
+markdown_core_session_node_by_id(const markdown_core_session *session, markdown_core_node_id id);
 
 /*
  * Footnote queries
@@ -324,22 +358,27 @@ typedef struct markdown_core_footnote_info {
 /** Fills `info` for the footnote node with the given id at the current
  * revision. Returns false (with `info` zeroed) when the id does not name a
  * footnote reference or definition of this session. */
-MARKDOWN_CORE_API bool markdown_core_session_footnote_info(const markdown_core_session *session,
-                                                           markdown_core_node_id id, markdown_core_footnote_info *info);
+MARKDOWN_CORE_API bool markdown_core_session_footnote_info(
+    const markdown_core_session *session,
+    markdown_core_node_id id,
+    markdown_core_footnote_info *info
+);
 
 /** Borrows the ids of the referenced (winning) definitions in first-use
  * order — the order a renderer lists them in. Valid until the next mutating
  * call on the session. */
-MARKDOWN_CORE_API size_t markdown_core_session_footnotes(const markdown_core_session *session,
-                                                         const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t
+markdown_core_session_footnotes(const markdown_core_session *session, const markdown_core_node_id **ids);
 
 /** Borrows the ids of the references that resolve to `definition`, in
  * document order — the renderer's back-reference targets. Empty unless
  * `definition` is a referenced winning definition. Valid until the next
  * mutating call on the session. */
-MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(const markdown_core_session *session,
-                                                                   markdown_core_node_id definition,
-                                                                   const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(
+    const markdown_core_session *session,
+    markdown_core_node_id definition,
+    const markdown_core_node_id **ids
+);
 
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any
@@ -358,16 +397,16 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const 
  * fields or direct child list changed, and `bubbled` lists ancestors whose
  * revision advanced only because a descendant changed. Ids of removed nodes
  * are retired and never reused. */
-MARKDOWN_CORE_API void markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before,
-                                                         uint64_t *after);
-MARKDOWN_CORE_API size_t markdown_core_changeset_added(const markdown_core_changeset *changes,
-                                                       const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t markdown_core_changeset_removed(const markdown_core_changeset *changes,
-                                                         const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t markdown_core_changeset_changed(const markdown_core_changeset *changes,
-                                                         const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t markdown_core_changeset_bubbled(const markdown_core_changeset *changes,
-                                                         const markdown_core_node_id **ids);
+MARKDOWN_CORE_API void
+markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before, uint64_t *after);
+MARKDOWN_CORE_API size_t
+markdown_core_changeset_added(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t
+markdown_core_changeset_removed(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t
+markdown_core_changeset_changed(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+MARKDOWN_CORE_API size_t
+markdown_core_changeset_bubbled(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API void markdown_core_changeset_free(markdown_core_changeset *changes);
 
 #ifdef __cplusplus

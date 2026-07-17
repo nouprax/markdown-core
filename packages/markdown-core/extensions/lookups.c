@@ -101,8 +101,11 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
  * moving label ownership out of the recording. On failure the recording
  * still owns whatever was not yet moved, so releasing both structures never
  * double-frees. */
-bool markdown_core_lookup_recording_bundle(markdown_core_lookup_recording *recording, markdown_core_unit_lookups **out,
-                                           size_t *out_count) {
+bool markdown_core_lookup_recording_bundle(
+    markdown_core_lookup_recording *recording,
+    markdown_core_unit_lookups **out,
+    size_t *out_count
+) {
     markdown_core_mem *mem = recording->mem;
     markdown_core_unit_lookups *bundles = NULL;
     size_t bundle_count = 0;
@@ -199,8 +202,12 @@ void markdown_core_lookup_table_release(markdown_core_mem *mem, markdown_core_lo
     table->count = 0;
 }
 
-static void lookup_table_insert(markdown_core_mem *mem, markdown_core_lookup_table *table, markdown_core_node_id id,
-                                markdown_core_lookup_record record) {
+static void lookup_table_insert(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    markdown_core_node_id id,
+    markdown_core_lookup_record record
+) {
     size_t mask = table->capacity - 1;
     size_t slot = (size_t)lookup_mix64(id) & mask;
     while (table->keys[slot] != 0) {
@@ -255,13 +262,20 @@ bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lo
     return true;
 }
 
-void markdown_core_lookup_table_put(markdown_core_mem *mem, markdown_core_lookup_table *table, markdown_core_node_id id,
-                                    markdown_core_lookup_record record) {
+void markdown_core_lookup_table_put(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    markdown_core_node_id id,
+    markdown_core_lookup_record record
+) {
     lookup_table_insert(mem, table, id, record);
 }
 
-void markdown_core_lookup_table_remove(markdown_core_mem *mem, markdown_core_lookup_table *table,
-                                       markdown_core_node_id id) {
+void markdown_core_lookup_table_remove(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    markdown_core_node_id id
+) {
     size_t mask;
     size_t slot;
     size_t gap;

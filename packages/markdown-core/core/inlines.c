@@ -80,7 +80,8 @@ static const int8_t BASE_SPECIAL_CHARS[256] = {
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+};
 
 // No emphasis-boundary skip characters by default; attached inline extensions
 // add theirs to the parser-local copy.
@@ -92,13 +93,20 @@ static delimiter *S_insert_emph(subject *subj, delimiter *opener, delimiter *clo
 
 static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_core_node *parent, int options);
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, int block_offset,
-                             subject *e, markdown_core_chunk *buffer, markdown_core_map *refmap);
+static void subject_from_buf(
+    markdown_core_parser *parser,
+    markdown_core_mem *mem,
+    int line_number,
+    int block_offset,
+    subject *e,
+    markdown_core_chunk *buffer,
+    markdown_core_map *refmap
+);
 static bufsize_t subject_find_special_char(subject *subj, int options);
 
 // Create an inline with a literal string value.
-static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(subject *subj, markdown_core_node_type t, int start_column,
-                                                             int end_column, markdown_core_chunk s) {
+static MARKDOWN_CORE_INLINE markdown_core_node *
+make_literal(subject *subj, markdown_core_node_type t, int start_column, int end_column, markdown_core_chunk s) {
     markdown_core_node *e = (markdown_core_node *)subj->mem->calloc(1, sizeof(*e));
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
@@ -138,8 +146,8 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_simple_subj(subject *subj, 
 }
 
 // Like make_str, but parses entities.
-static markdown_core_node *make_str_with_entities(subject *subj, int start_column, int end_column,
-                                                  markdown_core_chunk *content) {
+static markdown_core_node *
+make_str_with_entities(subject *subj, int start_column, int end_column, markdown_core_chunk *content) {
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
     if (markdown_core_houdini_unescape_html(&unescaped, content->data, content->len)) {
@@ -213,8 +221,8 @@ static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int start_column, int end_column,
-                                                              markdown_core_chunk url, int is_email) {
+static MARKDOWN_CORE_INLINE markdown_core_node *
+make_autolink(subject *subj, int start_column, int end_column, markdown_core_chunk url, int is_email) {
     markdown_core_node *link = make_simple(subj->mem, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
@@ -233,8 +241,15 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(subject *subj, int
     return link;
 }
 
-static void subject_from_buf(markdown_core_parser *parser, markdown_core_mem *mem, int line_number, int block_offset,
-                             subject *e, markdown_core_chunk *chunk, markdown_core_map *refmap) {
+static void subject_from_buf(
+    markdown_core_parser *parser,
+    markdown_core_mem *mem,
+    int line_number,
+    int block_offset,
+    subject *e,
+    markdown_core_chunk *chunk,
+    markdown_core_map *refmap
+) {
     int i;
     e->special_chars = parser ? parser->special_chars : BASE_SPECIAL_CHARS;
     e->skip_chars = parser ? parser->skip_chars : BASE_SKIP_CHARS;
@@ -478,8 +493,11 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
                before_char_pos > 0) {
             before_char_pos -= 1;
         }
-        len = markdown_core_utf8proc_iterate(subj->input.data + before_char_pos, subj->pos - before_char_pos,
-                                             &before_char);
+        len = markdown_core_utf8proc_iterate(
+            subj->input.data + before_char_pos,
+            subj->pos - before_char_pos,
+            &before_char
+        );
         if (len == -1 || (before_char < 256 && subj->skip_chars[(unsigned char)before_char])) {
             before_char = 10;
         }
@@ -502,8 +520,11 @@ static int scan_delims(subject *subj, unsigned char c, bool *can_open, bool *can
         while (subj->skip_chars[peek_at(subj, after_char_pos)] && after_char_pos < subj->input.len) {
             after_char_pos += 1;
         }
-        len = markdown_core_utf8proc_iterate(subj->input.data + after_char_pos, subj->input.len - after_char_pos,
-                                             &after_char);
+        len = markdown_core_utf8proc_iterate(
+            subj->input.data + after_char_pos,
+            subj->input.len - after_char_pos,
+            &after_char
+        );
         if (len == -1 || (after_char < 256 && subj->skip_chars[(unsigned char)after_char])) {
             after_char = 10;
         }
@@ -571,8 +592,8 @@ static void pop_bracket(subject *subj) {
     subj->mem->free(b);
 }
 
-static void push_delimiter(subject *subj, unsigned char c, bool can_open, bool can_close,
-                           markdown_core_node *inl_text) {
+static void
+push_delimiter(subject *subj, unsigned char c, bool can_open, bool can_close, markdown_core_node *inl_text) {
     delimiter *delim;
     /* Extensions may pass NULL after their own allocation failures. */
     if (!inl_text) {
@@ -1573,8 +1594,8 @@ void markdown_core_inlines_remove_special_character(markdown_core_parser *parser
     }
 }
 
-static markdown_core_node *try_extensions(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
-                                          subject *subj) {
+static markdown_core_node *
+try_extensions(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c, subject *subj) {
     markdown_core_node *res = NULL;
     markdown_core_llist *tmp;
 
@@ -1731,12 +1752,23 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 }
 
 // Parse inlines from parent's string_content, adding as children of parent.
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
-                                 int options) {
+void markdown_core_parse_inlines(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_map *refmap,
+    int options
+) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
-    subject_from_buf(parser, parser->mem, parent->start_line, parent->start_column - 1 + parent->internal_offset, &subj,
-                     &content, refmap);
+    subject_from_buf(
+        parser,
+        parser->mem,
+        parent->start_line,
+        parent->start_column - 1 + parent->internal_offset,
+        &subj,
+        &content,
+        refmap
+    );
     markdown_core_chunk_rtrim(&subj.input);
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
@@ -1768,8 +1800,8 @@ static void spnl(subject *subj) {
 // Modify refmap if a reference is encountered.
 // Return 0 if no reference found, otherwise position of subject
 // after reference is parsed.
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap) {
+bufsize_t
+markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input, markdown_core_map *refmap) {
     subject subj;
 
     markdown_core_chunk lab;
@@ -1859,8 +1891,8 @@ static char *my_strndup(const char *s, size_t n) {
     return (char *)memcpy(result, s, len);
 }
 
-char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser,
-                                             markdown_core_inline_predicate_func pred) {
+char *
+markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate_func pred) {
     unsigned char c;
     bufsize_t startpos = parser->pos;
     bufsize_t len = 0;
@@ -1873,8 +1905,13 @@ char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser
     return my_strndup((const char *)parser->input.data + startpos, len);
 }
 
-void markdown_core_inline_parser_push_delimiter(markdown_core_inline_parser *parser, unsigned char c, int can_open,
-                                                int can_close, markdown_core_node *inl_text) {
+void markdown_core_inline_parser_push_delimiter(
+    markdown_core_inline_parser *parser,
+    unsigned char c,
+    int can_open,
+    int can_close,
+    markdown_core_node *inl_text
+) {
     push_delimiter(parser, c, can_open != 0, can_close != 0, inl_text);
 }
 
@@ -1882,9 +1919,15 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
     remove_delimiter(parser, delim);
 }
 
-int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *parser, int max_delims, unsigned char c,
-                                                int *left_flanking, int *right_flanking, int *punct_before,
-                                                int *punct_after) {
+int markdown_core_inline_parser_scan_delimiters(
+    markdown_core_inline_parser *parser,
+    int max_delims,
+    unsigned char c,
+    int *left_flanking,
+    int *right_flanking,
+    int *punct_before,
+    int *punct_after
+) {
     int numdelims = 0;
     bufsize_t before_char_pos;
     int32_t after_char = 0;
@@ -1900,8 +1943,11 @@ int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *par
         while (peek_at(parser, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
             before_char_pos -= 1;
         }
-        len = markdown_core_utf8proc_iterate(parser->input.data + before_char_pos, parser->pos - before_char_pos,
-                                             &before_char);
+        len = markdown_core_utf8proc_iterate(
+            parser->input.data + before_char_pos,
+            parser->pos - before_char_pos,
+            &before_char
+        );
         if (len == -1) {
             before_char = 10;
         }

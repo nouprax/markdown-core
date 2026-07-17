@@ -41,8 +41,12 @@ static bool parse_node_item_prefix(markdown_core_parser *parser, const char *inp
     bool res = false;
 
     if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
-        markdown_core_parser_advance_offset(parser, input,
-                                            container->as.list.marker_offset + container->as.list.padding, true);
+        markdown_core_parser_advance_offset(
+            parser,
+            input,
+            container->as.list.marker_offset + container->as.list.padding,
+            true
+        );
         res = true;
     } else if (parser->blank && container->first_child != NULL) {
         // if container->first_child is NULL, then the opening line
@@ -54,18 +58,29 @@ static bool parse_node_item_prefix(markdown_core_parser *parser, const char *inp
     return res;
 }
 
-static int matches(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *input, int len,
-                   markdown_core_node *parent_container) {
+static int matches(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    unsigned char *input,
+    int len,
+    markdown_core_node *parent_container
+) {
     return parse_node_item_prefix(parser, (const char *)input, parent_container);
 }
 
-static int can_contain(markdown_core_extension *extension, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
+static int
+can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
     return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
-static markdown_core_node *open_tasklist_item(markdown_core_extension *self, int indented, markdown_core_parser *parser,
-                                              markdown_core_node *parent_container, unsigned char *input, int len) {
+static markdown_core_node *open_tasklist_item(
+    markdown_core_extension *self,
+    int indented,
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *input,
+    int len
+) {
     markdown_core_node_type node_type = markdown_core_node_get_type(parent_container);
     if (node_type != MARKDOWN_CORE_NODE_LIST_ITEM) {
         return NULL;
