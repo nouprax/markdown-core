@@ -722,9 +722,65 @@ done:
     return result;
 }
 
+/* Scripted footnote edits: the tree stays source-faithful (definitions never
+ * move, references never degrade), so every commit must dump-equal a
+ * one-shot parse while first-use ordinals cascade underneath; ordinal and
+ * resolution changes surface as revision-only `changed` entries, which the
+ * mirror check validates against a fresh walk. */
+static int case_footnote_edits(void) {
+    static const char initial[] = "alpha[^a] then beta[^b] then beta again[^b]\n"
+                                  "\n"
+                                  "[^b]: b body\n";
+    eq_replay replay;
+    markdown_core_parse_options options;
+    int result = -1;
+    size_t position;
+
+    markdown_core_parse_options_init(&options);
+    if (eq_replay_open(&replay, "footnote_edits", &options) != 0) {
+        return -1;
+    }
+
+    /* [^a] is unresolved; [^b] is number 1 with two references. */
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* A definition appearing at the end resolves [^a]; first-use order makes
+     * it number 1 and shifts [^b] to number 2 with no dump change. */
+    if (eq_replay_append_commit(&replay, (const uint8_t *)"\n[^a]: a body\n", 14) != 0) {
+        goto done;
+    }
+
+    /* An early reference to a brand-new label shifts every later ordinal. */
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)"first[^c]\n\n[^c]: c body\n\n", 25) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* A duplicate definition earlier in the document takes the label over. */
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)"[^b]: usurper\n\n", 15) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Deleting a definition flips its references back to unresolved; the
+     * definition node itself stays only if its text stays. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[^a]: a body") - (char *)replay.shadow.bytes);
+    if (eq_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    result = failures ? -1 : 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
 /* --- entry point ---------------------------------------------------------- */
 
-static const char *const EQ_CASES[] = {"canonical", "spec", "random_edits", "link_ref_edits"};
+static const char *const EQ_CASES[] = {"canonical", "spec", "random_edits", "link_ref_edits", "footnote_edits"};
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
@@ -776,6 +832,8 @@ int main(int argc, char **argv) {
         case_random_edits(spec_path);
     } else if (case_name && strcmp(case_name, "link_ref_edits") == 0) {
         case_link_ref_edits();
+    } else if (case_name && strcmp(case_name, "footnote_edits") == 0) {
+        case_footnote_edits();
     } else {
         fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n", stderr);
         goto done;

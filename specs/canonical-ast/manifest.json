@@ -120,7 +120,8 @@
                     "List",
                     "ListItem",
                     "CodeBlock",
-                    "HTMLBlock"
+                    "HTMLBlock",
+                    "FootnoteDefinition"
                 ],
                 "states": [
                     "placement.standalone",

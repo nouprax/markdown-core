@@ -392,13 +392,13 @@ Document scope=1:1..5:96 children=3
 ├── Paragraph scope=1:1..1:48 children=2
 │   ├── Text scope=1:1..1:37 literal="This is some text. It has a citation." children=0
 │   └── FootnoteReference scope=1:38..1:48 id="citation" children=0
-├── FootnoteDefinition scope=5:14..5:96 id="citation" children=1
-│   └── Paragraph scope=5:14..5:96 children=2
-│       ├── Text scope=5:14..5:77 literal="This is a long winded parapgraph that also has another citation." children=0
-│       └── FootnoteReference scope=5:78..5:96 id="another-citation" children=0
-└── FootnoteDefinition scope=3:22..4:0 id="another-citation" children=1
-    └── Paragraph scope=3:22..3:40 children=1
-        └── Text scope=3:22..3:40 literal="My second citation." children=0
+├── FootnoteDefinition scope=3:22..4:0 id="another-citation" children=1
+│   └── Paragraph scope=3:22..3:40 children=1
+│       └── Text scope=3:22..3:40 literal="My second citation." children=0
+└── FootnoteDefinition scope=5:14..5:96 id="citation" children=1
+    └── Paragraph scope=5:14..5:96 children=2
+        ├── Text scope=5:14..5:77 literal="This is a long winded parapgraph that also has another citation." children=0
+        └── FootnoteReference scope=5:78..5:96 id="another-citation" children=0
 ````````````````````````````````
 
 Footnotes are similar to, but should not be confused with, link references
@@ -446,12 +446,12 @@ Document scope=1:1..7:39 children=4
 │   ├── Code scope=3:103..3:103 mode=embedded literal="_" children=0
 │   ├── Text scope=3:105..3:106 literal=")." children=0
 │   └── FootnoteReference scope=3:107..3:155 id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=0
-├── FootnoteDefinition scope=7:18..7:39 id="widely-cited" children=1
-│   └── Paragraph scope=7:18..7:39 children=1
-│       └── Text scope=7:18..7:39 literal="this renders properly." children=0
-└── FootnoteDefinition scope=5:52..6:0 id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
-    └── Paragraph scope=5:52..5:64 children=1
-        └── Text scope=5:52..5:64 literal="so does this." children=0
+├── FootnoteDefinition scope=5:52..6:0 id="sphinx-of-black-quartz_judge-my-vow-0123456789" children=1
+│   └── Paragraph scope=5:52..5:64 children=1
+│       └── Text scope=5:52..5:64 literal="so does this." children=0
+└── FootnoteDefinition scope=7:18..7:39 id="widely-cited" children=1
+    └── Paragraph scope=7:18..7:39 children=1
+        └── Text scope=7:18..7:39 literal="this renders properly." children=0
 ````````````````````````````````
 
 Footnotes interacting with strikethrough should not lead to a use-after-free
@@ -460,8 +460,10 @@ Footnotes interacting with strikethrough should not lead to a use-after-free
 |Tot.....[^_a_]|
 .
 Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=1
-    └── Text scope=1:1..1:16 literal="|Tot.....[^_a_]|" children=0
+└── Paragraph scope=1:1..1:16 children=3
+    ├── Text scope=1:1..1:9 literal="|Tot....." children=0
+    ├── FootnoteReference scope=1:10..1:15 id="_a_" children=0
+    └── Text scope=1:16..1:16 literal="|" children=0
 ````````````````````````````````
 
 Footnotes interacting with strikethrough should not lead to a use-after-free pt2
@@ -471,7 +473,7 @@ Footnotes interacting with strikethrough should not lead to a use-after-free pt2
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Text scope=0:0..0:0 literal="[^~~is~~1]" children=0
+    └── FootnoteReference scope=1:1..1:10 id="~~is~~1" children=0
 ````````````````````````````````
 
 Adjacent unused footnotes definitions should not lead to a use after free
@@ -482,9 +484,11 @@ Hello world
 
 [^a]:[^b]:
 .
-Document scope=1:1..4:10 children=1
-└── Paragraph scope=1:1..1:11 children=1
-    └── Text scope=1:1..1:11 literal="Hello world" children=0
+Document scope=1:1..4:10 children=2
+├── Paragraph scope=1:1..1:11 children=1
+│   └── Text scope=1:1..1:11 literal="Hello world" children=0
+└── FootnoteDefinition scope=4:6..4:10 id="a" children=1
+    └── FootnoteDefinition scope=4:11..4:10 id="b" children=0
 ````````````````````````````````
 
 Issue #424 - emphasis before links

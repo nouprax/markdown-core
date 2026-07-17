@@ -1,4 +1,4 @@
-Document scope=1:1..17:17 children=7
+Document scope=1:1..17:17 children=8
 ├── Heading scope=1:1..1:9 level=1 children=1
 │   └── Text scope=1:3..1:9 literal="Heading" children=0
 ├── BlockQuote scope=3:1..3:7 children=1
@@ -14,4 +14,7 @@ Document scope=1:1..17:17 children=7
 │       └── Paragraph scope=9:7..9:10 children=1
 │           └── Text scope=9:7..9:10 literal="task" children=0
 ├── CodeBlock scope=11:1..13:3 mode=standalone info="swift title=\"demo\"" language="swift" literal="let x = 1\n" fenced=true closed=true children=0
-└── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0
+├── HTMLBlock scope=15:1..15:22 literal="<section>raw</section>\n" children=0
+└── FootnoteDefinition scope=17:10..17:17 id="note" children=1
+    └── Paragraph scope=17:10..17:17 children=1
+        └── Text scope=17:10..17:17 literal="Footnote" children=0

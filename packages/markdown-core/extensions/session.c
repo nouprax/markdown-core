@@ -244,10 +244,25 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
         return false;
     }
 
+    // Footnote numbering, resolution state, and back-reference ordinals are
+    // index-backed queries; a commit that changes only those answers bumps
+    // the affected revisions without any dump-visible change.
+    markdown_core_footnote_index footnotes = {NULL, 0, NULL, 0, NULL, NULL};
+    if (!markdown_core_footnote_index_build(session->mem, root, &footnotes) ||
+        !markdown_core_footnote_index_diff(&session->footnotes, &footnotes, new_rev, changes)) {
+        markdown_core_footnote_index_release(session->mem, &footnotes);
+        markdown_core_changeset_free(changes);
+        markdown_core_node_free(root);
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                    "could not index the document's footnotes");
+        return false;
+    }
+
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, NULL, 0, 0};
     if (!id_table_build(session->mem, root, &ids)) {
+        markdown_core_footnote_index_release(session->mem, &footnotes);
         markdown_core_changeset_free(changes);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -259,8 +274,10 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
         markdown_core_node_free(session->view.root);
     }
     id_table_release(session->mem, &session->ids);
+    markdown_core_footnote_index_release(session->mem, &session->footnotes);
     session->view.root = root;
     session->ids = ids;
+    session->footnotes = footnotes;
     session->revision = new_rev;
 
     if (changes_out) {
@@ -319,6 +336,7 @@ void markdown_core_session_free(markdown_core_session *session) {
     }
     markdown_core_text_release(&session->text);
     id_table_release(session->mem, &session->ids);
+    markdown_core_footnote_index_release(session->mem, &session->footnotes);
     free(session);
 }
 

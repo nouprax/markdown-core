@@ -40,6 +40,9 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_lineage;
     markdown_core_session_length;
     markdown_core_session_node_by_id;
+    markdown_core_session_footnote_info;
+    markdown_core_session_footnotes;
+    markdown_core_session_footnote_references;
     markdown_core_node_get_id;
     markdown_core_node_get_revision;
     markdown_core_node_get_parent;
