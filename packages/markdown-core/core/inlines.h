@@ -11,11 +11,15 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
 markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap,
-                                 int options);
+void markdown_core_parse_inlines(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_map *refmap,
+    int options
+);
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input,
-                                               markdown_core_map *refmap);
+bufsize_t
+markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk *input, markdown_core_map *refmap);
 
 /* The special-character tables live in the parser (parser-local, never
  * process-global); reset installs the core defaults. */

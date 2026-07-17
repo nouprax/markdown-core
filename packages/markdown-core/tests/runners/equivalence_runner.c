@@ -143,8 +143,9 @@ static int eq_replay_open(eq_replay *replay, const char *context, const markdown
     {
         const markdown_core_document *document = markdown_core_session_document(replay->session);
         const markdown_core_node *root = markdown_core_document_root(document);
-        if (!root || eq_mirror_insert(&replay->mirror, markdown_core_node_get_id(root),
-                                      markdown_core_node_get_revision(root)) != 0) {
+        if (!root ||
+            eq_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
+                0) {
             eq_fail(context, "empty session has no addressable root");
             return -1;
         }
@@ -321,8 +322,11 @@ static int eq_check_footnote_queries(eq_replay *replay) {
         eq_fail(replay->context, "fresh footnote reference session failed");
         goto done;
     }
-    if (ts_ast_walk(markdown_core_document_root(markdown_core_session_document(replay->session)), eq_id_collect_visit,
-                    &mine) < 0 ||
+    if (ts_ast_walk(
+            markdown_core_document_root(markdown_core_session_document(replay->session)),
+            eq_id_collect_visit,
+            &mine
+        ) < 0 ||
         mine.failed ||
         ts_ast_walk(markdown_core_document_root(markdown_core_session_document(fresh)), eq_id_collect_visit, &theirs) <
             0 ||
@@ -532,8 +536,12 @@ static int eq_replay_append_commit(eq_replay *replay, const uint8_t *bytes, size
 
 /* --- replays over one input --------------------------------------------- */
 
-static int eq_replay_per_line(const char *context, const uint8_t *text, size_t length,
-                              const markdown_core_parse_options *options) {
+static int eq_replay_per_line(
+    const char *context,
+    const uint8_t *text,
+    size_t length,
+    const markdown_core_parse_options *options
+) {
     eq_replay replay;
     size_t offset = 0;
     int result = -1;
@@ -564,8 +572,12 @@ done:
     return result;
 }
 
-static int eq_replay_per_byte(const char *context, const uint8_t *text, size_t length,
-                              const markdown_core_parse_options *options) {
+static int eq_replay_per_byte(
+    const char *context,
+    const uint8_t *text,
+    size_t length,
+    const markdown_core_parse_options *options
+) {
     eq_replay replay;
     size_t offset;
     int result = -1;
@@ -588,8 +600,13 @@ done:
  * in random order (each spliced at its correct relative position), then the
  * document suffers a garbage insertion that is edited away again.  The final
  * text is the target, and every intermediate commit is checked. */
-static int eq_replay_random_edits(const char *context, const uint8_t *text, size_t length,
-                                  const markdown_core_parse_options *options, ts_prng *prng) {
+static int eq_replay_random_edits(
+    const char *context,
+    const uint8_t *text,
+    size_t length,
+    const markdown_core_parse_options *options,
+    ts_prng *prng
+) {
     enum { EQ_MAX_CHUNKS = 8 };
     size_t boundaries[EQ_MAX_CHUNKS + 1];
     size_t order[EQ_MAX_CHUNKS];
@@ -641,8 +658,13 @@ static int eq_replay_random_edits(const char *context, const uint8_t *text, size
                 position += boundaries[k + 1] - boundaries[k];
             }
         }
-        if (eq_replay_edit(&replay, position, position, text + boundaries[chunk],
-                           boundaries[chunk + 1] - boundaries[chunk]) != 0) {
+        if (eq_replay_edit(
+                &replay,
+                position,
+                position,
+                text + boundaries[chunk],
+                boundaries[chunk + 1] - boundaries[chunk]
+            ) != 0) {
             goto done;
         }
         inserted[chunk] = 1;
@@ -680,17 +702,19 @@ done:
 /* --- cases ---------------------------------------------------------------- */
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
-    bool *fields[] = {&options->smart_punctuation,
-                      &options->footnotes,
-                      &options->strip_html_comments,
-                      &options->tables,
-                      &options->strikethrough,
-                      &options->autolinks,
-                      &options->task_lists,
-                      &options->formulas,
-                      &options->dollar_formula_delimiters,
-                      &options->latex_formula_delimiters,
-                      &options->directives};
+    bool *fields[] = {
+        &options->smart_punctuation,
+        &options->footnotes,
+        &options->strip_html_comments,
+        &options->tables,
+        &options->strikethrough,
+        &options->autolinks,
+        &options->task_lists,
+        &options->formulas,
+        &options->dollar_formula_delimiters,
+        &options->latex_formula_delimiters,
+        &options->directives
+    };
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -819,8 +843,13 @@ static int case_random_edits(const char *spec_path) {
         for (round = 0; round < 8; round++) {
             char context[64];
             snprintf(context, sizeof(context), "random rich corpus round %d", round);
-            eq_replay_random_edits(context, (const uint8_t *)EQ_RICH_CORPUS, sizeof(EQ_RICH_CORPUS) - 1, &options,
-                                   &prng);
+            eq_replay_random_edits(
+                context,
+                (const uint8_t *)EQ_RICH_CORPUS,
+                sizeof(EQ_RICH_CORPUS) - 1,
+                &options,
+                &prng
+            );
         }
     }
 
@@ -885,8 +914,13 @@ static int case_link_ref_edits(void) {
     }
 
     /* A definition for the second label appears after its reference. */
-    if (eq_replay_edit(&replay, replay.shadow.length, replay.shadow.length, (const uint8_t *)"\n[other]: /other\n",
-                       17) != 0 ||
+    if (eq_replay_edit(
+            &replay,
+            replay.shadow.length,
+            replay.shadow.length,
+            (const uint8_t *)"\n[other]: /other\n",
+            17
+        ) != 0 ||
         eq_replay_commit(&replay) != 0) {
         goto done;
     }
@@ -1019,7 +1053,11 @@ static const eq_script_step EQ_DIRECTIVE_STEPS[] = {
  * the leading `intro` line keeps the table fused to a split-off header
  * paragraph (never a restart point). */
 static const eq_script_step EQ_TABLE_STEPS[] = {
-    {"tail", 0, 4, "coda"}, {"| - |", 2, 1, "x"}, {"| x |", 2, 1, "-"}, {"intro", 0, 6, ""}, {"h1", 0, 0, "intro\n"},
+    {"tail", 0, 4, "coda"},
+    {"| - |", 2, 1, "x"},
+    {"| x |", 2, 1, "-"},
+    {"intro", 0, 6, ""},
+    {"h1", 0, 0, "intro\n"},
 };
 
 /* Tightness flips must surface as List-node changes while the items
@@ -1161,10 +1199,14 @@ static const eq_script_step EQ_REF_CARET_FLIP_STEPS[] = {
  * plain paragraph so the resync lands right after it rather than riding an
  * open footnote definition past the dependents. */
 static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
-    {"filler", 0, 6, "middle"},    {"middle", 0, 0, "lead[^n]\n\n[^n]: new\n\n"},
-    {"lead[^n]", 0, 21, ""},       {"/one", 0, 4, "/two\n\nmid[^m]\n\n[^m]: m body\n\nplain"},
-    {"[l]: /two\n", 0, 10, ""},    {NULL, (size_t)-1, 0, "\n[l]: /three\n"},
-    {"[^b]: second\n", 0, 13, ""}, {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
+    {"filler", 0, 6, "middle"},
+    {"middle", 0, 0, "lead[^n]\n\n[^n]: new\n\n"},
+    {"lead[^n]", 0, 21, ""},
+    {"/one", 0, 4, "/two\n\nmid[^m]\n\n[^m]: m body\n\nplain"},
+    {"[l]: /two\n", 0, 10, ""},
+    {NULL, (size_t)-1, 0, "\n[l]: /three\n"},
+    {"[^b]: second\n", 0, 13, ""},
+    {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
 };
 
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
@@ -1172,30 +1214,49 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
     {"unclosed_fence", "first\n\n```\ncode\n", EQ_FENCE_STEPS, sizeof(EQ_FENCE_STEPS) / sizeof(*EQ_FENCE_STEPS)},
     {"unclosed_html", "first\n\n<pre>\nx\n", EQ_HTML_STEPS, sizeof(EQ_HTML_STEPS) / sizeof(*EQ_HTML_STEPS)},
-    {"unclosed_directive", ":::note[L]\nbody\n", EQ_DIRECTIVE_STEPS,
+    {"unclosed_directive",
+     ":::note[L]\nbody\n",
+     EQ_DIRECTIVE_STEPS,
      sizeof(EQ_DIRECTIVE_STEPS) / sizeof(*EQ_DIRECTIVE_STEPS)},
-    {"table_delimiter", "intro\n| h1 | h2 |\n| - | - |\n| c1 | c2 |\n\ntail\n", EQ_TABLE_STEPS,
+    {"table_delimiter",
+     "intro\n| h1 | h2 |\n| - | - |\n| c1 | c2 |\n\ntail\n",
+     EQ_TABLE_STEPS,
      sizeof(EQ_TABLE_STEPS) / sizeof(*EQ_TABLE_STEPS)},
-    {"list_tightness", "- a\n- b\n\ntail\n", EQ_TIGHTNESS_STEPS,
+    {"list_tightness",
+     "- a\n- b\n\ntail\n",
+     EQ_TIGHTNESS_STEPS,
      sizeof(EQ_TIGHTNESS_STEPS) / sizeof(*EQ_TIGHTNESS_STEPS)},
-    {"no_blank_document", "l1\nl2\nl3\nl4\n", EQ_NO_BLANK_STEPS,
+    {"no_blank_document",
+     "l1\nl2\nl3\nl4\n",
+     EQ_NO_BLANK_STEPS,
      sizeof(EQ_NO_BLANK_STEPS) / sizeof(*EQ_NO_BLANK_STEPS)},
-    {"cross_boundary_refs", "[l]: /one\n\nsee [x][l] here\n\ntail [y][l]\n", EQ_CROSS_REF_STEPS,
+    {"cross_boundary_refs",
+     "[l]: /one\n\nsee [x][l] here\n\ntail [y][l]\n",
+     EQ_CROSS_REF_STEPS,
      sizeof(EQ_CROSS_REF_STEPS) / sizeof(*EQ_CROSS_REF_STEPS)},
     {"bom_restart",
      "\xef\xbb\xbf"
      "alpha\n\nbeta\n",
-     EQ_BOM_STEPS, sizeof(EQ_BOM_STEPS) / sizeof(*EQ_BOM_STEPS)},
+     EQ_BOM_STEPS,
+     sizeof(EQ_BOM_STEPS) / sizeof(*EQ_BOM_STEPS)},
     {"blank_head", "\n\n\nalpha\n", EQ_BLANK_HEAD_STEPS, sizeof(EQ_BLANK_HEAD_STEPS) / sizeof(*EQ_BLANK_HEAD_STEPS)},
     {"crlf_lines", "para\r\nsecond\r\n\r\nnext\r\n", EQ_CRLF_STEPS, sizeof(EQ_CRLF_STEPS) / sizeof(*EQ_CRLF_STEPS)},
     {"cr_fusion_head", "\r---\n", EQ_CR_FUSION_STEPS, sizeof(EQ_CR_FUSION_STEPS) / sizeof(*EQ_CR_FUSION_STEPS)},
-    {"cr_fusion_interior", "alpha\n\nbeta\n\n\r---\n", EQ_CR_FUSION_STEPS,
+    {"cr_fusion_interior",
+     "alpha\n\nbeta\n\n\r---\n",
+     EQ_CR_FUSION_STEPS,
      sizeof(EQ_CR_FUSION_STEPS) / sizeof(*EQ_CR_FUSION_STEPS)},
-    {"restart_prev_line_length", "```\ncode\n```\n<?pi x?>\n\ntail\n", EQ_PREV_LINE_LENGTH_STEPS,
+    {"restart_prev_line_length",
+     "```\ncode\n```\n<?pi x?>\n\ntail\n",
+     EQ_PREV_LINE_LENGTH_STEPS,
      sizeof(EQ_PREV_LINE_LENGTH_STEPS) / sizeof(*EQ_PREV_LINE_LENGTH_STEPS)},
-    {"transplant_end_column", "```\ncode\n```\n<?pi x?>\n\ntail\n", EQ_TRANSPLANT_END_STEPS,
+    {"transplant_end_column",
+     "```\ncode\n```\n<?pi x?>\n\ntail\n",
+     EQ_TRANSPLANT_END_STEPS,
      sizeof(EQ_TRANSPLANT_END_STEPS) / sizeof(*EQ_TRANSPLANT_END_STEPS)},
-    {"tail_delete", "alpha\n\nbeta\n", EQ_TAIL_DELETE_STEPS,
+    {"tail_delete",
+     "alpha\n\nbeta\n",
+     EQ_TAIL_DELETE_STEPS,
      sizeof(EQ_TAIL_DELETE_STEPS) / sizeof(*EQ_TAIL_DELETE_STEPS)},
     {"ref_retarget",
      "[l]: /one\n"
@@ -1207,8 +1268,11 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "# head [h][l]\n"
      "\n"
      "tail\n",
-     EQ_REF_RETARGET_STEPS, sizeof(EQ_REF_RETARGET_STEPS) / sizeof(*EQ_REF_RETARGET_STEPS)},
-    {"ref_new_label", "alpha [x]\n\nbeta\n", EQ_REF_NEW_LABEL_STEPS,
+     EQ_REF_RETARGET_STEPS,
+     sizeof(EQ_REF_RETARGET_STEPS) / sizeof(*EQ_REF_RETARGET_STEPS)},
+    {"ref_new_label",
+     "alpha [x]\n\nbeta\n",
+     EQ_REF_NEW_LABEL_STEPS,
      sizeof(EQ_REF_NEW_LABEL_STEPS) / sizeof(*EQ_REF_NEW_LABEL_STEPS)},
     {"ref_losing_dup",
      "[l]: /win\n"
@@ -1216,7 +1280,8 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "see [s][l]\n"
      "\n"
      "[l]: /lose\n",
-     EQ_REF_LOSING_DUP_STEPS, sizeof(EQ_REF_LOSING_DUP_STEPS) / sizeof(*EQ_REF_LOSING_DUP_STEPS)},
+     EQ_REF_LOSING_DUP_STEPS,
+     sizeof(EQ_REF_LOSING_DUP_STEPS) / sizeof(*EQ_REF_LOSING_DUP_STEPS)},
     {"ref_renumber",
      "[a]: /1\n"
      "\n"
@@ -1225,19 +1290,22 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "[b]: /2\n"
      "\n"
      "para [p][a] [q][b]\n",
-     EQ_REF_RENUMBER_STEPS, sizeof(EQ_REF_RENUMBER_STEPS) / sizeof(*EQ_REF_RENUMBER_STEPS)},
+     EQ_REF_RENUMBER_STEPS,
+     sizeof(EQ_REF_RENUMBER_STEPS) / sizeof(*EQ_REF_RENUMBER_STEPS)},
     {"ref_table_cell",
      "[l]: /one\n"
      "\n"
      "| h |\n"
      "| - |\n"
      "| [x][l] |\n",
-     EQ_REF_TABLE_CELL_STEPS, sizeof(EQ_REF_TABLE_CELL_STEPS) / sizeof(*EQ_REF_TABLE_CELL_STEPS)},
+     EQ_REF_TABLE_CELL_STEPS,
+     sizeof(EQ_REF_TABLE_CELL_STEPS) / sizeof(*EQ_REF_TABLE_CELL_STEPS)},
     {"ref_caret_flip",
      "body [^n]\n"
      "\n"
      "[ ^n]: /url\n",
-     EQ_REF_CARET_FLIP_STEPS, sizeof(EQ_REF_CARET_FLIP_STEPS) / sizeof(*EQ_REF_CARET_FLIP_STEPS)},
+     EQ_REF_CARET_FLIP_STEPS,
+     sizeof(EQ_REF_CARET_FLIP_STEPS) / sizeof(*EQ_REF_CARET_FLIP_STEPS)},
     {"footnote_sites",
      "head\n"
      "\n"
@@ -1256,7 +1324,8 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "[^b]: second\n"
      "\n"
      "[^q]: quoted\n",
-     EQ_FOOTNOTE_SITES_STEPS, sizeof(EQ_FOOTNOTE_SITES_STEPS) / sizeof(*EQ_FOOTNOTE_SITES_STEPS)},
+     EQ_FOOTNOTE_SITES_STEPS,
+     sizeof(EQ_FOOTNOTE_SITES_STEPS) / sizeof(*EQ_FOOTNOTE_SITES_STEPS)},
 };
 
 static int eq_run_script(const eq_script *script) {
@@ -1290,8 +1359,13 @@ static int eq_run_script(const eq_script *script) {
         if (delete_length == (size_t)-1) {
             delete_length = replay.shadow.length - position;
         }
-        if (eq_replay_edit(&replay, position, position + delete_length, (const uint8_t *)step->insert,
-                           strlen(step->insert)) != 0 ||
+        if (eq_replay_edit(
+                &replay,
+                position,
+                position + delete_length,
+                (const uint8_t *)step->insert,
+                strlen(step->insert)
+            ) != 0 ||
             eq_replay_commit(&replay) != 0) {
             goto done;
         }
@@ -1314,8 +1388,8 @@ static int case_boundary_edits(void) {
 
 /* --- entry point ---------------------------------------------------------- */
 
-static const char *const EQ_CASES[] = {"canonical",      "spec",           "random_edits",
-                                       "link_ref_edits", "footnote_edits", "boundary_edits"};
+static const char *const EQ_CASES[] =
+    {"canonical", "spec", "random_edits", "link_ref_edits", "footnote_edits", "boundary_edits"};
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
@@ -1343,8 +1417,10 @@ int main(int argc, char **argv) {
         } else if (argv[i][0] != '-') {
             positional[positional_count++] = argv[i];
         } else {
-            fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n",
-                  stderr);
+            fputs(
+                "usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n",
+                stderr
+            );
             goto done;
         }
     }

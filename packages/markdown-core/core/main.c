@@ -43,10 +43,14 @@ void print_usage(void) {
     printf("  --list-extensions               List available extensions and quit\n");
     printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
     printf("                                  with two tildes\n");
-    printf("  --dollar-formula-delimiters     Enable formula $...$ and $$...$$\n"
-           "                                  delimiters when formula is enabled.\n");
-    printf("  --latex-formula-delimiters         Enable LaTeX formula \\\\(...\\\\) and\n"
-           "                                  \\\\[...\\\\] delimiters when formula is enabled.\n");
+    printf(
+        "  --dollar-formula-delimiters     Enable formula $...$ and $$...$$\n"
+        "                                  delimiters when formula is enabled.\n"
+    );
+    printf(
+        "  --latex-formula-delimiters         Enable LaTeX formula \\\\(...\\\\) and\n"
+        "                                  \\\\[...\\\\] delimiters when formula is enabled.\n"
+    );
     printf("  --directive                    Enable directive syntax.\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
@@ -98,8 +102,12 @@ static bool print_document(markdown_core_node *document) {
 
     if (!markdown_core_document_dump(&facade_document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
-        fprintf(stderr, "AST dump failed: %.*s\n", (int)message.length,
-                message.data ? (const char *)message.data : "unknown error");
+        fprintf(
+            stderr,
+            "AST dump failed: %.*s\n",
+            (int)message.length,
+            message.data ? (const char *)message.data : "unknown error"
+        );
         markdown_core_error_free(error);
         return false;
     }
@@ -160,8 +168,10 @@ int main(int argc, char *argv[]) {
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
             printf("markdown-core %s", MARKDOWN_CORE_VERSION_STRING);
-            printf(" - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
-                   "MacFarlane\n");
+            printf(
+                " - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
+                "MacFarlane\n"
+            );
             goto success;
         } else if (strcmp(argv[i], "--list-extensions") == 0) {
             print_extensions();

@@ -2,9 +2,13 @@
 #include <parser.h>
 #include "extension.h"
 
-static markdown_core_node *match(markdown_core_extension *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *match(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    unsigned char character,
+    markdown_core_inline_parser *inline_parser
+) {
     markdown_core_node *res = NULL;
     int left_flanking, right_flanking, punct_before, punct_after, delims;
     char buffer[101];
@@ -13,8 +17,15 @@ static markdown_core_node *match(markdown_core_extension *self, markdown_core_pa
         return NULL;
     }
 
-    delims = markdown_core_inline_parser_scan_delimiters(inline_parser, sizeof(buffer) - 1, '~', &left_flanking,
-                                                         &right_flanking, &punct_before, &punct_after);
+    delims = markdown_core_inline_parser_scan_delimiters(
+        inline_parser,
+        sizeof(buffer) - 1,
+        '~',
+        &left_flanking,
+        &right_flanking,
+        &punct_before,
+        &punct_after
+    );
 
     memset(buffer, '~', delims);
     buffer[delims] = 0;
@@ -38,8 +49,13 @@ static markdown_core_node *match(markdown_core_extension *self, markdown_core_pa
     return res;
 }
 
-static delimiter *insert(markdown_core_extension *self, markdown_core_parser *parser,
-                         markdown_core_inline_parser *inline_parser, delimiter *opener, delimiter *closer) {
+static delimiter *insert(
+    markdown_core_extension *self,
+    markdown_core_parser *parser,
+    markdown_core_inline_parser *inline_parser,
+    delimiter *opener,
+    delimiter *closer
+) {
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
     delimiter *delim, *tmp_delim;
@@ -88,8 +104,8 @@ static const char *get_type_string(markdown_core_extension *extension, markdown_
     return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
-static int can_contain(markdown_core_extension *extension, markdown_core_node *node,
-                       markdown_core_node_type child_type) {
+static int
+can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
     if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
     }

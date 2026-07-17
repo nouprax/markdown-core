@@ -99,8 +99,13 @@ static char *cc_attributes(size_t size, size_t *length, int duplicates) {
      * the initial capacity always suffices. */
     written += (size_t)snprintf(input + written, capacity - written, ":x{");
     for (index = 0; index < attribute_count; index++) {
-        written += (size_t)snprintf(input + written, capacity - written, "%sk%zu=v", index ? " " : "",
-                                    duplicates ? index % 64 : index);
+        written += (size_t)snprintf(
+            input + written,
+            capacity - written,
+            "%sk%zu=v",
+            index ? " " : "",
+            duplicates ? index % 64 : index
+        );
     }
     written += (size_t)snprintf(input + written, capacity - written, "}");
     *length = written;
@@ -139,10 +144,14 @@ typedef struct cc_case_entry {
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value},       {"valid_consecutive_backslashes", cc_backslashes},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted}, {"unclosed_backslash_value", cc_unclosed_backslashes},
-    {"many_unique_attributes", cc_unique_attributes},   {"many_duplicate_attributes", cc_duplicate_attributes},
-    {"many_unique_references", cc_unique_references},   {"many_duplicate_references", cc_duplicate_references},
+    {"valid_long_quoted_value", cc_quoted_value},
+    {"valid_consecutive_backslashes", cc_backslashes},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted},
+    {"unclosed_backslash_value", cc_unclosed_backslashes},
+    {"many_unique_attributes", cc_unique_attributes},
+    {"many_duplicate_attributes", cc_duplicate_attributes},
+    {"many_unique_references", cc_unique_references},
+    {"many_duplicate_references", cc_duplicate_references},
 };
 
 /* --- session commit-cost cases -------------------------------------------
@@ -244,8 +253,14 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
         if (mode == CC_SESSION_STORM) {
             size_t index = (size_t)((*op_counter * UINT64_C(2654435761)) % stanza_count);
             uint8_t byte = (*op_counter & 1) ? 'x' : 'y';
-            ok = markdown_core_session_edit(session, index * stanza_length + 1, index * stanza_length + 2, &byte, 1,
-                                            NULL);
+            ok = markdown_core_session_edit(
+                session,
+                index * stanza_length + 1,
+                index * stanza_length + 2,
+                &byte,
+                1,
+                NULL
+            );
         } else if (mode == CC_SESSION_RETARGET) {
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(session, 6, 10, url, 4, NULL);
@@ -325,8 +340,8 @@ static int cc_run_session(const char *name, int mode) {
     return failed ? -1 : 0;
 }
 
-static const char *const CC_SESSION_CASES[] = {"session_stream_flat", "session_edit_storm", "session_ref_retarget",
-                                               "session_footnote_shift"};
+static const char *const CC_SESSION_CASES[] =
+    {"session_stream_flat", "session_edit_storm", "session_ref_retarget", "session_footnote_shift"};
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];

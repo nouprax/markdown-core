@@ -121,8 +121,11 @@ markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown
  *  data pointer of each of its elements
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_llist_free_full(markdown_core_mem *mem, markdown_core_llist *head,
-                                   markdown_core_free_func free_func);
+void markdown_core_llist_free_full(
+    markdown_core_mem *mem,
+    markdown_core_llist *head,
+    markdown_core_free_func free_func
+);
 
 /** Free the list starting with 'head'
  */
@@ -143,15 +146,17 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
  * allocator used to allocate the node.  Note:  be sure to use the same
  * allocator for every node in a tree, or bad things can happen.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type,
-                                                                         markdown_core_mem *mem);
+MARKDOWN_CORE_EXPORT markdown_core_node *
+markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
-                                                                         markdown_core_extension *extension);
+MARKDOWN_CORE_EXPORT markdown_core_node *
+markdown_core_node_new_with_ext(markdown_core_node_type type, markdown_core_extension *extension);
 
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type,
-                                                                                 markdown_core_mem *mem,
-                                                                                 markdown_core_extension *extension);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(
+    markdown_core_node_type type,
+    markdown_core_mem *mem,
+    markdown_core_extension *extension
+);
 
 /** Frees the memory allocated for a node and any children.
  */
@@ -272,8 +277,11 @@ markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter);
  * descendant of the root node or the root node itself.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
-                              markdown_core_event_type event_type);
+void markdown_core_iter_reset(
+    markdown_core_iter *iter,
+    markdown_core_node *current,
+    markdown_core_event_type event_type
+);
 
 /**
  * ## Accessors
@@ -379,13 +387,13 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_get_fence_closed(markdown_core_node 
 
 /** Sets code blocks fencing details
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset,
-                                                       char character);
+MARKDOWN_CORE_EXPORT int
+markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset, char character);
 
 /** Returns code blocks fencing details
  */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset,
-                                                       char *character);
+MARKDOWN_CORE_EXPORT int
+markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset, char *character);
 
 /** Returns the URL of a link or image 'node', or an empty string
     if no URL is set.  Returns NULL if called on a node that is
@@ -552,8 +560,11 @@ struct markdown_core_map;
  * flags, exactly like a full refine.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parser_refine_unit(markdown_core_parser *parser, struct markdown_core_map *refmap,
-                                                     markdown_core_node *unit);
+markdown_core_node *markdown_core_parser_refine_unit(
+    markdown_core_parser *parser,
+    struct markdown_core_map *refmap,
+    markdown_core_node *unit
+);
 
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for

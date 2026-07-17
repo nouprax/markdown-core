@@ -139,8 +139,8 @@ static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_INLINE_P(markdown_core_node 
     return node != NULL && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->type);
 }
 
-MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(markdown_core_node *node,
-                                                              markdown_core_node_type child_type);
+MARKDOWN_CORE_EXPORT bool
+markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type);
 
 /** True when `node` directly owns inline content (paragraph, heading, or an
  * extension node whose contains_inlines hook claims it, e.g. a table cell or

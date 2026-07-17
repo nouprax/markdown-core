@@ -18,8 +18,13 @@ void markdown_core_text_release(markdown_core_text *text) {
     text->alloc = 0;
 }
 
-bool markdown_core_text_edit(markdown_core_text *text, size_t start, size_t end, const unsigned char *bytes,
-                             size_t length) {
+bool markdown_core_text_edit(
+    markdown_core_text *text,
+    size_t start,
+    size_t end,
+    const unsigned char *bytes,
+    size_t length
+) {
     if (start > end || end > text->length) {
         return false;
     }

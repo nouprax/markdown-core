@@ -15,8 +15,12 @@ static void reference_free(markdown_core_map *map, markdown_core_map_entry *_ref
     }
 }
 
-void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label, markdown_core_chunk *url,
-                                    markdown_core_chunk *title) {
+void markdown_core_reference_create(
+    markdown_core_map *map,
+    markdown_core_chunk *label,
+    markdown_core_chunk *url,
+    markdown_core_chunk *title
+) {
     markdown_core_reference *ref;
     unsigned char *reflabel;
     int lost = 0;

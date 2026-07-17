@@ -114,8 +114,8 @@ static int compare_u64(const void *left, const void *right) {
     return a < b ? -1 : (a > b ? 1 : 0);
 }
 
-static int bench_measure(const char *name, const char *input, size_t length, const bench_options *options,
-                         double *median_ms) {
+static int
+bench_measure(const char *name, const char *input, size_t length, const bench_options *options, double *median_ms) {
     uint64_t samples[BENCH_MAX_REPEATS];
     uint64_t elapsed;
     int i;
@@ -137,16 +137,26 @@ static int bench_measure(const char *name, const char *input, size_t length, con
     }
     qsort(samples, (size_t)repeats, sizeof(samples[0]), compare_u64);
     *median_ms = (double)samples[repeats / 2] / 1e6;
-    printf("benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n", name, length, repeats, options->warmup,
-           *median_ms);
+    printf(
+        "benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n",
+        name,
+        length,
+        repeats,
+        options->warmup,
+        *median_ms
+    );
     return 0;
 }
 
 /* Measures the same generator at doubling scales and asserts the relative
  * growth stays under BENCH_MAX_DOUBLING_RATIO per step. */
-static int bench_doubling(const char *name, const bench_options *options,
-                          char *(*build)(const bench_options *options, size_t scale, size_t *length),
-                          const size_t *scales, size_t steps) {
+static int bench_doubling(
+    const char *name,
+    const bench_options *options,
+    char *(*build)(const bench_options *options, size_t scale, size_t *length),
+    const size_t *scales,
+    size_t steps
+) {
     double previous_ms = 0.0;
     size_t step;
     int failed = 0;
@@ -168,8 +178,14 @@ static int bench_doubling(const char *name, const bench_options *options,
         if (step > 0) {
             double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
             if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
-                fprintf(stderr, "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n", name, median_ms / floor_ms,
-                        BENCH_MAX_DOUBLING_RATIO, scales[step]);
+                fprintf(
+                    stderr,
+                    "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n",
+                    name,
+                    median_ms / floor_ms,
+                    BENCH_MAX_DOUBLING_RATIO,
+                    scales[step]
+                );
                 failed = 1;
             }
         }
@@ -235,9 +251,15 @@ static int workload_binding_baseline(const bench_options *options) {
     result = bench_measure("binding_baseline", input, length, options, &median_ms);
     free(input);
     if (result == 0) {
-        printf("baseline runtime=c boundary=native_parse workload=representative_large"
-               " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
-               length, options->warmup, options->repeats, median_ms * 1e6, peak_rss_kib());
+        printf(
+            "baseline runtime=c boundary=native_parse workload=representative_large"
+            " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
+            length,
+            options->warmup,
+            options->repeats,
+            median_ms * 1e6,
+            peak_rss_kib()
+        );
     }
     return result;
 }
@@ -357,9 +379,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc) {
             options.warmup = atoi(argv[++i]);
         } else {
-            fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
-                  " [--repeats N] [--warmup N]\n",
-                  stderr);
+            fputs(
+                "usage: bench_runner --list | --workload NAME [--samples DIR]"
+                " [--repeats N] [--warmup N]\n",
+                stderr
+            );
             return 2;
         }
     }
@@ -371,9 +395,11 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
-        fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
-              " [--repeats N] [--warmup N]\n",
-              stderr);
+        fputs(
+            "usage: bench_runner --list | --workload NAME [--samples DIR]"
+            " [--repeats N] [--warmup N]\n",
+            stderr
+        );
         return 2;
     }
     for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {

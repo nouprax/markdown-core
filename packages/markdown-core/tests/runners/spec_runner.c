@@ -20,13 +20,15 @@
 #include "test_support.h"
 
 static void usage(FILE *stream) {
-    fputs("usage: spec_runner --spec FILE [--option NAME]...\n"
-          "                   [--list] [--example N] [--section TEXT] [--rewrite]\n",
-          stream);
+    fputs(
+        "usage: spec_runner --spec FILE [--option NAME]...\n"
+        "                   [--list] [--example N] [--section TEXT] [--rewrite]\n",
+        stream
+    );
 }
 
-static uint8_t *dump_example(const ts_spec_case *test_case, const markdown_core_parse_options *base,
-                             size_t *dump_length) {
+static uint8_t *
+dump_example(const ts_spec_case *test_case, const markdown_core_parse_options *base, size_t *dump_length) {
     markdown_core_parse_options options = *base;
     markdown_core_document *document;
     markdown_core_error *error = NULL;
@@ -35,8 +37,12 @@ static uint8_t *dump_example(const ts_spec_case *test_case, const markdown_core_
 
     for (extension_index = 0; extension_index < test_case->extension_count; extension_index++) {
         if (ts_ast_enable(&options, test_case->extensions[extension_index]) != 0) {
-            fprintf(stderr, "example %d: unknown fixture tag %s\n", test_case->example,
-                    test_case->extensions[extension_index]);
+            fprintf(
+                stderr,
+                "example %d: unknown fixture tag %s\n",
+                test_case->example,
+                test_case->extensions[extension_index]
+            );
             return NULL;
         }
     }
@@ -161,11 +167,15 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
                 size_t dump_length = 0;
                 uint8_t *dump;
                 if (case_index >= spec.count || spec.cases[case_index].example != example_number + 1) {
-                    fprintf(stderr,
-                            "rewrite lost sync at example %d (case_index %zu of %zu, holds "
-                            "example %d)\n",
-                            example_number + 1, case_index, spec.count,
-                            case_index < spec.count ? spec.cases[case_index].example : -1);
+                    fprintf(
+                        stderr,
+                        "rewrite lost sync at example %d (case_index %zu of %zu, holds "
+                        "example %d)\n",
+                        example_number + 1,
+                        case_index,
+                        spec.count,
+                        case_index < spec.count ? spec.cases[case_index].example : -1
+                    );
                     goto done;
                 }
                 dump = dump_example(&spec.cases[case_index], base, &dump_length);
@@ -265,15 +275,26 @@ int main(int argc, char **argv) {
             continue;
         }
         if (list_only) {
-            printf("example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line, test_case->end_line,
-                   test_case->section);
+            printf(
+                "example %d (lines %d-%d) %s\n",
+                test_case->example,
+                test_case->start_line,
+                test_case->end_line,
+                test_case->section
+            );
             continue;
         }
 
         dump = dump_example(test_case, &base, &dump_length);
         if (!dump) {
-            fprintf(stderr, "example %d (lines %d-%d) %s: conversion failed\n", test_case->example,
-                    test_case->start_line, test_case->end_line, test_case->section);
+            fprintf(
+                stderr,
+                "example %d (lines %d-%d) %s: conversion failed\n",
+                test_case->example,
+                test_case->start_line,
+                test_case->end_line,
+                test_case->section
+            );
             errored++;
             continue;
         }
@@ -281,8 +302,14 @@ int main(int argc, char **argv) {
         if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
             passed++;
         } else {
-            fprintf(stderr, "FAILED example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line,
-                    test_case->end_line, test_case->section);
+            fprintf(
+                stderr,
+                "FAILED example %d (lines %d-%d) %s\n",
+                test_case->example,
+                test_case->start_line,
+                test_case->end_line,
+                test_case->section
+            );
             fputs(test_case->markdown, stderr);
             ts_print_line_diff(stderr, test_case->expected, (const char *)dump);
             fputc('\n', stderr);

@@ -259,8 +259,13 @@ static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_co
     }
 }
 
-bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_node *old_root,
-                                 markdown_core_node *new_root, uint64_t new_rev, markdown_core_changeset *changes) {
+bool markdown_core_session_adopt(
+    markdown_core_session *session,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    uint64_t new_rev,
+    markdown_core_changeset *changes
+) {
     adopt_ctx ctx = {session, changes, new_rev, false};
 
     if (!old_root) {
@@ -273,8 +278,11 @@ bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_n
     return !ctx.failed;
 }
 
-bool markdown_core_session_record_removed(markdown_core_session *session, const markdown_core_node *root,
-                                          markdown_core_changeset *changes) {
+bool markdown_core_session_record_removed(
+    markdown_core_session *session,
+    const markdown_core_node *root,
+    markdown_core_changeset *changes
+) {
     adopt_ctx ctx = {session, changes, 0, false};
     record_removed_subtree(&ctx, root);
     return !ctx.failed;

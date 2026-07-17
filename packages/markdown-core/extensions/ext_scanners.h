@@ -5,8 +5,8 @@
 extern "C" {
 #endif
 
-bufsize_t markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len,
-                                    bufsize_t offset);
+bufsize_t
+markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset);
 bufsize_t markdown_core_scan_table_start(const unsigned char *p);
 bufsize_t markdown_core_scan_table_cell(const unsigned char *p);
 bufsize_t markdown_core_scan_table_cell_end(const unsigned char *p);

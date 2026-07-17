@@ -1,5 +1,10 @@
 BasedOnStyle: LLVM
 Language: Cpp
+AlignAfterOpenBracket: BlockIndent
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+BinPackArguments: false
+BinPackParameters: OnePerLine
 ColumnLimit: 120
 ContinuationIndentWidth: 4
 DerivePointerAlignment: false

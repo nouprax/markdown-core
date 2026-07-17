@@ -89,8 +89,13 @@ static int pc_expect_text(const pc_context *context, const char *expected, size_
         return -1;
     }
     if (actual_length != expected_length || memcmp(actual, expected, expected_length) != 0) {
-        fprintf(stderr, "concatenated text differs from expected (%zu vs %zu bytes, first bytes: %.40s)\n",
-                actual_length, expected_length, actual);
+        fprintf(
+            stderr,
+            "concatenated text differs from expected (%zu vs %zu bytes, first bytes: %.40s)\n",
+            actual_length,
+            expected_length,
+            actual
+        );
         result = -1;
     }
     free(actual);
@@ -138,8 +143,13 @@ static int case_nested_strong_emph(pc_context *context) {
     return 0;
 }
 
-static int pc_literal_case(pc_context *context, const char *unit, size_t count, markdown_core_node_kind forbidden_kind,
-                           const char *forbidden_name) {
+static int pc_literal_case(
+    pc_context *context,
+    const char *unit,
+    size_t count,
+    markdown_core_node_kind forbidden_kind,
+    const char *forbidden_name
+) {
     if (pc_build(context, NULL, unit, count, NULL) != 0) {
         return -1;
     }
@@ -659,8 +669,15 @@ static int case_directive_long_attributes(pc_context *context) {
 
 /* Inline delimiter stack cases --------------------------------------------- */
 
-static int pc_formula_case(pc_context *context, const char *prefix, const char *unit, size_t count, const char *suffix,
-                           size_t expected_formulas, const char *expected_literal) {
+static int pc_formula_case(
+    pc_context *context,
+    const char *prefix,
+    const char *unit,
+    size_t count,
+    const char *suffix,
+    size_t expected_formulas,
+    const char *expected_literal
+) {
     if (pc_build(context, prefix, unit, count, suffix) != 0) {
         return -1;
     }

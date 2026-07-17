@@ -37,8 +37,11 @@ static bool node_list_push(markdown_core_mem *mem, node_list *list, markdown_cor
     return true;
 }
 
-bool markdown_core_footnote_site_push(markdown_core_mem *mem, markdown_core_footnote_site_list *list,
-                                      markdown_core_footnote_site site) {
+bool markdown_core_footnote_site_push(
+    markdown_core_mem *mem,
+    markdown_core_footnote_site_list *list,
+    markdown_core_footnote_site site
+) {
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 16;
         markdown_core_footnote_site *grown =
@@ -81,9 +84,13 @@ static markdown_core_node *site_unit(markdown_core_node *node) {
     return parent;
 }
 
-bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root, markdown_core_node *anchor,
-                                          markdown_core_footnote_site_list *defs,
-                                          markdown_core_footnote_site_list *refs) {
+bool markdown_core_footnote_collect_sites(
+    markdown_core_mem *mem,
+    markdown_core_node *root,
+    markdown_core_node *anchor,
+    markdown_core_footnote_site_list *defs,
+    markdown_core_footnote_site_list *refs
+) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type ev;
     bool ok = true;
@@ -137,8 +144,13 @@ typedef struct {
 // Resolves `label` to its accumulator slot, creating one on first sight.
 // Returns SIZE_MAX with *failed set on allocation loss; SIZE_MAX without it
 // when the label normalizes to nothing and can never participate.
-static size_t label_slot(markdown_core_mem *mem, label_list *labels, markdown_core_key_index *by_label,
-                         const markdown_core_chunk *label, bool *failed) {
+static size_t label_slot(
+    markdown_core_mem *mem,
+    label_list *labels,
+    markdown_core_key_index *by_label,
+    const markdown_core_chunk *label,
+    bool *failed
+) {
     markdown_core_chunk copy = *label;
     int lost = 0;
     unsigned char *normalized = markdown_core_map_normalize_label(mem, &copy, &lost);
@@ -171,8 +183,14 @@ static size_t label_slot(markdown_core_mem *mem, label_list *labels, markdown_co
 
     memset(&labels->items[labels->count], 0, sizeof(labels->items[0]));
     labels->items[labels->count].normalized = normalized;
-    if (!markdown_core_key_index_insert(by_label, normalized, normalized_len, (void *)(uintptr_t)(labels->count + 1), 0,
-                                        NULL)) {
+    if (!markdown_core_key_index_insert(
+            by_label,
+            normalized,
+            normalized_len,
+            (void *)(uintptr_t)(labels->count + 1),
+            0,
+            NULL
+        )) {
         mem->free(normalized);
         *failed = true;
         return SIZE_MAX;
@@ -207,9 +225,12 @@ void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_
     memset(index, 0, sizeof(*index));
 }
 
-bool markdown_core_footnote_index_build_sites(markdown_core_mem *mem, markdown_core_footnote_site_list *defs,
-                                              markdown_core_footnote_site_list *refs,
-                                              markdown_core_footnote_index *index) {
+bool markdown_core_footnote_index_build_sites(
+    markdown_core_mem *mem,
+    markdown_core_footnote_site_list *defs,
+    markdown_core_footnote_site_list *refs,
+    markdown_core_footnote_index *index
+) {
     label_list labels = {NULL, 0, 0};
     markdown_core_key_index by_label = {NULL, NULL, 0, 0};
     size_t *def_labels = NULL;
@@ -303,7 +324,8 @@ bool markdown_core_footnote_index_build_sites(markdown_core_mem *mem, markdown_c
     }
     index->references = (markdown_core_node_id *)mem->calloc(
         index->reference_offsets[index->in_use_count] ? index->reference_offsets[index->in_use_count] : 1,
-        sizeof(*index->references));
+        sizeof(*index->references)
+    );
     if (!index->references) {
         goto done;
     }
@@ -377,8 +399,11 @@ done:
     return ok;
 }
 
-bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_node *root,
-                                        markdown_core_footnote_index *index) {
+bool markdown_core_footnote_index_build(
+    markdown_core_mem *mem,
+    markdown_core_node *root,
+    markdown_core_footnote_index *index
+) {
     markdown_core_footnote_site_list defs = {NULL, 0, 0};
     markdown_core_footnote_site_list refs = {NULL, 0, 0};
 
@@ -391,8 +416,8 @@ bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_no
     return markdown_core_footnote_index_build_sites(mem, &defs, &refs, index);
 }
 
-static const markdown_core_footnote_record *find_record(const markdown_core_footnote_index *index,
-                                                        markdown_core_node_id id) {
+static const markdown_core_footnote_record *
+find_record(const markdown_core_footnote_index *index, markdown_core_node_id id) {
     size_t lo = 0;
     size_t hi = index->record_count;
     while (lo < hi) {
@@ -424,9 +449,13 @@ static bool node_list_holds(const node_list *list, const markdown_core_node *nod
     return false;
 }
 
-bool markdown_core_footnote_index_diff(markdown_core_mem *mem, const markdown_core_footnote_index *previous,
-                                       const markdown_core_footnote_index *next, uint64_t new_rev,
-                                       markdown_core_changeset *changes) {
+bool markdown_core_footnote_index_diff(
+    markdown_core_mem *mem,
+    const markdown_core_footnote_index *previous,
+    const markdown_core_footnote_index *next,
+    uint64_t new_rev,
+    markdown_core_changeset *changes
+) {
     // Two phases so the diff can run against a session's live tree: phase 1
     // collects the affected nodes without touching them (every allocation
     // happens here or in the reserve step), phase 2 applies revision bumps
@@ -494,8 +523,11 @@ done:
 
 // --- public queries ----------------------------------------------------------
 
-bool markdown_core_session_footnote_info(const markdown_core_session *session, markdown_core_node_id id,
-                                         markdown_core_footnote_info *info) {
+bool markdown_core_session_footnote_info(
+    const markdown_core_session *session,
+    markdown_core_node_id id,
+    markdown_core_footnote_info *info
+) {
     const markdown_core_footnote_record *record;
     if (info) {
         memset(info, 0, sizeof(*info));
@@ -518,8 +550,11 @@ size_t markdown_core_session_footnotes(const markdown_core_session *session, con
     return session ? session->footnotes.in_use_count : 0;
 }
 
-size_t markdown_core_session_footnote_references(const markdown_core_session *session, markdown_core_node_id definition,
-                                                 const markdown_core_node_id **ids) {
+size_t markdown_core_session_footnote_references(
+    const markdown_core_session *session,
+    markdown_core_node_id definition,
+    const markdown_core_node_id **ids
+) {
     const markdown_core_footnote_record *record;
     if (ids) {
         *ids = NULL;

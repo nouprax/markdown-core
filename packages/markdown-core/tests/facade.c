@@ -40,17 +40,19 @@ static uint8_t *read_file(const char *path, size_t *length) {
 }
 
 static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
-    bool *fields[] = {&options->smart_punctuation,
-                      &options->footnotes,
-                      &options->strip_html_comments,
-                      &options->tables,
-                      &options->strikethrough,
-                      &options->autolinks,
-                      &options->task_lists,
-                      &options->formulas,
-                      &options->dollar_formula_delimiters,
-                      &options->latex_formula_delimiters,
-                      &options->directives};
+    bool *fields[] = {
+        &options->smart_punctuation,
+        &options->footnotes,
+        &options->strip_html_comments,
+        &options->tables,
+        &options->strikethrough,
+        &options->autolinks,
+        &options->task_lists,
+        &options->formulas,
+        &options->dollar_formula_delimiters,
+        &options->latex_formula_delimiters,
+        &options->directives
+    };
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
         return 0;
@@ -178,10 +180,12 @@ static void check_api(void) {
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
-    check(options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-              options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
-              options.dollar_formula_delimiters && options.latex_formula_delimiters && options.directives,
-          "parse option defaults are explicit and complete");
+    check(
+        options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
+            options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
+            options.dollar_formula_delimiters && options.latex_formula_delimiters && options.directives,
+        "parse option defaults are explicit and complete"
+    );
 
     document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
@@ -189,10 +193,14 @@ static void check_api(void) {
         root = markdown_core_document_root(document);
         heading = markdown_core_node_get_first_child(root);
         check(markdown_core_node_get_kind(root) == MARKDOWN_CORE_KIND_DOCUMENT, "document root kind is typed");
-        check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
-              "first child traversal is read-only and typed");
-        check(markdown_core_node_heading_level(heading, &level) && level == 1,
-              "heading accessor returns its behavior-bearing field");
+        check(
+            markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING,
+            "first child traversal is read-only and typed"
+        );
+        check(
+            markdown_core_node_heading_level(heading, &level) && level == 1,
+            "heading accessor returns its behavior-bearing field"
+        );
         scope = markdown_core_node_scope(heading);
         check(scope.start.line == 1 && scope.start.column == 1, "scope copies native coordinates");
         markdown_core_document_free(document);

@@ -37,8 +37,13 @@ void markdown_core_text_release(markdown_core_text *text);
  * Returns false when the range is invalid or allocation fails; the stored
  * text is unchanged on failure.
  */
-bool markdown_core_text_edit(markdown_core_text *text, size_t start, size_t end, const unsigned char *bytes,
-                             size_t length);
+bool markdown_core_text_edit(
+    markdown_core_text *text,
+    size_t start,
+    size_t end,
+    const unsigned char *bytes,
+    size_t length
+);
 
 static MARKDOWN_CORE_INLINE const unsigned char *markdown_core_text_bytes(const markdown_core_text *text) {
     return text->data;
