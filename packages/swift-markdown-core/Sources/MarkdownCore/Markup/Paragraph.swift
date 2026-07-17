@@ -1,14 +1,16 @@
 import MarkdownCoreC
 
 public struct Paragraph: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
 extension Paragraph {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), children: Self.children(from: node))
+    init(from node: OpaquePointer, in decoder: NodeDecoder) {
+        let (id, revision) = decoder.identity(of: node)
+        self.init(id: id, revision: revision, children: decoder.children(node))
     }
 }

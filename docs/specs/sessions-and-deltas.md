@@ -1,8 +1,11 @@
-# Sessions and changesets contract
+# Sessions and deltas contract
 
 Status: draft for v2.0 (milestone M0, 2026-07-15; footnote queries added
-with the revised footnote contract, M3, 2026-07-16). This contract is not
-fully implemented yet; it becomes binding when the v2 milestones land.
+with the revised footnote contract, M3, 2026-07-16; platform surface
+concretized with the M4 Swift binding, 2026-07-17 — the per-commit id-set
+record is named **delta** everywhere: `markdown_core_delta_*` in C, `Delta`
+on the platforms). This contract is not fully implemented yet; it becomes
+binding when the v2 milestones land.
 Companion documents: `canonical-ast.md` (node inventory),
 `canonical-ast-dump.md` (diagnostic dump grammar), and
 `../migration/2026-07-15-v2-incremental-sessions-plan.md` (design rationale
@@ -22,7 +25,7 @@ produces:
 
 - a **snapshot**: an immutable `Document` value tree that structurally shares
   every unchanged node with the previous snapshot, and
-- an optional **changeset**: the exact set of node ids that were added,
+- an optional **delta**: the exact set of node ids that were added,
   removed, or changed by the commit.
 
 `Document.parse(source, options)` remains the one-shot entry point. It is a
@@ -98,6 +101,18 @@ Nodes do not store absolute source positions. The public API is:
 One-shot `Document.parse` materializes scopes eagerly so `scope(of:)` behaves
 identically in both modes.
 
+Session snapshots resolve scopes lazily: deltas deliberately omit pure
+positional shifts (an edit that only moves later content commits an empty
+delta), so a snapshot cannot carry positions in its shared node values.
+Instead, the first scope use on a snapshot — `scope(of:)`, a `Walker` walk,
+or a dump — materializes every scope from the session's native tree in one
+walk and caches the table; the snapshot is self-contained from then on,
+including after the session advances or is freed. Queueing edits does not
+end a snapshot's currency (edits never touch the committed tree); the next
+successful commit does. Requesting a scope from a snapshot that was
+superseded before it ever materialized is a documented programmer error
+(platforms trap), as is passing a node of a different session or revision.
+
 ## Edits
 
 - `edit(byteStart, byteEnd, replacement)` replaces the byte range
@@ -117,10 +132,10 @@ identically in both modes.
   token appends into fewer commits is the recommended way to trade latency
   for throughput.
 
-## Commit and changesets
+## Commit and deltas
 
 `commit()` reparses incrementally and returns the new snapshot plus, on
-request, a changeset containing four id arrays:
+request, a delta containing four id arrays:
 
 | Array | Meaning |
 | --- | --- |
@@ -129,18 +144,18 @@ request, a changeset containing four id arrays:
 | `changed` | nodes whose own fields or direct child list changed |
 | `bubbled` | ancestors whose revision changed only because a descendant did |
 
-The four arrays are disjoint. Applying a changeset to a mirror of the
+The four arrays are disjoint. Applying a delta to a mirror of the
 previous revision (materialize `added` and `changed`, relink `bubbled`, evict
 `removed`) yields exactly the new tree; this is the mechanism bindings use to
-build snapshots in O(changeset) rather than O(document).
+build snapshots in O(delta) rather than O(document).
 
-Changesets are plain caller-owned data and remain valid after the session
+Deltas are plain caller-owned data and remain valid after the session
 advances or is freed.
 
 ## Cost model
 
 - Per-commit work is proportional to the size of the touched leaf blocks plus
-  the changeset, independent of total document size. Streaming appends touch
+  the delta, independent of total document size. Streaming appends touch
   only the open frontier.
 - Inline content is reparsed per touched leaf block (inline syntax is
   non-local within a leaf). Streaming into one enormous paragraph is
@@ -209,27 +224,48 @@ session feature.
 - All calls on one session are externally synchronized (one writer at a
   time).
 - Between mutating calls, the session's document view, node accessors, and
-  any snapshot are safe for concurrent reads from any thread.
+  any snapshot are safe for concurrent reads from any thread. The borrowed
+  C document view stays valid across `markdown_core_session_edit` (edits
+  never touch the committed tree) and ends at the next commit or free.
 - Distinct sessions are fully concurrent.
 - One-shot documents keep the v1 concurrency contract verbatim.
 
 ## Platform surfaces
 
 The canonical entry points on Swift, Kotlin, and ES are `Document.parse`
-(unchanged shape) and `MarkupSession`:
+(unchanged shape, now implemented over an internal single-commit session so
+one-shot nodes carry ids) and `MarkupSession`:
 
 | Operation | Contract |
 | --- | --- |
 | `MarkupSession(options)` | options are immutable for the session lifetime |
-| `edit` / `append` | queue edits as defined above |
-| `commit()` | returns `(document, changes)` |
-| `updates(feeding:)` | async sugar: feed a token stream, yield per-commit `(document, changes)` |
-| `document` / `revision` | last committed snapshot and its revision |
+| `replace` / `append` | queue edits as defined above (byte ranges of the stored text) |
+| `commit()` | returns a `Commit` value: the new `document` plus its `changes: Delta` |
+| `updates(feeding:)` | async sugar: feed a token stream, yield one `Commit` per token |
+| `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
+| `node(for:)` | the committed snapshot's current value for an id |
+| `footnoteInfo(of:)` / `footnotes()` / `footnoteReferences(of:)` | the footnote queries below |
+
+Shared platform types, named identically on all three platforms:
+
+- `MarkupID` — node identity: the session's `lineage` salt plus the raw
+  64-bit id. `Identifiable`-style APIs use `MarkupID` (revision-free, stable
+  across commits); node equality is `MarkupID` plus `revision`.
+- `Commit` — `{ document, changes: Delta }`.
+- `Delta` — `{ beforeRevision, afterRevision, added, removed, changed,
+  bubbled }` as arrays of `MarkupID`. Always present on a platform `Commit`
+  (the C-level nullable out-parameter is a C-consumer knob only).
+- `FootnoteInfo` — the per-node footnote query record; unresolved and
+  not-applicable answers are platform-optional (`nil`/`null`) rather than 0.
+
+The platform footnote field on `FootnoteDefinition`/`FootnoteReference` is
+named `label` (the node identity property occupies `id`); the diagnostic
+dump grammar keeps its frozen `id=` key for that label.
 
 The C facade exposes the same model as
 `markdown_core_session_open/edit/commit/document/node_by_id/free`,
 `markdown_core_node_get_id/get_revision/get_parent`, and
-`markdown_core_changeset_*` accessors; node handles borrowed from a session
+`markdown_core_delta_*` accessors; node handles borrowed from a session
 are valid until the next mutating call on that session.
 
 `ParseOptions` is unchanged from `canonical-ast.md`. Visitor and Walker

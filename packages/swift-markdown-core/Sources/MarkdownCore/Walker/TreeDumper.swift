@@ -4,25 +4,38 @@ public enum TreeDumper {
         var remainingChildren: Int
     }
 
-    /// Returns the canonical diagnostic dump for `root` and its descendants.
-    public static func dump(_ root: some Markup) -> String {
+    /// Returns the canonical diagnostic dump for the whole document.
+    public static func dump(_ document: Document) -> String {
+        dump(document, of: document)
+    }
+
+    /// Returns the canonical diagnostic dump for the subtree rooted at
+    /// `node`. Scopes print with the subtree as origin: the root's start
+    /// line becomes line 1. Position-free markers (0:0..0:0) print
+    /// unchanged.
+    public static func dump(_ document: Document, of node: some Markup) -> String {
+        let origin = document.scope(of: node).start.line
+        let offset = origin > 0 ? origin - 1 : 0
         var visitor = DumpVisitor()
         var frames: [Frame] = []
         var lines: [String] = []
 
-        Walker().walk(root) { event, node in
+        Walker().walk(document, from: node) { event, current, resolved in
             switch event {
             case .entering:
-                let record = node.accept(&visitor)
+                let record = current.accept(&visitor)
+                let line =
+                    "\(record.kind) \(text(for: resolved, rebasedBy: offset))"
+                    + "\(record.fieldText) children=\(record.children)"
                 if frames.isEmpty {
-                    lines.append(record.line)
+                    lines.append(line)
                 } else {
                     let parent = frames.count - 1
                     let prefix = frames.dropLast().map {
                         $0.remainingChildren > 0 ? "│   " : "    "
                     }.joined()
                     let connector = frames[parent].remainingChildren == 1 ? "└── " : "├── "
-                    lines.append(prefix + connector + record.line)
+                    lines.append(prefix + connector + line)
                     frames[parent].remainingChildren -= 1
                 }
                 frames.append(Frame(remainingChildren: record.children))
@@ -33,43 +46,53 @@ public enum TreeDumper {
         }
         return lines.joined(separator: "\n") + "\n"
     }
+
+    private static func text(for scope: Scope, rebasedBy offset: Int32) -> String {
+        let start = scope.start.line > 0 ? scope.start.line - offset : scope.start.line
+        let end = scope.end.line > 0 ? scope.end.line - offset : scope.end.line
+        return "scope=\(start):\(scope.start.column)..\(end):\(scope.end.column)"
+    }
 }
 
-extension Markup {
-    /// Returns the canonical diagnostic dump for this markup subtree.
+extension Document {
+    /// Returns the canonical diagnostic dump for this document.
     public func dump() -> String { TreeDumper.dump(self) }
+
+    /// Returns the canonical diagnostic dump for the subtree rooted at
+    /// `node`, with the subtree as scope origin.
+    public func dump(of node: some Markup) -> String { TreeDumper.dump(self, of: node) }
 }
 
 private struct DumpRecord {
-    let line: String
+    let kind: String
+    let fieldText: String
     let children: Int
 }
 
 private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> DumpRecord {
-        record("Document", node, children: node.children.count)
+        record("Document", children: node.children.count)
     }
 
     mutating func visit(_ node: BlockQuote) -> DumpRecord {
-        record("BlockQuote", node, children: node.children.count)
+        record("BlockQuote", children: node.children.count)
     }
 
     mutating func visit(_ node: Paragraph) -> DumpRecord {
-        record("Paragraph", node, children: node.children.count)
+        record("Paragraph", children: node.children.count)
     }
 
     mutating func visit(_ node: Heading) -> DumpRecord {
-        record("Heading", node, fields: ["level=\(node.level)"], children: node.children.count)
+        record("Heading", fields: ["level=\(node.level)"], children: node.children.count)
     }
 
     mutating func visit(_ node: ThematicBreak) -> DumpRecord {
-        record("ThematicBreak", node)
+        record("ThematicBreak")
     }
 
     mutating func visit(_ node: MarkdownCore.List) -> DumpRecord {
         record(
             "List",
-            node,
             fields: [
                 "flavor=\(node.flavor.rawValue)",
                 "start=\(node.start.map(String.init) ?? "null")",
@@ -82,7 +105,6 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: ListItem) -> DumpRecord {
         record(
             "ListItem",
-            node,
             fields: ["checked=\(node.isChecked.map(boolean) ?? "null")"],
             children: node.children.count
         )
@@ -91,7 +113,6 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: CodeBlock) -> DumpRecord {
         record(
             "CodeBlock",
-            node,
             fields: [
                 "mode=standalone",
                 "info=\(optionalString(node.info))",
@@ -104,13 +125,12 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: HTMLBlock) -> DumpRecord {
-        record("HTMLBlock", node, fields: ["literal=\(jsonString(node.literal))"])
+        record("HTMLBlock", fields: ["literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: FormulaBlock) -> DumpRecord {
         record(
             "FormulaBlock",
-            node,
             fields: ["mode=\(node.mode.rawValue)", "literal=\(jsonString(node.literal))"]
         )
     }
@@ -119,7 +139,6 @@ private struct DumpVisitor: MarkupVisitor {
         let alignments = node.alignments.map(\.rawValue).joined(separator: ",")
         return record(
             "Table",
-            node,
             fields: ["alignments=[\(alignments)]"],
             children: 1 + node.rows.count
         )
@@ -128,7 +147,6 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: DirectiveBlock) -> DumpRecord {
         record(
             "DirectiveBlock",
-            node,
             fields: directiveFields(node.mode, node.name, node.attributes, node.labelCount),
             children: node.children.count
         )
@@ -137,52 +155,49 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: FootnoteDefinition) -> DumpRecord {
         record(
             "FootnoteDefinition",
-            node,
-            fields: ["id=\(jsonString(node.id))"],
+            fields: ["id=\(jsonString(node.label))"],
             children: node.children.count
         )
     }
 
     mutating func visit(_ node: Text) -> DumpRecord {
-        record("Text", node, fields: ["literal=\(jsonString(node.literal))"])
+        record("Text", fields: ["literal=\(jsonString(node.literal))"])
     }
 
-    mutating func visit(_ node: SoftBreak) -> DumpRecord { record("SoftBreak", node) }
+    mutating func visit(_ node: SoftBreak) -> DumpRecord { record("SoftBreak") }
 
-    mutating func visit(_ node: LineBreak) -> DumpRecord { record("LineBreak", node) }
+    mutating func visit(_ node: LineBreak) -> DumpRecord { record("LineBreak") }
 
     mutating func visit(_ node: Code) -> DumpRecord {
-        record("Code", node, fields: ["mode=embedded", "literal=\(jsonString(node.literal))"])
+        record("Code", fields: ["mode=embedded", "literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: HTML) -> DumpRecord {
-        record("HTML", node, fields: ["literal=\(jsonString(node.literal))"])
+        record("HTML", fields: ["literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: Formula) -> DumpRecord {
         record(
             "Formula",
-            node,
             fields: ["mode=\(node.mode.rawValue)", "literal=\(jsonString(node.literal))"]
         )
     }
 
     mutating func visit(_ node: Emphasis) -> DumpRecord {
-        record("Emphasis", node, children: node.children.count)
+        record("Emphasis", children: node.children.count)
     }
 
     mutating func visit(_ node: Strong) -> DumpRecord {
-        record("Strong", node, children: node.children.count)
+        record("Strong", children: node.children.count)
     }
 
     mutating func visit(_ node: Strikethrough) -> DumpRecord {
-        record("Strikethrough", node, children: node.children.count)
+        record("Strikethrough", children: node.children.count)
     }
 
     mutating func visit(_ node: Link) -> DumpRecord {
         record(
             "Link",
-            node,
             fields: [
                 "destination=\(optionalString(node.destination))",
                 "title=\(optionalString(node.title))",
@@ -194,7 +209,6 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> DumpRecord {
         record(
             "Image",
-            node,
             fields: ["source=\(optionalString(node.source))", "title=\(optionalString(node.title))"],
             children: node.children.count
         )
@@ -203,38 +217,35 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Directive) -> DumpRecord {
         record(
             "Directive",
-            node,
             fields: directiveFields(node.mode, node.name, node.attributes, node.labelCount),
             children: node.children.count
         )
     }
 
     mutating func visit(_ node: FootnoteReference) -> DumpRecord {
-        record("FootnoteReference", node, fields: ["id=\(jsonString(node.id))"])
+        record("FootnoteReference", fields: ["id=\(jsonString(node.label))"])
     }
 
     mutating func visit(_ node: TableRow) -> DumpRecord {
         record(
             "TableRow",
-            node,
             fields: ["isHeader=\(boolean(node.isHeader))"],
             children: node.cells.count
         )
     }
 
     mutating func visit(_ node: TableCell) -> DumpRecord {
-        record("TableCell", node, children: node.content.count)
+        record("TableCell", children: node.content.count)
     }
 
     private func record(
         _ kind: String,
-        _ node: any Markup,
         fields: [String] = [],
         children: Int = 0
     ) -> DumpRecord {
-        let fieldText = fields.isEmpty ? "" : " " + fields.joined(separator: " ")
-        return DumpRecord(
-            line: "\(kind) \(scope(node.scope))\(fieldText) children=\(children)",
+        DumpRecord(
+            kind: kind,
+            fieldText: fields.isEmpty ? "" : " " + fields.joined(separator: " "),
             children: children
         )
     }
@@ -252,10 +263,6 @@ private struct DumpVisitor: MarkupVisitor {
             "label=\(labelCount.map(String.init) ?? "null")",
         ]
     }
-}
-
-private func scope(_ value: Scope) -> String {
-    "scope=\(value.start.line):\(value.start.column)..\(value.end.line):\(value.end.column)"
 }
 
 private func boolean(_ value: Bool) -> String { value ? "true" : "false" }

@@ -6,7 +6,8 @@ public enum ListFlavor: String, Sendable {
 }
 
 public struct List: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
     public let flavor: ListFlavor
     public let start: Int64?
@@ -16,14 +17,16 @@ public struct List: Markup {
 }
 
 extension List {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, in decoder: NodeDecoder) {
+        let (id, revision) = decoder.identity(of: node)
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
         self.init(
-            scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            id: id,
+            revision: revision,
+            children: decoder.children(node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             isTight: tight
@@ -32,7 +35,8 @@ extension List {
 }
 
 public struct ListItem: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
     public let isChecked: Bool?
 
@@ -40,12 +44,14 @@ public struct ListItem: Markup {
 }
 
 extension ListItem {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, in decoder: NodeDecoder) {
+        let (id, revision) = decoder.identity(of: node)
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
-            scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            id: id,
+            revision: revision,
+            children: decoder.children(node),
             isChecked: checked.has_value ? checked.value : nil
         )
     }

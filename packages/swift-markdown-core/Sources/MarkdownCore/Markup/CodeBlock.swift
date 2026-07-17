@@ -1,7 +1,8 @@
 import MarkdownCoreC
 
 public struct CodeBlock: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup] = []
     public let info: String?
     public let language: String?
@@ -13,7 +14,8 @@ public struct CodeBlock: Markup {
 }
 
 extension CodeBlock {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, in decoder: NodeDecoder) {
+        let (id, revision) = decoder.identity(of: node)
         var info = markdown_core_string_view()
         var language = markdown_core_string_view()
         var literal = markdown_core_string_view()
@@ -28,7 +30,8 @@ extension CodeBlock {
             &closed
         )
         self.init(
-            scope: Self.scope(from: node),
+            id: id,
+            revision: revision,
             info: info.optionalString,
             language: language.optionalString,
             literal: literal.requiredString,

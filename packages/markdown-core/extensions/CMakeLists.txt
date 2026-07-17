@@ -8,7 +8,7 @@ set(LIBRARY_SOURCES
     incremental.c
     lookups.c
     footnote.c
-    changeset.c
+    delta.c
     core-extensions.c
     table.c
     strikethrough.c

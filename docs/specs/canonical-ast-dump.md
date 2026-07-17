@@ -11,9 +11,13 @@ only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
 `TreeDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
-Every platform `Markup` also offers `dump()`, which delegates to
-`TreeDumper.dump(markup)` and therefore supports focused subtree diagnostics.
-Dump text is never used to construct production AST values.
+Every platform `Document` also offers `dump()` and a focused subtree form
+`dump(of: node)`, both delegating to `TreeDumper`; dumping is
+document-mediated in v2 because node values carry no positions. A subtree
+dump prints scopes with the subtree as origin: the root's start line becomes
+line 1, later lines shift by the same amount, columns are line-local and
+unchanged, and position-free markers (`0:0..0:0`) print unchanged. Dump text
+is never used to construct production AST values.
 
 The API is public, but the text remains a human-readable diagnostic contract,
 not a persistence or interchange format. Consumers that need structured data
