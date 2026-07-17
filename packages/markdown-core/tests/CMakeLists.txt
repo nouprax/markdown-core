@@ -243,7 +243,8 @@ if(MARKDOWN_CORE_STATIC)
         key_index_probe_growth
         map_prepare_oom
         constructor_oom
-        oom_sweep)
+        oom_sweep
+        session_oom_sweep)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()
@@ -281,6 +282,7 @@ markdown_core_add_test(
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
+markdown_core_add_test(equivalence_footnote_edits equivalence 120 equivalence_runner --case footnote_edits)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(

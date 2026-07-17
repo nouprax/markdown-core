@@ -290,6 +290,57 @@ MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_sessio
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(const markdown_core_session *session,
                                                                              markdown_core_node_id id);
 
+/*
+ * Footnote queries
+ * ----------------
+ *
+ * The tree is source-faithful: definitions stay at their source position
+ * whether referenced or not, and references always carry the label exactly
+ * as written. Numbering, first-use order, resolution state, and
+ * back-reference ordinals are answered from a session-maintained index.
+ * Labels match case-folded with collapsed whitespace, and the earliest
+ * definition of a label in document order wins. When a commit changes only
+ * an answer below (an ordinal shift, a resolution flip), the affected nodes
+ * are reported `changed` with a revision bump and identical dump content.
+ */
+
+/** Answers for one footnote node.
+ * For a FootnoteReference: `definition` is the winning definition's id (0
+ * while unresolved), `number` its 1-based first-use ordinal (0 while
+ * unresolved), `reference_ordinal` the reference's 1-based position among
+ * the label's references in document order, and `reference_count` how many
+ * references share the label.
+ * For a FootnoteDefinition: `definition` is the id of the label's winning
+ * definition (its own id unless an earlier definition shadows it),
+ * `number`/`reference_count` describe the label (0 when unreferenced), and
+ * `reference_ordinal` is 0. */
+typedef struct markdown_core_footnote_info {
+    markdown_core_node_id definition;
+    uint64_t number;
+    uint64_t reference_ordinal;
+    uint64_t reference_count;
+} markdown_core_footnote_info;
+
+/** Fills `info` for the footnote node with the given id at the current
+ * revision. Returns false (with `info` zeroed) when the id does not name a
+ * footnote reference or definition of this session. */
+MARKDOWN_CORE_API bool markdown_core_session_footnote_info(const markdown_core_session *session,
+                                                           markdown_core_node_id id, markdown_core_footnote_info *info);
+
+/** Borrows the ids of the referenced (winning) definitions in first-use
+ * order — the order a renderer lists them in. Valid until the next mutating
+ * call on the session. */
+MARKDOWN_CORE_API size_t markdown_core_session_footnotes(const markdown_core_session *session,
+                                                         const markdown_core_node_id **ids);
+
+/** Borrows the ids of the references that resolve to `definition`, in
+ * document order — the renderer's back-reference targets. Empty unless
+ * `definition` is a referenced winning definition. Valid until the next
+ * mutating call on the session. */
+MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(const markdown_core_session *session,
+                                                                   markdown_core_node_id definition,
+                                                                   const markdown_core_node_id **ids);
+
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any
  * descendant last changed — two nodes of one session with equal (id,

@@ -1343,6 +1343,24 @@ noMatch:
         // after the ^, let's call it a footnote reference.
         if ((literal->len > 0 && literal->data[0] == '^') && (literal->len > 1 || opener->inl_text->next->next)) {
 
+            // A label with no non-whitespace character names nothing and can
+            // never resolve; such brackets stay ordinary text. The label is
+            // the raw bytes between "[^" and "]", read exactly like the
+            // chunk_dup below with the position rewound to initial_pos (the
+            // literal borrows the block's content buffer, so the bytes past
+            // literal->len up to the label length are in bounds).
+            int label_span =
+                (initial_pos + subj->column_offset + subj->block_offset) - opener->inl_text->start_column - 2;
+            bool label_blank = true;
+            for (int i = 0; i < label_span && label_blank; i++) {
+                label_blank = markdown_core_isspace(literal->data[1 + i]);
+            }
+            if (label_blank) {
+                pop_bracket(subj);
+                subj->pos = initial_pos;
+                return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
+            }
+
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
             // bracket, ie if it went looking for a `link_label`.

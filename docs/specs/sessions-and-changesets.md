@@ -1,9 +1,10 @@
 # Sessions and changesets contract
 
-Status: draft for v2.0 (milestone M0, 2026-07-15). This contract is not
-implemented yet; it becomes binding when the v2 milestones land. Companion
-documents: `canonical-ast.md` (node inventory), `canonical-ast-dump.md`
-(diagnostic dump grammar), and
+Status: draft for v2.0 (milestone M0, 2026-07-15; footnote queries added
+with the revised footnote contract, M3, 2026-07-16). This contract is not
+fully implemented yet; it becomes binding when the v2 milestones land.
+Companion documents: `canonical-ast.md` (node inventory),
+`canonical-ast-dump.md` (diagnostic dump grammar), and
 `../migration/2026-07-15-v2-incremental-sessions-plan.md` (design rationale
 and delivery plan).
 
@@ -153,6 +154,40 @@ advances or is freed.
   the references whose query answers changed (definitions stay at their
   source position; numbering and resolution are index-backed queries, per
   the revised footnote decision of 2026-07-16).
+
+## Footnote queries
+
+The tree is source-faithful (`canonical-ast.md`, footnote semantics):
+definitions never move and references always carry their label. Everything
+presentational is a query against the session's committed revision:
+
+- `footnoteInfo(id)` — for a `FootnoteReference`: the winning definition's id
+  (0 while unresolved), the label's 1-based first-use `number` (0 while
+  unresolved), the reference's 1-based ordinal among the label's references
+  in document order, and how many references share the label. For a
+  `FootnoteDefinition`: the label's winning definition id (its own unless an
+  earlier definition shadows it), the label's `number` and reference count
+  (0 when unreferenced), and ordinal 0.
+- `footnotes()` — the referenced winning definitions in first-use order (the
+  order a renderer lists them in).
+- `footnoteReferences(definition)` — the references resolving to a winning
+  definition, in document order (back-reference targets); empty for
+  shadowed, unreferenced, or non-definition ids.
+
+The C surface is `markdown_core_session_footnote_info`,
+`markdown_core_session_footnotes`, and
+`markdown_core_session_footnote_references` over a
+`markdown_core_footnote_info` record; borrowed arrays stay valid until the
+next mutating call. Labels match case-folded with collapsed whitespace; the
+earliest definition in document order wins; reference labels longer than the
+link-label limit (1000 bytes) never resolve.
+
+When a commit changes only these answers — an ordinal shift after an earlier
+first use appears, a resolution flip after a definition is added or removed —
+the affected references and definitions are reported `changed` with a
+revision bump and byte-identical dump content, and their untouched ancestors
+`bubbled`. One-shot documents do not carry the index; footnote queries are a
+session feature.
 
 ## Failure and memory
 

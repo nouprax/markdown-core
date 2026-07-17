@@ -23,6 +23,8 @@
 #include "node.h"
 #include "references.h"
 
+#include "session_internal.h"
+
 /* Injected allocator.  Only the targeted shapes fail: key-index slot tables
  * are calloc(capacity >= 16, sizeof(slot)) and the sorted-fallback pointer
  * arrays are calloc(count >= 2, sizeof(pointer)); every other allocation in
@@ -826,6 +828,177 @@ done:
     return result;
 }
 
+/* Session OOM sweep: every allocation of an open + edit + commit + edit +
+ * commit script fails exactly once. A failed commit must be transactional —
+ * the session stays at its previous revision with its previous view — and a
+ * retry must converge on the control result, footnote index included. */
+
+static const char FB_SESSION_STAGE1[] = "alpha[^a] and beta[^b]\n\n[^b]: b body\n";
+static const char FB_SESSION_STAGE2[] = "# zero[^b]\n\n[^a]: a body\n\n";
+
+/* Dumps through the facade (plain malloc, uncounted by the sweep). Returns
+ * NULL only on dump failure. */
+static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) {
+    uint8_t *dump = NULL;
+    markdown_core_error *error = NULL;
+    if (!markdown_core_document_dump(markdown_core_session_document(session), &dump, length, &error)) {
+        markdown_core_error_free(error);
+        return NULL;
+    }
+    return dump;
+}
+
+/* One scripted run: a failed step is retried once (the injector fires at
+ * most one failure per run). `stage_dumps[i]` receives the dump after stage
+ * i's commit; failed commits are checked against the last committed dump. */
+static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t *stage_lengths) {
+    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, NULL);
+    const char *stages[2] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2};
+    size_t inserts[2] = {0, 0};
+    uint8_t *committed_dump = NULL;
+    size_t committed_length = 0;
+    int stage;
+    int result = -1;
+
+    if (!session) {
+        return 1; /* clean constructor failure */
+    }
+    committed_dump = fb_session_dump(session, &committed_length);
+    if (!committed_dump) {
+        goto done;
+    }
+
+    for (stage = 0; stage < 2; stage++) {
+        size_t length = strlen(stages[stage]);
+        if (!markdown_core_session_edit(session, inserts[stage], inserts[stage], (const uint8_t *)stages[stage], length,
+                                        NULL) &&
+            !markdown_core_session_edit(session, inserts[stage], inserts[stage], (const uint8_t *)stages[stage], length,
+                                        NULL)) {
+            fputs("session edit failed twice\n", stderr);
+            goto done;
+        }
+        {
+            uint64_t revision_before = markdown_core_session_revision(session);
+            if (!markdown_core_session_commit(session, NULL, NULL)) {
+                uint8_t *view = NULL;
+                size_t view_length = 0;
+                if (markdown_core_session_revision(session) != revision_before) {
+                    fputs("failed commit advanced the revision\n", stderr);
+                    goto done;
+                }
+                view = fb_session_dump(session, &view_length);
+                if (!view || view_length != committed_length || memcmp(view, committed_dump, view_length) != 0) {
+                    fputs("failed commit disturbed the committed view\n", stderr);
+                    free(view);
+                    goto done;
+                }
+                free(view);
+                if (!markdown_core_session_commit(session, NULL, NULL)) {
+                    fputs("commit retry failed\n", stderr);
+                    goto done;
+                }
+            }
+            if (markdown_core_session_revision(session) != revision_before + 1) {
+                fputs("commit did not advance the revision by one\n", stderr);
+                goto done;
+            }
+        }
+        free(committed_dump);
+        committed_dump = fb_session_dump(session, &committed_length);
+        if (!committed_dump) {
+            goto done;
+        }
+        if (stage_dumps) {
+            stage_dumps[stage] = (uint8_t *)malloc(committed_length ? committed_length : 1);
+            if (!stage_dumps[stage]) {
+                goto done;
+            }
+            memcpy(stage_dumps[stage], committed_dump, committed_length);
+            stage_lengths[stage] = committed_length;
+        } else {
+            /* Sweep run: converge on the recorded control dumps. */
+        }
+    }
+
+    /* The footnote index must be coherent after retries: [^b] is referenced
+     * (number 1) and [^a] resolves after stage 2. */
+    {
+        const markdown_core_node_id *ids = NULL;
+        if (markdown_core_session_footnotes(session, &ids) != 2) {
+            fputs("footnote index diverged after retries\n", stderr);
+            goto done;
+        }
+    }
+
+    result = 0;
+done:
+    free(committed_dump);
+    markdown_core_session_free(session);
+    return result;
+}
+
+static int case_session_oom_sweep(void) {
+    uint8_t *control_dumps[2] = {NULL, NULL};
+    size_t control_lengths[2] = {0, 0};
+    uint8_t *counted_dumps[2] = {NULL, NULL};
+    size_t counted_lengths[2] = {0, 0};
+    unsigned long total;
+    unsigned long k;
+    int result = -1;
+
+    if (fb_session_run(markdown_core_mem_default(), control_dumps, control_lengths) != 0) {
+        fputs("control session run failed\n", stderr);
+        goto done;
+    }
+
+    fb_sweep_count = 0;
+    fb_sweep_fail_at = 0;
+    if (fb_session_run(&fb_sweep_mem, counted_dumps, counted_lengths) != 0 ||
+        counted_lengths[1] != control_lengths[1] ||
+        memcmp(counted_dumps[1], control_dumps[1], control_lengths[1]) != 0) {
+        fputs("counting session run diverged from control\n", stderr);
+        goto done;
+    }
+    total = fb_sweep_count;
+    if (total == 0 || total > 200000UL) {
+        fprintf(stderr, "implausible session allocation count %lu\n", total);
+        goto done;
+    }
+
+    for (k = 1; k <= total; k++) {
+        uint8_t *final_dumps[2] = {NULL, NULL};
+        size_t final_lengths[2] = {0, 0};
+        int run;
+        fb_sweep_count = 0;
+        fb_sweep_fail_at = k;
+        fb_sweep_fired = 0;
+        run = fb_session_run(&fb_sweep_mem, final_dumps, final_lengths);
+        if (run < 0) {
+            fprintf(stderr, "allocation %lu / %lu: session script broke\n", k, total);
+            free(final_dumps[0]);
+            free(final_dumps[1]);
+            goto done;
+        }
+        if (run == 0 && (final_lengths[1] != control_lengths[1] ||
+                         memcmp(final_dumps[1], control_dumps[1], control_lengths[1]) != 0)) {
+            fprintf(stderr, "allocation %lu / %lu: retried session diverged from control\n", k, total);
+            free(final_dumps[0]);
+            free(final_dumps[1]);
+            goto done;
+        }
+        free(final_dumps[0]);
+        free(final_dumps[1]);
+    }
+    result = 0;
+done:
+    fb_sweep_fail_at = 0;
+    free(control_dumps[0]);
+    free(control_dumps[1]);
+    free(counted_dumps[0]);
+    free(counted_dumps[1]);
+    return result;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -839,6 +1012,7 @@ static const fb_case_entry FB_CASES[] = {
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
+    {"session_oom_sweep", case_session_oom_sweep},
 };
 
 int main(int argc, char **argv) {

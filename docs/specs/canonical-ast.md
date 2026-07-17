@@ -1,6 +1,9 @@
 # Canonical AST contract
 
-Status: frozen for Phase 5 on 2026-07-11.
+Status: frozen for Phase 5 on 2026-07-11; footnote contract revised for v2
+milestone M3 on 2026-07-16 (source-order definitions, label-carrying
+references, query-based numbering — see the footnote semantics section and
+`sessions-and-changesets.md`).
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -122,7 +125,7 @@ error rather than silently dropping a value.
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
 | `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct |
-| `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is non-empty; block content |
+| `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is the label as written; non-empty; block content; stays at its source position whether referenced or not |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -135,10 +138,28 @@ error rather than silently dropping a value.
 | `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
 | `Directive` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct |
-| `FootnoteReference` | `id: String` | id is non-empty; leaf |
+| `FootnoteReference` | `id: String` | id is the label as written; non-empty; leaf; never degrades to text when unresolved |
 
 Every row above also has the final inherited field `scope: Scope`; it is not
 repeated in the table.
+
+### Footnote semantics (revised 2026-07-16)
+
+The AST is source-faithful. A footnote definition is an ordinary block at its
+source position: it is never moved to the document tail, never dropped when
+unreferenced, and never reordered by use. A footnote reference is always a
+`FootnoteReference` node carrying the label exactly as written between `[^`
+and `]`; an unresolved reference stays a reference (it does not degrade to
+literal text), and a bracket whose label has no non-whitespace character
+never forms a reference. Labels match case-folded with collapsed whitespace,
+and the earliest definition of a label in document order wins.
+
+Numbering, first-use order, resolution state, and back-reference ordinals are
+not AST content. They are queries over a session-maintained index defined in
+`sessions-and-changesets.md`; renderers that need the GFM presentation
+(definitions gathered at the tail in first-use order, numbered markers)
+derive it from those queries. This aligns the tree with the mdast model and
+keeps edits from rewriting unrelated parts of the document.
 
 ### Typed table ownership
 

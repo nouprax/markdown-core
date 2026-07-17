@@ -31,6 +31,28 @@ struct markdown_core_changeset {
     markdown_core_id_array bubbled;
 };
 
+// One record per footnote node (reference or definition) of the committed
+// tree, sorted by node id. `group` indexes the in-use group of the record's
+// label (SIZE_MAX when the label is unused or unresolvable).
+typedef struct {
+    markdown_core_node *node; // borrowed from the committed tree
+    markdown_core_footnote_info info;
+    size_t group;
+} markdown_core_footnote_record;
+
+// Session-maintained footnote index: numbering, first-use order, resolution
+// state, and back-reference ordinals are answered from here; the tree stays
+// source-faithful. Rebuilt on every commit and diffed against the previous
+// index to bump the revisions of nodes whose query answers changed.
+typedef struct {
+    markdown_core_footnote_record *records; // sorted by node id
+    size_t record_count;
+    markdown_core_node_id *in_use; // winning definitions in first-use order
+    size_t in_use_count;
+    markdown_core_node_id *references; // reference ids grouped by in_use entry, document order
+    size_t *reference_offsets;         // in_use_count + 1 entries
+} markdown_core_footnote_index;
+
 struct markdown_core_session {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
@@ -40,6 +62,7 @@ struct markdown_core_session {
     uint64_t lineage;
     uint64_t revision;
     markdown_core_id_table ids;
+    markdown_core_footnote_index footnotes;
 };
 
 /** Internal constructor used by allocation-injection tests; the public
@@ -63,5 +86,21 @@ bool markdown_core_session_adopt(markdown_core_session *session, markdown_core_n
 
 /** Appends an id to a changeset array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
+
+/** Builds the footnote index for `root` into `index` (zeroed on entry by the
+ * caller). Returns false on allocation failure with `index` fully released. */
+bool markdown_core_footnote_index_build(markdown_core_mem *mem, markdown_core_node *root,
+                                        markdown_core_footnote_index *index);
+
+/** Releases everything owned by `index` and zeroes it. */
+void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);
+
+/** Diffs `next` against `previous` by node id and bumps the revision of
+ * every node whose query answers changed but whose dump content did not:
+ * the node is recorded as `changed`, untouched ancestors as `bubbled`.
+ * Returns false when a changeset array could not grow. */
+bool markdown_core_footnote_index_diff(const markdown_core_footnote_index *previous,
+                                       const markdown_core_footnote_index *next, uint64_t new_rev,
+                                       markdown_core_changeset *changes);
 
 #endif

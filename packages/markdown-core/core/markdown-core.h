@@ -183,11 +183,6 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_first_child(markdown
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_core_node *node);
 
-/** Returns the footnote reference of 'node', or NULL if 'node' doesn't have a
- * footnote reference.
- */
-MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_parent_footnote_def(markdown_core_node *node);
-
 /**
  * ## Iterator
  *

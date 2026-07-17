@@ -1579,6 +1579,205 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+static void session_footnote_queries(test_batch_runner *runner) {
+    /* Source-faithful tree + index-backed queries: [^b] is used twice and
+     * numbered first, [^A] case-folds onto [^a], [^missing] stays an
+     * unresolved reference, the duplicate [^b] definition loses to the
+     * earlier one, and [^u] is retained unused. */
+    const char *source = "b1[^b] a1[^A] b2[^b] n1[^missing]\n"
+                         "\n"
+                         "[^a]: alpha body\n"
+                         "[^b]: beta body\n"
+                         "[^b]: beta usurper\n"
+                         "[^u]: unused body\n";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_node_id ref_b1, ref_a, ref_b2, ref_missing, def_a, def_b, def_b_dup, def_u, paragraph_id;
+    markdown_core_footnote_info info;
+
+    OK(runner, session != NULL, "footnote query session opens");
+    if (!session) {
+        return;
+    }
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "footnote query commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *child = markdown_core_node_get_first_child(paragraph);
+        paragraph_id = markdown_core_node_get_id(paragraph);
+        ref_b1 = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
+        child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
+        ref_a = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
+        child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
+        ref_b2 = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
+        child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
+        ref_missing = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
+
+        child = markdown_core_node_get_next_sibling(paragraph);
+        def_a = markdown_core_node_get_id(child);
+        child = markdown_core_node_get_next_sibling(child);
+        def_b = markdown_core_node_get_id(child);
+        child = markdown_core_node_get_next_sibling(child);
+        def_b_dup = markdown_core_node_get_id(child);
+        child = markdown_core_node_get_next_sibling(child);
+        def_u = markdown_core_node_get_id(child);
+        OK(runner, ref_b1 && ref_a && ref_b2 && ref_missing && def_a && def_b && def_b_dup && def_u,
+           "footnote nodes all carry ids");
+    }
+
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_b1, &info) && info.definition == def_b && info.number == 1 &&
+           info.reference_ordinal == 1 && info.reference_count == 2,
+       "first [^b] reference resolves to number 1, ordinal 1 of 2");
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_b2, &info) && info.definition == def_b && info.number == 1 &&
+           info.reference_ordinal == 2 && info.reference_count == 2,
+       "second [^b] reference shares the number with ordinal 2");
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_a, &info) && info.definition == def_a && info.number == 2 &&
+           info.reference_ordinal == 1 && info.reference_count == 1,
+       "[^A] case-folds onto [^a] and is number 2");
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_missing, &info) && info.definition == 0 && info.number == 0 &&
+           info.reference_ordinal == 1 && info.reference_count == 1,
+       "unresolved reference reports no definition and no number");
+
+    OK(runner,
+       markdown_core_session_footnote_info(session, def_b, &info) && info.definition == def_b && info.number == 1 &&
+           info.reference_ordinal == 0 && info.reference_count == 2,
+       "winning definition reports its label's number and count");
+    OK(runner,
+       markdown_core_session_footnote_info(session, def_b_dup, &info) && info.definition == def_b && info.number == 1,
+       "duplicate definition points at the earlier winner");
+    OK(runner,
+       markdown_core_session_footnote_info(session, def_u, &info) && info.definition == def_u && info.number == 0 &&
+           info.reference_count == 0,
+       "unused definition stays in the tree with no number");
+
+    OK(runner, !markdown_core_session_footnote_info(session, paragraph_id, &info),
+       "non-footnote ids answer no footnote info");
+    OK(runner, !markdown_core_session_footnote_info(session, 0, &info), "id 0 answers no footnote info");
+
+    {
+        const markdown_core_node_id *ids = NULL;
+        size_t count = markdown_core_session_footnotes(session, &ids);
+        OK(runner, count == 2 && ids && ids[0] == def_b && ids[1] == def_a,
+           "footnotes lists the referenced winners in first-use order");
+        count = markdown_core_session_footnote_references(session, def_b, &ids);
+        OK(runner, count == 2 && ids && ids[0] == ref_b1 && ids[1] == ref_b2,
+           "back-references list the label's references in document order");
+        OK(runner, markdown_core_session_footnote_references(session, def_b_dup, &ids) == 0,
+           "a shadowed duplicate has no back-references");
+        OK(runner, markdown_core_session_footnote_references(session, def_u, &ids) == 0,
+           "an unused definition has no back-references");
+    }
+
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_footnote_revision_bumps(test_batch_runner *runner) {
+    /* Ordinal and resolution changes are query changes, not dump changes:
+     * they surface as revision bumps with `changed` entries while ids and
+     * dump content stay put. */
+    const char *source = "one[^x] two[^y]\n"
+                         "\n"
+                         "[^x]: X\n"
+                         "[^y]: Y\n";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_node_id ref_x, ref_y, def_x, def_y, paragraph_id;
+    uint64_t ref_x_rev, paragraph_rev;
+    markdown_core_changeset *changes = NULL;
+    markdown_core_footnote_info info;
+
+    OK(runner, session != NULL, "footnote revision session opens");
+    if (!session) {
+        return;
+    }
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    OK(runner, markdown_core_session_commit(session, NULL, &error), "footnote revision baseline commit succeeds");
+
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *child = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *ref;
+        paragraph_id = markdown_core_node_get_id(paragraph);
+        paragraph_rev = markdown_core_node_get_revision(paragraph);
+        ref = markdown_core_node_get_next_sibling(child);
+        ref_x = markdown_core_node_get_id(ref);
+        ref_x_rev = markdown_core_node_get_revision(ref);
+        ref_y =
+            markdown_core_node_get_id(markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(ref)));
+        def_x = markdown_core_node_get_id(markdown_core_node_get_next_sibling(paragraph));
+        def_y = markdown_core_node_get_id(
+            markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(paragraph)));
+    }
+    OK(runner, markdown_core_session_footnote_info(session, ref_x, &info) && info.number == 1,
+       "[^x] starts as number 1");
+
+    /* A new heading on top references [^y] first: [^y] becomes number 1 and
+     * [^x] shifts to number 2. The paragraph's bytes never change. */
+    markdown_core_session_edit(session, 0, 0, (const uint8_t *)"# zero[^y]\n\n", 12, &error);
+    OK(runner, markdown_core_session_commit(session, &changes, &error), "ordinal shift commit succeeds");
+
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_x, &info) && info.definition == def_x && info.number == 2,
+       "[^x] shifted to number 2");
+    OK(runner,
+       markdown_core_session_footnote_info(session, ref_y, &info) && info.number == 1 && info.reference_ordinal == 2 &&
+           info.reference_count == 2,
+       "the old [^y] reference became ordinal 2 of number 1");
+    {
+        const markdown_core_node *ref = markdown_core_session_node_by_id(session, ref_x);
+        const markdown_core_node_id *ids = NULL;
+        size_t count;
+        OK(runner, ref != NULL && markdown_core_node_get_revision(ref) > ref_x_rev,
+           "the shifted reference keeps its id with a revision bump");
+        count = markdown_core_changeset_changed(changes, &ids);
+        OK(runner, changeset_contains(ids, count, ref_x), "the shifted reference is reported changed");
+        count = markdown_core_changeset_bubbled(changes, &ids);
+        OK(runner, changeset_contains(ids, count, paragraph_id), "its untouched paragraph bubbles");
+        {
+            const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_id);
+            OK(runner, paragraph && markdown_core_node_get_revision(paragraph) > paragraph_rev,
+               "the bubbled paragraph's revision advances");
+        }
+        count = markdown_core_session_footnotes(session, &ids);
+        OK(runner, count == 2 && ids && ids[0] == def_y && ids[1] == def_x, "first-use order flipped");
+    }
+    markdown_core_changeset_free(changes);
+    changes = NULL;
+
+    /* Relabeling [^x]'s definition to [^z] flips the reference back to
+     * unresolved: another revision-only change for the reference. The "x"
+     * of "[^x]: X" sits at byte 31 of the edited text
+     * ("# zero[^y]\n\n" + "one[^x] two[^y]\n" + "\n" + "[^"). */
+    {
+        uint64_t ref_x_rev_before = markdown_core_node_get_revision(markdown_core_session_node_by_id(session, ref_x));
+        markdown_core_session_edit(session, 31, 32, (const uint8_t *)"z", 1, &error);
+        OK(runner, markdown_core_session_commit(session, &changes, &error), "resolution flip commit succeeds");
+        OK(runner,
+           markdown_core_session_footnote_info(session, ref_x, &info) && info.definition == 0 && info.number == 0,
+           "[^x] became unresolved");
+        OK(runner, markdown_core_node_get_revision(markdown_core_session_node_by_id(session, ref_x)) > ref_x_rev_before,
+           "the unresolved flip advances the reference revision");
+        {
+            const markdown_core_node_id *ids = NULL;
+            size_t count = markdown_core_session_footnotes(session, &ids);
+            OK(runner, count == 1 && ids && ids[0] == def_y, "only [^y] stays referenced");
+        }
+        markdown_core_changeset_free(changes);
+        changes = NULL;
+    }
+
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -1613,6 +1812,8 @@ int main(void) {
     session_edit_errors(runner);
     session_directive_label_parent(runner);
     session_scope_shift_invariance(runner);
+    session_footnote_queries(runner);
+    session_footnote_revision_bumps(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

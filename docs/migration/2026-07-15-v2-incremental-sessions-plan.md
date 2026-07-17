@@ -2,7 +2,11 @@
 
 Status: approved design (2026-07-15); milestones M0–M2 delivered (M2 on
 2026-07-16: refmap v2, per-block postprocess pipeline, footnote projection
-scaffolding, equivalence suite). The binding contract text
+scaffolding, equivalence suite). M3 in progress: the revised footnote
+contract landed first (2026-07-16) — projection deleted, source-order tree,
+session footnote index + `session_footnote_*` query API, ordinal/resolution
+revision bumps, footnote goldens and spec deltas regenerated. The binding
+contract text
 lives in `../specs/sessions-and-changesets.md`; this document records why the
 design is shaped this way, the exact engine architecture, the deltas to the
 frozen v1 contracts, and the milestone/gate plan.
@@ -197,10 +201,12 @@ numbering, resolution state, and back-reference ordinals are answered as
 queries; commits diff the index and bump the revision of references whose
 ordinal or resolution changed (`changed` entries with identical dump
 fields). The GFM placement/renumber/drop behavior becomes a renderer or
-consumer concern, aligned with the mdast model. The M2 projection
-scaffolding's placement phase is deleted when this lands; the node fields
-`parent_footnote_def`, `footnote.ref_ix`, and `footnote.def_count` become
-removable.
+consumer concern, aligned with the mdast model. Landed 2026-07-16 as the
+first M3 workstream: the M2 projection scaffolding (`core/footnotes.c`) is
+deleted, the node fields `parent_footnote_def`, `footnote.ref_ix`, and
+`footnote.def_count` are removed, the index lives in
+`extensions/footnote.c`, and the query surface is
+`markdown_core_session_footnote_info/footnotes/footnote_references`.
 
 ### Extension pipeline
 
