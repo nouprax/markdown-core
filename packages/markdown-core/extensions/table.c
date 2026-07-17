@@ -613,11 +613,11 @@ static const markdown_core_extension table_extension = {
     .name = "table",
     .last_block_matches = matches,
     .try_opening_block = try_opening_table_block,
-    .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
-    .contains_inlines_func = contains_inlines,
-    .opaque_alloc_func = opaque_alloc,
-    .opaque_free_func = opaque_free,
+    .get_type_string = get_type_string,
+    .can_contain = can_contain,
+    .contains_inlines = contains_inlines,
+    .alloc_opaque = opaque_alloc,
+    .free_opaque = opaque_free,
 };
 
 markdown_core_extension *markdown_core_table_extension(void) {

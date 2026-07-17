@@ -2,7 +2,7 @@
 #include "chunk.h"
 #include "scanners.h"
 
-bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_chunk *c, bufsize_t offset)
+bufsize_t markdown_core_scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_chunk *c, bufsize_t offset)
 {
 	bufsize_t res;
 	unsigned char *ptr = (unsigned char *)c->data;
@@ -74,7 +74,7 @@ bufsize_t _scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_ch
 */
 
 // Try to match a scheme including colon.
-bufsize_t _scan_scheme(const unsigned char *p)
+bufsize_t markdown_core_scan_scheme(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -85,7 +85,7 @@ bufsize_t _scan_scheme(const unsigned char *p)
 }
 
 // Try to match URI autolink after first <, returning number of chars matched.
-bufsize_t _scan_autolink_uri(const unsigned char *p)
+bufsize_t markdown_core_scan_autolink_uri(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -96,7 +96,7 @@ bufsize_t _scan_autolink_uri(const unsigned char *p)
 }
 
 // Try to match email autolink after first <, returning num of chars matched.
-bufsize_t _scan_autolink_email(const unsigned char *p)
+bufsize_t markdown_core_scan_autolink_email(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -111,7 +111,7 @@ bufsize_t _scan_autolink_email(const unsigned char *p)
 }
 
 // Try to match an HTML tag after first <, returning num of chars matched.
-bufsize_t _scan_html_tag(const unsigned char *p)
+bufsize_t markdown_core_scan_html_tag(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -122,7 +122,7 @@ bufsize_t _scan_html_tag(const unsigned char *p)
 }
 
 // Try to (liberally) match an HTML tag after first <, returning num of chars matched.
-bufsize_t _scan_liberal_html_tag(const unsigned char *p)
+bufsize_t markdown_core_scan_liberal_html_tag(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -132,7 +132,7 @@ bufsize_t _scan_liberal_html_tag(const unsigned char *p)
 */
 }
 
-bufsize_t _scan_html_comment(const unsigned char *p)
+bufsize_t markdown_core_scan_html_comment(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -142,7 +142,7 @@ bufsize_t _scan_html_comment(const unsigned char *p)
 */
 }
 
-bufsize_t _scan_html_pi(const unsigned char *p)
+bufsize_t markdown_core_scan_html_pi(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -152,7 +152,7 @@ bufsize_t _scan_html_pi(const unsigned char *p)
 */
 }
 
-bufsize_t _scan_html_declaration(const unsigned char *p)
+bufsize_t markdown_core_scan_html_declaration(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -162,7 +162,7 @@ bufsize_t _scan_html_declaration(const unsigned char *p)
 */
 }
 
-bufsize_t _scan_html_cdata(const unsigned char *p)
+bufsize_t markdown_core_scan_html_cdata(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -175,7 +175,7 @@ bufsize_t _scan_html_cdata(const unsigned char *p)
 // Try to match an HTML block tag start line, returning
 // an integer code for the type of block (1-6, matching the spec).
 // #7 is handled by a separate function, below.
-bufsize_t _scan_html_block_start(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 /*!re2c
@@ -191,7 +191,7 @@ bufsize_t _scan_html_block_start(const unsigned char *p)
 
 // Try to match an HTML block tag start line of type 7, returning
 // 7 if successful, 0 if not.
-bufsize_t _scan_html_block_start_7(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_start_7(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 /*!re2c
@@ -201,7 +201,7 @@ bufsize_t _scan_html_block_start_7(const unsigned char *p)
 }
 
 // Try to match an HTML block end line of type 1
-bufsize_t _scan_html_block_end_1(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_end_1(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -212,7 +212,7 @@ bufsize_t _scan_html_block_end_1(const unsigned char *p)
 }
 
 // Try to match an HTML block end line of type 2
-bufsize_t _scan_html_block_end_2(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_end_2(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -223,7 +223,7 @@ bufsize_t _scan_html_block_end_2(const unsigned char *p)
 }
 
 // Try to match an HTML block end line of type 3
-bufsize_t _scan_html_block_end_3(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_end_3(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -234,7 +234,7 @@ bufsize_t _scan_html_block_end_3(const unsigned char *p)
 }
 
 // Try to match an HTML block end line of type 4
-bufsize_t _scan_html_block_end_4(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_end_4(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -245,7 +245,7 @@ bufsize_t _scan_html_block_end_4(const unsigned char *p)
 }
 
 // Try to match an HTML block end line of type 5
-bufsize_t _scan_html_block_end_5(const unsigned char *p)
+bufsize_t markdown_core_scan_html_block_end_5(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -258,7 +258,7 @@ bufsize_t _scan_html_block_end_5(const unsigned char *p)
 // Try to match a link title (in single quotes, in double quotes, or
 // in parentheses), returning number of chars matched.  Allow one
 // level of internal nesting (quotes within quotes).
-bufsize_t _scan_link_title(const unsigned char *p)
+bufsize_t markdown_core_scan_link_title(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -271,7 +271,7 @@ bufsize_t _scan_link_title(const unsigned char *p)
 }
 
 // Match space characters, including newlines.
-bufsize_t _scan_spacechars(const unsigned char *p)
+bufsize_t markdown_core_scan_spacechars(const unsigned char *p)
 {
   const unsigned char *start = p; \
 /*!re2c
@@ -281,7 +281,7 @@ bufsize_t _scan_spacechars(const unsigned char *p)
 }
 
 // Match ATX heading start.
-bufsize_t _scan_atx_heading_start(const unsigned char *p)
+bufsize_t markdown_core_scan_atx_heading_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -293,7 +293,7 @@ bufsize_t _scan_atx_heading_start(const unsigned char *p)
 
 // Match setext heading line.  Return 1 for level-1 heading,
 // 2 for level-2, 0 for no match.
-bufsize_t _scan_setext_heading_line(const unsigned char *p)
+bufsize_t markdown_core_scan_setext_heading_line(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 /*!re2c
@@ -304,7 +304,7 @@ bufsize_t _scan_setext_heading_line(const unsigned char *p)
 }
 
 // Scan an opening code fence.
-bufsize_t _scan_open_code_fence(const unsigned char *p)
+bufsize_t markdown_core_scan_open_code_fence(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -316,7 +316,7 @@ bufsize_t _scan_open_code_fence(const unsigned char *p)
 }
 
 // Scan a closing code fence with length at least len.
-bufsize_t _scan_close_code_fence(const unsigned char *p)
+bufsize_t markdown_core_scan_close_code_fence(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -329,7 +329,7 @@ bufsize_t _scan_close_code_fence(const unsigned char *p)
 
 // Scans an entity.
 // Returns number of chars matched.
-bufsize_t _scan_entity(const unsigned char *p)
+bufsize_t markdown_core_scan_entity(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -342,7 +342,7 @@ bufsize_t _scan_entity(const unsigned char *p)
 
 // Returns positive value if a URL begins in a way that is potentially
 // dangerous, with javascript:, vbscript:, file:, or data:, otherwise 0.
-bufsize_t _scan_dangerous_url(const unsigned char *p)
+bufsize_t markdown_core_scan_dangerous_url(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -354,7 +354,7 @@ bufsize_t _scan_dangerous_url(const unsigned char *p)
 }
 
 // Scans a footnote definition opening.
-bufsize_t _scan_footnote_definition(const unsigned char *p)
+bufsize_t markdown_core_scan_footnote_definition(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;

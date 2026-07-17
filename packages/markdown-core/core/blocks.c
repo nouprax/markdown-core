@@ -62,18 +62,32 @@ static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
     return literal->len - offset >= 4 && memcmp(literal->data + offset, "<!--", 4) == 0;
 }
 
-static bool S_strip_html_comments(markdown_core_node *root) {
+/* Block-local HTML-comment strip: removes the block itself when it is a
+ * comment HTML block, otherwise removes inline HTML comments inside an
+ * inline-owning block and re-consolidates the texts they separated. The
+ * iterator precomputes its successor before an ENTER is returned, and the
+ * stripped nodes are always leaves, so freeing at ENTER is safe. */
+static bool S_strip_block_html_comments(markdown_core_node *block, bool owns_inlines) {
     bool stripped = false;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    markdown_core_iter *iter;
     markdown_core_event_type ev_type;
 
+    if (S_html_literal_starts_with_comment(block)) {
+        markdown_core_node_free(block);
+        return true;
+    }
+    if (!owns_inlines) {
+        return true;
+    }
+
+    iter = markdown_core_iter_new(block);
     if (!iter) {
         return false;
     }
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && S_html_literal_starts_with_comment(node)) {
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && node != block && S_html_literal_starts_with_comment(node)) {
             markdown_core_node_free(node);
             stripped = true;
         }
@@ -82,7 +96,7 @@ static bool S_strip_html_comments(markdown_core_node *root) {
     markdown_core_iter_free(iter);
 
     if (stripped) {
-        return markdown_core_consolidate_text_nodes(root) != 0;
+        return markdown_core_node_consolidate_texts(block) != 0;
     }
     return true;
 }
@@ -229,7 +243,7 @@ markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_co
 }
 
 markdown_core_parser *markdown_core_parser_new(int options) {
-    return markdown_core_parser_new_with_mem(options, markdown_core_get_default_mem_allocator());
+    return markdown_core_parser_new_with_mem(options, markdown_core_mem_default());
 }
 
 void markdown_core_parser_free(markdown_core_parser *parser) {
@@ -266,8 +280,8 @@ static bool is_blank(markdown_core_strbuf *s, bufsize_t offset) {
 }
 
 static MARKDOWN_CORE_INLINE bool extension_accepts_lines(markdown_core_node *node) {
-    return node->extension && node->extension->accepts_lines_func &&
-           node->extension->accepts_lines_func(node->extension, node) != 0;
+    return node->extension && node->extension->accepts_lines &&
+           node->extension->accepts_lines(node->extension, node) != 0;
 }
 
 static MARKDOWN_CORE_INLINE bool accepts_lines(markdown_core_node *node) {
@@ -282,11 +296,7 @@ static MARKDOWN_CORE_INLINE bool accepts_lines(markdown_core_node *node) {
 }
 
 static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
-    if (node->extension && node->extension->contains_inlines_func) {
-        return node->extension->contains_inlines_func(node->extension, node) != 0;
-    }
-
-    return (node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING);
+    return markdown_core_node_owns_inlines(node);
 }
 
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -423,7 +433,7 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
             assert(pos < node_content->size);
 
             markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
-            houdini_unescape_html_f(&tmp, node_content->ptr, pos);
+            markdown_core_houdini_unescape_html_f(&tmp, node_content->ptr, pos);
             markdown_core_strbuf_trim(&tmp);
             markdown_core_strbuf_unescape(&tmp);
             b->as.code.info = markdown_core_chunk_buf_detach(&tmp);
@@ -522,7 +532,7 @@ static markdown_core_node *add_child(markdown_core_parser *parser, markdown_core
     return child;
 }
 
-void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
+void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
     markdown_core_llist *tmp_ext;
 
     for (tmp_ext = parser->inline_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
@@ -550,7 +560,7 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         return;
     }
 
-    markdown_core_manage_extensions_special_characters(parser, true);
+    markdown_core_parser_manage_extensions_special_characters(parser, true);
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
@@ -561,154 +571,9 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         }
     }
 
-    markdown_core_manage_extensions_special_characters(parser, false);
+    markdown_core_parser_manage_extensions_special_characters(parser, false);
 
     markdown_core_iter_free(iter);
-}
-
-static int sort_footnote_by_ix(const void *_a, const void *_b) {
-    markdown_core_footnote *a = *(markdown_core_footnote **)_a;
-    markdown_core_footnote *b = *(markdown_core_footnote **)_b;
-    return (int)a->ix - (int)b->ix;
-}
-
-static void process_footnotes(markdown_core_parser *parser) {
-    // * Collect definitions in a map.
-    // * Iterate the references in the document in order, assigning indices to
-    //   definitions in the order they're seen.
-    // * Write out the footnotes at the bottom of the document in index order.
-
-    markdown_core_map *map = markdown_core_footnote_map_new(parser->mem);
-    if (!map) {
-        parser->oom = true;
-        return;
-    }
-
-    markdown_core_iter *iter = markdown_core_iter_new(parser->root);
-    markdown_core_node *cur;
-    markdown_core_event_type ev_type;
-
-    if (!iter) {
-        parser->oom = true;
-        markdown_core_map_free(map);
-        return;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-            markdown_core_footnote_create(map, cur);
-        }
-    }
-
-    markdown_core_iter_free(iter);
-    iter = markdown_core_iter_new(parser->root);
-    unsigned int ix = 0;
-
-    if (!iter) {
-        parser->oom = true;
-        markdown_core_unlink_footnotes_map(map);
-        markdown_core_map_free(map);
-        return;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && cur->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
-            markdown_core_footnote *footnote =
-                (markdown_core_footnote *)markdown_core_map_lookup(map, &cur->as.literal);
-            if (footnote) {
-                if (!footnote->ix) {
-                    footnote->ix = ++ix;
-                }
-
-                // store a reference to this footnote reference's footnote definition
-                // this is used by renderers when generating label ids
-                cur->parent_footnote_def = footnote->node;
-
-                // keep track of a) count of how many times this footnote def has been
-                // referenced, and b) which reference index this footnote ref is at.
-                // this is used by renderers when generating links and backreferences.
-                cur->footnote.ref_ix = ++footnote->node->footnote.def_count;
-
-                char n[32];
-                snprintf(n, sizeof(n), "%d", footnote->ix);
-                markdown_core_chunk_free(parser->mem, &cur->as.literal);
-                markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(parser->mem);
-                markdown_core_strbuf_puts(&buf, n);
-
-                cur->as.literal = markdown_core_chunk_buf_detach(&buf);
-            } else {
-                markdown_core_node *text = (markdown_core_node *)parser->mem->calloc(1, sizeof(*text));
-                /* On allocation failure keep the unresolved reference node
-                 * and report the loss. */
-                if (text) {
-                    markdown_core_strbuf_init(parser->mem, &text->content, 0);
-                    text->type = (uint16_t)MARKDOWN_CORE_NODE_TEXT;
-
-                    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(parser->mem);
-                    markdown_core_strbuf_puts(&buf, "[^");
-                    markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
-                    markdown_core_strbuf_putc(&buf, ']');
-
-                    text->as.literal = markdown_core_chunk_buf_detach(&buf);
-                    if (!text->as.literal.data) {
-                        parser->oom = true;
-                    }
-                    markdown_core_node_insert_after(cur, text);
-                    markdown_core_node_free(cur);
-                } else {
-                    parser->oom = true;
-                }
-            }
-        }
-    }
-
-    markdown_core_iter_free(iter);
-
-    if (map->prepared) {
-        markdown_core_map_entry **footnotes = map->sorted;
-        if (map->indexed) {
-            footnotes = (markdown_core_map_entry **)parser->mem->calloc(map->size, sizeof(*footnotes));
-            if (!footnotes) {
-                parser->oom = true;
-            }
-            if (footnotes) {
-                size_t slot;
-                size_t count = 0;
-                for (slot = 0; slot < map->index.capacity; slot++) {
-                    if (map->index.slots[slot].key) {
-                        footnotes[count++] = (markdown_core_map_entry *)map->index.slots[slot].value;
-                    }
-                }
-                assert(count == map->size);
-            }
-        }
-        /* When the collection array cannot be allocated, skip emission; the
-         * definitions are then unlinked and freed with the map below. */
-        if (footnotes) {
-            qsort(footnotes, map->size, sizeof(markdown_core_map_entry *), sort_footnote_by_ix);
-            for (unsigned int i = 0; i < map->size; ++i) {
-                markdown_core_footnote *footnote = (markdown_core_footnote *)footnotes[i];
-                if (!footnote->ix) {
-                    markdown_core_node_unlink(footnote->node);
-                    continue;
-                }
-                markdown_core_node_append_child(parser->root, footnote->node);
-                footnote->node = NULL;
-            }
-            if (map->indexed) {
-                parser->mem->free(footnotes);
-            }
-        }
-    }
-
-    if (map->oom) {
-        parser->oom = true;
-    }
-
-    markdown_core_unlink_footnotes_map(map);
-    markdown_core_map_free(map);
 }
 
 // Attempts to parse a list item marker (bullet or enumerated).
@@ -835,13 +700,13 @@ static markdown_core_node *finalize_document(markdown_core_parser *parser) {
 
     process_inlines(parser, parser->refmap, parser->options);
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) {
-        process_footnotes(parser);
+        markdown_core_process_footnotes(parser);
     }
 
     return parser->root;
 }
 
-markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
+markdown_core_node *markdown_core_node_parse_file(FILE *f, int options) {
     unsigned char buffer[4096];
     markdown_core_parser *parser = markdown_core_parser_new(options);
     size_t bytes;
@@ -860,7 +725,7 @@ markdown_core_node *markdown_core_parse_file(FILE *f, int options) {
     return document;
 }
 
-markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options) {
+markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t len, int options) {
     markdown_core_parser *parser = markdown_core_parser_new(options);
     markdown_core_node *document;
 
@@ -1711,9 +1576,68 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
+/* Runs the block-local postprocess pipeline for one unit: text
+ * consolidation, extension block postprocess hooks in attachment order, and
+ * HTML-comment strip. Effects never leave the unit's subtree, and the unit
+ * may end up replaced (formula promotion) or removed (comment HTML block);
+ * the caller must precompute its traversal successor. */
+static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
+    markdown_core_llist *extensions;
+
+    if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
+        parser->oom = true;
+    }
+
+    for (extensions = parser->extensions; extensions; extensions = extensions->next) {
+        markdown_core_extension *ext = (markdown_core_extension *)extensions->data;
+        if (ext->postprocess_block) {
+            markdown_core_node *processed = ext->postprocess_block(ext, parser, unit);
+            if (processed) {
+                unit = processed;
+                owns_inlines = contains_inlines(unit);
+            }
+        }
+    }
+
+    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
+        if (!S_strip_block_html_comments(unit, owns_inlines)) {
+            parser->oom = true;
+        }
+    }
+}
+
+/* Drives S_postprocess_unit over every block and inline-owning node in
+ * document order. Inline-owning units are pipeline leaves: their inline
+ * subtrees are handled by the unit pass itself, so traversal never descends
+ * into them (a directive label wrapper nested in a paragraph is covered by
+ * the paragraph's pass). Successors are computed before a unit runs because
+ * the pipeline may replace or free the unit node. */
+static void S_postprocess_blocks(markdown_core_parser *parser) {
+    markdown_core_node *root = parser->root;
+    markdown_core_node *node = root->first_child;
+
+    while (node) {
+        bool owns_inlines = contains_inlines(node);
+        markdown_core_node *next = NULL;
+
+        if (!owns_inlines && node->first_child) {
+            next = node->first_child;
+        } else {
+            for (markdown_core_node *up = node; up != root; up = up->parent) {
+                if (up->next) {
+                    next = up->next;
+                    break;
+                }
+            }
+        }
+
+        S_postprocess_unit(parser, node, owns_inlines);
+        node = next;
+    }
+}
+
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     markdown_core_node *res;
-    markdown_core_llist *extensions;
 
     /* Parser was already finished once */
     if (parser->root == NULL) {
@@ -1727,10 +1651,6 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
 
     finalize_document(parser);
 
-    if (!markdown_core_consolidate_text_nodes(parser->root)) {
-        parser->oom = true;
-    }
-
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
 
@@ -1740,21 +1660,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
     }
 #endif
 
-    for (extensions = parser->extensions; extensions; extensions = extensions->next) {
-        markdown_core_extension *ext = (markdown_core_extension *)extensions->data;
-        if (ext->postprocess_func) {
-            markdown_core_node *processed = ext->postprocess_func(ext, parser, parser->root);
-            if (processed) {
-                parser->root = processed;
-            }
-        }
-    }
-
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_html_comments(parser->root)) {
-            parser->oom = true;
-        }
-    }
+    S_postprocess_blocks(parser);
 
     /* All allocation-loss routes converge here: block/inline structures set
      * parser->oom directly, definition maps carry their own sticky flag. */

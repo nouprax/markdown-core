@@ -220,8 +220,14 @@ fi
 
 tests_ready_job=$(sed -n '/^    tests-ready:$/,/^    required-gates:$/p' "$ci")
 grep -Fq '        if: ${{ always() }}' <<<"$tests_ready_job"
+if grep -Fq 'benchmarks-ready' <<<"$tests_ready_job"; then
+    echo "Tests - Ready must not depend on the parallel benchmark barrier" >&2
+    exit 1
+fi
 required_gate_job=$(sed -n '/^    required-gates:/,$p' "$ci")
-grep -Fq '        needs: tests-ready' <<<"$required_gate_job"
+grep -Fq '            - tests-ready' <<<"$required_gate_job"
+grep -Fq '            - benchmarks-ready' <<<"$required_gate_job"
+grep -Fq 'BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}' <<<"$required_gate_job"
 
 search '^    push:$' "$release"
 search '^        tags:$' "$release"
@@ -380,7 +386,7 @@ if [ "$(grep -Fc 'SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.s
     exit 1
 fi
 
-if search 'pr-metrics|benchmark|binary.size' <(
+if search 'pr-metrics|binary.size|collect-pr-metrics|upload.*metrics' <(
     sed -n '/^    required-gates:/,$p' "$ci"
 ); then
     echo "non-blocking metrics leaked into the required gate" >&2

@@ -1,6 +1,8 @@
 # v2 incremental sessions: design and delivery plan
 
-Status: approved design, milestone M0 (2026-07-15). The binding contract text
+Status: approved design (2026-07-15); milestones M0–M2 delivered (M2 on
+2026-07-16: refmap v2, per-block postprocess pipeline, footnote projection
+scaffolding, equivalence suite). The binding contract text
 lives in `../specs/sessions-and-changesets.md`; this document records why the
 design is shaped this way, the exact engine architecture, the deltas to the
 frozen v1 contracts, and the milestone/gate plan.
@@ -28,9 +30,17 @@ around sessions, immutable snapshots, and changesets.
 3. Compatibility: clean v2.0 break; `Document.parse` survives as a
    convenience over the session core.
 4. Platforms: C + Swift + Kotlin + ES in lockstep under one contract.
-5. Footnotes keep v1 observable behavior (used definitions moved to document
-   end in first-use order, unused dropped, references renumbered),
-   implemented as an incremental projection rather than a whole-tree pass.
+5. Footnotes ride the reference-map machinery (decided 2026-07-16,
+   superseding the original "keep v1 observable behavior via incremental
+   projection" — the superseded design is recorded in the appendix):
+   definitions stay at their source position, used or not; references always
+   parse as footnote-reference nodes carrying their label (no degradation to
+   text, no renumbering); numbering, first-use order, resolution state, and
+   back-reference ordinals are queries over a session-maintained index.
+   Ordinal/resolution changes surface as revision bumps (`changed` entries)
+   with no content or structure change. Unresolved *link* references keep
+   the CommonMark behavior (literal text) — link formation is grammar, not
+   semantics, and changing it would fork the dialect.
 6. Scope moves off node values; absolute positions are resolved via
    `document.scope(of:)` and walker events.
 7. Pure session-based C API with **zero process-global state**: any number of
@@ -118,7 +128,7 @@ M3 damage planning, which is their only consumer.
  1. Damage plan  — edits → lines → document children; extend backward to the
                    nearest CLEAN_START child. Fast path: all edits beyond the
                    last sealed byte (streaming append) ⇒ damage = ∅, go to 4.
- 2. Retract      — unproject footnote placement; remove refmap defs owned by
+ 2. Retract      — remove refmap and footnote-map definitions owned by
                    damaged children; detach damaged children into a graveyard.
  3. Staged reparse — feed lines through the existing S_process_line machinery
                    from damage start; after each line, resync check; on
@@ -137,7 +147,8 @@ M3 damage planning, which is their only consumer.
                    id stable.
  7. Refmap diff  — per-label winner (min document order) delta ⇒ dirty
                    dependent leaves ⇒ rerun 6 for them once.
- 8. Footnote projection — incremental re-application of v1 semantics.
+ 8. Footnote index refresh — recompute first-use ordinals/resolution; bump
+                   revisions of references whose query answers changed.
  9. Seal         — relativize new nodes, set CLEAN_START, bump
                    last_changed_rev + bubble (recording `bubbled`), build the
                    changeset, free the graveyard, revision++.
@@ -173,22 +184,30 @@ owner. Inline parsing records every label lookup (hits and misses) against
 the leaf id; commits diff per-label winners and dirty exactly the dependent
 leaves.
 
-### Footnotes: v1 semantics as an incremental projection
+### Footnotes: source-order AST over the reference map (revised 2026-07-16)
 
-The observable AST stays byte-identical to v1. The session's footnote index
-tracks label → definition, references per label in document order, first-use
-order, and each definition's source span. Unused definitions are detached
-and retained (hidden, not freed). Commits unproject at the start (restore
-source order for damage mapping) and re-project at the end (splice used
-definitions to the tail in first-use order; renumber only references whose
-index changed — revision bumps put them in the changeset). Definition nodes
-keep their id across moves.
+Footnote definitions harvest their labels into the same map machinery as
+link reference definitions (owner ids, document-order winner, remove-owned
+retraction); footnote references record lookups per leaf and re-dirty
+through the same refmap-delta path (step 7). The tree is source-faithful:
+definitions never move and are never dropped; references always exist and
+carry their label. The session maintains a footnote index (label →
+definition, references in document order, first-use order) from which
+numbering, resolution state, and back-reference ordinals are answered as
+queries; commits diff the index and bump the revision of references whose
+ordinal or resolution changed (`changed` entries with identical dump
+fields). The GFM placement/renumber/drop behavior becomes a renderer or
+consumer concern, aligned with the mdast model. The M2 projection
+scaffolding's placement phase is deleted when this lands; the node fields
+`parent_footnote_def`, `footnote.ref_ix`, and `footnote.def_count` become
+removable.
 
 ### Extension pipeline
 
-The internal extension ABI gains `block_postprocess_func(ext, parser,
-block)`; autolink and formula convert to it and run per dirty block. The
-whole-tree `postprocess_func` is removed from bundled extensions.
+The internal extension ABI gains `postprocess_block(ext, parser, block)`
+(typedef `markdown_core_postprocess_block_func`); autolink and formula
+convert to it and run per dirty block. The whole-tree `postprocess_func` is
+removed from bundled extensions.
 Table/tasklist/strikethrough/smart-punctuation/directive are untouched.
 HTML-comment strip becomes per-node at seal. Formula promotion, table
 retyping, and setext flips change the node kind ⇒ removed + added.
@@ -258,8 +277,8 @@ Equality everywhere is `(lineage, id, revision)`.
 
 | Artifact | Change |
 | --- | --- |
-| `docs/specs/canonical-ast.md` | 28-kind inventory unchanged; every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote semantics unchanged. |
-| `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` are expected to stay byte-identical. |
+| `docs/specs/canonical-ast.md` | 28-kind inventory unchanged; every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote contract revised (source-order definitions, label-carrying references, query-based numbering/resolution — decision #5 as revised 2026-07-16). |
+| `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` stay byte-identical through M2; footnote-bearing goldens regenerate deliberately when the revised footnote contract lands (M3). |
 | `docs/specs/test-architecture.md` | Add equivalence, id-stability, and edit-storm suites to the frozen topology. |
 | `scripts/audit-public-surface.sh` | Add the new C symbols to the header+map sync; scope the Swift/Kotlin/ES mutation-ban greps to the model/walker directories (Session's `append`/`replace` would otherwise trip them); pin the Session surfaces exactly; ES frozen runtime export list gains `MarkupSession`. |
 | Build lists ×4 | `packages/markdown-core/core/CMakeLists.txt` (+`extensions/CMakeLists.txt`), root `Package.swift`, `packages/es-markdown-core/scripts/build.mjs`, and `packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt` (the Android runtime keeps its own explicit engine list): add `session.c`, `text.c`, `damage.c`, `adopt.c`, `changeset.c`. New facade symbols go into **both** export allowlists: `core/exports/markdown_core.map` (Linux version script) and `core/exports/markdown_core.exports` (macOS exported-symbols list). |
@@ -277,22 +296,25 @@ Equality everywhere is `(lineage, id, revision)`.
   Gates: full v1 suites + goldens unchanged, complexity ≤ 4.0 (one-shot fast
   path), oom_sweep, TSan, audit.
 - **M2 — Semantic core**: refmap v2, per-block inline pipeline + extension
-  `block_postprocess_func`, per-node comment strip, footnote projection
+  `postprocess_block`, per-node comment strip, footnote projection
   scaffolding (full recompute per commit). Gates: goldens unchanged,
   equivalence runner incl. link-ref edit fixtures, sanitizers.
 - **M3 — True incrementality**: damage planning + CLEAN_START, resync +
   suffix adoption + frontier save/restore, graveyard/transplant,
-  refmap-delta inline dirtiness, incremental footnote projection, append
-  fast path, transactional OOM staging. Gates: adversarial equivalence
-  fixtures (setext, lazy continuation, unclosed fence/HTML/directive, table
-  delimiter edits, list-tightness flips, footnote renumber cascades,
+  refmap-delta inline dirtiness, footnote contract change (source-order
+  tree, query-based numbering — regenerate footnote goldens and spec deltas
+  first), footnote index + query API, append fast path, transactional OOM
+  staging. Gates: adversarial equivalence fixtures (setext, lazy
+  continuation, unclosed fence/HTML/directive, table delimiter edits,
+  list-tightness flips, footnote ordinal-shift cascades,
   no-blank documents), changeset-mirror check, id-stability tests, new
   complexity cases (`session_stream_flat`, `session_edit_storm`), oom_sweep
   session variant, TSan.
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta
-  benchmarks, audit v2.
+  benchmarks, audit v2, and the public-surface naming freeze review
+  (`docs/specs/c-naming.md`) before anything ships.
 - **M5 — Hardening & release**: edit-script fuzz target, pathological corpus,
   perf tuning, CHANGELOG/VERSION 2.0.0, release dry-run. Gates: full CI
   matrix + package audits.
@@ -335,12 +357,28 @@ Equality everywhere is `(lineage, id, revision)`.
   unclosed; suffix ids survive via span transplants.
 - Adoption bugs → stale binding mirrors: changeset-mirror gate + seeded edit
   fuzzing target exactly this.
-- Footnote renumber cascades: inherent to the retained v1 semantics; surface
-  as honest `changed` entries; projection cost bounded by #refs + #defs.
+- Footnote ordinal-shift cascades: inserting an early first-use reference
+  shifts every later ordinal; surfaces as revision-only `changed` entries
+  (no content or structure change); index refresh bounded by #refs + #defs.
 - One-shot perf regression: the M1 fast path is benchmarked before anything
   is built on it.
 
 ## Appendix: rejected alternatives (rationale record only — no planned work)
+
+- **Footnotes as an incremental projection of the v1/GFM observable
+  behavior** (original decision #5, superseded 2026-07-16): the session
+  would have kept used definitions moved to the document tail in first-use
+  order, dropped unused ones, and renumbered reference literals, re-applied
+  incrementally per commit (unproject at commit start, re-project at the
+  end). Superseded because the moved/renumbered shape is itself an artifact
+  of cmark-gfm's decision to implement footnotes as a post-parse pass over
+  an untouchable core: it forces tree restructuring and literal rewrites on
+  every ordinal shift (large changesets, heavy UI re-renders), leaves
+  unresolved references degrading to text after the block pipeline (which
+  the M2 pipeline had to work around), and duplicates machinery the
+  reference map already provides. The M2-delivered projection scaffolding
+  (collect/resolve/apply in `core/footnotes.c`) remains the interim
+  implementation until the revised contract lands in M3.
 
 - **Pure-function C API** (`new_doc = edit(old_doc, …)`, old stays valid):
   requires a persistent C tree — coexisting snapshot versions sharing
