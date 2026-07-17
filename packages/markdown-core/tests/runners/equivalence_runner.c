@@ -778,9 +778,234 @@ done:
     return result;
 }
 
+/* --- scripted boundary edits ---------------------------------------------- */
+
+/* One edit-and-commit: the position is `offset` bytes past the first match
+ * of `anchor` (or absolute when anchor is NULL), `delete_length` bytes leave,
+ * `insert` arrives. */
+typedef struct eq_script_step {
+    const char *anchor;
+    size_t offset;
+    size_t delete_length;
+    const char *insert;
+} eq_script_step;
+
+typedef struct eq_script {
+    const char *name;
+    const char *initial;
+    const eq_script_step *steps;
+    size_t step_count;
+} eq_script;
+
+/* Setext underlines attach to the open paragraph, so a boundary must never
+ * split them; flipping one in and out exercises the kind-change path. */
+static const eq_script_step EQ_SETEXT_STEPS[] = {
+    {"gamma", 0, 0, "===\n"},
+    {"===", 0, 4, ""},
+    {"alpha", 5, 0, "\n---"},
+    {"\n---", 0, 4, ""},
+};
+
+/* Removing the blank line makes `tail` a lazy continuation of the quoted
+ * paragraph; restoring it splits the paragraph again. */
+static const eq_script_step EQ_LAZY_STEPS[] = {
+    {"\ntail", 0, 1, ""},
+    {"tail", 0, 0, "\n"},
+};
+
+/* An unclosed fence swallows everything to EOF (reparse-to-EOF degradation);
+ * closing it releases the suffix again. */
+static const eq_script_step EQ_FENCE_STEPS[] = {
+    {NULL, (size_t)-1, 0, "swallowed\n"},
+    {NULL, (size_t)-1, 0, "```\n\nafter\n"},
+    {"first", 0, 0, "zero\n\n"},
+    {"```\ncode", 0, 3, "~~~"},
+};
+
+static const eq_script_step EQ_HTML_STEPS[] = {
+    {NULL, (size_t)-1, 0, "y\n"},
+    {NULL, (size_t)-1, 0, "</pre>\n\nafter\n"},
+    {"x\ny", 0, 1, "q"},
+};
+
+static const eq_script_step EQ_DIRECTIVE_STEPS[] = {
+    {NULL, (size_t)-1, 0, "more\n"},
+    {NULL, (size_t)-1, 0, ":::\n\nafter\n"},
+    {"body", 0, 4, "edited"},
+};
+
+/* Breaking and restoring the delimiter row retypes table <-> paragraph, and
+ * the leading `intro` line keeps the table fused to a split-off header
+ * paragraph (never a restart point). */
+static const eq_script_step EQ_TABLE_STEPS[] = {
+    {"tail", 0, 4, "coda"}, {"| - |", 2, 1, "x"}, {"| x |", 2, 1, "-"}, {"intro", 0, 6, ""}, {"h1", 0, 0, "intro\n"},
+};
+
+/* Tightness flips must surface as List-node changes while the items
+ * transplant. */
+static const eq_script_step EQ_TIGHTNESS_STEPS[] = {
+    {"- b", 0, 0, "\n"},
+    {"\n- b", 0, 1, ""},
+    {"tail", 0, 0, "- c\n\n"},
+};
+
+/* A document with no interior clean boundary: every edit reparses the lone
+ * paragraph. */
+static const eq_script_step EQ_NO_BLANK_STEPS[] = {
+    {"l3", 0, 2, "L3!"},
+    {NULL, (size_t)-1, 0, "l5\n"},
+    {NULL, 0, 3, ""},
+};
+
+/* Cross-boundary reference edits: touching the paragraphs must not disturb
+ * resolution, editing the definition re-resolves both sides (full-reparse
+ * fallback), and a same-text definition rewrite must stay incremental. */
+static const eq_script_step EQ_CROSS_REF_STEPS[] = {
+    {"here", 0, 4, "there"},
+    {"/one", 0, 4, "/two"},
+    {"[l]: /two", 0, 9, "[l]: /two"},
+    {"tail", 0, 0, "coda "},
+};
+
+/* Restarts at byte zero re-encounter the BOM; edits after it must not. */
+static const eq_script_step EQ_BOM_STEPS[] = {
+    {"beta", 0, 4, "BETA"},
+    {"alpha", 0, 0, "pre "},
+};
+
+/* Head-region edits before the first document child (owner-0 anchoring). */
+static const eq_script_step EQ_BLANK_HEAD_STEPS[] = {
+    {NULL, 1, 0, "x\n"},
+    {"x\n", 0, 2, ""},
+    {NULL, 0, 0, "[l]: /url\n"},
+    {"[l]: /url\n", 0, 10, ""},
+};
+
+static const eq_script_step EQ_CRLF_STEPS[] = {
+    {"next", 0, 4, "NEXT"},
+    {NULL, (size_t)-1, 0, "\r\ntail\r\n"},
+    {"second", 0, 0, "2nd "},
+};
+
+/* An insertion that begins with '\n' exactly at a clean boundary fuses with
+ * a lone-CR terminator at the end of the untouched prefix: the boundary no
+ * longer starts a line in the new text, so the restart must back off one
+ * entry rather than feed from inside the new CRLF pair. */
+static const eq_script_step EQ_CR_FUSION_STEPS[] = {
+    {"---", 0, 0, "\n![a](b)"},
+};
+
+/* A block that closes in the middle of its own first line (the processing
+ * instruction here) dates its end to the line before it, so a restart whose
+ * first staged line closes one must see the prefix line's terminator-stripped
+ * length rather than a fresh parser's zero. */
+static const eq_script_step EQ_PREV_LINE_LENGTH_STEPS[] = {
+    {"x?>", 0, 1, "y"},
+};
+
+/* Lengthening the line just before a resync boundary (trailing spaces on the
+ * closing fence) must re-date a transplanted first suffix child that closed
+ * inside its own first line: its end borrows that staged line's length. */
+static const eq_script_step EQ_TRANSPLANT_END_STEPS[] = {
+    {"```\n<?", 3, 0, "  "},
+};
+
+/* Deleting the whole tail at a clean boundary leaves nothing to feed. */
+static const eq_script_step EQ_TAIL_DELETE_STEPS[] = {
+    {"\n\nbeta", 2, (size_t)-1, ""},
+    {NULL, (size_t)-1, 0, "\ngamma\n"},
+    {"gamma", 0, (size_t)-1, ""},
+};
+
+static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
+    {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
+    {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
+    {"unclosed_fence", "first\n\n```\ncode\n", EQ_FENCE_STEPS, sizeof(EQ_FENCE_STEPS) / sizeof(*EQ_FENCE_STEPS)},
+    {"unclosed_html", "first\n\n<pre>\nx\n", EQ_HTML_STEPS, sizeof(EQ_HTML_STEPS) / sizeof(*EQ_HTML_STEPS)},
+    {"unclosed_directive", ":::note[L]\nbody\n", EQ_DIRECTIVE_STEPS,
+     sizeof(EQ_DIRECTIVE_STEPS) / sizeof(*EQ_DIRECTIVE_STEPS)},
+    {"table_delimiter", "intro\n| h1 | h2 |\n| - | - |\n| c1 | c2 |\n\ntail\n", EQ_TABLE_STEPS,
+     sizeof(EQ_TABLE_STEPS) / sizeof(*EQ_TABLE_STEPS)},
+    {"list_tightness", "- a\n- b\n\ntail\n", EQ_TIGHTNESS_STEPS,
+     sizeof(EQ_TIGHTNESS_STEPS) / sizeof(*EQ_TIGHTNESS_STEPS)},
+    {"no_blank_document", "l1\nl2\nl3\nl4\n", EQ_NO_BLANK_STEPS,
+     sizeof(EQ_NO_BLANK_STEPS) / sizeof(*EQ_NO_BLANK_STEPS)},
+    {"cross_boundary_refs", "[l]: /one\n\nsee [x][l] here\n\ntail [y][l]\n", EQ_CROSS_REF_STEPS,
+     sizeof(EQ_CROSS_REF_STEPS) / sizeof(*EQ_CROSS_REF_STEPS)},
+    {"bom_restart",
+     "\xef\xbb\xbf"
+     "alpha\n\nbeta\n",
+     EQ_BOM_STEPS, sizeof(EQ_BOM_STEPS) / sizeof(*EQ_BOM_STEPS)},
+    {"blank_head", "\n\n\nalpha\n", EQ_BLANK_HEAD_STEPS, sizeof(EQ_BLANK_HEAD_STEPS) / sizeof(*EQ_BLANK_HEAD_STEPS)},
+    {"crlf_lines", "para\r\nsecond\r\n\r\nnext\r\n", EQ_CRLF_STEPS, sizeof(EQ_CRLF_STEPS) / sizeof(*EQ_CRLF_STEPS)},
+    {"cr_fusion_head", "\r---\n", EQ_CR_FUSION_STEPS, sizeof(EQ_CR_FUSION_STEPS) / sizeof(*EQ_CR_FUSION_STEPS)},
+    {"cr_fusion_interior", "alpha\n\nbeta\n\n\r---\n", EQ_CR_FUSION_STEPS,
+     sizeof(EQ_CR_FUSION_STEPS) / sizeof(*EQ_CR_FUSION_STEPS)},
+    {"restart_prev_line_length", "```\ncode\n```\n<?pi x?>\n\ntail\n", EQ_PREV_LINE_LENGTH_STEPS,
+     sizeof(EQ_PREV_LINE_LENGTH_STEPS) / sizeof(*EQ_PREV_LINE_LENGTH_STEPS)},
+    {"transplant_end_column", "```\ncode\n```\n<?pi x?>\n\ntail\n", EQ_TRANSPLANT_END_STEPS,
+     sizeof(EQ_TRANSPLANT_END_STEPS) / sizeof(*EQ_TRANSPLANT_END_STEPS)},
+    {"tail_delete", "alpha\n\nbeta\n", EQ_TAIL_DELETE_STEPS,
+     sizeof(EQ_TAIL_DELETE_STEPS) / sizeof(*EQ_TAIL_DELETE_STEPS)},
+};
+
+static int eq_run_script(const eq_script *script) {
+    eq_replay replay;
+    markdown_core_parse_options options;
+    size_t i;
+    int result = -1;
+
+    markdown_core_parse_options_init(&options);
+    if (eq_replay_open(&replay, script->name, &options) != 0) {
+        return -1;
+    }
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)script->initial, strlen(script->initial)) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+    for (i = 0; i < script->step_count; i++) {
+        const eq_script_step *step = &script->steps[i];
+        size_t position;
+        size_t delete_length = step->delete_length;
+        if (step->anchor) {
+            const char *found = strstr((const char *)replay.shadow.bytes, step->anchor);
+            if (!found) {
+                eq_fail(script->name, "script anchor is missing from the text");
+                goto done;
+            }
+            position = (size_t)(found - (const char *)replay.shadow.bytes) + step->offset;
+        } else {
+            position = step->offset == (size_t)-1 ? replay.shadow.length : step->offset;
+        }
+        if (delete_length == (size_t)-1) {
+            delete_length = replay.shadow.length - position;
+        }
+        if (eq_replay_edit(&replay, position, position + delete_length, (const uint8_t *)step->insert,
+                           strlen(step->insert)) != 0 ||
+            eq_replay_commit(&replay) != 0) {
+            goto done;
+        }
+    }
+    result = 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
+/* Adversarial boundary fixtures: constructs whose parse can reach across a
+ * would-be restart point must never desynchronize an incremental commit. */
+static int case_boundary_edits(void) {
+    size_t i;
+    for (i = 0; i < sizeof(EQ_BOUNDARY_SCRIPTS) / sizeof(*EQ_BOUNDARY_SCRIPTS); i++) {
+        eq_run_script(&EQ_BOUNDARY_SCRIPTS[i]);
+    }
+    return failures ? -1 : 0;
+}
+
 /* --- entry point ---------------------------------------------------------- */
 
-static const char *const EQ_CASES[] = {"canonical", "spec", "random_edits", "link_ref_edits", "footnote_edits"};
+static const char *const EQ_CASES[] = {"canonical",      "spec",           "random_edits",
+                                       "link_ref_edits", "footnote_edits", "boundary_edits"};
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
@@ -834,6 +1059,8 @@ int main(int argc, char **argv) {
         case_link_ref_edits();
     } else if (case_name && strcmp(case_name, "footnote_edits") == 0) {
         case_footnote_edits();
+    } else if (case_name && strcmp(case_name, "boundary_edits") == 0) {
+        case_boundary_edits();
     } else {
         fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n", stderr);
         goto done;

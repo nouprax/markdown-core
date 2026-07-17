@@ -37,6 +37,10 @@ struct markdown_core_parser {
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
     bool blank;
+    /* True while processing a line that began with the document as the only
+     * open block; direct document children opened on such a line get
+     * MARKDOWN_CORE_NODE__CLEAN_START. */
+    bool line_began_clean;
     /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
      * markdown_core.h */
     bool partially_consumed_tab;

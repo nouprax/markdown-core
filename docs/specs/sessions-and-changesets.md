@@ -17,7 +17,8 @@ ordering, identity rules, or cost guarantees defined here.
 A **session** is the single mutable owner of one Markdown text and its living
 AST. Consumers apply **edits** (insert, replace, delete on byte ranges;
 appending a streamed token is an edit at end-of-text), then **commit**. Each
-commit incrementally reparses only the damaged region and produces:
+commit incrementally reparses only the stale region around the edits and
+produces:
 
 - a **snapshot**: an immutable `Document` value tree that structurally shares
   every unchanged node with the previous snapshot, and
@@ -59,7 +60,7 @@ Nodes from different sessions never compare equal.
 
 ### Id stability guarantees
 
-- Nodes outside the damaged region of an edit keep their id and revision.
+- Nodes outside the stale region of an edit keep their id and revision.
 - A block whose source bytes are unchanged by an edit keeps its id, its
   revision, and its entire subtree, even when the surrounding structure is
   reparsed.
@@ -110,7 +111,8 @@ identically in both modes.
   lets a streamed append complete a multi-byte character whose first bytes
   arrived in an earlier edit — the completing commit parses the whole
   character, identical to a batch parse of the same final bytes.
-- Edits are cheap: they update the text store and queue damage. No parsing
+- Edits are cheap: they update the text store and extend the pending stale
+  range. No parsing
   happens until commit. Multiple edits may be queued per commit; coalescing
   token appends into fewer commits is the recommended way to trade latency
   for throughput.
@@ -148,12 +150,15 @@ advances or is freed.
   them (for example `CodeBlock.closed == false`).
 - Non-local Markdown constructs degrade gracefully, never worse than one full
   parse per commit: an edit inside an unclosed fence, raw-HTML block, or
-  directive reparses forward to end of input; a link-reference definition
-  change re-parses inline content only in the blocks that referenced that
-  label; a footnote ordinal or resolution change bumps only the revisions of
-  the references whose query answers changed (definitions stay at their
-  source position; numbering and resolution are index-backed queries, per
-  the revised footnote decision of 2026-07-16).
+  directive reparses forward to end of input; an edit that changes the
+  document's link-reference definitions (label, destination, or title —
+  a reparse that re-harvests byte-identical definitions does not count)
+  re-resolves every affected reference within that bound (narrowing this to
+  exactly the blocks that referenced the label is a planned refinement); a
+  footnote ordinal or resolution change bumps only the revisions of the
+  references whose query answers changed (definitions stay at their source
+  position; numbering and resolution are index-backed queries, per the
+  revised footnote decision of 2026-07-16).
 
 ## Footnote queries
 
