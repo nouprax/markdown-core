@@ -6,6 +6,7 @@ set(LIBRARY_SOURCES
     session.c
     adopt.c
     incremental.c
+    lookups.c
     footnote.c
     changeset.c
     core-extensions.c

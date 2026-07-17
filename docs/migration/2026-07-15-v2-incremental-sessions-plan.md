@@ -337,14 +337,34 @@ Equality everywhere is `(lineage, id, revision)`.
     the restart child's lines. `session_stream_flat` holds at ~1x across a
     1024x document-size spread. Frontier save/restore remains available as a
     later constant-factor refinement.
-  - Refmap-delta inline dirtiness is coarse: definitions harvested by the
-    staged block phase are compared, in document order, against the
-    definitions previously anchored in the stale region; an identical
-    (label, url, title) sequence keeps the old entries (preserving their
-    full-parse document orders — the winner-election invariant) and any
-    difference falls the commit back to a full reparse. Per-leaf lookup
-    recording that would narrow the fallback to exactly the dependent
-    leaves is the main open M3 refinement.
+  - ~~Refmap-delta inline dirtiness is coarse~~ — resolved 2026-07-17
+    (per-unit lookup records and winner-delta reconciliation): the map's
+    lookup path gained an observation sink; each inline-owning unit's
+    normalized label lookups (hits and misses alike, misses against an
+    empty map included) persist in a session table keyed by unit id,
+    maintained by both commit paths and skipped for the one-shot
+    convenience parse. A commit whose definition sequences differ now
+    reconciles the session map in place instead of falling back: stale
+    entries leave, staged entries take document orders in the vacated span
+    (whole-map renumber when the span is too small — rare, O(definitions)),
+    affected buckets relink to prefix → staged → suffix, and labels whose
+    winning (url, title) payload changed name the dependent units through
+    the lookup table. Dependents rebuild as cloned shells re-refined
+    against the reconciled map through the per-unit pipeline
+    (`markdown_core_parser_refine_unit`), adopt pairwise for id stability,
+    splice by pointer surgery inside the existing transaction, and bubble
+    ancestor revisions. Only paragraphs and headings rebuild per-unit;
+    extension-owned units (table cells, directives) still fall back to a
+    full reparse before anything is touched. Once the map surgery has run,
+    a failing commit marks the map stale (`refmap_stale`) and the next
+    commit takes the full path, which rebuilds the map wholesale — the
+    session stays valid at its previous revision throughout. Gates:
+    `ref_*` boundary scripts in the equivalence runner (retarget with
+    quoted/heading dependents, empty-map miss resolution, losing-duplicate
+    edits that stay re-run-free, renumber, table-cell fallback, the
+    footnotes-enabled `[^n]` link/footnote-reference kind flip) and the
+    `session_ref_retarget` complexity case (definition-edit commits flat
+    across a 1024x document-size spread).
   - The footnote index is still rebuilt by a whole-tree walk per commit
     when footnotes are enabled (skipped entirely otherwise). Bounding the
     refresh by #refs + #defs is open.

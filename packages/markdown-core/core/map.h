@@ -40,14 +40,22 @@ struct markdown_core_map;
 
 typedef void (*markdown_core_map_free_func)(struct markdown_core_map *, markdown_core_map_entry *);
 
+/* Observes every lookup by its normalized label (hits, misses, and lookups
+ * against an empty map alike: each one is an answer that a later definition
+ * edit can change). `label` is NUL-terminated and only valid for the call. */
+typedef void (*markdown_core_map_lookup_sink)(void *context, void *unit, const unsigned char *label);
+
 struct markdown_core_map {
     markdown_core_mem *mem;
-    markdown_core_map_entry *refs;    /* every live entry, newest first */
-    markdown_core_map_entry **sorted; /* fallback path: all entries by (label, order) */
-    markdown_core_key_index index;    /* hash path: label -> bucket head (winner) */
-    size_t size;                      /* live entry count, duplicates included */
-    uint64_t next_order;              /* monotonic document-order allocator */
-    uint64_t pending_owner;           /* stamped onto entries at add time */
+    markdown_core_map_entry *refs;             /* every live entry, newest first */
+    markdown_core_map_entry **sorted;          /* fallback path: all entries by (label, order) */
+    markdown_core_key_index index;             /* hash path: label -> bucket head (winner) */
+    size_t size;                               /* live entry count, duplicates included */
+    uint64_t next_order;                       /* monotonic document-order allocator */
+    uint64_t pending_owner;                    /* stamped onto entries at add time */
+    markdown_core_map_lookup_sink lookup_sink; /* NULL outside sessions */
+    void *lookup_context;
+    void *lookup_unit; /* attribution target for the current inline parse */
     size_t ref_size;
     size_t max_ref_size;
     int prepared;
@@ -89,6 +97,10 @@ void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_en
  * order unspecified) or NULL with map->oom set on allocation failure.
  * *count receives the number of distinct labels. */
 markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size_t *count);
+/* Forces the hash-indexed lookup path (dropping a prepared sorted fallback
+ * first). Returns 0 when the index cannot be built; the map is then left
+ * unprepared, and the next lookup rebuilds — nothing is lost. */
+int markdown_core_map_ensure_index(markdown_core_map *map);
 
 #ifdef __cplusplus
 }

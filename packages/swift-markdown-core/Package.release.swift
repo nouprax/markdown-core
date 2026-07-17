@@ -22,6 +22,7 @@ let package = Package(
                 "core/linked_list.c", "core/text.c", "extensions/core-extensions.c",
                 "extensions/ast.c", "extensions/session.c", "extensions/adopt.c",
                 "extensions/incremental.c",
+                "extensions/lookups.c",
                 "extensions/footnote.c",
                 "extensions/changeset.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",

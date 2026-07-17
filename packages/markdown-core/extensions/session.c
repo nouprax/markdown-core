@@ -300,6 +300,7 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_map *map;
+    markdown_core_lookup_recording recording;
     int total_lines;
     int last_line_length;
     uint64_t new_rev = initial ? 0 : session->revision + 1;
@@ -307,6 +308,12 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     parser = markdown_core_session_new_parser(session, error);
     if (!parser) {
         return false;
+    }
+
+    markdown_core_lookup_recording_init(&recording, session->mem);
+    if (session->record_lookups && parser->refmap) {
+        parser->refmap->lookup_sink = markdown_core_lookup_recording_sink;
+        parser->refmap->lookup_context = &recording;
     }
 
     size_t length = markdown_core_text_length(&session->text);
@@ -319,12 +326,25 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
         markdown_core_parser_free(parser); // frees the staged map with it
+        markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not parse the session text");
         return false;
     }
     map = parser->refmap;
     parser->refmap = NULL;
     markdown_core_parser_free(parser);
+    // The sink's context is this call's stack frame; the map outlives it.
+    map->lookup_sink = NULL;
+    map->lookup_context = NULL;
+    map->lookup_unit = NULL;
+    if (recording.lost) {
+        markdown_core_map_free(map);
+        markdown_core_node_free(root);
+        markdown_core_lookup_recording_release(&recording);
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                    "could not record the document's reference lookups");
+        return false;
+    }
 
     markdown_core_session_seal_positions(root);
 
@@ -336,12 +356,39 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     if (!markdown_core_session_adopt(session, session->view.root, root, new_rev, changes)) {
         markdown_core_map_free(map);
         markdown_core_node_free(root);
+        markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the changeset");
         return false;
     }
     // Ids exist now; definitions recorded against anchor node pointers can
-    // take their retraction ids.
+    // take their retraction ids, and lookup records can bind to unit ids.
     markdown_core_session_resolve_definition_owners(map);
+
+    markdown_core_lookup_table lookups = {NULL, NULL, 0, 0};
+    {
+        markdown_core_unit_lookups *bundles = NULL;
+        size_t bundle_count = 0;
+        size_t i;
+        bool bound = markdown_core_lookup_recording_bundle(&recording, &bundles, &bundle_count) &&
+                     markdown_core_lookup_table_reserve(session->mem, &lookups, bundle_count);
+        if (!bound) {
+            markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);
+            markdown_core_lookup_recording_release(&recording);
+            markdown_core_lookup_table_release(session->mem, &lookups);
+            markdown_core_map_free(map);
+            markdown_core_node_free(root);
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                                        "could not index the document's reference lookups");
+            return false;
+        }
+        for (i = 0; i < bundle_count; i++) {
+            markdown_core_lookup_table_put(session->mem, &lookups, bundles[i].unit->id, bundles[i].record);
+            bundles[i].record.labels = NULL; // moved into the table
+            bundles[i].record.count = 0;
+        }
+        markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);
+        markdown_core_lookup_recording_release(&recording);
+    }
 
     // Footnote numbering, resolution state, and back-reference ordinals are
     // index-backed queries; a commit that changes only those answers bumps
@@ -350,6 +397,7 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     if (!markdown_core_footnote_index_build(session->mem, root, &footnotes) ||
         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes)) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
+        markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -365,6 +413,7 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
         !markdown_core_session_index_clean_children(session, root, &clean)) {
         id_table_release(session->mem, &ids);
         markdown_core_footnote_index_release(session->mem, &footnotes);
+        markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -377,6 +426,7 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     }
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
+    markdown_core_lookup_table_release(session->mem, &session->lookups);
     markdown_core_map_free(session->refmap);
     if (session->clean.items) {
         session->mem->free(session->clean.items);
@@ -384,7 +434,9 @@ static bool commit_full(markdown_core_session *session, bool initial, markdown_c
     session->view.root = root;
     session->ids = ids;
     session->footnotes = footnotes;
+    session->lookups = lookups;
     session->refmap = map;
+    session->refmap_stale = false;
     session->clean = clean;
     session->total_lines = total_lines;
     session->last_line_length = last_line_length;
@@ -421,7 +473,7 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
         return true;
     }
 
-    if (!initial && session->view.root && session->refmap && !session->refmap->oom) {
+    if (!initial && session->view.root && session->refmap && !session->refmap->oom && !session->refmap_stale) {
         switch (markdown_core_session_commit_incremental(session, session->revision + 1, changes, error)) {
         case MARKDOWN_CORE_INCREMENTAL_COMMITTED:
             if (changes_out) {
@@ -469,6 +521,7 @@ markdown_core_session *markdown_core_session_open_with_mem(const markdown_core_p
     markdown_core_text_init(&session->text, mem);
     session->next_id = 1;
     session->revision = 0;
+    session->record_lookups = true;
 
     // Purely local entropy: no global RNG state. The lineage only has to make
     // accidental cross-session id equality vanishingly unlikely.
@@ -499,6 +552,7 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_text_release(&session->text);
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
+    markdown_core_lookup_table_release(session->mem, &session->lookups);
     markdown_core_map_free(session->refmap);
     if (session->clean.items) {
         session->mem->free(session->clean.items);
