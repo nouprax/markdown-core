@@ -167,6 +167,14 @@ struct markdown_core_session {
     // commit must take the full path (which rebuilds the map and clears
     // this).
     bool refmap_stale;
+    // At-rest definition entries ordered by start line (equal to document
+    // order): staleness and prefix/suffix classification are line-interval
+    // range queries, and a commit's stale range splices in place. Rebuilt
+    // by the full path; an aborted reconciliation is covered by
+    // refmap_stale.
+    markdown_core_map_entry **def_index;
+    size_t def_count;
+    size_t def_capacity;
     markdown_core_clean_index clean;
     markdown_core_edit_summary pending;
     int total_lines;      // parser line count of the committed text
@@ -177,6 +185,13 @@ struct markdown_core_session {
     // one-shot dump byte for byte; beyond it commits fall back to a full
     // reparse, which resets the bound to the measured value.
     size_t expansion_estimate;
+    // Restart-locality inventory (white-box, asserted by fallback_runner):
+    // full-reparse commits, incremental restarts, and restarts that
+    // resynced at a boundary. Degraded-to-full cases stay counted instead
+    // of accumulating silently.
+    size_t full_commits;
+    size_t restarted_commits;
+    size_t resynced_commits;
 };
 
 /** Internal constructor used by allocation-injection tests; the public
@@ -307,6 +322,15 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
  * commits remove pointer-stamped duplicates instead. */
 void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
 
+/** Rebuilds the session's line-ordered at-rest definition index from `map`
+ * into caller-provided storage (swapped in by the full commit path). */
+bool markdown_core_session_index_definitions(
+    markdown_core_session *session,
+    markdown_core_map *map,
+    markdown_core_map_entry ***out_items,
+    size_t *out_count
+);
+
 /** Builds the clean-child index for a freshly sealed tree into `out` (zeroed
  * by the caller) by scanning the session's stored text for line starts.
  * O(text); used by full commits only — incremental commits update the index
@@ -315,6 +339,7 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
 bool markdown_core_session_index_clean_children(
     markdown_core_session *session,
     markdown_core_node *root,
+    const markdown_core_map *map,
     markdown_core_clean_index *out
 );
 

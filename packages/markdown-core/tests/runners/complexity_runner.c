@@ -181,21 +181,30 @@ static const cc_case_entry CC_CASES[] = {
     "[^b]: beta body\n\n"                                                                                              \
     "[^c]: c body\n\n"                                                                                                 \
     "[^d]: d body\n"
+/* The head-defs corpus is a document-scale leading cluster of distinct
+ * definition paragraphs with one fixed use at the tail; the edit retargets
+ * the cluster's last (unused) definition. Sentinel clean entries must keep
+ * that commit's cost independent of the cluster size. */
+#define CC_SESSION_DEF_WIDTH 18 /* strlen("[dNNNNNN]: /aaaa\n\n") */
+#define CC_SESSION_DEF_URL_OFFSET 12
+#define CC_SESSION_DEF_USE "uses [u][d000000] tail\n"
 #define CC_SESSION_OPS 64
 static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
 
-enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET, CC_SESSION_FOOTNOTE };
+enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET, CC_SESSION_FOOTNOTE, CC_SESSION_HEAD_DEFS };
 
 static markdown_core_session *cc_session_build(size_t size, int mode, size_t *stanza_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
     const char *stanza =
         mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE ? CC_SESSION_PLAIN_STANZA : CC_SESSION_STANZA;
-    size_t stanza_length = strlen(stanza);
+    size_t stanza_length = mode == CC_SESSION_HEAD_DEFS ? CC_SESSION_DEF_WIDTH : strlen(stanza);
     size_t count = size / stanza_length ? size / stanza_length : 1;
-    size_t extras = mode == CC_SESSION_RETARGET
-                        ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE)
-                        : (mode == CC_SESSION_FOOTNOTE ? strlen(CC_SESSION_FOOTNOTE_CLUSTER) : 0);
+    size_t extras =
+        mode == CC_SESSION_RETARGET
+            ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE)
+            : (mode == CC_SESSION_FOOTNOTE ? strlen(CC_SESSION_FOOTNOTE_CLUSTER)
+                                           : (mode == CC_SESSION_HEAD_DEFS ? strlen(CC_SESSION_DEF_USE) : 0));
     char *text = (char *)malloc(count * stanza_length + extras + 1);
     char *fill = text;
     size_t i;
@@ -207,9 +216,16 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
         memcpy(fill, CC_SESSION_DEFINITION, strlen(CC_SESSION_DEFINITION));
         fill += strlen(CC_SESSION_DEFINITION);
     }
-    for (i = 0; i < count; i++) {
-        memcpy(fill, stanza, stanza_length);
-        fill += stanza_length;
+    if (mode == CC_SESSION_HEAD_DEFS) {
+        for (i = 0; i < count; i++) {
+            sprintf(fill, "[d%06zu]: /aaaa\n\n", i % 1000000);
+            fill += CC_SESSION_DEF_WIDTH;
+        }
+    } else {
+        for (i = 0; i < count; i++) {
+            memcpy(fill, stanza, stanza_length);
+            fill += stanza_length;
+        }
     }
     if (mode == CC_SESSION_RETARGET) {
         for (i = 0; i < CC_SESSION_USES; i++) {
@@ -220,6 +236,10 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
     if (mode == CC_SESSION_FOOTNOTE) {
         memcpy(fill, CC_SESSION_FOOTNOTE_CLUSTER, strlen(CC_SESSION_FOOTNOTE_CLUSTER));
         fill += strlen(CC_SESSION_FOOTNOTE_CLUSTER);
+    }
+    if (mode == CC_SESSION_HEAD_DEFS) {
+        memcpy(fill, CC_SESSION_DEF_USE, strlen(CC_SESSION_DEF_USE));
+        fill += strlen(CC_SESSION_DEF_USE);
     }
     *fill = '\0';
 
@@ -268,6 +288,10 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             size_t base = stanza_count * strlen(CC_SESSION_PLAIN_STANZA);
             uint8_t label = (*op_counter & 1) ? 'b' : 'a';
             ok = markdown_core_session_edit(session, base + 7, base + 8, &label, 1, NULL);
+        } else if (mode == CC_SESSION_HEAD_DEFS) {
+            size_t base = (stanza_count - 1) * CC_SESSION_DEF_WIDTH + CC_SESSION_DEF_URL_OFFSET;
+            const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
+            ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
         } else {
             static const uint8_t line[] = "appended stream line\n";
             size_t length = markdown_core_session_length(session);
@@ -340,8 +364,13 @@ static int cc_run_session(const char *name, int mode) {
     return failed ? -1 : 0;
 }
 
-static const char *const CC_SESSION_CASES[] =
-    {"session_stream_flat", "session_edit_storm", "session_ref_retarget", "session_footnote_shift"};
+static const char *const CC_SESSION_CASES[] = {
+    "session_stream_flat",
+    "session_edit_storm",
+    "session_ref_retarget",
+    "session_footnote_shift",
+    "session_head_defs",
+};
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
     double samples[SCALING_REPEATS];
@@ -466,6 +495,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_footnote_shift") == 0) {
         return cc_run_session(case_name, CC_SESSION_FOOTNOTE) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_head_defs") == 0) {
+        return cc_run_session(case_name, CC_SESSION_HEAD_DEFS) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;

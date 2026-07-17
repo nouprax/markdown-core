@@ -1240,6 +1240,21 @@ static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
     {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
 };
 
+/* A leading definition cluster restarts and resyncs inside itself: the
+ * vanished paragraphs anchor sentinel clean entries, so a head edit
+ * retracts only the reparsed definitions while dependents re-refine. The
+ * script also walks a definition in and out of tree existence (a paragraph
+ * that stops vanishing turns its head entries into anchored ones). */
+static const eq_script_step EQ_HEAD_DEFS_STEPS[] = {
+    {"/c1", 0, 3, "/c9"},                 /* retarget the cluster's last paragraph */
+    {"/a1", 0, 3, "/a9"},                 /* retarget the first; resync mid-cluster */
+    {"[c]: /c9\n", 0, 0, "[n]: /n1\n\n"}, /* a new definition paragraph arrives */
+    {"[n]: /n1\n\n", 0, 10, ""},          /* and leaves again */
+    {"[c]: /c9\n", 9, 0, "\n"},           /* widen the gap: a pure shift below the cluster */
+    {"[b]: /b1", 0, 8, "[b] /b1"},        /* the paragraph stops vanishing (a real child appears) */
+    {"[b] /b1", 0, 7, "[b]: /b1"},        /* and vanishes again */
+};
+
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
     {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
@@ -1337,6 +1352,19 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "[ ^n]: /url\n",
      EQ_REF_CARET_FLIP_STEPS,
      sizeof(EQ_REF_CARET_FLIP_STEPS) / sizeof(*EQ_REF_CARET_FLIP_STEPS)},
+    {"head_defs",
+     "[a]: /a1\n"
+     "[b]: /b1\n"
+     "\n"
+     "[c]: /c1\n"
+     "\n"
+     "use [pa][a] and [pb][b]\n"
+     "\n"
+     "> quoted [pc][c]\n"
+     "\n"
+     "tail para\n",
+     EQ_HEAD_DEFS_STEPS,
+     sizeof(EQ_HEAD_DEFS_STEPS) / sizeof(*EQ_HEAD_DEFS_STEPS)},
     {"footnote_sites",
      "head\n"
      "\n"
