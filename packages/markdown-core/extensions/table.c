@@ -368,6 +368,10 @@ static markdown_core_node *try_opening_table_header(markdown_core_extension *sel
     if (header_row->paragraph_offset) {
         try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
                                              header_row->paragraph_offset);
+        /* The split-off paragraph shares the retyped node's original span, so
+         * the table's first line no longer begins a document child: it must
+         * not remain an incremental restart point. */
+        parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_START;
     }
 
     /* The paragraph is already rewritten into a table node here.  On

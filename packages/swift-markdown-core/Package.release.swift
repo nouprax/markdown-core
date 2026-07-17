@@ -21,6 +21,7 @@ let package = Package(
                 "core/houdini_html_u.c", "core/markdown_core_ctype.c",
                 "core/linked_list.c", "core/text.c", "extensions/core-extensions.c",
                 "extensions/ast.c", "extensions/session.c", "extensions/adopt.c",
+                "extensions/incremental.c",
                 "extensions/footnote.c",
                 "extensions/changeset.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",

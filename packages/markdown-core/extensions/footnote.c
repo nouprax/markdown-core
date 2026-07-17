@@ -345,34 +345,82 @@ static bool info_equal(const markdown_core_footnote_info *a, const markdown_core
            a->reference_count == b->reference_count;
 }
 
-bool markdown_core_footnote_index_diff(const markdown_core_footnote_index *previous,
+static bool node_list_holds(const node_list *list, const markdown_core_node *node) {
+    size_t i;
+    for (i = 0; i < list->count; i++) {
+        if (list->items[i] == node) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool markdown_core_footnote_index_diff(markdown_core_mem *mem, const markdown_core_footnote_index *previous,
                                        const markdown_core_footnote_index *next, uint64_t new_rev,
                                        markdown_core_changeset *changes) {
+    // Two phases so the diff can run against a session's live tree: phase 1
+    // collects the affected nodes without touching them (every allocation
+    // happens here or in the reserve step), phase 2 applies revision bumps
+    // and records ids infallibly. A failed diff therefore leaves every
+    // committed node exactly as it was.
+    node_list changed = {NULL, 0, 0};
+    node_list bubbled = {NULL, 0, 0};
+    bool ok = false;
     size_t i;
+
     for (i = 0; i < next->record_count; i++) {
         markdown_core_node *node = next->records[i].node;
         const markdown_core_footnote_record *old;
         markdown_core_node *parent;
-        if (node->last_changed_rev == new_rev) {
-            continue; // already reported by the adoption walk
+        if (node->last_changed_rev == new_rev || node_list_holds(&changed, node) || node_list_holds(&bubbled, node)) {
+            continue; // already reported by the adoption walk or this diff
         }
         old = find_record(previous, node->id);
         if (old && info_equal(&old->info, &next->records[i].info)) {
             continue;
         }
-        node->last_changed_rev = new_rev;
-        if (changes && !markdown_core_id_array_push(&changes->changed, node->id)) {
-            return false;
+        if (!node_list_push(mem, &changed, node)) {
+            goto done;
         }
-        // Ancestors at new_rev already carried their own bump up the chain.
+        // Ancestors already carrying (or collected for) their own bump
+        // covered the rest of the chain.
         for (parent = node->parent; parent && parent->last_changed_rev != new_rev; parent = parent->parent) {
-            parent->last_changed_rev = new_rev;
-            if (changes && !markdown_core_id_array_push(&changes->bubbled, parent->id)) {
-                return false;
+            if (node_list_holds(&bubbled, parent) || node_list_holds(&changed, parent)) {
+                break;
+            }
+            if (!node_list_push(mem, &bubbled, parent)) {
+                goto done;
             }
         }
     }
-    return true;
+
+    if (changes && (!markdown_core_id_array_reserve(&changes->changed, changed.count) ||
+                    !markdown_core_id_array_reserve(&changes->bubbled, bubbled.count))) {
+        goto done;
+    }
+
+    for (i = 0; i < changed.count; i++) {
+        changed.items[i]->last_changed_rev = new_rev;
+        if (changes) {
+            markdown_core_id_array_push(&changes->changed, changed.items[i]->id);
+        }
+    }
+    for (i = 0; i < bubbled.count; i++) {
+        bubbled.items[i]->last_changed_rev = new_rev;
+        if (changes) {
+            markdown_core_id_array_push(&changes->bubbled, bubbled.items[i]->id);
+        }
+    }
+    ok = true;
+
+done:
+    if (changed.items) {
+        mem->free(changed.items);
+    }
+    if (bubbled.items) {
+        mem->free(bubbled.items);
+    }
+    return ok;
 }
 
 // --- public queries ----------------------------------------------------------

@@ -2,11 +2,17 @@
 
 Status: approved design (2026-07-15); milestones M0–M2 delivered (M2 on
 2026-07-16: refmap v2, per-block postprocess pipeline, footnote projection
-scaffolding, equivalence suite). M3 in progress: the revised footnote
-contract landed first (2026-07-16) — projection deleted, source-order tree,
-session footnote index + `session_footnote_*` query API, ordinal/resolution
-revision bumps, footnote goldens and spec deltas regenerated. The binding
-contract text
+scaffolding, equivalence suite). M3 substantially delivered in two
+workstreams: the revised footnote contract landed first (2026-07-16) —
+projection deleted, source-order tree, session footnote index +
+`session_footnote_*` query API, ordinal/resolution revision bumps, footnote
+goldens and spec deltas regenerated — and true incrementality second
+(2026-07-16, `extensions/incremental.c`): CLEAN_START restart planning, staged
+reparse with resync + suffix transplant, graveyard adoption through the
+standard machine, session-persistent reference map with
+definition-sequence reconciliation, transactional splice, and the
+equivalence/complexity gates. Interim M3 simplifications that remain open
+are listed under the M3 milestone below. The binding contract text
 lives in `../specs/sessions-and-changesets.md`; this document records why the
 design is shaped this way, the exact engine architecture, the deltas to the
 frozen v1 contracts, and the milestone/gate plan.
@@ -97,7 +103,10 @@ call.
 
 ### C core: `markdown_core_session`
 
-New files `core/session.c/.h`, `core/text.c/.h`, `core/damage.c`,
+New files `core/session.c/.h`, `core/text.c/.h`, `core/incremental.c` (named `damage.c`
+in the original plan; renamed at delivery — the file holds the whole commit
+pipeline, of which planning the stale region is only the first step; the
+shipped code says "restart plan" and "stale region" for the same reason),
 `core/adopt.c`, `core/changeset.c`; surgical changes in `blocks.c`, `node.h`,
 `map.c`, `references.c`, `footnotes.c`, `inlines.c`, `extensions/ast.c`,
 `extensions/autolink.c`, `extensions/formula.c`.
@@ -287,7 +296,7 @@ Equality everywhere is `(lineage, id, revision)`.
 | `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` stay byte-identical through M2; footnote-bearing goldens regenerate deliberately when the revised footnote contract lands (M3). |
 | `docs/specs/test-architecture.md` | Add equivalence, id-stability, and edit-storm suites to the frozen topology. |
 | `scripts/audit-public-surface.sh` | Add the new C symbols to the header+map sync; scope the Swift/Kotlin/ES mutation-ban greps to the model/walker directories (Session's `append`/`replace` would otherwise trip them); pin the Session surfaces exactly; ES frozen runtime export list gains `MarkupSession`. |
-| Build lists ×4 | `packages/markdown-core/core/CMakeLists.txt` (+`extensions/CMakeLists.txt`), root `Package.swift`, `packages/es-markdown-core/scripts/build.mjs`, and `packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt` (the Android runtime keeps its own explicit engine list): add `session.c`, `text.c`, `damage.c`, `adopt.c`, `changeset.c`. New facade symbols go into **both** export allowlists: `core/exports/markdown_core.map` (Linux version script) and `core/exports/markdown_core.exports` (macOS exported-symbols list). |
+| Build lists ×4 | `packages/markdown-core/core/CMakeLists.txt` (+`extensions/CMakeLists.txt`), root `Package.swift`, `packages/es-markdown-core/scripts/build.mjs`, and `packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt` (the Android runtime keeps its own explicit engine list): add `session.c`, `text.c`, `incremental.c`, `adopt.c`, `changeset.c`. New facade symbols go into **both** export allowlists: `core/exports/markdown_core.map` (Linux version script) and `core/exports/markdown_core.exports` (macOS exported-symbols list). |
 
 ## Milestones and gates
 
@@ -316,6 +325,40 @@ Equality everywhere is `(lineage, id, revision)`.
   no-blank documents), changeset-mirror check, id-stability tests, new
   complexity cases (`session_stream_flat`, `session_edit_storm`), oom_sweep
   session variant, TSan.
+
+  Delivered 2026-07-16 with these deviations and interim simplifications:
+
+  - No persistent parser / frontier save/restore: every commit runs a fresh
+    staged parser from the restart point (the last CLEAN_START document
+    child at or before the first edited byte). The streaming append fast
+    path is therefore "reparse the unclosed tail region", which has the same
+    per-commit asymptotics as frontier feeding (the inline phase re-parses
+    the open leaf either way) at the cost of re-running the block phase over
+    the restart child's lines. `session_stream_flat` holds at ~1x across a
+    1024x document-size spread. Frontier save/restore remains available as a
+    later constant-factor refinement.
+  - Refmap-delta inline dirtiness is coarse: definitions harvested by the
+    staged block phase are compared, in document order, against the
+    definitions previously anchored in the stale region; an identical
+    (label, url, title) sequence keeps the old entries (preserving their
+    full-parse document orders — the winner-election invariant) and any
+    difference falls the commit back to a full reparse. Per-leaf lookup
+    recording that would narrow the fallback to exactly the dependent
+    leaves is the main open M3 refinement.
+  - The footnote index is still rebuilt by a whole-tree walk per commit
+    when footnotes are enabled (skipped entirely otherwise). Bounding the
+    refresh by #refs + #defs is open.
+  - The text store stays contiguous; the chunked line records were not
+    needed because restart planning derives geometry from the clean-child
+    index (start bytes and lines of CLEAN_START document children,
+    updated in place per commit) plus per-commit fed-line offsets. Suffix
+    bookkeeping after a resync is O(top-level suffix children), and only
+    when the commit shifted line numbers or byte offsets.
+  - The inline phase of an incremental commit runs with an unlimited
+    reference-expansion budget; a session-tracked upper bound on the
+    one-shot expansion total proves the equivalent one-shot parse would not
+    have denied any lookup either, and commits past the bound fall back to
+    a full reparse (which re-measures it).
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta

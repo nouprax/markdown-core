@@ -27,6 +27,7 @@ const extensions = [
     "ast.c",
     "session.c",
     "adopt.c",
+    "incremental.c",
     "footnote.c",
     "changeset.c",
     "table.c",
