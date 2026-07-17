@@ -63,8 +63,8 @@ typedef struct {
 // incremental commits — and diffed against the previous index to bump the
 // revisions of nodes whose query answers changed.
 typedef struct {
-    markdown_core_footnote_site_list defs; // definition sites in document order
-    markdown_core_footnote_site_list refs; // reference sites in document order
+    markdown_core_footnote_site_list defs;  // definition sites in document order
+    markdown_core_footnote_site_list refs;  // reference sites in document order
     markdown_core_footnote_record *records; // sorted by node id
     size_t record_count;
     markdown_core_node_id *in_use; // winning definitions in first-use order
@@ -225,8 +225,8 @@ void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_c
  * document order. Sites take `anchor` when non-NULL (a subtree that will sit
  * under one document child), or their own top-level ancestor below `root`.
  * Returns false on allocation failure; the lists stay releasable. */
-bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root,
-                                          markdown_core_node *anchor, markdown_core_footnote_site_list *defs,
+bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root, markdown_core_node *anchor,
+                                          markdown_core_footnote_site_list *defs,
                                           markdown_core_footnote_site_list *refs);
 
 /** Builds the index from document-ordered site lists, taking ownership of

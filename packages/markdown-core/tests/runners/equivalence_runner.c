@@ -1161,14 +1161,10 @@ static const eq_script_step EQ_REF_CARET_FLIP_STEPS[] = {
  * plain paragraph so the resync lands right after it rather than riding an
  * open footnote definition past the dependents. */
 static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
-    {"filler", 0, 6, "middle"},
-    {"middle", 0, 0, "lead[^n]\n\n[^n]: new\n\n"},
-    {"lead[^n]", 0, 21, ""},
-    {"/one", 0, 4, "/two\n\nmid[^m]\n\n[^m]: m body\n\nplain"},
-    {"[l]: /two\n", 0, 10, ""},
-    {NULL, (size_t)-1, 0, "\n[l]: /three\n"},
-    {"[^b]: second\n", 0, 13, ""},
-    {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
+    {"filler", 0, 6, "middle"},    {"middle", 0, 0, "lead[^n]\n\n[^n]: new\n\n"},
+    {"lead[^n]", 0, 21, ""},       {"/one", 0, 4, "/two\n\nmid[^m]\n\n[^m]: m body\n\nplain"},
+    {"[l]: /two\n", 0, 10, ""},    {NULL, (size_t)-1, 0, "\n[l]: /three\n"},
+    {"[^b]: second\n", 0, 13, ""}, {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
 };
 
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {

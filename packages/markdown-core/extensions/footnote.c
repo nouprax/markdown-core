@@ -81,8 +81,8 @@ static markdown_core_node *site_unit(markdown_core_node *node) {
     return parent;
 }
 
-bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root,
-                                          markdown_core_node *anchor, markdown_core_footnote_site_list *defs,
+bool markdown_core_footnote_collect_sites(markdown_core_mem *mem, markdown_core_node *root, markdown_core_node *anchor,
+                                          markdown_core_footnote_site_list *defs,
                                           markdown_core_footnote_site_list *refs) {
     markdown_core_iter *iter = markdown_core_iter_new(root);
     markdown_core_event_type ev;
