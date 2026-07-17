@@ -79,8 +79,9 @@ Required CI 使用 build-once/test-many DAG，而不是把 build 和多个 suite
 5. `Test - <platform>` correctness、
    conformance、sanitizer、browser、simulator 与 page-size leaves 一次性并行启动，各自下载 artifact，
    只安装运行环境并调用原生 runner 的 no-build 模式；
-6. `Tests - Ready` fail-closed 聚合 test 层，稳定的 `Required gates` 只依赖该聚合点；任一前置层失败
-   导致 test skipped 时，聚合点也必须失败而不是把 skipped 当成成功；
+6. `Tests - Ready` 与 `Benchmarks - Ready` 分别 fail-closed 聚合普通 test 与 benchmark 层，稳定的
+   `Required gates` 同时依赖这两个并列聚合点；任一前置层失败导致 consumer skipped 时，对应聚合点
+   也必须失败而不是把 skipped 当成成功；
 7. consumer job 中出现 compiler、Gradle build task、`swift build`、`xcodebuild build`、`emcc` 或
    publication 即为架构回归；cache 只能加速 producer，不能代替可校验 artifact；
 8. packaging/deployment/consumer contract 本身属于 build/resolve 验证时可保持独立 contract job，
@@ -135,6 +136,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
+| `equivalence` | session 增量编辑 replay 与 one-shot parse 的 dump 等价 + changeset mirror 校验(`equivalence_*`) |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |

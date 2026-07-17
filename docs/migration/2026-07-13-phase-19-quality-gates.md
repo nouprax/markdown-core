@@ -106,7 +106,8 @@ Phase 19 contract。
 - blocking workflows 包含 `merge_group`；
 - 主 CI benchmark consumers 只执行 Build Test 产物，不重新 build；
 - privileged commenter 没有 checkout/fetch PR code；
-- benchmark leaves 通过 `Tests - Ready` 进入 required gate，但不直接进入 ruleset；
+- benchmark leaves 通过 `Benchmarks - Ready` 与 `Tests - Ready` 并列进入 required gate，但不直接进入
+  ruleset；
 - metrics/binary-size collection failure 不改变 benchmark job 结论。
 
 ## Acceptance

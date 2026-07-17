@@ -14,8 +14,8 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
         return false;
     }
 
-    if (node->extension && node->extension->can_contain_func) {
-        return node->extension->can_contain_func(node->extension, node, child_type) != 0;
+    if (node->extension && node->extension->can_contain) {
+        return node->extension->can_contain(node->extension, node, child_type) != 0;
     }
 
     switch (node->type) {
@@ -41,6 +41,13 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     }
 
     return false;
+}
+
+bool markdown_core_node_owns_inlines(markdown_core_node *node) {
+    if (node->extension && node->extension->contains_inlines) {
+        return node->extension->contains_inlines(node->extension, node) != 0;
+    }
+    return node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING;
 }
 
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
@@ -90,15 +97,15 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_t
         break;
     }
 
-    if (node->extension && node->extension->opaque_alloc_func) {
-        node->extension->opaque_alloc_func(node->extension, mem, node);
+    if (node->extension && node->extension->alloc_opaque) {
+        node->extension->alloc_opaque(node->extension, mem, node);
     }
 
     return node;
 }
 
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, markdown_core_extension *extension) {
-    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_get_default_mem_allocator(), extension);
+    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_mem_default(), extension);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
@@ -143,8 +150,8 @@ static void S_free_nodes(markdown_core_node *e) {
             e->user_data_free_func(NODE_MEM(e), e->user_data);
         }
 
-        if (e->as.opaque && e->extension && e->extension->opaque_free_func) {
-            e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
+        if (e->as.opaque && e->extension && e->extension->free_opaque) {
+            e->extension->free_opaque(e->extension, NODE_MEM(e), e);
         }
 
         free_node_as(e);
@@ -203,8 +210,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "NONE";
     }
 
-    if (node->extension && node->extension->get_type_string_func) {
-        return node->extension->get_type_string_func(node->extension, node);
+    if (node->extension && node->extension->get_type_string) {
+        return node->extension->get_type_string(node->extension, node);
     }
 
     switch (node->type) {

@@ -1,0 +1,789 @@
+/* Session equivalence suite: an incrementally edited session must always
+ * dump byte-identically to a one-shot parse of the same final text, and its
+ * changesets must account for every observable node change.
+ *
+ * Every replay drives the public facade only.  A shadow text buffer receives
+ * the same edits as the session, so each commit can be checked against
+ * markdown_core_document_parse of the shadow bytes; a shadow id->revision
+ * mirror is maintained purely from changesets and compared against a fresh
+ * walk after every commit, which catches adoption bugs that dumps cannot
+ * see.
+ *
+ *   equivalence_runner --list
+ *   equivalence_runner --case canonical --fixtures DIR NAME MASK [NAME MASK ...]
+ *   equivalence_runner --case spec --spec FILE
+ *   equivalence_runner --case random_edits --spec FILE
+ *   equivalence_runner --case link_ref_edits
+ */
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "test_support.h"
+
+#include <markdown_core.h>
+
+/* Per-byte replays are quadratic; keep them for short inputs. */
+#define EQ_PER_BYTE_LIMIT 2048
+/* Sampling strides keep the spec-wide replays within the suite budget. */
+#define EQ_SPEC_PER_BYTE_STRIDE 7
+#define EQ_SPEC_RANDOM_STRIDE 31
+#define EQ_RANDOM_SEED UINT64_C(0x4d32c0de)
+
+static int failures;
+
+static void eq_fail(const char *context, const char *message) {
+    fprintf(stderr, "FAILED: %s: %s\n", context, message);
+    failures++;
+}
+
+/* --- shadow text -------------------------------------------------------- */
+
+typedef struct eq_text {
+    uint8_t *bytes;
+    size_t length;
+    size_t capacity;
+} eq_text;
+
+/* The buffer is always allocated (even for an empty text, so no pointer
+ * arithmetic ever touches NULL) and always NUL-terminated one byte past
+ * `length` (the link_ref_edits script locates edit positions with strstr). */
+static int eq_text_splice(eq_text *text, size_t start, size_t end, const uint8_t *insert, size_t insert_length) {
+    size_t removed = end - start;
+    size_t new_length = text->length - removed + insert_length;
+    if (new_length + 1 > text->capacity) {
+        size_t capacity = text->capacity ? text->capacity : 64;
+        uint8_t *grown;
+        while (capacity < new_length + 1) {
+            capacity *= 2;
+        }
+        grown = (uint8_t *)realloc(text->bytes, capacity);
+        if (!grown) {
+            return -1;
+        }
+        text->bytes = grown;
+        text->capacity = capacity;
+    }
+    memmove(text->bytes + start + insert_length, text->bytes + end, text->length - end);
+    if (insert_length) {
+        memcpy(text->bytes + start, insert, insert_length);
+    }
+    text->bytes[new_length] = '\0';
+    text->length = new_length;
+    return 0;
+}
+
+/* --- changeset mirror ---------------------------------------------------- */
+
+typedef struct eq_mirror_entry {
+    markdown_core_node_id id;
+    uint64_t revision;
+} eq_mirror_entry;
+
+typedef struct eq_mirror {
+    eq_mirror_entry *entries;
+    size_t count;
+    size_t capacity;
+} eq_mirror;
+
+static eq_mirror_entry *eq_mirror_find(eq_mirror *mirror, markdown_core_node_id id) {
+    size_t i;
+    for (i = 0; i < mirror->count; i++) {
+        if (mirror->entries[i].id == id) {
+            return &mirror->entries[i];
+        }
+    }
+    return NULL;
+}
+
+static int eq_mirror_insert(eq_mirror *mirror, markdown_core_node_id id, uint64_t revision) {
+    if (mirror->count == mirror->capacity) {
+        size_t capacity = mirror->capacity ? mirror->capacity * 2 : 64;
+        eq_mirror_entry *grown = (eq_mirror_entry *)realloc(mirror->entries, capacity * sizeof(*grown));
+        if (!grown) {
+            return -1;
+        }
+        mirror->entries = grown;
+        mirror->capacity = capacity;
+    }
+    mirror->entries[mirror->count].id = id;
+    mirror->entries[mirror->count].revision = revision;
+    mirror->count++;
+    return 0;
+}
+
+static void eq_mirror_remove(eq_mirror *mirror, eq_mirror_entry *entry) {
+    *entry = mirror->entries[mirror->count - 1];
+    mirror->count--;
+}
+
+/* --- replay harness ------------------------------------------------------ */
+
+typedef struct eq_replay {
+    const char *context;
+    markdown_core_session *session;
+    eq_text shadow;
+    eq_mirror mirror;
+    const markdown_core_parse_options *options;
+} eq_replay;
+
+static int eq_replay_open(eq_replay *replay, const char *context, const markdown_core_parse_options *options) {
+    markdown_core_error *error = NULL;
+    memset(replay, 0, sizeof(*replay));
+    replay->context = context;
+    replay->options = options;
+    replay->session = markdown_core_session_open(options, &error);
+    if (!replay->session) {
+        markdown_core_error_free(error);
+        eq_fail(context, "session open failed");
+        return -1;
+    }
+    /* Revision 0 (empty document) seeds the mirror. */
+    {
+        const markdown_core_document *document = markdown_core_session_document(replay->session);
+        const markdown_core_node *root = markdown_core_document_root(document);
+        if (!root || eq_mirror_insert(&replay->mirror, markdown_core_node_get_id(root),
+                                      markdown_core_node_get_revision(root)) != 0) {
+            eq_fail(context, "empty session has no addressable root");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static void eq_replay_close(eq_replay *replay) {
+    markdown_core_session_free(replay->session);
+    free(replay->shadow.bytes);
+    free(replay->mirror.entries);
+    memset(replay, 0, sizeof(*replay));
+}
+
+static int eq_replay_edit(eq_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
+    markdown_core_error *error = NULL;
+    if (!markdown_core_session_edit(replay->session, start, end, bytes, length, &error)) {
+        markdown_core_error_free(error);
+        eq_fail(replay->context, "session edit failed");
+        return -1;
+    }
+    if (eq_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
+        eq_fail(replay->context, "shadow splice allocation failed");
+        return -1;
+    }
+    return 0;
+}
+
+static int eq_apply_changeset(eq_replay *replay, markdown_core_changeset *changes, uint64_t expected_after) {
+    const markdown_core_node_id *ids;
+    size_t count;
+    size_t i;
+    uint64_t before;
+    uint64_t after;
+
+    markdown_core_changeset_revisions(changes, &before, &after);
+    if (after != expected_after) {
+        eq_fail(replay->context, "changeset revisions disagree with the session");
+        return -1;
+    }
+
+    count = markdown_core_changeset_removed(changes, &ids);
+    for (i = 0; i < count; i++) {
+        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
+        if (!entry) {
+            eq_fail(replay->context, "changeset removed an id the mirror never saw");
+            return -1;
+        }
+        eq_mirror_remove(&replay->mirror, entry);
+    }
+
+    count = markdown_core_changeset_added(changes, &ids);
+    for (i = 0; i < count; i++) {
+        if (eq_mirror_find(&replay->mirror, ids[i])) {
+            eq_fail(replay->context, "changeset added an id that already exists");
+            return -1;
+        }
+        if (eq_mirror_insert(&replay->mirror, ids[i], after) != 0) {
+            eq_fail(replay->context, "mirror allocation failed");
+            return -1;
+        }
+    }
+
+    count = markdown_core_changeset_changed(changes, &ids);
+    for (i = 0; i < count; i++) {
+        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
+        if (!entry) {
+            eq_fail(replay->context, "changeset changed an id the mirror never saw");
+            return -1;
+        }
+        entry->revision = after;
+    }
+
+    count = markdown_core_changeset_bubbled(changes, &ids);
+    for (i = 0; i < count; i++) {
+        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
+        if (!entry) {
+            eq_fail(replay->context, "changeset bubbled an id the mirror never saw");
+            return -1;
+        }
+        entry->revision = after;
+    }
+
+    return 0;
+}
+
+typedef struct eq_walk_state {
+    eq_replay *replay;
+    size_t seen;
+    int failed;
+} eq_walk_state;
+
+static int eq_walk_visit(const markdown_core_node *node, void *context) {
+    eq_walk_state *state = (eq_walk_state *)context;
+    eq_replay *replay = state->replay;
+    markdown_core_node_id id = markdown_core_node_get_id(node);
+    eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, id);
+
+    state->seen++;
+    if (!entry) {
+        eq_fail(replay->context, "tree holds an id the changeset stream never added");
+        state->failed = 1;
+        return 1;
+    }
+    if (entry->revision != markdown_core_node_get_revision(node)) {
+        eq_fail(replay->context, "node revision changed without a changeset notification");
+        state->failed = 1;
+        return 1;
+    }
+    if (markdown_core_session_node_by_id(replay->session, id) != node) {
+        eq_fail(replay->context, "node_by_id disagrees with the committed tree");
+        state->failed = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* Commits the session, folds the changeset into the mirror, verifies the
+ * mirror against a fresh walk, and compares the session dump with a one-shot
+ * parse of the shadow text. */
+static int eq_replay_commit(eq_replay *replay) {
+    markdown_core_error *error = NULL;
+    markdown_core_changeset *changes = NULL;
+    const markdown_core_document *document;
+    const markdown_core_node *root;
+    markdown_core_document *reference = NULL;
+    uint8_t *session_dump = NULL;
+    uint8_t *reference_dump = NULL;
+    size_t session_dump_length = 0;
+    size_t reference_dump_length = 0;
+    eq_walk_state state;
+    int result = -1;
+
+    if (!markdown_core_session_commit(replay->session, &changes, &error)) {
+        markdown_core_error_free(error);
+        eq_fail(replay->context, "commit failed");
+        return -1;
+    }
+    if (!changes) {
+        eq_fail(replay->context, "commit produced no changeset");
+        return -1;
+    }
+    if (eq_apply_changeset(replay, changes, markdown_core_session_revision(replay->session)) != 0) {
+        goto done;
+    }
+
+    document = markdown_core_session_document(replay->session);
+    root = markdown_core_document_root(document);
+    state.replay = replay;
+    state.seen = 0;
+    state.failed = 0;
+    if (ts_ast_walk(root, eq_walk_visit, &state) < 0 || state.failed) {
+        if (!state.failed) {
+            eq_fail(replay->context, "mirror walk failed to allocate");
+        }
+        goto done;
+    }
+    if (state.seen != replay->mirror.count) {
+        eq_fail(replay->context, "mirror holds ids that are no longer in the tree");
+        goto done;
+    }
+
+    if (!markdown_core_document_dump(document, &session_dump, &session_dump_length, &error)) {
+        markdown_core_error_free(error);
+        error = NULL;
+        eq_fail(replay->context, "session dump failed");
+        goto done;
+    }
+    reference = markdown_core_document_parse(replay->shadow.bytes, replay->shadow.length, replay->options, &error);
+    if (!reference) {
+        markdown_core_error_free(error);
+        error = NULL;
+        eq_fail(replay->context, "one-shot reference parse failed");
+        goto done;
+    }
+    if (!markdown_core_document_dump(reference, &reference_dump, &reference_dump_length, &error)) {
+        markdown_core_error_free(error);
+        error = NULL;
+        eq_fail(replay->context, "reference dump failed");
+        goto done;
+    }
+    if (session_dump_length != reference_dump_length ||
+        memcmp(session_dump, reference_dump, reference_dump_length) != 0) {
+        eq_fail(replay->context, "session dump diverged from the one-shot parse");
+        ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)session_dump);
+        goto done;
+    }
+
+    result = 0;
+done:
+    markdown_core_dump_free(session_dump);
+    markdown_core_dump_free(reference_dump);
+    markdown_core_document_free(reference);
+    markdown_core_changeset_free(changes);
+    return result;
+}
+
+static int eq_replay_append_commit(eq_replay *replay, const uint8_t *bytes, size_t length) {
+    if (eq_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
+        return -1;
+    }
+    return eq_replay_commit(replay);
+}
+
+/* --- replays over one input --------------------------------------------- */
+
+static int eq_replay_per_line(const char *context, const uint8_t *text, size_t length,
+                              const markdown_core_parse_options *options) {
+    eq_replay replay;
+    size_t offset = 0;
+    int result = -1;
+
+    if (eq_replay_open(&replay, context, options) != 0) {
+        return -1;
+    }
+    while (offset < length) {
+        size_t line_end = offset;
+        while (line_end < length && text[line_end] != '\n') {
+            line_end++;
+        }
+        if (line_end < length) {
+            line_end++;
+        }
+        if (eq_replay_append_commit(&replay, text + offset, line_end - offset) != 0) {
+            goto done;
+        }
+        offset = line_end;
+    }
+    /* Empty inputs still must commit cleanly. */
+    if (length == 0 && eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+    result = 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
+static int eq_replay_per_byte(const char *context, const uint8_t *text, size_t length,
+                              const markdown_core_parse_options *options) {
+    eq_replay replay;
+    size_t offset;
+    int result = -1;
+
+    if (eq_replay_open(&replay, context, options) != 0) {
+        return -1;
+    }
+    for (offset = 0; offset < length; offset++) {
+        if (eq_replay_append_commit(&replay, text + offset, 1) != 0) {
+            goto done;
+        }
+    }
+    result = 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
+/* Seeded random edit script: the target text is cut into chunks that arrive
+ * in random order (each spliced at its correct relative position), then the
+ * document suffers a garbage insertion that is edited away again.  The final
+ * text is the target, and every intermediate commit is checked. */
+static int eq_replay_random_edits(const char *context, const uint8_t *text, size_t length,
+                                  const markdown_core_parse_options *options, ts_prng *prng) {
+    enum { EQ_MAX_CHUNKS = 8 };
+    size_t boundaries[EQ_MAX_CHUNKS + 1];
+    size_t order[EQ_MAX_CHUNKS];
+    int inserted[EQ_MAX_CHUNKS] = {0};
+    size_t chunk_count;
+    size_t i;
+    eq_replay replay;
+    int result = -1;
+
+    chunk_count = length ? 1 + (size_t)(ts_prng_next(prng) % EQ_MAX_CHUNKS) : 0;
+    if (chunk_count > length) {
+        chunk_count = length;
+    }
+    boundaries[0] = 0;
+    for (i = 1; i < chunk_count; i++) {
+        boundaries[i] = (size_t)(ts_prng_next(prng) % (length + 1));
+    }
+    boundaries[chunk_count] = length;
+    /* Insertion sort keeps the boundary list ordered. */
+    for (i = 1; i <= chunk_count; i++) {
+        size_t j = i;
+        while (j > 0 && boundaries[j - 1] > boundaries[j]) {
+            size_t swap = boundaries[j - 1];
+            boundaries[j - 1] = boundaries[j];
+            boundaries[j] = swap;
+            j--;
+        }
+    }
+    for (i = 0; i < chunk_count; i++) {
+        order[i] = i;
+    }
+    for (i = chunk_count; i > 1; i--) {
+        size_t j = (size_t)(ts_prng_next(prng) % i);
+        size_t swap = order[i - 1];
+        order[i - 1] = order[j];
+        order[j] = swap;
+    }
+
+    if (eq_replay_open(&replay, context, options) != 0) {
+        return -1;
+    }
+
+    for (i = 0; i < chunk_count; i++) {
+        size_t chunk = order[i];
+        size_t position = 0;
+        size_t k;
+        for (k = 0; k < chunk; k++) {
+            if (inserted[k]) {
+                position += boundaries[k + 1] - boundaries[k];
+            }
+        }
+        if (eq_replay_edit(&replay, position, position, text + boundaries[chunk],
+                           boundaries[chunk + 1] - boundaries[chunk]) != 0) {
+            goto done;
+        }
+        inserted[chunk] = 1;
+        /* Commit roughly every other insertion to cover coalesced edits. */
+        if ((ts_prng_next(prng) & 1) && eq_replay_commit(&replay) != 0) {
+            goto done;
+        }
+    }
+    if (eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Garbage round-trip: insert noise, commit, edit it away, commit. */
+    {
+        static const uint8_t noise[] = "*[zz](x\n> ~~q~~\n";
+        size_t position = replay.shadow.length ? (size_t)(ts_prng_next(prng) % replay.shadow.length) : 0;
+        if (eq_replay_edit(&replay, position, position, noise, sizeof(noise) - 1) != 0 ||
+            eq_replay_commit(&replay) != 0 ||
+            eq_replay_edit(&replay, position, position + sizeof(noise) - 1, NULL, 0) != 0 ||
+            eq_replay_commit(&replay) != 0) {
+            goto done;
+        }
+    }
+
+    if (replay.shadow.length != length || (length && memcmp(replay.shadow.bytes, text, length) != 0)) {
+        eq_fail(context, "random edit script did not rebuild the target text");
+        goto done;
+    }
+    result = 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
+/* --- cases ---------------------------------------------------------------- */
+
+static int parse_option_mask(const char *mask, markdown_core_parse_options *options) {
+    bool *fields[] = {&options->smart_punctuation,
+                      &options->footnotes,
+                      &options->strip_html_comments,
+                      &options->tables,
+                      &options->strikethrough,
+                      &options->autolinks,
+                      &options->task_lists,
+                      &options->formulas,
+                      &options->dollar_formula_delimiters,
+                      &options->latex_formula_delimiters,
+                      &options->directives};
+    size_t i;
+    if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
+        return 0;
+    }
+    for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+        if (mask[i] != '0' && mask[i] != '1') {
+            return 0;
+        }
+        *fields[i] = mask[i] == '1';
+    }
+    return 1;
+}
+
+static int case_canonical(const char *fixtures_dir, char **names, size_t name_count) {
+    size_t i;
+    for (i = 0; i < name_count; i += 2) {
+        const char *name = names[i];
+        const char *mask = names[i + 1];
+        char path[1024];
+        char context[1100];
+        uint8_t *markdown;
+        size_t length = 0;
+        markdown_core_parse_options options;
+
+        markdown_core_parse_options_init(&options);
+        if (!parse_option_mask(mask, &options)) {
+            eq_fail(name, "manifest parse option mask is invalid");
+            continue;
+        }
+        snprintf(path, sizeof(path), "%s/%s.md", fixtures_dir, name);
+        markdown = ts_read_file(path, &length);
+        if (!markdown) {
+            eq_fail(name, "fixture is unreadable");
+            continue;
+        }
+        snprintf(context, sizeof(context), "canonical %s per-line", name);
+        eq_replay_per_line(context, markdown, length, &options);
+        if (length <= EQ_PER_BYTE_LIMIT) {
+            snprintf(context, sizeof(context), "canonical %s per-byte", name);
+            eq_replay_per_byte(context, markdown, length, &options);
+        }
+        free(markdown);
+    }
+    return failures ? -1 : 0;
+}
+
+static int case_spec(const char *spec_path) {
+    ts_spec_file file;
+    size_t i;
+
+    if (ts_spec_load(spec_path, &file) != 0) {
+        eq_fail(spec_path, "spec fixture failed to load");
+        return -1;
+    }
+    for (i = 0; i < file.count; i++) {
+        ts_spec_case *example = &file.cases[i];
+        char context[256];
+        markdown_core_parse_options options;
+        ts_ast_options_none(&options);
+
+        snprintf(context, sizeof(context), "spec example %d per-line", example->example);
+        eq_replay_per_line(context, (const uint8_t *)example->markdown, example->markdown_length, &options);
+        if (i % EQ_SPEC_PER_BYTE_STRIDE == 0 && example->markdown_length <= EQ_PER_BYTE_LIMIT) {
+            snprintf(context, sizeof(context), "spec example %d per-byte", example->example);
+            eq_replay_per_byte(context, (const uint8_t *)example->markdown, example->markdown_length, &options);
+        }
+    }
+    ts_spec_free(&file);
+    return failures ? -1 : 0;
+}
+
+/* Rich corpus for the seeded edit scripts: every construct whose commit
+ * pipeline has cross-block bookkeeping (link references, footnotes, tables,
+ * formulas, directives, comments). */
+static const char EQ_RICH_CORPUS[] = "# Title *one*\n"
+                                     "\n"
+                                     "A [ref][label] link, mail@example.com, `code`, $x+y$, ~~gone~~.\n"
+                                     "\n"
+                                     "[label]: /first \"one\"\n"
+                                     "[label]: /second\n"
+                                     "\n"
+                                     "> quoted footnote[^fn]\n"
+                                     "\n"
+                                     "- [x] task\n"
+                                     "  1. nested\n"
+                                     "\n"
+                                     "| a | b |\n"
+                                     "| - | - |\n"
+                                     "| 1 | 2 |\n"
+                                     "\n"
+                                     "```math\n"
+                                     "x^2\n"
+                                     "```\n"
+                                     "\n"
+                                     ":::note[Label]{k=1}\n"
+                                     "body\n"
+                                     ":::\n"
+                                     "\n"
+                                     "[^fn]: footnote *body*\n"
+                                     "\n"
+                                     "<!-- comment -->\n"
+                                     "tail <span>html</span>\n";
+
+static int case_random_edits(const char *spec_path) {
+    ts_spec_file file;
+    ts_prng prng;
+    size_t i;
+    int round;
+
+    ts_prng_seed(&prng, EQ_RANDOM_SEED);
+
+    {
+        markdown_core_parse_options options;
+        markdown_core_parse_options_init(&options);
+        options.smart_punctuation = true;
+        options.footnotes = true;
+        options.strip_html_comments = true;
+        options.tables = true;
+        options.strikethrough = true;
+        options.autolinks = true;
+        options.task_lists = true;
+        options.formulas = true;
+        options.dollar_formula_delimiters = true;
+        options.latex_formula_delimiters = true;
+        options.directives = true;
+        for (round = 0; round < 8; round++) {
+            char context[64];
+            snprintf(context, sizeof(context), "random rich corpus round %d", round);
+            eq_replay_random_edits(context, (const uint8_t *)EQ_RICH_CORPUS, sizeof(EQ_RICH_CORPUS) - 1, &options,
+                                   &prng);
+        }
+    }
+
+    if (ts_spec_load(spec_path, &file) != 0) {
+        eq_fail(spec_path, "spec fixture failed to load");
+        return -1;
+    }
+    for (i = 0; i < file.count; i += EQ_SPEC_RANDOM_STRIDE) {
+        ts_spec_case *example = &file.cases[i];
+        char context[256];
+        markdown_core_parse_options options;
+        ts_ast_options_none(&options);
+        snprintf(context, sizeof(context), "random spec example %d", example->example);
+        eq_replay_random_edits(context, (const uint8_t *)example->markdown, example->markdown_length, &options, &prng);
+    }
+    ts_spec_free(&file);
+    return failures ? -1 : 0;
+}
+
+/* Scripted link-reference-definition edits: winners must re-resolve exactly
+ * as a one-shot parse of the edited text at every commit. */
+static int case_link_ref_edits(void) {
+    static const char initial[] = "[one][label] and [two][other]\n"
+                                  "\n"
+                                  "[label]: /first \"one\"\n"
+                                  "[label]: /second \"two\"\n";
+    static const char early_definition[] = "[label]: /zero\n\n";
+    eq_replay replay;
+    markdown_core_parse_options options;
+    int result = -1;
+    size_t position;
+
+    markdown_core_parse_options_init(&options);
+    if (eq_replay_open(&replay, "link_ref_edits", &options) != 0) {
+        return -1;
+    }
+
+    /* Duplicate labels: the first definition wins. */
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Deleting the winning definition re-elects the later duplicate. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]: /first") - (char *)replay.shadow.bytes);
+    if (eq_replay_edit(&replay, position, position + strlen("[label]: /first \"one\"\n"), NULL, 0) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* A definition inserted earlier in the document takes the label over. */
+    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)early_definition, sizeof(early_definition) - 1) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Editing the winning definition's destination re-resolves the links. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "/zero") - (char *)replay.shadow.bytes);
+    if (eq_replay_edit(&replay, position, position + strlen("/zero"), (const uint8_t *)"/elsewhere", 10) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* A definition for the second label appears after its reference. */
+    if (eq_replay_edit(&replay, replay.shadow.length, replay.shadow.length, (const uint8_t *)"\n[other]: /other\n",
+                       17) != 0 ||
+        eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Removing every definition degrades the references to literal text. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]:") - (char *)replay.shadow.bytes);
+    if (eq_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || eq_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    result = failures ? -1 : 0;
+done:
+    eq_replay_close(&replay);
+    return result;
+}
+
+/* --- entry point ---------------------------------------------------------- */
+
+static const char *const EQ_CASES[] = {"canonical", "spec", "random_edits", "link_ref_edits"};
+
+int main(int argc, char **argv) {
+    const char *case_name = NULL;
+    const char *fixtures_dir = NULL;
+    const char *spec_path = NULL;
+    char **positional = NULL;
+    size_t positional_count = 0;
+    int list_only = 0;
+    int i;
+    int result = 2;
+
+    positional = (char **)calloc(argc ? (size_t)argc : 1, sizeof(*positional));
+    if (!positional) {
+        return 2;
+    }
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--list") == 0) {
+            list_only = 1;
+        } else if (strcmp(argv[i], "--case") == 0 && i + 1 < argc) {
+            case_name = argv[++i];
+        } else if (strcmp(argv[i], "--fixtures") == 0 && i + 1 < argc) {
+            fixtures_dir = argv[++i];
+        } else if (strcmp(argv[i], "--spec") == 0 && i + 1 < argc) {
+            spec_path = argv[++i];
+        } else if (argv[i][0] != '-') {
+            positional[positional_count++] = argv[i];
+        } else {
+            fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n",
+                  stderr);
+            goto done;
+        }
+    }
+
+    if (list_only) {
+        size_t c;
+        for (c = 0; c < sizeof(EQ_CASES) / sizeof(EQ_CASES[0]); c++) {
+            puts(EQ_CASES[c]);
+        }
+        result = 0;
+        goto done;
+    }
+
+    if (case_name && strcmp(case_name, "canonical") == 0 && fixtures_dir && positional_count >= 2 &&
+        positional_count % 2 == 0) {
+        case_canonical(fixtures_dir, positional, positional_count);
+    } else if (case_name && strcmp(case_name, "spec") == 0 && spec_path) {
+        case_spec(spec_path);
+    } else if (case_name && strcmp(case_name, "random_edits") == 0 && spec_path) {
+        case_random_edits(spec_path);
+    } else if (case_name && strcmp(case_name, "link_ref_edits") == 0) {
+        case_link_ref_edits();
+    } else {
+        fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n", stderr);
+        goto done;
+    }
+
+    printf("equivalence %s [%s]\n", case_name, failures ? "FAILED" : "PASSED");
+    result = failures ? 1 : 0;
+done:
+    free(positional);
+    return result;
+}

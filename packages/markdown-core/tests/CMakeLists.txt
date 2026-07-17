@@ -1,8 +1,8 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec extensions regression pathological complexity
-#   fuzz packaging benchmark
+#   api facade consumer spec equivalence extensions regression pathological
+#   complexity fuzz packaging benchmark
 #
 # The default correctness preset excludes conformance and benchmark; sanitizer
 # correctness presets also exclude wall-clock complexity gates.  The benchmark
@@ -116,6 +116,7 @@ function(markdown_core_add_runner name)
 endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
+markdown_core_add_runner(equivalence_runner runners/equivalence_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
@@ -235,12 +236,51 @@ markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
 # byte-key index keep hash-path duplicate semantics; probe exhaustion grows
 # the table once before falling back.
 if(MARKDOWN_CORE_STATIC)
-    set(MARKDOWN_CORE_FALLBACK_CASES reference_sorted_fallback directive_sorted_fallback key_index_probe_growth
-                                     map_prepare_oom constructor_oom oom_sweep)
+    set(MARKDOWN_CORE_FALLBACK_CASES
+        reference_sorted_fallback
+        reference_map_v2
+        directive_sorted_fallback
+        key_index_probe_growth
+        map_prepare_oom
+        constructor_oom
+        oom_sweep)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()
 endif()
+
+# equivalence: incrementally edited sessions must dump byte-identically to a
+# one-shot parse of the same final text after every commit, and the changeset
+# stream must account for every observable node change (mirror check).
+markdown_core_add_test(
+    equivalence_canonical
+    equivalence
+    240
+    equivalence_runner
+    --case
+    canonical
+    --fixtures
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
+    ${MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS})
+markdown_core_add_test(
+    equivalence_spec
+    equivalence
+    600
+    equivalence_runner
+    --case
+    spec
+    --spec
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+markdown_core_add_test(
+    equivalence_random_edits
+    equivalence
+    600
+    equivalence_runner
+    --case
+    random_edits
+    --spec
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(

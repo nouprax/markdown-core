@@ -87,7 +87,7 @@ typedef struct markdown_core_mem {
  * realloc and free.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_mem *markdown_core_get_default_mem_allocator(void);
+markdown_core_mem *markdown_core_mem_default(void);
 
 /** Callback for freeing user data with a 'markdown_core_mem' context.
  */
@@ -467,7 +467,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_append_child(markdown_core_node *nod
  */
 /** Merges adjacent text nodes.  Returns 0 when merged text could not be
  *  materialized because an allocation failed; the tree stays valid. */
-MARKDOWN_CORE_EXPORT int markdown_core_consolidate_text_nodes(markdown_core_node *root);
+MARKDOWN_CORE_EXPORT int markdown_core_node_consolidate_texts(markdown_core_node *root);
 
 /** Ensures a node and all its children own their own chunk memory.
  */
@@ -481,7 +481,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_own(markdown_core_node *root);
  *
  * Simple interface:
  *
- *     markdown_core_node *document = markdown_core_parse_document("Hello *world*", 13,
+ *     markdown_core_node *document = markdown_core_node_parse_document("Hello *world*", 13,
  *                                                 MARKDOWN_CORE_OPT_DEFAULT);
  *
  * Streaming interface:
@@ -529,14 +529,14 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
  * when it is no longer needed.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len, int options);
+markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t len, int options);
 
 /** Parse a CommonMark document in file 'f', returning a pointer to
  * a tree of nodes.  The memory allocated for the node tree should be
  * released using 'markdown_core_node_free' when it is no longer needed.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parse_file(FILE *f, int options);
+markdown_core_node *markdown_core_node_parse_file(FILE *f, int options);
 
 /**
  * ## Options

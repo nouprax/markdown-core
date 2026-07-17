@@ -36,7 +36,7 @@ static uint64_t mix64(uint64_t x) {
 
 // --- id table ---------------------------------------------------------------
 
-static void id_table_release(markdown_core_mem *mem, mkc_id_table *table) {
+static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
     if (table->keys) {
         mem->free(table->keys);
     }
@@ -49,7 +49,7 @@ static void id_table_release(markdown_core_mem *mem, mkc_id_table *table) {
     table->count = 0;
 }
 
-static bool id_table_insert(mkc_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
+static bool id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
     size_t mask = table->capacity - 1;
     size_t slot = (size_t)mix64(id) & mask;
     while (table->keys[slot] != 0) {
@@ -68,7 +68,7 @@ static bool id_table_insert(mkc_id_table *table, markdown_core_node_id id, markd
 // Builds a fresh id table for `root` into `out` (owned by the caller on
 // success). Runs inside mutating calls only, so concurrent readers never
 // observe a table under construction.
-static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, mkc_id_table *out) {
+static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, markdown_core_id_table *out) {
     size_t nodes = 0;
 
     markdown_core_iter *iter = markdown_core_iter_new(root);
@@ -143,7 +143,7 @@ static int native_options_from(const markdown_core_parse_options *options) {
 }
 
 static bool attach_extension_named(markdown_core_parser *parser, const char *name) {
-    markdown_core_extension *extension = markdown_core_find_extension(name);
+    markdown_core_extension *extension = markdown_core_extension_find(name);
     return extension && markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
@@ -246,7 +246,7 @@ static bool commit_internal(markdown_core_session *session, bool initial, markdo
 
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
-    mkc_id_table ids = {NULL, NULL, 0, 0};
+    markdown_core_id_table ids = {NULL, NULL, 0, 0};
     if (!id_table_build(session->mem, root, &ids)) {
         markdown_core_changeset_free(changes);
         markdown_core_node_free(root);
@@ -307,7 +307,7 @@ markdown_core_session *markdown_core_session_open_with_mem(const markdown_core_p
 
 markdown_core_session *markdown_core_session_open(const markdown_core_parse_options *options,
                                                   markdown_core_error **error) {
-    return markdown_core_session_open_with_mem(options, markdown_core_get_default_mem_allocator(), error);
+    return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), error);
 }
 
 void markdown_core_session_free(markdown_core_session *session) {

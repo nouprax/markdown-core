@@ -121,12 +121,12 @@ typedef struct delimiter {
  *  with the markdown_core_parser_attach_extension method.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_extension *markdown_core_find_extension(const char *name);
+markdown_core_extension *markdown_core_extension_find(const char *name);
 
 /** Returns a caller-owned list of the bundled syntax extensions.
  */
 MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_list_extensions(markdown_core_mem *mem);
+markdown_core_llist *markdown_core_extension_list(markdown_core_mem *mem);
 
 /** Should create and add a new open block to 'parent_container' if
  * 'input' matches a syntax rule for that block type. It is allowed
@@ -165,15 +165,25 @@ typedef int (*markdown_core_contains_inlines_func)(markdown_core_extension *exte
 
 typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-typedef markdown_core_node *(*markdown_core_postprocess_func)(markdown_core_extension *extension,
-                                                              markdown_core_parser *parser, markdown_core_node *root);
+/** Block-local postprocess hook. After inline parsing, footnote processing,
+ * and per-block text consolidation, the parser calls this once for every
+ * block (and every inline-owning node, such as a table cell or directive
+ * label wrapper) in document order. All effects must stay inside that
+ * node's subtree so the pipeline can later rerun for single blocks.
+ *
+ * Returns the node now occupying the block's position in the tree: the
+ * block itself, or its replacement when the extension replaced or retyped
+ * the block. Must not return NULL. */
+typedef markdown_core_node *(*markdown_core_postprocess_block_func)(markdown_core_extension *extension,
+                                                                    markdown_core_parser *parser,
+                                                                    markdown_core_node *block);
 
 typedef int (*markdown_core_ispunct_func)(char c);
 
-typedef void (*markdown_core_opaque_alloc_func)(markdown_core_extension *extension, markdown_core_mem *mem,
+typedef void (*markdown_core_alloc_opaque_func)(markdown_core_extension *extension, markdown_core_mem *mem,
                                                 markdown_core_node *node);
 
-typedef void (*markdown_core_opaque_free_func)(markdown_core_extension *extension, markdown_core_mem *mem,
+typedef void (*markdown_core_free_opaque_func)(markdown_core_extension *extension, markdown_core_mem *mem,
                                                markdown_core_node *node);
 
 /** See the documentation for 'markdown_core_extension'
@@ -377,7 +387,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *no
 
 /** Should return 'true' if the predicate matches 'c', 'false' otherwise
  */
-typedef int (*markdown_core_inline_predicate)(int c);
+typedef int (*markdown_core_inline_predicate_func)(int c);
 
 /** Advance the current inline parsing offset */
 MARKDOWN_CORE_EXPORT
@@ -429,7 +439,8 @@ int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser);
  * while 'pred' matches. Free after usage.
  */
 MARKDOWN_CORE_EXPORT
-char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate pred);
+char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser,
+                                             markdown_core_inline_predicate_func pred);
 
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
@@ -473,7 +484,7 @@ int markdown_core_inline_parser_scan_delimiters(markdown_core_inline_parser *par
                                                 int *punct_after);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_manage_extensions_special_characters(markdown_core_parser *parser, int add);
+void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add);
 
 MARKDOWN_CORE_EXPORT
 markdown_core_llist *markdown_core_parser_get_extensions(markdown_core_parser *parser);

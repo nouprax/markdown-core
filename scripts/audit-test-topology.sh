@@ -72,7 +72,7 @@ if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
 fi
 
 tests_all=$("ctest" --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
-for label in api facade conformance consumer spec extensions regression pathological complexity fuzz packaging benchmark; do
+for label in api facade conformance consumer spec equivalence extensions regression pathological complexity fuzz packaging benchmark; do
     count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
     if [ "${count:-0}" -lt 1 ]; then
         fail "no CTest tests carry label '$label'"
@@ -130,6 +130,10 @@ done
 for case_name in $("$runner_dir/fallback_runner" --list); do
     echo "$tests_all" | grep -q "^regression_fallback_${case_name}$" \
         || fail "fallback case '$case_name' is not registered in CTest"
+done
+for case_name in $("$runner_dir/equivalence_runner" --list); do
+    echo "$tests_all" | grep -q "^equivalence_${case_name}$" \
+        || fail "equivalence case '$case_name' is not registered in CTest"
 done
 for workload in $("$runner_dir/bench_runner" --list); do
     echo "$tests_all" | grep -q "^benchmark_${workload}$" \

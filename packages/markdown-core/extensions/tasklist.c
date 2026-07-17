@@ -93,9 +93,9 @@ static markdown_core_node *open_tasklist_item(markdown_core_extension *self, int
 static const markdown_core_extension tasklist_extension = {
     .name = "tasklist",
     .last_block_matches = matches,
-    .get_type_string_func = get_type_string,
+    .get_type_string = get_type_string,
     .try_opening_block = open_tasklist_item,
-    .can_contain_func = can_contain,
+    .can_contain = can_contain,
 };
 
 markdown_core_extension *markdown_core_tasklist_extension(void) {

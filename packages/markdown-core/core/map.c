@@ -126,6 +126,11 @@ int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigne
             *existing = slot->value;
         }
         if (replace) {
+            /* The key bytes match, but the stored pointer may belong to an
+             * entry that is about to be removed; repoint it at the caller's
+             * storage together with the value. */
+            slot->key = key;
+            slot->key_len = key_len;
             slot->value = value;
         }
         return 1;
@@ -165,11 +170,58 @@ void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const
     return NULL;
 }
 
+int markdown_core_key_index_remove(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len) {
+    uint64_t hash = hash_key(key, key_len);
+    size_t mask;
+    size_t position;
+    size_t probe;
+    size_t gap;
+    size_t scan;
+    int found = 0;
+
+    if (!index->capacity) {
+        return 0;
+    }
+    mask = index->capacity - 1;
+    position = (size_t)hash & mask;
+    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+        markdown_core_key_index_slot *slot = &index->slots[position];
+        if (!slot->key) {
+            return 0;
+        }
+        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
+            found = 1;
+            break;
+        }
+        position = (position + 1) & mask;
+    }
+    if (!found) {
+        return 0;
+    }
+
+    /* Backward-shift deletion: walk the collision run after the gap and pull
+     * every entry whose home slot lies at or before the gap into it. The
+     * load-factor bound guarantees an empty slot, so the walk terminates. */
+    gap = position;
+    scan = (gap + 1) & mask;
+    while (index->slots[scan].key) {
+        size_t home = (size_t)index->slots[scan].hash & mask;
+        if (((scan - home) & mask) >= ((scan - gap) & mask)) {
+            index->slots[gap] = index->slots[scan];
+            gap = scan;
+        }
+        scan = (scan + 1) & mask;
+    }
+    memset(&index->slots[gap], 0, sizeof(index->slots[gap]));
+    index->size--;
+    return 1;
+}
+
 // normalize map label:  collapse internal whitespace to single space,
 // remove leading/trailing whitespace, case fold
 // Return NULL if the label is actually empty (i.e. composed solely from
 // whitespace)
-unsigned char *normalize_map_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost) {
+unsigned char *markdown_core_map_normalize_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost) {
     markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT(mem);
     unsigned char *result;
 
@@ -208,7 +260,13 @@ static int refcmp(const void *p1, const void *p2) {
     markdown_core_map_entry *r1 = *(markdown_core_map_entry **)p1;
     markdown_core_map_entry *r2 = *(markdown_core_map_entry **)p2;
     int res = labelcmp(r1->label, r2->label);
-    return res ? res : ((int)r1->age - (int)r2->age);
+    if (res) {
+        return res;
+    }
+    if (r1->order != r2->order) {
+        return r1->order < r2->order ? -1 : 1;
+    }
+    return 0;
 }
 
 static int refsearch(const void *label, const void *p2) {
@@ -216,8 +274,22 @@ static int refsearch(const void *label, const void *p2) {
     return labelcmp((const unsigned char *)label, ref->label);
 }
 
+/* Drops the prepared lookup structures. Lossless: the live chain still holds
+ * every entry, so the next lookup rebuilds. */
+static void unprepare_map(markdown_core_map *map) {
+    if (map->sorted) {
+        map->mem->free(map->sorted);
+        map->sorted = NULL;
+    }
+    markdown_core_key_index_free(&map->index);
+    map->prepared = 0;
+    map->indexed = 0;
+}
+
+/* Sorted fallback: every entry, duplicates included, ordered by (label,
+ * document order). The winner for a label is the first entry of its run. */
 static int sort_map(markdown_core_map *map) {
-    size_t i = 0, last = 0, size = map->size;
+    size_t i = 0, size = map->size;
     markdown_core_map_entry *r = map->refs, **sorted = NULL;
 
     sorted = (markdown_core_map_entry **)map->mem->calloc(size, sizeof(markdown_core_map_entry *));
@@ -231,15 +303,9 @@ static int sort_map(markdown_core_map *map) {
 
     qsort(sorted, size, sizeof(markdown_core_map_entry *), refcmp);
 
-    for (i = 1; i < size; i++) {
-        if (labelcmp(sorted[i]->label, sorted[last]->label) != 0) {
-            sorted[++last] = sorted[i];
-        }
-    }
-
     map->sorted = sorted;
-    map->size = last + 1;
     map->prepared = 1;
+    map->indexed = 0;
     return 1;
 }
 
@@ -270,28 +336,67 @@ static size_t map_index_expected_size(markdown_core_map *map) {
     return unique > sampled / 2 ? map->size : unique;
 }
 
+/* Splices `entry` into its label bucket in ascending document order and
+ * keeps the index slot pointing at the bucket head (the winner). Returns 0
+ * when the index could not take the label. */
+static int bucket_attach(markdown_core_map *map, markdown_core_map_entry *entry) {
+    bufsize_t label_len = (bufsize_t)strlen((char *)entry->label);
+    markdown_core_map_entry *head =
+        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
+    markdown_core_map_entry *cur;
+
+    if (!head) {
+        entry->bucket_next = NULL;
+        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 0, NULL);
+    }
+    if (entry->order <= head->order) {
+        entry->bucket_next = head;
+        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 1, NULL);
+    }
+    cur = head;
+    while (cur->bucket_next && cur->bucket_next->order < entry->order) {
+        cur = cur->bucket_next;
+    }
+    entry->bucket_next = cur->bucket_next;
+    cur->bucket_next = entry;
+    return 1;
+}
+
+/* Hash path: label -> bucket head. The live chain is newest-first with
+ * monotonic orders, so the descending traversal hits bucket_attach's prepend
+ * fast path and the build stays O(entries) even when one label repeats. */
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
     if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
         return 0;
     }
-    /* Entries are linked newest-first. Replacing while traversing therefore
-     * leaves the oldest (first source) definition in each slot. */
     for (ref = map->refs; ref; ref = ref->next) {
-        if (!markdown_core_key_index_insert(&map->index, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 1,
-                                            NULL)) {
+        if (!bucket_attach(map, ref)) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
     }
-    map->size = map->index.size;
     map->prepared = 1;
     map->indexed = 1;
     return 1;
 }
 
+static int prepare_map(markdown_core_map *map) { return map->prepared || index_map(map) || sort_map(map); }
+
+/* Leftmost entry of the label's run in the sorted array: the winner. */
+static markdown_core_map_entry *sorted_winner(markdown_core_map *map, const unsigned char *label) {
+    markdown_core_map_entry **ref = (markdown_core_map_entry **)bsearch(label, map->sorted, map->size,
+                                                                        sizeof(markdown_core_map_entry *), refsearch);
+    if (!ref) {
+        return NULL;
+    }
+    while (ref > map->sorted && labelcmp(ref[-1]->label, label) == 0) {
+        ref--;
+    }
+    return *ref;
+}
+
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    markdown_core_map_entry **ref = NULL;
     markdown_core_map_entry *r = NULL;
     unsigned char *norm;
 
@@ -305,7 +410,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 
     {
         int lost = 0;
-        norm = normalize_map_label(map->mem, label, &lost);
+        norm = markdown_core_map_normalize_label(map->mem, label, &lost);
         if (norm == NULL) {
             if (lost) {
                 map->oom = 1;
@@ -314,7 +419,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         }
     }
 
-    if (!map->prepared && !index_map(map) && !sort_map(map)) {
+    if (!prepare_map(map)) {
         /* Neither preparation path could allocate; report a miss and leave
          * the map unprepared so a later lookup can retry. */
         map->oom = 1;
@@ -326,15 +431,11 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         r = (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, norm,
                                                                       (bufsize_t)strlen((char *)norm));
     } else {
-        ref = (markdown_core_map_entry **)bsearch(norm, map->sorted, map->size, sizeof(markdown_core_map_entry *),
-                                                  refsearch);
+        r = sorted_winner(map, norm);
     }
     map->mem->free(norm);
 
-    if (r != NULL || ref != NULL) {
-        if (!r) {
-            r = ref[0];
-        }
+    if (r != NULL) {
         /* Check for expansion limit */
         if (r->size > map->max_ref_size - map->ref_size) {
             return NULL;
@@ -343,6 +444,135 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     }
 
     return r;
+}
+
+void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry) {
+    entry->order = ++map->next_order;
+    entry->owner = map->pending_owner;
+    entry->bucket_next = NULL;
+    entry->next = map->refs;
+    map->refs = entry;
+    map->size++;
+
+    if (!map->prepared) {
+        return;
+    }
+    if (!map->indexed || !bucket_attach(map, entry)) {
+        /* The sorted array cannot absorb inserts (and a failed index attach
+         * must not leave the label partially visible); drop the structures
+         * and let the next lookup rebuild them. */
+        unprepare_map(map);
+    }
+}
+
+/* Unlinks `entry` from its bucket and keeps the index slot on the winner.
+ * Returns 0 when the index state could not be kept coherent. */
+static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry) {
+    bufsize_t label_len = (bufsize_t)strlen((char *)entry->label);
+    markdown_core_map_entry *head =
+        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
+    markdown_core_map_entry *cur;
+
+    if (!head) {
+        return 0;
+    }
+    if (head == entry) {
+        if (!markdown_core_key_index_remove(&map->index, entry->label, label_len)) {
+            return 0;
+        }
+        if (!entry->bucket_next) {
+            return 1;
+        }
+        /* Re-elect the next-oldest definition; its label bytes key the slot
+         * from now on. The freshly vacated run guarantees room, and the
+         * insert's own growth path covers the remaining corner cases. */
+        return markdown_core_key_index_insert(&map->index, entry->bucket_next->label,
+                                              (bufsize_t)strlen((char *)entry->bucket_next->label), entry->bucket_next,
+                                              0, NULL);
+    }
+    cur = head;
+    while (cur->bucket_next && cur->bucket_next != entry) {
+        cur = cur->bucket_next;
+    }
+    if (cur->bucket_next != entry) {
+        return 0;
+    }
+    cur->bucket_next = entry->bucket_next;
+    return 1;
+}
+
+void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner) {
+    markdown_core_map_entry **link;
+
+    if (map == NULL) {
+        return;
+    }
+
+    link = &map->refs;
+    while (*link) {
+        markdown_core_map_entry *entry = *link;
+        if (entry->owner != owner) {
+            link = &entry->next;
+            continue;
+        }
+        *link = entry->next;
+        if (map->prepared) {
+            if (!map->indexed || !bucket_detach(map, entry)) {
+                unprepare_map(map);
+            }
+        }
+        map->size--;
+        map->free(map, entry);
+    }
+}
+
+markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size_t *count) {
+    markdown_core_map_entry **winners;
+    size_t filled = 0;
+
+    *count = 0;
+    if (map == NULL || !map->size) {
+        return NULL;
+    }
+    if (!prepare_map(map)) {
+        map->oom = 1;
+        return NULL;
+    }
+
+    if (map->indexed) {
+        size_t slot;
+        winners = (markdown_core_map_entry **)map->mem->calloc(map->index.size, sizeof(*winners));
+        if (!winners) {
+            map->oom = 1;
+            return NULL;
+        }
+        for (slot = 0; slot < map->index.capacity; slot++) {
+            if (map->index.slots[slot].key) {
+                winners[filled++] = (markdown_core_map_entry *)map->index.slots[slot].value;
+            }
+        }
+    } else {
+        size_t i;
+        size_t unique = 0;
+        for (i = 0; i < map->size; i++) {
+            if (i == 0 || labelcmp(map->sorted[i]->label, map->sorted[i - 1]->label) != 0) {
+                unique++;
+            }
+        }
+        winners = (markdown_core_map_entry **)map->mem->calloc(unique, sizeof(*winners));
+        if (!winners) {
+            map->oom = 1;
+            return NULL;
+        }
+        for (i = 0; i < map->size; i++) {
+            if (i == 0 || labelcmp(map->sorted[i]->label, map->sorted[i - 1]->label) != 0) {
+                winners[filled++] = map->sorted[i];
+            }
+        }
+    }
+
+    *count = filled;
+    return winners;
 }
 
 void markdown_core_map_free(markdown_core_map *map) {
@@ -364,7 +594,7 @@ void markdown_core_map_free(markdown_core_map *map) {
     map->mem->free(map);
 }
 
-markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_f free) {
+markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_func free) {
     markdown_core_map *map = (markdown_core_map *)mem->calloc(1, sizeof(markdown_core_map));
     if (!map) {
         return NULL;

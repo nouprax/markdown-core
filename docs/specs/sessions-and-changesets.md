@@ -149,8 +149,10 @@ advances or is freed.
   parse per commit: an edit inside an unclosed fence, raw-HTML block, or
   directive reparses forward to end of input; a link-reference definition
   change re-parses inline content only in the blocks that referenced that
-  label; footnote renumbering touches only the references whose index
-  changed.
+  label; a footnote ordinal or resolution change bumps only the revisions of
+  the references whose query answers changed (definitions stay at their
+  source position; numbering and resolution are index-backed queries, per
+  the revised footnote decision of 2026-07-16).
 
 ## Failure and memory
 

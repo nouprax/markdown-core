@@ -32,7 +32,7 @@ static markdown_core_extension *core_extension_at(size_t index) {
     }
 }
 
-markdown_core_extension *markdown_core_find_extension(const char *name) {
+markdown_core_extension *markdown_core_extension_find(const char *name) {
     for (size_t i = 0; i < CORE_EXTENSION_COUNT; i++) {
         markdown_core_extension *extension = core_extension_at(i);
         if (!strcmp(extension->name, name)) {
@@ -42,7 +42,7 @@ markdown_core_extension *markdown_core_find_extension(const char *name) {
     return NULL;
 }
 
-markdown_core_llist *markdown_core_list_extensions(markdown_core_mem *mem) {
+markdown_core_llist *markdown_core_extension_list(markdown_core_mem *mem) {
     markdown_core_llist *res = NULL;
 
     for (size_t i = 0; i < CORE_EXTENSION_COUNT; i++) {

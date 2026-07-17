@@ -1133,7 +1133,6 @@ jobs:
             - c-test
             - c-test-windows
             - c-sanitizer-test
-            - benchmarks-ready
         runs-on: ubuntu-latest
         steps:
             - name: Require every platform test
@@ -1145,7 +1144,6 @@ jobs:
                   C_TEST: ${{ needs.c-test.result }}
                   C_TEST_WINDOWS: ${{ needs.c-test-windows.result }}
                   C_SANITIZER_TEST: ${{ needs.c-sanitizer-test.result }}
-                  BENCHMARKS: ${{ needs.benchmarks-ready.result }}
               run: |
                   for result in \
                       "$SWIFT_TEST" \
@@ -1154,8 +1152,7 @@ jobs:
                       "$ES_TEST" \
                       "$C_TEST" \
                       "$C_TEST_WINDOWS" \
-                      "$C_SANITIZER_TEST" \
-                      "$BENCHMARKS"
+                      "$C_SANITIZER_TEST"
                   do
                       if [ "$result" != success ]; then
                           echo "A required test dependency concluded: $result" >&2
@@ -1168,10 +1165,16 @@ jobs:
         # merge-queue runs alone own the name referenced by the ruleset.
         name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
         if: ${{ always() }}
-        needs: tests-ready
+        needs:
+            - tests-ready
+            - benchmarks-ready
         runs-on: ubuntu-latest
         steps:
-            - name: Require the complete test layer
+            - name: Require the complete test and benchmark layers
               env:
                   TESTS_READY: ${{ needs.tests-ready.result }}
-              run: test "$TESTS_READY" = success
+                  BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}
+              run: |
+                  for result in "$TESTS_READY" "$BENCHMARKS_READY"; do
+                      test "$result" = success
+                  done

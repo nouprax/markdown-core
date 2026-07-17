@@ -561,68 +561,60 @@ static markdown_core_node *new_formula_block_from_literal(markdown_core_extensio
     return formula;
 }
 
-static int replace_with_formula_block(markdown_core_extension *extension, markdown_core_mem *mem,
-                                      markdown_core_node *oldnode, const unsigned char *literal,
-                                      bufsize_t literal_len) {
+static markdown_core_node *replace_with_formula_block(markdown_core_extension *extension, markdown_core_mem *mem,
+                                                      markdown_core_node *oldnode, const unsigned char *literal,
+                                                      bufsize_t literal_len) {
     markdown_core_node *formula = new_formula_block_from_literal(extension, mem, oldnode, literal, literal_len);
     if (!formula) {
-        return 0;
+        return NULL;
     }
 
     if (markdown_core_node_replace(oldnode, formula)) {
         markdown_core_node_free(oldnode);
-        return 1;
+        return formula;
     }
     markdown_core_node_free(formula);
-    return 0;
+    return NULL;
 }
 
-static void postprocess_node(markdown_core_extension *extension, markdown_core_parser *parser,
-                             markdown_core_node *node) {
-    markdown_core_node *child;
-    markdown_core_node *next;
-
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-        node_formula *formula = get_formula(node);
+// Block-local promotion; the parser drives it once per block in document
+// order, so no case recurses into child blocks.
+static markdown_core_node *postprocess_block(markdown_core_extension *extension, markdown_core_parser *parser,
+                                             markdown_core_node *block) {
+    if (block->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+        node_formula *formula = get_formula(block);
         if (formula && !formula->literal.data) {
-            set_formula_literal_trimmed(node, node->content.ptr, node->content.size);
-            markdown_core_strbuf_clear(&node->content);
+            set_formula_literal_trimmed(block, block->content.ptr, block->content.size);
+            markdown_core_strbuf_clear(&block->content);
         }
-        return;
+        return block;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code.info)) {
-        if (!replace_with_formula_block(extension, parser->mem, node, node->as.code.literal.data,
-                                        node->as.code.literal.len)) {
+    if (block->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&block->as.code.info)) {
+        markdown_core_node *formula = replace_with_formula_block(
+            extension, parser->mem, block, block->as.code.literal.data, block->as.code.literal.len);
+        if (!formula) {
             parser->oom = true;
+            return block;
         }
-        return;
+        return formula;
     }
 
-    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child && node->first_child == node->last_child &&
-        node->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(node->first_child)) {
-        node_formula *formula = get_formula(node->first_child);
+    if (block->type == MARKDOWN_CORE_NODE_PARAGRAPH && block->first_child && block->first_child == block->last_child &&
+        block->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(block->first_child)) {
+        node_formula *formula = get_formula(block->first_child);
         if (formula) {
-            if (!replace_with_formula_block(extension, parser->mem, node, formula->literal.data,
-                                            formula->literal.len)) {
+            markdown_core_node *promoted =
+                replace_with_formula_block(extension, parser->mem, block, formula->literal.data, formula->literal.len);
+            if (!promoted) {
                 parser->oom = true;
+                return block;
             }
-            return;
+            return promoted;
         }
     }
 
-    child = node->first_child;
-    while (child) {
-        next = child->next;
-        postprocess_node(extension, parser, child);
-        child = next;
-    }
-}
-
-static markdown_core_node *postprocess(markdown_core_extension *extension, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
-    postprocess_node(extension, parser, root);
-    return root;
+    return block;
 }
 
 static const unsigned char formula_special_chars[] = {
@@ -639,12 +631,12 @@ static const markdown_core_extension formula_extension = {
     .match_inline = match,
     .last_block_matches = formula_block_matches,
     .try_opening_block = try_opening_formula_block,
-    .postprocess_func = postprocess,
-    .get_type_string_func = get_type_string,
-    .can_contain_func = can_contain,
-    .accepts_lines_func = accepts_lines,
-    .opaque_alloc_func = formula_opaque_alloc,
-    .opaque_free_func = formula_opaque_free,
+    .postprocess_block = postprocess_block,
+    .get_type_string = get_type_string,
+    .can_contain = can_contain,
+    .accepts_lines = accepts_lines,
+    .alloc_opaque = formula_opaque_alloc,
+    .free_opaque = formula_opaque_free,
     .insert_inline_from_delim = insert_formula,
     .special_inline_chars = formula_special_chars,
     .special_inline_char_count = sizeof(formula_special_chars),

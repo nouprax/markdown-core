@@ -36,7 +36,7 @@ static bool is_wrapper(const markdown_core_node *node) { return node->type == MA
 typedef enum { REC_ADDED, REC_REMOVED, REC_CHANGED, REC_BUBBLED } rec_kind;
 
 static void record(adopt_ctx *ctx, rec_kind kind, const markdown_core_node *node) {
-    mkc_id_array *array;
+    markdown_core_id_array *array;
     if (!ctx->changes || is_wrapper(node)) {
         return;
     }
@@ -54,7 +54,7 @@ static void record(adopt_ctx *ctx, rec_kind kind, const markdown_core_node *node
         array = &ctx->changes->bubbled;
         break;
     }
-    if (!mkc_id_array_push(array, node->id)) {
+    if (!markdown_core_id_array_push(array, node->id)) {
         ctx->failed = true;
     }
 }

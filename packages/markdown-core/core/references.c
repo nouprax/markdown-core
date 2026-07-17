@@ -27,7 +27,7 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
         return;
     }
 
-    reflabel = normalize_map_label(map->mem, label, &lost);
+    reflabel = markdown_core_map_normalize_label(map->mem, label, &lost);
 
     /* empty reference name, or composed from only whitespace */
     if (reflabel == NULL) {
@@ -36,8 +36,6 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
         }
         return;
     }
-
-    assert(!map->prepared);
 
     ref = (markdown_core_reference *)map->mem->calloc(1, sizeof(*ref));
     if (!ref) {
@@ -52,12 +50,9 @@ void markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk 
     if (lost) {
         map->oom = 1;
     }
-    ref->entry.age = map->size;
-    ref->entry.next = map->refs;
     ref->entry.size = ref->url.len + ref->title.len;
 
-    map->refs = (markdown_core_map_entry *)ref;
-    map->size++;
+    markdown_core_map_add(map, &ref->entry);
 }
 
 markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {

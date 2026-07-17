@@ -1,6 +1,7 @@
 #include "autolink.h"
 #include "extension.h"
 #include <iterator.h>
+#include <node.h>
 #include <parser.h>
 #include <string.h>
 #include <utf8.h>
@@ -591,20 +592,23 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *postprocess(markdown_core_extension *ext, markdown_core_parser *parser,
-                                       markdown_core_node *root) {
+static markdown_core_node *postprocess_block(markdown_core_extension *ext, markdown_core_parser *parser,
+                                             markdown_core_node *block) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
     markdown_core_node *node;
     bool in_link = false;
 
-    if (!markdown_core_consolidate_text_nodes(root)) {
-        parser->oom = true;
+    // Text nodes only live under inline-owning units; the driver has already
+    // consolidated adjacent text nodes inside this block.
+    if (!markdown_core_node_owns_inlines(block)) {
+        return block;
     }
-    iter = markdown_core_iter_new(root);
+
+    iter = markdown_core_iter_new(block);
     if (!iter) {
         parser->oom = true;
-        return NULL;
+        return block;
     }
 
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
@@ -628,7 +632,7 @@ static markdown_core_node *postprocess(markdown_core_extension *ext, markdown_co
 
     markdown_core_iter_free(iter);
 
-    return root;
+    return block;
 }
 
 static const unsigned char autolink_special_chars[] = {':', 'w'};
@@ -636,7 +640,7 @@ static const unsigned char autolink_special_chars[] = {':', 'w'};
 static const markdown_core_extension autolink_extension = {
     .name = "autolink",
     .match_inline = match,
-    .postprocess_func = postprocess,
+    .postprocess_block = postprocess_block,
     .special_inline_chars = autolink_special_chars,
     .special_inline_char_count = sizeof(autolink_special_chars),
 };

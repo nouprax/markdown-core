@@ -142,7 +142,7 @@ static markdown_core_node *make_str_with_entities(subject *subj, int start_colum
                                                   markdown_core_chunk *content) {
     markdown_core_strbuf unescaped = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
-    if (houdini_unescape_html(&unescaped, content->data, content->len)) {
+    if (markdown_core_houdini_unescape_html(&unescaped, content->data, content->len)) {
         if (unescaped.oom) {
             subj->oom = 1;
         }
@@ -206,7 +206,7 @@ static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_
         markdown_core_strbuf_puts(&buf, "mailto:");
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
+    markdown_core_houdini_unescape_html_f(&buf, url->data, url->len);
     if (buf.oom) {
         subj->oom = 1;
     }
@@ -946,7 +946,7 @@ static markdown_core_node *handle_entity(subject *subj) {
 
     advance(subj);
 
-    len = houdini_unescape_ent(&ent, subj->input.data + subj->pos, subj->input.len - subj->pos);
+    len = markdown_core_houdini_unescape_ent(&ent, subj->input.data + subj->pos, subj->input.len - subj->pos);
 
     if (len == 0) {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("&"));
@@ -971,7 +971,7 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
         return result;
     }
 
-    houdini_unescape_html_f(&buf, url->data, url->len);
+    markdown_core_houdini_unescape_html_f(&buf, url->data, url->len);
 
     markdown_core_strbuf_unescape(&buf);
     if (buf.oom && lost) {
@@ -994,9 +994,9 @@ markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_c
 
     // remove surrounding quotes if any:
     if ((first == '\'' && last == '\'') || (first == '(' && last == ')') || (first == '"' && last == '"')) {
-        houdini_unescape_html_f(&buf, title->data + 1, title->len - 2);
+        markdown_core_houdini_unescape_html_f(&buf, title->data + 1, title->len - 2);
     } else {
-        houdini_unescape_html_f(&buf, title->data, title->len);
+        markdown_core_houdini_unescape_html_f(&buf, title->data, title->len);
     }
 
     markdown_core_strbuf_unescape(&buf);
@@ -1841,7 +1841,8 @@ static char *my_strndup(const char *s, size_t n) {
     return (char *)memcpy(result, s, len);
 }
 
-char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate pred) {
+char *markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser,
+                                             markdown_core_inline_predicate_func pred) {
     unsigned char c;
     bufsize_t startpos = parser->pos;
     bufsize_t len = 0;
