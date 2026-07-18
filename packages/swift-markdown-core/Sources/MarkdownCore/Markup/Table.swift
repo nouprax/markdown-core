@@ -18,7 +18,7 @@ public struct Table: Markup {
 }
 
 extension Table {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
@@ -55,7 +55,7 @@ public struct TableRow: Markup {
 }
 
 extension TableRow {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
@@ -78,7 +78,7 @@ public struct TableCell: Markup {
 }
 
 extension TableCell {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         self.init(id: id, revision: revision, content: builder.children(node))
     }

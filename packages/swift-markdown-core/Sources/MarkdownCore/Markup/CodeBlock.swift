@@ -14,7 +14,7 @@ public struct CodeBlock: Markup {
 }
 
 extension CodeBlock {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var info = markdown_core_string_view()
         var language = markdown_core_string_view()

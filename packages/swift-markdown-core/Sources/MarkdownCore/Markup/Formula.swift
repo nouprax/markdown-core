@@ -11,7 +11,7 @@ public struct Formula: Markup {
 }
 
 extension Formula {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
         var literal = markdown_core_string_view()

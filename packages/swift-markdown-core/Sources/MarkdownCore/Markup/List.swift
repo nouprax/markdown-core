@@ -17,7 +17,7 @@ public struct List: Markup {
 }
 
 extension List {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
@@ -44,7 +44,7 @@ public struct ListItem: Markup {
 }
 
 extension ListItem {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)

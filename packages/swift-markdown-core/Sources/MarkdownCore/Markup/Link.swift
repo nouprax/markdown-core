@@ -11,7 +11,7 @@ public struct Link: Markup {
 }
 
 extension Link {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var destination = markdown_core_string_view()
         var title = markdown_core_string_view()

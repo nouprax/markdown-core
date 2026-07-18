@@ -10,7 +10,7 @@ public struct HTMLBlock: Markup {
 }
 
 extension HTMLBlock {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var literal = markdown_core_string_view()
         markdown_core_node_literal(node, &literal)

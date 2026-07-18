@@ -10,7 +10,7 @@ public struct FootnoteDefinition: Markup {
 }
 
 extension FootnoteDefinition {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var label = markdown_core_string_view()
         markdown_core_node_footnote_id(node, &label)
@@ -33,7 +33,7 @@ public struct FootnoteReference: Markup {
 }
 
 extension FootnoteReference {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var label = markdown_core_string_view()
         markdown_core_node_footnote_id(node, &label)

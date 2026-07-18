@@ -9,7 +9,7 @@ public struct SoftBreak: Markup {
 }
 
 extension SoftBreak {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         self.init(id: id, revision: revision)
     }

@@ -13,7 +13,7 @@ public struct DirectiveBlock: Markup {
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         let values = DirectiveValues(from: node)
         self.init(
