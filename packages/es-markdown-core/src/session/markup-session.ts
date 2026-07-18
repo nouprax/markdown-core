@@ -106,11 +106,15 @@ export class MarkupSession {
      */
     replace(byteStart: number, byteEnd: number, replacement: string): void {
         if (typeof replacement !== "string") throw new TypeError("replacement must be a string");
+        // The upper bound keeps the offsets faithful across the WASM
+        // boundary: the native size_t parameters are 32-bit, so a larger
+        // value would wrap instead of being rejected against the length.
         if (
             !Number.isSafeInteger(byteStart) ||
             !Number.isSafeInteger(byteEnd) ||
             byteStart < 0 ||
-            byteStart > byteEnd
+            byteStart > byteEnd ||
+            byteEnd >= 2 ** 32
         ) {
             throw new RangeError(`invalid edit range [${byteStart}, ${byteEnd})`);
         }

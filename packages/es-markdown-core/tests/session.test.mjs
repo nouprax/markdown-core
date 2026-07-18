@@ -240,6 +240,11 @@ test("sessions: invalid edit ranges are rejected", () => {
         assert.throws(() => session.replace(-1, 1, "x"), RangeError);
         assert.throws(() => session.append(42), TypeError);
         session.append("abc");
+        // Offsets at or beyond 2^32 would wrap at the 32-bit WASM boundary
+        // (here to [0, 0), an insert at the start) instead of failing the
+        // native length check; they must be rejected before the crossing.
+        assert.throws(() => session.replace(2 ** 32, 2 ** 32, "x"), RangeError);
+        assert.throws(() => session.replace(0, 2 ** 32 + 3, "x"), RangeError);
         assert.throws(
             () => session.replace(1, 9, "x"),
             (error) => error.name === "ParseError" && error.code === "invalidArgument"
