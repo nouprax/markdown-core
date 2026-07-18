@@ -355,6 +355,9 @@ kotlin {
     compilerOptions {
         languageVersion.set(KotlinVersion.KOTLIN_2_2)
         apiVersion.set(KotlinVersion.KOTLIN_2_2)
+        // CSession is an expect class (one native handle type per
+        // platform); the flag silences the expect/actual-classes Beta notice.
+        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
     jvm {
@@ -429,10 +432,16 @@ kotlin {
     }
 
     sourceSets {
-        commonMain.dependencies { api(libs.kotlin.stdlib) }
+        commonMain.dependencies {
+            api(libs.kotlin.stdlib)
+            api(libs.kotlinx.coroutines.core)
+        }
         commonTest {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
-            dependencies { implementation(kotlin("test")) }
+            dependencies {
+                implementation(kotlin("test"))
+                implementation(libs.kotlinx.coroutines.test)
+            }
         }
         jvmTest.dependencies { implementation(kotlin("test-junit5")) }
         getByName("androidDeviceTest").dependencies {

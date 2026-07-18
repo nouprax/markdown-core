@@ -1,8 +1,13 @@
 package com.nouprax.markdown.core
 
 public class BlockQuote internal constructor(
+    override val id: MarkupID,
+    override val revision: ULong,
     public val content: kotlin.collections.List<Markup>,
-    override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitBlockQuote(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }

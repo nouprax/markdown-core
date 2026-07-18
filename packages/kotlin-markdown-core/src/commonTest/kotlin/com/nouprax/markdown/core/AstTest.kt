@@ -50,7 +50,7 @@ class AstTest {
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
-        assertTrue(documents.all { it.scope.start == Position(1, 1) })
+        assertTrue(documents.all { it.scope(it).start == Position(1, 1) })
     }
 
     @Test
@@ -68,9 +68,9 @@ class AstTest {
         assertTrue(table.header.isHeader)
         assertTrue(table.rows.all { !it.isHeader })
         assertTrue(
-            table.header.cells
-                .single()
-                .scope.start.line > 0,
+            document
+                .scope(table.header.cells.single())
+                .start.line > 0,
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link

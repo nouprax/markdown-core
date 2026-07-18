@@ -476,6 +476,59 @@ Equality everywhere is `(lineage, id, revision)`.
     equality + delta-mirror integrity, session streaming benchmark
     (`session_stream_and_delta_decode`), audit v2 (session surface pinned
     exactly, mutation ban scoped to model/walker).
+
+  Kotlin workstream delivered 2026-07-18 (ES remains), same architecture over
+  the wire boundary:
+
+  - **MKC3 wire** replaces MKC2 end to end: every node record carries
+    (kind, id, revision, fields) and names its children by id — positions
+    never travel with records. A commit payload is
+    `removed ids | records for added ∪ changed ∪ bubbled`, with records
+    ordered children-before-parents (C-side depth sort; equal depths are
+    never ancestor-related), which is exactly the order the mirror rebuilds
+    in — one pass, one record shape for all three verdicts (the planned
+    bubbled-only `(id, childIds)` shape was dropped: bubbled nodes are
+    containers with tiny fields, and one shape removes a decoder branch).
+    Scopes travel as a separate `(id, revision, scope)` table payload that a
+    snapshot requests once on first scope use while current
+    (`ScopeResolver`, atomic pending → materialized/detached state), and the
+    revision in each entry rejects stale node values instead of pairing old
+    fields with a current position.
+  - The bridge gains `markdown_core_kotlin_session_{open,free,lineage,
+    revision,length,root,edit,commit,scopes,footnote_info,footnotes,
+    footnote_references}`; JNI mirrors each (exports/map/def lists updated);
+    Kotlin/Native binds them through the existing cinterop def. One-shot
+    `markdown_core_kotlin_parse` is reimplemented as C-side session sugar —
+    open + edit + delta-bearing commit + free in a single crossing — whose
+    payload is the same record stream a session commit produces (the first
+    commit lists every node as added) plus lineage, root id, and the eagerly
+    materialized scope table: one decode pipeline for both modes. An empty
+    source commits an empty delta, so the decoder synthesizes the revision-0
+    empty root from the scope table.
+  - Platform surface: all 28 model classes gain `id: MarkupID`/`revision`
+    with O(1) equals/hashCode, drop stored scopes, and rename the footnote
+    field to `label`; `Document.scope(node)`/`Document.dump()` mediate
+    scopes and dumps; `Walker.walk(document, ...)` supplies the resolved
+    scope per event. `MarkupSession` is `AutoCloseable` (explicit `close`;
+    snapshots and materialized scopes survive it), a pure-shift commit
+    re-wraps the root `Document` object around a fresh resolver (Kotlin
+    classes cannot carry two snapshots' positions the way Swift's copied
+    structs can), and `updates(input: Flow<String>): Flow<Commit>` lands the
+    coroutines dependency (`kotlinx-coroutines-core` as `api`).
+  - Gates: `SessionTest` (streaming id stability, clean-boundary inserts,
+    kind changes, empty-delta pure shifts, scope survival after close,
+    superseded-unmaterialized traps, footnote queries, `updates`, closed
+    sessions, rejected edits), `SessionAstTest` conformance replay of the
+    manifest corpus (per-commit dump equality against one-shot references +
+    delta-mirror integrity: disjoint arrays, untouched revisions intact,
+    removed ids gone) on JVM, native, and Android-host conformance runs,
+    `SessionConcurrencyTest` (parallel sessions with disagreeing options on
+    `Dispatchers.Default` — JVM executors, native workers, Android host) plus
+    a raw-thread executor variant in `ConcurrencyJvmTest`, the
+    `session_stream_flat` JVM streaming benchmark
+    (`jni_session_stream_and_delta_decode`), and audit v2 (Kotlin session
+    surface pinned exactly, mutation ban scoped away from the session
+    directory, document-mediated dump pins).
 - **M5 — Hardening & release**: edit-script fuzz target, pathological corpus,
   perf tuning, CHANGELOG/VERSION 2.0.0, release dry-run. Gates: full CI
   matrix + package audits.
