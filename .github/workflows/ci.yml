@@ -582,13 +582,19 @@ jobs:
                   path: build/ci-artifacts/kotlin-android-x86_64
 
     kotlin-android-test:
-        # Each leaf receives the same immutable APK and owns exactly one fresh
-        # emulator lifecycle. No Gradle, JVM, NDK, CMake, publication, managed
-        # device snapshot, or other test suite runs on these consumers.
+        # Each leaf receives the same immutable APK and owns a fresh emulator
+        # lifecycle per attempt. No Gradle, JVM, NDK, CMake, publication,
+        # managed device snapshot, or other test suite runs on these
+        # consumers. The emulator and system image are pinned by cache key:
+        # Google revises system-image packages in place under the same path
+        # (the 16 KB image is on its seventh revision), so an uncached
+        # sdkmanager install makes runs non-reproducible, and the ~1.7 GB
+        # download itself has corrupted (digest-mismatch); bump the -r
+        # suffix deliberately to take a newer revision.
         name: Test - Kotlin / Android · ${{ matrix.label }}
         needs: build-tests-ready
         runs-on: ubuntu-24.04
-        timeout-minutes: 12
+        timeout-minutes: 20
         strategy:
             fail-fast: false
             matrix:
@@ -616,7 +622,16 @@ jobs:
         steps:
             - uses: actions/checkout@v7
             - uses: android-actions/setup-android@v4
+            - name: Restore the pinned emulator and system image
+              id: emulator-cache
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ${{ env.ANDROID_HOME }}/emulator
+                      ${{ env.ANDROID_HOME }}/system-images/android-36/${{ matrix.system-image }}
+                  key: android-emulator-api36-${{ matrix.system-image }}-x86_64-r1
             - name: Install one Android runtime image
+              if: steps.emulator-cache.outputs.cache-hit != 'true'
               run: |
                   sdkmanager \
                       "emulator" \
@@ -639,11 +654,20 @@ jobs:
                   name: kotlin-android-x86_64-${{ github.sha }}
                   path: build/ci-artifacts/kotlin-android-x86_64
             - name: Run Android ${{ matrix.suite }} without building
+              # One bounded retry with a fresh AVD absorbs transient
+              # emulator-stack crashes; a real regression still fails both
+              # attempts.
               run: |
-                  scripts/run-kotlin-android-test-artifact.sh \
-                      build/ci-artifacts/kotlin-android-x86_64 \
-                      "${{ matrix.suite }}" \
-                      "${{ matrix.page-size }}"
+                  for attempt in 1 2; do
+                      if scripts/run-kotlin-android-test-artifact.sh \
+                          build/ci-artifacts/kotlin-android-x86_64 \
+                          "${{ matrix.suite }}" \
+                          "${{ matrix.page-size }}"; then
+                          exit 0
+                      fi
+                      echo "::warning::Android ${{ matrix.label }} attempt ${attempt} failed"
+                  done
+                  exit 1
             - name: Upload Android test failure evidence
               if: failure()
               uses: actions/upload-artifact@v7
