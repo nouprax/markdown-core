@@ -29,8 +29,15 @@ const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body i
   try {
     const api = await import('/index.js');
     const parsed = api.Document.parse('# Browser 🌍');
+    const session = new api.MarkupSession();
+    session.append('# Brow');
+    session.commit();
+    session.append('ser 🌍');
+    const streamed = session.commit().document.dump();
+    session.close();
     const valid = parsed.content[0].kind === 'heading' &&
       parsed.content[0].content[0].literal === 'Browser 🌍' &&
+      streamed === parsed.dump() &&
       !('memory' in api) && !('initialize' in api);
     document.title = valid ? 'PASS' : 'FAIL';
     document.body.textContent = document.title;

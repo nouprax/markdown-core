@@ -191,6 +191,62 @@ test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
 fi
+# Node values carry identity, never positions; scopes are document-mediated.
+if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model; then
+    fail "ES node values store scopes"
+fi
+grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/tree-dumper.ts \
+    && grep -q 'readonly scope: (node: Markup) => Scope' packages/es-markdown-core/src/model/document.ts \
+    && grep -q 'readonly dump: () => string' packages/es-markdown-core/src/model/document.ts \
+    || fail "ES does not expose the reviewed Document diagnostic dump API"
+es_session_surface=$(
+    {
+        grep -R -h -E '^export (class|interface|function) [A-Za-z]+' packages/es-markdown-core/src/session
+        grep -h -E '^    [a-zA-Z].*[{;]$' \
+            packages/es-markdown-core/src/session/markup-session.ts \
+            packages/es-markdown-core/src/session/commit.ts \
+            packages/es-markdown-core/src/session/footnote-info.ts \
+            | grep -v '^    private '
+    } | sed -E 's/ \{$//; s/;$//; s/^    //' | sort -u
+)
+expected_es_session_surface='append(text: string): void
+async *updates(input: AsyncIterable<string> | Iterable<string>): AsyncIterableIterator<Commit>
+close(): void
+commit(): Commit
+constructor(options: ParseOptions = {})
+export class MarkupSession
+export class ScopeResolver
+export function adoptDocument(value: DocumentValue, resolver: ScopeResolver): Document
+export interface Commit
+export interface Delta
+export interface FootnoteInfo
+export interface ScopeEntry
+footnoteInfo(id: MarkupID): FootnoteInfo | null
+footnoteReferences(definition: MarkupID): FootnoteReference[]
+footnotes(): FootnoteDefinition[]
+get document(): Document
+get length(): number
+get revision(): number
+node(id: MarkupID): Markup | null
+readonly added: readonly MarkupID[]
+readonly afterRevision: number
+readonly beforeRevision: number
+readonly bubbled: readonly MarkupID[]
+readonly changed: readonly MarkupID[]
+readonly changes: Delta
+readonly definition: MarkupID | null
+readonly document: Document
+readonly lineage: bigint
+readonly number: number | null
+readonly options: Readonly<Required<ParseOptions>>
+readonly referenceCount: number
+readonly referenceOrdinal: number | null
+readonly removed: readonly MarkupID[]
+replace(byteStart: number, byteEnd: number, replacement: string): void'
+if [ "$es_session_surface" != "$expected_es_session_surface" ]; then
+    printf '%s\n' "$es_session_surface" >&2
+    fail "ES session surface drifted from the reviewed pin"
+fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/visitor.ts \
@@ -224,7 +280,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+const expectedRuntime = ["Document", "MarkupSession", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

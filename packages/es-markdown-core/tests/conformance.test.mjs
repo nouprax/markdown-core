@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, MarkupSession, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -52,7 +52,11 @@ test("conformance: public node schema is reachable", () => {
             "footnoteReference"
         ])
     );
-    assert.ok(documents.every((document) => document.scope.start.line === 1 && document.scope.start.column === 1));
+    assert.ok(
+        documents.every(
+            (document) => document.scope(document).start.line === 1 && document.scope(document).start.column === 1
+        )
+    );
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
@@ -112,6 +116,56 @@ for (const testCase of canonicalManifest.cases) {
         assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
+}
+
+// Session replay of the shared canonical AST corpus: every per-line commit
+// must dump byte-equal to a one-shot parse of the same prefix, and the delta
+// must be exactly the difference between consecutive mirrors.
+for (const testCase of canonicalManifest.cases) {
+    test(`conformance: session replay of canonical AST case ${testCase.name}`, () => {
+        const session = new MarkupSession(testCase.parseOptions);
+        try {
+            let replayed = "";
+            let previous = new Map();
+            for (const chunk of lineChunks(testCase.source)) {
+                replayed += chunk;
+                session.append(chunk);
+                const commit = session.commit();
+
+                // Equivalence: the incremental snapshot dumps byte-equal to
+                // a one-shot parse of the same prefix.
+                const reference = Document.parse(replayed, testCase.parseOptions);
+                assert.equal(commit.document.dump(), reference.dump(), testCase.name);
+
+                // Delta-mirror integrity: the four arrays are disjoint,
+                // every node outside the delta kept its exact revision, and
+                // removed ids are gone.
+                const changes = commit.changes;
+                const touched = [...changes.added, ...changes.changed, ...changes.bubbled].map((id) => id.rawValue);
+                const removed = changes.removed.map((id) => id.rawValue);
+                assert.equal(new Set([...touched, ...removed]).size, touched.length + removed.length, testCase.name);
+                const touchedSet = new Set(touched);
+                const current = new Map();
+                for (const node of flatten(commit.document)) {
+                    current.set(node.id.rawValue, node.revision);
+                    if (!touchedSet.has(node.id.rawValue)) {
+                        assert.equal(node.revision, previous.get(node.id.rawValue), testCase.name);
+                    }
+                }
+                for (const rawValue of removed) {
+                    assert.equal(current.has(rawValue), false, testCase.name);
+                }
+                previous = current;
+            }
+            assert.equal(session.document.dump(), testCase.expected, testCase.name);
+        } finally {
+            session.close();
+        }
+    });
+}
+
+function lineChunks(source) {
+    return source.length === 0 ? [] : source.split(/(?<=\n)/);
 }
 
 function flatten(root) {

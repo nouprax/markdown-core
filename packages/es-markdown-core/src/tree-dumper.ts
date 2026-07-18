@@ -12,40 +12,41 @@ import type { Heading } from "./model/heading.js";
 import type { HTMLBlock } from "./model/html-block.js";
 import type { HTML } from "./model/html.js";
 import type { Image } from "./model/image.js";
-import type { LineBreak } from "./model/line-break.js";
 import type { Link } from "./model/link.js";
 import type { List, ListItem } from "./model/list.js";
 import type { Markup } from "./model/markup.js";
 import type { Paragraph } from "./model/paragraph.js";
-import type { SoftBreak } from "./model/soft-break.js";
 import type { Strikethrough } from "./model/strikethrough.js";
 import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
-import type { ThematicBreak } from "./model/thematic-break.js";
 import type { Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
 import { Walker, WalkEvent } from "./walker.js";
-
-interface DumpRecord {
-    readonly line: string;
-    readonly children: number;
-}
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
 export class TreeDumper {
     private constructor() {}
 
-    /** Returns the canonical diagnostic dump for `root` and its descendants. */
-    static dump(root: Markup): string {
+    /**
+     * Returns the canonical diagnostic dump for the subtree rooted at
+     * `node` (the whole document by default), resolving absolute scopes
+     * through the snapshot. A non-document subtree prints scopes with the
+     * subtree as origin: the root's start line becomes line 1.
+     * Position-free markers (0:0..0:0) print unchanged.
+     */
+    static dump(document: Document, node: Markup = document): string {
+        const origin = document.scope(node).start.line;
+        const offset = origin > 0 ? origin - 1 : 0;
         const remainingChildren: number[] = [];
         const lines: string[] = [];
 
-        new Walker().walk(root, (event, node) => {
+        new Walker().walk(document, node, (event, current, scope) => {
             if (event === WalkEvent.entering) {
-                const dump = visit(node, dumpVisitor);
+                const record = visit(current, dumpVisitor);
+                const line = record.line(rebased(scope, offset));
                 if (remainingChildren.length === 0) {
-                    lines.push(dump.line);
+                    lines.push(line);
                 } else {
                     const parent = remainingChildren.length - 1;
                     const prefix = remainingChildren
@@ -53,10 +54,10 @@ export class TreeDumper {
                         .map((remaining) => (remaining > 0 ? "│   " : "    "))
                         .join("");
                     const connector = remainingChildren[parent] === 1 ? "└── " : "├── ";
-                    lines.push(prefix + connector + dump.line);
+                    lines.push(prefix + connector + line);
                     remainingChildren[parent] = remainingChildren[parent]! - 1;
                 }
-                remainingChildren.push(dump.children);
+                remainingChildren.push(record.children);
             } else {
                 if (remainingChildren.pop() !== 0) throw new Error("walker exited before its children");
             }
@@ -65,23 +66,26 @@ export class TreeDumper {
     }
 }
 
-const dumpVisitor: Visitor<DumpRecord> = {
-    visitDocument: (node: Document) => record("Document", node, [], node.content.length),
-    visitBlockQuote: (node: BlockQuote) => record("BlockQuote", node, [], node.content.length),
-    visitParagraph: (node: Paragraph) => record("Paragraph", node, [], node.content.length),
-    visitHeading: (node: Heading) => record("Heading", node, [`level=${node.level}`], node.content.length),
-    visitThematicBreak: (node: ThematicBreak) => record("ThematicBreak", node),
+interface PendingRecord {
+    readonly line: (scope: string) => string;
+    readonly children: number;
+}
+
+const dumpVisitor: Visitor<PendingRecord> = {
+    visitDocument: (node: Document) => record("Document", [], node.content.length),
+    visitBlockQuote: (node: BlockQuote) => record("BlockQuote", [], node.content.length),
+    visitParagraph: (node: Paragraph) => record("Paragraph", [], node.content.length),
+    visitHeading: (node: Heading) => record("Heading", [`level=${node.level}`], node.content.length),
+    visitThematicBreak: () => record("ThematicBreak"),
     visitList: (node: List) =>
         record(
             "List",
-            node,
             [`flavor=${node.flavor}`, `start=${node.start ?? "null"}`, `tight=${node.tight}`],
             node.items.length
         ),
-    visitListItem: (node: ListItem) =>
-        record("ListItem", node, [`checked=${node.checked ?? "null"}`], node.content.length),
+    visitListItem: (node: ListItem) => record("ListItem", [`checked=${node.checked ?? "null"}`], node.content.length),
     visitCodeBlock: (node: CodeBlock) =>
-        record("CodeBlock", node, [
+        record("CodeBlock", [
             `mode=${node.mode}`,
             `info=${optionalString(node.info)}`,
             `language=${optionalString(node.language)}`,
@@ -89,60 +93,53 @@ const dumpVisitor: Visitor<DumpRecord> = {
             `fenced=${node.fenced}`,
             `closed=${node.closed}`
         ]),
-    visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", node, [`literal=${jsonString(node.literal)}`]),
+    visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", [`literal=${jsonString(node.literal)}`]),
     visitFormulaBlock: (node: FormulaBlock) =>
-        record("FormulaBlock", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
-    visitTable: (node: Table) =>
-        record("Table", node, [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
-    visitTableRow: (node: TableRow) => record("TableRow", node, [`isHeader=${node.isHeader}`], node.cells.length),
-    visitTableCell: (node: TableCell) => record("TableCell", node, [], node.content.length),
+        record("FormulaBlock", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+    visitTable: (node: Table) => record("Table", [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
+    visitTableRow: (node: TableRow) => record("TableRow", [`isHeader=${node.isHeader}`], node.cells.length),
+    visitTableCell: (node: TableCell) => record("TableCell", [], node.content.length),
     visitDirectiveBlock: (node: DirectiveBlock) =>
         record(
             "DirectiveBlock",
-            node,
             directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
             (node.label?.length ?? 0) + node.content.length
         ),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
-        record("FootnoteDefinition", node, [`id=${jsonString(node.id)}`], node.content.length),
-    visitText: (node: Text) => record("Text", node, [`literal=${jsonString(node.literal)}`]),
-    visitSoftBreak: (node: SoftBreak) => record("SoftBreak", node),
-    visitLineBreak: (node: LineBreak) => record("LineBreak", node),
-    visitCode: (node: Code) => record("Code", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
-    visitHTML: (node: HTML) => record("HTML", node, [`literal=${jsonString(node.literal)}`]),
-    visitFormula: (node: Formula) =>
-        record("Formula", node, [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
-    visitEmphasis: (node: Emphasis) => record("Emphasis", node, [], node.content.length),
-    visitStrong: (node: Strong) => record("Strong", node, [], node.content.length),
-    visitStrikethrough: (node: Strikethrough) => record("Strikethrough", node, [], node.content.length),
+        record("FootnoteDefinition", [`id=${jsonString(node.label)}`], node.content.length),
+    visitText: (node: Text) => record("Text", [`literal=${jsonString(node.literal)}`]),
+    visitSoftBreak: () => record("SoftBreak"),
+    visitLineBreak: () => record("LineBreak"),
+    visitCode: (node: Code) => record("Code", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+    visitHTML: (node: HTML) => record("HTML", [`literal=${jsonString(node.literal)}`]),
+    visitFormula: (node: Formula) => record("Formula", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
+    visitEmphasis: (node: Emphasis) => record("Emphasis", [], node.content.length),
+    visitStrong: (node: Strong) => record("Strong", [], node.content.length),
+    visitStrikethrough: (node: Strikethrough) => record("Strikethrough", [], node.content.length),
     visitLink: (node: Link) =>
         record(
             "Link",
-            node,
             [`destination=${optionalString(node.destination)}`, `title=${optionalString(node.title)}`],
             node.content.length
         ),
     visitImage: (node: Image) =>
         record(
             "Image",
-            node,
             [`source=${optionalString(node.source)}`, `title=${optionalString(node.title)}`],
             node.content.length
         ),
     visitDirective: (node: Directive) =>
         record(
             "Directive",
-            node,
             directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
             node.label?.length ?? 0
         ),
-    visitFootnoteReference: (node: FootnoteReference) =>
-        record("FootnoteReference", node, [`id=${jsonString(node.id)}`])
+    visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", [`id=${jsonString(node.label)}`])
 };
 
-function record(kind: string, node: Markup, fields: readonly string[] = [], children = 0): DumpRecord {
+function record(kind: string, fields: readonly string[] = [], children = 0): PendingRecord {
     const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
-    return { line: `${kind} ${scope(node.scope)}${fieldText} children=${children}`, children };
+    return { line: (scope) => `${kind} ${scope}${fieldText} children=${children}`, children };
 }
 
 function directiveFields(
@@ -159,8 +156,10 @@ function directiveFields(
     ];
 }
 
-function scope(value: Scope): string {
-    return `scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}`;
+function rebased(value: Scope, offset: number): string {
+    const start = value.start.line > 0 ? value.start.line - offset : value.start.line;
+    const end = value.end.line > 0 ? value.end.line - offset : value.end.line;
+    return `scope=${start}:${value.start.column}..${end}:${value.end.column}`;
 }
 
 function optionalString(value: string | null): string {
