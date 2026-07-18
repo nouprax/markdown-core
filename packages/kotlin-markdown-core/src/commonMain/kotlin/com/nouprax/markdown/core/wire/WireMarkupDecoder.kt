@@ -1,134 +1,186 @@
 package com.nouprax.markdown.core
 
-internal fun WireReader.markup(): Markup {
+/**
+ * Applies one MKC3 commit body to [mirror] and returns its delta.
+ *
+ * The body lists removed ids and then full records for added, changed, and
+ * bubbled nodes ordered children-before-parents, so every record's child ids
+ * resolve against already-decoded mirror entries in one pass. Unchanged
+ * children keep their exact platform object across snapshots.
+ */
+internal fun WireReader.commitBody(
+    lineage: ULong,
+    mirror: MutableMap<ULong, Markup>,
+): Delta {
+    val beforeRevision = ulong()
+    val afterRevision = ulong()
+
+    val removedCount = int()
+    require(removedCount >= 0) { "invalid native removed count" }
+    val removed = immutableList(removedCount) { MarkupID(lineage, ulong()) }
+    removed.forEach { mirror.remove(it.rawValue) }
+
+    val recordCount = int()
+    require(recordCount >= 0) { "invalid native record count" }
+    val added = ArrayList<MarkupID>()
+    val changed = ArrayList<MarkupID>()
+    val bubbled = ArrayList<MarkupID>()
+    repeat(recordCount) {
+        val verdict = byte().toInt()
+        val node = record(lineage, mirror)
+        mirror[node.id.rawValue] = node
+        when (verdict) {
+            0 -> added += node.id
+            1 -> changed += node.id
+            2 -> bubbled += node.id
+            else -> error("invalid native delta verdict $verdict")
+        }
+    }
+    return Delta(
+        beforeRevision,
+        afterRevision,
+        immutableList(added.size) { added[it] },
+        removed,
+        immutableList(changed.size) { changed[it] },
+        immutableList(bubbled.size) { bubbled[it] },
+    )
+}
+
+private fun WireReader.record(
+    lineage: ULong,
+    mirror: Map<ULong, Markup>,
+): Markup {
     val kind = kind()
-    val nodeScope = scope()
+    val id = MarkupID(lineage, ulong())
+    val revision = ulong()
     return when (kind) {
         WireKind.DOCUMENT -> {
-            Document(markupList(), nodeScope)
+            Document(id, revision, children(mirror), ScopeResolver.unresolvable)
         }
 
         WireKind.BLOCK_QUOTE -> {
-            BlockQuote(markupList(), nodeScope)
+            BlockQuote(id, revision, children(mirror))
         }
 
         WireKind.PARAGRAPH -> {
-            Paragraph(markupList(), nodeScope)
+            Paragraph(id, revision, children(mirror))
         }
 
         WireKind.HEADING -> {
-            Heading(int(), markupList(), nodeScope)
+            Heading(id, revision, int(), children(mirror))
         }
 
         WireKind.THEMATIC_BREAK -> {
-            ThematicBreak(nodeScope)
+            ThematicBreak(id, revision)
         }
 
         WireKind.LIST -> {
-            readList(nodeScope)
+            readList(id, revision, mirror)
         }
 
         WireKind.LIST_ITEM -> {
-            ListItem(nullableBoolean(), markupList(), nodeScope)
+            ListItem(id, revision, nullableBoolean(), children(mirror))
         }
 
         WireKind.CODE_BLOCK -> {
             CodeBlock(
+                id,
+                revision,
                 PlacementMode.STANDALONE,
                 string(),
                 string(),
                 requiredString(),
                 boolean(),
                 boolean(),
-                nodeScope,
             )
         }
 
         WireKind.HTML_BLOCK -> {
-            HTMLBlock(requiredString(), nodeScope)
+            HTMLBlock(id, revision, requiredString())
         }
 
         WireKind.FORMULA_BLOCK -> {
-            FormulaBlock(placement(), requiredString(), nodeScope)
+            FormulaBlock(id, revision, placement(), requiredString())
         }
 
         WireKind.TABLE -> {
-            readTable(nodeScope)
+            readTable(id, revision, mirror)
         }
 
         WireKind.DIRECTIVE_BLOCK -> {
             DirectiveBlock(
+                id,
+                revision,
                 placement(),
                 requiredString(),
                 string(),
-                optionalMarkupList(),
-                markupList(),
-                nodeScope,
+                optionalChildren(mirror),
+                children(mirror),
             )
         }
 
         WireKind.FOOTNOTE_DEFINITION -> {
-            FootnoteDefinition(requiredString(), markupList(), nodeScope)
+            FootnoteDefinition(id, revision, requiredString(), children(mirror))
         }
 
         WireKind.TEXT -> {
-            Text(requiredString(), nodeScope)
+            Text(id, revision, requiredString())
         }
 
         WireKind.SOFT_BREAK -> {
-            SoftBreak(nodeScope)
+            SoftBreak(id, revision)
         }
 
         WireKind.LINE_BREAK -> {
-            LineBreak(nodeScope)
+            LineBreak(id, revision)
         }
 
         WireKind.CODE -> {
-            Code(PlacementMode.EMBEDDED, requiredString(), nodeScope)
+            Code(id, revision, PlacementMode.EMBEDDED, requiredString())
         }
 
         WireKind.HTML -> {
-            HTML(requiredString(), nodeScope)
+            HTML(id, revision, requiredString())
         }
 
         WireKind.FORMULA -> {
-            Formula(placement(), requiredString(), nodeScope)
+            Formula(id, revision, placement(), requiredString())
         }
 
         WireKind.EMPHASIS -> {
-            Emphasis(markupList(), nodeScope)
+            Emphasis(id, revision, children(mirror))
         }
 
         WireKind.STRONG -> {
-            Strong(markupList(), nodeScope)
+            Strong(id, revision, children(mirror))
         }
 
         WireKind.STRIKETHROUGH -> {
-            Strikethrough(markupList(), nodeScope)
+            Strikethrough(id, revision, children(mirror))
         }
 
         WireKind.LINK -> {
-            Link(string(), string(), markupList(), nodeScope)
+            Link(id, revision, string(), string(), children(mirror))
         }
 
         WireKind.IMAGE -> {
-            Image(string(), string(), markupList(), nodeScope)
+            Image(id, revision, string(), string(), children(mirror))
         }
 
         WireKind.DIRECTIVE -> {
-            readDirective(nodeScope)
+            readDirective(id, revision, mirror)
         }
 
         WireKind.FOOTNOTE_REFERENCE -> {
-            FootnoteReference(requiredString(), nodeScope)
+            FootnoteReference(id, revision, requiredString())
         }
 
         WireKind.TABLE_ROW -> {
-            readTableRow(nodeScope)
+            readTableRow(id, revision, mirror)
         }
 
         WireKind.TABLE_CELL -> {
-            readTableCell(nodeScope)
+            TableCell(id, revision, children(mirror))
         }
     }
 }
@@ -140,19 +192,28 @@ private fun WireReader.placement(): PlacementMode =
         else -> error("invalid native placement mode $rawValue")
     }
 
-private fun WireReader.markupList(): kotlin.collections.List<Markup> {
+private fun WireReader.child(mirror: Map<ULong, Markup>): Markup {
+    val rawValue = ulong()
+    return mirror[rawValue] ?: error("native record referenced an undecoded child")
+}
+
+private fun WireReader.children(mirror: Map<ULong, Markup>): kotlin.collections.List<Markup> {
     val count = int()
     require(count >= 0) { "invalid native child count" }
-    return immutableList(count) { markup() }
+    return immutableList(count) { child(mirror) }
 }
 
-private fun WireReader.optionalMarkupList(): kotlin.collections.List<Markup>? {
+private fun WireReader.optionalChildren(mirror: Map<ULong, Markup>): kotlin.collections.List<Markup>? {
     val count = int()
     require(count >= -1) { "invalid native child count" }
-    return if (count == -1) null else immutableList(count) { markup() }
+    return if (count == -1) null else immutableList(count) { child(mirror) }
 }
 
-private fun WireReader.readList(scope: Scope): List {
+private fun WireReader.readList(
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): List {
     val flavor =
         when (val rawValue = int()) {
             1 -> ListFlavor.BULLET
@@ -162,30 +223,36 @@ private fun WireReader.readList(scope: Scope): List {
     val startValue = long()
     val start = if (boolean()) startValue else null
     val tight = boolean()
-    return List(flavor, start, tight, readListItems(), scope)
+    val itemCount = int()
+    require(itemCount >= 0) { "invalid native list item count" }
+    val items =
+        immutableList(itemCount) {
+            val item = child(mirror)
+            require(item is ListItem) { "list contains a non-item node" }
+            item
+        }
+    return List(id, revision, flavor, start, tight, items)
 }
 
-private fun WireReader.readListItems(): kotlin.collections.List<ListItem> {
-    val count = int()
-    require(count >= 0) { "invalid native list item count" }
-    return immutableList(count) {
-        val item = markup()
-        require(item is ListItem) { "list contains a non-item node" }
-        item
-    }
-}
-
-private fun WireReader.readDirective(scope: Scope): Directive {
+private fun WireReader.readDirective(
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): Directive {
     val mode = placement()
     val name = requiredString()
     val attributes = string()
-    val label = optionalMarkupList()
-    val content = markupList()
+    val label = optionalChildren(mirror)
+    val content = children(mirror)
     require(content.isEmpty()) { "inline directive contains block content" }
-    return Directive(mode, name, attributes, label, scope)
+    return Directive(id, revision, mode, name, attributes, label)
 }
 
-private fun WireReader.readTable(scope: Scope): Table {
+private fun WireReader.readTable(
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): Table {
     val alignmentCount = int()
     require(alignmentCount >= 0) { "invalid native table alignment count" }
     val alignments = immutableList(alignmentCount) { tableAlignment(byte().toInt() and 0xff) }
@@ -193,7 +260,7 @@ private fun WireReader.readTable(scope: Scope): Table {
     require(rowCount >= 0) { "invalid native table row count" }
     val rows =
         immutableList(rowCount) {
-            val row = markup()
+            val row = child(mirror)
             require(row is TableRow) { "table contains a non-row node" }
             row
         }
@@ -206,29 +273,32 @@ private fun WireReader.readTable(scope: Scope): Table {
     }
     require(headerIndex >= 0) { "table has no header" }
     return Table(
+        id,
+        revision,
         alignments,
         rows[headerIndex],
         rows
             .filterIndexed { index, _ -> index != headerIndex }
             .immutableMap { it },
-        scope,
     )
 }
 
-private fun WireReader.readTableRow(scope: Scope): TableRow {
+private fun WireReader.readTableRow(
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): TableRow {
     val header = boolean()
     val cellCount = int()
     require(cellCount >= 0) { "invalid native table cell count" }
     val cells =
         immutableList(cellCount) {
-            val cell = markup()
+            val cell = child(mirror)
             require(cell is TableCell) { "table row contains a non-cell node" }
             cell
         }
-    return TableRow(header, cells, scope)
+    return TableRow(id, revision, header, cells)
 }
-
-private fun WireReader.readTableCell(scope: Scope): TableCell = TableCell(markupList(), scope)
 
 private fun tableAlignment(rawValue: Int): TableAlignment =
     when (rawValue) {

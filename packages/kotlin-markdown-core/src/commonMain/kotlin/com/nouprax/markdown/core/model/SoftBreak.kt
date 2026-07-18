@@ -1,7 +1,12 @@
 package com.nouprax.markdown.core
 
 public class SoftBreak internal constructor(
-    override val scope: Scope,
+    override val id: MarkupID,
+    override val revision: ULong,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitSoftBreak(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }

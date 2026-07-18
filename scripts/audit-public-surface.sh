@@ -125,18 +125,58 @@ test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/Markd
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
+# The model and walker stay mutation-free; the session directory is the one
+# deliberate exception (append/replace are its reviewed edit surface) and is
+# pinned exactly below instead.
 if grep -R -n -E \
     'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    --exclude-dir=session \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports mutation, renderer, or native implementation details"
 fi
+kotlin_session_surface=$(grep -R -h -o -E \
+    'public (fun|val|var|class|object) [A-Za-z.]+' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session | sort -u)
+expected_kotlin_session_surface='public class Commit
+public class Delta
+public class FootnoteInfo
+public class MarkupSession
+public fun MarkupSession.footnoteInfo
+public fun MarkupSession.footnoteReferences
+public fun MarkupSession.footnotes
+public fun append
+public fun commit
+public fun node
+public fun replace
+public fun updates
+public val added
+public val afterRevision
+public val beforeRevision
+public val bubbled
+public val changed
+public val changes
+public val definition
+public val document
+public val length
+public val lineage
+public val number
+public val options
+public val referenceCount
+public val referenceOrdinal
+public val removed
+public val revision
+public var document'
+if [ "$kotlin_session_surface" != "$expected_kotlin_session_surface" ]; then
+    printf '%s\n' "$kotlin_session_surface" >&2
+    fail "Kotlin session surface drifted from the reviewed pin"
+fi
 grep -q 'public object TreeDumper' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
-    && grep -q 'public fun dump(root: Markup): String' \
+    && grep -q 'public fun dump(document: Document): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
     && grep -q 'public fun dump(): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Markup.kt \
-    || fail "Kotlin does not expose the reviewed Markup diagnostic dump API"
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt \
+    || fail "Kotlin does not expose the reviewed Document diagnostic dump API"
 grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
     && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \

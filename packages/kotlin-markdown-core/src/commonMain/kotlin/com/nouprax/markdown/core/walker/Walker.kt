@@ -7,95 +7,107 @@ public enum class WalkEvent {
 
 public object Walker {
     public fun walk(
-        root: Markup,
+        document: Document,
         visitor: Visitor<Unit>,
     ) {
-        walk(root) { event, node ->
+        walk(document) { event, node, _ ->
             if (event == WalkEvent.ENTERING) {
                 node.accept(visitor)
             }
         }
     }
 
+    /** Walks the document depth-first, supplying each event with the node's
+     * resolved absolute scope. */
     public fun walk(
-        root: Markup,
-        visit: (WalkEvent, Markup) -> Unit,
+        document: Document,
+        visit: (WalkEvent, Markup, Scope) -> Unit,
     ) {
-        visit(WalkEvent.ENTERING, root)
-        root.walkChildren(visit)
-        visit(WalkEvent.EXITING, root)
+        walk(document, document, visit)
     }
 
-    private fun Markup.walkChildren(visit: (WalkEvent, Markup) -> Unit) {
+    /** Walks the subtree rooted at [from]; scopes stay document-absolute. */
+    public fun walk(
+        document: Document,
+        from: Markup,
+        visit: (WalkEvent, Markup, Scope) -> Unit,
+    ) {
+        val scope = document.scope(from)
+        visit(WalkEvent.ENTERING, from, scope)
+        from.walkChildren { child -> walk(document, child, visit) }
+        visit(WalkEvent.EXITING, from, scope)
+    }
+
+    private fun Markup.walkChildren(walkChild: (Markup) -> Unit) {
         when (this) {
             is Document -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is BlockQuote -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Paragraph -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Heading -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is List -> {
-                items.walk(visit)
+                items.forEach(walkChild)
             }
 
             is ListItem -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Table -> {
-                walk(header, visit)
-                rows.walk(visit)
+                walkChild(header)
+                rows.forEach(walkChild)
             }
 
             is TableRow -> {
-                cells.walk(visit)
+                cells.forEach(walkChild)
             }
 
             is TableCell -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is DirectiveBlock -> {
-                label?.walk(visit)
-                content.walk(visit)
+                label?.forEach(walkChild)
+                content.forEach(walkChild)
             }
 
             is FootnoteDefinition -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Emphasis -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Strong -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Strikethrough -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Link -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Image -> {
-                content.walk(visit)
+                content.forEach(walkChild)
             }
 
             is Directive -> {
-                label?.walk(visit)
+                label?.forEach(walkChild)
             }
 
             is ThematicBreak,
@@ -111,9 +123,5 @@ public object Walker {
             is FootnoteReference,
             -> {}
         }
-    }
-
-    private fun <Node : Markup> kotlin.collections.List<Node>.walk(visit: (WalkEvent, Markup) -> Unit) {
-        forEach { walk(it, visit) }
     }
 }
