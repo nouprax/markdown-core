@@ -75,7 +75,7 @@ internal actual fun nativeParse(
         }
     }
 
-internal actual class NativeSession actual constructor(
+internal actual class CSession actual constructor(
     options: ParseOptions,
 ) {
     private val handle: CPointer<markdown_core_kotlin_session> =

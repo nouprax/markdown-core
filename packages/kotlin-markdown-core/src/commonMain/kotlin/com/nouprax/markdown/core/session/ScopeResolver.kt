@@ -28,7 +28,7 @@ internal class ScopeResolver private constructor(
 ) {
     private object Detached
 
-    // NativeSession (pending) | Map<ULong, ScopeEntry> (materialized) |
+    // CSession (pending) | Map<ULong, ScopeEntry> (materialized) |
     // Detached. Reads between the owning session's mutating calls are safe
     // by the native contract; the atomic keeps concurrent readers and the
     // session's detach consistent with each other.
@@ -41,7 +41,7 @@ internal class ScopeResolver private constructor(
     fun detach() {
         while (true) {
             val current = state.load()
-            if (current !is NativeSession) return
+            if (current !is CSession) return
             if (state.compareAndSet(current, Detached)) return
         }
     }
@@ -51,7 +51,7 @@ internal class ScopeResolver private constructor(
      * is unchanged, so the snapshot is current again. A resolver that
      * materialized before the detach keeps its (still valid) cache.
      */
-    fun reattach(session: NativeSession) {
+    fun reattach(session: CSession) {
         state.compareAndSet(Detached, session)
     }
 
@@ -67,7 +67,7 @@ internal class ScopeResolver private constructor(
     fun entry(rawValue: ULong): ScopeEntry? {
         while (true) {
             when (val current = state.load()) {
-                is NativeSession -> {
+                is CSession -> {
                     state.compareAndSet(current, WireDecoder.decodeScopes(current.scopes()))
                 }
 
@@ -90,7 +90,7 @@ internal class ScopeResolver private constructor(
          * exposed snapshot swaps in a live or materialized resolver. */
         val unresolvable = ScopeResolver(Detached)
 
-        fun live(session: NativeSession): ScopeResolver = ScopeResolver(session)
+        fun live(session: CSession): ScopeResolver = ScopeResolver(session)
 
         fun materialized(table: Map<ULong, ScopeEntry>): ScopeResolver = ScopeResolver(table)
     }

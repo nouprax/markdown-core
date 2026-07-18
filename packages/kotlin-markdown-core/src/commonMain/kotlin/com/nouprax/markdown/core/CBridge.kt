@@ -10,7 +10,7 @@ internal expect fun nativeParse(
  * externally, keep every call before [free], and call [free] exactly once;
  * [MarkupSession] is the only owner.
  */
-internal expect class NativeSession(
+internal expect class CSession(
     options: ParseOptions,
 ) {
     fun free()

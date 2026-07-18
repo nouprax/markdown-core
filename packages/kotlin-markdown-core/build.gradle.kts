@@ -355,7 +355,7 @@ kotlin {
     compilerOptions {
         languageVersion.set(KotlinVersion.KOTLIN_2_2)
         apiVersion.set(KotlinVersion.KOTLIN_2_2)
-        // NativeSession is an expect class (one native handle type per
+        // CSession is an expect class (one native handle type per
         // platform); the flag silences the expect/actual-classes Beta notice.
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }

@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.flow
 public class MarkupSession(
     public val options: ParseOptions = ParseOptions(),
 ) : AutoCloseable {
-    internal val native: NativeSession = NativeSession(options)
+    internal val native: CSession = CSession(options)
 
     /**
      * Per-session random salt; nodes from different sessions never compare
