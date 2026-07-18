@@ -49,7 +49,7 @@ private inline fun payload(
         }
     }
 
-internal actual fun nativeParse(
+internal actual fun cParse(
     source: ByteArray,
     options: ParseOptions,
 ): ByteArray =

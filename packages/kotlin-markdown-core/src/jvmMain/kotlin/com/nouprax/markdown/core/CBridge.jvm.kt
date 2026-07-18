@@ -3,7 +3,7 @@ package com.nouprax.markdown.core
 import java.nio.file.Files
 import java.nio.file.Path
 
-internal actual fun nativeParse(
+internal actual fun cParse(
     source: ByteArray,
     options: ParseOptions,
 ): ByteArray {
