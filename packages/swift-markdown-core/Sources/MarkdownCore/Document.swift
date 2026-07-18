@@ -111,7 +111,7 @@ struct MarkupBuilder {
     let lineage: UInt64
     let children: (OpaquePointer) -> [any Markup]
 
-    func identity(of node: OpaquePointer) -> (id: MarkupID, revision: UInt64) {
+    func id(of node: OpaquePointer) -> (id: MarkupID, revision: UInt64) {
         (
             MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
             markdown_core_node_get_revision(node)
@@ -158,7 +158,7 @@ struct MarkupBuilder {
 
 extension Document {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         self.init(
             id: id,
             revision: revision,

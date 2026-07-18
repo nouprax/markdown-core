@@ -10,7 +10,7 @@ public struct Emphasis: Markup {
 
 extension Emphasis {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         self.init(id: id, revision: revision, children: builder.children(node))
     }
 }

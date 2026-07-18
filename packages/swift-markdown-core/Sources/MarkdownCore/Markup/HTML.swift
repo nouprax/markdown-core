@@ -11,7 +11,7 @@ public struct HTML: Markup {
 
 extension HTML {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         var literal = markdown_core_string_view()
         markdown_core_node_literal(node, &literal)
         self.init(id: id, revision: revision, literal: literal.requiredString)

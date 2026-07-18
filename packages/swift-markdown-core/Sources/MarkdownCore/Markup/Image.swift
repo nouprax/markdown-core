@@ -12,7 +12,7 @@ public struct Image: Markup {
 
 extension Image {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         var source = markdown_core_string_view()
         var title = markdown_core_string_view()
         markdown_core_node_image_properties(node, &source, &title)

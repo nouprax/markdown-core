@@ -19,7 +19,7 @@ public struct Table: Markup {
 
 extension Table {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -56,7 +56,7 @@ public struct TableRow: Markup {
 
 extension TableRow {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
         let cells = builder.children(node).map { child -> TableCell in
@@ -79,7 +79,7 @@ public struct TableCell: Markup {
 
 extension TableCell {
     init(from node: OpaquePointer, in builder: MarkupBuilder) {
-        let (id, revision) = builder.identity(of: node)
+        let (id, revision) = builder.id(of: node)
         self.init(id: id, revision: revision, content: builder.children(node))
     }
 }
