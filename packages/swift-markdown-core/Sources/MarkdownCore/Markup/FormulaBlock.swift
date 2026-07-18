@@ -11,8 +11,8 @@ public struct FormulaBlock: Markup {
 }
 
 extension FormulaBlock {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
         var literal = markdown_core_string_view()
         markdown_core_node_formula_properties(node, &mode, &literal)

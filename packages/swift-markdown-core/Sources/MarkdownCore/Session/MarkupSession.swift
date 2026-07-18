@@ -134,14 +134,14 @@ public final class MarkupSession {
             // skips the by-id lookups and depth sort of the delta path. This
             // is also what keeps the one-shot `Document.parse` sugar on the
             // v1 performance budget.
-            mirror[markdown_core_node_get_id(root)] = bulkDecode(root)
+            mirror[markdown_core_node_get_id(root)] = bulkBuild(root)
         } else {
             for id in changes.removed {
                 mirror.removeValue(forKey: id.rawValue)
             }
-            let decoder = NodeDecoder(lineage: lineage) { [self] node in childValues(of: node) }
+            let builder = MarkupBuilder(lineage: lineage) { [self] node in childValues(of: node) }
             for rebuild in rebuildsByDepth(changes) {
-                mirror[rebuild.rawID] = decoder.markup(from: rebuild.node)
+                mirror[rebuild.rawID] = builder.markup(from: rebuild.node)
             }
         }
 
@@ -176,7 +176,7 @@ public final class MarkupSession {
         else {
             preconditionFailure("session committed without a document root")
         }
-        mirror[markdown_core_node_get_id(root)] = bulkDecode(root)
+        mirror[markdown_core_node_get_id(root)] = bulkBuild(root)
         return adoptSnapshot(root: root)
     }
 
@@ -186,25 +186,25 @@ public final class MarkupSession {
         id.lineage == lineage ? mirror[id.rawValue] : nil
     }
 
-    private func bulkDecode(_ root: OpaquePointer) -> any Markup {
+    private func bulkBuild(_ root: OpaquePointer) -> any Markup {
         // Post-order over an explicit stack (adversarial nesting must not
         // exhaust native recursion). Child arrays assemble in sibling frames
         // so the bulk build costs one mirror write per node and no reads.
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
-        let decoder = NodeDecoder(lineage: lineage) { _ in completed }
+        let builder = MarkupBuilder(lineage: lineage) { _ in completed }
         var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
         while let (node, ready) = stack.popLast() {
             if ready {
                 completed = frames.removeLast()
-                let value = decoder.markup(from: node)
+                let value = builder.markup(from: node)
                 frames[frames.count - 1].append(value)
                 mirror[markdown_core_node_get_id(node)] = value
                 continue
             }
             stack.append((node, true))
             frames.append([])
-            // Reversed so pops decode children in source order.
+            // Reversed so pops build children in source order.
             var children: [OpaquePointer] = []
             var child = markdown_core_node_get_first_child(node)
             while let current = child {
@@ -216,7 +216,7 @@ public final class MarkupSession {
             }
         }
         guard let value = frames.first?.first else {
-            preconditionFailure("bulk decode did not reach the root")
+            preconditionFailure("bulk build did not reach the root")
         }
         return value
     }

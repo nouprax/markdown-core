@@ -13,13 +13,13 @@ public struct Directive: Markup {
 }
 
 extension Directive {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         let values = DirectiveValues(from: node)
         self.init(
             id: id,
             revision: revision,
-            children: decoder.children(node),
+            children: builder.children(node),
             mode: values.mode,
             name: values.name,
             attributes: values.attributes,

@@ -18,8 +18,8 @@ public struct Table: Markup {
 }
 
 extension Table {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -27,7 +27,7 @@ extension Table {
             markdown_core_node_table_alignment_at(node, index, &alignment)
             return TableAlignment(from: alignment)
         }
-        let rows = decoder.children(node).map { child -> TableRow in
+        let rows = builder.children(node).map { child -> TableRow in
             guard let row = child as? TableRow else {
                 preconditionFailure("table contains a non-row node")
             }
@@ -55,11 +55,11 @@ public struct TableRow: Markup {
 }
 
 extension TableRow {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
-        let cells = decoder.children(node).map { child -> TableCell in
+        let cells = builder.children(node).map { child -> TableCell in
             guard let cell = child as? TableCell else {
                 preconditionFailure("table row contains a non-cell node")
             }
@@ -78,8 +78,8 @@ public struct TableCell: Markup {
 }
 
 extension TableCell {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
-        self.init(id: id, revision: revision, content: decoder.children(node))
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
+        self.init(id: id, revision: revision, content: builder.children(node))
     }
 }

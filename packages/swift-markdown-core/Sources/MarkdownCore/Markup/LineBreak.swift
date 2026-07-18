@@ -9,8 +9,8 @@ public struct LineBreak: Markup {
 }
 
 extension LineBreak {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         self.init(id: id, revision: revision)
     }
 }

@@ -10,10 +10,10 @@ public struct Heading: Markup {
 }
 
 extension Heading {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         var level: Int32 = 0
         markdown_core_node_heading_level(node, &level)
-        self.init(id: id, revision: revision, children: decoder.children(node), level: level)
+        self.init(id: id, revision: revision, children: builder.children(node), level: level)
     }
 }

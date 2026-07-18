@@ -103,11 +103,11 @@ extension ParseOptions {
     }
 }
 
-/// Decodes native nodes into platform values for the session mirror. The
+/// Builds platform values from native nodes for the session mirror. The
 /// `children` strategy is the only degree of freedom: a first commit's bulk
-/// build recurses over the native tree, while an incremental commit
-/// assembles rebuilt parents from already-decoded mirror values.
-struct NodeDecoder {
+/// build assembles child arrays in sibling frames, while an incremental
+/// commit rebuilds parents from already-built mirror values.
+struct MarkupBuilder {
     let lineage: UInt64
     let children: (OpaquePointer) -> [any Markup]
 
@@ -157,12 +157,12 @@ struct NodeDecoder {
 }
 
 extension Document {
-    init(from node: OpaquePointer, in decoder: NodeDecoder) {
-        let (id, revision) = decoder.identity(of: node)
+    init(from node: OpaquePointer, in builder: MarkupBuilder) {
+        let (id, revision) = builder.identity(of: node)
         self.init(
             id: id,
             revision: revision,
-            children: decoder.children(node),
+            children: builder.children(node),
             resolver: ScopeResolver.unresolvable
         )
     }
