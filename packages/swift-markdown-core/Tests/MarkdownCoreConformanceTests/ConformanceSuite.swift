@@ -26,7 +26,9 @@ import Testing
             "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
-        #expect(documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) })
+        #expect(
+            documents.allSatisfy { $0.scope(of: $0).start == Position(line: 1, column: 1) }
+        )
     }
 
     @Test("field and nullability mapping uses Swift-native types")
@@ -53,20 +55,84 @@ import Testing
 
     @Test("all manifest cases match the shared canonical AST spec")
     func sharedCanonicalAST() throws {
-        let resource = try #require(
-            Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
-        )
-        let manifestData = try Data(contentsOf: resource)
-        let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
-        #expect(manifest.schemaVersion == 1)
-        #expect(!manifest.cases.isEmpty)
-
+        let manifest = try loadManifest()
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
             #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
+
+    @Test("sessions replay the manifest corpus to dump equality per commit")
+    func sessionEquivalenceReplay() throws {
+        let manifest = try loadManifest()
+        for testCase in manifest.cases {
+            let session = try MarkupSession(options: testCase.parseOptions.value)
+            var replayed = ""
+            var previous: [UInt64: UInt64] = [:]
+            for chunk in lineChunks(testCase.source) {
+                replayed += chunk
+                try session.append(chunk)
+                let commit = try session.commit()
+
+                // Equivalence: the incremental snapshot dumps byte-equal to a
+                // one-shot parse of the same prefix.
+                let reference = try Document.parse(replayed, options: testCase.parseOptions.value)
+                #expect(commit.document.dump() == reference.dump(), Comment(rawValue: testCase.name))
+
+                // Delta-mirror integrity: every node outside the
+                // delta kept its exact revision, removed ids are gone,
+                // and the four arrays are disjoint.
+                let changes = commit.changes
+                let touched = [changes.added, changes.changed, changes.bubbled]
+                    .joined().map(\.rawValue)
+                #expect(
+                    touched.count + changes.removed.count
+                        == Set(touched).union(changes.removed.map(\.rawValue)).count
+                )
+                var current: [UInt64: UInt64] = [:]
+                let touchedSet = Set(touched)
+                for node in flatten(commit.document) {
+                    current[node.id.rawValue] = node.revision
+                    if !touchedSet.contains(node.id.rawValue) {
+                        #expect(previous[node.id.rawValue] == node.revision)
+                    }
+                }
+                for removed in changes.removed {
+                    #expect(current[removed.rawValue] == nil)
+                }
+                previous = current
+            }
+            #expect(session.document.dump() == testCase.expected, Comment(rawValue: testCase.name))
+        }
+    }
+}
+
+private func loadManifest() throws -> CanonicalManifest {
+    let resource = try #require(
+        Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
+    )
+    let manifestData = try Data(contentsOf: resource)
+    let manifest = try JSONDecoder().decode(CanonicalManifest.self, from: manifestData)
+    #expect(manifest.schemaVersion == 1)
+    #expect(!manifest.cases.isEmpty)
+    return manifest
+}
+
+private func lineChunks(_ source: String) -> [String] {
+    var chunks: [String] = []
+    var current = ""
+    for character in source {
+        current.append(character)
+        if character == "\n" {
+            chunks.append(current)
+            current = ""
+        }
+    }
+    if !current.isEmpty {
+        chunks.append(current)
+    }
+    return chunks
 }
 
 private struct CanonicalManifest: Decodable {
@@ -111,9 +177,9 @@ private struct CanonicalParseOptions: Decodable {
     }
 }
 
-private func flatten(_ root: any Markup) -> [any Markup] {
+private func flatten(_ document: Document) -> [any Markup] {
     var result: [any Markup] = []
-    Walker().walk(root) { event, node in
+    Walker().walk(document) { event, node, _ in
         if case .entering = event { result.append(node) }
     }
     return result

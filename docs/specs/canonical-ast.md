@@ -3,7 +3,10 @@
 Status: frozen for Phase 5 on 2026-07-11; footnote contract revised for v2
 milestone M3 on 2026-07-16 (source-order definitions, label-carrying
 references, query-based numbering — see the footnote semantics section and
-`sessions-and-changesets.md`).
+`sessions-and-deltas.md`); identity/equality contract added and scope moved
+off node values for v2 milestone M4 on 2026-07-17 (`MarkupSession` becomes a
+canonical entry point; the footnote label field is renamed `label` because
+`id` now names node identity).
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -18,7 +21,14 @@ or semantics.
 ## Core rules
 
 - `Markup` is the only abstract AST node type.
-- Every `Markup` has a non-optional `scope: Scope`.
+- Every `Markup` has a non-optional identity `id: MarkupID` and a
+  `revision`; equality and hashing are `(id, revision)` — O(1) and
+  allocation-free — and equal nodes are guaranteed to have identical AST
+  content. See the identity and equality section.
+- Nodes do not store absolute source positions. Scopes are resolved through
+  the owning snapshot (`document.scope(of:)`), supplied with every `Walker`
+  event, and printed by the dump; see `sessions-and-deltas.md` for the
+  resolution rules.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -44,8 +54,8 @@ rescanning, normalizing, expanding, rejecting, or otherwise reinterpreting
 particular coordinate combinations. Consumers that need to interpret a source
 position use the native parser contract from the same Markdown Core release.
 
-`TableRow` and `TableCell` have non-optional scopes like every other `Markup`,
-so typed table boundaries do not discard source information.
+`TableRow` and `TableCell` resolve scopes like every other `Markup`, so
+typed table boundaries do not discard source information.
 
 ## Shared value types
 
@@ -125,7 +135,7 @@ error rather than silently dropping a value.
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
 | `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct |
-| `FootnoteDefinition` | `id: String`, `content: [Markup]` | id is the label as written; non-empty; block content; stays at its source position whether referenced or not |
+| `FootnoteDefinition` | `label: String`, `content: [Markup]` | label is written between `[^` and `]`; non-empty; block content; stays at its source position whether referenced or not |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
@@ -138,10 +148,24 @@ error rather than silently dropping a value.
 | `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
 | `Directive` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct |
-| `FootnoteReference` | `id: String` | id is the label as written; non-empty; leaf; never degrades to text when unresolved |
+| `FootnoteReference` | `label: String` | label is written as in source; non-empty; leaf; never degrades to text when unresolved |
 
-Every row above also has the final inherited field `scope: Scope`; it is not
-repeated in the table.
+Every row above also has the inherited identity fields `id: MarkupID` and
+`revision`; they are not repeated in the table. No row has a stored scope.
+
+### Identity and equality
+
+`MarkupID` packs the owning session's random `lineage` salt with the node's
+raw 64-bit id: ids are unique within a session, never reused, and stable
+across incremental commits while the node remains the same kind of thing at
+the same place; nodes from different sessions (one-shot parses included —
+`Document.parse` runs an internal single-commit session) never compare
+equal. `revision` is the commit revision at which the node's own fields,
+child list, or any descendant last changed; a pure positional shift never
+changes it. Equality and hashing on every kind are `(id, revision)`,
+identifiable-style APIs use `MarkupID` alone, and two equal nodes are
+guaranteed to have identical AST content. Absolute source position is not
+content. The full identity contract lives in `sessions-and-deltas.md`.
 
 ### Footnote semantics (revised 2026-07-16)
 
@@ -156,7 +180,7 @@ and the earliest definition of a label in document order wins.
 
 Numbering, first-use order, resolution state, and back-reference ordinals are
 not AST content. They are queries over a session-maintained index defined in
-`sessions-and-changesets.md`; renderers that need the GFM presentation
+`sessions-and-deltas.md`; renderers that need the GFM presentation
 (definitions gathered at the tail in first-use order, numbered markers)
 derive it from those queries. This aligns the tree with the mdast model and
 keeps edits from rewriting unrelated parts of the document.
@@ -164,9 +188,9 @@ keeps edits from rewriting unrelated parts of the document.
 ### Typed table ownership
 
 ```text
-Table(alignments, header: TableRow, rows: readonly TableRow[], scope)
-TableRow(isHeader, cells: readonly TableCell[], scope)
-TableCell(content: readonly Markup[], scope)
+Table(alignments, header: TableRow, rows: readonly TableRow[])
+TableRow(isHeader, cells: readonly TableCell[])
+TableCell(content: readonly Markup[])
 ```
 
 These are all immutable `Markup` values. The typed edges preserve legal table
@@ -176,8 +200,10 @@ validates the owning edge: the value in `Table.header` is true and values in
 
 ## ParseOptions
 
-`Document.parse(source, options = ParseOptions.default)` is the only parsing
-entry point. `ParseOptions` is immutable and contains exactly these booleans:
+`Document.parse(source, options = ParseOptions.default)` and
+`MarkupSession(options)` (`sessions-and-deltas.md`) are the two canonical
+parsing entry points. `ParseOptions` is immutable and contains exactly these
+booleans:
 
 | Field | Default |
 | --- | --- |
@@ -210,8 +236,9 @@ fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
 recurse.
 
-The standard read-only `Walker` performs depth-first traversal and emits
-`entering` then `exiting` events for every reachable `Markup`. Applying an
+The standard read-only `Walker` walks a `Document` snapshot (whole or from
+a subtree root) depth-first and emits `entering` then `exiting` events for
+every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
 exhaustive Visitor on `entering` invokes it exactly once per node. Walker owns
 the typed-property rules, so consumers never inspect kinds to discover
 structure:
@@ -229,12 +256,16 @@ native-handle callback.
 
 ## Diagnostic dump
 
-Swift, Kotlin, and TypeScript publish `TreeDumper.dump(markup)` and a
-convenience `Markup.dump()` method. Both traverse that platform's immutable
-typed tree through its exhaustive Visitor and read-only Walker; they do not
-call the C diagnostic dump. Dumping a non-Document Markup treats that value as
-the root and emits only its subtree. The canonical text grammar is defined in
-`canonical-ast-dump.md` and is diagnostic rather than a serialization API.
+Swift, Kotlin, and TypeScript publish `TreeDumper.dump(document)` with a
+convenience `document.dump()`, plus a subtree form
+`TreeDumper.dump(document, of: node)` / `document.dump(of: node)`. All
+traverse that platform's immutable typed tree through its exhaustive Visitor
+and read-only Walker; they do not call the C diagnostic dump. Dumping is
+document-mediated because scopes are (subtree dumps print scopes with the
+subtree as origin — see `canonical-ast-dump.md`). The canonical text grammar
+is defined in `canonical-ast-dump.md` and is diagnostic rather than a
+serialization API; its frozen `id=` key on footnote nodes prints the
+`label` field.
 
 ## Kotlin `List` naming contract
 

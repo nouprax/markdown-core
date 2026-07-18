@@ -6,20 +6,36 @@ public enum WalkEvent: Sendable {
 public struct Walker: Sendable {
     public init() {}
 
-    public func walk(_ root: some Markup, visit: (WalkEvent, any Markup) throws -> Void) rethrows {
-        try walk(node: root, visit: visit)
+    /// Walks the document depth-first, supplying each event with the node's
+    /// resolved absolute scope.
+    public func walk(
+        _ document: Document,
+        visit: (WalkEvent, any Markup, Scope) throws -> Void
+    ) rethrows {
+        try walk(document, from: document, visit: visit)
+    }
+
+    /// Walks the subtree rooted at `node`; scopes stay document-absolute.
+    public func walk(
+        _ document: Document,
+        from node: some Markup,
+        visit: (WalkEvent, any Markup, Scope) throws -> Void
+    ) rethrows {
+        try walk(node: node, document: document, visit: visit)
     }
 
     private func walk(
         node: any Markup,
-        visit: (WalkEvent, any Markup) throws -> Void
+        document: Document,
+        visit: (WalkEvent, any Markup, Scope) throws -> Void
     ) rethrows {
-        try visit(.entering, node)
+        let scope = document.scope(of: node)
+        try visit(.entering, node, scope)
         var visitor = ChildrenVisitor()
         for child in node.accept(&visitor) {
-            try walk(node: child, visit: visit)
+            try walk(node: child, document: document, visit: visit)
         }
-        try visit(.exiting, node)
+        try visit(.exiting, node, scope)
     }
 }
 

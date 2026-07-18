@@ -411,7 +411,7 @@ typedef struct session_worker {
 } session_worker;
 
 // Clears the session text, then streams `input` byte-by-byte with a commit
-// (and discarded changeset) per byte. Hands back a determinism-checked dump.
+// (and discarded delta) per byte. Hands back a determinism-checked dump.
 static int
 session_stream_once(markdown_core_session *session, const char *input, uint8_t **dump_out, size_t *length_out) {
     markdown_core_error *error = NULL;
@@ -427,13 +427,13 @@ session_stream_once(markdown_core_session *session, const char *input, uint8_t *
 
     size_t length = strlen(input);
     for (size_t offset = 0; offset < length; offset++) {
-        markdown_core_changeset *changes = NULL;
+        markdown_core_delta *changes = NULL;
         if (!markdown_core_session_edit(session, offset, offset, (const uint8_t *)input + offset, 1, &error) ||
             !markdown_core_session_commit(session, &changes, &error)) {
             markdown_core_error_free(error);
             return 1;
         }
-        markdown_core_changeset_free(changes);
+        markdown_core_delta_free(changes);
     }
 
     uint8_t *first = NULL;

@@ -13,7 +13,7 @@ standard machine, session-persistent reference map with
 definition-sequence reconciliation, transactional splice, and the
 equivalence/complexity gates. Interim M3 simplifications that remain open
 are listed under the M3 milestone below. The binding contract text
-lives in `../specs/sessions-and-changesets.md`; this document records why the
+lives in `../specs/sessions-and-deltas.md`; this document records why the
 design is shaped this way, the exact engine architecture, the deltas to the
 frozen v1 contracts, and the milestone/gate plan.
 
@@ -29,14 +29,14 @@ update.
 v2 makes the engine incremental (arbitrary insert/replace/delete; append-only
 token streaming as the hot path), gives every node a stable id and an O(1)
 content-equality contract on all platforms, and redesigns the consumer API
-around sessions, immutable snapshots, and changesets.
+around sessions, immutable snapshots, and deltas.
 
 ## Decisions
 
 1. Input model: full incremental editing; append is the optimized common
    case.
 2. Update model: immutable snapshots with structural sharing plus a
-   per-commit changeset.
+   per-commit delta.
 3. Compatibility: clean v2.0 break; `Document.parse` survives as a
    convenience over the session core.
 4. Platforms: C + Swift + Kotlin + ES in lockstep under one contract.
@@ -62,7 +62,7 @@ around sessions, immutable snapshots, and changesets.
 
 Core invariants: equivalence (incremental result dump-equals a from-scratch
 parse of the final text), O(1) shift-invariant equality, per-commit cost
-bounded by touched leaves + changeset and never worse than one full parse.
+bounded by touched leaves + delta and never worse than one full parse.
 
 ## Engine facts the design builds on (verified against source)
 
@@ -96,7 +96,7 @@ bounded by touched leaves + changeset and never worse than one full parse.
 
 ### Layering
 
-The C core keeps one living, mutable tree per session and emits changesets.
+The C core keeps one living, mutable tree per session and emits deltas.
 Immutable snapshots with structural sharing are a binding-layer construct.
 The C `session_document` view is borrowed and valid until the next mutating
 call.
@@ -107,7 +107,7 @@ New files `core/session.c/.h`, `core/text.c/.h`, `core/incremental.c` (named `da
 in the original plan; renamed at delivery — the file holds the whole commit
 pipeline, of which planning the stale region is only the first step; the
 shipped code says "restart plan" and "stale region" for the same reason),
-`core/adopt.c`, `core/changeset.c`; surgical changes in `blocks.c`, `node.h`,
+`core/adopt.c`, `core/delta.c`; surgical changes in `blocks.c`, `node.h`,
 `map.c`, `references.c`, `footnotes.c`, `inlines.c`, `extensions/ast.c`,
 `extensions/autolink.c`, `extensions/formula.c`.
 
@@ -164,7 +164,7 @@ M3 damage planning, which is their only consumer.
                    revisions of references whose query answers changed.
  9. Seal         — relativize new nodes, set CLEAN_START, bump
                    last_changed_rev + bubble (recording `bubbled`), build the
-                   changeset, free the graveyard, revision++.
+                   delta, free the graveyard, revision++.
 ```
 
 Resync condition: the current byte offset maps through the cumulative edit
@@ -236,7 +236,7 @@ Additions to `include/markdown_core.h` and `core/exports/markdown_core.map`
 
 ```c
 typedef struct markdown_core_session markdown_core_session;
-typedef struct markdown_core_changeset markdown_core_changeset;
+typedef struct markdown_core_delta markdown_core_delta;
 typedef uint64_t markdown_core_node_id;
 
 markdown_core_session *markdown_core_session_open(const markdown_core_parse_options *, markdown_core_error **);
@@ -245,7 +245,7 @@ bool   markdown_core_session_edit(markdown_core_session *, size_t byte_start,
                                   size_t byte_end, const uint8_t *bytes,
                                   size_t length, markdown_core_error **);
 bool   markdown_core_session_commit(markdown_core_session *,
-                                    markdown_core_changeset **, /* nullable */
+                                    markdown_core_delta **, /* nullable */
                                     markdown_core_error **);
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *);
 uint64_t markdown_core_session_revision(const markdown_core_session *);
@@ -257,23 +257,23 @@ markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *);
 uint64_t markdown_core_node_get_revision(const markdown_core_node *);
 const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *);
 
-void   markdown_core_changeset_revisions(const markdown_core_changeset *, uint64_t *before, uint64_t *after);
-size_t markdown_core_changeset_added(const markdown_core_changeset *, const markdown_core_node_id **);
-size_t markdown_core_changeset_removed(const markdown_core_changeset *, const markdown_core_node_id **);
-size_t markdown_core_changeset_changed(const markdown_core_changeset *, const markdown_core_node_id **);
-size_t markdown_core_changeset_bubbled(const markdown_core_changeset *, const markdown_core_node_id **);
-void   markdown_core_changeset_free(markdown_core_changeset *);
+void   markdown_core_delta_revisions(const markdown_core_delta *, uint64_t *before, uint64_t *after);
+size_t markdown_core_delta_added(const markdown_core_delta *, const markdown_core_node_id **);
+size_t markdown_core_delta_removed(const markdown_core_delta *, const markdown_core_node_id **);
+size_t markdown_core_delta_changed(const markdown_core_delta *, const markdown_core_node_id **);
+size_t markdown_core_delta_bubbled(const markdown_core_delta *, const markdown_core_node_id **);
+void   markdown_core_delta_free(markdown_core_delta *);
 ```
 
 `markdown_core_document_parse` is reimplemented as open + edit + commit +
 detach-root.
 
-### Bindings (mirror-by-changeset, same architecture ×3)
+### Bindings (mirror-by-delta, same architecture ×3)
 
 Each platform `MarkupSession` owns the C session plus a mutable id → node
 mirror. Per commit it decodes only `added ∪ changed` payloads, rebuilds
 `bubbled` ancestors reusing unchanged children, evicts `removed`, and emits a
-new immutable `Document` sharing everything unchanged — O(changeset·depth).
+new immutable `Document` sharing everything unchanged — O(delta·depth).
 Equality everywhere is `(lineage, id, revision)`.
 
 - Swift: structs stay `Sendable`; `Markup` gains `id`/`revision`; all 28
@@ -296,17 +296,17 @@ Equality everywhere is `(lineage, id, revision)`.
 | `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` stay byte-identical through M2; footnote-bearing goldens regenerate deliberately when the revised footnote contract lands (M3). |
 | `docs/specs/test-architecture.md` | Add equivalence, id-stability, and edit-storm suites to the frozen topology. |
 | `scripts/audit-public-surface.sh` | Add the new C symbols to the header+map sync; scope the Swift/Kotlin/ES mutation-ban greps to the model/walker directories (Session's `append`/`replace` would otherwise trip them); pin the Session surfaces exactly; ES frozen runtime export list gains `MarkupSession`. |
-| Build lists ×4 | `packages/markdown-core/core/CMakeLists.txt` (+`extensions/CMakeLists.txt`), root `Package.swift`, `packages/es-markdown-core/scripts/build.mjs`, and `packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt` (the Android runtime keeps its own explicit engine list): add `session.c`, `text.c`, `incremental.c`, `adopt.c`, `changeset.c`. New facade symbols go into **both** export allowlists: `core/exports/markdown_core.map` (Linux version script) and `core/exports/markdown_core.exports` (macOS exported-symbols list). |
+| Build lists ×4 | `packages/markdown-core/core/CMakeLists.txt` (+`extensions/CMakeLists.txt`), root `Package.swift`, `packages/es-markdown-core/scripts/build.mjs`, and `packages/kotlin-markdown-core/android-runtime/src/main/cpp/CMakeLists.txt` (the Android runtime keeps its own explicit engine list): add `session.c`, `text.c`, `incremental.c`, `adopt.c`, `delta.c`. New facade symbols go into **both** export allowlists: `core/exports/markdown_core.map` (Linux version script) and `core/exports/markdown_core.exports` (macOS exported-symbols list). |
 
 ## Milestones and gates
 
-- **M0 — Contracts** (this document + `sessions-and-changesets.md`). Gate:
+- **M0 — Contracts** (this document + `sessions-and-deltas.md`). Gate:
   review; existing audits stay green.
 - **M1 — Ids, relative positions, session skeleton** (correct, not yet
   incremental): zero-global-state workstream (delete global arena,
   const/per-session registry, per-session ES scratch); node id/revision/
   flags; seal-time relativization + parent-chain scope; text store; session
-  where every commit is a full staged reparse + adoption + changeset; rebase
+  where every commit is a full staged reparse + adoption + delta; rebase
   `document_parse`; facade symbols/exports/build lists; audit-script v2.
   Gates: full v1 suites + goldens unchanged, complexity ≤ 4.0 (one-shot fast
   path), oom_sweep, TSan, audit.
@@ -322,7 +322,7 @@ Equality everywhere is `(lineage, id, revision)`.
   staging. Gates: adversarial equivalence fixtures (setext, lazy
   continuation, unclosed fence/HTML/directive, table delimiter edits,
   list-tightness flips, footnote ordinal-shift cascades,
-  no-blank documents), changeset-mirror check, id-stability tests, new
+  no-blank documents), delta-mirror check, id-stability tests, new
   complexity cases (`session_stream_flat`, `session_edit_storm`), oom_sweep
   session variant, TSan.
 
@@ -420,6 +420,47 @@ Equality everywhere is `(lineage, id, revision)`.
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta
   benchmarks, audit v2, and the public-surface naming freeze review
   (`docs/specs/c-naming.md`) before anything ships.
+
+  Swift workstream delivered 2026-07-17 (Kotlin and ES remain), with the
+  freeze-review outcomes applied surface-wide:
+
+  - Platform names concretized and user-approved: `MarkupID`
+    `{ lineage, rawValue }` (Identifiable uses it revision-free; equality is
+    id + revision), `Commit { document, changes: Delta }`, and the
+    per-commit record renamed **delta** everywhere — C
+    `markdown_core_delta_*`, file `extensions/delta.c`, spec file
+    `sessions-and-deltas.md`. The footnote field is `label` on platforms
+    (`id` names node identity); the dump grammar keeps its `id=` key.
+  - Scope mechanics settled: deltas deliberately omit pure positional
+    shifts (a blank-line-only edit commits an empty delta), so platform
+    node values carry no positions; dump/walk are document-mediated, and a
+    session snapshot lazily materializes all scopes from the C tree on
+    first use while current, becoming self-contained afterwards. The C
+    borrowed-view contract was sharpened to match: edits never invalidate
+    the committed view, only commit/free do.
+  - `MarkupSession.document` is non-optional — the revision-0 empty root is
+    addressable and mirrored from `session_open`.
+  - One-shot and session decoding are one pipeline: `Document.parse` is
+    session sugar over a delta-free first-commit bulk build (post-order
+    frame stack, one mirror write per node, no delta materialization — the
+    C nullable out-parameter is exactly this knob). Measured cost of the
+    unification on the one-shot decode boundary: ~15-25% on
+    `large_document` (mirror construction), accepted for the single
+    pipeline; the delta path is untouched.
+  - Engine fix found by the new Swift delta-mirror gate: the incremental
+    path recorded the document in `changed` (via the staged-root dummy
+    verdict) while the footnote index diff, running before the document's
+    revision stamp, re-collected it as `bubbled` — the same latent hazard
+    existed for dependent-rebuild bubble ancestors. Revision stamps now
+    land before the footnote diff (rolled back if the diff fails); the
+    equivalence runner gained a corpus-wide delta-disjointness check.
+  - Swift gates in place: `sessions` suite (id-stability across streaming /
+    clean-boundary inserts / kind changes, empty-delta pure shifts, scope
+    materialization survival, footnote queries, `updates(feeding:)`),
+    conformance session replay of the manifest corpus with per-commit dump
+    equality + delta-mirror integrity, session streaming benchmark
+    (`session_stream_and_delta_decode`), audit v2 (session surface pinned
+    exactly, mutation ban scoped to model/walker).
 - **M5 — Hardening & release**: edit-script fuzz target, pathological corpus,
   perf tuning, CHANGELOG/VERSION 2.0.0, release dry-run. Gates: full CI
   matrix + package audits.
@@ -430,8 +471,8 @@ Equality everywhere is `(lineage, id, revision)`.
   fixture + CommonMark spec case parsed batch, per-line append replay,
   sampled per-byte replay, and N seeded random edit scripts — final dump
   byte-equal to a one-shot parse of the final text. Plus a
-  **changeset-mirror check**: maintain an id→(kind,parent,ordinal,rev)
-  shadow from changesets only and compare against a fresh walk after every
+  **delta-mirror check**: maintain an id→(kind,parent,ordinal,rev)
+  shadow from deltas only and compare against a fresh walk after every
   commit (catches adoption bugs dumps cannot see).
 - **Id stability**: streaming keeps frontier paragraph + trailing Text ids;
   a clean-boundary insert at the top leaves every downstream (id, revision)
@@ -460,7 +501,7 @@ Equality everywhere is `(lineage, id, revision)`.
   documented cost model + commit-coalescing guidance.
 - Unclosed fence over a large suffix: reparse-to-EOF per commit while
   unclosed; suffix ids survive via span transplants.
-- Adoption bugs → stale binding mirrors: changeset-mirror gate + seeded edit
+- Adoption bugs → stale binding mirrors: delta-mirror gate + seeded edit
   fuzzing target exactly this.
 - Footnote ordinal-shift cascades: inserting an early first-use reference
   shifts every later ordinal; surfaces as revision-only `changed` entries
@@ -478,7 +519,7 @@ Equality everywhere is `(lineage, id, revision)`.
   end). Superseded because the moved/renumbered shape is itself an artifact
   of cmark-gfm's decision to implement footnotes as a post-parse pass over
   an untouchable core: it forces tree restructuring and literal rewrites on
-  every ordinal shift (large changesets, heavy UI re-renders), leaves
+  every ordinal shift (large deltas, heavy UI re-renders), leaves
   unresolved references degrading to text after the block pipeline (which
   the M2 pipeline had to work around), and duplicates machinery the
   reference map already provides. The M2-delivered projection scaffolding

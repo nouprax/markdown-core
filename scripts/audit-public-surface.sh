@@ -56,15 +56,62 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 }
 NODE
 
+# The model and walker stay mutation-free; the session directory is the one
+# deliberate exception (append/replace are its reviewed edit surface) and is
+# pinned exactly below instead.
 if grep -R -n -E \
     'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    --exclude-dir=Session \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports mutation, renderer, or native implementation details"
 fi
+session_surface=$(grep -R -h -o -E \
+    'public (mutating func|final class|struct|func|var|let|init|typealias|private\(set\) var)[^{=]*' \
+    packages/swift-markdown-core/Sources/MarkdownCore/Session | sed -E 's/[[:space:]]+$//' | sort -u)
+expected_session_surface='public final class MarkupSession
+public func append(_ text: String) throws
+public func commit() throws -> Commit
+public func footnoteInfo(of id: MarkupID) -> FootnoteInfo?
+public func footnoteReferences(of definition: MarkupID) -> [FootnoteReference]
+public func footnotes() -> [FootnoteDefinition]
+public func makeAsyncIterator() -> Updates<Tokens>
+public func node(for id: MarkupID) -> (any Markup)?
+public func replace(_ range: Range<Int>, with text: String) throws
+public func scope(of node: some Markup) -> Scope
+public func updates<Tokens: AsyncSequence>(
+public init(options: ParseOptions
+public let added: [MarkupID]
+public let afterRevision: UInt64
+public let beforeRevision: UInt64
+public let bubbled: [MarkupID]
+public let changed: [MarkupID]
+public let changes: Delta
+public let definition: MarkupID?
+public let document: Document
+public let lineage: UInt64
+public let number: Int?
+public let options: ParseOptions
+public let referenceCount: Int
+public let referenceOrdinal: Int?
+public let removed: [MarkupID]
+public mutating func next() async throws -> Commit?
+public private(set) var document: Document
+public struct Commit: Sendable
+public struct Delta: Sendable, Hashable
+public struct FootnoteInfo: Sendable, Hashable
+public struct Updates<Tokens: AsyncSequence>: AsyncSequence, AsyncIteratorProtocol
+public var length: Int
+public var revision: UInt64'
+if [ "$session_surface" != "$expected_session_surface" ]; then
+    printf '%s\n' "$session_surface" >&2
+    fail "Swift session surface drifted from the reviewed pin"
+fi
 grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
-    && grep -q 'public static func dump' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
-    && grep -q 'func dump() -> String' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Markup.swift \
-    || fail "Swift does not expose the reviewed Markup diagnostic dump API"
+    && grep -q 'public static func dump(_ document: Document)' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+    && grep -q 'public func dump() -> String' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+    || fail "Swift does not expose the reviewed Document diagnostic dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \

@@ -295,12 +295,8 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
 // reference map, adopts ids from the previous tree, and replaces every piece
 // of session state at once. The staging never touches the committed state,
 // so any failure leaves the session valid at its previous revision.
-static bool commit_full(
-    markdown_core_session *session,
-    bool initial,
-    markdown_core_changeset *changes,
-    markdown_core_error **error
-) {
+static bool
+commit_full(markdown_core_session *session, bool initial, markdown_core_delta *changes, markdown_core_error **error) {
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_map *map;
@@ -364,7 +360,7 @@ static bool commit_full(
         markdown_core_map_free(map);
         markdown_core_node_free(root);
         markdown_core_lookup_recording_release(&recording);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the changeset");
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
         return false;
     }
     // Ids exist now; definitions recorded against anchor node pointers can
@@ -469,15 +465,15 @@ static bool commit_full(
 static bool commit_internal(
     markdown_core_session *session,
     bool initial,
-    markdown_core_changeset **changes_out,
+    markdown_core_delta **changes_out,
     markdown_core_error **error
 ) {
-    markdown_core_changeset *changes = NULL;
+    markdown_core_delta *changes = NULL;
 
     if (changes_out) {
-        changes = (markdown_core_changeset *)calloc(1, sizeof(*changes));
+        changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
         if (!changes) {
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate changeset");
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
             return false;
         }
         changes->before = session->revision;
@@ -485,7 +481,7 @@ static bool commit_internal(
     }
 
     // A commit with no pending edits advances the revision with an empty
-    // changeset; nothing else can have changed.
+    // delta; nothing else can have changed.
     if (!initial && session->view.root && !session->pending.dirty) {
         session->revision++;
         if (changes_out) {
@@ -502,17 +498,17 @@ static bool commit_internal(
             }
             return true;
         case MARKDOWN_CORE_INCREMENTAL_FAILED:
-            markdown_core_changeset_free(changes);
+            markdown_core_delta_free(changes);
             return false;
         case MARKDOWN_CORE_INCREMENTAL_FALLBACK:
-            // The changeset may hold nothing yet (the pipeline records only
+            // The delta may hold nothing yet (the pipeline records only
             // after its point of no return), so it is reusable as-is.
             break;
         }
     }
 
     if (!commit_full(session, initial, changes, error)) {
-        markdown_core_changeset_free(changes);
+        markdown_core_delta_free(changes);
         return false;
     }
     if (changes_out) {
@@ -645,7 +641,7 @@ bool markdown_core_session_edit(
 
 bool markdown_core_session_commit(
     markdown_core_session *session,
-    markdown_core_changeset **changes,
+    markdown_core_delta **changes,
     markdown_core_error **error
 ) {
     clear_error(error);

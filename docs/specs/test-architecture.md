@@ -136,7 +136,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
-| `equivalence` | session 增量编辑 replay 与 one-shot parse 的 dump 等价 + changeset mirror 校验(`equivalence_*`) |
+| `equivalence` | session 增量编辑 replay 与 one-shot parse 的 dump 等价 + delta mirror 校验(`equivalence_*`) |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
@@ -145,10 +145,16 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
 
 Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
-`robustness`、`consumer`；`ConformanceSuite` 位于独立
+`robustness`、`sessions`、`consumer`；`ConformanceSuite` 位于独立
 `MarkdownCoreConformanceTests` target。测试与 consumer package 位于
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
+`sessions` 覆盖 M4 binding 契约:streaming/clean-boundary/kind-change 的
+id-stability、(lineage, id, revision) 等值语义、空 delta 纯位移、scope
+惰性物化的存活性、footnote queries 与 `updates(feeding:)`；
+`ConformanceSuite` 另以 per-line append 通过 `MarkupSession` 回放 manifest
+corpus，逐 commit 校验 dump 等价与 delta-mirror 完整性(数组不相交、
+revision 不变式、removed 消失)。
 
 Kotlin correctness suites:`api`、`errors`、`unicode`、`ownership`、`robustness`、
 `consumer`、`packaging`；`AstTest` 只由具名 conformance tasks 选择。`commonTest` 复用于 JVM、Android host、Android emulator、

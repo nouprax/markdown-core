@@ -39,3 +39,42 @@ func benchmark(_ workload: String, source: String) throws {
 let unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
 try benchmark("large_document", source: String(repeating: unit, count: 2_000))
 try benchmark("deep_nesting", source: String(repeating: "> ", count: 128) + "leaf\n")
+
+func benchmarkSession(_ workload: String, unit: String, units: Int) throws {
+    func replay() throws -> Document {
+        let session = try MarkupSession()
+        for _ in 0..<units {
+            try session.append(unit)
+            _ = try session.commit()
+        }
+        return session.document
+    }
+
+    for _ in 0..<warmupCount {
+        _ = try replay()
+    }
+
+    let clock = ContinuousClock()
+    var durations: [Duration] = []
+    durations.reserveCapacity(repeatCount)
+    for _ in 0..<repeatCount {
+        durations.append(try clock.measure { _ = try replay() })
+    }
+    durations.sort()
+    let median = durations[repeatCount / 2].components
+    let medianNanoseconds = Double(median.seconds) * 1e9 + Double(median.attoseconds) / 1e9
+    #if canImport(Darwin)
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        let peakRSSKiB = usage.ru_maxrss / 1024
+    #else
+        let peakRSSKiB = -1
+    #endif
+    print(
+        "benchmark runtime=swift boundary=session_stream_and_delta_decode workload=\(workload) "
+            + "bytes=\(unit.utf8.count * units) commits=\(units) warmup=\(warmupCount) repeats=\(repeatCount) "
+            + "median_ns=\(Int64(medianNanoseconds)) peak_rss_kib=\(peakRSSKiB)"
+    )
+}
+
+try benchmarkSession("streamed_document", unit: unit, units: 500)

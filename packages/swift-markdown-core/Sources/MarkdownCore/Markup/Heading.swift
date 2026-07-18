@@ -1,7 +1,8 @@
 import MarkdownCoreC
 
 public struct Heading: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
     public let level: Int32
 
@@ -9,9 +10,10 @@ public struct Heading: Markup {
 }
 
 extension Heading {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
+        let (id, revision) = builder.id(of: node)
         var level: Int32 = 0
         markdown_core_node_heading_level(node, &level)
-        self.init(scope: Self.scope(from: node), children: Self.children(from: node), level: level)
+        self.init(id: id, revision: revision, children: builder.children(node), level: level)
     }
 }

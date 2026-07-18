@@ -20,30 +20,52 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
-public protocol Markup: Sendable {
-    var scope: Scope { get }
+/// Session-scoped node identity: `rawValue` is unique within the owning
+/// session and never reused; `lineage` is the session's random salt, so nodes
+/// from different sessions (including separate one-shot parses) never share
+/// an identity. Stable across incremental commits while the node remains the
+/// same kind of thing at the same place.
+public struct MarkupID: Sendable, Hashable {
+    public let lineage: UInt64
+    public let rawValue: UInt64
+
+    public init(lineage: UInt64, rawValue: UInt64) {
+        self.lineage = lineage
+        self.rawValue = rawValue
+    }
+}
+
+/// A node of the canonical Markdown value tree.
+///
+/// Nodes are immutable values. Equality and hashing are O(1) and
+/// allocation-free: two nodes are equal exactly when they have the same
+/// `id` and the same `revision`, which the engine guarantees implies
+/// identical AST content (fields and descendants). Absolute source position
+/// is not content — resolve it with `Document.scope(of:)` or receive it from
+/// `Walker` events.
+public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
+    var id: MarkupID { get }
+
+    /// The commit revision at which this node's own fields, child list, or
+    /// any descendant last changed. A pure positional shift caused by an
+    /// edit elsewhere never changes a node's revision.
+    var revision: UInt64 { get }
+
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
-    func dump() -> String
+}
+
+extension Markup {
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.revision == rhs.revision
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(revision)
+    }
 }
 
 public enum PlacementMode: String, Sendable {
     case embedded
     case standalone
-}
-
-extension Markup {
-    static func scope(from node: OpaquePointer) -> Scope {
-        Scope(from: markdown_core_node_scope(node))
-    }
-
-    static func children(from node: OpaquePointer) -> [any Markup] {
-        var result: [any Markup] = []
-        result.reserveCapacity(markdown_core_node_child_count(node))
-        var child = markdown_core_node_get_first_child(node)
-        while let current = child {
-            result.append(markup(from: current))
-            child = markdown_core_node_get_next_sibling(current)
-        }
-        return result
-    }
 }

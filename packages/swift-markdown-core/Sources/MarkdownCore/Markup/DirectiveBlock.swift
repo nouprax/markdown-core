@@ -1,7 +1,8 @@
 import MarkdownCoreC
 
 public struct DirectiveBlock: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
     public let mode: PlacementMode
     public let name: String
@@ -12,11 +13,13 @@ public struct DirectiveBlock: Markup {
 }
 
 extension DirectiveBlock {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
+        let (id, revision) = builder.id(of: node)
         let values = DirectiveValues(from: node)
         self.init(
-            scope: Self.scope(from: node),
-            children: Self.children(from: node),
+            id: id,
+            revision: revision,
+            children: builder.children(node),
             mode: values.mode,
             name: values.name,
             attributes: values.attributes,

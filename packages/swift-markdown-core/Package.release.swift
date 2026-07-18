@@ -24,7 +24,7 @@ let package = Package(
                 "extensions/incremental.c",
                 "extensions/lookups.c",
                 "extensions/footnote.c",
-                "extensions/changeset.c", "extensions/table.c", "extensions/strikethrough.c",
+                "extensions/delta.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",
                 "extensions/ext_scanners.c", "extensions/tasklist.c",
             ],

@@ -251,7 +251,7 @@ if(MARKDOWN_CORE_STATIC)
 endif()
 
 # equivalence: incrementally edited sessions must dump byte-identically to a
-# one-shot parse of the same final text after every commit, and the changeset
+# one-shot parse of the same final text after every commit, and the delta
 # stream must account for every observable node change (mirror check).
 markdown_core_add_test(
     equivalence_canonical

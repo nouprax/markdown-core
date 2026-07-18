@@ -30,7 +30,7 @@ add_library(
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/incremental.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/lookups.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/footnote.c"
-    "${MARKDOWN_CORE_EXTENSIONS_DIR}/changeset.c"
+    "${MARKDOWN_CORE_EXTENSIONS_DIR}/delta.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/core-extensions.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/table.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/strikethrough.c"

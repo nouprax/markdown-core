@@ -16,7 +16,7 @@
 // so every prefix node keeps its id, and a kind change never adopts.
 //
 // Directive-label wrapper nodes are facade-invisible. They pair and carry
-// ids like any raw child, but they are never recorded in changesets, and a
+// ids like any raw child, but they are never recorded in deltas, and a
 // change inside a label marks the owning directive as `changed` (a label is
 // a typed property edge of its directive, not ordinary content).
 //
@@ -26,7 +26,7 @@
 
 typedef struct {
     markdown_core_session *session;
-    markdown_core_changeset *changes;
+    markdown_core_delta *changes;
     uint64_t new_rev;
     bool failed;
 } adopt_ctx;
@@ -264,7 +264,7 @@ bool markdown_core_session_adopt(
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 ) {
     adopt_ctx ctx = {session, changes, new_rev, false};
 
@@ -281,7 +281,7 @@ bool markdown_core_session_adopt(
 bool markdown_core_session_record_removed(
     markdown_core_session *session,
     const markdown_core_node *root,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 ) {
     adopt_ctx ctx = {session, changes, 0, false};
     record_removed_subtree(&ctx, root);

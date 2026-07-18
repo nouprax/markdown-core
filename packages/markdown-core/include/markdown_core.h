@@ -23,9 +23,11 @@
  * (one writer at a time). Between mutating calls (edit, commit, free), the
  * session's document view, its nodes, and lookups are safe for concurrent
  * reads from any thread. The document view borrowed from a session is valid
- * until the next mutating call on that session. Changesets are caller-owned
- * plain data: they survive the session and are released with
- * markdown_core_changeset_free.
+ * until the session's next commit or free: edits only advance the stored
+ * text and never touch the committed tree, so the borrowed view (and node
+ * scopes resolved through it) stays valid across
+ * markdown_core_session_edit. Deltas are caller-owned plain data: they
+ * survive the session and are released with markdown_core_delta_free.
  *
  * A single document: after markdown_core_document_parse returns, the document
  * and its nodes are logically immutable through this API. Concurrent
@@ -68,7 +70,7 @@ typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
 typedef struct markdown_core_session markdown_core_session;
-typedef struct markdown_core_changeset markdown_core_changeset;
+typedef struct markdown_core_delta markdown_core_delta;
 
 /** Session-assigned node identity: unique within a session, never reused,
  * stable across incremental commits while the node remains the same kind of
@@ -304,16 +306,16 @@ MARKDOWN_CORE_API bool markdown_core_session_edit(
 );
 
 /** Reparses the pending text and advances the revision. When `changes` is
- * non-NULL it receives a caller-owned changeset (release with
- * markdown_core_changeset_free). */
+ * non-NULL it receives a caller-owned delta (release with
+ * markdown_core_delta_free). */
 MARKDOWN_CORE_API bool markdown_core_session_commit(
     markdown_core_session *session,
-    markdown_core_changeset **changes,
+    markdown_core_delta **changes,
     markdown_core_error **error
 );
 
-/** Borrowed view of the last committed document; valid until the next
- * mutating call on the session. */
+/** Borrowed view of the last committed document; valid until the session's
+ * next commit or free (edits never touch the committed tree). */
 MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
 MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_session *session);
 
@@ -392,22 +394,22 @@ MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_n
  * its owning directive (label wrappers are never exposed). */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
 
-/** Changeset accessors. The four arrays are disjoint: `added` and `removed`
+/** Delta accessors. The four arrays are disjoint: `added` and `removed`
  * list nodes that appeared/disappeared, `changed` lists nodes whose own
  * fields or direct child list changed, and `bubbled` lists ancestors whose
  * revision advanced only because a descendant changed. Ids of removed nodes
  * are retired and never reused. */
 MARKDOWN_CORE_API void
-markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before, uint64_t *after);
+markdown_core_delta_revisions(const markdown_core_delta *changes, uint64_t *before, uint64_t *after);
 MARKDOWN_CORE_API size_t
-markdown_core_changeset_added(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t
-markdown_core_changeset_removed(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+markdown_core_delta_removed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t
-markdown_core_changeset_changed(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
+markdown_core_delta_changed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t
-markdown_core_changeset_bubbled(const markdown_core_changeset *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API void markdown_core_changeset_free(markdown_core_changeset *changes);
+markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_core_node_id **ids);
+MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus
 }

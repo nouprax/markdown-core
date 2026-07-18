@@ -23,7 +23,7 @@ typedef struct {
     size_t capacity;
 } markdown_core_id_array;
 
-struct markdown_core_changeset {
+struct markdown_core_delta {
     uint64_t before;
     uint64_t after;
     markdown_core_id_array added;
@@ -203,7 +203,7 @@ bool markdown_core_session_adopt(
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 );
 
 /** Records every facade-visible node of `root`'s subtree as removed in
@@ -211,13 +211,13 @@ bool markdown_core_session_adopt(
 bool markdown_core_session_record_removed(
     markdown_core_session *session,
     const markdown_core_node *root,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 );
 
-/** Appends an id to a changeset array; plain-malloc grow. */
+/** Appends an id to a delta array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
 
-/** Grows a changeset array so the next `extra` pushes cannot fail. */
+/** Grows a delta array so the next `extra` pushes cannot fail. */
 bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra);
 
 /** Builds the footnote index for `root` into `index` (zeroed on entry by the
@@ -274,7 +274,7 @@ bool markdown_core_footnote_index_diff(
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
     uint64_t new_rev,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 );
 
 /** Creates a parser configured with the session's options and extensions.
@@ -379,7 +379,7 @@ typedef enum {
 markdown_core_incremental_result markdown_core_session_commit_incremental(
     markdown_core_session *session,
     uint64_t new_rev,
-    markdown_core_changeset *changes,
+    markdown_core_delta *changes,
     markdown_core_error **error
 );
 

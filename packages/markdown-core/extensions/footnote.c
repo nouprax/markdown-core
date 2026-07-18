@@ -454,7 +454,7 @@ bool markdown_core_footnote_index_diff(
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
     uint64_t new_rev,
-    markdown_core_changeset *changes
+    markdown_core_delta *changes
 ) {
     // Two phases so the diff can run against a session's live tree: phase 1
     // collects the affected nodes without touching them (every allocation

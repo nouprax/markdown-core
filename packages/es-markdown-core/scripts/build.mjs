@@ -30,7 +30,7 @@ const extensions = [
     "incremental.c",
     "lookups.c",
     "footnote.c",
-    "changeset.c",
+    "delta.c",
     "table.c",
     "strikethrough.c",
     "autolink.c",

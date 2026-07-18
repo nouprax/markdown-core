@@ -46,12 +46,12 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_get_id;
     markdown_core_node_get_revision;
     markdown_core_node_get_parent;
-    markdown_core_changeset_revisions;
-    markdown_core_changeset_added;
-    markdown_core_changeset_removed;
-    markdown_core_changeset_changed;
-    markdown_core_changeset_bubbled;
-    markdown_core_changeset_free;
+    markdown_core_delta_revisions;
+    markdown_core_delta_added;
+    markdown_core_delta_removed;
+    markdown_core_delta_changed;
+    markdown_core_delta_bubbled;
+    markdown_core_delta_free;
   local:
     *;
 };
