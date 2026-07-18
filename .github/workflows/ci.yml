@@ -624,7 +624,7 @@ jobs:
             - uses: android-actions/setup-android@v4
             - name: Restore the pinned emulator and system image
               id: emulator-cache
-              uses: actions/cache@v4
+              uses: actions/cache/restore@v4
               with:
                   path: |
                       ${{ env.ANDROID_HOME }}/emulator
@@ -636,6 +636,20 @@ jobs:
                   sdkmanager \
                       "emulator" \
                       "system-images;android-36;${{ matrix.system-image }};x86_64"
+            # Saved before the tests run, not in a post step: the combined
+            # cache action only saves on job success, so a cold cache plus
+            # one flaky failure would re-download moving bytes on every
+            # rerun — exactly what the pin exists to prevent. Sibling legs
+            # sharing an image race to save once; the loser's "cache
+            # already exists" is harmless.
+            - name: Save the pinned emulator and system image
+              if: steps.emulator-cache.outputs.cache-hit != 'true'
+              uses: actions/cache/save@v4
+              with:
+                  path: |
+                      ${{ env.ANDROID_HOME }}/emulator
+                      ${{ env.ANDROID_HOME }}/system-images/android-36/${{ matrix.system-image }}
+                  key: android-emulator-api36-${{ matrix.system-image }}-x86_64-r1
             - name: Enable KVM
               run: |
                   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
