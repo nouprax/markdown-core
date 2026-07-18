@@ -110,8 +110,20 @@ public final class MarkupSession {
     public func commit() throws -> Commit {
         var nativeChanges: OpaquePointer?
         var nativeError: OpaquePointer?
+        // The previous snapshot's currency ends when the commit starts:
+        // detach its resolver before the native tree is replaced, so a
+        // not-yet-materialized snapshot can never cache the new revision's
+        // positions as its own — a racing reader either materialized from
+        // the still-unchanged tree or takes the documented
+        // superseded-snapshot trap.
+        let previousResolver = currentResolver
+        previousResolver?.detach()
         guard markdown_core_session_commit(session, &nativeChanges, &nativeError) else {
             defer { markdown_core_error_free(nativeError) }
+            // The native commit failed transactionally: the tree is
+            // unchanged at the previous revision, the previous snapshot
+            // becomes current again, and the commit may be retried.
+            previousResolver?.reattach(session: session)
             throw ParseError(from: nativeError)
         }
         guard let nativeChanges else {
@@ -119,10 +131,6 @@ public final class MarkupSession {
         }
         defer { markdown_core_delta_free(nativeChanges) }
         let changes = Delta(from: nativeChanges, lineage: lineage)
-
-        // The previous snapshot must answer scope queries from its cache (or
-        // trap) from here on: the native tree now describes the new revision.
-        currentResolver?.detach()
 
         guard let view = markdown_core_session_document(session),
             let root = markdown_core_document_root(view)
@@ -166,11 +174,16 @@ public final class MarkupSession {
     func commitBulk() throws -> Document {
         precondition(revision == 0, "commitBulk is only the first commit")
         var nativeError: OpaquePointer?
+        // Same detach-before-commit ordering as `commit()`; the intermediate
+        // snapshot is never exposed by `Document.parse`, so this only keeps
+        // the two commit paths on one contract.
+        let previousResolver = currentResolver
+        previousResolver?.detach()
         guard markdown_core_session_commit(session, nil, &nativeError) else {
             defer { markdown_core_error_free(nativeError) }
+            previousResolver?.reattach(session: session)
             throw ParseError(from: nativeError)
         }
-        currentResolver?.detach()
         guard let view = markdown_core_session_document(session),
             let root = markdown_core_document_root(view)
         else {

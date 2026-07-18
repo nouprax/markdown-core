@@ -48,6 +48,17 @@ final class ScopeResolver: Sendable {
         state.withLock { $0.session = nil }
     }
 
+    /// Undoes `detach()` after a transactionally failed commit: the native
+    /// tree is unchanged, so the snapshot is current again. A resolver that
+    /// materialized before the detach keeps its (still valid) cache.
+    func reattach(session: OpaquePointer) {
+        state.withLock { state in
+            if state.table == nil {
+                state.session = session
+            }
+        }
+    }
+
     /// Forces the one-time materialization now; the caller guarantees the
     /// snapshot is current. (0 is never a valid id, so this only builds the
     /// table.)
