@@ -529,6 +529,62 @@ Equality everywhere is `(lineage, id, revision)`.
     (`jni_session_stream_and_delta_decode`), and audit v2 (Kotlin session
     surface pinned exactly, mutation ban scoped away from the session
     directory, document-mediated dump pins).
+
+  ES workstream delivered 2026-07-18, completing M4: the same
+  mirror-by-delta architecture, but over pointer-walking bridge accessors
+  instead of a serialized wire — a WASM export call is a cheap in-process
+  crossing, so the record framing that exists to amortize JNI would only
+  add a second decoder:
+
+  - The bridge stays per-field: `bridge.c` gains `es_session_{open,free,
+    edit,commit,document,revision,lineage,length,footnote_info,footnotes,
+    footnote_references}`, `es_delta_{revision,ids,free}`, and
+    `es_node_{id,revision}`; `es_document_parse/free` are deleted — the
+    one-shot parse is TS-side session sugar (open, one edit, one
+    delta-free commit through the C nullable out-parameter, decode, eager
+    scope materialization, free) sharing the session decode pipeline end
+    to end.
+  - Mirror-by-delta without records: a commit reads the four delta id
+    arrays straight from WASM memory, then rebuilds top-down from the
+    committed root — a node in `added ∪ changed ∪ bubbled` re-decodes and
+    recurses, everything else returns the previous snapshot's object from
+    the id → node mirror (children-before-parents ordering falls out of
+    the recursion; no depth sort). A pure-shift empty delta re-wraps the
+    root `Document` around a fresh resolver, exactly the Kotlin path, and
+    the detach-before-native-commit / reattach-on-transactional-failure
+    order from the Swift race fix (#22) is ported verbatim.
+  - Identity: `MarkupID { lineage: bigint, rawValue: number }`, interned
+    per session so the same identity is always the same object — ids work
+    as `Map`/React keys and delta arrays answer `includes` by reference;
+    ids and revisions cross the boundary as bigint and convert under a
+    safe-integer guard. Node values stay plain objects, gain `id`/
+    `revision`, drop stored scopes, and rename the footnote field to
+    `label`; `document.scope(node)` and `document.dump()` are
+    non-enumerable mediators wired at snapshot adoption;
+    `TreeDumper.dump(document, node)` rebases subtree origins; Walker
+    events carry the resolved scope. The lazy `ScopeResolver` is the
+    Kotlin state machine minus the atomics (JS contexts are
+    single-threaded).
+  - Engine-facing fix found by the ES id tests: the session lineage
+    entropy (session address ⊕ `time(NULL)` ⊕ `clock()`) survives the WASM
+    libc only at seconds granularity, so back-to-back one-shot parses
+    reusing a freed session's address within one wall-clock second minted
+    identical lineages. The WASI `clock_time_get` shim now advances its
+    reported time a full second per call — entropy is the engine's only
+    time consumer, so the drift is unobservable.
+  - Gates: `sessions` node suite (streaming id stability, clean-boundary
+    inserts, kind changes, empty-delta pure shifts, scope survival after
+    close, superseded-unmaterialized traps, footnote queries, `updates`
+    over sync and async iterables, closed sessions, rejected edits,
+    interleaved sessions per context, per-worker session replay on
+    isolated WASM instances), conformance session replay of the manifest
+    corpus (per-commit dump equality against one-shot references +
+    delta-mirror integrity), a browser streamed-session check, the packed
+    npm consumer's session smoke, the
+    `wasm_session_stream_and_delta_decode` streaming benchmark, and audit
+    v2 (the ES runtime export list gains `MarkupSession`, the session
+    surface pinned exactly, scope-free node values and the
+    document-mediated dump pinned).
 - **M5 — Hardening & release**: edit-script fuzz target, pathological corpus,
   perf tuning, CHANGELOG/VERSION 2.0.0, release dry-run. Gates: full CI
   matrix + package audits.

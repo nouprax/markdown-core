@@ -24,8 +24,7 @@ static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_
     *length = view.length;
 }
 
-markdown_core_document *es_document_parse(const uint8_t *source, size_t length, uint32_t flags,
-                                          markdown_core_error **error) {
+markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **error) {
     markdown_core_parse_options options;
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = (flags & (1u << 0)) != 0;
@@ -39,14 +38,100 @@ markdown_core_document *es_document_parse(const uint8_t *source, size_t length, 
     options.dollar_formula_delimiters = (flags & (1u << 8)) != 0;
     options.latex_formula_delimiters = (flags & (1u << 9)) != 0;
     options.directives = (flags & (1u << 10)) != 0;
-    return markdown_core_document_parse(source, length, &options, error);
+    return markdown_core_session_open(&options, error);
 }
 
-void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
+void es_session_free(markdown_core_session *session) { markdown_core_session_free(session); }
+
+int32_t es_session_edit(
+    markdown_core_session *session,
+    size_t byte_start,
+    size_t byte_end,
+    const uint8_t *bytes,
+    size_t length,
+    markdown_core_error **error
+) {
+    return markdown_core_session_edit(session, byte_start, byte_end, bytes, length, error);
+}
+
+int32_t
+es_session_commit(markdown_core_session *session, markdown_core_delta **changes, markdown_core_error **error) {
+    return markdown_core_session_commit(session, changes, error);
+}
+
+const markdown_core_document *es_session_document(const markdown_core_session *session) {
+    return markdown_core_session_document(session);
+}
+
+uint64_t es_session_revision(const markdown_core_session *session) { return markdown_core_session_revision(session); }
+
+uint64_t es_session_lineage(const markdown_core_session *session) { return markdown_core_session_lineage(session); }
+
+size_t es_session_length(const markdown_core_session *session) { return markdown_core_session_length(session); }
+
+int32_t es_session_footnote_info(const markdown_core_session *session, uint64_t id, uint64_t *fields) {
+    markdown_core_footnote_info info;
+    if (!markdown_core_session_footnote_info(session, id, &info)) {
+        return 0;
+    }
+    fields[0] = info.definition;
+    fields[1] = info.number;
+    fields[2] = info.reference_ordinal;
+    fields[3] = info.reference_count;
+    return 1;
+}
+
+size_t es_session_footnotes(const markdown_core_session *session, uintptr_t *data) {
+    const markdown_core_node_id *ids = NULL;
+    size_t count = markdown_core_session_footnotes(session, &ids);
+    *data = (uintptr_t)ids;
+    return count;
+}
+
+size_t es_session_footnote_references(const markdown_core_session *session, uint64_t definition, uintptr_t *data) {
+    const markdown_core_node_id *ids = NULL;
+    size_t count = markdown_core_session_footnote_references(session, definition, &ids);
+    *data = (uintptr_t)ids;
+    return count;
+}
+
+uint64_t es_delta_revision(const markdown_core_delta *changes, int32_t boundary) {
+    uint64_t before = 0;
+    uint64_t after = 0;
+    markdown_core_delta_revisions(changes, &before, &after);
+    return boundary == 0 ? before : after;
+}
+
+size_t es_delta_ids(const markdown_core_delta *changes, int32_t verdict, uintptr_t *data) {
+    const markdown_core_node_id *ids = NULL;
+    size_t count = 0;
+    switch (verdict) {
+    case 0:
+        count = markdown_core_delta_added(changes, &ids);
+        break;
+    case 1:
+        count = markdown_core_delta_removed(changes, &ids);
+        break;
+    case 2:
+        count = markdown_core_delta_changed(changes, &ids);
+        break;
+    default:
+        count = markdown_core_delta_bubbled(changes, &ids);
+        break;
+    }
+    *data = (uintptr_t)ids;
+    return count;
+}
+
+void es_delta_free(markdown_core_delta *changes) { markdown_core_delta_free(changes); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
     return markdown_core_document_root(document);
 }
+
+uint64_t es_node_id(const markdown_core_node *node) { return markdown_core_node_get_id(node); }
+
+uint64_t es_node_revision(const markdown_core_node *node) { return markdown_core_node_get_revision(node); }
 
 int32_t es_error_code(const markdown_core_error *error) {
     return (int32_t)markdown_core_error_get_code(error);

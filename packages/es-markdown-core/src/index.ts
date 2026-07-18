@@ -17,6 +17,10 @@ export type { Link } from "./model/link.js";
 export type { List, ListItem } from "./model/list.js";
 export type { MarkupBase } from "./model/base.js";
 export type { Markup } from "./model/markup.js";
+export type { MarkupID } from "./model/markup-id.js";
+export { MarkupSession } from "./session/markup-session.js";
+export type { Commit, Delta } from "./session/commit.js";
+export type { FootnoteInfo } from "./session/footnote-info.js";
 export type { Paragraph } from "./model/paragraph.js";
 export type { SoftBreak } from "./model/soft-break.js";
 export type { Strikethrough } from "./model/strikethrough.js";
@@ -32,3 +36,4 @@ export type { ListFlavor, PlacementMode, Position, Scope, TableAlignment } from 
 export { visit } from "./visitor.js";
 export type { Visitor } from "./visitor.js";
 export { Walker, WalkEvent } from "./walker.js";
+export type { WalkCallback } from "./walker.js";

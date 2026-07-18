@@ -31,11 +31,24 @@ test("ast: typed fields are copied from direct WASM accessors", () => {
     assert.deepEqual(document.content[1].alignments, ["center"]);
 });
 
-test("ast: every Markup exposes the canonical diagnostic dump", () => {
-    const document = Document.parse("# Heading\n");
+test("ast: the document mediates the canonical diagnostic dump", () => {
+    const document = Document.parse("Lead\n\n# Heading\n");
     assert.equal(document.dump(), TreeDumper.dump(document));
-    assert.match(document.content[0].dump(), /^Heading scope=/);
+    // A subtree dump prints scopes with the subtree as origin.
+    assert.match(TreeDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
     assert.equal(Object.keys(document).includes("dump"), false);
+    assert.equal(Object.keys(document).includes("scope"), false);
+});
+
+test("ast: nodes carry identity instead of positions", () => {
+    const document = Document.parse("# Heading\n");
+    assert.equal(typeof document.id.lineage, "bigint");
+    assert.equal(typeof document.id.rawValue, "number");
+    assert.equal(typeof document.revision, "number");
+    assert.equal("scope" in document.content[0], false);
+    assert.equal(document.scope(document.content[0]).start.line, 1);
+    // Separate parses never share identity.
+    assert.notEqual(Document.parse("# Heading\n").id.lineage, document.id.lineage);
 });
 
 test("unicode: UTF-8 survives native document release", () => {

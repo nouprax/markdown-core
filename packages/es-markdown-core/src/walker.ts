@@ -1,4 +1,6 @@
+import type { Document } from "./model/document.js";
 import type { Markup } from "./model/markup.js";
+import type { Scope } from "./values.js";
 
 export const WalkEvent = {
     entering: "entering",
@@ -7,20 +9,32 @@ export const WalkEvent = {
 
 export type WalkEvent = (typeof WalkEvent)[keyof typeof WalkEvent];
 
+export type WalkCallback = (event: WalkEvent, node: Markup, scope: Scope) => void;
+
 interface Frame {
     readonly event: WalkEvent;
     readonly node: Markup;
+    readonly scope?: Scope;
 }
 
 export class Walker {
-    walk(root: Markup, callback: (event: WalkEvent, node: Markup) => void): void {
-        const stack: Frame[] = [{ event: WalkEvent.entering, node: root }];
+    /** Walks the document depth-first, supplying each event with the node's
+     * resolved absolute scope. */
+    walk(document: Document, callback: WalkCallback): void;
+    /** Walks the subtree rooted at `from`; scopes stay document-absolute. */
+    walk(document: Document, from: Markup, callback: WalkCallback): void;
+    walk(document: Document, fromOrCallback: Markup | WalkCallback, subtreeCallback?: WalkCallback): void {
+        const from = typeof fromOrCallback === "function" ? document : fromOrCallback;
+        const callback = typeof fromOrCallback === "function" ? fromOrCallback : subtreeCallback;
+        if (typeof callback !== "function") throw new TypeError("walk requires a callback");
+        const stack: Frame[] = [{ event: WalkEvent.entering, node: from }];
         while (stack.length > 0) {
             const frame = stack.pop()!;
-            callback(frame.event, frame.node);
+            const scope = frame.scope ?? document.scope(frame.node);
+            callback(frame.event, frame.node, scope);
             if (frame.event === WalkEvent.exiting) continue;
 
-            stack.push({ event: WalkEvent.exiting, node: frame.node });
+            stack.push({ event: WalkEvent.exiting, node: frame.node, scope });
             const descendants = children(frame.node);
             for (let index = descendants.length - 1; index >= 0; index -= 1) {
                 stack.push({ event: WalkEvent.entering, node: descendants[index]! });

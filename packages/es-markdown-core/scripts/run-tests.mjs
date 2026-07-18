@@ -11,6 +11,7 @@ const correctnessSuites = [
     "errors",
     "ownership",
     "robustness",
+    "sessions",
     "unicode",
     "types",
     "packaging"
@@ -44,6 +45,9 @@ const selectedNodeSuites = selected.filter((suite) =>
 );
 if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);
+}
+if (selected.includes("sessions")) {
+    run("node", ["--test", "tests/session.test.mjs"]);
 }
 const packageSuites = selected.filter((suite) => ["consumer", "types", "packaging"].includes(suite));
 if (packageSuites.length === 3) {
