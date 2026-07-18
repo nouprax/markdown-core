@@ -1059,6 +1059,63 @@ done:
     return result;
 }
 
+/* Head-of-document definition clusters must restart and resync at sentinel
+ * clean entries: retargeting the last definition of a leading cluster is an
+ * incremental, resynced commit, never a full reparse. The counters are the
+ * session's restart-locality inventory. */
+static int case_restart_locality_counters(void) {
+    static const char initial[] = "[a]: /a1\n"
+                                  "[b]: /b1\n"
+                                  "\n"
+                                  "[c]: /c1\n"
+                                  "\n"
+                                  "uses [u][a] here\n";
+    static const char retarget[] = "/c9";
+    markdown_core_parse_options options;
+    markdown_core_session *session;
+    int result = -1;
+
+    markdown_core_parse_options_init(&options);
+    session = markdown_core_session_open(&options, NULL);
+    if (!session) {
+        fprintf(stderr, "FAILED: restart_locality_counters: session open failed\n");
+        return -1;
+    }
+    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fprintf(stderr, "FAILED: restart_locality_counters: initial commit failed\n");
+        goto done;
+    }
+    /* Opening a session commits the empty document through the full path. */
+    if (session->full_commits != 1 || session->restarted_commits != 1) {
+        fprintf(stderr, "FAILED: restart_locality_counters: initial commit was not an incremental restart\n");
+        goto done;
+    }
+    /* Retarget the last head definition: [c]'s destination at bytes 24..27. */
+    if (!markdown_core_session_edit(session, 24, 27, (const uint8_t *)retarget, sizeof(retarget) - 1, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fprintf(stderr, "FAILED: restart_locality_counters: retarget commit failed\n");
+        goto done;
+    }
+    if (session->full_commits != 1) {
+        fprintf(stderr, "FAILED: restart_locality_counters: a head-cluster edit fell back to a full reparse\n");
+        goto done;
+    }
+    if (session->restarted_commits != 2 || session->resynced_commits != 1) {
+        fprintf(
+            stderr,
+            "FAILED: restart_locality_counters: expected a resynced restart (restarted %zu, resynced %zu)\n",
+            session->restarted_commits,
+            session->resynced_commits
+        );
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_session_free(session);
+    return result;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -1073,6 +1130,7 @@ static const fb_case_entry FB_CASES[] = {
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
     {"session_oom_sweep", case_session_oom_sweep},
+    {"restart_locality_counters", case_restart_locality_counters},
 };
 
 int main(int argc, char **argv) {

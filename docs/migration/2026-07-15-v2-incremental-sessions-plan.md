@@ -402,19 +402,34 @@ Equality everywhere is `(lineage, id, revision)`.
     one-shot expansion total proves the equivalent one-shot parse would not
     have denied any lookup either, and commits past the bound fall back to
     a full reparse (which re-measures it).
-  - Deferred to issue #15 (restart locality): a definition-only paragraph
-    is consumed into the refmap and leaves no tree node, so no clean-child
-    entry anchors its bytes and nearby edits restart at the previous clean
-    child — byte 0 for head-region clusters, O(#head definitions) per
-    commit in def-front-loaded documents. Direction: restart geometry for
-    consumed definitions (sentinel clean-index entries or per-definition
-    byte/line stamps) plus a head-region split for definition
-    reconciliation, which today classifies every owner-0 entry wholesale.
-    The issue also carries the resync-delay behaviors (blockquotes
-    observed non-CLEAN_START, footnote definitions open across blank
-    lines) and the inventory of surviving full-path fallbacks, so
-    degraded-to-full-reparse cases stay counted instead of accumulating
-    silently.
+  - ~~Deferred to issue #15 (restart locality)~~ — resolved 2026-07-17
+    (sentinel clean entries + a line-ordered definition index): map entries
+    carry the harvesting paragraph's start line (stamped at add time like
+    the owner, shifted with the suffix), and a vanished clean definition
+    paragraph leaves a `node == NULL` sentinel entry in the clean index —
+    a valid restart point and resync boundary, resolved to the first real
+    child at or beyond its line (real children can appear inside a cluster
+    when a paragraph stops vanishing). Staleness and prefix/suffix
+    classification became pure line-interval queries over a
+    session-persistent, line-ordered at-rest definition index
+    (`session->def_index`): stale collection is a binary-searched range,
+    reconcile extrema come from the range's neighbors (slice copies only
+    on renumber), stale entries unlink O(1) through new map back links,
+    and the staged range splices in place (capacity reserved during
+    prepare; `refmap_stale` covers aborted reconciliations). Owner-based
+    region classification is gone; anchors remain only as parse-local
+    vanish markers. The session counts full/restarted/resynced commits
+    (`fallback_runner --case restart_locality_counters` pins them), so
+    degraded-to-full cases stay counted. Gates: the `head_defs` boundary
+    script (mid-cluster retargets, definition paragraphs arriving/leaving,
+    pure-shift gap edits, a paragraph flipping between vanishing and
+    real), and the `session_head_defs` complexity case (last-definition
+    retargets against a document-scale leading cluster, flat across a
+    1024x spread — 0.8x measured, ~3167x before the change). Remaining in
+    the issue's orbit: the resync-delay behaviors (consecutive top-level
+    blockquotes fuse because `line_began_clean` is computed before
+    `check_open_blocks`; footnote definitions stay open across blank
+    lines), tracked for M5 hardening.
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta

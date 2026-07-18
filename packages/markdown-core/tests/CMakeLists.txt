@@ -244,7 +244,8 @@ if(MARKDOWN_CORE_STATIC)
         map_prepare_oom
         constructor_oom
         oom_sweep
-        session_oom_sweep)
+        session_oom_sweep
+        restart_locality_counters)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()
@@ -410,7 +411,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     session_stream_flat
     session_edit_storm
     session_ref_retarget
-    session_footnote_shift)
+    session_footnote_shift
+    session_head_defs)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})

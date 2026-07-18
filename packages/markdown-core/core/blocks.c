@@ -385,6 +385,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     if (parser->refmap) {
         parser->refmap->pending_owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, b);
+        parser->refmap->pending_line = b->start_line;
     }
     while (chunk.len && chunk.data[0] == '[' &&
            (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
@@ -413,6 +414,7 @@ static void S_reanchor_vanishing_definitions(markdown_core_parser *parser, markd
     }
     for (entry = parser->refmap->refs; entry && entry->owner == vanishing; entry = entry->next) {
         entry->owner = replacement;
+        entry->from_vanished_clean = (b->flags & MARKDOWN_CORE_NODE__CLEAN_START) != 0;
     }
 }
 

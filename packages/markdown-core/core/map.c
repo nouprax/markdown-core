@@ -482,8 +482,14 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry) {
     entry->order = ++map->next_order;
     entry->owner = map->pending_owner;
+    entry->start_line = map->pending_line;
+    entry->from_vanished_clean = false;
     entry->bucket_next = NULL;
     entry->next = map->refs;
+    entry->prev = NULL;
+    if (map->refs) {
+        map->refs->prev = entry;
+    }
     map->refs = entry;
     map->size++;
 
@@ -546,6 +552,9 @@ void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_en
     while (map->refs && map->refs != until) {
         markdown_core_map_entry *entry = map->refs;
         map->refs = entry->next;
+        if (map->refs) {
+            map->refs->prev = NULL;
+        }
         if (map->prepared) {
             if (!map->indexed || !bucket_detach(map, entry)) {
                 unprepare_map(map);
@@ -571,6 +580,9 @@ void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner) {
             continue;
         }
         *link = entry->next;
+        if (entry->next) {
+            entry->next->prev = entry->prev;
+        }
         if (map->prepared) {
             if (!map->indexed || !bucket_detach(map, entry)) {
                 unprepare_map(map);

@@ -13,11 +13,21 @@ extern "C" {
  * is no freeze after the first lookup. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next;        /* every live entry, newest first */
+    struct markdown_core_map_entry *prev;        /* back link: sessions unlink stale entries in O(1) */
     struct markdown_core_map_entry *bucket_next; /* same-label chain, ascending document order */
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
-    uint64_t owner; /* owning document-child id (0 = whole document) */
-    size_t size;    /* reference expansion accounting */
+    uint64_t owner; /* owning document-child id (0 = the head region) */
+    /* Source line of the harvesting paragraph (absolute; sessions keep it in
+     * committed-text coordinates). Head-region entries (owner 0) classify by
+     * this line, so a restart inside a leading definition cluster retracts
+     * only the reparsed paragraphs instead of the whole region. */
+    int start_line;
+    /* The harvesting paragraph was fully consumed and had begun on a clean
+     * line: its start is a safe restart point the tree no longer records,
+     * so the session indexes it as a sentinel clean entry. */
+    bool from_vanished_clean;
+    size_t size; /* reference expansion accounting */
 };
 
 typedef struct markdown_core_map_entry markdown_core_map_entry;
@@ -53,6 +63,7 @@ struct markdown_core_map {
     size_t size;                               /* live entry count, duplicates included */
     uint64_t next_order;                       /* monotonic document-order allocator */
     uint64_t pending_owner;                    /* stamped onto entries at add time */
+    int pending_line;                          /* stamped onto entries at add time */
     markdown_core_map_lookup_sink lookup_sink; /* NULL outside sessions */
     void *lookup_context;
     void *lookup_unit; /* attribution target for the current inline parse */
