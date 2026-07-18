@@ -419,9 +419,15 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, NULL, 0, 0};
     markdown_core_clean_index clean = {NULL, 0, 0};
+    markdown_core_map_entry **def_index = NULL;
+    size_t def_count = 0;
     if (!id_table_build(session->mem, root, &ids) ||
-        !markdown_core_session_index_clean_children(session, root, &clean)) {
+        !markdown_core_session_index_clean_children(session, root, map, &clean) ||
+        !markdown_core_session_index_definitions(session, map, &def_index, &def_count)) {
         id_table_release(session->mem, &ids);
+        if (clean.items) {
+            session->mem->free(clean.items);
+        }
         markdown_core_footnote_index_release(session->mem, &footnotes);
         markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
@@ -444,6 +450,12 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     if (session->clean.items) {
         session->mem->free(session->clean.items);
     }
+    if (session->def_index) {
+        session->mem->free(session->def_index);
+    }
+    session->def_index = def_index;
+    session->def_count = def_count;
+    session->def_capacity = def_count ? def_count : 1;
     session->view.root = root;
     session->ids = ids;
     session->footnotes = footnotes;
@@ -455,6 +467,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     session->last_line_length = last_line_length;
     session->expansion_estimate = map->ref_size;
     session->revision = new_rev;
+    session->full_commits++;
     session->pending.dirty = false;
     session->pending.new_lo = 0;
     session->pending.new_hi = 0;
@@ -576,6 +589,9 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_map_free(session->refmap);
     if (session->clean.items) {
         session->mem->free(session->clean.items);
+    }
+    if (session->def_index) {
+        session->mem->free(session->def_index);
     }
     free(session);
 }

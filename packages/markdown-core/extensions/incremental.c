@@ -1,3 +1,5 @@
+#include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -119,16 +121,27 @@ static bool offset_push(markdown_core_mem *mem, offset_list *list, size_t offset
     return true;
 }
 
+static int line_compare(const void *a, const void *b) {
+    int la = *(const int *)a;
+    int lb = *(const int *)b;
+    return la < lb ? -1 : la > lb ? 1 : 0;
+}
+
 bool markdown_core_session_index_clean_children(
     markdown_core_session *session,
     markdown_core_node *root,
+    const markdown_core_map *map,
     markdown_core_clean_index *out
 ) {
     const unsigned char *bytes = markdown_core_text_bytes(&session->text);
     size_t length = markdown_core_text_length(&session->text);
+    const markdown_core_map_entry *entry;
     markdown_core_node *child;
+    int *sentinel_lines = NULL;
+    size_t sentinel_count = 0;
     size_t count = 0;
     size_t offset = 0;
+    size_t i;
     int line = 1;
 
     for (child = root->first_child; child; child = child->next) {
@@ -136,15 +149,61 @@ bool markdown_core_session_index_clean_children(
             count++;
         }
     }
-    out->items = (markdown_core_clean_child *)session->mem->calloc(count ? count : 1, sizeof(*out->items));
+    // Head sentinels: vanished clean definition paragraphs leave no tree
+    // node but remain safe restart and resync points; one entry per
+    // distinct line, and every one precedes the first real child.
+    for (entry = map ? map->refs : NULL; entry; entry = entry->next) {
+        if (entry->owner == 0 && entry->from_vanished_clean) {
+            sentinel_count++;
+        }
+    }
+    if (sentinel_count) {
+        size_t filled = 0;
+        size_t kept = 0;
+        sentinel_lines = (int *)session->mem->calloc(sentinel_count, sizeof(*sentinel_lines));
+        if (!sentinel_lines) {
+            return false;
+        }
+        for (entry = map->refs; entry; entry = entry->next) {
+            if (entry->owner == 0 && entry->from_vanished_clean) {
+                sentinel_lines[filled++] = entry->start_line;
+            }
+        }
+        qsort(sentinel_lines, filled, sizeof(*sentinel_lines), line_compare);
+        for (i = 0; i < filled; i++) {
+            if (kept == 0 || sentinel_lines[kept - 1] != sentinel_lines[i]) {
+                sentinel_lines[kept++] = sentinel_lines[i];
+            }
+        }
+        sentinel_count = kept;
+    }
+    out->items = (markdown_core_clean_child *)
+                     session->mem->calloc(count + sentinel_count ? count + sentinel_count : 1, sizeof(*out->items));
     if (!out->items) {
+        if (sentinel_lines) {
+            session->mem->free(sentinel_lines);
+        }
         return false;
     }
-    out->capacity = count ? count : 1;
+    out->capacity = count + sentinel_count ? count + sentinel_count : 1;
     out->count = 0;
 
-    // Clean children carry strictly increasing parser line numbers, so one
-    // forward scan of the text resolves every start byte.
+    // Sentinels first (they precede every child), then clean children:
+    // both carry strictly increasing line numbers, so one forward scan of
+    // the text resolves every start byte.
+    for (i = 0; i < sentinel_count; i++) {
+        while (line < sentinel_lines[i] && offset < length) {
+            offset = line_end(bytes, length, offset);
+            line++;
+        }
+        out->items[out->count].start_byte = offset;
+        out->items[out->count].start_line = sentinel_lines[i];
+        out->items[out->count].node = NULL;
+        out->count++;
+    }
+    if (sentinel_lines) {
+        session->mem->free(sentinel_lines);
+    }
     for (child = root->first_child; child; child = child->next) {
         int start_line;
         if (!(child->flags & MARKDOWN_CORE_NODE__CLEAN_START)) {
@@ -164,6 +223,74 @@ bool markdown_core_session_index_clean_children(
 }
 
 /* Index of the last clean child with start_byte <= old_lo, or -1. */
+/* The real document child a clean entry stands for: a sentinel entry (a
+ * vanished definition paragraph) resolves to the first child whose sealed
+ * start reaches the sentinel's line — real children can precede it inside a
+ * definition cluster (a paragraph that stopped vanishing), and those belong
+ * to the prefix, not the stale region. */
+static markdown_core_node *entry_node_at(const markdown_core_clean_child *entry, markdown_core_node *doc) {
+    markdown_core_node *child;
+    if (entry->node) {
+        return entry->node;
+    }
+    for (child = doc->first_child; child && child->start_line + 1 < entry->start_line; child = child->next) {
+    }
+    return child;
+}
+
+static int def_index_compare(const void *a, const void *b) {
+    const markdown_core_map_entry *ea = *(const markdown_core_map_entry *const *)a;
+    const markdown_core_map_entry *eb = *(const markdown_core_map_entry *const *)b;
+    if (ea->start_line != eb->start_line) {
+        return ea->start_line < eb->start_line ? -1 : 1;
+    }
+    if (ea->order != eb->order) {
+        return ea->order < eb->order ? -1 : 1;
+    }
+    return 0;
+}
+
+bool markdown_core_session_index_definitions(
+    markdown_core_session *session,
+    markdown_core_map *map,
+    markdown_core_map_entry ***out_items,
+    size_t *out_count
+) {
+    markdown_core_map_entry **items;
+    markdown_core_map_entry *entry;
+    size_t count = map ? map->size : 0;
+    size_t filled = 0;
+
+    items = (markdown_core_map_entry **)session->mem->calloc(count ? count : 1, sizeof(*items));
+    if (!items) {
+        return false;
+    }
+    for (entry = map ? map->refs : NULL; entry; entry = entry->next) {
+        items[filled++] = entry;
+    }
+    if (filled > 1) {
+        qsort(items, filled, sizeof(*items), def_index_compare);
+    }
+    *out_items = items;
+    *out_count = filled;
+    return true;
+}
+
+/* First index whose entry starts at or beyond `line`. */
+static size_t def_lower_bound(markdown_core_map_entry **items, size_t count, int line) {
+    size_t lo = 0;
+    size_t hi = count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (items[mid]->start_line < line) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
 static ptrdiff_t restart_position(const markdown_core_clean_index *clean, size_t old_lo) {
     size_t lo = 0;
     size_t hi = clean->count;
@@ -266,39 +393,26 @@ static bool id_set_holds(const uint64_t *ids, size_t count, uint64_t id) {
     return false;
 }
 
-static int order_compare(const void *a, const void *b) {
-    const markdown_core_reference *ra = *(const markdown_core_reference *const *)a;
-    const markdown_core_reference *rb = *(const markdown_core_reference *const *)b;
-    if (ra->entry.order != rb->entry.order) {
-        return ra->entry.order < rb->entry.order ? -1 : 1;
-    }
-    return 0;
-}
-
 /* Entries anchored in the stale region, in document order. At rest every
  * entry order stems from the most recent full parse, so sorting by order is
  * sorting by document position. */
+/* A definition's stamped line lies inside its harvesting paragraph, and a
+ * paragraph is reparsed exactly when its lines are: the stale entries are
+ * one contiguous range of the session's line-ordered index. */
 static bool collect_stale_definitions(
     markdown_core_mem *mem,
-    markdown_core_map *map,
-    const markdown_core_map_entry *previous_head,
-    const uint64_t *stale_ids,
-    size_t stale_count,
-    bool include_head_region,
+    markdown_core_session *session,
+    int restart_line,
+    int boundary_line,
     reference_list *out
 ) {
-    markdown_core_map_entry *entry = map->refs;
-    while (entry && entry != previous_head) {
-        entry = entry->next; // skip this parse's own additions
-    }
-    for (; entry; entry = entry->next) {
-        bool stale = entry->owner == 0 ? include_head_region : id_set_holds(stale_ids, stale_count, entry->owner);
-        if (stale && !reference_push(mem, out, (markdown_core_reference *)entry)) {
+    size_t lo = def_lower_bound(session->def_index, session->def_count, restart_line);
+    size_t hi = def_lower_bound(session->def_index, session->def_count, boundary_line);
+    size_t i;
+    for (i = lo; i < hi; i++) {
+        if (!reference_push(mem, out, (markdown_core_reference *)session->def_index[i])) {
             return false;
         }
-    }
-    if (out->count > 1) {
-        qsort(out->items, out->count, sizeof(*out->items), order_compare);
     }
     return true;
 }
@@ -339,32 +453,16 @@ typedef enum {
     DEF_REGION_PREFIX,
     DEF_REGION_STALE,
     DEF_REGION_SUFFIX,
-    DEF_REGION_UNKNOWN,
 } def_region;
 
-/* Places an at-rest entry relative to the stale region. Anchors are direct
- * document children with sealed document-relative lines, so one comparison
- * against the restart line settles prefix versus suffix. */
-static def_region classify_definition(
-    markdown_core_session *session,
-    const markdown_core_map_entry *entry,
-    const uint64_t *stale_ids,
-    size_t stale_count,
-    bool include_head_region,
-    int restart_line
-) {
-    const markdown_core_node *anchor;
-    if (entry->owner == 0) {
-        return include_head_region ? DEF_REGION_STALE : DEF_REGION_PREFIX;
+/* Places an at-rest entry relative to the stale region by its stamped line:
+ * the line lies inside the harvesting paragraph, whose position against the
+ * restart and boundary lines settles the region exactly. */
+static def_region classify_definition(const markdown_core_map_entry *entry, int restart_line, int boundary_line) {
+    if (entry->start_line < restart_line) {
+        return DEF_REGION_PREFIX;
     }
-    if (id_set_holds(stale_ids, stale_count, entry->owner)) {
-        return DEF_REGION_STALE;
-    }
-    anchor = markdown_core_session_node_by_id(session, entry->owner);
-    if (!anchor || anchor->parent != session->view.root) {
-        return DEF_REGION_UNKNOWN;
-    }
-    return anchor->start_line + 1 < restart_line ? DEF_REGION_PREFIX : DEF_REGION_SUFFIX;
+    return entry->start_line < boundary_line ? DEF_REGION_STALE : DEF_REGION_SUFFIX;
 }
 
 /* One affected label's bucket, partitioned into its region runs. The bucket
@@ -388,6 +486,8 @@ typedef struct {
     size_t suffix_count;
     uint64_t prefix_max_order;
     uint64_t suffix_min_order; // UINT64_MAX when the suffix holds none
+    size_t splice_lo;          // stale range of the session's definition index
+    size_t splice_hi;
     bool renumber;
     bool prepared;
     bool applied; // surgery ran: a failing commit leaves the map stale
@@ -427,18 +527,14 @@ static bool reconcile_prepare(
     markdown_core_session *session,
     markdown_core_map *map,
     uint64_t order_floor,
-    const markdown_core_map_entry *previous_head,
-    const uint64_t *stale_ids,
-    size_t stale_count,
-    bool include_head_region,
     int restart_line,
+    int boundary_line,
     const reference_list *old_defs,
     const reference_list *new_defs,
     reconcile_state *state,
     bool *fallback
 ) {
     markdown_core_mem *mem = session->mem;
-    markdown_core_map_entry *entry;
     size_t affected_upper = old_defs->count + new_defs->count;
     size_t i;
 
@@ -465,61 +561,50 @@ static bool reconcile_prepare(
         return false;
     }
 
-    // Classify every at-rest entry once: the prefix/suffix arrays feed the
-    // renumber path, and the extrema bound the vacated order span.
-    {
-        size_t at_rest = 0;
-        size_t prefix_filled = 0;
-        size_t suffix_filled = 0;
-        for (entry = map->refs; entry && entry != previous_head; entry = entry->next) {
-        }
-        for (; entry; entry = entry->next) {
-            at_rest++;
-        }
-        state->prefix_entries =
-            (markdown_core_reference **)mem->calloc(at_rest ? at_rest : 1, sizeof(*state->prefix_entries));
-        state->suffix_entries =
-            (markdown_core_reference **)mem->calloc(at_rest ? at_rest : 1, sizeof(*state->suffix_entries));
-        if (!state->prefix_entries || !state->suffix_entries) {
-            reconcile_release(mem, state);
-            return false;
-        }
-        entry = map->refs;
-        while (entry && entry != previous_head) {
-            entry = entry->next;
-        }
-        for (; entry; entry = entry->next) {
-            switch (classify_definition(session, entry, stale_ids, stale_count, include_head_region, restart_line)) {
-            case DEF_REGION_PREFIX:
-                state->prefix_entries[prefix_filled++] = (markdown_core_reference *)entry;
-                if (entry->order > state->prefix_max_order) {
-                    state->prefix_max_order = entry->order;
-                }
-                break;
-            case DEF_REGION_SUFFIX:
-                state->suffix_entries[suffix_filled++] = (markdown_core_reference *)entry;
-                if (entry->order < state->suffix_min_order) {
-                    state->suffix_min_order = entry->order;
-                }
-                break;
-            case DEF_REGION_STALE:
-                break;
-            case DEF_REGION_UNKNOWN:
-                reconcile_release(mem, state);
-                *fallback = true;
-                return false;
-            }
-        }
-        state->prefix_count = prefix_filled;
-        state->suffix_count = suffix_filled;
-    }
-
-    // The vacated span holds exactly the stale orders; more staged entries
-    // than that means the whole map renumbers (rare, O(definitions)).
+    // The stale entries form one line range of the session's definition
+    // index; its neighbors bound the vacated order span. More staged
+    // entries than the span holds means the whole map renumbers (rare,
+    // O(definitions)) — only then are the surviving slices copied.
+    state->splice_lo = def_lower_bound(session->def_index, session->def_count, restart_line);
+    state->splice_hi = def_lower_bound(session->def_index, session->def_count, boundary_line);
+    state->prefix_max_order = state->splice_lo ? session->def_index[state->splice_lo - 1]->order : 0;
+    state->suffix_min_order =
+        state->splice_hi < session->def_count ? session->def_index[state->splice_hi]->order : UINT64_MAX;
     {
         uint64_t span =
             state->suffix_min_order == UINT64_MAX ? UINT64_MAX : state->suffix_min_order - state->prefix_max_order - 1;
         state->renumber = span < new_defs->count;
+    }
+    if (state->renumber) {
+        size_t prefix = state->splice_lo;
+        size_t suffix = session->def_count - state->splice_hi;
+        state->prefix_entries =
+            (markdown_core_reference **)mem->calloc(prefix ? prefix : 1, sizeof(*state->prefix_entries));
+        state->suffix_entries =
+            (markdown_core_reference **)mem->calloc(suffix ? suffix : 1, sizeof(*state->suffix_entries));
+        if (!state->prefix_entries || !state->suffix_entries) {
+            reconcile_release(mem, state);
+            return false;
+        }
+        memcpy(state->prefix_entries, session->def_index, prefix * sizeof(*state->prefix_entries));
+        memcpy(state->suffix_entries, session->def_index + state->splice_hi, suffix * sizeof(*state->suffix_entries));
+        state->prefix_count = prefix;
+        state->suffix_count = suffix;
+    }
+
+    // Reserve the definition-index splice room while failing is still free.
+    {
+        size_t needed = session->def_count - (state->splice_hi - state->splice_lo) + new_defs->count;
+        if (needed > session->def_capacity) {
+            markdown_core_map_entry **grown =
+                (markdown_core_map_entry **)mem->realloc(session->def_index, (needed ? needed : 1) * sizeof(*grown));
+            if (!grown) {
+                reconcile_release(mem, state);
+                return false;
+            }
+            session->def_index = grown;
+            session->def_capacity = needed ? needed : 1;
+        }
     }
 
     // Partition each affected label's bucket and elect its winners: the old
@@ -553,8 +638,7 @@ static bool reconcile_prepare(
                 head = &plan->staged_head;
                 tail = &plan->staged_tail;
             } else {
-                switch (
-                    classify_definition(session, cursor, stale_ids, stale_count, include_head_region, restart_line)) {
+                switch (classify_definition(cursor, restart_line, boundary_line)) {
                 case DEF_REGION_PREFIX:
                     head = &plan->prefix_head;
                     tail = &plan->prefix_tail;
@@ -607,15 +691,9 @@ static int reference_order_compare(const void *a, const void *b) {
 static void reconcile_apply(
     markdown_core_session *session,
     markdown_core_map *map,
-    const markdown_core_map_entry *previous_head,
-    const uint64_t *stale_ids,
-    size_t stale_count,
-    bool include_head_region,
-    int restart_line,
     const reference_list *new_defs,
     reconcile_state *state
 ) {
-    markdown_core_map_entry **link = &map->refs;
     size_t i;
 
     state->applied = true;
@@ -693,27 +771,37 @@ static void reconcile_apply(
     // Live-chain removal of the stale entries: last, because the index and
     // bucket surgery above still reads label bytes that stale entries own
     // (old winners key their index slots until the relink repoints them).
-    // The chain is newest-first, so everything before `previous_head` is a
-    // staged entry of this parse — never at-rest, owners still pointer
-    // stamps — and must not reach the classifier. A NULL `previous_head`
-    // means the map held nothing at rest and nothing is removable.
-    {
-        bool at_rest = false;
-        while (*link) {
-            markdown_core_map_entry *entry = *link;
-            if (entry == previous_head) {
-                at_rest = true;
-            }
-            if (at_rest &&
-                classify_definition(session, entry, stale_ids, stale_count, include_head_region, restart_line) ==
-                    DEF_REGION_STALE) {
-                *link = entry->next;
-                map->size--;
-                map->free(map, entry);
-                continue;
-            }
-            link = &entry->next;
+    // The stale set is exactly the collected index range; back links make
+    // each unlink O(1).
+    for (i = state->splice_lo; i < state->splice_hi; i++) {
+        markdown_core_map_entry *entry = session->def_index[i];
+        if (entry->prev) {
+            entry->prev->next = entry->next;
+        } else {
+            map->refs = entry->next;
         }
+        if (entry->next) {
+            entry->next->prev = entry->prev;
+        }
+        map->size--;
+        map->free(map, entry);
+    }
+
+    // Definition-index splice: the staged entries take the stale range's
+    // place (room reserved during prepare); the array stays line-ordered
+    // because staged lines lie strictly between the surviving neighbors.
+    {
+        size_t staged = new_defs->count;
+        size_t tail = session->def_count - state->splice_hi;
+        memmove(
+            session->def_index + state->splice_lo + staged,
+            session->def_index + state->splice_hi,
+            tail * sizeof(*session->def_index)
+        );
+        for (i = 0; i < staged; i++) {
+            session->def_index[state->splice_lo + i] = &new_defs->items[i]->entry;
+        }
+        session->def_count = state->splice_lo + staged + tail;
     }
 }
 
@@ -1291,6 +1379,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     size_t bubble_count = 0;
     size_t bubble_capacity = 0;
     uint64_t previous_doc_rev = 0;
+    int *sentinel_lines = NULL; // vanished clean definition paragraphs staged by this commit
+    size_t sentinel_count = 0;
 
     markdown_core_lookup_recording_init(&recording, mem);
     memset(&reconcile, 0, sizeof(reconcile));
@@ -1315,7 +1405,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             restart_pos--;
         }
     }
-    restart_node = restart_pos >= 0 ? session->clean.items[restart_pos].node : doc->first_child;
+    restart_node = restart_pos >= 0 ? entry_node_at(&session->clean.items[restart_pos], doc) : doc->first_child;
     restart_byte = restart_pos >= 0 ? session->clean.items[restart_pos].start_byte : 0;
     restart_line = restart_pos >= 0 ? session->clean.items[restart_pos].start_line : 1;
 
@@ -1400,9 +1490,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     staged_tail_length = parser->last_line_length;
 
     // --- 3. definition reconciliation ---
+    int boundary_line = boundary_pos >= 0 ? session->clean.items[boundary_pos].start_line : INT_MAX;
     {
         markdown_core_node *sibling;
-        markdown_core_node *stop = boundary_pos >= 0 ? session->clean.items[boundary_pos].node : NULL;
+        markdown_core_node *stop = boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
         size_t filled = 0;
         for (sibling = restart_node; sibling && sibling != stop; sibling = sibling->next) {
             stale_count++;
@@ -1418,9 +1509,37 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             qsort(stale_ids, stale_count, sizeof(*stale_ids), id_compare);
         }
         if (!collect_new_definitions(mem, map, previous_head, &new_defs) ||
-            !collect_stale_definitions(mem, map, previous_head, stale_ids, stale_count, restart_pos < 0, &old_defs)) {
+            !collect_stale_definitions(mem, session, restart_line, boundary_line, &old_defs)) {
             goto failed;
         }
+        // Sentinel lines for the staged region: vanished clean definition
+        // paragraphs of this parse, one per line, taken from the staged
+        // list before any map surgery. `new_defs` is document-ordered, so
+        // deduping neighbors suffices.
+        if (!doc->first_child || restart_node == doc->first_child) {
+            size_t i;
+            size_t upper = 0;
+            for (i = 0; i < new_defs.count; i++) {
+                const markdown_core_map_entry *entry = &new_defs.items[i]->entry;
+                if (entry->owner == 0 && entry->from_vanished_clean) {
+                    upper++;
+                }
+            }
+            if (upper) {
+                sentinel_lines = (int *)mem->calloc(upper, sizeof(*sentinel_lines));
+                if (!sentinel_lines) {
+                    goto failed;
+                }
+                for (i = 0; i < new_defs.count; i++) {
+                    const markdown_core_map_entry *entry = &new_defs.items[i]->entry;
+                    if (entry->owner == 0 && entry->from_vanished_clean &&
+                        (sentinel_count == 0 || sentinel_lines[sentinel_count - 1] != entry->start_line)) {
+                        sentinel_lines[sentinel_count++] = entry->start_line;
+                    }
+                }
+            }
+        }
+
         defs_equal = definition_sequences_equal(&old_defs, &new_defs);
         if (!defs_equal) {
             bool fallback = false;
@@ -1429,11 +1548,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                     session,
                     map,
                     order_floor,
-                    previous_head,
-                    stale_ids,
-                    stale_count,
-                    restart_pos < 0,
                     restart_line,
+                    boundary_line,
                     &old_defs,
                     &new_defs,
                     &reconcile,
@@ -1476,17 +1592,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             }
             // The last allocation-bearing step is behind; reconcile the map
             // in place so the inline phase resolves the final winners.
-            reconcile_apply(
-                session,
-                map,
-                previous_head,
-                stale_ids,
-                stale_count,
-                restart_pos < 0,
-                restart_line,
-                &new_defs,
-                &reconcile
-            );
+            reconcile_apply(session, map, &new_defs, &reconcile);
         }
     }
 
@@ -1571,7 +1677,11 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
 
     // --- 5/6. adoption and the transactional splice ---
     {
-        markdown_core_node *boundary_node = boundary_pos >= 0 ? session->clean.items[boundary_pos].node : NULL;
+        // A sentinel boundary's suffix starts at the first real child whose
+        // start reaches it; real children between restart and boundary stay
+        // in the stale walk.
+        markdown_core_node *boundary_node =
+            boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
         markdown_core_node *first_stale = restart_node == boundary_node ? NULL : restart_node;
         markdown_core_node *last_stale = NULL;
         markdown_core_node *prefix_tail = NULL;
@@ -1595,7 +1705,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 staged_clean++;
             }
         }
-        clean_count = prefix_clean + staged_clean + suffix_clean;
+
+        clean_count = prefix_clean + sentinel_count + staged_clean + suffix_clean;
 
         if (!markdown_core_session_ids_reserve(session, staged_nodes)) {
             goto failed;
@@ -1927,10 +2038,25 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         doc->end_line = total_lines - 1;
         doc->end_column = last_line_length;
 
+        // At-rest entries beyond the boundary follow the same line shift as
+        // the suffix children and clean entries below. The reconciled path
+        // shifts by index position (the array briefly mixes old suffix
+        // coordinates with current staged ones); the equal path still holds
+        // old lines everywhere, so the boundary line bounds the range.
+        if (boundary_pos >= 0 && delta_lines != 0) {
+            size_t start = reconcile.applied ? reconcile.splice_lo + new_defs.count
+                                             : def_lower_bound(session->def_index, session->def_count, boundary_line);
+            size_t at;
+            for (at = start; at < session->def_count; at++) {
+                session->def_index[at]->start_line += delta_lines;
+            }
+        }
+
         // Definitions. Equal sequences: the old entries stay (their orders
-        // are document order), take over the staged anchors, and the staged
-        // duplicates leave. Reconciled sequences: the staged entries are the
-        // truth and their pointer-stamped anchors resolve to ids.
+        // are document order), take over the staged anchors and geometry,
+        // and the staged duplicates leave. Reconciled sequences: the staged
+        // entries are the truth and their pointer-stamped anchors resolve to
+        // ids. Staged lines are already absolute in current coordinates.
         {
             size_t i;
             uint64_t head_owner = prefix_tail ? prefix_tail->id : 0;
@@ -1939,6 +2065,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                     uint64_t anchor = new_defs.items[i]->entry.owner;
                     old_defs.items[i]->entry.owner =
                         anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+                    old_defs.items[i]->entry.start_line = new_defs.items[i]->entry.start_line;
+                    old_defs.items[i]->entry.from_vanished_clean = new_defs.items[i]->entry.from_vanished_clean;
                 }
                 markdown_core_map_remove_until(map, previous_head);
             } else {
@@ -2007,7 +2135,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         // growing middle overlaps the suffix's old slots.
         {
             markdown_core_clean_child *items = session->clean.items;
-            ptrdiff_t index_shift = (ptrdiff_t)(prefix_clean + staged_clean) - (ptrdiff_t)boundary_idx;
+            ptrdiff_t index_shift = (ptrdiff_t)(prefix_clean + sentinel_count + staged_clean) - (ptrdiff_t)boundary_idx;
             size_t filled;
             size_t i;
             if (suffix_clean && (index_shift != 0 || pending.delta != 0 || delta_lines != 0)) {
@@ -2028,6 +2156,14 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 }
             }
             filled = prefix_clean;
+            // Sentinels precede every staged child: vanished definition
+            // paragraphs only exist ahead of the first real child.
+            for (i = 0; i < sentinel_count; i++) {
+                items[filled].start_byte = line_offsets.items[sentinel_lines[i] - restart_line];
+                items[filled].start_line = sentinel_lines[i];
+                items[filled].node = NULL;
+                filled++;
+            }
             for (sibling = staged_first; sibling && sibling != suffix_head; sibling = sibling->next) {
                 if (sibling->flags & MARKDOWN_CORE_NODE__CLEAN_START) {
                     int abs_line = sibling->start_line + 1;
@@ -2072,6 +2208,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         session->total_lines = total_lines;
         session->last_line_length = last_line_length;
         session->revision = new_rev;
+        session->restarted_commits++;
+        if (boundary_pos >= 0) {
+            session->resynced_commits++;
+        }
         session->pending.dirty = false;
         session->pending.new_lo = 0;
         session->pending.new_hi = 0;
@@ -2138,6 +2278,9 @@ done:
     }
     if (bubble_nodes) {
         mem->free(bubble_nodes);
+    }
+    if (sentinel_lines) {
+        mem->free(sentinel_lines);
     }
     if (line_offsets.items) {
         mem->free(line_offsets.items);
