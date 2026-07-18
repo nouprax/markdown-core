@@ -67,4 +67,43 @@ class ConcurrencyJvmTest {
         threads.forEach { it.join() }
         assertTrue(failures.isEmpty(), failures.joinToString("\n"))
     }
+
+    @Test
+    fun parallelSessionsOnExecutorThreadsStayIsolated() {
+        // One session per worker thread, interleaved edit/commit/read, with
+        // cross-thread snapshot reads after the writer thread finished — the
+        // session contract keeps snapshots readable from any thread between
+        // mutating calls.
+        val source = "# Title\n\nBody with *emphasis*, `code`, and [^n].\n\n[^n]: note\n"
+        val reference = Document.parse(source).dump()
+        val snapshots = ConcurrentLinkedQueue<Document>()
+        val failures = ConcurrentLinkedQueue<String>()
+        val start = CountDownLatch(1)
+        val threads =
+            (0 until 8).map { worker ->
+                thread {
+                    start.await()
+                    MarkupSession().use { session ->
+                        repeat(25) { iteration ->
+                            session.replace(0, session.length, "")
+                            session.commit()
+                            for (line in source.split("\n").dropLast(1)) {
+                                session.append(line + "\n")
+                                session.commit()
+                            }
+                            if (session.document.dump() != reference) {
+                                failures.add("worker $worker iteration $iteration diverged")
+                            }
+                        }
+                        snapshots.add(session.document)
+                    }
+                }
+            }
+        start.countDown()
+        threads.forEach { it.join() }
+        assertTrue(failures.isEmpty(), failures.joinToString("\n"))
+        // Snapshots materialized their scopes while current; they answer
+        // after their sessions closed, from any thread.
+        assertTrue(snapshots.all { it.scope(it).start.line == 1 })
+    }
 }

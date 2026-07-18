@@ -1,2 +1,14 @@
 EXPORTS
     Java_com_nouprax_markdown_core_JvmNative_parse
+    Java_com_nouprax_markdown_core_JvmNative_sessionOpen
+    Java_com_nouprax_markdown_core_JvmNative_sessionFree
+    Java_com_nouprax_markdown_core_JvmNative_sessionLineage
+    Java_com_nouprax_markdown_core_JvmNative_sessionRevision
+    Java_com_nouprax_markdown_core_JvmNative_sessionLength
+    Java_com_nouprax_markdown_core_JvmNative_sessionRoot
+    Java_com_nouprax_markdown_core_JvmNative_sessionEdit
+    Java_com_nouprax_markdown_core_JvmNative_sessionCommit
+    Java_com_nouprax_markdown_core_JvmNative_sessionScopes
+    Java_com_nouprax_markdown_core_JvmNative_sessionFootnoteInfo
+    Java_com_nouprax_markdown_core_JvmNative_sessionFootnotes
+    Java_com_nouprax_markdown_core_JvmNative_sessionFootnoteReferences

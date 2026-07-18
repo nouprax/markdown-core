@@ -1,19 +1,29 @@
 package com.nouprax.markdown.core
 
 public class List internal constructor(
+    override val id: MarkupID,
+    override val revision: ULong,
     public val flavor: ListFlavor,
     public val start: Long?,
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,
-    override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitList(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }
 
 public class ListItem internal constructor(
+    override val id: MarkupID,
+    override val revision: ULong,
     public val checked: Boolean?,
     public val content: kotlin.collections.List<Markup>,
-    override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitListItem(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }

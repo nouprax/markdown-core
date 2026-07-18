@@ -1,16 +1,26 @@
 package com.nouprax.markdown.core
 
 public class FootnoteDefinition internal constructor(
-    public val id: String,
+    override val id: MarkupID,
+    override val revision: ULong,
+    public val label: String,
     public val content: kotlin.collections.List<Markup>,
-    override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitFootnoteDefinition(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }
 
 public class FootnoteReference internal constructor(
-    public val id: String,
-    override val scope: Scope,
+    override val id: MarkupID,
+    override val revision: ULong,
+    public val label: String,
 ) : Markup {
     override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitFootnoteReference(this)
+
+    override fun equals(other: Any?): Boolean = markupEquals(this, other)
+
+    override fun hashCode(): Int = markupHashCode(this)
 }

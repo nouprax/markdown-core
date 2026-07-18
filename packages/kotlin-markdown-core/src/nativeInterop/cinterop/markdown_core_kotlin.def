@@ -3,4 +3,4 @@ headerFilter = markdown_core_kotlin_bridge.h
 package = com.nouprax.markdown.core.internal.nativebridge
 staticLibraries = libmarkdown_core_kotlin.a libmarkdown-core-extensions.a libmarkdown-core.a
 libraryPaths = @LIBRARY_PATH@
-noStringConversion = markdown_core_kotlin_parse
+noStringConversion = markdown_core_kotlin_parse markdown_core_kotlin_session_edit
