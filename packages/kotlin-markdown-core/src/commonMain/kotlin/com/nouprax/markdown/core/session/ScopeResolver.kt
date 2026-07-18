@@ -46,6 +46,15 @@ internal class ScopeResolver private constructor(
         }
     }
 
+    /**
+     * Undoes [detach] after a transactionally failed commit: the native tree
+     * is unchanged, so the snapshot is current again. A resolver that
+     * materialized before the detach keeps its (still valid) cache.
+     */
+    fun reattach(session: NativeSession) {
+        state.compareAndSet(Detached, session)
+    }
+
     /** Forces the one-time materialization now; the caller guarantees the
      * snapshot is current. (0 is never a valid id, so this only builds the
      * table.) */

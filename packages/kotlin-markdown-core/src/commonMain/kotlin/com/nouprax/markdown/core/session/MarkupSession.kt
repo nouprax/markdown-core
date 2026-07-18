@@ -34,6 +34,7 @@ public class MarkupSession(
     private val rootId: ULong = native.rootId()
     private var currentResolver: ScopeResolver
     private var closed = false
+    private var failed = false
 
     /**
      * The last committed snapshot; the empty document at revision 0 until
@@ -108,14 +109,30 @@ public class MarkupSession(
      */
     public fun commit(): Commit {
         requireOpen()
-        val payload = native.commit()
-        // decodeCommit throws before touching the mirror when the native
-        // commit failed; the previous snapshot stays current and answerable.
-        val changes = WireDecoder.decodeCommit(payload, lineage, mirror)
-
-        // The previous snapshot must answer scope queries from its cache (or
-        // fail) from here on: the native tree now describes the new revision.
-        currentResolver.detach()
+        // The previous snapshot's currency ends when the commit starts:
+        // detach its resolver before the native tree is replaced, so a
+        // not-yet-materialized snapshot can never cache the new revision's
+        // positions as its own — a racing reader either materialized from
+        // the still-unchanged tree or takes the documented
+        // superseded-snapshot failure.
+        val previousResolver = currentResolver
+        previousResolver.detach()
+        val changes =
+            try {
+                WireDecoder.decodeCommit(native.commit(), lineage, mirror)
+            } catch (failure: ParseException) {
+                // The native commit failed transactionally: the tree is
+                // unchanged at the previous revision, the previous snapshot
+                // becomes current again, and the commit may be retried.
+                previousResolver.reattach(native)
+                throw failure
+            } catch (failure: Throwable) {
+                // The native tree may have advanced while the payload or the
+                // mirror did not; the session can no longer answer
+                // consistently and refuses further work.
+                failed = true
+                throw failure
+            }
         val resolver = ScopeResolver.live(native)
         currentResolver = resolver
         val root = mirror[rootId]
@@ -163,5 +180,6 @@ public class MarkupSession(
 
     internal fun requireOpen() {
         check(!closed) { "the session is closed" }
+        check(!failed) { "the session failed irrecoverably during a commit" }
     }
 }
