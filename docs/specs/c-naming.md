@@ -6,6 +6,20 @@ Applies to every C symbol in `packages/markdown-core`. The public facade
 surface (`include/markdown_core.h` + export allowlists) additionally goes
 through a naming freeze review before the 2.0.0 release.
 
+## M4 freeze review (2026-07-17)
+
+The facade surface was audited symbol by symbol against the rules below:
+every symbol passes, and `audit-public-surface.sh` keeps the header and both
+export allowlists in sync. One rename came out of the review: the per-commit
+record `markdown_core_changeset` became **`markdown_core_delta`**
+(`markdown_core_delta_revisions/added/removed/changed/bubbled/free`;
+platform type `Delta`, file `extensions/delta.c`), decided with the platform
+naming set — `MarkupSession`, `Commit { document, changes: Delta }`,
+`MarkupID`, `FootnoteInfo`, and the footnote `label` field (`id` names node
+identity on platforms). The `get_` cluster decision below was not
+re-litigated. The freeze completes when the remaining M4 bindings ship
+against these names.
+
 ## Rules
 
 1. **Prefix.** Every symbol with external linkage — including
@@ -40,7 +54,7 @@ cluster — node identity/traversal and error accessors (`node_get_id`,
 `node_get_kind`, `node_get_revision`, `node_get_parent`,
 `node_get_first_child`, `node_get_next_sibling`, `error_get_*`) — and uses
 bare `subject_attribute` names everywhere else (kind-specific property
-accessors, `session_*`, `changeset_*`, `document_root`). This is
+accessors, `session_*`, `delta_*`, `document_root`). This is
 deliberate, not drift: the bare names for that cluster are occupied
 (`markdown_core_node_id` and `markdown_core_node_kind` are type names, and
 `node_first_child`/`node_parent` are the raw internal traversal functions),

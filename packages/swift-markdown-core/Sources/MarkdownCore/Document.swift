@@ -54,94 +54,116 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
     public var description: String { message }
 }
 
+/// An immutable snapshot of a parsed Markdown document.
+///
+/// A `Document` is itself the root `Markup` node. Snapshots produced by a
+/// `MarkupSession` structurally share every unchanged node with the previous
+/// snapshot; a one-shot `Document.parse` is a self-contained value.
+///
+/// Absolute source positions are not stored on nodes: resolve them with
+/// `scope(of:)`, receive them from `Walker` events, or print them with
+/// `dump()`. A session snapshot resolves scopes against its session the
+/// first time any of these is used and is self-contained from then on; see
+/// `scope(of:)` for the exact rules.
 public struct Document: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup]
+    var resolver: ScopeResolver
 
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        var nativeOptions = markdown_core_parse_options(
-            smart_punctuation: options.smartPunctuation,
-            footnotes: options.footnotes,
-            strip_html_comments: options.stripHTMLComments,
-            tables: options.tables,
-            strikethrough: options.strikethrough,
-            autolinks: options.autolinks,
-            task_lists: options.taskLists,
-            formulas: options.formulas,
-            dollar_formula_delimiters: options.dollarFormulaDelimiters,
-            latex_formula_delimiters: options.latexFormulaDelimiters,
-            directives: options.directives
-        )
-        var nativeError: OpaquePointer?
-        let bytes = Array(source.utf8)
-        let nativeDocument = bytes.withUnsafeBufferPointer { buffer in
-            markdown_core_document_parse(
-                buffer.baseAddress,
-                buffer.count,
-                &nativeOptions,
-                &nativeError
-            )
-        }
-        guard let nativeDocument else {
-            defer { markdown_core_error_free(nativeError) }
-            throw ParseError(from: nativeError)
-        }
-        defer { markdown_core_document_free(nativeDocument) }
-
-        guard let root = markdown_core_document_root(nativeDocument),
-            let document = markup(from: root) as? Document
-        else {
-            throw ParseError(
-                code: .internal,
-                message: "parser returned an invalid document tree",
-                scope: nil
-            )
-        }
+        // A one-shot parse is literally a single-commit session. Scopes
+        // materialize eagerly because the session dies with this call and
+        // the snapshot must leave it self-contained.
+        let session = try MarkupSession(options: options)
+        try session.append(source)
+        let document = try session.commitBulk()
+        document.resolver.materialize()
         return document
     }
 }
 
-extension Document {
-    init(from node: OpaquePointer) {
-        self.init(scope: Self.scope(from: node), children: Self.children(from: node))
+extension ParseOptions {
+    var nativeValue: markdown_core_parse_options {
+        markdown_core_parse_options(
+            smart_punctuation: smartPunctuation,
+            footnotes: footnotes,
+            strip_html_comments: stripHTMLComments,
+            tables: tables,
+            strikethrough: strikethrough,
+            autolinks: autolinks,
+            task_lists: taskLists,
+            formulas: formulas,
+            dollar_formula_delimiters: dollarFormulaDelimiters,
+            latex_formula_delimiters: latexFormulaDelimiters,
+            directives: directives
+        )
     }
 }
 
-// Keep the exhaustive native-kind switch in one place so a newly added native
-// kind cannot silently bypass value-tree copying.
-// swiftlint:disable:next cyclomatic_complexity
-func markup(from node: OpaquePointer) -> any Markup {
-    switch markdown_core_node_get_kind(node) {
-    case MARKDOWN_CORE_KIND_DOCUMENT: Document(from: node)
-    case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node)
-    case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node)
-    case MARKDOWN_CORE_KIND_HEADING: Heading(from: node)
-    case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node)
-    case MARKDOWN_CORE_KIND_LIST: List(from: node)
-    case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node)
-    case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node)
-    case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node)
-    case MARKDOWN_CORE_KIND_TABLE: Table(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node)
-    case MARKDOWN_CORE_KIND_TEXT: Text(from: node)
-    case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node)
-    case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node)
-    case MARKDOWN_CORE_KIND_CODE: Code(from: node)
-    case MARKDOWN_CORE_KIND_HTML: HTML(from: node)
-    case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node)
-    case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node)
-    case MARKDOWN_CORE_KIND_STRONG: Strong(from: node)
-    case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node)
-    case MARKDOWN_CORE_KIND_LINK: Link(from: node)
-    case MARKDOWN_CORE_KIND_IMAGE: Image(from: node)
-    case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node)
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node)
-    case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node)
-    default: preconditionFailure("native parser returned an unknown node kind")
+/// Builds platform values from native nodes for the session mirror. The
+/// `children` strategy is the only degree of freedom: a first commit's bulk
+/// build assembles child arrays in sibling frames, while an incremental
+/// commit rebuilds parents from already-built mirror values.
+struct MarkupBuilder {
+    let lineage: UInt64
+    let children: (OpaquePointer) -> [any Markup]
+
+    func id(of node: OpaquePointer) -> (id: MarkupID, revision: UInt64) {
+        (
+            MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
+            markdown_core_node_get_revision(node)
+        )
+    }
+
+    // Keep the exhaustive native-kind switch in one place so a newly added
+    // native kind cannot silently bypass value-tree copying.
+    // swiftlint:disable:next cyclomatic_complexity
+    func markup(from node: OpaquePointer) -> any Markup {
+        switch markdown_core_node_get_kind(node) {
+        case MARKDOWN_CORE_KIND_DOCUMENT: Document(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_THEMATIC_BREAK: ThematicBreak(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_LIST: List(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_LIST_ITEM: ListItem(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_CODE_BLOCK: CodeBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE: Table(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TEXT: Text(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_LINE_BREAK: LineBreak(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_CODE: Code(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_HTML: HTML(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_FORMULA: Formula(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_EMPHASIS: Emphasis(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_STRONG: Strong(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_STRIKETHROUGH: Strikethrough(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_LINK: Link(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, builder: self)
+        default: preconditionFailure("native parser returned an unknown node kind")
+        }
+    }
+}
+
+extension Document {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
+        let (id, revision) = builder.id(of: node)
+        self.init(
+            id: id,
+            revision: revision,
+            children: builder.children(node),
+            resolver: ScopeResolver.unresolvable
+        )
     }
 }

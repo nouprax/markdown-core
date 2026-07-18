@@ -846,6 +846,15 @@ typedef struct {
     bool changed;
 } dependent_unit;
 
+// A committed ancestor collected for a revision bubble. The revision stamp
+// lands before the footnote diff (so its ancestor climb sees the node as
+// already classified), while the delta id is recorded after the point of
+// no return; `previous_rev` restores the stamp when the diff fails.
+typedef struct {
+    markdown_core_node *node;
+    uint64_t previous_rev;
+} bubble_ancestor;
+
 /* Rebuilds the block shell of a committed unit for a fresh inline parse:
  * same raw kind, a copy of the block's string content, and absolute
  * positions (the parse writes absolute inline positions exactly like the
@@ -1243,7 +1252,7 @@ static void splice_replace(markdown_core_node *unit, markdown_core_node *staged)
 markdown_core_incremental_result markdown_core_session_commit_incremental(
     markdown_core_session *session,
     uint64_t new_rev,
-    markdown_core_changeset *changes,
+    markdown_core_delta *changes,
     markdown_core_error **error
 ) {
     markdown_core_mem *mem = session->mem;
@@ -1278,9 +1287,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     dependent_unit *dependents = NULL;
     size_t dependent_count = 0;
     markdown_core_node *holder = NULL; // staging parent for dependent rebuilds
-    markdown_core_node **bubble_nodes = NULL;
+    bubble_ancestor *bubble_nodes = NULL;
     size_t bubble_count = 0;
     size_t bubble_capacity = 0;
+    uint64_t previous_doc_rev = 0;
 
     markdown_core_lookup_recording_init(&recording, mem);
     memset(&reconcile, 0, sizeof(reconcile));
@@ -1540,7 +1550,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     }
 
     // Footnote sites of the next tree, merged while falling back is still
-    // free: adoption has not run, so the changeset holds nothing yet.
+    // free: adoption has not run, so the delta holds nothing yet.
     if (session->options.footnotes) {
         markdown_core_incremental_result merged = footnote_sites_merge(
             session,
@@ -1671,15 +1681,15 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                         break; // the dummy verdict already bumps the document
                     }
                     for (k = 0; k < bubble_count && !collected; k++) {
-                        collected = bubble_nodes[k] == ancestor;
+                        collected = bubble_nodes[k].node == ancestor;
                     }
                     if (collected) {
                         break; // and with it every ancestor above
                     }
                     if (bubble_count == bubble_capacity) {
                         size_t grown_capacity = bubble_capacity ? bubble_capacity * 2 : 8;
-                        markdown_core_node **grown =
-                            (markdown_core_node **)mem->realloc(bubble_nodes, grown_capacity * sizeof(*grown));
+                        bubble_ancestor *grown =
+                            (bubble_ancestor *)mem->realloc(bubble_nodes, grown_capacity * sizeof(*grown));
                         if (!grown) {
                             staged_ok = false;
                             break;
@@ -1687,7 +1697,9 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                         bubble_nodes = grown;
                         bubble_capacity = grown_capacity;
                     }
-                    bubble_nodes[bubble_count++] = ancestor;
+                    bubble_nodes[bubble_count].node = ancestor;
+                    bubble_nodes[bubble_count].previous_rev = ancestor->last_changed_rev;
+                    bubble_count++;
                 }
             }
             if (staged_ok && changes && bubble_count) {
@@ -1773,10 +1785,32 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         // step, O(sites) rather than a tree walk. The two-phase diff mutates
         // nothing on failure, so undoing the splices restores the previous
         // revision exactly.
+        // Stamp the document and the bubbling ancestors before the footnote
+        // diff runs: its ancestor climb must see every node this commit
+        // already classifies as bumped, or it re-records them (a `changed`
+        // document would also land in `bubbled`, breaking the disjointness
+        // contract). The delta ids are still recorded after the point of
+        // no return; on a failed diff the stamps roll back below.
+        {
+            size_t i;
+            previous_doc_rev = doc->last_changed_rev;
+            doc->last_changed_rev = root->last_changed_rev;
+            for (i = 0; i < bubble_count; i++) {
+                bubble_nodes[i].node->last_changed_rev = new_rev;
+            }
+        }
+
         if (session->options.footnotes) {
             if (!markdown_core_footnote_index_build_sites(mem, &def_sites, &ref_sites, &footnotes) ||
                 !markdown_core_footnote_index_diff(mem, &session->footnotes, &footnotes, new_rev, changes)) {
                 markdown_core_footnote_index_release(mem, &footnotes);
+                {
+                    size_t i;
+                    doc->last_changed_rev = previous_doc_rev;
+                    for (i = 0; i < bubble_count; i++) {
+                        bubble_nodes[i].node->last_changed_rev = bubble_nodes[i].previous_rev;
+                    }
+                }
                 // Swap the committed units back in and re-park the rebuilt
                 // ones under the holder so the shared cleanup frees them.
                 {
@@ -1839,9 +1873,9 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
 
         // --- point of no return: nothing below can fail ---
 
-        // Document node bookkeeping: the staged root carried the adoption
-        // verdict under the document's id.
-        doc->last_changed_rev = root->last_changed_rev;
+        // The document's revision (the staged root carried the adoption
+        // verdict under the document's id) and the bubbling ancestors'
+        // revisions were already stamped before the footnote diff.
         if (boundary_pos >= 0) {
             delta_lines = (restart_line + fed_lines) - session->clean.items[boundary_pos].start_line;
             total_lines = session->total_lines + delta_lines;
@@ -1949,16 +1983,13 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             }
         }
 
-        // Ancestors of a changed rebuilt unit bubble now; the document's own
-        // verdict landed above, so it only appears here when the staged
-        // adoption left it untouched.
-        {
+        // Ancestors of a changed rebuilt unit were stamped before the
+        // footnote diff; only their delta ids are recorded here. The
+        // document never appears: its verdict rode the staged root.
+        if (changes) {
             size_t i;
             for (i = 0; i < bubble_count; i++) {
-                bubble_nodes[i]->last_changed_rev = new_rev;
-                if (changes) {
-                    markdown_core_id_array_push(&changes->bubbled, bubble_nodes[i]->id);
-                }
+                markdown_core_id_array_push(&changes->bubbled, bubble_nodes[i].node->id);
             }
         }
 

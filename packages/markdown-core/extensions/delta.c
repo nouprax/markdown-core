@@ -2,7 +2,7 @@
 
 #include "session_internal.h"
 
-// Changesets are caller-owned plain data: they stay valid after the session
+// Deltas are caller-owned plain data: they stay valid after the session
 // advances or is freed, so they use the system allocator like the facade's
 // error and dump buffers do.
 
@@ -40,7 +40,7 @@ bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra)
     return true;
 }
 
-void markdown_core_changeset_revisions(const markdown_core_changeset *changes, uint64_t *before, uint64_t *after) {
+void markdown_core_delta_revisions(const markdown_core_delta *changes, uint64_t *before, uint64_t *after) {
     if (before) {
         *before = changes ? changes->before : 0;
     }
@@ -56,7 +56,7 @@ static size_t array_view(const markdown_core_id_array *array, const markdown_cor
     return array->count;
 }
 
-size_t markdown_core_changeset_added(const markdown_core_changeset *changes, const markdown_core_node_id **ids) {
+size_t markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids) {
     if (!changes) {
         if (ids) {
             *ids = NULL;
@@ -66,7 +66,7 @@ size_t markdown_core_changeset_added(const markdown_core_changeset *changes, con
     return array_view(&changes->added, ids);
 }
 
-size_t markdown_core_changeset_removed(const markdown_core_changeset *changes, const markdown_core_node_id **ids) {
+size_t markdown_core_delta_removed(const markdown_core_delta *changes, const markdown_core_node_id **ids) {
     if (!changes) {
         if (ids) {
             *ids = NULL;
@@ -76,7 +76,7 @@ size_t markdown_core_changeset_removed(const markdown_core_changeset *changes, c
     return array_view(&changes->removed, ids);
 }
 
-size_t markdown_core_changeset_changed(const markdown_core_changeset *changes, const markdown_core_node_id **ids) {
+size_t markdown_core_delta_changed(const markdown_core_delta *changes, const markdown_core_node_id **ids) {
     if (!changes) {
         if (ids) {
             *ids = NULL;
@@ -86,7 +86,7 @@ size_t markdown_core_changeset_changed(const markdown_core_changeset *changes, c
     return array_view(&changes->changed, ids);
 }
 
-size_t markdown_core_changeset_bubbled(const markdown_core_changeset *changes, const markdown_core_node_id **ids) {
+size_t markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_core_node_id **ids) {
     if (!changes) {
         if (ids) {
             *ids = NULL;
@@ -96,7 +96,7 @@ size_t markdown_core_changeset_bubbled(const markdown_core_changeset *changes, c
     return array_view(&changes->bubbled, ids);
 }
 
-void markdown_core_changeset_free(markdown_core_changeset *changes) {
+void markdown_core_delta_free(markdown_core_delta *changes) {
     if (!changes) {
         return;
     }

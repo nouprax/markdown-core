@@ -1,7 +1,8 @@
 import MarkdownCoreC
 
 public struct HTMLBlock: Markup {
-    public let scope: Scope
+    public let id: MarkupID
+    public let revision: UInt64
     public let children: [any Markup] = []
     public let literal: String
 
@@ -9,9 +10,10 @@ public struct HTMLBlock: Markup {
 }
 
 extension HTMLBlock {
-    init(from node: OpaquePointer) {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
+        let (id, revision) = builder.id(of: node)
         var literal = markdown_core_string_view()
         markdown_core_node_literal(node, &literal)
-        self.init(scope: Self.scope(from: node), literal: literal.requiredString)
+        self.init(id: id, revision: revision, literal: literal.requiredString)
     }
 }

@@ -1578,7 +1578,7 @@ static char *dump_document_cstr(const markdown_core_document *document) {
     return copy;
 }
 
-static int changeset_contains(const markdown_core_node_id *ids, size_t count, markdown_core_node_id id) {
+static int delta_contains(const markdown_core_node_id *ids, size_t count, markdown_core_node_id id) {
     size_t i;
     for (i = 0; i < count; i++) {
         if (ids[i] == id) {
@@ -1673,7 +1673,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
     const char *part_two = "world **bold**";
     markdown_core_node_id heading_id, paragraph_id, text_id, root_id;
     uint64_t heading_rev, root_rev_before;
-    markdown_core_changeset *changes = NULL;
+    markdown_core_delta *changes = NULL;
 
     OK(runner, session != NULL, "id-stability session opens");
     if (!session) {
@@ -1707,7 +1707,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
         &error
     );
     OK(runner, markdown_core_session_commit(session, &changes, &error), "second commit succeeds");
-    OK(runner, changes != NULL, "changeset is produced on request");
+    OK(runner, changes != NULL, "delta is produced on request");
 
     {
         const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
@@ -1727,19 +1727,19 @@ static void session_append_id_stability(test_batch_runner *runner) {
            strong != NULL && markdown_core_node_get_kind(strong) == MARKDOWN_CORE_KIND_STRONG,
            "appended strong exists");
 
-        markdown_core_changeset_revisions(changes, &before, &after);
-        OK(runner, before + 1 == after, "changeset revisions are consecutive");
-        OK(runner, markdown_core_session_revision(session) == after, "session revision matches the changeset");
+        markdown_core_delta_revisions(changes, &before, &after);
+        OK(runner, before + 1 == after, "delta revisions are consecutive");
+        OK(runner, markdown_core_session_revision(session) == after, "session revision matches the delta");
 
-        count = markdown_core_changeset_changed(changes, &ids);
-        OK(runner, changeset_contains(ids, count, paragraph_id), "paragraph is reported changed");
-        OK(runner, changeset_contains(ids, count, text_id), "grown text is reported changed");
-        OK(runner, !changeset_contains(ids, count, heading_id), "heading is not reported changed");
-        count = markdown_core_changeset_added(changes, &ids);
-        OK(runner, changeset_contains(ids, count, markdown_core_node_get_id(strong)), "strong is reported added");
-        count = markdown_core_changeset_bubbled(changes, &ids);
-        OK(runner, changeset_contains(ids, count, root_id), "root revision bubbles");
-        count = markdown_core_changeset_removed(changes, &ids);
+        count = markdown_core_delta_changed(changes, &ids);
+        OK(runner, delta_contains(ids, count, paragraph_id), "paragraph is reported changed");
+        OK(runner, delta_contains(ids, count, text_id), "grown text is reported changed");
+        OK(runner, !delta_contains(ids, count, heading_id), "heading is not reported changed");
+        count = markdown_core_delta_added(changes, &ids);
+        OK(runner, delta_contains(ids, count, markdown_core_node_get_id(strong)), "strong is reported added");
+        count = markdown_core_delta_bubbled(changes, &ids);
+        OK(runner, delta_contains(ids, count, root_id), "root revision bubbles");
+        count = markdown_core_delta_removed(changes, &ids);
         INT_EQ(runner, (int)count, 0, "append removes nothing");
 
         OK(runner,
@@ -1752,7 +1752,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
         OK(runner, markdown_core_session_lineage(session) != 0, "session lineage is nonzero");
     }
 
-    markdown_core_changeset_free(changes);
+    markdown_core_delta_free(changes);
     markdown_core_session_free(session);
     markdown_core_error_free(error);
 }
@@ -2116,7 +2116,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     markdown_core_session *session = markdown_core_session_open(NULL, &error);
     markdown_core_node_id ref_x, ref_y, def_x, def_y, paragraph_id;
     uint64_t ref_x_rev, paragraph_rev;
-    markdown_core_changeset *changes = NULL;
+    markdown_core_delta *changes = NULL;
     markdown_core_footnote_info info;
 
     OK(runner, session != NULL, "footnote revision session opens");
@@ -2166,10 +2166,10 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         OK(runner,
            ref != NULL && markdown_core_node_get_revision(ref) > ref_x_rev,
            "the shifted reference keeps its id with a revision bump");
-        count = markdown_core_changeset_changed(changes, &ids);
-        OK(runner, changeset_contains(ids, count, ref_x), "the shifted reference is reported changed");
-        count = markdown_core_changeset_bubbled(changes, &ids);
-        OK(runner, changeset_contains(ids, count, paragraph_id), "its untouched paragraph bubbles");
+        count = markdown_core_delta_changed(changes, &ids);
+        OK(runner, delta_contains(ids, count, ref_x), "the shifted reference is reported changed");
+        count = markdown_core_delta_bubbled(changes, &ids);
+        OK(runner, delta_contains(ids, count, paragraph_id), "its untouched paragraph bubbles");
         {
             const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_id);
             OK(runner,
@@ -2179,7 +2179,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         count = markdown_core_session_footnotes(session, &ids);
         OK(runner, count == 2 && ids && ids[0] == def_y && ids[1] == def_x, "first-use order flipped");
     }
-    markdown_core_changeset_free(changes);
+    markdown_core_delta_free(changes);
     changes = NULL;
 
     /* Relabeling [^x]'s definition to [^z] flips the reference back to
@@ -2201,7 +2201,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
             size_t count = markdown_core_session_footnotes(session, &ids);
             OK(runner, count == 1 && ids && ids[0] == def_y, "only [^y] stays referenced");
         }
-        markdown_core_changeset_free(changes);
+        markdown_core_delta_free(changes);
         changes = NULL;
     }
 

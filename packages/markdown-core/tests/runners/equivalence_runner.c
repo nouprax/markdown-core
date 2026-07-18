@@ -1,11 +1,11 @@
 /* Session equivalence suite: an incrementally edited session must always
  * dump byte-identically to a one-shot parse of the same final text, and its
- * changesets must account for every observable node change.
+ * deltas must account for every observable node change.
  *
  * Every replay drives the public facade only.  A shadow text buffer receives
  * the same edits as the session, so each commit can be checked against
  * markdown_core_document_parse of the shadow bytes; a shadow id->revision
- * mirror is maintained purely from changesets and compared against a fresh
+ * mirror is maintained purely from deltas and compared against a fresh
  * walk after every commit, which catches adoption bugs that dumps cannot
  * see.
  *
@@ -74,7 +74,7 @@ static int eq_text_splice(eq_text *text, size_t start, size_t end, const uint8_t
     return 0;
 }
 
-/* --- changeset mirror ---------------------------------------------------- */
+/* --- delta mirror ---------------------------------------------------- */
 
 typedef struct eq_mirror_entry {
     markdown_core_node_id id;
@@ -174,33 +174,64 @@ static int eq_replay_edit(eq_replay *replay, size_t start, size_t end, const uin
     return 0;
 }
 
-static int eq_apply_changeset(eq_replay *replay, markdown_core_changeset *changes, uint64_t expected_after) {
+static int eq_delta_disjoint(eq_replay *replay, markdown_core_delta *changes) {
+    const markdown_core_node_id *arrays[4];
+    size_t counts[4];
+    size_t a;
+    size_t b;
+    size_t i;
+    size_t k;
+
+    counts[0] = markdown_core_delta_added(changes, &arrays[0]);
+    counts[1] = markdown_core_delta_removed(changes, &arrays[1]);
+    counts[2] = markdown_core_delta_changed(changes, &arrays[2]);
+    counts[3] = markdown_core_delta_bubbled(changes, &arrays[3]);
+    for (a = 0; a < 4; a++) {
+        for (i = 0; i < counts[a]; i++) {
+            for (b = a; b < 4; b++) {
+                for (k = b == a ? i + 1 : 0; k < counts[b]; k++) {
+                    if (arrays[a][i] == arrays[b][k]) {
+                        eq_fail(replay->context, "delta arrays repeat an id");
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+static int eq_apply_delta(eq_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
     const markdown_core_node_id *ids;
     size_t count;
     size_t i;
     uint64_t before;
     uint64_t after;
 
-    markdown_core_changeset_revisions(changes, &before, &after);
+    markdown_core_delta_revisions(changes, &before, &after);
     if (after != expected_after) {
-        eq_fail(replay->context, "changeset revisions disagree with the session");
+        eq_fail(replay->context, "delta revisions disagree with the session");
         return -1;
     }
 
-    count = markdown_core_changeset_removed(changes, &ids);
+    if (eq_delta_disjoint(replay, changes) != 0) {
+        return -1;
+    }
+
+    count = markdown_core_delta_removed(changes, &ids);
     for (i = 0; i < count; i++) {
         eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
         if (!entry) {
-            eq_fail(replay->context, "changeset removed an id the mirror never saw");
+            eq_fail(replay->context, "delta removed an id the mirror never saw");
             return -1;
         }
         eq_mirror_remove(&replay->mirror, entry);
     }
 
-    count = markdown_core_changeset_added(changes, &ids);
+    count = markdown_core_delta_added(changes, &ids);
     for (i = 0; i < count; i++) {
         if (eq_mirror_find(&replay->mirror, ids[i])) {
-            eq_fail(replay->context, "changeset added an id that already exists");
+            eq_fail(replay->context, "delta added an id that already exists");
             return -1;
         }
         if (eq_mirror_insert(&replay->mirror, ids[i], after) != 0) {
@@ -209,21 +240,21 @@ static int eq_apply_changeset(eq_replay *replay, markdown_core_changeset *change
         }
     }
 
-    count = markdown_core_changeset_changed(changes, &ids);
+    count = markdown_core_delta_changed(changes, &ids);
     for (i = 0; i < count; i++) {
         eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
         if (!entry) {
-            eq_fail(replay->context, "changeset changed an id the mirror never saw");
+            eq_fail(replay->context, "delta changed an id the mirror never saw");
             return -1;
         }
         entry->revision = after;
     }
 
-    count = markdown_core_changeset_bubbled(changes, &ids);
+    count = markdown_core_delta_bubbled(changes, &ids);
     for (i = 0; i < count; i++) {
         eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
         if (!entry) {
-            eq_fail(replay->context, "changeset bubbled an id the mirror never saw");
+            eq_fail(replay->context, "delta bubbled an id the mirror never saw");
             return -1;
         }
         entry->revision = after;
@@ -426,12 +457,12 @@ static int eq_walk_visit(const markdown_core_node *node, void *context) {
 
     state->seen++;
     if (!entry) {
-        eq_fail(replay->context, "tree holds an id the changeset stream never added");
+        eq_fail(replay->context, "tree holds an id the delta stream never added");
         state->failed = 1;
         return 1;
     }
     if (entry->revision != markdown_core_node_get_revision(node)) {
-        eq_fail(replay->context, "node revision changed without a changeset notification");
+        eq_fail(replay->context, "node revision changed without a delta notification");
         state->failed = 1;
         return 1;
     }
@@ -443,12 +474,12 @@ static int eq_walk_visit(const markdown_core_node *node, void *context) {
     return 0;
 }
 
-/* Commits the session, folds the changeset into the mirror, verifies the
+/* Commits the session, folds the delta into the mirror, verifies the
  * mirror against a fresh walk, and compares the session dump with a one-shot
  * parse of the shadow text. */
 static int eq_replay_commit(eq_replay *replay) {
     markdown_core_error *error = NULL;
-    markdown_core_changeset *changes = NULL;
+    markdown_core_delta *changes = NULL;
     const markdown_core_document *document;
     const markdown_core_node *root;
     markdown_core_document *reference = NULL;
@@ -465,10 +496,10 @@ static int eq_replay_commit(eq_replay *replay) {
         return -1;
     }
     if (!changes) {
-        eq_fail(replay->context, "commit produced no changeset");
+        eq_fail(replay->context, "commit produced no delta");
         return -1;
     }
-    if (eq_apply_changeset(replay, changes, markdown_core_session_revision(replay->session)) != 0) {
+    if (eq_apply_delta(replay, changes, markdown_core_session_revision(replay->session)) != 0) {
         goto done;
     }
 
@@ -523,7 +554,7 @@ done:
     markdown_core_dump_free(session_dump);
     markdown_core_dump_free(reference_dump);
     markdown_core_document_free(reference);
-    markdown_core_changeset_free(changes);
+    markdown_core_delta_free(changes);
     return result;
 }
 
