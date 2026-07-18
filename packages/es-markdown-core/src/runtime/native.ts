@@ -2,9 +2,30 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    es_document_parse(source: number, length: number, flags: number, errorOutput: number): number;
-    es_document_free(document: number): void;
+    es_session_open(flags: number, errorOutput: number): number;
+    es_session_free(session: number): void;
+    es_session_edit(
+        session: number,
+        byteStart: number,
+        byteEnd: number,
+        bytes: number,
+        length: number,
+        errorOutput: number
+    ): number;
+    es_session_commit(session: number, changesOutput: number, errorOutput: number): number;
+    es_session_document(session: number): number;
+    es_session_revision(session: number): bigint;
+    es_session_lineage(session: number): bigint;
+    es_session_length(session: number): number;
+    es_session_footnote_info(session: number, id: bigint, fieldsOutput: number): number;
+    es_session_footnotes(session: number, dataOutput: number): number;
+    es_session_footnote_references(session: number, definition: bigint, dataOutput: number): number;
+    es_delta_revision(changes: number, boundary: number): bigint;
+    es_delta_ids(changes: number, verdict: number, dataOutput: number): number;
+    es_delta_free(changes: number): void;
     es_document_root(document: number): number;
+    es_node_id(node: number): bigint;
+    es_node_revision(node: number): bigint;
     es_error_code(error: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;
@@ -42,14 +63,21 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
         bytes = await response.arrayBuffer();
     }
     const memoryHolder: { memory?: WebAssembly.Memory } = {};
+    // Supplies time (u64 nanoseconds at timePtr) for the engine's
+    // per-session identity entropy; any clock id gets the same source, and
+    // nothing else in the engine consumes time. Each call advances the
+    // reported value a full second past the previous call: the entropy mix
+    // survives libc only at seconds granularity, and a freed-and-reallocated
+    // session at the same address within the same wall-clock second would
+    // otherwise mint the same lineage.
+    let lastNanoseconds = 0n;
     const wasi = {
-        // Supplies wall-clock time (u64 nanoseconds at timePtr) for the
-        // engine's per-session identity entropy; any clock id gets the same
-        // source. Calls only happen after instantiation fills the holder.
         clock_time_get: (_clockId: number, _precision: bigint, timePtr: number): number => {
             const memory = memoryHolder.memory;
             if (!memory) return 28; // WASI EINVAL; unreachable in practice
-            new DataView(memory.buffer).setBigUint64(timePtr, BigInt(Date.now()) * 1_000_000n, true);
+            const now = BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6));
+            lastNanoseconds = now > lastNanoseconds + 1_000_000_000n ? now : lastNanoseconds + 1_000_000_000n;
+            new DataView(memory.buffer).setBigUint64(timePtr, lastNanoseconds, true);
             return 0;
         },
         fd_close: (): number => 0,

@@ -24,7 +24,7 @@ const document = Document.parse("# Hello", {
 
 console.log(document.content[0].kind);
 console.log(document.dump());
-console.log(TreeDumper.dump(document.content[0]));
+console.log(TreeDumper.dump(document, document.content[0]));
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
@@ -32,22 +32,59 @@ stripping, tables, strikethrough, autolinks, task lists, formulas, dollar and
 LaTeX formula delimiters, and directives. Pass only the options you want to
 override.
 
-`Document.parse` returns a discriminated `Markup` union with source scopes and
-recursively readonly TypeScript properties. The JavaScript objects are not
-runtime-frozen. The package exposes parsing and AST traversal, not rendering or
-AST mutation.
+`Document.parse` returns a discriminated `Markup` union with recursively
+readonly TypeScript properties. The JavaScript objects are not runtime-frozen.
+The package exposes parsing and AST traversal, not rendering or AST mutation.
+
+Every node carries an identity: `id` (a `MarkupID` of the owning session's
+`lineage` salt plus a raw value, always the same object for the same identity)
+and `revision`, the commit revision at which the node's content last changed.
+Two nodes with the same `id` and `revision` are guaranteed to have identical
+content, and an unchanged node is the same object across consecutive
+snapshots — safe fast paths for render caches and reconciliation keys.
+
+Nodes do not store absolute positions. Resolve them through the snapshot:
+`document.scope(node)` returns the node's absolute start/end line and column.
 
 ## Traverse and Inspect
 
-Use `Walker` for a read-only depth-first traversal:
+Use `Walker` for a read-only depth-first traversal; every event carries the
+resolved scope:
 
 ```js
-new Walker().walk(document, (event, node) => {
-  console.log(event, node.kind, node.scope);
+new Walker().walk(document, (event, node, scope) => {
+  console.log(event, node.kind, scope.start.line);
 });
 ```
 
-`TreeDumper.dump(markup)` and each Markup's non-enumerable `dump()` method emit
-the canonical diagnostic tree for a complete document or focused subtree. The
-text is intended for logs, snapshots, and debugging rather than persistence or
-data interchange.
+`document.dump()` and `TreeDumper.dump(document, node)` emit the canonical
+diagnostic tree for the complete document or a focused subtree (subtree scopes
+print with the subtree as origin). The text is intended for logs, snapshots,
+and debugging rather than persistence or data interchange.
+
+## Incremental Sessions
+
+`MarkupSession` owns one Markdown text and its living AST. Queue edits
+(`append` is an edit at end-of-text), then `commit`: the session reparses
+incrementally, keeps node identity wherever content is unchanged, and returns
+the new immutable snapshot plus the exact delta — the ids that were `added`,
+`removed`, `changed`, and `bubbled`. After any sequence of edits and commits
+the document is semantically identical to a one-shot `Document.parse` of the
+same final text.
+
+```js
+import { MarkupSession } from "@nouprax/es-markdown-core";
+
+const session = new MarkupSession();
+for await (const commit of session.updates(tokenStream)) {
+  render(commit.document, commit.changes);
+}
+session.close();
+```
+
+Snapshots are plain immutable values that share every unchanged node with the
+previous snapshot and stay usable after the session advances or closes.
+`session.node(id)` answers the committed value for an id, and
+`session.footnotes()`, `session.footnoteInfo(id)`, and
+`session.footnoteReferences(id)` answer footnote numbering, resolution, and
+back-reference ordinals as queries against the committed revision.
