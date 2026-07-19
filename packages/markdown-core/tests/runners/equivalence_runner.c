@@ -748,6 +748,42 @@ static const eq_script_step EQ_HEAD_DEFS_STEPS[] = {
     {"[b] /b1", 0, 7, "[b]: /b1"},        /* and vanishes again */
 };
 
+/* A blank-separated footnote-definition cluster: every definition stays open
+ * across the blank that follows it, so cluster followers restart only through
+ * sealing anchors. Body edits probe restarts at the cluster's head, interior,
+ * and tail; the colon flip walks a definition in and out of definition-hood
+ * mid-cluster; an arriving definition splits the cluster; and the indented
+ * continuation is the negative case — it rides the blank into the previous
+ * definition's body, un-sealing the line below it, and the reshaped "uses"
+ * line forces restart planning to back off a damaged sealing anchor. */
+static const eq_script_step EQ_FOOTNOTE_DEFS_STEPS[] = {
+    {"alpha", 0, 5, "ALPHA"},             /* head body edit */
+    {"beta", 0, 4, "BETA"},               /* interior body edit; resync mid-cluster */
+    {"gamma", 0, 5, "GAMMA"},             /* tail body edit */
+    {"[^b]:", 4, 1, ""},                  /* colon leaves: definition -> paragraph */
+    {"[^b]", 4, 0, ":"},                  /* and returns */
+    {"[^c]", 0, 0, "[^n]: new body\n\n"}, /* a definition arrives mid-cluster */
+    {"[^n]: new body\n\n", 0, 16, ""},    /* and leaves again */
+    {"uses", 0, 0, "    continued\n\n"},  /* an indented continuation joins [^c] */
+    {"continued", 0, 9, "altered"},       /* edit inside the fused continuation */
+    {"    altered\n\n", 0, 13, ""},       /* the continuation leaves */
+    {"uses", 0, 0, "    "},               /* the sealing line itself turns indented */
+    {"    uses", 0, 4, ""},               /* and seals again */
+};
+
+/* A sealing anchor rebuilt as a winner-delta dependent: the uses paragraph
+ * seals the open-across-blank footnote definition above it, then the
+ * retarget rebuilds it per-unit — the clone must keep the sealing
+ * qualifier, or the reshaped-line steps would restart at an indented line
+ * the definition captures in a one-shot parse. */
+static const eq_script_step EQ_SEALING_REBUILD_STEPS[] = {
+    {"/one", 0, 4, "/two"},      /* rebuild the sealing uses paragraph per-unit */
+    {"uses", 0, 0, "    "},      /* its line turns indented: the anchor must refuse */
+    {"    uses", 0, 4, ""},      /* and seals again */
+    {"/two", 0, 4, "/one"},      /* rebuild once more */
+    {"uses", 0, (size_t)-1, ""}, /* delete the tail at the damaged anchor */
+};
+
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
     {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
@@ -858,6 +894,24 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
      "tail para\n",
      EQ_HEAD_DEFS_STEPS,
      sizeof(EQ_HEAD_DEFS_STEPS) / sizeof(*EQ_HEAD_DEFS_STEPS)},
+    {"sealing_rebuild",
+     "[l]: /one\n"
+     "\n"
+     "[^a]: note body\n"
+     "\n"
+     "uses [x][l] tail\n",
+     EQ_SEALING_REBUILD_STEPS,
+     sizeof(EQ_SEALING_REBUILD_STEPS) / sizeof(*EQ_SEALING_REBUILD_STEPS)},
+    {"footnote_defs",
+     "[^a]: alpha body\n"
+     "\n"
+     "[^b]: beta body\n"
+     "\n"
+     "[^c]: gamma body\n"
+     "\n"
+     "uses [^a] and [^b] and [^c] tail\n",
+     EQ_FOOTNOTE_DEFS_STEPS,
+     sizeof(EQ_FOOTNOTE_DEFS_STEPS) / sizeof(*EQ_FOOTNOTE_DEFS_STEPS)},
     {"footnote_sites",
      "head\n"
      "\n"

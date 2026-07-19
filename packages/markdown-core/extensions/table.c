@@ -386,8 +386,9 @@ static markdown_core_node *try_opening_table_header(
         );
         /* The split-off paragraph shares the retyped node's original span, so
          * the table's first line no longer begins a document child: it must
-         * not remain an incremental restart point. */
-        parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_START;
+         * not remain an incremental restart point, sealing qualifier
+         * included. */
+        parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 
     /* The paragraph is already rewritten into a table node here.  On

@@ -425,11 +425,12 @@ Equality everywhere is `(lineage, id, revision)`.
     pure-shift gap edits, a paragraph flipping between vanishing and
     real), and the `session_head_defs` complexity case (last-definition
     retargets against a document-scale leading cluster, flat across a
-    1024x spread — 0.8x measured, ~3167x before the change). Remaining in
-    the issue's orbit: the resync-delay behaviors (consecutive top-level
-    blockquotes fuse because `line_began_clean` is computed before
-    `check_open_blocks`; footnote definitions stay open across blank
-    lines), tracked for M5 hardening.
+    1024x spread — 0.8x measured, ~3167x before the change). The
+    resync-delay behaviors carried in the issue's orbit both resolved
+    (issue #26, M5): the blockquote half no longer reproduced after this
+    index rework and is pinned by `session_quote_suffix`; the footnote
+    half (definitions stay open across blank lines) landed as the sealing
+    rule below.
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta
@@ -603,9 +604,95 @@ Equality everywhere is `(lineage, id, revision)`.
   smoke (`fuzz_script_smoke`, 512 scripts per run, alternating token-biased
   and uniform splice payloads) in the CI fuzz label. Sanity campaign at
   delivery: 1.1M executions / 2 minutes under ASan, 10,646 edges covered,
-  zero failures; correctness + ASan/UBSan presets green. Remaining in M5:
-  pathological corpus, the #15 resync-delay behaviors, perf tuning, release
-  prep.
+  zero failures; correctness + ASan/UBSan presets green.
+
+  Resync locality for footnote definitions delivered 2026-07-19 (issue
+  #26), closing out the #15 resync-delay behaviors. A definition legitimately
+  stays open across blank lines, which used to strip restart anchors from
+  every cluster follower and ride restarts through whole clusters. Both
+  halves now apply the same argument: a non-blank line whose first non-space
+  sits below the continuation indent closes a definitions-only open chain on
+  that very line, before anything above can capture it (no open paragraph is
+  left for a lazy continuation to ride).
+
+  - Flag side: when `check_open_blocks` stops at the document and the chain
+    open at line start consisted solely of footnote definitions, the line is
+    promoted to clean; its direct document children carry `CLEAN_START`
+    qualified by `CLEAN_START_SEALING`, recording that the anchor holds only
+    while the line keeps its sealing shape.
+  - Restart side: planning re-checks a sealing anchor's line against the
+    current text (blank or indented means reshaped into a continuation) and
+    backs off one clean entry, mirroring the CRLF-fusion guard; sentinels
+    take the same check since they do not record their sealing quality.
+  - Resync side: the staged probe accepts a boundary while only footnote
+    definitions are open, provided the upcoming line seals them; the splice
+    finalizes them with ends dated to the line before the boundary, exactly
+    as the one-shot parse dates them.
+  - Contiguous definition clusters (no blank between definitions) keep an
+    open trailing paragraph in the chain and stay genuinely fused — a lazy
+    continuation could ride them — as does an indented body continuation
+    after a blank.
+
+  Gates: the `footnote_defs` boundary script (body edits at cluster
+  head/interior/tail, the colon kind-flip both ways, a definition arriving
+  and leaving mid-cluster, the indented continuation negative case, and the
+  sealing line itself reshaped indented and back), the
+  `restart_locality_counters` cluster layouts (every footnote-cluster body
+  edit an incremental resynced commit; a quote-cluster front edit resyncs at
+  the second quote), the `session_quote_suffix` complexity case (front edits
+  flat across a 1024x quote-suffix spread, 0.9x measured), and the
+  `session_footnote_defs` complexity case (last-definition body edits flat
+  across a 1024x cluster spread, 0.97x measured — see the footnote-index
+  rework below, which the flat form of this gate depends on). Fuzz campaign
+  at delivery: 688K executions / 2.5 minutes of the session edit-script
+  target, zero failures; correctness + ASan/UBSan presets green.
+
+  Footnote index made damage-proportional, delivered 2026-07-19 with the
+  same workstream. Gating #26 exposed that the #14-era refresh — an
+  O(#sites) merge copy, a full rebuild that case-folded every label, and an
+  O(#sites) diff — ran against every footnote-enabled commit, so even
+  site-free edits against a 65K-definition corpus cost ~7.3ms and no
+  growing-cluster gate could be wall-clock flat. The index is now
+  maintained across commits:
+
+  - **Session-persistent label interning** (`footnote_labels`): one owned
+    normalized string per distinct label, folded once when a site first
+    carries it; sites store label slots, and no commit path re-normalizes
+    at rest (the profile's dominant cost — `utf8proc` folding plus
+    `key_index` churn per site per commit — is gone).
+  - **Sequence-preserving fast path**: the stale site ranges are two
+    O(log #sites) probes over the persistent document-ordered lists
+    (anchor lines, old coordinates; graveyard anchors keep theirs); when
+    the stale and staged runs — and every rebuilt unit's run — carry
+    identical label sequences with stable definition ids, the commit
+    patches pointers and churned reference ids in place. Churned ids
+    tombstone first and reinsert after (adoption can swap ids between
+    positions), repointing their group entries through the site's stored
+    group position. No aggregate can have moved, so no delta and no
+    rebuild: O(staged + stale + rebuilt) per commit.
+  - **Slow path**: any other commit merges the site lists in document
+    order (the #14 merge, now post-adoption and clone-anchor tolerant) and
+    rebuilds the derived structures from label-slot integers, diffing per
+    node id against a hash-keyed record table (sorted array replaced;
+    tombstoned open addressing, growth only through a fallible reserve so
+    applies never allocate).
+  - The refresh runs post-adoption as before; a fallback now clears the
+    delta's id arrays so the full path re-records cleanly, and the
+    label table survives every path — full rebuilds, failed commits, and
+    index swaps included.
+
+  Measured at 65K definitions: site-free edits 7.3ms → 1.3µs/commit,
+  last-definition body edits 7.7ms → 1.6µs (both flat from 256 to 65K
+  definitions); `session_footnote_shift` (the structural label-flip slow
+  path over a fixed cluster) stays flat at 0.96x. Structure-changing
+  commits pay the slow path's O(#sites) integer pass — comparable to the
+  text memmove the edit itself already costs — and their deltas are
+  output-sensitive either way. Gates: the flat `session_footnote_defs`
+  above, every footnote boundary script and the per-commit footnote query
+  equivalence in the replay harness, the OOM sweep (which caught a
+  zero-capacity label-table probe on the injected-failure path), and a
+  470K-execution fuzz campaign; correctness + ASan/UBSan presets green.
+  Remaining in M5: pathological corpus, perf tuning, release prep.
 
 ## Verification
 
