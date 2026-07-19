@@ -241,6 +241,30 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
     return parser;
 }
 
+markdown_core_parser *
+markdown_core_session_acquire_parser(markdown_core_session *session, markdown_core_error **error) {
+    markdown_core_parser *parser = session->warm_parser;
+    if (parser) {
+        session->warm_parser = NULL;
+        return parser;
+    }
+    return markdown_core_session_new_parser(session, error);
+}
+
+void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser) {
+    if (!parser) {
+        return;
+    }
+    if (!parser->oom && !session->warm_parser) {
+        markdown_core_parser_renew(parser);
+        if (!parser->oom) {
+            session->warm_parser = parser;
+            return;
+        }
+    }
+    markdown_core_parser_free(parser);
+}
+
 // Seals a freshly parsed tree: line positions convert from absolute to
 // parent-relative deltas (columns are line-local already) and every node
 // gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Post-order, so each conversion
@@ -305,7 +329,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     int last_line_length;
     uint64_t new_rev = initial ? 0 : session->revision + 1;
 
-    parser = markdown_core_session_new_parser(session, error);
+    parser = markdown_core_session_acquire_parser(session, error);
     if (!parser) {
         return false;
     }
@@ -332,7 +356,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     }
     map = parser->refmap;
     parser->refmap = NULL;
-    markdown_core_parser_free(parser);
+    markdown_core_session_release_parser(session, parser);
     // The sink's context is this call's stack frame; the map outlives it.
     map->lookup_sink = NULL;
     map->lookup_context = NULL;
@@ -594,6 +618,9 @@ void markdown_core_session_free(markdown_core_session *session) {
         session->mem->free(session->def_index);
     }
     markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
+    if (session->warm_parser) {
+        markdown_core_parser_free(session->warm_parser);
+    }
     free(session);
 }
 
