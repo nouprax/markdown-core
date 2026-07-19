@@ -782,6 +782,62 @@ Equality everywhere is `(lineage, id, revision)`.
   release (decision 2026-07-19), as the final perf workstream before
   release prep.
 
+  The arena workstream delivered 2026-07-19 in three parts:
+
+  - **Self-referential allocators**: every `markdown_core_mem` function
+    now receives the allocator itself (container-of pattern), so
+    stateful allocators recover their state from the embedded struct
+    with no global.  Mechanical sweep of ~180 call sites; the default
+    allocator and injection harnesses ignore the argument.
+  - **Session arena** (`extensions/arena.c`): a pooled session routes
+    every allocation it owns — nodes, content buffers, tables, staged
+    parsers — through a size-classed slab arena behind the
+    `markdown_core_mem` face.  Freed blocks go to per-class freelists
+    and later commits reuse them; growth within a block's class
+    capacity is a realloc no-op (absorbing content-buffer growth);
+    requests above the largest class pass through to the base allocator
+    on a tracked list; teardown is one wholesale release.  Two
+    boundaries are deliberate: the one-shot parse stays unpooled (its
+    detached tree outlives the session, and `Document.parse` keeps its
+    v1 memory profile per the contract), and ASan builds bypass pooling
+    so the sanitizer keeps seeing individual allocations.  A
+    growth-driven passthrough block skips calloc zeroing — the first
+    arena cut re-zeroed the adoption stack on every commit and showed
+    up as a 15% retarget regression before the fix.  Gate added:
+    `session_oom_sweep_pooled` drives the sweep script through an arena
+    over the injected allocator, so every base refill (slab,
+    passthrough, the arena itself) fails in turn.
+  - **Id table**: id and node now share one slot struct (one cache line
+    per probe, one allocation per table).  An attempted
+    remove-stale-before-put reorder — dropping the ownership probe in
+    `ids_remove_stale_chain` — was measured and REVERTED: backward-shift
+    deletion costs far more than the read probe it saved (storm
+    2.03→2.60 µs/commit), so the put-first order with the ownership
+    probe is load-bearing for performance, not just correctness.
+
+  Cumulative profile-driver numbers for M5 perf (Release, M-series,
+  µs/commit, baseline → warm parser → arena): storm 3.47→2.58→2.03,
+  bounded stream 1.11→0.82→0.68, retarget 9.68→5.85→5.64, footnote-defs
+  0.98→0.75→0.55.  What remains at the top of the storm profile is
+  parsing itself (block feed + inline refine ~43%) and the adoption
+  walk (~22%) — no allocator or table maintenance dominates any
+  workload anymore.
+
+  The arena surfaced a latent WASM limit: the ES module was built
+  without `ALLOW_MEMORY_GROWTH`, so the heap was fixed at emscripten's
+  16 MiB default and emscripten's malloc hangs the module once a parse
+  exceeds it (the engine itself fails permanent exhaustion cleanly —
+  probed natively with a hard-cutoff allocator at 19 budgets across a
+  395 KB pooled commit; every one failed transactionally).  The
+  arena's class rounding lowered the threshold into the ES robustness
+  suite's range, but any sufficiently large document hit the same wall
+  before it.  The module now links with memory growth enabled and the
+  runtime supplies `emscripten_notify_memory_growth`; no view
+  refreshing is needed because every DataView/Uint8Array over wasm
+  memory is created at its use site.  Session memory characteristics
+  (high-water retention) are now bounded by the host's memory limits,
+  matching the documented session cost model.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical

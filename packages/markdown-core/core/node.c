@@ -75,7 +75,7 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_mem *mem,
     markdown_core_extension *extension
 ) {
-    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
+    markdown_core_node *node = (markdown_core_node *)mem->calloc(mem, 1, sizeof(*node));
     if (!node) {
         return NULL;
     }
@@ -165,7 +165,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(e);
+        NODE_MEM(e)->free(NODE_MEM(e), e);
         e = next;
     }
 }

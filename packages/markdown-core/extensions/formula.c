@@ -104,7 +104,7 @@ static void formula_opaque_alloc(markdown_core_extension *extension, markdown_co
     /* A NULL payload is tolerated: every accessor goes through get_formula
      * and treats the node as formula-less. */
     if (is_formula_node(node)) {
-        node->as.opaque = mem->calloc(1, sizeof(node_formula));
+        node->as.opaque = mem->calloc(mem, 1, sizeof(node_formula));
     }
 }
 
@@ -115,7 +115,7 @@ static void formula_opaque_free(markdown_core_extension *extension, markdown_cor
     }
 
     markdown_core_chunk_free(mem, &formula->literal);
-    mem->free(formula);
+    mem->free(mem, formula);
 }
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
@@ -250,7 +250,7 @@ static markdown_core_node *try_opening_formula_block(
     }
 
     markdown_core_node_set_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(1, sizeof(node_formula));
+    node->as.opaque = parser->mem->calloc(parser->mem, 1, sizeof(node_formula));
 
     formula = get_formula(node);
     if (!formula) {

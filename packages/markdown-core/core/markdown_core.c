@@ -7,8 +7,9 @@ int markdown_core_version(void) { return MARKDOWN_CORE_VERSION; }
 
 const char *markdown_core_version_string(void) { return MARKDOWN_CORE_VERSION_STRING; }
 
-static void *xcalloc(size_t nmem, size_t size) {
+static void *xcalloc(markdown_core_mem *mem, size_t nmem, size_t size) {
     void *ptr = calloc(nmem, size);
+    (void)mem;
     if (!ptr) {
         fprintf(stderr, "[markdown_core] calloc returned null pointer, aborting\n");
         abort();
@@ -16,8 +17,9 @@ static void *xcalloc(size_t nmem, size_t size) {
     return ptr;
 }
 
-static void *xrealloc(void *ptr, size_t size) {
+static void *xrealloc(markdown_core_mem *mem, void *ptr, size_t size) {
     void *new_ptr = realloc(ptr, size);
+    (void)mem;
     if (!new_ptr) {
         fprintf(stderr, "[markdown_core] realloc returned null pointer, aborting\n");
         abort();
@@ -25,7 +27,10 @@ static void *xrealloc(void *ptr, size_t size) {
     return new_ptr;
 }
 
-static void xfree(void *ptr) { free(ptr); }
+static void xfree(markdown_core_mem *mem, void *ptr) {
+    (void)mem;
+    free(ptr);
+}
 
 /* Immutable by contract: the engine has no process-level mutable state, so
  * the default allocator lives in read-only storage. Callers receive a

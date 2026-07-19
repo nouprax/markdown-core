@@ -18,7 +18,7 @@ typedef struct markdown_core_chunk {
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
     if (c->alloc) {
-        mem->free(c->data);
+        mem->free(mem, c->data);
     }
 
     c->data = NULL;
@@ -63,7 +63,7 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
     if (c->alloc) {
         return (char *)c->data;
     }
-    str = (unsigned char *)mem->calloc(c->len + 1, 1);
+    str = (unsigned char *)mem->calloc(mem, c->len + 1, 1);
     /* NULL reports allocation failure; the chunk keeps its borrowed bytes. */
     if (!str) {
         return NULL;
@@ -89,7 +89,7 @@ markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c, con
         c->alloc = 0;
     } else {
         bufsize_t len = (bufsize_t)strlen(str);
-        unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
+        unsigned char *copy = (unsigned char *)mem->calloc(mem, (size_t)len + 1, 1);
         if (!copy) {
             return 0;
         }
@@ -99,7 +99,7 @@ markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c, con
         memcpy(c->data, str, (size_t)len + 1);
     }
     if (old != NULL) {
-        mem->free(old);
+        mem->free(mem, old);
     }
     return 1;
 }
