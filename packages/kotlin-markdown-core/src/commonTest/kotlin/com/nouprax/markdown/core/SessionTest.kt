@@ -249,6 +249,7 @@ class SessionTest {
         // burst shapes are irregular but reproducible — and identical in the
         // Swift and ES mirrors of this test.
         var state = 0x9E3779B97F4A7C15UL.toLong()
+
         fun draw(bound: Long): Long {
             state = state * 6364136223846793005L + 1442695040888963407L
             return (state ushr 33) % bound
@@ -259,6 +260,7 @@ class SessionTest {
             var messages = 0
             var commits = 0
             var touched = 0
+
             fun tick() {
                 val commit = session.commit()
                 commits += 1

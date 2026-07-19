@@ -133,8 +133,7 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
             children = node.content.size,
         )
 
-    override fun visit(node: Text): DumpRecord =
-        record("Text", fields = listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(node: Text): DumpRecord = record("Text", fields = listOf("literal=${jsonString(node.literal)}"))
 
     override fun visit(node: SoftBreak): DumpRecord = record("SoftBreak")
 
@@ -146,8 +145,7 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
             fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
         )
 
-    override fun visit(node: HTML): DumpRecord =
-        record("HTML", fields = listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(node: HTML): DumpRecord = record("HTML", fields = listOf("literal=${jsonString(node.literal)}"))
 
     override fun visit(node: Formula): DumpRecord =
         record(
@@ -159,8 +157,7 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
 
     override fun visit(node: Strong): DumpRecord = record("Strong", children = node.content.size)
 
-    override fun visit(node: Strikethrough): DumpRecord =
-        record("Strikethrough", children = node.content.size)
+    override fun visit(node: Strikethrough): DumpRecord = record("Strikethrough", children = node.content.size)
 
     override fun visit(node: Link): DumpRecord =
         record(

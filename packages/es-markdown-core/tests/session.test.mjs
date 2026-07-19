@@ -258,9 +258,7 @@ test("sessions: conflated streaming with irregular ticks over a multi-turn conve
             // The turn boundary always renders; everything but the still-hot
             // last block is now settled.
             tick();
-            frozen = session.document.content
-                .slice(0, -1)
-                .map((node, index) => [index, node.id, node.revision]);
+            frozen = session.document.content.slice(0, -1).map((node, index) => [index, node.id, node.revision]);
         }
         assert.ok(messages > 9);
         assert.ok(commits < messages);
