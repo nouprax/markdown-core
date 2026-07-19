@@ -692,7 +692,54 @@ Equality everywhere is `(lineage, id, revision)`.
   equivalence in the replay harness, the OOM sweep (which caught a
   zero-capacity label-table probe on the injected-failure path), and a
   470K-execution fuzz campaign; correctness + ASan/UBSan presets green.
-  Remaining in M5: pathological corpus, perf tuning, release prep.
+
+  Session pathological corpus delivered 2026-07-19: nine `session_*` cases
+  in `pathological_runner` replay adversarial structures through the shared
+  harness, so every commit carries the full verification set (dump equality
+  against a one-shot parse, delta accounting, footnote-query equivalence)
+  and the per-case CTest TIMEOUT bounds any commit whose cost degenerates
+  against the structure.  The corpus attacks each layer of the incremental
+  machinery where its worst case lives:
+
+  - **Inline floods** — `session_emph_openers` (a 48 KiB single paragraph
+    of `_a ` openers with a toggling mid-paragraph closer) and
+    `session_backtick_runs` (backtick runs of every length below 1200 with
+    a parity-flipping front backtick) force whole-paragraph inline
+    reparses; the delimiter and code-span machinery must not leak state
+    between commits.
+  - **Deep chains** — `session_quotes_deep` (1024 open quotes; innermost
+    text edits plus a level-64 quote-to-list marker flip re-kinding the 959
+    levels below) and `session_list_spine` (512-deep list nesting; a
+    mid-spine dedent re-parenting every deeper level).  Session trees pass
+    through the recursive dump on every commit, so these depths deliberately
+    stay below the one-shot cases'.
+  - **Whole-document churn** — `session_reference_collisions` (2048
+    colliding-label definitions all referencing one shared key whose
+    definition toggles, resolving and collapsing 2047 links per commit
+    against a collision-saturated reference map) and `session_fence_gate`
+    (4096 paragraphs behind a toggling unclosed fence at the head,
+    re-kinding the entire suffix through adoption, the graveyard, and the
+    delta stream twice per round).
+  - **Restart hostility** — `session_lazy_wall` (one quoted paragraph
+    continued by 4096 lazy lines: no clean anchor exists, so tail edits
+    ride the fallback; a mid-wall blank evicts the tail from the quote and
+    its deletion knits the wall back) and `session_crlf_seam` (4096
+    CRLF-separated paragraphs edited exactly at `\r\n` seams — deleting a
+    middle `\r`, splicing a byte between `\r` and `\n` on text and blank
+    lines — against the restart planner's line-shape re-checks).
+  - **Footnote interning** — `session_footnote_labels` (1024 definitions
+    whose labels need case folding, 256 references; a site-free edit that
+    must not refold, and definition/reference label flips churning the
+    interning table and cascading ordinals).
+
+  The list-flip case pinned an engine fact worth recording: list markers
+  only open below `MAX_LIST_DEPTH` (100), so a bullet at quote depth 511
+  stays literal text — the flip sits at level 64.  Gates: all nine cases
+  registered per-case as `pathological_session_*` (30s timeouts, audit
+  cross-checked against `pathological_runner --list`), worst sanitizer
+  wall-clock 2.4s; correctness (92) + ASan/UBSan/TSan suites (77 each) and
+  the test-topology audit green.  Remaining in M5: perf tuning, release
+  prep.
 
 ## Verification
 
