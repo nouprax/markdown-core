@@ -447,7 +447,15 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/structure.md"
     --generated
     256)
-markdown_core_add_test(fuzz_script_smoke fuzz 240 fuzz_smoke_runner --generated 0 --script-generated 512)
+markdown_core_add_test(
+    fuzz_script_smoke
+    fuzz
+    240
+    fuzz_smoke_runner
+    --generated
+    0
+    --script-generated
+    512)
 
 # packaging: corpus/workspace policy guard, also run before benchmarks.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")
