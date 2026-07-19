@@ -589,6 +589,24 @@ Equality everywhere is `(lineage, id, revision)`.
   perf tuning, CHANGELOG/VERSION 2.0.0, release dry-run. Gates: full CI
   matrix + package audits.
 
+  Edit-script fuzz target delivered 2026-07-18: the equivalence runner's
+  replay machinery (shadow text, delta mirror, verified commit, footnote
+  query equivalence) moved to a shared harness
+  (`tests/support/session_replay.{c,h}`) with a report callback, and gained
+  a deterministic byte-script interpreter — two option bytes, then
+  insert/delete/replace/commit operations whose positions are taken modulo
+  the shadow length, so every input decodes to a valid edit sequence and
+  every byte is fuzzer-meaningful. Three drivers share it: the equivalence
+  runner (unchanged cases), the new `fuzz_session_edits` libFuzzer target
+  (`MARKDOWN_CORE_FUZZ_SESSION`; verification failure aborts, crash inputs
+  replay via `fuzz_smoke_runner --script`), and a seeded deterministic
+  smoke (`fuzz_script_smoke`, 512 scripts per run, alternating token-biased
+  and uniform splice payloads) in the CI fuzz label. Sanity campaign at
+  delivery: 1.1M executions / 2 minutes under ASan, 10,646 edges covered,
+  zero failures; correctness + ASan/UBSan presets green. Remaining in M5:
+  pathological corpus, the #15 resync-delay behaviors, perf tuning, release
+  prep.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical
