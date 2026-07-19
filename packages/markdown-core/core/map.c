@@ -51,7 +51,7 @@ static int grow_key_index(markdown_core_key_index *index) {
     if (capacity > SIZE_MAX / sizeof(*slots)) {
         return 0;
     }
-    slots = (markdown_core_key_index_slot *)index->mem->calloc(capacity, sizeof(*slots));
+    slots = (markdown_core_key_index_slot *)index->mem->calloc(index->mem, capacity, sizeof(*slots));
     if (!slots) {
         return 0;
     }
@@ -63,12 +63,12 @@ static int grow_key_index(markdown_core_key_index *index) {
         }
         destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
         if (!destination) {
-            index->mem->free(slots);
+            index->mem->free(index->mem, slots);
             return 0;
         }
         *destination = *source;
     }
-    index->mem->free(index->slots);
+    index->mem->free(index->mem, index->slots);
     index->slots = slots;
     index->capacity = capacity;
     return 1;
@@ -90,7 +90,7 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
     if (capacity > SIZE_MAX / sizeof(*index->slots)) {
         return 0;
     }
-    index->slots = (markdown_core_key_index_slot *)mem->calloc(capacity, sizeof(*index->slots));
+    index->slots = (markdown_core_key_index_slot *)mem->calloc(mem, capacity, sizeof(*index->slots));
     if (!index->slots) {
         return 0;
     }
@@ -100,7 +100,7 @@ int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_m
 
 void markdown_core_key_index_free(markdown_core_key_index *index) {
     if (index->slots) {
-        index->mem->free(index->slots);
+        index->mem->free(index->mem, index->slots);
     }
     memset(index, 0, sizeof(*index));
 }
@@ -258,7 +258,7 @@ unsigned char *markdown_core_map_normalize_label(markdown_core_mem *mem, markdow
     }
 
     if (result[0] == '\0') {
-        mem->free(result);
+        mem->free(mem, result);
         return NULL;
     }
 
@@ -289,7 +289,7 @@ static int refsearch(const void *label, const void *p2) {
  * every entry, so the next lookup rebuilds. */
 static void unprepare_map(markdown_core_map *map) {
     if (map->sorted) {
-        map->mem->free(map->sorted);
+        map->mem->free(map->mem, map->sorted);
         map->sorted = NULL;
     }
     markdown_core_key_index_free(&map->index);
@@ -303,7 +303,7 @@ static int sort_map(markdown_core_map *map) {
     size_t i = 0, size = map->size;
     markdown_core_map_entry *r = map->refs, **sorted = NULL;
 
-    sorted = (markdown_core_map_entry **)map->mem->calloc(size, sizeof(markdown_core_map_entry *));
+    sorted = (markdown_core_map_entry **)map->mem->calloc(map->mem, size, sizeof(markdown_core_map_entry *));
     if (!sorted) {
         return 0;
     }
@@ -448,7 +448,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         map->lookup_sink(map->lookup_context, map->lookup_unit, norm);
     }
     if (!map->size) {
-        map->mem->free(norm);
+        map->mem->free(map->mem, norm);
         return NULL;
     }
 
@@ -456,7 +456,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
         /* Neither preparation path could allocate; report a miss and leave
          * the map unprepared so a later lookup can retry. */
         map->oom = 1;
-        map->mem->free(norm);
+        map->mem->free(map->mem, norm);
         return NULL;
     }
 
@@ -466,7 +466,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     } else {
         r = sorted_winner(map, norm);
     }
-    map->mem->free(norm);
+    map->mem->free(map->mem, norm);
 
     if (r != NULL) {
         /* Check for expansion limit */
@@ -608,7 +608,7 @@ markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size
 
     if (map->indexed) {
         size_t slot;
-        winners = (markdown_core_map_entry **)map->mem->calloc(map->index.size, sizeof(*winners));
+        winners = (markdown_core_map_entry **)map->mem->calloc(map->mem, map->index.size, sizeof(*winners));
         if (!winners) {
             map->oom = 1;
             return NULL;
@@ -626,7 +626,7 @@ markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size
                 unique++;
             }
         }
-        winners = (markdown_core_map_entry **)map->mem->calloc(unique, sizeof(*winners));
+        winners = (markdown_core_map_entry **)map->mem->calloc(map->mem, unique, sizeof(*winners));
         if (!winners) {
             map->oom = 1;
             return NULL;
@@ -656,13 +656,13 @@ void markdown_core_map_free(markdown_core_map *map) {
         ref = next;
     }
 
-    map->mem->free(map->sorted);
+    map->mem->free(map->mem, map->sorted);
     markdown_core_key_index_free(&map->index);
-    map->mem->free(map);
+    map->mem->free(map->mem, map);
 }
 
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_func free) {
-    markdown_core_map *map = (markdown_core_map *)mem->calloc(1, sizeof(markdown_core_map));
+    markdown_core_map *map = (markdown_core_map *)mem->calloc(mem, 1, sizeof(markdown_core_map));
     if (!map) {
         return NULL;
     }

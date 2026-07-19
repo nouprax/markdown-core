@@ -153,7 +153,7 @@ typedef struct {
 static bool offset_push(markdown_core_mem *mem, offset_list *list, size_t offset) {
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 64;
-        size_t *grown = (size_t *)mem->realloc(list->items, capacity * sizeof(*grown));
+        size_t *grown = (size_t *)mem->realloc(mem, list->items, capacity * sizeof(*grown));
         if (!grown) {
             return false;
         }
@@ -203,7 +203,7 @@ bool markdown_core_session_index_clean_children(
     if (sentinel_count) {
         size_t filled = 0;
         size_t kept = 0;
-        sentinel_lines = (int *)session->mem->calloc(sentinel_count, sizeof(*sentinel_lines));
+        sentinel_lines = (int *)session->mem->calloc(session->mem, sentinel_count, sizeof(*sentinel_lines));
         if (!sentinel_lines) {
             return false;
         }
@@ -220,11 +220,11 @@ bool markdown_core_session_index_clean_children(
         }
         sentinel_count = kept;
     }
-    out->items = (markdown_core_clean_child *)
-                     session->mem->calloc(count + sentinel_count ? count + sentinel_count : 1, sizeof(*out->items));
+    out->items = (markdown_core_clean_child *)session->mem
+                     ->calloc(session->mem, count + sentinel_count ? count + sentinel_count : 1, sizeof(*out->items));
     if (!out->items) {
         if (sentinel_lines) {
-            session->mem->free(sentinel_lines);
+            session->mem->free(session->mem, sentinel_lines);
         }
         return false;
     }
@@ -245,7 +245,7 @@ bool markdown_core_session_index_clean_children(
         out->count++;
     }
     if (sentinel_lines) {
-        session->mem->free(sentinel_lines);
+        session->mem->free(session->mem, sentinel_lines);
     }
     for (child = root->first_child; child; child = child->next) {
         int start_line;
@@ -304,7 +304,7 @@ bool markdown_core_session_index_definitions(
     size_t count = map ? map->size : 0;
     size_t filled = 0;
 
-    items = (markdown_core_map_entry **)session->mem->calloc(count ? count : 1, sizeof(*items));
+    items = (markdown_core_map_entry **)session->mem->calloc(session->mem, count ? count : 1, sizeof(*items));
     if (!items) {
         return false;
     }
@@ -379,7 +379,7 @@ static bool reference_push(markdown_core_mem *mem, reference_list *list, markdow
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 16;
         markdown_core_reference **grown =
-            (markdown_core_reference **)mem->realloc(list->items, capacity * sizeof(*grown));
+            (markdown_core_reference **)mem->realloc(mem, list->items, capacity * sizeof(*grown));
         if (!grown) {
             return false;
         }
@@ -543,13 +543,13 @@ static void reconcile_release(markdown_core_mem *mem, reconcile_state *state) {
     markdown_core_key_index_free(&state->affected);
     markdown_core_key_index_free(&state->dirty);
     if (state->plans) {
-        mem->free(state->plans);
+        mem->free(mem, state->plans);
     }
     if (state->prefix_entries) {
-        mem->free(state->prefix_entries);
+        mem->free(mem, state->prefix_entries);
     }
     if (state->suffix_entries) {
-        mem->free(state->suffix_entries);
+        mem->free(mem, state->suffix_entries);
     }
     memset(state, 0, sizeof(*state));
 }
@@ -598,7 +598,7 @@ static bool reconcile_prepare(
         return false;
     }
     state->prepared = true;
-    state->plans = (label_plan *)mem->calloc(affected_upper ? affected_upper : 1, sizeof(*state->plans));
+    state->plans = (label_plan *)mem->calloc(mem, affected_upper ? affected_upper : 1, sizeof(*state->plans));
     if (!state->plans) {
         reconcile_release(mem, state);
         return false;
@@ -622,9 +622,9 @@ static bool reconcile_prepare(
         size_t prefix = state->splice_lo;
         size_t suffix = session->def_count - state->splice_hi;
         state->prefix_entries =
-            (markdown_core_reference **)mem->calloc(prefix ? prefix : 1, sizeof(*state->prefix_entries));
+            (markdown_core_reference **)mem->calloc(mem, prefix ? prefix : 1, sizeof(*state->prefix_entries));
         state->suffix_entries =
-            (markdown_core_reference **)mem->calloc(suffix ? suffix : 1, sizeof(*state->suffix_entries));
+            (markdown_core_reference **)mem->calloc(mem, suffix ? suffix : 1, sizeof(*state->suffix_entries));
         if (!state->prefix_entries || !state->suffix_entries) {
             reconcile_release(mem, state);
             return false;
@@ -640,7 +640,8 @@ static bool reconcile_prepare(
         size_t needed = session->def_count - (state->splice_hi - state->splice_lo) + new_defs->count;
         if (needed > session->def_capacity) {
             markdown_core_map_entry **grown =
-                (markdown_core_map_entry **)mem->realloc(session->def_index, (needed ? needed : 1) * sizeof(*grown));
+                (markdown_core_map_entry **)
+                    mem->realloc(mem, session->def_index, (needed ? needed : 1) * sizeof(*grown));
             if (!grown) {
                 reconcile_release(mem, state);
                 return false;
@@ -1083,10 +1084,10 @@ static bool collect_dependents(
         }
         if (count == capacity) {
             size_t grown_capacity = capacity ? capacity * 2 : 8;
-            dependent_unit *grown = (dependent_unit *)mem->realloc(dependents, grown_capacity * sizeof(*grown));
+            dependent_unit *grown = (dependent_unit *)mem->realloc(mem, dependents, grown_capacity * sizeof(*grown));
             if (!grown) {
                 if (dependents) {
-                    mem->free(dependents);
+                    mem->free(mem, dependents);
                 }
                 return false;
             }
@@ -1104,7 +1105,7 @@ static bool collect_dependents(
 
 fall_back:
     if (dependents) {
-        mem->free(dependents);
+        mem->free(mem, dependents);
     }
     *fallback = true;
     return false;
@@ -1370,10 +1371,10 @@ static markdown_core_incremental_result footnote_refresh(
     size_t i;
 
     if (dependent_count) {
-        clone_runs = (markdown_core_footnote_site_list *)mem->calloc(dependent_count, sizeof(*clone_runs));
-        clone_keys = (clone_key *)mem->calloc(dependent_count, sizeof(*clone_keys));
-        clone_emitted = (bool *)mem->calloc(dependent_count, sizeof(*clone_emitted));
-        runs = (unit_run *)mem->calloc(dependent_count, sizeof(*runs));
+        clone_runs = (markdown_core_footnote_site_list *)mem->calloc(mem, dependent_count, sizeof(*clone_runs));
+        clone_keys = (clone_key *)mem->calloc(mem, dependent_count, sizeof(*clone_keys));
+        clone_emitted = (bool *)mem->calloc(mem, dependent_count, sizeof(*clone_emitted));
+        runs = (unit_run *)mem->calloc(mem, dependent_count, sizeof(*runs));
         if (!clone_runs || !clone_keys || !clone_emitted || !runs) {
             goto done;
         }
@@ -1484,10 +1485,10 @@ static markdown_core_incremental_result footnote_refresh(
         churn_stash *stash = NULL;
         size_t stashed = 0;
         if (churn) {
-            stash = (churn_stash *)mem->calloc(churn, sizeof(*stash));
+            stash = (churn_stash *)mem->calloc(mem, churn, sizeof(*stash));
             if (!stash || !markdown_core_footnote_table_reserve(mem, &fn->records, churn)) {
                 if (stash) {
-                    mem->free(stash);
+                    mem->free(mem, stash);
                 }
                 goto done;
             }
@@ -1533,7 +1534,7 @@ static markdown_core_incremental_result footnote_refresh(
             }
         }
         if (stash) {
-            mem->free(stash);
+            mem->free(mem, stash);
         }
         (void)new_rev;
         (void)changes;
@@ -1590,16 +1591,16 @@ done:
         for (i = 0; i < dependent_count; i++) {
             markdown_core_footnote_site_list_release(mem, &clone_runs[i]);
         }
-        mem->free(clone_runs);
+        mem->free(mem, clone_runs);
     }
     if (clone_keys) {
-        mem->free(clone_keys);
+        mem->free(mem, clone_keys);
     }
     if (clone_emitted) {
-        mem->free(clone_emitted);
+        mem->free(mem, clone_emitted);
     }
     if (runs) {
-        mem->free(runs);
+        mem->free(mem, runs);
     }
     return result;
 }
@@ -1804,7 +1805,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             stale_count++;
         }
         if (stale_count) {
-            stale_ids = (uint64_t *)mem->calloc(stale_count, sizeof(*stale_ids));
+            stale_ids = (uint64_t *)mem->calloc(mem, stale_count, sizeof(*stale_ids));
             if (!stale_ids) {
                 goto failed;
             }
@@ -1831,7 +1832,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 }
             }
             if (upper) {
-                sentinel_lines = (int *)mem->calloc(upper, sizeof(*sentinel_lines));
+                sentinel_lines = (int *)mem->calloc(mem, upper, sizeof(*sentinel_lines));
                 if (!sentinel_lines) {
                     goto failed;
                 }
@@ -2014,7 +2015,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         if (clean_count > session->clean.capacity) {
             markdown_core_clean_child *grown =
                 (markdown_core_clean_child *)
-                    mem->realloc(session->clean.items, clean_count * sizeof(*session->clean.items));
+                    mem->realloc(mem, session->clean.items, clean_count * sizeof(*session->clean.items));
             if (!grown) {
                 goto failed;
             }
@@ -2097,7 +2098,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                     if (bubble_count == bubble_capacity) {
                         size_t grown_capacity = bubble_capacity ? bubble_capacity * 2 : 8;
                         bubble_ancestor *grown =
-                            (bubble_ancestor *)mem->realloc(bubble_nodes, grown_capacity * sizeof(*grown));
+                            (bubble_ancestor *)mem->realloc(mem, bubble_nodes, grown_capacity * sizeof(*grown));
                         if (!grown) {
                             staged_ok = false;
                             break;
@@ -2593,25 +2594,25 @@ done:
         markdown_core_node_free(holder); // any rebuilt unit not spliced in goes with it
     }
     if (dependents) {
-        mem->free(dependents);
+        mem->free(mem, dependents);
     }
     if (bubble_nodes) {
-        mem->free(bubble_nodes);
+        mem->free(mem, bubble_nodes);
     }
     if (sentinel_lines) {
-        mem->free(sentinel_lines);
+        mem->free(mem, sentinel_lines);
     }
     if (line_offsets.items) {
-        mem->free(line_offsets.items);
+        mem->free(mem, line_offsets.items);
     }
     if (new_defs.items) {
-        mem->free(new_defs.items);
+        mem->free(mem, new_defs.items);
     }
     if (old_defs.items) {
-        mem->free(old_defs.items);
+        mem->free(mem, old_defs.items);
     }
     if (stale_ids) {
-        mem->free(stale_ids);
+        mem->free(mem, stale_ids);
     }
     return result;
 }

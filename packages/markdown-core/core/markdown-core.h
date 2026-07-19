@@ -77,11 +77,12 @@ typedef struct markdown_core_extension markdown_core_extension;
 /** Defines the memory allocation functions to be used by Markdown Core
  * when parsing and allocating a document tree
  */
-typedef struct markdown_core_mem {
-    void *(*calloc)(size_t, size_t);
-    void *(*realloc)(void *, size_t);
-    void (*free)(void *);
-} markdown_core_mem;
+typedef struct markdown_core_mem markdown_core_mem;
+struct markdown_core_mem {
+    void *(*calloc)(markdown_core_mem *mem, size_t nmem, size_t size);
+    void *(*realloc)(markdown_core_mem *mem, void *ptr, size_t size);
+    void (*free)(markdown_core_mem *mem, void *ptr);
+};
 
 /** The default memory allocator; uses the system's calloc,
  * realloc and free.

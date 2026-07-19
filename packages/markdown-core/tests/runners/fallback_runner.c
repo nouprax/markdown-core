@@ -34,7 +34,8 @@ static int fb_block_slot_tables;
 static int fb_block_pointer_arrays;
 static int fb_block_all_callocs;
 
-static void *fb_calloc(size_t nmemb, size_t size) {
+static void *fb_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    (void)mem;
     if (fb_block_all_callocs) {
         fb_blocked_allocations++;
         return NULL;
@@ -50,9 +51,15 @@ static void *fb_calloc(size_t nmemb, size_t size) {
     return calloc(nmemb, size);
 }
 
-static void *fb_realloc(void *pointer, size_t size) { return realloc(pointer, size); }
+static void *fb_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    (void)mem;
+    return realloc(pointer, size);
+}
 
-static void fb_free(void *pointer) { free(pointer); }
+static void fb_free(markdown_core_mem *mem, void *pointer) {
+    (void)mem;
+    free(pointer);
+}
 
 static markdown_core_mem fb_failing_mem = {fb_calloc, fb_realloc, fb_free};
 
@@ -62,7 +69,8 @@ static unsigned long fb_sweep_count;
 static unsigned long fb_sweep_fail_at; /* 0 = count only */
 static int fb_sweep_fired;
 
-static void *fb_sweep_calloc(size_t nmemb, size_t size) {
+static void *fb_sweep_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    (void)mem;
     if (++fb_sweep_count == fb_sweep_fail_at) {
         fb_sweep_fired = 1;
         return NULL;
@@ -70,7 +78,8 @@ static void *fb_sweep_calloc(size_t nmemb, size_t size) {
     return calloc(nmemb, size);
 }
 
-static void *fb_sweep_realloc(void *pointer, size_t size) {
+static void *fb_sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    (void)mem;
     if (++fb_sweep_count == fb_sweep_fail_at) {
         fb_sweep_fired = 1;
         return NULL;
@@ -894,8 +903,8 @@ static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) 
 /* One scripted run: a failed step is retried once (the injector fires at
  * most one failure per run). `stage_dumps[i]` receives the dump after stage
  * i's commit; failed commits are checked against the last committed dump. */
-static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t *stage_lengths) {
-    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, NULL);
+static int fb_session_run(markdown_core_mem *mem, bool pooled, uint8_t **stage_dumps, size_t *stage_lengths) {
+    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, pooled, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;
@@ -992,7 +1001,7 @@ done:
     return result;
 }
 
-static int case_session_oom_sweep(void) {
+static int fb_session_sweep(bool pooled) {
     uint8_t *control_dumps[3] = {NULL, NULL, NULL};
     size_t control_lengths[3] = {0, 0, 0};
     uint8_t *counted_dumps[3] = {NULL, NULL, NULL};
@@ -1001,14 +1010,14 @@ static int case_session_oom_sweep(void) {
     unsigned long k;
     int result = -1;
 
-    if (fb_session_run(markdown_core_mem_default(), control_dumps, control_lengths) != 0) {
+    if (fb_session_run(markdown_core_mem_default(), pooled, control_dumps, control_lengths) != 0) {
         fputs("control session run failed\n", stderr);
         goto done;
     }
 
     fb_sweep_count = 0;
     fb_sweep_fail_at = 0;
-    if (fb_session_run(&fb_sweep_mem, counted_dumps, counted_lengths) != 0 ||
+    if (fb_session_run(&fb_sweep_mem, pooled, counted_dumps, counted_lengths) != 0 ||
         counted_lengths[2] != control_lengths[2] ||
         memcmp(counted_dumps[2], control_dumps[2], control_lengths[2]) != 0) {
         fputs("counting session run diverged from control\n", stderr);
@@ -1027,7 +1036,7 @@ static int case_session_oom_sweep(void) {
         fb_sweep_count = 0;
         fb_sweep_fail_at = k;
         fb_sweep_fired = 0;
-        run = fb_session_run(&fb_sweep_mem, final_dumps, final_lengths);
+        run = fb_session_run(&fb_sweep_mem, pooled, final_dumps, final_lengths);
         if (run < 0) {
             fprintf(stderr, "allocation %lu / %lu: session script broke\n", k, total);
             free(final_dumps[0]);
@@ -1058,6 +1067,14 @@ done:
     free(counted_dumps[2]);
     return result;
 }
+
+static int case_session_oom_sweep(void) { return fb_session_sweep(false); }
+
+/* The pooled sweep drives the same script through a session arena over the
+ * injected allocator, so every base refill — slab, passthrough block, the
+ * arena itself — fails in turn; transactionality and retry convergence must
+ * hold exactly as they do against direct allocation. */
+static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true); }
 
 /* One same-length in-place edit for a restart-locality scenario. */
 typedef struct {
@@ -1237,6 +1254,7 @@ static const fb_case_entry FB_CASES[] = {
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
     {"session_oom_sweep", case_session_oom_sweep},
+    {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
     {"restart_locality_counters", case_restart_locality_counters},
 };
 

@@ -107,7 +107,7 @@ static bufsize_t subject_find_special_char(subject *subj, int options);
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *
 make_literal(subject *subj, markdown_core_node_type t, int start_column, int end_column, markdown_core_chunk s) {
-    markdown_core_node *e = (markdown_core_node *)subj->mem->calloc(1, sizeof(*e));
+    markdown_core_node *e = (markdown_core_node *)subj->mem->calloc(subj->mem, 1, sizeof(*e));
     if (!e) {
         /* Frees an owned literal; borrowed chunks only reset fields. */
         markdown_core_chunk_free(subj->mem, &s);
@@ -126,7 +126,7 @@ make_literal(subject *subj, markdown_core_node_type t, int start_column, int end
 
 // Create an inline with no value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_simple(markdown_core_mem *mem, markdown_core_node_type t) {
-    markdown_core_node *e = (markdown_core_node *)mem->calloc(1, sizeof(*e));
+    markdown_core_node *e = (markdown_core_node *)mem->calloc(mem, 1, sizeof(*e));
     if (!e) {
         return NULL;
     }
@@ -185,7 +185,7 @@ static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) 
     bufsize_t len = src->len;
 
     c.len = len;
-    c.data = (unsigned char *)subj->mem->calloc((size_t)len + 1, 1);
+    c.data = (unsigned char *)subj->mem->calloc(subj->mem, (size_t)len + 1, 1);
     if (!c.data) {
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
         subj->oom = 1;
@@ -579,7 +579,7 @@ static void remove_delimiter(subject *subj, delimiter *delim) {
     if (delim->previous != NULL) {
         delim->previous->next = delim->next;
     }
-    subj->mem->free(delim);
+    subj->mem->free(subj->mem, delim);
 }
 
 static void pop_bracket(subject *subj) {
@@ -589,7 +589,7 @@ static void pop_bracket(subject *subj) {
     }
     b = subj->last_bracket;
     subj->last_bracket = subj->last_bracket->previous;
-    subj->mem->free(b);
+    subj->mem->free(subj->mem, b);
 }
 
 static void
@@ -600,7 +600,7 @@ push_delimiter(subject *subj, unsigned char c, bool can_open, bool can_close, ma
         subj->oom = 1;
         return;
     }
-    delim = (delimiter *)subj->mem->calloc(1, sizeof(delimiter));
+    delim = (delimiter *)subj->mem->calloc(subj->mem, 1, sizeof(delimiter));
     if (!delim) {
         /* The literal text node stays in the tree; only its emphasis
          * potential is lost, which the sticky flag reports. */
@@ -622,7 +622,7 @@ push_delimiter(subject *subj, unsigned char c, bool can_open, bool can_close, ma
 }
 
 static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text) {
-    bracket *b = (bracket *)subj->mem->calloc(1, sizeof(bracket));
+    bracket *b = (bracket *)subj->mem->calloc(subj->mem, 1, sizeof(bracket));
     if (!b) {
         subj->oom = 1;
         return;
@@ -940,7 +940,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
             }
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)subj->mem->calloc((size_t)output_len + 1, 1);
+                unsigned char *output = (unsigned char *)subj->mem->calloc(subj->mem, (size_t)output_len + 1, 1);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
                     memset(output, '\\', (size_t)output_len);

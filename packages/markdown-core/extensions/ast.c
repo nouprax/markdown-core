@@ -95,7 +95,9 @@ markdown_core_document *markdown_core_document_parse(
         set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
         return NULL;
     }
-    session = markdown_core_session_open(options, error);
+    // Unpooled: the detached tree must outlive the session, and Document.parse
+    // keeps its v1 memory profile (no arena rides along with the document).
+    session = markdown_core_session_open_with_mem(options, markdown_core_mem_default(), false, error);
     if (!session) {
         return NULL;
     }

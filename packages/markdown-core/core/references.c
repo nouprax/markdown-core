@@ -8,10 +8,10 @@ static void reference_free(markdown_core_map *map, markdown_core_map_entry *_ref
     markdown_core_reference *ref = (markdown_core_reference *)_ref;
     markdown_core_mem *mem = map->mem;
     if (ref != NULL) {
-        mem->free(ref->entry.label);
+        mem->free(mem, ref->entry.label);
         markdown_core_chunk_free(mem, &ref->url);
         markdown_core_chunk_free(mem, &ref->title);
-        mem->free(ref);
+        mem->free(mem, ref);
     }
 }
 
@@ -41,10 +41,10 @@ void markdown_core_reference_create(
         return;
     }
 
-    ref = (markdown_core_reference *)map->mem->calloc(1, sizeof(*ref));
+    ref = (markdown_core_reference *)map->mem->calloc(map->mem, 1, sizeof(*ref));
     if (!ref) {
         map->oom = 1;
-        map->mem->free(reflabel);
+        map->mem->free(map->mem, reflabel);
         return;
     }
     ref->entry.label = reflabel;

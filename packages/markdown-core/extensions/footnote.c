@@ -26,7 +26,7 @@ typedef struct {
 static bool node_list_push(markdown_core_mem *mem, node_list *list, markdown_core_node *node) {
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 16;
-        markdown_core_node **grown = (markdown_core_node **)mem->realloc(list->items, capacity * sizeof(*grown));
+        markdown_core_node **grown = (markdown_core_node **)mem->realloc(mem, list->items, capacity * sizeof(*grown));
         if (!grown) {
             return false;
         }
@@ -45,7 +45,7 @@ bool markdown_core_footnote_site_push(
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 16;
         markdown_core_footnote_site *grown =
-            (markdown_core_footnote_site *)mem->realloc(list->items, capacity * sizeof(*grown));
+            (markdown_core_footnote_site *)mem->realloc(mem, list->items, capacity * sizeof(*grown));
         if (!grown) {
             return false;
         }
@@ -58,7 +58,7 @@ bool markdown_core_footnote_site_push(
 
 void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_core_footnote_site_list *list) {
     if (list->items) {
-        mem->free(list->items);
+        mem->free(mem, list->items);
     }
     memset(list, 0, sizeof(*list));
 }
@@ -130,10 +130,10 @@ bool markdown_core_footnote_collect_sites(
 void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core_footnote_labels *labels) {
     size_t i;
     for (i = 0; i < labels->count; i++) {
-        mem->free(labels->normalized[i]);
+        mem->free(mem, labels->normalized[i]);
     }
     if (labels->normalized) {
-        mem->free(labels->normalized);
+        mem->free(mem, labels->normalized);
     }
     markdown_core_key_index_free(&labels->by_label); // slots-NULL safe
     memset(labels, 0, sizeof(*labels));
@@ -160,21 +160,21 @@ markdown_core_session_footnote_label(markdown_core_session *session, const markd
     // A failed init leaves `mem` set with no slots; probe the slots so the
     // next call retries instead of walking a zero-capacity table.
     if (labels->by_label.slots == NULL && !markdown_core_key_index_init(&labels->by_label, mem, 16)) {
-        mem->free(normalized);
+        mem->free(mem, normalized);
         *failed = true;
         return SIZE_MAX;
     }
     existing = markdown_core_key_index_lookup(&labels->by_label, normalized, normalized_len);
     if (existing) {
-        mem->free(normalized);
+        mem->free(mem, normalized);
         return (size_t)((uintptr_t)existing - 1);
     }
 
     if (labels->count == labels->capacity) {
         size_t capacity = labels->capacity ? labels->capacity * 2 : 16;
-        unsigned char **grown = (unsigned char **)mem->realloc(labels->normalized, capacity * sizeof(*grown));
+        unsigned char **grown = (unsigned char **)mem->realloc(mem, labels->normalized, capacity * sizeof(*grown));
         if (!grown) {
-            mem->free(normalized);
+            mem->free(mem, normalized);
             *failed = true;
             return SIZE_MAX;
         }
@@ -189,7 +189,7 @@ markdown_core_session_footnote_label(markdown_core_session *session, const markd
             0,
             NULL
         )) {
-        mem->free(normalized);
+        mem->free(mem, normalized);
         *failed = true;
         return SIZE_MAX;
     }
@@ -289,10 +289,10 @@ void markdown_core_footnote_table_remove(markdown_core_footnote_table *table, ma
 
 static void footnote_table_release(markdown_core_mem *mem, markdown_core_footnote_table *table) {
     if (table->keys) {
-        mem->free(table->keys);
+        mem->free(mem, table->keys);
     }
     if (table->records) {
-        mem->free(table->records);
+        mem->free(mem, table->records);
     }
     memset(table, 0, sizeof(*table));
 }
@@ -311,8 +311,8 @@ bool markdown_core_footnote_table_reserve(markdown_core_mem *mem, markdown_core_
     while (capacity < needed * 2) {
         capacity *= 2;
     }
-    grown.keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(*grown.keys));
-    grown.records = (markdown_core_footnote_record *)mem->calloc(capacity, sizeof(*grown.records));
+    grown.keys = (markdown_core_node_id *)mem->calloc(mem, capacity, sizeof(*grown.keys));
+    grown.records = (markdown_core_footnote_record *)mem->calloc(mem, capacity, sizeof(*grown.records));
     if (!grown.keys || !grown.records) {
         footnote_table_release(mem, &grown);
         return false;
@@ -344,13 +344,13 @@ void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_
     markdown_core_footnote_site_list_release(mem, &index->refs);
     footnote_table_release(mem, &index->records);
     if (index->in_use) {
-        mem->free(index->in_use);
+        mem->free(mem, index->in_use);
     }
     if (index->references) {
-        mem->free(index->references);
+        mem->free(mem, index->references);
     }
     if (index->reference_offsets) {
-        mem->free(index->reference_offsets);
+        mem->free(mem, index->reference_offsets);
     }
     memset(index, 0, sizeof(*index));
 }
@@ -393,7 +393,7 @@ bool markdown_core_footnote_index_build_sites(
             label_bound = slot + 1;
         }
     }
-    labels = (label_scratch *)mem->calloc(label_bound ? label_bound : 1, sizeof(*labels));
+    labels = (label_scratch *)mem->calloc(mem, label_bound ? label_bound : 1, sizeof(*labels));
     if (!labels) {
         goto done;
     }
@@ -413,7 +413,7 @@ bool markdown_core_footnote_index_build_sites(
 
     // First-use numbering over the resolved labels, in reference document
     // order.
-    index->in_use = (markdown_core_node_id *)mem->calloc(label_bound ? label_bound : 1, sizeof(*index->in_use));
+    index->in_use = (markdown_core_node_id *)mem->calloc(mem, label_bound ? label_bound : 1, sizeof(*index->in_use));
     if (!index->in_use) {
         goto done;
     }
@@ -427,8 +427,8 @@ bool markdown_core_footnote_index_build_sites(
     }
 
     // Back-reference targets: reference ids grouped by first-use number.
-    index->reference_offsets = (size_t *)mem->calloc(index->in_use_count + 1, sizeof(*index->reference_offsets));
-    cursors = (size_t *)mem->calloc(index->in_use_count + 1, sizeof(*cursors));
+    index->reference_offsets = (size_t *)mem->calloc(mem, index->in_use_count + 1, sizeof(*index->reference_offsets));
+    cursors = (size_t *)mem->calloc(mem, index->in_use_count + 1, sizeof(*cursors));
     if (!index->reference_offsets || !cursors) {
         goto done;
     }
@@ -441,6 +441,7 @@ bool markdown_core_footnote_index_build_sites(
         index->reference_offsets[i] += index->reference_offsets[i - 1];
     }
     index->references = (markdown_core_node_id *)mem->calloc(
+        mem,
         index->reference_offsets[index->in_use_count] ? index->reference_offsets[index->in_use_count] : 1,
         sizeof(*index->references)
     );
@@ -502,10 +503,10 @@ bool markdown_core_footnote_index_build_sites(
 
 done:
     if (labels) {
-        mem->free(labels);
+        mem->free(mem, labels);
     }
     if (cursors) {
-        mem->free(cursors);
+        mem->free(mem, cursors);
     }
     if (!ok) {
         markdown_core_footnote_index_release(mem, index);
@@ -620,10 +621,10 @@ bool markdown_core_footnote_index_diff(
 
 done:
     if (changed.items) {
-        mem->free(changed.items);
+        mem->free(mem, changed.items);
     }
     if (bubbled.items) {
-        mem->free(bubbled.items);
+        mem->free(mem, bubbled.items);
     }
     return ok;
 }

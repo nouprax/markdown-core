@@ -359,8 +359,16 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
     return 0;
 }
 
+/* Session repeats take the minimum, not the median: contention on shared CI
+ * runners only ever adds time, and it inflates the large session (the
+ * cache- and bandwidth-heavy working set) far more than the small one,
+ * which skews the ratio the flatness bound is about. The minimum estimates
+ * the uncontended per-commit cost on both sides of that ratio. Five windows
+ * give the minimum a real chance to see a quiet slice on a noisy machine. */
+#define CC_SESSION_REPEATS 5
+
 static int cc_session_measure(size_t size, int mode, double *seconds_per_commit) {
-    double samples[SCALING_REPEATS];
+    double floor_seconds = 0.0;
     size_t stanza_count = 0;
     size_t op_counter = 0;
     markdown_core_session *session = cc_session_build(size, mode, &stanza_count);
@@ -369,10 +377,11 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
     if (!session) {
         return -1;
     }
-    for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
+    for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
         uint64_t started = ts_monotonic_ns();
         uint64_t elapsed;
         size_t commits = 0;
+        double sample;
         do {
             if (cc_session_block(session, mode, stanza_count, &op_counter) != 0) {
                 markdown_core_session_free(session);
@@ -381,15 +390,13 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
             commits += CC_SESSION_OPS;
             elapsed = ts_monotonic_ns() - started;
         } while (elapsed < MIN_SAMPLE_NS);
-        samples[repeat] = (double)elapsed / (1e9 * (double)commits);
+        sample = (double)elapsed / (1e9 * (double)commits);
+        if (repeat == 0 || sample < floor_seconds) {
+            floor_seconds = sample;
+        }
     }
     markdown_core_session_free(session);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds_per_commit = a + b + c - high - low;
-    }
+    *seconds_per_commit = floor_seconds;
     return 0;
 }
 

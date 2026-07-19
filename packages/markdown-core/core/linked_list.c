@@ -7,7 +7,7 @@
  * afterwards (see markdown_core_parser_attach_extension). */
 markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data) {
     markdown_core_llist *tmp;
-    markdown_core_llist *new_node = (markdown_core_llist *)mem->calloc(1, sizeof(markdown_core_llist));
+    markdown_core_llist *new_node = (markdown_core_llist *)mem->calloc(mem, 1, sizeof(markdown_core_llist));
 
     if (!new_node) {
         return head;
@@ -42,7 +42,7 @@ void markdown_core_llist_free_full(
 
         prev = tmp;
         tmp = tmp->next;
-        mem->free(prev);
+        mem->free(mem, prev);
     }
 }
 

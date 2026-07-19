@@ -11,7 +11,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
         return NULL;
     }
     markdown_core_mem *mem = root->content.mem;
-    markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(1, sizeof(markdown_core_iter));
+    markdown_core_iter *iter = (markdown_core_iter *)mem->calloc(mem, 1, sizeof(markdown_core_iter));
     if (!iter) {
         return NULL;
     }
@@ -24,7 +24,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     return iter;
 }
 
-void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter); }
+void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter->mem, iter); }
 
 static bool S_is_leaf(markdown_core_node *node) {
     switch (node->type) {

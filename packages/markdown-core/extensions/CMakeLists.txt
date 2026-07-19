@@ -4,6 +4,7 @@ set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
     ast.c
     session.c
+    arena.c
     adopt.c
     incremental.c
     lookups.c

@@ -134,7 +134,7 @@ static markdown_core_node *
 make_block(markdown_core_mem *mem, markdown_core_node_type tag, int start_line, int start_column) {
     markdown_core_node *e;
 
-    e = (markdown_core_node *)mem->calloc(1, sizeof(*e));
+    e = (markdown_core_node *)mem->calloc(mem, 1, sizeof(*e));
     if (!e) {
         return NULL;
     }
@@ -157,7 +157,7 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
 /* Appends and reports failure directly instead of relying on llist_append's
  * silent-drop behavior. */
 static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **head, void *data) {
-    markdown_core_llist *node = (markdown_core_llist *)mem->calloc(1, sizeof(*node));
+    markdown_core_llist *node = (markdown_core_llist *)mem->calloc(mem, 1, sizeof(*node));
     markdown_core_llist *tail;
     if (!node) {
         return 0;
@@ -275,7 +275,7 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
 }
 
 markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem) {
-    markdown_core_parser *parser = (markdown_core_parser *)mem->calloc(1, sizeof(markdown_core_parser));
+    markdown_core_parser *parser = (markdown_core_parser *)mem->calloc(mem, 1, sizeof(markdown_core_parser));
     if (!parser) {
         return NULL;
     }
@@ -296,7 +296,7 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&parser->linebuf);
     markdown_core_llist_free(parser->mem, parser->extensions);
     markdown_core_llist_free(parser->mem, parser->inline_extensions);
-    mem->free(parser);
+    mem->free(mem, parser);
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b);
@@ -741,7 +741,7 @@ static bufsize_t parse_list_marker(
             }
         }
 
-        data = (markdown_core_list *)mem->calloc(1, sizeof(*data));
+        data = (markdown_core_list *)mem->calloc(mem, 1, sizeof(*data));
         if (!data) {
             /* Allocation loss, not an invalid marker. */
             parser->oom = true;
@@ -786,7 +786,7 @@ static bufsize_t parse_list_marker(
                 }
             }
 
-            data = (markdown_core_list *)mem->calloc(1, sizeof(*data));
+            data = (markdown_core_list *)mem->calloc(mem, 1, sizeof(*data));
             if (!data) {
                 parser->oom = true;
                 return 0;
@@ -1512,7 +1512,7 @@ static void open_new_blocks(
             if (cont_type != MARKDOWN_CORE_NODE_LIST || !lists_match(&((*container)->as.list), data)) {
                 *container = add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->first_nonspace + 1);
                 if (!*container) {
-                    parser->mem->free(data);
+                    parser->mem->free(parser->mem, data);
                     return;
                 }
 
@@ -1522,11 +1522,11 @@ static void open_new_blocks(
             // add the list item
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, parser->first_nonspace + 1);
             if (!*container) {
-                parser->mem->free(data);
+                parser->mem->free(parser->mem, data);
                 return;
             }
             memcpy(&((*container)->as.list), data, sizeof(*data));
-            parser->mem->free(data);
+            parser->mem->free(parser->mem, data);
         } else if (indented && !maybe_lazy && !parser->blank) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);

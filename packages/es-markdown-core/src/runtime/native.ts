@@ -87,7 +87,13 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             throw new Error(`Markdown Core WASM exited with status ${code}`);
         }
     };
-    const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env: {} })).instance;
+    const env = {
+        // Growth support: nothing to refresh — every DataView / Uint8Array
+        // over wasm memory is created at its use site, never cached across
+        // calls, so a replaced buffer is picked up automatically.
+        emscripten_notify_memory_growth: (): void => {}
+    };
+    const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
     memoryHolder.memory = instance.exports["memory"] as WebAssembly.Memory;
     return instance;
 }

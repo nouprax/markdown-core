@@ -2,17 +2,41 @@
 #define MARKDOWN_CORE_SESSION_INTERNAL_H
 
 #include "../include/markdown_core.h"
+#include "arena.h"
 #include "ast_internal.h"
 
 #include <map.h>
 #include <markdown-core.h>
 #include <text.h>
 
+// AddressSanitizer detection: session pooling is bypassed under ASan so the
+// sanitizer keeps seeing individual allocations (see session_open_with_mem).
+#ifndef MARKDOWN_CORE_ASAN
+#if defined(__SANITIZE_ADDRESS__)
+#define MARKDOWN_CORE_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define MARKDOWN_CORE_ASAN 1
+#else
+#define MARKDOWN_CORE_ASAN 0
+#endif
+#else
+#define MARKDOWN_CORE_ASAN 0
+#endif
+#endif
+
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
-// session-unique node ids (0 marks an empty slot, ids start at 1).
+// session-unique node ids (0 marks an empty slot, ids start at 1). Id and
+// node share a slot so every probe costs one cache line, not two — the
+// table dwarfs the cache at document scale and probes dominate the
+// commit's table maintenance.
 typedef struct {
-    markdown_core_node_id *keys;
-    markdown_core_node **values;
+    markdown_core_node_id id; // 0 marks an empty slot
+    markdown_core_node *node;
+} markdown_core_id_slot;
+
+typedef struct {
+    markdown_core_id_slot *slots;
     size_t capacity; // power of two, 0 when unallocated
     size_t count;
 } markdown_core_id_table;
@@ -230,13 +254,23 @@ struct markdown_core_session {
     // reference map, extension attachments) is commit-invariant, so
     // commits skip rebuilding it. NULL when no healthy parser came back.
     markdown_core_parser *warm_parser;
+    // When pooled, every session-owned allocation flows through this arena
+    // (session->mem is its allocator face) and teardown is a wholesale
+    // release. NULL for unpooled sessions: the one-shot parse (its detached
+    // tree must outlive the session and Document.parse keeps its v1 memory
+    // profile) and the ASan suites.
+    markdown_core_arena *arena;
 };
 
-/** Internal constructor used by allocation-injection tests; the public
- * markdown_core_session_open uses the default allocator. */
+/** Internal constructor used by allocation-injection tests and the one-shot
+ * parse; the public markdown_core_session_open uses the default allocator
+ * with pooling. `pooled` routes every session-owned allocation through a
+ * session arena over `mem` — pass false when detached nodes must outlive
+ * the session or when injection needs to see individual allocations. */
 markdown_core_session *markdown_core_session_open_with_mem(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
+    bool pooled,
     markdown_core_error **error
 );
 

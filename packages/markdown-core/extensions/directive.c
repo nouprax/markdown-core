@@ -207,7 +207,7 @@ set_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsign
 
 static int
 replace_chunk_bytes(markdown_core_mem *mem, markdown_core_chunk *chunk, const unsigned char *data, bufsize_t len) {
-    unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
+    unsigned char *copy = (unsigned char *)mem->calloc(mem, (size_t)len + 1, 1);
     if (!copy) {
         return 0;
     }
@@ -226,7 +226,7 @@ static void free_attribute_list(markdown_core_mem *mem, directive_attribute *att
         directive_attribute *next = attr->next;
         markdown_core_chunk_free(mem, &attr->name);
         markdown_core_chunk_free(mem, &attr->value);
-        mem->free(attr);
+        mem->free(mem, attr);
         attr = next;
     }
 }
@@ -259,7 +259,7 @@ static int append_attribute(
     if (!attribute_name_is_valid(name, name_len)) {
         return 0;
     }
-    attr = (directive_attribute *)mem->calloc(1, sizeof(*attr));
+    attr = (directive_attribute *)mem->calloc(mem, 1, sizeof(*attr));
     if (!attr) {
         if (oom) {
             *oom = 1;
@@ -306,7 +306,7 @@ static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directi
     if (count < 2) {
         return 1;
     }
-    sorted = (directive_attribute **)mem->calloc(count, sizeof(*sorted));
+    sorted = (directive_attribute **)mem->calloc(mem, count, sizeof(*sorted));
     if (!sorted) {
         return 0;
     }
@@ -331,7 +331,7 @@ static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directi
         }
         i = end;
     }
-    mem->free(sorted);
+    mem->free(mem, sorted);
     return 1;
 }
 
@@ -688,14 +688,14 @@ static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
     }
 
     len = (bufsize_t)raw_len;
-    copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
+    copy = (unsigned char *)mem->calloc(mem, (size_t)len + 1, 1);
     if (!copy) {
         return 0;
     }
 
     memcpy(copy, name, (size_t)len);
     valid = scan_name(copy, len, 0, &name_start, &name_len) && name_start == 0 && name_len == len;
-    mem->free(copy);
+    mem->free(mem, copy);
     return valid;
 }
 
@@ -752,7 +752,7 @@ directive_opaque_alloc(markdown_core_extension *extension, markdown_core_mem *me
     /* A NULL payload is tolerated: every accessor goes through get_directive
      * and treats the node as attribute-less. */
     if (is_directive_node(node)) {
-        node->as.opaque = mem->calloc(1, sizeof(node_directive));
+        node->as.opaque = mem->calloc(mem, 1, sizeof(node_directive));
     }
 }
 
@@ -766,7 +766,7 @@ directive_opaque_free(markdown_core_extension *extension, markdown_core_mem *mem
     markdown_core_chunk_free(mem, &directive->name);
     free_attribute_list(mem, directive->attributes);
     markdown_core_chunk_free(mem, &directive->attributes_json);
-    mem->free(directive);
+    mem->free(mem, directive);
 }
 
 static int is_attr_name_char(unsigned char c) {
@@ -1355,7 +1355,7 @@ static markdown_core_node *open_directive_block(
     }
 
     markdown_core_node_set_extension(node, extension);
-    node->as.opaque = parser->mem->calloc(1, sizeof(node_directive));
+    node->as.opaque = parser->mem->calloc(parser->mem, 1, sizeof(node_directive));
     if (!node->as.opaque) {
         parser->oom = true;
         markdown_core_node_free(node);

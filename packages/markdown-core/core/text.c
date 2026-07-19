@@ -11,7 +11,7 @@ void markdown_core_text_init(markdown_core_text *text, markdown_core_mem *mem) {
 
 void markdown_core_text_release(markdown_core_text *text) {
     if (text->data) {
-        text->mem->free(text->data);
+        text->mem->free(text->mem, text->data);
     }
     text->data = NULL;
     text->length = 0;
@@ -48,7 +48,7 @@ bool markdown_core_text_edit(
             }
             new_alloc *= 2;
         }
-        unsigned char *grown = (unsigned char *)text->mem->realloc(text->data, new_alloc);
+        unsigned char *grown = (unsigned char *)text->mem->realloc(text->mem, text->data, new_alloc);
         if (!grown) {
             return false;
         }

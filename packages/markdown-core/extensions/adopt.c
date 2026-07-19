@@ -133,7 +133,7 @@ typedef struct adopt_stack {
 static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
     if (stack->length == stack->capacity) {
         size_t capacity = stack->capacity ? stack->capacity * 2 : 256;
-        adopt_frame *grown = (adopt_frame *)stack->mem->realloc(stack->frames, capacity * sizeof(*grown));
+        adopt_frame *grown = (adopt_frame *)stack->mem->realloc(stack->mem, stack->frames, capacity * sizeof(*grown));
         if (!grown) {
             ctx->failed = true;
             return false;
@@ -255,7 +255,7 @@ static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_co
     }
 
     if (stack.frames) {
-        ctx->session->mem->free(stack.frames);
+        ctx->session->mem->free(ctx->session->mem, stack.frames);
     }
 }
 
