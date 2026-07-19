@@ -36,7 +36,7 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
-.package(url: "https://github.com/nouprax/markdown-core", from: "1.0.3")
+.package(url: "https://github.com/nouprax/markdown-core", from: "2.0.0")
 ```
 
 ```swift
@@ -60,7 +60,7 @@ Use the root Maven coordinate from a Kotlin Multiplatform source set:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
+            implementation("com.nouprax:kotlin-markdown-core:2.0.0")
         }
     }
 }
@@ -129,6 +129,50 @@ The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
+
+## Incremental sessions
+
+A session owns one Markdown text and its living AST. Apply byte-range edits
+(appending a streamed token is an edit at end-of-text), then commit: the
+engine reparses only the stale region around the edits, at a per-commit cost
+that is independent of document size. Every commit produces an immutable
+document snapshot that structurally shares unchanged nodes with the previous
+snapshot, plus a delta — the exact set of stable node ids the commit added,
+removed, or changed. After any sequence of commits the document is
+byte-for-byte dump-equal to a from-scratch parse of the same text.
+
+The session type is `MarkupSession` in Swift, Kotlin, and ECMAScript, and
+`markdown_core_session_*` in C:
+
+```swift
+let session = try MarkupSession()
+try session.append("# Hello\n")
+var commit = try session.commit()
+try session.append("world ")
+try session.append("again\n")
+commit = try session.commit()          // one incremental reparse
+print(commit.delta.changed)            // stable MarkupID values
+```
+
+```js
+const session = new MarkupSession();
+session.append("# Hello\nworld\n");
+let { document, delta } = session.commit();
+session.replace(2, 7, "Goodbye");      // byte range in the stored text
+({ document, delta } = session.commit());
+session.close();
+```
+
+Node identity is stable across commits: a `MarkupID` keeps addressing the
+same node until that node is removed, and `node(id)` resolves ids against
+the latest snapshot. Sessions also answer footnote queries (numbering,
+resolution, first-use order, back-references) directly. Any number of
+sessions may run concurrently; there is no shared or global parser state.
+One-shot `Document.parse` is unchanged and keeps its v1 memory profile.
+
+The language-neutral contract — identity and ordering rules, delta
+semantics, and the incremental cost model — is specified in
+[`docs/specs/sessions-and-deltas.md`](docs/specs/sessions-and-deltas.md).
 
 ## Repository layout
 
