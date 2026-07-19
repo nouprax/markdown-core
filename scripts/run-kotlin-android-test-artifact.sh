@@ -62,10 +62,20 @@ cleanup() {
     timeout 10s "$adb" -s "$serial" shell getprop >"$diagnostic_dir/getprop.txt" 2>&1
     timeout 10s "$adb" -s "$serial" emu kill >/dev/null 2>&1
     if [ -n "${emulator_pid:-}" ]; then
-        if kill -0 "$emulator_pid" 2>/dev/null; then
-            kill "$emulator_pid" 2>/dev/null
-        fi
-        wait "$emulator_pid" 2>/dev/null
+        # A wedged qemu can survive both the console kill and SIGTERM (the
+        # netsim/bluetooth threads are known to hang shutdown), and an
+        # unbounded `wait` here once outlived a fully green test run until
+        # the job timeout killed everything. Escalate on a deadline and
+        # never block on reaping — the runner sweeps stragglers after the
+        # step.
+        kill "$emulator_pid" 2>/dev/null
+        for _ in $(seq 1 10); do
+            if ! kill -0 "$emulator_pid" 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        kill -9 "$emulator_pid" 2>/dev/null
     fi
     rm -rf "$ANDROID_AVD_HOME/$avd_name.avd" "$ANDROID_AVD_HOME/$avd_name.ini"
 }
@@ -140,7 +150,7 @@ instrumentation_output="$diagnostic_dir/instrumentation-${suite}.txt"
 # `am instrument -w` indefinitely, which the caller's fresh-AVD retry can
 # only absorb as a failure, never as a hang riding out the job timeout.
 # The suites finish in well under two minutes on a healthy emulator.
-timeout 480s "$adb" -s "$serial" shell am instrument -w -r \
+timeout 360s "$adb" -s "$serial" shell am instrument -w -r \
     "${runner_arguments[@]}" \
     com.nouprax.markdown.core.test/androidx.test.runner.AndroidJUnitRunner \
     | tee "$instrumentation_output"

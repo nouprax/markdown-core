@@ -594,7 +594,10 @@ jobs:
         name: Test - Kotlin / Android · ${{ matrix.label }}
         needs: build-tests-ready
         runs-on: ubuntu-24.04
-        timeout-minutes: 20
+        # Two full attempts must fit: each is bounded by three minutes of adb
+        # wait, six of boot, and six of instrumentation, so a first-attempt
+        # hang still leaves the fresh-AVD retry room to finish.
+        timeout-minutes: 30
         strategy:
             fail-fast: false
             matrix:
