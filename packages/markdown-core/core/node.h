@@ -84,6 +84,10 @@ enum markdown_core_node__internal_flags {
     // — those all attach to a block that was still open, which this flag
     // rules out.
     MARKDOWN_CORE_NODE__CLEAN_START = (1 << 15),
+
+    // The restart-anchor pair: every path that grants, transfers, or strips
+    // anchor-hood moves both bits together.
+    MARKDOWN_CORE_NODE__CLEAN_ANCHOR = MARKDOWN_CORE_NODE__CLEAN_START | MARKDOWN_CORE_NODE__CLEAN_START_SEALING,
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

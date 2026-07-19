@@ -1007,7 +1007,10 @@ static markdown_core_node *clone_unit_shell(markdown_core_session *session, mark
     clone->end_line = scope.end.line;
     clone->end_column = unit->end_column;
     clone->internal_offset = unit->internal_offset;
-    clone->flags |= unit->flags & MARKDOWN_CORE_NODE__CLEAN_START;
+    // Both restart-anchor bits: a sealing anchor rebuilt as a dependent must
+    // keep its shape-conditional qualifier, or restart planning would trust
+    // the anchor after an edit reshapes its line into a continuation.
+    clone->flags |= unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     if (unit->type == MARKDOWN_CORE_NODE_HEADING) {
         clone->as.heading = unit->as.heading;
     }

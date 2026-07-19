@@ -1746,8 +1746,7 @@ finished:
 static markdown_core_node *
 S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
-    markdown_core_node_internal_flags clean_start =
-        unit->flags & (MARKDOWN_CORE_NODE__CLEAN_START | MARKDOWN_CORE_NODE__CLEAN_START_SEALING);
+    markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
