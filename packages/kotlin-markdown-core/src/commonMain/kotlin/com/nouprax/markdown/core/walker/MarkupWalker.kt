@@ -8,7 +8,7 @@ public enum class WalkEvent {
 public object MarkupWalker {
     public fun walk(
         document: Document,
-        visitor: Visitor<Unit>,
+        visitor: MarkupVisitor<Unit>,
     ) {
         walk(document) { event, node, _ ->
             if (event == WalkEvent.ENTERING) {

@@ -48,7 +48,7 @@ Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
 `children` counts direct typed descendants. `TableRow` and `TableCell` are
-`Markup` kinds, produce Visitor/MarkupWalker callbacks, and own their descendants
+`Markup` kinds, produce MarkupVisitor/MarkupWalker callbacks, and own their descendants
 through `cells` and `content` respectively.
 
 The dump deliberately carries no property or array-index edge labels. Parent

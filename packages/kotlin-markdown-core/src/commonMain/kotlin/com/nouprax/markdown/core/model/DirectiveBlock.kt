@@ -9,7 +9,7 @@ public class DirectiveBlock internal constructor(
     public val label: kotlin.collections.List<Markup>?,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

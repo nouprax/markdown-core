@@ -49,7 +49,7 @@ private data class DumpRecord(
     }
 }
 
-private class DumpVisitor : Visitor<DumpRecord> {
+private class DumpVisitor : MarkupVisitor<DumpRecord> {
     override fun visit(node: Document): DumpRecord = record("Document", children = node.content.size)
 
     override fun visit(node: BlockQuote): DumpRecord = record("BlockQuote", children = node.content.size)

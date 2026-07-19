@@ -1,6 +1,6 @@
 package com.nouprax.markdown.core
 
-public interface Visitor<Result> {
+public interface MarkupVisitor<Result> {
     public fun visit(node: Document): Result
 
     public fun visit(node: BlockQuote): Result

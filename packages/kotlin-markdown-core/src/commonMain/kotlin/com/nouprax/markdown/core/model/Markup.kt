@@ -23,7 +23,7 @@ public sealed interface Markup {
      */
     public val revision: ULong
 
-    public fun <Result> accept(visitor: Visitor<Result>): Result
+    public fun <Result> accept(visitor: MarkupVisitor<Result>): Result
 }
 
 internal fun markupEquals(

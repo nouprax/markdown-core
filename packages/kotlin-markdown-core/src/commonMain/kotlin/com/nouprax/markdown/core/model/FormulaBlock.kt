@@ -6,7 +6,7 @@ public class FormulaBlock internal constructor(
     public val mode: PlacementMode,
     public val literal: String,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
+    override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

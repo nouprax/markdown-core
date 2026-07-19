@@ -21,7 +21,7 @@ import type { Strong } from "./model/strong.js";
 import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { Scope } from "./values.js";
-import { visit, type Visitor } from "./visitor.js";
+import { visit, type MarkupVisitor } from "./markup-visitor.js";
 import { MarkupWalker, WalkEvent } from "./markup-walker.js";
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
@@ -71,7 +71,7 @@ interface PendingRecord {
     readonly children: number;
 }
 
-const dumpVisitor: Visitor<PendingRecord> = {
+const dumpVisitor: MarkupVisitor<PendingRecord> = {
     visitDocument: (node: Document) => record("Document", [], node.content.length),
     visitBlockQuote: (node: BlockQuote) => record("BlockQuote", [], node.content.length),
     visitParagraph: (node: Paragraph) => record("Paragraph", [], node.content.length),

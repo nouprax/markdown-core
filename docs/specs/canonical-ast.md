@@ -225,9 +225,9 @@ when `formulas` is false. Scope tracking is mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 
-## Visitor and MarkupWalker
+## MarkupVisitor and MarkupWalker
 
-The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
+The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup` kind in
 the node inventory, including `TableRow` and `TableCell`. A directive label has
 no dispatch method because it is a typed collection edge, not synthetic
 `Markup`. The interface is exhaustive: every typed method is required, there is
@@ -239,7 +239,7 @@ recurse.
 The standard read-only `MarkupWalker` walks a `Document` snapshot (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
 every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
-exhaustive Visitor on `entering` invokes it exactly once per node. MarkupWalker owns
+exhaustive MarkupVisitor on `entering` invokes it exactly once per node. MarkupWalker owns
 the typed-property rules, so consumers never inspect kinds to discover
 structure:
 
@@ -251,7 +251,7 @@ structure:
 - `Link` and `Image` traverse their inline `content`.
 
 Rows and cells produce normal visitor callbacks before their descendants.
-Visitor and MarkupWalker expose no replace, remove, setter, parent mutation, or
+MarkupVisitor and MarkupWalker expose no replace, remove, setter, parent mutation, or
 native-handle callback.
 
 ## Diagnostic dump
@@ -259,7 +259,7 @@ native-handle callback.
 Swift, Kotlin, and TypeScript publish `MarkupDumper.dump(document)` with a
 convenience `document.dump()`, plus a subtree form
 `MarkupDumper.dump(document, of: node)` / `document.dump(of: node)`. All
-traverse that platform's immutable typed tree through its exhaustive Visitor
+traverse that platform's immutable typed tree through its exhaustive MarkupVisitor
 and read-only MarkupWalker; they do not call the C diagnostic dump. Dumping is
 document-mediated because scopes are (subtree dumps print scopes with the
 subtree as origin — see `canonical-ast-dump.md`). The canonical text grammar

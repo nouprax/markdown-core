@@ -267,5 +267,5 @@ The C facade exposes the same model as
 `markdown_core_delta_*` accessors; node handles borrowed from a session
 are valid until the next mutating call on that session.
 
-`ParseOptions` is unchanged from `canonical-ast.md`. Visitor and MarkupWalker
+`ParseOptions` is unchanged from `canonical-ast.md`. MarkupVisitor and MarkupWalker
 contracts are unchanged; walker events additionally carry the resolved scope.

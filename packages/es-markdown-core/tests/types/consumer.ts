@@ -14,7 +14,7 @@ import {
     type Table,
     type TableCell,
     type TableRow,
-    type Visitor
+    type MarkupVisitor
 } from "@nouprax/es-markdown-core";
 import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 
@@ -29,7 +29,7 @@ void subtreeDiagnostic;
 void parsedDocument;
 // @ts-expect-error Document values are created only by Document.parse
 new Document();
-const visitor: Visitor<string> = {
+const visitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
     visitParagraph: (node) => node.kind,
@@ -115,8 +115,8 @@ void rowMarkup;
 void cellMarkup;
 void cell;
 
-// @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
-const incompleteVisitor: Visitor<string> = {
+// @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
+const incompleteVisitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind
 };
 void incompleteVisitor;
