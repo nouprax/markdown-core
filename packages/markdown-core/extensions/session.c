@@ -384,13 +384,14 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     // take their retraction ids, and lookup records can bind to unit ids.
     markdown_core_session_resolve_definition_owners(map);
 
-    markdown_core_lookup_table lookups = {NULL, NULL, 0, 0};
+    markdown_core_lookup_table lookups = {NULL, NULL, 0, 0, {NULL, 0, 0, {NULL, NULL, 0, 0}}};
     {
         markdown_core_unit_lookups *bundles = NULL;
         size_t bundle_count = 0;
         size_t i;
         bool bound = markdown_core_lookup_recording_bundle(&recording, &bundles, &bundle_count) &&
-                     markdown_core_lookup_table_reserve(session->mem, &lookups, bundle_count);
+                     markdown_core_lookup_table_reserve(session->mem, &lookups, bundle_count) &&
+                     markdown_core_lookup_postings_reserve(session->mem, &lookups, bundles, bundle_count);
         if (!bound) {
             markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);
             markdown_core_lookup_recording_release(&recording);
@@ -407,6 +408,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
         for (i = 0; i < bundle_count; i++) {
             markdown_core_lookup_table_put(session->mem, &lookups, bundles[i].unit->id, bundles[i].record);
             bundles[i].record.labels = NULL; // moved into the table
+            bundles[i].record.positions = NULL;
             bundles[i].record.count = 0;
         }
         markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);

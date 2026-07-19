@@ -838,6 +838,30 @@ Equality everywhere is `(lineage, id, revision)`.
   (high-water retention) are now bounded by the host's memory limits,
   matching the documented session cost model.
 
+  Label-scoped dependent narrowing delivered 2026-07-19 (first of the
+  three degenerate-cost items pulled into M5 by the pre-release
+  decision).  Dependent selection was already label-filtered, but
+  collecting the dependents scanned every lookup record per
+  definition-changing commit — measured superlinear in total units
+  (one dirty label among 4096/16384 self-referencing units: 30/203
+  µs/commit).  The lookup table now carries an inverted index
+  (`markdown_core_lookup_postings`): one posting per distinct label
+  ever looked up (owned key, slot persistent for the table lifetime,
+  mirroring footnote label interning), entries as (unit id, ordinal)
+  pairs with per-record stored positions so removal is an O(1)
+  swap-remove that repoints the moved entry's owner.  Postings are
+  reserved fallibly before the transactional splice (two-pass tally so
+  repeated labels reserve their true count) and maintained infallibly
+  by every put and remove; the table rehash carries them wholesale
+  (entries reference unit ids, not slots).  `collect_dependents` walks
+  the changed labels' postings and sort-uniques the union —
+  O(affected).  Same shape after: 1.44/1.57 µs/commit, ratio 1.09x;
+  gate added (`session_def_spread`, flat across the 1024x spread).
+  Traps worth remembering: a record moved into the table must NULL its
+  `positions` pointer alongside `labels` (double free at teardown
+  otherwise), and the table rehash must copy the postings struct into
+  the grown table before the swap or they leak away.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical
