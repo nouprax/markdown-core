@@ -225,6 +225,11 @@ struct markdown_core_session {
     size_t full_commits;
     size_t restarted_commits;
     size_t resynced_commits;
+    // One recycled parser held between commits: staged parses are
+    // per-commit, but the parser shell (struct, line buffers, empty
+    // reference map, extension attachments) is commit-invariant, so
+    // commits skip rebuilding it. NULL when no healthy parser came back.
+    markdown_core_parser *kept_parser;
 };
 
 /** Internal constructor used by allocation-injection tests; the public
@@ -366,6 +371,16 @@ bool markdown_core_footnote_index_diff(
  * Returns NULL on allocation or extension-registry failure with *error set
  * when non-NULL. Defined in session.c. */
 markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *session, markdown_core_error **error);
+
+/** Takes the session's kept parser when one is held, else creates one like
+ * markdown_core_session_new_parser. Defined in session.c. */
+markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session *session, markdown_core_error **error);
+
+/** Hands a parser back after its parse ended: a healthy one is recycled and
+ * kept for the next commit, a poisoned one (or a second hand-back) is freed.
+ * The parser's refmap must be its own or NULL — never the session's map.
+ * Defined in session.c. */
+void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
 
 /** Seals a freshly parsed tree: positions become parent-relative deltas and
  * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Defined in

@@ -741,6 +741,46 @@ Equality everywhere is `(lineage, id, revision)`.
   the test-topology audit green.  Remaining in M5: perf tuning, release
   prep.
 
+  Perf tuning delivered 2026-07-19, scoped by a sampling profile of the
+  commit path (storm, bounded-stream, retarget, and footnote-defs
+  workloads over the complexity corpora): the two dominant non-parsing
+  costs were per-commit resource churn, both removed without touching the
+  parse or adoption algorithms.
+
+  - **Field equality without serialization** (`ast.c`): adoption compared
+    paired nodes by JSON-dumping both field sets into heap buffers and
+    memcmp-ing them — two allocations plus full escaping per surviving
+    node pair (~10% of a storm commit, ~11% of a retarget commit).
+    `markdown_core_ast_fields_equal` now compares fields directly per
+    kind through the same accessors the dump uses; optional strings keep
+    the dump's null/empty distinction, and the no-allocation path also
+    retires the "allocation failure forces a revision bump" caveat.
+  - **Parser recycling** (`blocks.c` + session): every commit built and
+    tore down a full parser — struct calloc, line buffers, an empty
+    reference map the incremental path never reads (it swaps the
+    session's map in), extension attachments, special-character
+    re-derivation (6% of a storm commit, 12% of a bounded-stream
+    commit).  A session now keeps one recycled parser
+    (`session->kept_parser`): `markdown_core_parser_recycle` (core)
+    resets a parser whose parse ended while keeping the line buffers'
+    capacity, its own (empty) reference map when the caller left one
+    attached, and the extension attachments.  Commit paths acquire/release
+    through the session; a poisoned parser (allocation failure during the
+    parse or the recycle) is freed instead of kept, so the cache never
+    holds a broken parser, and the full path — which consumes the
+    parser's map as the session's next refmap — hands the parser back
+    with `refmap == NULL` and the recycle replaces it.  A fallback
+    releases the staged parser before the full path acquires, so even
+    degraded commits reuse the shell.
+
+  Measured on the profile driver (Release, M-series): storm 3.47→2.58
+  µs/commit, bounded stream 1.11→0.82, retarget 9.68→5.85, footnote-defs
+  0.98→0.75; complexity-runner session gates all improved and stay flat
+  across the 1024x size spread.  Remaining hotspots (id-table
+  maintenance ~11%, subtree frees ~9%, allocator churn) are arena-shaped
+  and deliberately out of scope before 2.0.0.  Remaining in M5: release
+  prep.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical

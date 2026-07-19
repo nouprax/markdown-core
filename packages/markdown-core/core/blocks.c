@@ -230,6 +230,50 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_inlines_reset_special_chars(parser);
 }
 
+/* Like markdown_core_parser_reset, but keeps the allocations one parse hands
+ * back intact for the next: the line buffers' capacity, the reference map
+ * when the caller left one attached (a consumed map is replaced by a fresh
+ * one), and the extension attachments. A kept map must be empty — the caller
+ * either never inserted into it or took it away. Failure poisons the parser
+ * exactly like a failed reset. */
+void markdown_core_parser_recycle(markdown_core_parser *parser) {
+    markdown_core_llist *saved_exts = parser->extensions;
+    markdown_core_llist *saved_inline_exts = parser->inline_extensions;
+    int saved_options = parser->options;
+    markdown_core_mem *saved_mem = parser->mem;
+    markdown_core_map *saved_refmap = parser->refmap;
+    markdown_core_strbuf saved_curline = parser->curline;
+    markdown_core_strbuf saved_linebuf = parser->linebuf;
+
+    if (parser->root) {
+        markdown_core_node_free(parser->root);
+    }
+
+    memset(parser, 0, sizeof(markdown_core_parser));
+    parser->mem = saved_mem;
+
+    parser->curline = saved_curline;
+    parser->linebuf = saved_linebuf;
+    markdown_core_strbuf_clear(&parser->curline);
+    markdown_core_strbuf_clear(&parser->linebuf);
+
+    markdown_core_node *document = make_document(parser->mem);
+
+    parser->refmap = saved_refmap ? saved_refmap : markdown_core_reference_map_new(parser->mem);
+    parser->root = document;
+    parser->current = document;
+
+    parser->extensions = saved_exts;
+    parser->inline_extensions = saved_inline_exts;
+    parser->options = saved_options;
+
+    if (!parser->root || !parser->refmap || parser->curline.oom || parser->linebuf.oom) {
+        parser->oom = true;
+    }
+
+    markdown_core_inlines_reset_special_chars(parser);
+}
+
 markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem) {
     markdown_core_parser *parser = (markdown_core_parser *)mem->calloc(1, sizeof(markdown_core_parser));
     if (!parser) {

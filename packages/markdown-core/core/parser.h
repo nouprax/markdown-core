@@ -76,6 +76,12 @@ struct markdown_core_parser {
     int8_t skip_chars[256];
 };
 
+/** Returns a parser whose parse ended (root handed off or freed) to its
+ * post-construction state for another parse, keeping the line buffers'
+ * capacity, an attached (empty) reference map, and the extension
+ * attachments. Allocation failure poisons the parser like a failed reset. */
+void markdown_core_parser_recycle(markdown_core_parser *parser);
+
 #ifdef __cplusplus
 }
 #endif
