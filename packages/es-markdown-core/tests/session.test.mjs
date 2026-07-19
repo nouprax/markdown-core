@@ -183,16 +183,67 @@ test("sessions: footnote queries answer numbering, resolution, and back-referenc
     }
 });
 
-test("sessions: updates yields one commit per token", async () => {
+test("sessions: conflated streaming with irregular ticks over a multi-turn conversation", () => {
+    // The shape of a real LLM consumer: every socket message appends
+    // (nothing parses), only an irregular render tick commits, and the
+    // messages between ticks conflate into that one commit. Three assistant
+    // turns extend one document; blocks settled at a turn boundary must stay
+    // frozen while later turns stream.
+    const turns = [
+        "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
+            "and the heading keeps its identity from the first render on.",
+        "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
+            "\n\n```swift\nlet constant = 1\n```",
+        "\n\nA table lands in one turn:\n\n| a | b |\n| - | - |\n| 1 | 2 |" +
+            "\n\nTail with a footnote[^n].\n\n[^n]: Resolved at the end."
+    ];
+    // One fixed generator drives message widths and tick timing, so the
+    // burst shapes are irregular but reproducible — and identical in the
+    // Swift and Kotlin mirrors of this test.
+    const mask = (1n << 64n) - 1n;
+    let state = 0x9e3779b97f4a7c15n;
+    function draw(bound) {
+        state = (state * 6364136223846793005n + 1442695040888963407n) & mask;
+        return Number((state >> 33n) % bound);
+    }
+
     const session = new MarkupSession();
     try {
-        const tokens = ["# Str", "eamed\n", "\nBody *tok", "ens*.\n"];
-        const commits = [];
-        for await (const commit of session.updates(tokens)) commits.push(commit);
-        assert.equal(commits.length, tokens.length);
-        assert.equal(commits.at(-1).document.dump(), Document.parse(tokens.join("")).dump());
-        // The streamed heading kept its identity from the first commit on.
-        assert.equal(commits[0].document.content[0].id, commits.at(-1).document.content[0].id);
+        let streamed = "";
+        let frozen = [];
+        let messages = 0;
+        let commits = 0;
+        function tick() {
+            const commit = session.commit();
+            commits += 1;
+            assert.equal(commit.document.dump(), Document.parse(streamed).dump());
+            for (const [index, id, revision] of frozen) {
+                const node = commit.document.content[index];
+                assert.equal(node.id, id);
+                assert.equal(node.revision, revision);
+            }
+        }
+
+        for (const turn of turns) {
+            let offset = 0;
+            while (offset < turn.length) {
+                const message = turn.slice(offset, offset + 2 + draw(29n));
+                offset += message.length;
+                session.append(message);
+                streamed += message;
+                messages += 1;
+                if (draw(4n) === 0) tick();
+            }
+            // The turn boundary always renders; everything but the still-hot
+            // last block is now settled.
+            tick();
+            frozen = session.document.content
+                .slice(0, -1)
+                .map((node, index) => [index, node.id, node.revision]);
+        }
+        assert.ok(messages > 12);
+        assert.ok(commits < messages);
+        assert.equal(session.document.dump(), Document.parse(turns.join("")).dump());
     } finally {
         session.close();
     }

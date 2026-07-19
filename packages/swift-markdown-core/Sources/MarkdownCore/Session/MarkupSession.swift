@@ -251,30 +251,3 @@ public final class MarkupSession {
         return result
     }
 }
-
-extension MarkupSession {
-    /// Async sugar over the streaming hot path: appends each token from
-    /// `tokens` and commits, yielding one `Commit` per token. Iterate on the
-    /// isolation that owns the session; coalescing tokens before feeding
-    /// them trades latency for throughput exactly as manual `append` +
-    /// `commit` does.
-    public func updates<Tokens: AsyncSequence>(
-        feeding tokens: Tokens
-    ) -> Updates<Tokens> where Tokens.Element == String {
-        Updates(session: self, iterator: tokens.makeAsyncIterator())
-    }
-
-    public struct Updates<Tokens: AsyncSequence>: AsyncSequence, AsyncIteratorProtocol
-    where Tokens.Element == String {
-        let session: MarkupSession
-        var iterator: Tokens.AsyncIterator
-
-        public func makeAsyncIterator() -> Updates<Tokens> { self }
-
-        public mutating func next() async throws -> Commit? {
-            guard let token = try await iterator.next() else { return nil }
-            try session.append(token)
-            return try session.commit()
-        }
-    }
-}

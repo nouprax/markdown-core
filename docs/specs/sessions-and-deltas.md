@@ -241,7 +241,6 @@ one-shot nodes carry ids) and `MarkupSession`:
 | `MarkupSession(options)` | options are immutable for the session lifetime |
 | `replace` / `append` | queue edits as defined above (byte ranges of the stored text) |
 | `commit()` | returns a `Commit` value: the new `document` plus its `delta: Delta` |
-| `updates(feeding:)` | async sugar: feed a token stream, yield one `Commit` per token |
 | `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
 | `node(for:)` | the committed snapshot's current value for an id |
 | `footnote(of:)` / `footnotes()` / `references(of:)` | the footnote queries below |

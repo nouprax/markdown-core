@@ -97,18 +97,11 @@ const added: readonly MarkupID[] = delta.added;
 const currentValue: Markup | null = session.node(document.id);
 const info: FootnoteInfo | null = session.footnote(document.id);
 const sessionLineage: bigint = session.lineage;
-async function stream(tokens: AsyncIterable<string>): Promise<void> {
-    for await (const each of session.updates(tokens)) {
-        const streamed: Commit = each;
-        void streamed;
-    }
-}
 void snapshot;
 void added;
 void currentValue;
 void info;
 void sessionLineage;
-void stream;
 // @ts-expect-error session options are immutable for the session lifetime
 session.options.tables = false;
 session.close();

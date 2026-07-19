@@ -87,11 +87,18 @@ let second = try session.commit()
 // The paragraph kept its identity; only its text advanced a revision.
 ```
 
-`updates(feeding:)` is async sugar over the streaming hot path, yielding one
-`Commit` per token:
+Streaming consumers keep the two primitives on their natural cadences:
+`append` on every network message (cheap — nothing parses), `commit()` on the
+render tick. Messages that arrive between ticks conflate into one commit, so
+the parse rate follows your display, not the socket:
 
 ```swift
-for try await commit in session.updates(feeding: tokens) {
+func received(_ message: String) throws {
+    try session.append(message)
+}
+
+func renderTick() throws {
+    let commit = try session.commit()
     render(commit.document, commit.delta)
 }
 ```

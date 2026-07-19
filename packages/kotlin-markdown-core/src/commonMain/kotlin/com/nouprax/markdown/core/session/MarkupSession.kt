@@ -1,8 +1,5 @@
 package com.nouprax.markdown.core
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-
 /**
  * The single mutable owner of one Markdown text and its living AST.
  *
@@ -148,21 +145,6 @@ public class MarkupSession(
      * with that identity exists at the committed revision.
      */
     public fun node(id: MarkupID): Markup? = if (id.lineage == lineage) mirror[id.rawValue] else null
-
-    /**
-     * Async sugar over the streaming hot path: appends each token from
-     * [input] and commits, yielding one [Commit] per token. Collect on the
-     * context that owns the session; coalescing tokens before feeding them
-     * trades latency for throughput exactly as manual [append] + [commit]
-     * does.
-     */
-    public fun updates(input: Flow<String>): Flow<Commit> =
-        flow {
-            input.collect { token ->
-                append(token)
-                emit(commit())
-            }
-        }
 
     /**
      * Releases the native session. Idempotent. Snapshots, deltas, and scopes

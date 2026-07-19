@@ -249,19 +249,6 @@ export class MarkupSession {
     }
 
     /**
-     * Async sugar over the streaming hot path: appends each token from
-     * `input` and commits, yielding one `Commit` per token. Coalescing
-     * tokens before feeding them trades latency for throughput exactly as
-     * manual `append` + `commit` does.
-     */
-    async *updates(input: AsyncIterable<string> | Iterable<string>): AsyncIterableIterator<Commit> {
-        for await (const token of input) {
-            this.append(token);
-            yield this.commit();
-        }
-    }
-
-    /**
      * Releases the native session. Idempotent. Snapshots, deltas, and scopes
      * materialized while their snapshot was current remain usable; every
      * other member of this class fails after closing.

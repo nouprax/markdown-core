@@ -151,7 +151,9 @@ Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
 `sessions` 覆盖 M4 binding 契约:streaming/clean-boundary/kind-change 的
 id-stability、(lineage, id, revision) 等值语义、空 delta 纯位移、scope
-惰性物化的存活性、footnote queries 与 `updates(feeding:)`；
+惰性物化的存活性、footnote queries,以及模拟真实 LLM 消费端的
+conflated-streaming 驱动(多 turn、不规律 render tick、消息突发按 tick
+合并提交、turn 边界已定稿块冻结;三端共用同一确定性发生器)；
 `ConformanceSuite` 另以 per-line append 通过 `MarkupSession` 回放 manifest
 corpus，逐 commit 校验 dump 等价与 delta-mirror 完整性(数组不相交、
 revision 不变式、removed 消失)。

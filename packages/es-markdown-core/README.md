@@ -72,14 +72,20 @@ the new immutable snapshot plus the exact delta — the ids that were `added`,
 the document is semantically identical to a one-shot `Document.parse` of the
 same final text.
 
+Streaming consumers keep the two primitives on their natural cadences:
+`append` on every network message (cheap — nothing parses), `commit` on the
+render tick. Messages that arrive between ticks conflate into one commit, so
+the parse rate follows your display, not the socket:
+
 ```js
 import { MarkupSession } from "@nouprax/es-markdown-core";
 
 const session = new MarkupSession();
-for await (const commit of session.updates(tokenStream)) {
+socket.onmessage = ({ data }) => session.append(data);
+const ticker = setInterval(() => {
+  const commit = session.commit();
   render(commit.document, commit.delta);
-}
-session.close();
+}, 100);
 ```
 
 Snapshots are plain immutable values that share every unchanged node with the

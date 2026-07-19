@@ -92,10 +92,12 @@ MarkupSession().use { session ->
 }
 ```
 
-`updates(input: Flow<String>): Flow<Commit>` streams one commit per token, and
-`footnote(id)` / `footnotes()` / `references(id)` answer footnote
-numbering, resolution, and back-reference ordinals as queries against the
-committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
+Streaming consumers keep the two primitives on their natural cadences:
+`append` on every socket message (cheap — nothing parses), `commit()` on the
+render tick, so messages between ticks conflate into one commit and the parse
+rate follows the display, not the socket. `footnote(id)` / `footnotes()` /
+`references(id)` answer footnote numbering, resolution, and back-reference
+ordinals as queries against the committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
 scopes materialized while their snapshot was current stay usable after
 `close()`.
 

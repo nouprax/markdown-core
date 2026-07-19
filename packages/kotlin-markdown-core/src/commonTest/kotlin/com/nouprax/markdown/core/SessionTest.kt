@@ -1,8 +1,5 @@
 package com.nouprax.markdown.core
 
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -223,30 +220,75 @@ class SessionTest {
     }
 
     @Test
-    fun updatesYieldsOneCommitPerToken() =
-        runTest {
-            MarkupSession().use { session ->
-                val tokens = listOf("# Str", "eamed\n", "\nBody *tok", "ens*.\n")
-                val commits = session.updates(flowOf(*tokens.toTypedArray())).toList()
-                assertEquals(tokens.size, commits.size)
-                assertEquals(
-                    Document.parse(tokens.joinToString(separator = "")).dump(),
-                    commits.last().document.dump(),
-                )
-                // The streamed heading kept its identity from the first
-                // commit on.
-                assertEquals(
-                    commits
-                        .first()
-                        .document.content[0]
-                        .id,
-                    commits
-                        .last()
-                        .document.content[0]
-                        .id,
-                )
-            }
+    fun conflatedStreamingWithIrregularTicksOverAMultiTurnConversation() {
+        // The shape of a real LLM consumer: every socket message appends
+        // (nothing parses), only an irregular render tick commits, and the
+        // messages between ticks conflate into that one commit. Three
+        // assistant turns extend one document; blocks settled at a turn
+        // boundary must stay frozen while later turns stream.
+        val turns =
+            listOf(
+                "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
+                    "and the heading keeps its identity from the first render on.",
+                "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
+                    "\n\n```swift\nlet constant = 1\n```",
+                "\n\nA table lands in one turn:\n\n| a | b |\n| - | - |\n| 1 | 2 |" +
+                    "\n\nTail with a footnote[^n].\n\n[^n]: Resolved at the end.",
+            )
+        // One fixed generator drives message widths and tick timing, so the
+        // burst shapes are irregular but reproducible — and identical in the
+        // Swift and ES mirrors of this test.
+        var state = 0x9E3779B97F4A7C15UL.toLong()
+        fun draw(bound: Long): Long {
+            state = state * 6364136223846793005L + 1442695040888963407L
+            return (state ushr 33) % bound
         }
+
+        MarkupSession().use { session ->
+            var streamed = ""
+            var frozen = emptyList<Triple<Int, MarkupID, ULong>>()
+            var messages = 0
+            var commits = 0
+            fun tick() {
+                val commit = session.commit()
+                commits += 1
+                assertEquals(Document.parse(streamed).dump(), commit.document.dump())
+                for ((index, id, revision) in frozen) {
+                    val node = commit.document.content[index]
+                    assertEquals(id, node.id)
+                    assertEquals(revision, node.revision)
+                }
+            }
+
+            for (turn in turns) {
+                var offset = 0
+                while (offset < turn.length) {
+                    val width = 2 + draw(29L).toInt()
+                    val message = turn.substring(offset, minOf(offset + width, turn.length))
+                    offset += message.length
+                    session.append(message)
+                    streamed += message
+                    messages += 1
+                    if (draw(4L) == 0L) {
+                        tick()
+                    }
+                }
+                // The turn boundary always renders; everything but the
+                // still-hot last block is now settled.
+                tick()
+                frozen =
+                    session.document.content.dropLast(1).mapIndexed { index, node ->
+                        Triple(index, node.id, node.revision)
+                    }
+            }
+            assertTrue(messages > 12)
+            assertTrue(commits < messages)
+            assertEquals(
+                Document.parse(turns.joinToString(separator = "")).dump(),
+                session.document.dump(),
+            )
+        }
+    }
 
     @Test
     fun snapshotsAreValuesAndIdsAreStableDictionaryKeys() {
