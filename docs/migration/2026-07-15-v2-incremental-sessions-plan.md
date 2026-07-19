@@ -425,11 +425,12 @@ Equality everywhere is `(lineage, id, revision)`.
     pure-shift gap edits, a paragraph flipping between vanishing and
     real), and the `session_head_defs` complexity case (last-definition
     retargets against a document-scale leading cluster, flat across a
-    1024x spread — 0.8x measured, ~3167x before the change). Remaining in
-    the issue's orbit: the resync-delay behaviors (consecutive top-level
-    blockquotes fuse because `line_began_clean` is computed before
-    `check_open_blocks`; footnote definitions stay open across blank
-    lines), tracked for M5 hardening.
+    1024x spread — 0.8x measured, ~3167x before the change). The
+    resync-delay behaviors carried in the issue's orbit both resolved
+    (issue #26, M5): the blockquote half no longer reproduced after this
+    index rework and is pinned by `session_quote_suffix`; the footnote
+    half (definitions stay open across blank lines) landed as the sealing
+    rule below.
 - **M4 — Bindings**: Swift, Kotlin (MKC3), ES sessions; binding conformance
   replays the equivalence corpus through sessions. Gates: all platform
   conformance/dump gates, platform id-stability + O(1)-equality tests, delta
@@ -603,8 +604,52 @@ Equality everywhere is `(lineage, id, revision)`.
   smoke (`fuzz_script_smoke`, 512 scripts per run, alternating token-biased
   and uniform splice payloads) in the CI fuzz label. Sanity campaign at
   delivery: 1.1M executions / 2 minutes under ASan, 10,646 edges covered,
-  zero failures; correctness + ASan/UBSan presets green. Remaining in M5:
-  pathological corpus, the #15 resync-delay behaviors, perf tuning, release
+  zero failures; correctness + ASan/UBSan presets green.
+
+  Resync locality for footnote definitions delivered 2026-07-19 (issue
+  #26), closing out the #15 resync-delay behaviors. A definition legitimately
+  stays open across blank lines, which used to strip restart anchors from
+  every cluster follower and ride restarts through whole clusters. Both
+  halves now apply the same argument: a non-blank line whose first non-space
+  sits below the continuation indent closes a definitions-only open chain on
+  that very line, before anything above can capture it (no open paragraph is
+  left for a lazy continuation to ride).
+
+  - Flag side: when `check_open_blocks` stops at the document and the chain
+    open at line start consisted solely of footnote definitions, the line is
+    promoted to clean; its direct document children carry `CLEAN_START`
+    qualified by `CLEAN_START_SEALING`, recording that the anchor holds only
+    while the line keeps its sealing shape.
+  - Restart side: planning re-checks a sealing anchor's line against the
+    current text (blank or indented means reshaped into a continuation) and
+    backs off one clean entry, mirroring the CRLF-fusion guard; sentinels
+    take the same check since they do not record their sealing quality.
+  - Resync side: the staged probe accepts a boundary while only footnote
+    definitions are open, provided the upcoming line seals them; the splice
+    finalizes them with ends dated to the line before the boundary, exactly
+    as the one-shot parse dates them.
+  - Contiguous definition clusters (no blank between definitions) keep an
+    open trailing paragraph in the chain and stay genuinely fused — a lazy
+    continuation could ride them — as does an indented body continuation
+    after a blank.
+
+  Gates: the `footnote_defs` boundary script (body edits at cluster
+  head/interior/tail, the colon kind-flip both ways, a definition arriving
+  and leaving mid-cluster, the indented continuation negative case, and the
+  sealing line itself reshaped indented and back), the
+  `restart_locality_counters` cluster layouts (every footnote-cluster body
+  edit an incremental resynced commit; a quote-cluster front edit resyncs at
+  the second quote), the `session_quote_suffix` complexity case (front edits
+  flat across a 1024x quote-suffix spread, 0.9x measured), and the
+  `session_footnote_defs` complexity case. The latter gates a same-size
+  ratio — last-definition body edit within 3x of a site-free control edit on
+  the same corpus (measured 1.3x/1.0x small/large; 6.4x/7.0x before the
+  change) — because the accepted O(#sites) footnote index refresh (#14)
+  runs against every commit and scales with the cluster itself, so
+  cross-size wall-clock flatness is a #14 property, not a restart-locality
+  one. Fuzz campaign at delivery: 688K executions / 2.5 minutes of the
+  session edit-script target, zero failures; correctness + ASan/UBSan
+  presets green. Remaining in M5: pathological corpus, perf tuning, release
   prep.
 
 ## Verification

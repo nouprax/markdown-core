@@ -188,23 +188,61 @@ static const cc_case_entry CC_CASES[] = {
 #define CC_SESSION_DEF_WIDTH 18 /* strlen("[dNNNNNN]: /aaaa\n\n") */
 #define CC_SESSION_DEF_URL_OFFSET 12
 #define CC_SESSION_DEF_USE "uses [u][d000000] tail\n"
+/* The footnote-defs corpus is a document-scale leading cluster of
+ * blank-separated footnote definitions with one fixed use and one plain
+ * paragraph at the tail; the gated edit rewrites the last definition's body.
+ * Every definition is a footnote site, and the accepted O(#sites) index
+ * refresh (#14) makes any commit against this corpus scale with the cluster,
+ * so the case gates a same-size ratio instead: sealing clean entries must
+ * keep the last-definition edit within a small factor of the site-free
+ * control edit, which pays the same refresh but no restart span. Without
+ * them the definition edit also reparses the whole cluster. */
+#define CC_SESSION_FOOTNOTE_DEF_WIDTH 18 /* strlen("[^dNNNNNN]: aaaa\n\n") */
+#define CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET 12
+#define CC_SESSION_FOOTNOTE_DEF_USE "uses [^d000000] tail\n\nplain para line\n"
+#define CC_SESSION_FOOTNOTE_DEF_CONTROL_OFFSET 22 /* "plain" in the tail paragraph */
+#define CC_SESSION_MAX_RATIO 3.0
+/* The quote-suffix corpus pins the resolved half of the resync-delay pair:
+ * blank-separated top-level quotes restart cleanly, so a front edit must
+ * resync at the first boundary regardless of how many quotes follow. */
+#define CC_SESSION_QUOTE_STANZA "> q aaaa line\n\n"
+#define CC_SESSION_QUOTE_BODY_OFFSET 4
 #define CC_SESSION_OPS 64
 static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
 
-enum { CC_SESSION_STREAM, CC_SESSION_STORM, CC_SESSION_RETARGET, CC_SESSION_FOOTNOTE, CC_SESSION_HEAD_DEFS };
+enum {
+    CC_SESSION_STREAM,
+    CC_SESSION_STORM,
+    CC_SESSION_RETARGET,
+    CC_SESSION_FOOTNOTE,
+    CC_SESSION_HEAD_DEFS,
+    CC_SESSION_FOOTNOTE_DEFS,
+    CC_SESSION_FOOTNOTE_DEFS_CONTROL,
+    CC_SESSION_QUOTE_SUFFIX
+};
+
+static int cc_session_mode_footnote_defs(int mode) {
+    return mode == CC_SESSION_FOOTNOTE_DEFS || mode == CC_SESSION_FOOTNOTE_DEFS_CONTROL;
+}
 
 static markdown_core_session *cc_session_build(size_t size, int mode, size_t *stanza_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
-    const char *stanza =
-        mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE ? CC_SESSION_PLAIN_STANZA : CC_SESSION_STANZA;
-    size_t stanza_length = mode == CC_SESSION_HEAD_DEFS ? CC_SESSION_DEF_WIDTH : strlen(stanza);
+    const char *stanza = mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE
+                             ? CC_SESSION_PLAIN_STANZA
+                             : (mode == CC_SESSION_QUOTE_SUFFIX ? CC_SESSION_QUOTE_STANZA : CC_SESSION_STANZA);
+    size_t stanza_length = mode == CC_SESSION_HEAD_DEFS
+                               ? CC_SESSION_DEF_WIDTH
+                               : (cc_session_mode_footnote_defs(mode) ? CC_SESSION_FOOTNOTE_DEF_WIDTH : strlen(stanza));
     size_t count = size / stanza_length ? size / stanza_length : 1;
     size_t extras =
         mode == CC_SESSION_RETARGET
             ? strlen(CC_SESSION_DEFINITION) + CC_SESSION_USES * strlen(CC_SESSION_USE)
-            : (mode == CC_SESSION_FOOTNOTE ? strlen(CC_SESSION_FOOTNOTE_CLUSTER)
-                                           : (mode == CC_SESSION_HEAD_DEFS ? strlen(CC_SESSION_DEF_USE) : 0));
+            : (mode == CC_SESSION_FOOTNOTE
+                   ? strlen(CC_SESSION_FOOTNOTE_CLUSTER)
+                   : (mode == CC_SESSION_HEAD_DEFS
+                          ? strlen(CC_SESSION_DEF_USE)
+                          : (cc_session_mode_footnote_defs(mode) ? strlen(CC_SESSION_FOOTNOTE_DEF_USE) : 0)));
     char *text = (char *)malloc(count * stanza_length + extras + 1);
     char *fill = text;
     size_t i;
@@ -220,6 +258,11 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
         for (i = 0; i < count; i++) {
             sprintf(fill, "[d%06zu]: /aaaa\n\n", i % 1000000);
             fill += CC_SESSION_DEF_WIDTH;
+        }
+    } else if (cc_session_mode_footnote_defs(mode)) {
+        for (i = 0; i < count; i++) {
+            sprintf(fill, "[^d%06zu]: aaaa\n\n", i % 1000000);
+            fill += CC_SESSION_FOOTNOTE_DEF_WIDTH;
         }
     } else {
         for (i = 0; i < count; i++) {
@@ -241,10 +284,14 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
         memcpy(fill, CC_SESSION_DEF_USE, strlen(CC_SESSION_DEF_USE));
         fill += strlen(CC_SESSION_DEF_USE);
     }
+    if (cc_session_mode_footnote_defs(mode)) {
+        memcpy(fill, CC_SESSION_FOOTNOTE_DEF_USE, strlen(CC_SESSION_FOOTNOTE_DEF_USE));
+        fill += strlen(CC_SESSION_FOOTNOTE_DEF_USE);
+    }
     *fill = '\0';
 
     ts_ast_options_none(&options);
-    if (mode == CC_SESSION_FOOTNOTE) {
+    if (mode == CC_SESSION_FOOTNOTE || cc_session_mode_footnote_defs(mode)) {
         options.footnotes = true;
     }
     session = markdown_core_session_open(&options, NULL);
@@ -292,6 +339,24 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             size_t base = (stanza_count - 1) * CC_SESSION_DEF_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
+        } else if (mode == CC_SESSION_FOOTNOTE_DEFS) {
+            size_t base = (stanza_count - 1) * CC_SESSION_FOOTNOTE_DEF_WIDTH + CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET;
+            const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
+            ok = markdown_core_session_edit(session, base, base + 4, body, 4, NULL);
+        } else if (mode == CC_SESSION_FOOTNOTE_DEFS_CONTROL) {
+            size_t base = stanza_count * CC_SESSION_FOOTNOTE_DEF_WIDTH + CC_SESSION_FOOTNOTE_DEF_CONTROL_OFFSET;
+            const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "PLAIN" : "plain");
+            ok = markdown_core_session_edit(session, base, base + 5, body, 5, NULL);
+        } else if (mode == CC_SESSION_QUOTE_SUFFIX) {
+            const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
+            ok = markdown_core_session_edit(
+                session,
+                CC_SESSION_QUOTE_BODY_OFFSET,
+                CC_SESSION_QUOTE_BODY_OFFSET + 4,
+                body,
+                4,
+                NULL
+            );
         } else {
             static const uint8_t line[] = "appended stream line\n";
             size_t length = markdown_core_session_length(session);
@@ -364,12 +429,50 @@ static int cc_run_session(const char *name, int mode) {
     return failed ? -1 : 0;
 }
 
+/* Same-size ratio gate: at every scaling step the subject edit must stay
+ * within CC_SESSION_MAX_RATIO of the control edit against the same corpus.
+ * Used where an accepted per-commit cost (the O(#sites) footnote index
+ * refresh, #14) scales with the corpus itself: the control pays that cost
+ * too, so the ratio isolates the restart span under the gate. */
+static int cc_run_session_ratio(const char *name, int subject_mode, int control_mode) {
+    double subject[SCALING_STEPS];
+    double control[SCALING_STEPS];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < SCALING_STEPS; step++) {
+        if (cc_session_measure(CC_SESSION_SIZES[step], subject_mode, &subject[step]) != 0 ||
+            cc_session_measure(CC_SESSION_SIZES[step], control_mode, &control[step]) != 0) {
+            fprintf(stderr, "session run failed for %s\n", name);
+            return -1;
+        }
+        if (subject[step] > control[step] * CC_SESSION_MAX_RATIO) {
+            failed = 1;
+        }
+    }
+    printf("%s ... %s (", name, failed ? "[FAILED subject edit dwarfs its control]" : "[PASSED]");
+    for (step = 0; step < SCALING_STEPS; step++) {
+        printf(
+            "%s%zu bytes: %.9fs vs %.9fs control (%.3fx)",
+            step ? ", " : "",
+            CC_SESSION_SIZES[step],
+            subject[step],
+            control[step],
+            subject[step] / control[step]
+        );
+    }
+    printf(")\n");
+    return failed ? -1 : 0;
+}
+
 static const char *const CC_SESSION_CASES[] = {
     "session_stream_flat",
     "session_edit_storm",
     "session_ref_retarget",
     "session_footnote_shift",
     "session_head_defs",
+    "session_footnote_defs",
+    "session_quote_suffix",
 };
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
@@ -498,6 +601,12 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_head_defs") == 0) {
         return cc_run_session(case_name, CC_SESSION_HEAD_DEFS) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_footnote_defs") == 0) {
+        return cc_run_session_ratio(case_name, CC_SESSION_FOOTNOTE_DEFS, CC_SESSION_FOOTNOTE_DEFS_CONTROL) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_quote_suffix") == 0) {
+        return cc_run_session(case_name, CC_SESSION_QUOTE_SUFFIX) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;

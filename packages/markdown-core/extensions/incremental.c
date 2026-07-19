@@ -101,6 +101,49 @@ static bool parser_is_clean(const markdown_core_parser *parser) {
     return !(last && (last->flags & MARKDOWN_CORE_NODE__OPEN));
 }
 
+/* Whether the line starting at `offset` seals a chain of open footnote
+ * definitions: non-blank, with its first non-space before the continuation
+ * indent (column 4, tabs advancing to the next stop). Blank and indented
+ * lines keep such a chain open, so they can neither validate a sealing
+ * restart anchor nor close a staged boundary. */
+static bool line_seals(const unsigned char *bytes, size_t length, size_t offset) {
+    int column = 0;
+    size_t i;
+    for (i = offset; i < length; i++) {
+        unsigned char c = bytes[i];
+        if (c == ' ') {
+            column++;
+        } else if (c == '\t') {
+            column += 4 - (column % 4);
+        } else {
+            return c != '\n' && c != '\r';
+        }
+        if (column >= 4) {
+            return false;
+        }
+    }
+    return false;
+}
+
+/* The staged parser's open chain is nonempty and consists solely of footnote
+ * definitions. Together with a sealing upcoming line this makes the position
+ * a valid resync boundary: a one-shot parse closes those definitions on that
+ * very line, so finalizing them before the splice reproduces its tree, ends
+ * dated to the line before the boundary either way. */
+static bool parser_open_defs_only(const markdown_core_parser *parser) {
+    const markdown_core_node *node = parser->root->last_child;
+    if (!node || !(node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        return false;
+    }
+    while (node && (node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        if (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
+            return false;
+        }
+        node = node->last_child;
+    }
+    return true;
+}
+
 typedef struct {
     size_t *items;
     size_t count;
@@ -1405,6 +1448,21 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             restart_pos--;
         }
     }
+
+    // A sealing anchor is valid only while its first line keeps the shape
+    // that closes the footnote definitions open above it; an edit at the
+    // restart line can reshape it into a blank or indented continuation
+    // those definitions would capture. Sentinels do not record their sealing
+    // quality, so they take the same check. Only the chosen entry's line can
+    // be damaged — every earlier entry's line lies wholly inside the
+    // untouched prefix — so one entry back always restores validity.
+    if (restart_pos >= 0) {
+        const markdown_core_clean_child *entry = &session->clean.items[restart_pos];
+        if ((!entry->node || (entry->node->flags & MARKDOWN_CORE_NODE__CLEAN_START_SEALING)) &&
+            !line_seals(bytes, length, entry->start_byte)) {
+            restart_pos--;
+        }
+    }
     restart_node = restart_pos >= 0 ? entry_node_at(&session->clean.items[restart_pos], doc) : doc->first_child;
     restart_byte = restart_pos >= 0 ? session->clean.items[restart_pos].start_byte : 0;
     restart_line = restart_pos >= 0 ? session->clean.items[restart_pos].start_line : 1;
@@ -1469,7 +1527,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             }
             feed_pos = next;
             if (feed_pos >= pending.new_hi && feed_pos < length && (ptrdiff_t)feed_pos >= pending.delta &&
-                parser_is_clean(parser)) {
+                (parser_is_clean(parser) || (parser_open_defs_only(parser) && line_seals(bytes, length, feed_pos)))) {
                 size_t old_byte = (size_t)((ptrdiff_t)feed_pos - pending.delta);
                 boundary_pos = boundary_position(&session->clean, old_byte, restart_pos);
                 if (boundary_pos >= 0) {

@@ -573,9 +573,14 @@ static markdown_core_node *add_child(
 
     /* Direct document children born on a clean line are incremental restart
      * points; every other child attaches under (or next to) a block that was
-     * open when the line began and stays fused to it. */
+     * open when the line began and stays fused to it. A line that seals a
+     * definitions-only chain counts as clean, with the qualifier marking the
+     * anchor as conditional on the line's shape. */
     if (parent == parser->root && parser->line_began_clean) {
         child->flags |= MARKDOWN_CORE_NODE__CLEAN_START;
+        if (parser->line_defs_only) {
+            child->flags |= MARKDOWN_CORE_NODE__CLEAN_START_SEALING;
+        }
     }
 
     if (parent->last_child) {
@@ -1037,6 +1042,27 @@ static void S_advance_offset(markdown_core_parser *parser, markdown_core_chunk *
 
 static bool S_last_child_is_open(markdown_core_node *container) {
     return container->last_child && (container->last_child->flags & MARKDOWN_CORE_NODE__OPEN);
+}
+
+/* True when the document's open chain is nonempty and consists solely of
+ * footnote definitions: every inner block has already been closed (a blank
+ * line finalizes a definition's trailing paragraph while the definition
+ * itself stays open). Such a chain continues only on a blank or indented
+ * line and holds no open paragraph a lazy continuation could ride, so a
+ * line that fails every prefix closes the whole chain before anything above
+ * can capture it. */
+static bool S_open_chain_defs_only(markdown_core_node *root) {
+    markdown_core_node *node = root->last_child;
+    if (!node || !(node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        return false;
+    }
+    while (node && (node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        if (S_type(node) != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
+            return false;
+        }
+        node = node->last_child;
+    }
+    return true;
 }
 
 static bool parse_block_quote_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
@@ -1665,11 +1691,23 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     parser->line_number++;
     parser->line_began_clean = !S_last_child_is_open(parser->root);
+    parser->line_defs_only = !parser->line_began_clean && S_open_chain_defs_only(parser->root);
 
     last_matched_container = check_open_blocks(parser, &input, &all_matched);
 
     if (!last_matched_container) {
         goto finished;
+    }
+
+    /* A line that fails every prefix of a definitions-only chain seals it:
+     * the definitions close during this line, before its own content
+     * attaches, so direct document children restart as if the line had
+     * begun clean. The anchor is conditional on the line's sealing shape,
+     * which the qualifying flag records for restart planning. */
+    if (last_matched_container != parser->root) {
+        parser->line_defs_only = false;
+    } else if (parser->line_defs_only) {
+        parser->line_began_clean = true;
     }
 
     container = last_matched_container;
@@ -1708,7 +1746,8 @@ finished:
 static markdown_core_node *
 S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
-    markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_START;
+    markdown_core_node_internal_flags clean_start =
+        unit->flags & (MARKDOWN_CORE_NODE__CLEAN_START | MARKDOWN_CORE_NODE__CLEAN_START_SEALING);
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
