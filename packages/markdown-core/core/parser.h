@@ -41,6 +41,12 @@ struct markdown_core_parser {
      * open block; direct document children opened on such a line get
      * MARKDOWN_CORE_NODE__CLEAN_START. */
     bool line_began_clean;
+    /* True while processing a line whose open chain at line start consisted
+     * solely of footnote definitions and whose own shape failed every one of
+     * their prefixes (check_open_blocks stopped at the document): the line
+     * closes the whole chain, so its direct document children get
+     * CLEAN_START qualified by CLEAN_START_SEALING. */
+    bool line_defs_only;
     /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
      * markdown_core.h */
     bool partially_consumed_tab;

@@ -1059,6 +1059,68 @@ done:
     return result;
 }
 
+/* One same-length in-place edit for a restart-locality scenario. */
+typedef struct {
+    size_t lo;
+    size_t hi;
+    const char *insert;
+} rl_edit;
+
+/* Opens a session over `initial`, applies each edit as its own commit, and
+ * pins the whole inventory: exactly one full commit (the empty open), and
+ * every edit an incremental, resynced restart. */
+static int rl_cluster_scenario(const char *name, const char *initial, const rl_edit *edits, size_t edit_count) {
+    markdown_core_parse_options options;
+    markdown_core_session *session;
+    size_t i;
+    int result = -1;
+
+    markdown_core_parse_options_init(&options);
+    session = markdown_core_session_open(&options, NULL);
+    if (!session) {
+        fprintf(stderr, "FAILED: restart_locality_counters: %s: session open failed\n", name);
+        return -1;
+    }
+    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, strlen(initial), NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fprintf(stderr, "FAILED: restart_locality_counters: %s: initial commit failed\n", name);
+        goto done;
+    }
+    for (i = 0; i < edit_count; i++) {
+        if (!markdown_core_session_edit(
+                session,
+                edits[i].lo,
+                edits[i].hi,
+                (const uint8_t *)edits[i].insert,
+                strlen(edits[i].insert),
+                NULL
+            ) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            fprintf(stderr, "FAILED: restart_locality_counters: %s: edit %zu failed\n", name, i);
+            goto done;
+        }
+    }
+    if (session->full_commits != 1 || session->restarted_commits != 1 + edit_count ||
+        session->resynced_commits != edit_count) {
+        fprintf(
+            stderr,
+            "FAILED: restart_locality_counters: %s: expected 1 full / %zu restarted / %zu resynced, "
+            "got %zu / %zu / %zu\n",
+            name,
+            1 + edit_count,
+            edit_count,
+            session->full_commits,
+            session->restarted_commits,
+            session->resynced_commits
+        );
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_session_free(session);
+    return result;
+}
+
 /* Head-of-document definition clusters must restart and resync at sentinel
  * clean entries: retargeting the last definition of a leading cluster is an
  * incremental, resynced commit, never a full reparse. The counters are the
@@ -1109,6 +1171,51 @@ static int case_restart_locality_counters(void) {
             session->resynced_commits
         );
         goto done;
+    }
+
+    /* Blank-separated footnote definitions stay open across their blanks, so
+     * interior and tail body edits restart at sealing anchors and resync at
+     * the next sealing line — two fed lines per commit, never a full
+     * reparse. */
+    {
+        static const rl_edit edits[] = {
+            {17, 20, "TWO"},   /* interior body: resync at [^c] */
+            {28, 33, "THREE"}, /* tail body: resync at the tail paragraph */
+        };
+        if (rl_cluster_scenario(
+                "footnote cluster",
+                "[^a]: one\n"
+                "\n"
+                "[^b]: two\n"
+                "\n"
+                "[^c]: three\n"
+                "\n"
+                "tail para\n",
+                edits,
+                sizeof(edits) / sizeof(*edits)
+            ) != 0) {
+            goto done;
+        }
+    }
+
+    /* Blank-separated top-level quotes restart cleanly (the resolved half of
+     * the resync-delay pair): a front edit resyncs at the second quote. */
+    {
+        static const rl_edit edits[] = {
+            {4, 7, "ONE"},
+        };
+        if (rl_cluster_scenario(
+                "quote cluster",
+                "> q one\n"
+                "\n"
+                "> q two\n"
+                "\n"
+                "> q three\n",
+                edits,
+                sizeof(edits) / sizeof(*edits)
+            ) != 0) {
+            goto done;
+        }
     }
     result = 0;
 done:

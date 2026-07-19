@@ -111,6 +111,8 @@ bool markdown_core_footnote_collect_sites(
         }
         site.node = node;
         site.anchor = anchor ? anchor : site_anchor(root, node);
+        site.label = SIZE_MAX; // interned later by label_sites
+        site.group_pos = 0;
         if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
             site.unit = NULL;
             ok = markdown_core_footnote_site_push(mem, defs, site);
@@ -123,47 +125,46 @@ bool markdown_core_footnote_collect_sites(
     return ok;
 }
 
-// Per-label accumulator. `winner` is the earliest definition in document
-// order; `number` is the 1-based first-use ordinal, assigned when the first
-// reference of a defined label is met; `seen` runs the per-reference
-// ordinals.
-typedef struct {
-    unsigned char *normalized; // owned
-    markdown_core_node *winner;
-    uint64_t number;
-    uint64_t references;
-    uint64_t seen;
-} label_state;
+// --- persistent label interning ----------------------------------------------
 
-typedef struct {
-    label_state *items;
-    size_t count;
-    size_t capacity;
-} label_list;
+void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core_footnote_labels *labels) {
+    size_t i;
+    for (i = 0; i < labels->count; i++) {
+        mem->free(labels->normalized[i]);
+    }
+    if (labels->normalized) {
+        mem->free(labels->normalized);
+    }
+    markdown_core_key_index_free(&labels->by_label); // slots-NULL safe
+    memset(labels, 0, sizeof(*labels));
+}
 
-// Resolves `label` to its accumulator slot, creating one on first sight.
-// Returns SIZE_MAX with *failed set on allocation loss; SIZE_MAX without it
-// when the label normalizes to nothing and can never participate.
-static size_t label_slot(
-    markdown_core_mem *mem,
-    label_list *labels,
-    markdown_core_key_index *by_label,
-    const markdown_core_chunk *label,
-    bool *failed
-) {
+size_t
+markdown_core_session_footnote_label(markdown_core_session *session, const markdown_core_chunk *label, bool *failed) {
+    markdown_core_mem *mem = session->mem;
+    markdown_core_footnote_labels *labels = &session->footnote_labels;
     markdown_core_chunk copy = *label;
     int lost = 0;
-    unsigned char *normalized = markdown_core_map_normalize_label(mem, &copy, &lost);
+    unsigned char *normalized;
     bufsize_t normalized_len;
     void *existing;
 
+    *failed = false;
+    normalized = markdown_core_map_normalize_label(mem, &copy, &lost);
     if (!normalized) {
         *failed = lost != 0;
         return SIZE_MAX;
     }
     normalized_len = (bufsize_t)strlen((char *)normalized);
 
-    existing = markdown_core_key_index_lookup(by_label, normalized, normalized_len);
+    // A failed init leaves `mem` set with no slots; probe the slots so the
+    // next call retries instead of walking a zero-capacity table.
+    if (labels->by_label.slots == NULL && !markdown_core_key_index_init(&labels->by_label, mem, 16)) {
+        mem->free(normalized);
+        *failed = true;
+        return SIZE_MAX;
+    }
+    existing = markdown_core_key_index_lookup(&labels->by_label, normalized, normalized_len);
     if (existing) {
         mem->free(normalized);
         return (size_t)((uintptr_t)existing - 1);
@@ -171,20 +172,17 @@ static size_t label_slot(
 
     if (labels->count == labels->capacity) {
         size_t capacity = labels->capacity ? labels->capacity * 2 : 16;
-        label_state *grown = (label_state *)mem->realloc(labels->items, capacity * sizeof(*grown));
+        unsigned char **grown = (unsigned char **)mem->realloc(labels->normalized, capacity * sizeof(*grown));
         if (!grown) {
             mem->free(normalized);
             *failed = true;
             return SIZE_MAX;
         }
-        labels->items = grown;
+        labels->normalized = grown;
         labels->capacity = capacity;
     }
-
-    memset(&labels->items[labels->count], 0, sizeof(labels->items[0]));
-    labels->items[labels->count].normalized = normalized;
     if (!markdown_core_key_index_insert(
-            by_label,
+            &labels->by_label,
             normalized,
             normalized_len,
             (void *)(uintptr_t)(labels->count + 1),
@@ -195,24 +193,156 @@ static size_t label_slot(
         *failed = true;
         return SIZE_MAX;
     }
+    labels->normalized[labels->count] = normalized;
     return labels->count++;
 }
 
-static int record_id_compare(const void *a, const void *b) {
-    const markdown_core_footnote_record *ra = (const markdown_core_footnote_record *)a;
-    const markdown_core_footnote_record *rb = (const markdown_core_footnote_record *)b;
-    if (ra->node->id != rb->node->id) {
-        return ra->node->id < rb->node->id ? -1 : 1;
+bool markdown_core_session_footnote_label_sites(
+    markdown_core_session *session,
+    markdown_core_footnote_site_list *defs,
+    markdown_core_footnote_site_list *refs
+) {
+    size_t i;
+    for (i = 0; i < defs->count; i++) {
+        bool failed = false;
+        defs->items[i].label = markdown_core_session_footnote_label(session, &defs->items[i].node->as.literal, &failed);
+        if (failed) {
+            return false;
+        }
     }
-    return 0;
+    for (i = 0; i < refs->count; i++) {
+        markdown_core_node *ref = refs->items[i].node;
+        bool failed = false;
+        refs->items[i].label = SIZE_MAX;
+        if (ref->as.literal.len >= 1 && ref->as.literal.len <= MAX_LINK_LABEL_LENGTH) {
+            refs->items[i].label = markdown_core_session_footnote_label(session, &ref->as.literal, &failed);
+        }
+        if (failed) {
+            return false;
+        }
+    }
+    return true;
 }
+
+// --- id -> record table ------------------------------------------------------
+
+#define FOOTNOTE_TOMBSTONE UINT64_MAX
+
+static uint64_t footnote_mix64(uint64_t x) {
+    x ^= x >> 33;
+    x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x *= UINT64_C(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    return x;
+}
+
+markdown_core_footnote_record *
+markdown_core_footnote_table_find(const markdown_core_footnote_table *table, markdown_core_node_id id) {
+    size_t mask;
+    size_t slot;
+    if (table->capacity == 0) {
+        return NULL;
+    }
+    mask = table->capacity - 1;
+    slot = (size_t)footnote_mix64(id) & mask;
+    while (table->keys[slot] != 0) {
+        if (table->keys[slot] == id) {
+            return &table->records[slot];
+        }
+        slot = (slot + 1) & mask;
+    }
+    return NULL;
+}
+
+void markdown_core_footnote_table_put(markdown_core_footnote_table *table, markdown_core_footnote_record record) {
+    size_t mask = table->capacity - 1;
+    size_t slot = (size_t)footnote_mix64(record.node->id) & mask;
+    while (table->keys[slot] != 0 && table->keys[slot] != FOOTNOTE_TOMBSTONE) {
+        slot = (slot + 1) & mask;
+    }
+    if (table->keys[slot] != FOOTNOTE_TOMBSTONE) {
+        table->occupied++;
+    }
+    table->keys[slot] = record.node->id;
+    table->records[slot] = record;
+    table->count++;
+}
+
+void markdown_core_footnote_table_remove(markdown_core_footnote_table *table, markdown_core_node_id id) {
+    size_t mask;
+    size_t slot;
+    if (table->capacity == 0) {
+        return;
+    }
+    mask = table->capacity - 1;
+    slot = (size_t)footnote_mix64(id) & mask;
+    while (table->keys[slot] != 0) {
+        if (table->keys[slot] == id) {
+            table->keys[slot] = FOOTNOTE_TOMBSTONE;
+            table->count--;
+            return;
+        }
+        slot = (slot + 1) & mask;
+    }
+}
+
+static void footnote_table_release(markdown_core_mem *mem, markdown_core_footnote_table *table) {
+    if (table->keys) {
+        mem->free(table->keys);
+    }
+    if (table->records) {
+        mem->free(table->records);
+    }
+    memset(table, 0, sizeof(*table));
+}
+
+bool markdown_core_footnote_table_reserve(markdown_core_mem *mem, markdown_core_footnote_table *table, size_t extra) {
+    markdown_core_footnote_table grown;
+    size_t needed = table->count + extra;
+    size_t capacity = 16;
+    size_t i;
+
+    // Tombstones count against the probe budget, so the trigger is occupancy.
+    if (table->capacity && (table->occupied + extra) * 2 <= table->capacity) {
+        return true;
+    }
+    memset(&grown, 0, sizeof(grown));
+    while (capacity < needed * 2) {
+        capacity *= 2;
+    }
+    grown.keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(*grown.keys));
+    grown.records = (markdown_core_footnote_record *)mem->calloc(capacity, sizeof(*grown.records));
+    if (!grown.keys || !grown.records) {
+        footnote_table_release(mem, &grown);
+        return false;
+    }
+    grown.capacity = capacity;
+    for (i = 0; i < table->capacity; i++) {
+        if (table->keys[i] != 0 && table->keys[i] != FOOTNOTE_TOMBSTONE) {
+            markdown_core_footnote_table_put(&grown, table->records[i]);
+        }
+    }
+    footnote_table_release(mem, table);
+    *table = grown;
+    return true;
+}
+
+// Per-label accumulator, indexed by the session's interned label slot.
+// `winner` is the earliest definition in document order; `number` is the
+// 1-based first-use ordinal, assigned when the first reference of a defined
+// label is met; `seen` runs the per-reference ordinals.
+typedef struct {
+    markdown_core_node *winner;
+    uint64_t number;
+    uint64_t references;
+    uint64_t seen;
+} label_scratch;
 
 void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index) {
     markdown_core_footnote_site_list_release(mem, &index->defs);
     markdown_core_footnote_site_list_release(mem, &index->refs);
-    if (index->records) {
-        mem->free(index->records);
-    }
+    footnote_table_release(mem, &index->records);
     if (index->in_use) {
         mem->free(index->in_use);
     }
@@ -231,15 +361,12 @@ bool markdown_core_footnote_index_build_sites(
     markdown_core_footnote_site_list *refs,
     markdown_core_footnote_index *index
 ) {
-    label_list labels = {NULL, 0, 0};
-    markdown_core_key_index by_label = {NULL, NULL, 0, 0};
-    size_t *def_labels = NULL;
-    size_t *ref_labels = NULL;
+    label_scratch *labels = NULL;
+    size_t label_bound = 0;
     size_t *cursors = NULL;
     size_t def_count;
     size_t ref_count;
     bool ok = false;
-    bool indexed = false;
     size_t i;
 
     memset(index, 0, sizeof(*index));
@@ -254,54 +381,45 @@ bool markdown_core_footnote_index_build_sites(
         return true;
     }
 
-    if (!markdown_core_key_index_init(&by_label, mem, def_count + ref_count)) {
-        goto done;
+    for (i = 0; i < def_count; i++) {
+        size_t slot = index->defs.items[i].label;
+        if (slot != SIZE_MAX && slot + 1 > label_bound) {
+            label_bound = slot + 1;
+        }
     }
-    indexed = true;
-
-    def_labels = (size_t *)mem->calloc(def_count ? def_count : 1, sizeof(*def_labels));
-    ref_labels = (size_t *)mem->calloc(ref_count ? ref_count : 1, sizeof(*ref_labels));
-    if (!def_labels || !ref_labels) {
+    for (i = 0; i < ref_count; i++) {
+        size_t slot = index->refs.items[i].label;
+        if (slot != SIZE_MAX && slot + 1 > label_bound) {
+            label_bound = slot + 1;
+        }
+    }
+    labels = (label_scratch *)mem->calloc(label_bound ? label_bound : 1, sizeof(*labels));
+    if (!labels) {
         goto done;
     }
 
     for (i = 0; i < def_count; i++) {
-        markdown_core_node *def = index->defs.items[i].node;
-        bool failed = false;
-        size_t slot = label_slot(mem, &labels, &by_label, &def->as.literal, &failed);
-        if (failed) {
-            goto done;
-        }
-        def_labels[i] = slot;
-        if (slot != SIZE_MAX && !labels.items[slot].winner) {
-            labels.items[slot].winner = def;
+        size_t slot = index->defs.items[i].label;
+        if (slot != SIZE_MAX && !labels[slot].winner) {
+            labels[slot].winner = index->defs.items[i].node;
         }
     }
-
     for (i = 0; i < ref_count; i++) {
-        markdown_core_node *ref = index->refs.items[i].node;
-        bool failed = false;
-        size_t slot = SIZE_MAX;
-        if (ref->as.literal.len >= 1 && ref->as.literal.len <= MAX_LINK_LABEL_LENGTH) {
-            slot = label_slot(mem, &labels, &by_label, &ref->as.literal, &failed);
-        }
-        if (failed) {
-            goto done;
-        }
-        ref_labels[i] = slot;
+        size_t slot = index->refs.items[i].label;
         if (slot != SIZE_MAX) {
-            labels.items[slot].references++;
+            labels[slot].references++;
         }
     }
 
     // First-use numbering over the resolved labels, in reference document
     // order.
-    index->in_use = (markdown_core_node_id *)mem->calloc(labels.count ? labels.count : 1, sizeof(*index->in_use));
+    index->in_use = (markdown_core_node_id *)mem->calloc(label_bound ? label_bound : 1, sizeof(*index->in_use));
     if (!index->in_use) {
         goto done;
     }
     for (i = 0; i < ref_count; i++) {
-        label_state *label = ref_labels[i] == SIZE_MAX ? NULL : &labels.items[ref_labels[i]];
+        size_t slot = index->refs.items[i].label;
+        label_scratch *label = slot == SIZE_MAX ? NULL : &labels[slot];
         if (label && label->winner && !label->number) {
             label->number = ++index->in_use_count;
             index->in_use[label->number - 1] = label->winner->id;
@@ -314,9 +432,9 @@ bool markdown_core_footnote_index_build_sites(
     if (!index->reference_offsets || !cursors) {
         goto done;
     }
-    for (i = 0; i < labels.count; i++) {
-        if (labels.items[i].number) {
-            index->reference_offsets[labels.items[i].number] = (size_t)labels.items[i].references;
+    for (i = 0; i < label_bound; i++) {
+        if (labels[i].number) {
+            index->reference_offsets[labels[i].number] = (size_t)labels[i].references;
         }
     }
     for (i = 1; i <= index->in_use_count; i++) {
@@ -330,65 +448,61 @@ bool markdown_core_footnote_index_build_sites(
         goto done;
     }
     for (i = 0; i < ref_count; i++) {
-        label_state *label = ref_labels[i] == SIZE_MAX ? NULL : &labels.items[ref_labels[i]];
+        size_t slot = index->refs.items[i].label;
+        label_scratch *label = slot == SIZE_MAX ? NULL : &labels[slot];
         if (label && label->number) {
             size_t group = (size_t)(label->number - 1);
             index->references[index->reference_offsets[group] + cursors[group]++] = index->refs.items[i].node->id;
         }
     }
 
-    // One record per footnote node, sorted by id for the query bsearch.
-    index->records = (markdown_core_footnote_record *)mem->calloc(def_count + ref_count, sizeof(*index->records));
-    if (!index->records) {
+    // One record per footnote node, keyed by id. `group_pos` mirrors each
+    // reference's position inside its label's group run so a
+    // sequence-preserving commit can patch a churned id in place.
+    if (!markdown_core_footnote_table_reserve(mem, &index->records, def_count + ref_count)) {
         goto done;
     }
     for (i = 0; i < def_count; i++) {
-        markdown_core_footnote_record *record = &index->records[index->record_count++];
-        label_state *label = def_labels[i] == SIZE_MAX ? NULL : &labels.items[def_labels[i]];
-        record->node = index->defs.items[i].node;
-        record->group = SIZE_MAX;
+        markdown_core_footnote_record record;
+        size_t slot = index->defs.items[i].label;
+        label_scratch *label = slot == SIZE_MAX ? NULL : &labels[slot];
+        memset(&record, 0, sizeof(record));
+        record.node = index->defs.items[i].node;
+        record.group = SIZE_MAX;
         if (label) {
-            record->info.definition = label->winner->id;
-            record->info.number = label->number;
-            record->info.reference_count = label->references;
-            if (label->winner == record->node && label->number) {
-                record->group = (size_t)(label->number - 1);
+            record.info.definition = label->winner->id;
+            record.info.number = label->number;
+            record.info.reference_count = label->references;
+            if (label->winner == record.node && label->number) {
+                record.group = (size_t)(label->number - 1);
             }
         }
+        markdown_core_footnote_table_put(&index->records, record);
     }
     for (i = 0; i < ref_count; i++) {
-        markdown_core_footnote_record *record = &index->records[index->record_count++];
-        label_state *label = ref_labels[i] == SIZE_MAX ? NULL : &labels.items[ref_labels[i]];
-        record->node = index->refs.items[i].node;
-        record->group = SIZE_MAX;
+        markdown_core_footnote_record record;
+        size_t slot = index->refs.items[i].label;
+        label_scratch *label = slot == SIZE_MAX ? NULL : &labels[slot];
+        memset(&record, 0, sizeof(record));
+        record.node = index->refs.items[i].node;
+        record.group = SIZE_MAX;
         if (label) {
-            record->info.reference_ordinal = ++label->seen;
-            record->info.reference_count = label->references;
+            record.info.reference_ordinal = ++label->seen;
+            record.info.reference_count = label->references;
+            index->refs.items[i].group_pos = (size_t)(record.info.reference_ordinal - 1);
             if (label->winner) {
-                record->info.definition = label->winner->id;
-                record->info.number = label->number;
+                record.info.definition = label->winner->id;
+                record.info.number = label->number;
             }
         }
+        markdown_core_footnote_table_put(&index->records, record);
     }
-    qsort(index->records, index->record_count, sizeof(*index->records), record_id_compare);
 
     ok = true;
 
 done:
-    for (i = 0; i < labels.count; i++) {
-        mem->free(labels.items[i].normalized);
-    }
-    if (labels.items) {
-        mem->free(labels.items);
-    }
-    if (indexed) {
-        markdown_core_key_index_free(&by_label);
-    }
-    if (def_labels) {
-        mem->free(def_labels);
-    }
-    if (ref_labels) {
-        mem->free(ref_labels);
+    if (labels) {
+        mem->free(labels);
     }
     if (cursors) {
         mem->free(cursors);
@@ -400,15 +514,17 @@ done:
 }
 
 bool markdown_core_footnote_index_build(
-    markdown_core_mem *mem,
+    markdown_core_session *session,
     markdown_core_node *root,
     markdown_core_footnote_index *index
 ) {
+    markdown_core_mem *mem = session->mem;
     markdown_core_footnote_site_list defs = {NULL, 0, 0};
     markdown_core_footnote_site_list refs = {NULL, 0, 0};
 
     memset(index, 0, sizeof(*index));
-    if (!markdown_core_footnote_collect_sites(mem, root, NULL, &defs, &refs)) {
+    if (!markdown_core_footnote_collect_sites(mem, root, NULL, &defs, &refs) ||
+        !markdown_core_session_footnote_label_sites(session, &defs, &refs)) {
         markdown_core_footnote_site_list_release(mem, &defs);
         markdown_core_footnote_site_list_release(mem, &refs);
         return false;
@@ -418,20 +534,7 @@ bool markdown_core_footnote_index_build(
 
 static const markdown_core_footnote_record *
 find_record(const markdown_core_footnote_index *index, markdown_core_node_id id) {
-    size_t lo = 0;
-    size_t hi = index->record_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (index->records[mid].node->id == id) {
-            return &index->records[mid];
-        }
-        if (index->records[mid].node->id < id) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return NULL;
+    return markdown_core_footnote_table_find(&index->records, id);
 }
 
 static bool info_equal(const markdown_core_footnote_info *a, const markdown_core_footnote_info *b) {
@@ -466,15 +569,19 @@ bool markdown_core_footnote_index_diff(
     bool ok = false;
     size_t i;
 
-    for (i = 0; i < next->record_count; i++) {
-        markdown_core_node *node = next->records[i].node;
+    for (i = 0; i < next->records.capacity; i++) {
+        markdown_core_node *node;
         const markdown_core_footnote_record *old;
         markdown_core_node *parent;
+        if (next->records.keys[i] == 0 || next->records.keys[i] == FOOTNOTE_TOMBSTONE) {
+            continue;
+        }
+        node = next->records.records[i].node;
         if (node->last_changed_rev == new_rev || node_list_holds(&changed, node) || node_list_holds(&bubbled, node)) {
             continue; // already reported by the adoption walk or this diff
         }
         old = find_record(previous, node->id);
-        if (old && info_equal(&old->info, &next->records[i].info)) {
+        if (old && info_equal(&old->info, &next->records.records[i].info)) {
             continue;
         }
         if (!node_list_push(mem, &changed, node)) {

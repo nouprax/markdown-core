@@ -401,7 +401,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     // the affected revisions without any dump-visible change.
     markdown_core_footnote_index footnotes;
     memset(&footnotes, 0, sizeof(footnotes));
-    if (!markdown_core_footnote_index_build(session->mem, root, &footnotes) ||
+    if (!markdown_core_footnote_index_build(session, root, &footnotes) ||
         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes)) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
         markdown_core_lookup_table_release(session->mem, &lookups);
@@ -593,6 +593,7 @@ void markdown_core_session_free(markdown_core_session *session) {
     if (session->def_index) {
         session->mem->free(session->def_index);
     }
+    markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
     free(session);
 }
 
