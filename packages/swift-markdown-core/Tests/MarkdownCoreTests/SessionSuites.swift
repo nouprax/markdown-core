@@ -241,7 +241,7 @@ import Testing
         // final node plus bounded frontier churn per tick. A full rebuild
         // per tick would be on the order of commits * nodes.
         var nodes = 0
-        Walker().walk(session.document) { event, _, _ in
+        MarkupWalker().walk(session.document) { event, _, _ in
             if event == .entering { nodes += 1 }
         }
         #expect(touched < nodes + 16 * commits)

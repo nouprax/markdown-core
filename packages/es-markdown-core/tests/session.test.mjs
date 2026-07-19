@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupSession, Walker, WalkEvent } from "../dist/index.js";
+import { Document, MarkupSession, MarkupWalker, WalkEvent } from "../dist/index.js";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
     const session = new MarkupSession();
@@ -270,7 +270,7 @@ test("sessions: conflated streaming with irregular ticks over a multi-turn conve
         // final node plus bounded frontier churn per tick. A full rebuild
         // per tick would be on the order of commits * nodes.
         let nodes = 0;
-        new Walker().walk(session.document, (event) => {
+        new MarkupWalker().walk(session.document, (event) => {
             if (event === WalkEvent.entering) nodes += 1;
         });
         assert.ok(touched < nodes + 16 * commits);

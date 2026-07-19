@@ -22,10 +22,10 @@ import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { Scope } from "./values.js";
 import { visit, type Visitor } from "./visitor.js";
-import { Walker, WalkEvent } from "./walker.js";
+import { MarkupWalker, WalkEvent } from "./markup-walker.js";
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
-export class TreeDumper {
+export class MarkupDumper {
     private constructor() {}
 
     /**
@@ -41,7 +41,7 @@ export class TreeDumper {
         const remainingChildren: number[] = [];
         const lines: string[] = [];
 
-        new Walker().walk(document, node, (event, current, scope) => {
+        new MarkupWalker().walk(document, node, (event, current, scope) => {
             if (event === WalkEvent.entering) {
                 const record = visit(current, dumpVisitor);
                 const line = record.line(rebased(scope, offset));

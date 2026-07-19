@@ -113,7 +113,7 @@ extension Document {
     /// after the snapshot's one-time materialization.
     ///
     /// A one-shot `Document.parse` result always answers. A session snapshot
-    /// materializes its scopes on first use (of `scope(of:)`, a `Walker`
+    /// materializes its scopes on first use (of `scope(of:)`, a `MarkupWalker`
     /// walk, or `dump()`) while it is the session's current snapshot and is
     /// self-contained afterwards — including after the session advances or
     /// is deinitialized. Requesting a scope from a snapshot that was

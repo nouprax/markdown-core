@@ -85,7 +85,7 @@ class AstTest {
     fun walkerDispatchesTableRowsAndCellsAsMarkup() {
         val document = Document.parse("| a |\n| --- |\n| b |\n")
         val visitor = RecordingVisitor()
-        Walker.walk(document, visitor)
+        MarkupWalker.walk(document, visitor)
         assertEquals(
             listOf("Document", "Table", "TableRow", "TableCell", "Text", "TableRow", "TableCell", "Text"),
             visitor.visited,
@@ -97,7 +97,7 @@ class AstTest {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
             val document = Document.parse(testCase.source, testCase.options)
-            assertEquals(testCase.expected, TreeDumper.dump(document), testCase.name)
+            assertEquals(testCase.expected, MarkupDumper.dump(document), testCase.name)
             assertEquals(testCase.expected, document.dump(), testCase.name)
         }
     }

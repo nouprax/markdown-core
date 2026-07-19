@@ -49,11 +49,11 @@ column.
 
 ## Traverse and Inspect
 
-Use `Walker` for a read-only depth-first traversal; every event carries the
+Use `MarkupWalker` for a read-only depth-first traversal; every event carries the
 node's resolved absolute scope:
 
 ```swift
-try Walker().walk(document) { event, node, scope in
+try MarkupWalker().walk(document) { event, node, scope in
     if event == .entering {
         print(type(of: node), scope.start.line)
     }
@@ -62,7 +62,7 @@ try Walker().walk(document) { event, node, scope in
 
 For typed dispatch, conform to `MarkupVisitor` and hand it to
 `node.accept(&visitor)`. `document.dump()` and
-`TreeDumper.dump(document, of: node)` emit the canonical diagnostic tree for
+`MarkupDumper.dump(document, of: node)` emit the canonical diagnostic tree for
 the complete document or a focused subtree (subtree scopes print with the
 subtree as origin) — intended for logs, snapshots, and debugging rather than
 persistence or data interchange.

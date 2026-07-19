@@ -2,7 +2,7 @@ package consumer;
 
 import com.nouprax.markdown.core.Document;
 import com.nouprax.markdown.core.ParseOptions;
-import com.nouprax.markdown.core.TreeDumper;
+import com.nouprax.markdown.core.MarkupDumper;
 
 public final class Main {
     private Main() {}
@@ -14,7 +14,7 @@ public final class Main {
         if (document.getContent().size() != 1) {
             throw new IllegalStateException("Document.parse returned unexpected top-level content");
         }
-        String dump = TreeDumper.INSTANCE.dump(document);
+        String dump = MarkupDumper.INSTANCE.dump(document);
         if (!dump.contains("héllo 🚀")) {
             throw new IllegalStateException("native payload returned an unexpected document: " + dump);
         }

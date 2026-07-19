@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
-public object TreeDumper {
+public object MarkupDumper {
     /** Returns the canonical diagnostic dump for [document] and its
      * descendants, resolving absolute scopes through the snapshot. */
     public fun dump(document: Document): String {
@@ -9,7 +9,7 @@ public object TreeDumper {
         val remainingChildren = mutableListOf<Int>()
         val lines = mutableListOf<String>()
 
-        Walker.walk(document) { event, node, scope ->
+        MarkupWalker.walk(document) { event, node, scope ->
             when (event) {
                 WalkEvent.ENTERING -> {
                     val record = node.accept(visitor)

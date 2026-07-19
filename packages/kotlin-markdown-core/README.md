@@ -45,29 +45,29 @@ and read-only AST traversal, not rendering or mutation.
 
 ## Traverse and Inspect
 
-Use `Walker` for a depth-first traversal; every event carries the node's
+Use `MarkupWalker` for a depth-first traversal; every event carries the node's
 resolved absolute scope:
 
 ```kotlin
 import com.nouprax.markdown.core.WalkEvent
-import com.nouprax.markdown.core.Walker
+import com.nouprax.markdown.core.MarkupWalker
 
-Walker.walk(document) { event, node, scope ->
+MarkupWalker.walk(document) { event, node, scope ->
     if (event == WalkEvent.ENTERING) {
         println("$node at ${scope.start.line}")
     }
 }
 ```
 
-`Document` exposes `dump()`, which delegates to the public `TreeDumper` and
+`Document` exposes `dump()`, which delegates to the public `MarkupDumper` and
 returns the canonical file-tree diagnostic for the snapshot:
 
 ```kotlin
-import com.nouprax.markdown.core.TreeDumper
+import com.nouprax.markdown.core.MarkupDumper
 
 val document = Document.parse("# Hello")
 println(document.dump())
-println(TreeDumper.dump(document))
+println(MarkupDumper.dump(document))
 ```
 
 ## Incremental Sessions

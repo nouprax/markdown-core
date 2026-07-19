@@ -5,7 +5,7 @@ public enum class WalkEvent {
     EXITING,
 }
 
-public object Walker {
+public object MarkupWalker {
     public fun walk(
         document: Document,
         visitor: Visitor<Unit>,

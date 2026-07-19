@@ -8,7 +8,7 @@ import type { MarkupID } from "./markup-id.js";
  * engine guarantees implies identical AST content (fields and descendants).
  * An unchanged node is additionally the same object across consecutive
  * snapshots. Absolute source position is not content — resolve it with
- * `Document.scope` or receive it from `Walker` events.
+ * `Document.scope` or receive it from `MarkupWalker` events.
  */
 export interface MarkupBase<Kind extends string> {
     readonly kind: Kind;

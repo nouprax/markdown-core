@@ -310,7 +310,7 @@ class SessionTest {
             // per final node plus bounded frontier churn per tick. A full
             // rebuild per tick would be on the order of commits * nodes.
             var nodes = 0
-            Walker.walk(session.document) { event, _, _ ->
+            MarkupWalker.walk(session.document) { event, _, _ ->
                 if (event == WalkEvent.ENTERING) {
                     nodes += 1
                 }

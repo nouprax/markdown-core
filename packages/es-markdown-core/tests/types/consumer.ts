@@ -1,9 +1,9 @@
 import {
     Document,
     MarkupSession,
-    TreeDumper,
+    MarkupDumper,
     visit,
-    Walker,
+    MarkupWalker,
     type Commit,
     type Delta,
     type FootnoteInfo,
@@ -21,8 +21,8 @@ import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 const document = Document.parse("# typed", { tables: true });
 const parsedDocument: ParsedDocument = document;
 const diagnostic: string = document.dump();
-const explicitDiagnostic: string = TreeDumper.dump(document);
-const subtreeDiagnostic: string = TreeDumper.dump(document, document.content[0]);
+const explicitDiagnostic: string = MarkupDumper.dump(document);
+const subtreeDiagnostic: string = MarkupDumper.dump(document, document.content[0]);
 void diagnostic;
 void explicitDiagnostic;
 void subtreeDiagnostic;
@@ -62,12 +62,12 @@ const visitor: Visitor<string> = {
     visitFootnoteReference: (node) => node.label
 };
 visit(document, visitor);
-new Walker().walk(document, (_event, node, scope) => {
+new MarkupWalker().walk(document, (_event, node, scope) => {
     const resolved: Scope = scope;
     void resolved;
     visit(node, visitor);
 });
-new Walker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
+new MarkupWalker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced

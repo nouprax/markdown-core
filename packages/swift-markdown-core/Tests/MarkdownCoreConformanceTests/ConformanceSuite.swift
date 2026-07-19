@@ -58,7 +58,7 @@ import Testing
         let manifest = try loadManifest()
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
-            #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
+            #expect(MarkupDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
@@ -179,7 +179,7 @@ private struct CanonicalParseOptions: Decodable {
 
 private func flatten(_ document: Document) -> [any Markup] {
     var result: [any Markup] = []
-    Walker().walk(document) { event, node, _ in
+    MarkupWalker().walk(document) { event, node, _ in
         if case .entering = event { result.append(node) }
     }
     return result

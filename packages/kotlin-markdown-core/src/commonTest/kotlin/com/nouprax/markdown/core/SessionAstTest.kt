@@ -59,7 +59,7 @@ class SessionAstTest {
 
 private fun flatten(document: Document): kotlin.collections.List<Markup> {
     val nodes = mutableListOf<Markup>()
-    Walker.walk(document) { event, node, _ ->
+    MarkupWalker.walk(document) { event, node, _ ->
         if (event == WalkEvent.ENTERING) {
             nodes += node
         }

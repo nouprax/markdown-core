@@ -16,7 +16,7 @@ initialization, so `Document.parse` is synchronous.
 ## Parse Markdown
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper, MarkupWalker } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello", {
   directives: false,
@@ -24,7 +24,7 @@ const document = Document.parse("# Hello", {
 
 console.log(document.content[0].kind);
 console.log(document.dump());
-console.log(TreeDumper.dump(document, document.content[0]));
+console.log(MarkupDumper.dump(document, document.content[0]));
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
@@ -48,16 +48,16 @@ Nodes do not store absolute positions. Resolve them through the snapshot:
 
 ## Traverse and Inspect
 
-Use `Walker` for a read-only depth-first traversal; every event carries the
+Use `MarkupWalker` for a read-only depth-first traversal; every event carries the
 resolved scope:
 
 ```js
-new Walker().walk(document, (event, node, scope) => {
+new MarkupWalker().walk(document, (event, node, scope) => {
   console.log(event, node.kind, scope.start.line);
 });
 ```
 
-`document.dump()` and `TreeDumper.dump(document, node)` emit the canonical
+`document.dump()` and `MarkupDumper.dump(document, node)` emit the canonical
 diagnostic tree for the complete document or a focused subtree (subtree scopes
 print with the subtree as origin). The text is intended for logs, snapshots,
 and debugging rather than persistence or data interchange.

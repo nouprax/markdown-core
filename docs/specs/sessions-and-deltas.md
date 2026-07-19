@@ -93,7 +93,7 @@ Nodes do not store absolute source positions. The public API is:
 
 - `document.scope(of: node)` — resolves the absolute `Scope` (start/end
   line:column) of a node within that snapshot, O(depth).
-- `Walker` supplies the resolved scope with every event; `TreeDumper` prints
+- `MarkupWalker` supplies the resolved scope with every event; `MarkupDumper` prints
   absolute scopes for a `Document` root, byte-identical to the v1 dump
   grammar. Dumping a non-`Document` subtree prints scopes with the subtree as
   origin.
@@ -104,7 +104,7 @@ identically in both modes.
 Session snapshots resolve scopes lazily: deltas deliberately omit pure
 positional shifts (an edit that only moves later content commits an empty
 delta), so a snapshot cannot carry positions in its shared node values.
-Instead, the first scope use on a snapshot — `scope(of:)`, a `Walker` walk,
+Instead, the first scope use on a snapshot — `scope(of:)`, a `MarkupWalker` walk,
 or a dump — materializes every scope from the session's native tree in one
 walk and caches the table; the snapshot is self-contained from then on,
 including after the session advances or is freed. Queueing edits does not
@@ -267,5 +267,5 @@ The C facade exposes the same model as
 `markdown_core_delta_*` accessors; node handles borrowed from a session
 are valid until the next mutating call on that session.
 
-`ParseOptions` is unchanged from `canonical-ast.md`. Visitor and Walker
+`ParseOptions` is unchanged from `canonical-ast.md`. Visitor and MarkupWalker
 contracts are unchanged; walker events additionally carry the resolved scope.

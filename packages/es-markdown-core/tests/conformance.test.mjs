@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, MarkupSession, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, MarkupSession, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -113,7 +113,7 @@ test("conformance: directive labels preserve missing, empty, and populated state
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
         const document = Document.parse(testCase.source, testCase.parseOptions);
-        assert.equal(TreeDumper.dump(document), testCase.expected, testCase.name);
+        assert.equal(MarkupDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
 }
@@ -170,7 +170,7 @@ function lineChunks(source) {
 
 function flatten(root) {
     const nodes = [];
-    new Walker().walk(root, (event, node) => {
+    new MarkupWalker().walk(root, (event, node) => {
         if (event === WalkEvent.entering) nodes.push(node);
     });
     return nodes;
