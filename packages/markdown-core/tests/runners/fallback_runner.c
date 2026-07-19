@@ -1084,8 +1084,10 @@ typedef struct {
 } rl_edit;
 
 /* Opens a session over `initial`, applies each edit as its own commit, and
- * pins the whole inventory: exactly one full commit (the empty open), and
- * every edit an incremental, resynced restart. */
+ * pins the whole inventory: exactly two full commits (the empty open and the
+ * whole-text insert, which routes to the full path — a head restart with no
+ * boundary beyond the damage), and every edit an incremental, resynced
+ * restart. */
 static int rl_cluster_scenario(const char *name, const char *initial, const rl_edit *edits, size_t edit_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
@@ -1117,14 +1119,14 @@ static int rl_cluster_scenario(const char *name, const char *initial, const rl_e
             goto done;
         }
     }
-    if (session->full_commits != 1 || session->restarted_commits != 1 + edit_count ||
+    if (session->full_commits != 2 || session->restarted_commits != edit_count ||
         session->resynced_commits != edit_count) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: %s: expected 1 full / %zu restarted / %zu resynced, "
+            "FAILED: restart_locality_counters: %s: expected 2 full / %zu restarted / %zu resynced, "
             "got %zu / %zu / %zu\n",
             name,
-            1 + edit_count,
+            edit_count,
             edit_count,
             session->full_commits,
             session->restarted_commits,
@@ -1165,9 +1167,12 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: initial commit failed\n");
         goto done;
     }
-    /* Opening a session commits the empty document through the full path. */
-    if (session->full_commits != 1 || session->restarted_commits != 1) {
-        fprintf(stderr, "FAILED: restart_locality_counters: initial commit was not an incremental restart\n");
+    /* Opening a session commits the empty document through the full path,
+     * and the whole-text insert routes there too: a head restart with no
+     * clean boundary at or beyond the damage reparses everything, and the
+     * full path does that with wholesale rebuilds. */
+    if (session->full_commits != 2 || session->restarted_commits != 0) {
+        fprintf(stderr, "FAILED: restart_locality_counters: whole-text insert did not route to the full path\n");
         goto done;
     }
     /* Retarget the last head definition: [c]'s destination at bytes 24..27. */
@@ -1176,11 +1181,11 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: retarget commit failed\n");
         goto done;
     }
-    if (session->full_commits != 1) {
+    if (session->full_commits != 2) {
         fprintf(stderr, "FAILED: restart_locality_counters: a head-cluster edit fell back to a full reparse\n");
         goto done;
     }
-    if (session->restarted_commits != 2 || session->resynced_commits != 1) {
+    if (session->restarted_commits != 1 || session->resynced_commits != 1) {
         fprintf(
             stderr,
             "FAILED: restart_locality_counters: expected a resynced restart (restarted %zu, resynced %zu)\n",

@@ -853,31 +853,6 @@ static void reconcile_apply(
 
 static bool is_wrapper_node(const markdown_core_node *node) { return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL; }
 
-/* Counts every node of every subtree in the sibling chain starting at
- * `chain` (wrappers included: a small over-reservation is harmless). */
-static size_t chain_node_count(const markdown_core_node *chain) {
-    size_t count = 0;
-    const markdown_core_node *top;
-    for (top = chain; top; top = top->next) {
-        const markdown_core_node *node = top;
-        for (;;) {
-            count++;
-            if (node->first_child) {
-                node = node->first_child;
-                continue;
-            }
-            while (node != top && !node->next) {
-                node = node->parent;
-            }
-            if (node == top) {
-                break;
-            }
-            node = node->next;
-        }
-    }
-    return count;
-}
-
 /* `stop` bounds the walk once the chain has been spliced into a longer
  * sibling list (the first suffix node, or NULL for an isolated chain). */
 static void ids_put_chain(markdown_core_session *session, markdown_core_node *chain, const markdown_core_node *stop) {
@@ -1705,6 +1680,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     dependent_unit *dependents = NULL;
     size_t dependent_count = 0;
     markdown_core_node *holder = NULL; // staging parent for dependent rebuilds
+    size_t sealed_nodes = 0;           // filled by the seal walks, sizes the id reserve
     bubble_ancestor *bubble_nodes = NULL;
     size_t bubble_count = 0;
     size_t bubble_capacity = 0;
@@ -1766,6 +1742,18 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // Rare — the entire tail was deleted at a clean boundary — and bounded:
     // fall back to the full reparse.
     if (restart_byte >= length) {
+        return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+    }
+
+    // Routing: a restart at the document head with no clean boundary at or
+    // beyond the damage reparses everything and no resync can cut the
+    // suffix. The full path runs the same parse with wholesale table and
+    // index rebuilds instead of per-node splice maintenance (measured up to
+    // 31% cheaper on whole-document shapes), and falling back here is free —
+    // nothing has been staged yet.
+    if (restart_byte == 0 &&
+        (session->clean.count == 0 || session->clean.items[session->clean.count - 1].start_byte <
+                                          (size_t)((ptrdiff_t)session->pending.new_hi - session->pending.delta))) {
         return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
     }
 
@@ -1914,6 +1902,22 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 }
                 goto failed;
             }
+            // Routing: when the changed labels' dependents approach the
+            // whole document, the full path's wholesale rebuilds beat
+            // per-unit splice maintenance (measured 31% on the
+            // every-unit-affected shape). Only the small staged region's
+            // parse is discarded by falling back here.
+            if (dependent_count >= 64) {
+                size_t children = 0;
+                markdown_core_node *child;
+                for (child = doc->first_child; child && children < dependent_count * 2; child = child->next) {
+                    children++;
+                }
+                if (dependent_count * 2 >= children) {
+                    result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+                    goto failed;
+                }
+            }
             if (dependent_count) {
                 holder = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, mem);
                 if (!holder) {
@@ -1986,7 +1990,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         session->expansion_estimate += phase_expansion; // an upper bound stays one if a later step fails
     }
 
-    markdown_core_session_seal_positions(root);
+    // The seal walks double as the node count for the id reservation below:
+    // the parse root's count includes the root holder itself, and the
+    // dependents' counts sum to exactly the holder's child chain.
+    sealed_nodes = markdown_core_session_seal_positions(root) - 1;
     {
         // Rebuilt units seal like parse roots (absolute start kept, children
         // relativized), then take the replaced unit's stored start: the
@@ -1995,7 +2002,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         // ancestor.
         size_t i;
         for (i = 0; i < dependent_count; i++) {
-            markdown_core_session_seal_positions(dependents[i].staged);
+            sealed_nodes += markdown_core_session_seal_positions(dependents[i].staged);
             dependents[i].staged->start_line = dependents[i].unit->start_line;
         }
     }
@@ -2025,10 +2032,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         markdown_core_node *suffix_head = boundary_node;
         markdown_core_node *staged_first = NULL;
         markdown_core_node *staged_last = NULL;
-        size_t staged_nodes = chain_node_count(root->first_child);
-        if (holder) {
-            staged_nodes += chain_node_count(holder->first_child);
-        }
+        size_t staged_nodes = sealed_nodes;
         size_t staged_clean = 0;
         size_t prefix_clean = restart_pos >= 0 ? (size_t)restart_pos : 0;
         size_t boundary_idx = boundary_pos >= 0 ? (size_t)boundary_pos : session->clean.count;
