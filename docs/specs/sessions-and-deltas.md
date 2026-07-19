@@ -240,7 +240,7 @@ one-shot nodes carry ids) and `MarkupSession`:
 | --- | --- |
 | `MarkupSession(options)` | options are immutable for the session lifetime |
 | `replace` / `append` | queue edits as defined above (byte ranges of the stored text) |
-| `commit()` | returns a `Commit` value: the new `document` plus its `changes: Delta` |
+| `commit()` | returns a `Commit` value: the new `document` plus its `delta: Delta` |
 | `updates(feeding:)` | async sugar: feed a token stream, yield one `Commit` per token |
 | `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
 | `node(for:)` | the committed snapshot's current value for an id |
@@ -251,7 +251,7 @@ Shared platform types, named identically on all three platforms:
 - `MarkupID` — node identity: the session's `lineage` salt plus the raw
   64-bit id. `Identifiable`-style APIs use `MarkupID` (revision-free, stable
   across commits); node equality is `MarkupID` plus `revision`.
-- `Commit` — `{ document, changes: Delta }`.
+- `Commit` — `{ document, delta: Delta }`.
 - `Delta` — `{ beforeRevision, afterRevision, added, removed, changed,
   bubbled }` as arrays of `MarkupID`. Always present on a platform `Commit`
   (the C-level nullable out-parameter is a C-consumer knob only).

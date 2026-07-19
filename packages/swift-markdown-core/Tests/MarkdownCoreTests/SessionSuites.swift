@@ -22,8 +22,8 @@ import Testing
         #expect(secondText.id == firstText.id)
         #expect(secondText.revision > firstText.revision)
         #expect(secondHeading == firstHeading)
-        #expect(!second.changes.added.contains(secondParagraph.id))
-        #expect(!second.changes.removed.contains(firstText.id))
+        #expect(!second.delta.added.contains(secondParagraph.id))
+        #expect(!second.delta.removed.contains(firstText.id))
     }
 
     @Test("a clean-boundary insert at the top leaves downstream identity intact")
@@ -38,7 +38,7 @@ import Testing
 
         #expect(after.document.children.count == 4)
         let inserted = try #require(after.document.children[0] as? Heading)
-        #expect(after.changes.added.contains(inserted.id))
+        #expect(after.delta.added.contains(inserted.id))
         for (index, node) in after.document.children.dropFirst().enumerated() {
             #expect(node.id == downstreamBefore[index].0)
             #expect(node.revision == downstreamBefore[index].1)
@@ -66,8 +66,8 @@ import Testing
         let after = try session.commit()
         let heading = try #require(after.document.children[0] as? Heading)
 
-        #expect(after.changes.removed.contains(paragraph.id))
-        #expect(after.changes.added.contains(heading.id))
+        #expect(after.delta.removed.contains(paragraph.id))
+        #expect(after.delta.added.contains(heading.id))
         #expect(heading.id != paragraph.id)
     }
 
@@ -97,10 +97,10 @@ import Testing
         let after = try session.commit()
         let omegaAfter = try #require(after.document.children[1] as? Paragraph)
 
-        #expect(after.changes.added.isEmpty)
-        #expect(after.changes.removed.isEmpty)
-        #expect(after.changes.changed.isEmpty)
-        #expect(after.changes.bubbled.isEmpty)
+        #expect(after.delta.added.isEmpty)
+        #expect(after.delta.removed.isEmpty)
+        #expect(after.delta.changed.isEmpty)
+        #expect(after.delta.bubbled.isEmpty)
         #expect(omegaAfter == omegaBefore)
         #expect(after.document.scope(of: omegaAfter).start.line == 3)
         #expect(after.document.dump() == (try Document.parse("Alpha\n\nOmega\n").dump()))
@@ -154,7 +154,7 @@ import Testing
         try session.replace(0..<0, with: "Lead [^a].\n\n")
         let shifted = try session.commit()
         #expect(session.footnotes().map(\.label) == ["a", "b"])
-        #expect(!shifted.changes.changed.isEmpty)
+        #expect(!shifted.delta.changed.isEmpty)
         _ = dumpBefore
     }
 

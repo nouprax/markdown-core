@@ -140,9 +140,9 @@ for (const testCase of canonicalManifest.cases) {
                 // Delta-mirror integrity: the four arrays are disjoint,
                 // every node outside the delta kept its exact revision, and
                 // removed ids are gone.
-                const changes = commit.changes;
-                const touched = [...changes.added, ...changes.changed, ...changes.bubbled].map((id) => id.rawValue);
-                const removed = changes.removed.map((id) => id.rawValue);
+                const delta = commit.delta;
+                const touched = [...delta.added, ...delta.changed, ...delta.bubbled].map((id) => id.rawValue);
+                const removed = delta.removed.map((id) => id.rawValue);
                 assert.equal(new Set([...touched, ...removed]).size, touched.length + removed.length, testCase.name);
                 const touchedSet = new Set(touched);
                 const current = new Map();

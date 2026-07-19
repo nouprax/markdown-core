@@ -138,9 +138,9 @@ export class MarkupSession {
         // failure.
         const previous = this.resolver;
         previous.detach();
-        let changesPointer: number;
+        let deltaPointer: number;
         try {
-            changesPointer = this.native.commit(true);
+            deltaPointer = this.native.commit(true);
         } catch (failure) {
             if (failure instanceof ParseError) {
                 // The native commit failed transactionally: the tree is
@@ -156,8 +156,8 @@ export class MarkupSession {
         // leaves the mirror out of step, and the session refuses further
         // work.
         try {
-            const raw = this.native.readDelta(changesPointer);
-            const changes: Delta = {
+            const raw = this.native.readDelta(deltaPointer);
+            const delta: Delta = {
                 beforeRevision: raw.beforeRevision,
                 afterRevision: raw.afterRevision,
                 added: raw.added.map((rawValue) => this.identity(rawValue)),
@@ -192,12 +192,12 @@ export class MarkupSession {
             this.mirror.set(this.rootRawValue, document);
             this.resolver = resolver;
             this.currentDocument = document;
-            return { document, changes };
+            return { document, delta };
         } catch (failure) {
             this.failed = true;
             throw failure;
         } finally {
-            this.native.deltaFree(changesPointer);
+            this.native.deltaFree(deltaPointer);
         }
     }
 

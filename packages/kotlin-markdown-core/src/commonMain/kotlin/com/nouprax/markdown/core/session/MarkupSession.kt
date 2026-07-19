@@ -117,7 +117,7 @@ public class MarkupSession(
         // superseded-snapshot failure.
         val previous = resolver
         previous.detach()
-        val changes =
+        val delta =
             try {
                 WireDecoder.decodeCommit(native.commit(), lineage, mirror)
             } catch (failure: ParseException) {
@@ -140,7 +140,7 @@ public class MarkupSession(
         val adopted = Document(root.id, root.revision, root.content, resolver)
         mirror[rootId] = adopted
         document = adopted
-        return Commit(adopted, changes)
+        return Commit(adopted, delta)
     }
 
     /**

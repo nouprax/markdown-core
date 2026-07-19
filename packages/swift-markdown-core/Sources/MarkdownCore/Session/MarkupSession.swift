@@ -130,30 +130,30 @@ public final class MarkupSession {
             preconditionFailure("session commit succeeded without a delta")
         }
         defer { markdown_core_delta_free(nativeChanges) }
-        let changes = Delta(from: nativeChanges, lineage: lineage)
+        let delta = Delta(from: nativeChanges, lineage: lineage)
 
         guard let view = markdown_core_session_document(session),
             let root = markdown_core_document_root(view)
         else {
             preconditionFailure("session committed without a document root")
         }
-        if changes.beforeRevision == 0 {
+        if delta.beforeRevision == 0 {
             // First commit: every node is fresh, so a direct recursive build
             // skips the by-id lookups and depth sort of the delta path. This
             // is also what keeps the one-shot `Document.parse` sugar on the
             // v1 performance budget.
             mirror[markdown_core_node_get_id(root)] = build(root)
         } else {
-            for id in changes.removed {
+            for id in delta.removed {
                 mirror.removeValue(forKey: id.rawValue)
             }
             let builder = MarkupBuilder(lineage: lineage) { [self] node in children(of: node) }
-            for rebuild in rebuilds(of: changes) {
+            for rebuild in rebuilds(of: delta) {
                 mirror[rebuild.rawID] = builder.markup(from: rebuild.node)
             }
         }
 
-        return Commit(document: adopt(root: root), changes: changes)
+        return Commit(document: adopt(root: root), delta: delta)
     }
 
     private func adopt(root: OpaquePointer) -> Document {
@@ -215,12 +215,12 @@ public final class MarkupSession {
         let depth: Int
     }
 
-    private func rebuilds(of changes: Delta) -> [Rebuild] {
+    private func rebuilds(of delta: Delta) -> [Rebuild] {
         var rebuilds: [Rebuild] = []
         rebuilds.reserveCapacity(
-            changes.added.count + changes.changed.count + changes.bubbled.count
+            delta.added.count + delta.changed.count + delta.bubbled.count
         )
-        for id in [changes.added, changes.changed, changes.bubbled].joined() {
+        for id in [delta.added, delta.changed, delta.bubbled].joined() {
             guard let node = markdown_core_session_node_by_id(session, id.rawValue) else {
                 preconditionFailure("delta names a node the session cannot resolve")
             }

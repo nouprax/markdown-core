@@ -23,8 +23,8 @@ test("sessions: streaming keeps frontier ids and bumps the trailing text revisio
         assert.ok(secondText.revision > firstText.revision);
         // An unchanged node is the same object across snapshots.
         assert.equal(secondHeading, firstHeading);
-        assert.equal(second.changes.added.includes(secondParagraph.id), false);
-        assert.equal(second.changes.removed.includes(firstText.id), false);
+        assert.equal(second.delta.added.includes(secondParagraph.id), false);
+        assert.equal(second.delta.removed.includes(firstText.id), false);
     } finally {
         session.close();
     }
@@ -43,7 +43,7 @@ test("sessions: a clean-boundary insert at the top leaves downstream identity in
         assert.equal(after.document.content.length, 4);
         const inserted = after.document.content[0];
         assert.equal(inserted.kind, "heading");
-        assert.ok(after.changes.added.includes(inserted.id));
+        assert.ok(after.delta.added.includes(inserted.id));
         after.document.content.slice(1).forEach((node, index) => {
             assert.equal(node.id, downstreamBefore[index][0]);
             assert.equal(node.revision, downstreamBefore[index][1]);
@@ -75,8 +75,8 @@ test("sessions: a kind change is reported as removed plus added", () => {
         const heading = after.document.content[0];
         assert.equal(heading.kind, "heading");
 
-        assert.ok(after.changes.removed.includes(paragraph.id));
-        assert.ok(after.changes.added.includes(heading.id));
+        assert.ok(after.delta.removed.includes(paragraph.id));
+        assert.ok(after.delta.added.includes(heading.id));
         assert.notEqual(paragraph.id, heading.id);
     } finally {
         session.close();
@@ -96,10 +96,10 @@ test("sessions: a blank-line-only edit commits an empty delta yet shifts scopes"
         const after = session.commit();
         const omegaAfter = after.document.content[1];
 
-        assert.deepEqual(after.changes.added, []);
-        assert.deepEqual(after.changes.removed, []);
-        assert.deepEqual(after.changes.changed, []);
-        assert.deepEqual(after.changes.bubbled, []);
+        assert.deepEqual(after.delta.added, []);
+        assert.deepEqual(after.delta.removed, []);
+        assert.deepEqual(after.delta.changed, []);
+        assert.deepEqual(after.delta.bubbled, []);
         assert.equal(omegaAfter, omegaBefore);
         assert.equal(after.document.scope(omegaAfter).start.line, 3);
         assert.equal(after.document.dump(), Document.parse("Alpha\n\nOmega\n").dump());
@@ -177,7 +177,7 @@ test("sessions: footnote queries answer numbering, resolution, and back-referenc
             session.footnotes().map((definition) => definition.label),
             ["a", "b"]
         );
-        assert.ok(shifted.changes.changed.length > 0);
+        assert.ok(shifted.delta.changed.length > 0);
     } finally {
         session.close();
     }

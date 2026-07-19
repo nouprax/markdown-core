@@ -5,7 +5,7 @@ import type { MarkupID } from "../model/markup-id.js";
  * exact difference from the previous revision. */
 export interface Commit {
     readonly document: Document;
-    readonly changes: Delta;
+    readonly delta: Delta;
 }
 
 /**

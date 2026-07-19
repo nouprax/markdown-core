@@ -88,7 +88,7 @@ MarkupSession().use { session ->
     session.append(" world")
     val second = session.commit()
     check(second.document.content[1].id == first.document.content[1].id)
-    check(second.changes.added.isEmpty())
+    check(second.delta.added.isEmpty())
 }
 ```
 

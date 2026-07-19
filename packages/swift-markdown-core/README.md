@@ -92,7 +92,7 @@ let second = try session.commit()
 
 ```swift
 for try await commit in session.updates(feeding: tokens) {
-    render(commit.document, commit.changes)
+    render(commit.document, commit.delta)
 }
 ```
 

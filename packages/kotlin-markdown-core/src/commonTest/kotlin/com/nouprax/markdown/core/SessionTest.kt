@@ -32,8 +32,8 @@ class SessionTest {
             assertEquals(firstText.id, secondText.id)
             assertTrue(secondText.revision > firstText.revision)
             assertEquals(firstHeading, secondHeading)
-            assertTrue(secondParagraph.id !in second.changes.added)
-            assertTrue(firstText.id !in second.changes.removed)
+            assertTrue(secondParagraph.id !in second.delta.added)
+            assertTrue(firstText.id !in second.delta.removed)
         }
     }
 
@@ -49,7 +49,7 @@ class SessionTest {
 
             assertEquals(4, after.document.content.size)
             val inserted = assertIs<Heading>(after.document.content[0])
-            assertTrue(inserted.id in after.changes.added)
+            assertTrue(inserted.id in after.delta.added)
             after.document.content.drop(1).forEachIndexed { index, node ->
                 assertEquals(downstreamBefore[index].first, node.id)
                 assertEquals(downstreamBefore[index].second, node.revision)
@@ -90,8 +90,8 @@ class SessionTest {
             val after = session.commit()
             val heading = assertIs<Heading>(after.document.content[0])
 
-            assertTrue(paragraph.id in after.changes.removed)
-            assertTrue(heading.id in after.changes.added)
+            assertTrue(paragraph.id in after.delta.removed)
+            assertTrue(heading.id in after.delta.added)
             assertNotEquals(paragraph.id, heading.id)
         }
     }
@@ -127,10 +127,10 @@ class SessionTest {
             val after = session.commit()
             val omegaAfter = assertIs<Paragraph>(after.document.content[1])
 
-            assertTrue(after.changes.added.isEmpty())
-            assertTrue(after.changes.removed.isEmpty())
-            assertTrue(after.changes.changed.isEmpty())
-            assertTrue(after.changes.bubbled.isEmpty())
+            assertTrue(after.delta.added.isEmpty())
+            assertTrue(after.delta.removed.isEmpty())
+            assertTrue(after.delta.changed.isEmpty())
+            assertTrue(after.delta.bubbled.isEmpty())
             assertEquals(omegaBefore, omegaAfter)
             assertEquals(
                 3,
@@ -218,7 +218,7 @@ class SessionTest {
             session.replace(0, 0, "Lead [^a].\n\n")
             val shifted = session.commit()
             assertEquals(listOf("a", "b"), session.footnotes().map { it.label })
-            assertTrue(shifted.changes.changed.isNotEmpty())
+            assertTrue(shifted.delta.changed.isNotEmpty())
         }
     }
 

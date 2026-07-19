@@ -20,9 +20,9 @@ export interface NativeExports extends WebAssembly.Exports {
     es_session_footnote_info(session: number, id: bigint, fieldsOutput: number): number;
     es_session_footnotes(session: number, dataOutput: number): number;
     es_session_footnote_references(session: number, definition: bigint, dataOutput: number): number;
-    es_delta_revision(changes: number, boundary: number): bigint;
-    es_delta_ids(changes: number, verdict: number, dataOutput: number): number;
-    es_delta_free(changes: number): void;
+    es_delta_revision(delta: number, boundary: number): bigint;
+    es_delta_ids(delta: number, verdict: number, dataOutput: number): number;
+    es_delta_free(delta: number): void;
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;

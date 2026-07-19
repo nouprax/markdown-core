@@ -77,7 +77,7 @@ import { MarkupSession } from "@nouprax/es-markdown-core";
 
 const session = new MarkupSession();
 for await (const commit of session.updates(tokenStream)) {
-  render(commit.document, commit.changes);
+  render(commit.document, commit.delta);
 }
 session.close();
 ```

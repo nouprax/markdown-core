@@ -29,10 +29,10 @@ class SessionAstTest {
                     // Delta-mirror integrity: the four arrays are disjoint,
                     // every node outside the delta kept its exact revision,
                     // and removed ids are gone.
-                    val changes = commit.changes
+                    val delta = commit.delta
                     val touched =
-                        (changes.added + changes.changed + changes.bubbled).map { it.rawValue }
-                    val removed = changes.removed.map { it.rawValue }
+                        (delta.added + delta.changed + delta.bubbled).map { it.rawValue }
+                    val removed = delta.removed.map { it.rawValue }
                     assertEquals(
                         touched.size + removed.size,
                         (touched + removed).toSet().size,

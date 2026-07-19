@@ -83,12 +83,12 @@ import Testing
                 // Delta-mirror integrity: every node outside the
                 // delta kept its exact revision, removed ids are gone,
                 // and the four arrays are disjoint.
-                let changes = commit.changes
-                let touched = [changes.added, changes.changed, changes.bubbled]
+                let delta = commit.delta
+                let touched = [delta.added, delta.changed, delta.bubbled]
                     .joined().map(\.rawValue)
                 #expect(
-                    touched.count + changes.removed.count
-                        == Set(touched).union(changes.removed.map(\.rawValue)).count
+                    touched.count + delta.removed.count
+                        == Set(touched).union(delta.removed.map(\.rawValue)).count
                 )
                 var current: [UInt64: UInt64] = [:]
                 let touchedSet = Set(touched)
@@ -98,7 +98,7 @@ import Testing
                         #expect(previous[node.id.rawValue] == node.revision)
                     }
                 }
-                for removed in changes.removed {
+                for removed in delta.removed {
                     #expect(current[removed.rawValue] == nil)
                 }
                 previous = current
