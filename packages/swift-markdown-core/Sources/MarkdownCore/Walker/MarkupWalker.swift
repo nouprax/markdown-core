@@ -3,7 +3,7 @@ public enum WalkEvent: Sendable {
     case exiting
 }
 
-public struct Walker: Sendable {
+public struct MarkupWalker: Sendable {
     public init() {}
 
     /// Walks the document depth-first, supplying each event with the node's

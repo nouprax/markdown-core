@@ -8,7 +8,7 @@ import { CSession } from "../runtime/c-session.js";
 import type { Commit, Delta } from "./commit.js";
 import type { FootnoteInfo } from "./footnote-info.js";
 import { ScopeResolver } from "./scope-resolver.js";
-import { adoptDocument } from "./snapshot.js";
+import { adopt } from "./snapshot.js";
 
 /**
  * The single mutable owner of one Markdown text and its living AST.
@@ -37,7 +37,7 @@ export class MarkupSession {
     private readonly mirror = new Map<number, Markup>();
     private readonly identities = new Map<number, MarkupID>();
     private readonly rootRawValue: number;
-    private currentResolver: ScopeResolver;
+    private resolver: ScopeResolver;
     private currentDocument: Document;
     private closed = false;
     private failed = false;
@@ -52,11 +52,11 @@ export class MarkupSession {
             const rootIdentity = this.native.rootIdentity();
             this.rootRawValue = rootIdentity.rawValue;
             const resolver = ScopeResolver.live(this.native);
-            this.currentResolver = resolver;
-            const root = adoptDocument(
+            this.resolver = resolver;
+            const root = adopt(
                 {
                     kind: "document",
-                    id: this.markupId(this.rootRawValue),
+                    id: this.identity(this.rootRawValue),
                     revision: rootIdentity.revision,
                     content: []
                 },
@@ -136,17 +136,17 @@ export class MarkupSession {
         // positions as its own — a reader either materialized from the
         // still-unchanged tree or takes the documented superseded-snapshot
         // failure.
-        const previousResolver = this.currentResolver;
-        previousResolver.detach();
-        let changesPointer: number;
+        const previous = this.resolver;
+        previous.detach();
+        let deltaPointer: number;
         try {
-            changesPointer = this.native.commit(true);
+            deltaPointer = this.native.commit(true);
         } catch (failure) {
             if (failure instanceof ParseError) {
                 // The native commit failed transactionally: the tree is
                 // unchanged at the previous revision, the previous snapshot
                 // becomes current again, and the commit may be retried.
-                previousResolver.reattach(this.native);
+                previous.reattach(this.native);
                 throw failure;
             }
             this.failed = true;
@@ -156,14 +156,14 @@ export class MarkupSession {
         // leaves the mirror out of step, and the session refuses further
         // work.
         try {
-            const raw = this.native.readDelta(changesPointer);
-            const changes: Delta = {
+            const raw = this.native.readDelta(deltaPointer);
+            const delta: Delta = {
                 beforeRevision: raw.beforeRevision,
                 afterRevision: raw.afterRevision,
-                added: raw.added.map((rawValue) => this.markupId(rawValue)),
-                removed: raw.removed.map((rawValue) => this.markupId(rawValue)),
-                changed: raw.changed.map((rawValue) => this.markupId(rawValue)),
-                bubbled: raw.bubbled.map((rawValue) => this.markupId(rawValue))
+                added: raw.added.map((rawValue) => this.identity(rawValue)),
+                removed: raw.removed.map((rawValue) => this.identity(rawValue)),
+                changed: raw.changed.map((rawValue) => this.identity(rawValue)),
+                bubbled: raw.bubbled.map((rawValue) => this.identity(rawValue))
             };
             const resolver = ScopeResolver.live(this.native);
             const touched = new Set<number>([...raw.added, ...raw.changed, ...raw.bubbled]);
@@ -172,15 +172,15 @@ export class MarkupSession {
                 // A pure positional shift: the tree is value-identical, but
                 // this snapshot needs its own resolver for the shifted
                 // positions.
-                const previous = this.currentDocument;
-                document = adoptDocument(
-                    { kind: "document", id: previous.id, revision: previous.revision, content: previous.content },
+                const value = this.currentDocument;
+                document = adopt(
+                    { kind: "document", id: value.id, revision: value.revision, content: value.content },
                     resolver
                 );
             } else {
                 document = this.native.decoder.decodeDocument(this.native.rootPointer(), {
-                    ids: (rawValue) => this.markupId(rawValue),
-                    adopt: (value) => adoptDocument(value, resolver),
+                    ids: (rawValue) => this.identity(rawValue),
+                    adopt: (value) => adopt(value, resolver),
                     mirror: this.mirror,
                     touched
                 });
@@ -190,14 +190,14 @@ export class MarkupSession {
                 this.identities.delete(rawValue);
             }
             this.mirror.set(this.rootRawValue, document);
-            this.currentResolver = resolver;
+            this.resolver = resolver;
             this.currentDocument = document;
-            return { document, changes };
+            return { document, delta };
         } catch (failure) {
             this.failed = true;
             throw failure;
         } finally {
-            this.native.deltaFree(changesPointer);
+            this.native.deltaFree(deltaPointer);
         }
     }
 
@@ -210,13 +210,13 @@ export class MarkupSession {
     /** Answers for the footnote reference or definition with `id` at the
      * committed revision; null when `id` does not name a footnote node of
      * this session. */
-    footnoteInfo(id: MarkupID): FootnoteInfo | null {
+    footnote(id: MarkupID): FootnoteInfo | null {
         if (id.lineage !== this.lineage) return null;
         this.requireOpen();
         const raw = this.native.footnoteInfo(id.rawValue);
         if (raw === null) return null;
         return {
-            definition: raw.definition === 0 ? null : this.markupId(raw.definition),
+            definition: raw.definition === 0 ? null : this.identity(raw.definition),
             number: raw.number === 0 ? null : raw.number,
             referenceOrdinal: raw.referenceOrdinal === 0 ? null : raw.referenceOrdinal,
             referenceCount: raw.referenceCount
@@ -238,7 +238,7 @@ export class MarkupSession {
     /** The references that resolve to `definition`, in document order — the
      * renderer's back-reference targets. Empty unless `definition` is a
      * referenced winning definition of this session. */
-    footnoteReferences(definition: MarkupID): FootnoteReference[] {
+    references(definition: MarkupID): FootnoteReference[] {
         if (definition.lineage !== this.lineage) return [];
         this.requireOpen();
         return this.native.footnoteReferences(definition.rawValue).map((rawValue) => {
@@ -249,19 +249,6 @@ export class MarkupSession {
     }
 
     /**
-     * Async sugar over the streaming hot path: appends each token from
-     * `input` and commits, yielding one `Commit` per token. Coalescing
-     * tokens before feeding them trades latency for throughput exactly as
-     * manual `append` + `commit` does.
-     */
-    async *updates(input: AsyncIterable<string> | Iterable<string>): AsyncIterableIterator<Commit> {
-        for await (const token of input) {
-            this.append(token);
-            yield this.commit();
-        }
-    }
-
-    /**
      * Releases the native session. Idempotent. Snapshots, deltas, and scopes
      * materialized while their snapshot was current remain usable; every
      * other member of this class fails after closing.
@@ -269,11 +256,11 @@ export class MarkupSession {
     close(): void {
         if (this.closed) return;
         this.closed = true;
-        this.currentResolver.detach();
+        this.resolver.detach();
         this.native.free();
     }
 
-    private markupId(rawValue: number): MarkupID {
+    private identity(rawValue: number): MarkupID {
         const existing = this.identities.get(rawValue);
         if (existing) return existing;
         const created: MarkupID = { lineage: this.lineage, rawValue };

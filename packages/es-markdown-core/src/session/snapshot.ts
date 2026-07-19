@@ -1,6 +1,6 @@
 import type { Document } from "../model/document.js";
 import type { Markup } from "../model/markup.js";
-import { TreeDumper } from "../tree-dumper.js";
+import { MarkupDumper } from "../markup-dumper.js";
 import type { Scope } from "../values.js";
 import type { DocumentValue } from "../wire/node-decoder.js";
 import type { ScopeResolver } from "./scope-resolver.js";
@@ -11,7 +11,7 @@ import type { ScopeResolver } from "./scope-resolver.js";
  * properties, keeping the node a plain value for enumeration and
  * serialization.
  */
-export function adoptDocument(value: DocumentValue, resolver: ScopeResolver): Document {
+export function adopt(value: DocumentValue, resolver: ScopeResolver): Document {
     const document = {
         kind: value.kind,
         id: value.id,
@@ -35,7 +35,7 @@ export function adoptDocument(value: DocumentValue, resolver: ScopeResolver): Do
     Object.defineProperty(document, "dump", {
         enumerable: false,
         value(this: Document): string {
-            return TreeDumper.dump(this);
+            return MarkupDumper.dump(this);
         }
     });
     return document as Document;

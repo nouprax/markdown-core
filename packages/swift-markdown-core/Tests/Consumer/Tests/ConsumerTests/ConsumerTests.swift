@@ -7,6 +7,6 @@ import Testing
         let document = try Document.parse("## Consumer\n")
 
         #expect((document.children.first as? Heading)?.level == 2)
-        #expect(document.dump() == TreeDumper.dump(document))
+        #expect(document.dump() == MarkupDumper.dump(document))
     }
 }

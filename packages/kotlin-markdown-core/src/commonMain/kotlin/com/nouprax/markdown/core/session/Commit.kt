@@ -6,7 +6,7 @@ package com.nouprax.markdown.core
  */
 public class Commit internal constructor(
     public val document: Document,
-    public val changes: Delta,
+    public val delta: Delta,
 )
 
 /**

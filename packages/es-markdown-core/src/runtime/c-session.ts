@@ -117,19 +117,19 @@ export class CSession {
         return changes;
     }
 
-    readDelta(changes: number): RawDelta {
+    readDelta(delta: number): RawDelta {
         return {
-            beforeRevision: this.decoder.toSafeNumber(native.es_delta_revision(changes, 0), "delta revision"),
-            afterRevision: this.decoder.toSafeNumber(native.es_delta_revision(changes, 1), "delta revision"),
-            added: this.readIds((output) => native.es_delta_ids(changes, 0, output)),
-            removed: this.readIds((output) => native.es_delta_ids(changes, 1, output)),
-            changed: this.readIds((output) => native.es_delta_ids(changes, 2, output)),
-            bubbled: this.readIds((output) => native.es_delta_ids(changes, 3, output))
+            beforeRevision: this.decoder.toSafeNumber(native.es_delta_revision(delta, 0), "delta revision"),
+            afterRevision: this.decoder.toSafeNumber(native.es_delta_revision(delta, 1), "delta revision"),
+            added: this.readIds((output) => native.es_delta_ids(delta, 0, output)),
+            removed: this.readIds((output) => native.es_delta_ids(delta, 1, output)),
+            changed: this.readIds((output) => native.es_delta_ids(delta, 2, output)),
+            bubbled: this.readIds((output) => native.es_delta_ids(delta, 3, output))
         };
     }
 
-    deltaFree(changes: number): void {
-        native.es_delta_free(changes);
+    deltaFree(delta: number): void {
+        native.es_delta_free(delta);
     }
 
     rootPointer(): number {

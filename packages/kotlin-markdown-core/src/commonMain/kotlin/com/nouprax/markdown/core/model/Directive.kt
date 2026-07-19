@@ -8,7 +8,7 @@ public class Directive internal constructor(
     public val attributes: String?,
     public val label: kotlin.collections.List<Markup>?,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDirective(this)
+    override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

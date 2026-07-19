@@ -65,7 +65,7 @@ try {
                     "const d = api.Document.parse('# npm consumer');",
                     "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
-                    "if (d.dump() !== api.TreeDumper.dump(d)) process.exit(4);",
+                    "if (d.dump() !== api.MarkupDumper.dump(d)) process.exit(4);",
                     "const s = new api.MarkupSession();",
                     "s.append('# npm consumer');",
                     "if (s.commit().document.dump() !== d.dump()) process.exit(5);",

@@ -2,7 +2,7 @@ import type { Document } from "../model/document.js";
 import type { MarkupID } from "../model/markup-id.js";
 import type { ParseOptions } from "../parse-options.js";
 import { ScopeResolver } from "../session/scope-resolver.js";
-import { adoptDocument } from "../session/snapshot.js";
+import { adopt } from "../session/snapshot.js";
 import { CSession } from "./c-session.js";
 
 /**
@@ -11,7 +11,7 @@ import { CSession } from "./c-session.js";
  * session survives the call; nodes carry ids under the internal session's
  * lineage, so separate parses never share identity.
  */
-export function parseDocument(source: string, parseOptions: ParseOptions = {}): Document {
+export function parse(source: string, parseOptions: ParseOptions = {}): Document {
     if (typeof source !== "string") throw new TypeError("source must be a string");
     if (parseOptions === null || typeof parseOptions !== "object") {
         throw new TypeError("options must be an object");
@@ -32,7 +32,7 @@ export function parseDocument(source: string, parseOptions: ParseOptions = {}): 
                 }
                 return id;
             },
-            adopt: (value) => adoptDocument(value, resolver),
+            adopt: (value) => adopt(value, resolver),
             mirror: null,
             touched: null
         });

@@ -17,7 +17,7 @@ interface Frame {
     readonly scope?: Scope;
 }
 
-export class Walker {
+export class MarkupWalker {
     /** Walks the document depth-first, supplying each event with the node's
      * resolved absolute scope. */
     walk(document: Document, callback: WalkCallback): void;

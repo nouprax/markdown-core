@@ -42,7 +42,7 @@ public struct MarkupID: Sendable, Hashable {
 /// `id` and the same `revision`, which the engine guarantees implies
 /// identical AST content (fields and descendants). Absolute source position
 /// is not content — resolve it with `Document.scope(of:)` or receive it from
-/// `Walker` events.
+/// `MarkupWalker` events.
 public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     var id: MarkupID { get }
 

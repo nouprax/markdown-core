@@ -16,7 +16,7 @@ initialization, so `Document.parse` is synchronous.
 ## Parse Markdown
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper, MarkupWalker } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello", {
   directives: false,
@@ -24,7 +24,7 @@ const document = Document.parse("# Hello", {
 
 console.log(document.content[0].kind);
 console.log(document.dump());
-console.log(TreeDumper.dump(document, document.content[0]));
+console.log(MarkupDumper.dump(document, document.content[0]));
 ```
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
@@ -48,16 +48,16 @@ Nodes do not store absolute positions. Resolve them through the snapshot:
 
 ## Traverse and Inspect
 
-Use `Walker` for a read-only depth-first traversal; every event carries the
+Use `MarkupWalker` for a read-only depth-first traversal; every event carries the
 resolved scope:
 
 ```js
-new Walker().walk(document, (event, node, scope) => {
+new MarkupWalker().walk(document, (event, node, scope) => {
   console.log(event, node.kind, scope.start.line);
 });
 ```
 
-`document.dump()` and `TreeDumper.dump(document, node)` emit the canonical
+`document.dump()` and `MarkupDumper.dump(document, node)` emit the canonical
 diagnostic tree for the complete document or a focused subtree (subtree scopes
 print with the subtree as origin). The text is intended for logs, snapshots,
 and debugging rather than persistence or data interchange.
@@ -72,19 +72,25 @@ the new immutable snapshot plus the exact delta — the ids that were `added`,
 the document is semantically identical to a one-shot `Document.parse` of the
 same final text.
 
+Streaming consumers keep the two primitives on their natural cadences:
+`append` on every network message (cheap — nothing parses), `commit` on the
+render tick. Messages that arrive between ticks conflate into one commit, so
+the parse rate follows your display, not the socket:
+
 ```js
 import { MarkupSession } from "@nouprax/es-markdown-core";
 
 const session = new MarkupSession();
-for await (const commit of session.updates(tokenStream)) {
-  render(commit.document, commit.changes);
-}
-session.close();
+socket.onmessage = ({ data }) => session.append(data);
+const ticker = setInterval(() => {
+  const commit = session.commit();
+  render(commit.document, commit.delta);
+}, 100);
 ```
 
 Snapshots are plain immutable values that share every unchanged node with the
 previous snapshot and stay usable after the session advances or closes.
 `session.node(id)` answers the committed value for an id, and
-`session.footnotes()`, `session.footnoteInfo(id)`, and
-`session.footnoteReferences(id)` answer footnote numbering, resolution, and
+`session.footnotes()`, `session.footnote(id)`, and
+`session.references(id)` answer footnote numbering, resolution, and
 back-reference ordinals as queries against the committed revision.

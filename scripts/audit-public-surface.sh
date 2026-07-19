@@ -71,22 +71,20 @@ session_surface=$(grep -R -h -o -E \
 expected_session_surface='public final class MarkupSession
 public func append(_ text: String) throws
 public func commit() throws -> Commit
-public func footnoteInfo(of id: MarkupID) -> FootnoteInfo?
-public func footnoteReferences(of definition: MarkupID) -> [FootnoteReference]
+public func footnote(of id: MarkupID) -> FootnoteInfo?
 public func footnotes() -> [FootnoteDefinition]
-public func makeAsyncIterator() -> Updates<Tokens>
 public func node(for id: MarkupID) -> (any Markup)?
+public func references(of definition: MarkupID) -> [FootnoteReference]
 public func replace(_ range: Range<Int>, with text: String) throws
 public func scope(of node: some Markup) -> Scope
-public func updates<Tokens: AsyncSequence>(
 public init(options: ParseOptions
 public let added: [MarkupID]
 public let afterRevision: UInt64
 public let beforeRevision: UInt64
 public let bubbled: [MarkupID]
 public let changed: [MarkupID]
-public let changes: Delta
 public let definition: MarkupID?
+public let delta: Delta
 public let document: Document
 public let lineage: UInt64
 public let number: Int?
@@ -94,23 +92,21 @@ public let options: ParseOptions
 public let referenceCount: Int
 public let referenceOrdinal: Int?
 public let removed: [MarkupID]
-public mutating func next() async throws -> Commit?
 public private(set) var document: Document
 public struct Commit: Sendable
 public struct Delta: Sendable, Hashable
 public struct FootnoteInfo: Sendable, Hashable
-public struct Updates<Tokens: AsyncSequence>: AsyncSequence, AsyncIteratorProtocol
 public var length: Int
 public var revision: UInt64'
 if [ "$session_surface" != "$expected_session_surface" ]; then
     printf '%s\n' "$session_surface" >&2
     fail "Swift session surface drifted from the reviewed pin"
 fi
-grep -q 'public enum TreeDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+grep -q 'public enum MarkupDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift \
     && grep -q 'public static func dump(_ document: Document)' \
-        packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift \
     && grep -q 'public func dump() -> String' \
-        packages/swift-markdown-core/Sources/MarkdownCore/Walker/TreeDumper.swift \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift \
     || fail "Swift does not expose the reviewed Document diagnostic dump API"
 grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
     && grep -q 'public struct TableCell: Markup' packages/swift-markdown-core/Sources/MarkdownCore/Markup/Table.swift \
@@ -141,21 +137,20 @@ expected_kotlin_session_surface='public class Commit
 public class Delta
 public class FootnoteInfo
 public class MarkupSession
-public fun MarkupSession.footnoteInfo
-public fun MarkupSession.footnoteReferences
+public fun MarkupSession.footnote
 public fun MarkupSession.footnotes
+public fun MarkupSession.references
 public fun append
 public fun commit
 public fun node
 public fun replace
-public fun updates
 public val added
 public val afterRevision
 public val beforeRevision
 public val bubbled
 public val changed
-public val changes
 public val definition
+public val delta
 public val document
 public val length
 public val lineage
@@ -170,23 +165,22 @@ if [ "$kotlin_session_surface" != "$expected_kotlin_session_surface" ]; then
     printf '%s\n' "$kotlin_session_surface" >&2
     fail "Kotlin session surface drifted from the reviewed pin"
 fi
-grep -q 'public object TreeDumper' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+grep -q 'public object MarkupDumper' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt \
     && grep -q 'public fun dump(document: Document): String' \
-        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/TreeDumper.kt \
+        packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt \
     && grep -q 'public fun dump(): String' \
         packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt \
     || fail "Kotlin does not expose the reviewed Document diagnostic dump API"
-grep -q 'visitor.visitTableRow(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitor.visitTableCell(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt \
-    && grep -q 'visitTableRow' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
-    && grep -q 'visitTableCell' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt \
+test "$(grep -c 'visitor.visit(this)' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Table.kt)" -eq 3 \
+    && grep -q 'public fun visit(node: TableRow): Result' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupVisitor.kt \
+    && grep -q 'public fun visit(node: TableCell): Result' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupVisitor.kt \
     || fail "Kotlin table rows and cells are not first-class Markup visitor nodes"
 if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
-    fail "Kotlin Visitor exposes a catch-all fallback"
+    fail "Kotlin MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/Visitor.kt)" -eq 28 \
-    || fail "Kotlin Visitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupVisitor.kt)" -eq 28 \
+    || fail "Kotlin MarkupVisitor is not exhaustive over all 28 Markup kinds"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
@@ -195,7 +189,7 @@ fi
 if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model; then
     fail "ES node values store scopes"
 fi
-grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/tree-dumper.ts \
+grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/markup-dumper.ts \
     && grep -q 'readonly scope: (node: Markup) => Scope' packages/es-markdown-core/src/model/document.ts \
     && grep -q 'readonly dump: () => string' packages/es-markdown-core/src/model/document.ts \
     || fail "ES does not expose the reviewed Document diagnostic dump API"
@@ -210,19 +204,17 @@ es_session_surface=$(
     } | sed -E 's/ \{$//; s/;$//; s/^    //' | sort -u
 )
 expected_es_session_surface='append(text: string): void
-async *updates(input: AsyncIterable<string> | Iterable<string>): AsyncIterableIterator<Commit>
 close(): void
 commit(): Commit
 constructor(options: ParseOptions = {})
 export class MarkupSession
 export class ScopeResolver
-export function adoptDocument(value: DocumentValue, resolver: ScopeResolver): Document
+export function adopt(value: DocumentValue, resolver: ScopeResolver): Document
 export interface Commit
 export interface Delta
 export interface FootnoteInfo
 export interface ScopeEntry
-footnoteInfo(id: MarkupID): FootnoteInfo | null
-footnoteReferences(definition: MarkupID): FootnoteReference[]
+footnote(id: MarkupID): FootnoteInfo | null
 footnotes(): FootnoteDefinition[]
 get document(): Document
 get length(): number
@@ -233,8 +225,8 @@ readonly afterRevision: number
 readonly beforeRevision: number
 readonly bubbled: readonly MarkupID[]
 readonly changed: readonly MarkupID[]
-readonly changes: Delta
 readonly definition: MarkupID | null
+readonly delta: Delta
 readonly document: Document
 readonly lineage: bigint
 readonly number: number | null
@@ -242,6 +234,7 @@ readonly options: Readonly<Required<ParseOptions>>
 readonly referenceCount: number
 readonly referenceOrdinal: number | null
 readonly removed: readonly MarkupID[]
+references(definition: MarkupID): FootnoteReference[]
 replace(byteStart: number, byteEnd: number, replacement: string): void'
 if [ "$es_session_surface" != "$expected_es_session_surface" ]; then
     printf '%s\n' "$es_session_surface" >&2
@@ -249,14 +242,14 @@ if [ "$es_session_surface" != "$expected_es_session_surface" ]; then
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
-    && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/visitor.ts \
-    && grep -q 'visitTableCell(this:' packages/es-markdown-core/src/visitor.ts \
+    && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/markup-visitor.ts \
+    && grep -q 'visitTableCell(this:' packages/es-markdown-core/src/markup-visitor.ts \
     || fail "ES table rows and cells are not first-class Markup visitor nodes"
 if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/src; then
-    fail "ES Visitor exposes a catch-all or optional typed handlers"
+    fail "ES MarkupVisitor exposes a catch-all or optional typed handlers"
 fi
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/visitor.ts)" -eq 28 \
-    || fail "ES Visitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/markup-visitor.ts)" -eq 28 \
+    || fail "ES MarkupVisitor is not exhaustive over all 28 Markup kinds"
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";
@@ -280,7 +273,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "MarkupSession", "ParseError", "TreeDumper", "WalkEvent", "Walker", "visit"].sort();
+const expectedRuntime = ["Document", "MarkupDumper", "MarkupSession", "MarkupWalker", "ParseError", "WalkEvent", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

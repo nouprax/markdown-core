@@ -9,10 +9,10 @@ JSON, XML, a renderer, or a serialization/transport API.
 The complete reviewed `.ast` golden corpus and its v1 coverage manifest live
 only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
-`TreeDumper` and implement this tree format independently over their public
+`MarkupDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
 Every platform `Document` also offers `dump()` and a focused subtree form
-`dump(of: node)`, both delegating to `TreeDumper`; dumping is
+`dump(of: node)`, both delegating to `MarkupDumper`; dumping is
 document-mediated in v2 because node values carry no positions. A subtree
 dump prints scopes with the subtree as origin: the root's start line becomes
 line 1, later lines shift by the same amount, columns are line-local and
@@ -48,7 +48,7 @@ Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
 `children` counts direct typed descendants. `TableRow` and `TableCell` are
-`Markup` kinds, produce Visitor/Walker callbacks, and own their descendants
+`Markup` kinds, produce MarkupVisitor/MarkupWalker callbacks, and own their descendants
 through `cells` and `content` respectively.
 
 The dump deliberately carries no property or array-index edge labels. Parent

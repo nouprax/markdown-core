@@ -53,9 +53,9 @@ internal object WireDecoder {
         mirror: MutableMap<ULong, Markup>,
     ): Delta {
         val reader = reader(bytes)
-        val changes = reader.commitBody(lineage, mirror)
+        val delta = reader.commitBody(lineage, mirror)
         require(reader.finished) { "trailing bytes after a native commit payload" }
-        return changes
+        return delta
     }
 
     fun decodeScopes(bytes: ByteArray): Map<ULong, ScopeEntry> {

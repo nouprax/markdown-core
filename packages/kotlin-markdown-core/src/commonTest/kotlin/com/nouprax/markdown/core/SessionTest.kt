@@ -1,8 +1,5 @@
 package com.nouprax.markdown.core
 
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -32,8 +29,8 @@ class SessionTest {
             assertEquals(firstText.id, secondText.id)
             assertTrue(secondText.revision > firstText.revision)
             assertEquals(firstHeading, secondHeading)
-            assertTrue(secondParagraph.id !in second.changes.added)
-            assertTrue(firstText.id !in second.changes.removed)
+            assertTrue(secondParagraph.id !in second.delta.added)
+            assertTrue(firstText.id !in second.delta.removed)
         }
     }
 
@@ -49,7 +46,7 @@ class SessionTest {
 
             assertEquals(4, after.document.content.size)
             val inserted = assertIs<Heading>(after.document.content[0])
-            assertTrue(inserted.id in after.changes.added)
+            assertTrue(inserted.id in after.delta.added)
             after.document.content.drop(1).forEachIndexed { index, node ->
                 assertEquals(downstreamBefore[index].first, node.id)
                 assertEquals(downstreamBefore[index].second, node.revision)
@@ -90,8 +87,8 @@ class SessionTest {
             val after = session.commit()
             val heading = assertIs<Heading>(after.document.content[0])
 
-            assertTrue(paragraph.id in after.changes.removed)
-            assertTrue(heading.id in after.changes.added)
+            assertTrue(paragraph.id in after.delta.removed)
+            assertTrue(heading.id in after.delta.added)
             assertNotEquals(paragraph.id, heading.id)
         }
     }
@@ -127,10 +124,10 @@ class SessionTest {
             val after = session.commit()
             val omegaAfter = assertIs<Paragraph>(after.document.content[1])
 
-            assertTrue(after.changes.added.isEmpty())
-            assertTrue(after.changes.removed.isEmpty())
-            assertTrue(after.changes.changed.isEmpty())
-            assertTrue(after.changes.bubbled.isEmpty())
+            assertTrue(after.delta.added.isEmpty())
+            assertTrue(after.delta.removed.isEmpty())
+            assertTrue(after.delta.changed.isEmpty())
+            assertTrue(after.delta.bubbled.isEmpty())
             assertEquals(omegaBefore, omegaAfter)
             assertEquals(
                 3,
@@ -198,55 +195,131 @@ class SessionTest {
             assertEquals(listOf("b", "a"), footnotes.map { it.label })
 
             val definitionA = footnotes.last()
-            val infoA = requireNotNull(session.footnoteInfo(definitionA.id))
+            val infoA = requireNotNull(session.footnote(definitionA.id))
             assertEquals(2, infoA.number)
             assertEquals(definitionA.id, infoA.definition)
             assertEquals(1, infoA.referenceCount)
             assertNull(infoA.referenceOrdinal)
 
-            val references = session.footnoteReferences(definitionA.id)
+            val references = session.references(definitionA.id)
             assertEquals(listOf("a"), references.map { it.label })
-            val referenceInfo = requireNotNull(session.footnoteInfo(references[0].id))
+            val referenceInfo = requireNotNull(session.footnote(references[0].id))
             assertEquals(2, referenceInfo.number)
             assertEquals(1, referenceInfo.referenceOrdinal)
 
             // A non-footnote id answers null.
-            assertNull(session.footnoteInfo(commit.document.id))
+            assertNull(session.footnote(commit.document.id))
 
             // An ordinal shift surfaces as changed entries with identical
             // dump content.
             session.replace(0, 0, "Lead [^a].\n\n")
             val shifted = session.commit()
             assertEquals(listOf("a", "b"), session.footnotes().map { it.label })
-            assertTrue(shifted.changes.changed.isNotEmpty())
+            assertTrue(shifted.delta.changed.isNotEmpty())
         }
     }
 
     @Test
-    fun updatesYieldsOneCommitPerToken() =
-        runTest {
-            MarkupSession().use { session ->
-                val tokens = listOf("# Str", "eamed\n", "\nBody *tok", "ens*.\n")
-                val commits = session.updates(flowOf(*tokens.toTypedArray())).toList()
-                assertEquals(tokens.size, commits.size)
-                assertEquals(
-                    Document.parse(tokens.joinToString(separator = "")).dump(),
-                    commits.last().document.dump(),
-                )
-                // The streamed heading kept its identity from the first
-                // commit on.
-                assertEquals(
-                    commits
-                        .first()
-                        .document.content[0]
-                        .id,
-                    commits
-                        .last()
-                        .document.content[0]
-                        .id,
-                )
-            }
+    fun conflatedStreamingWithIrregularTicksOverAMultiTurnConversation() {
+        // The shape of a real LLM consumer: every socket message appends
+        // (nothing parses), only an irregular render tick commits, and the
+        // messages between ticks conflate into that one commit. Three
+        // assistant turns extend one document; blocks settled at a turn
+        // boundary must stay frozen while later turns stream.
+        val turns =
+            listOf(
+                "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
+                    "and the heading keeps its identity from the first render on.\n\n" +
+                    "Deltas stay proportional to what changed, so a renderer " +
+                    "reconciles by id instead of walking the whole tree.\n\n" +
+                    "> Snapshots are values: whatever a tick captured stays valid " +
+                    "while the socket races ahead.",
+                "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
+                    "\n- identical items stress identity\n- identical items stress identity" +
+                    "\n\n```swift\nlet constant = 1\nlet mirror = [Int: String]()\n" +
+                    "for index in 0..<3 {\n    print(index, constant)\n}\n```\n\n" +
+                    "Fenced code arrives line by line and only closes at the final tick.",
+                "\n\nA table lands late in the conversation:\n\n" +
+                    "| stage | commits | messages |\n| - | - | - |\n| one | 3 | 9 |\n" +
+                    "| two | 5 | 14 |\n| three | 8 | 21 |\n\n" +
+                    "Tail with a footnote[^n] whose definition arrives last.\n\n" +
+                    "[^n]: Resolved at the end, after every reference already rendered.",
+            )
+        // One fixed generator drives batch sizes and tick timing, so the
+        // burst shapes are irregular but reproducible — and identical in the
+        // Swift and ES mirrors of this test.
+        var state = 0x9E3779B97F4A7C15UL.toLong()
+
+        fun draw(bound: Long): Long {
+            state = state * 6364136223846793005L + 1442695040888963407L
+            return (state ushr 33) % bound
         }
+        MarkupSession().use { session ->
+            var streamed = ""
+            var frozen = emptyList<Triple<Int, MarkupID, ULong>>()
+            var messages = 0
+            var commits = 0
+            var touched = 0
+
+            fun tick() {
+                val commit = session.commit()
+                commits += 1
+                touched += commit.delta.added.size + commit.delta.removed.size +
+                    commit.delta.changed.size + commit.delta.bubbled.size
+                assertEquals(Document.parse(streamed).dump(), commit.document.dump())
+                for ((index, id, revision) in frozen) {
+                    val node = commit.document.content[index]
+                    assertEquals(id, node.id)
+                    assertEquals(revision, node.revision)
+                }
+            }
+
+            for (turn in turns) {
+                var offset = 0
+                while (offset < turn.length) {
+                    // Mostly a 20-30 token batch (80-150 characters), with
+                    // occasional tiny flushes of a few words. Cuts land at
+                    // raw character offsets — mid-word, mid-marker, even
+                    // between the two newlines of a block boundary —
+                    // because that is the steady state of LLM output.
+                    val width =
+                        if (draw(10L) < 2L) 2 + draw(18L).toInt() else 80 + draw(71L).toInt()
+                    val message = turn.substring(offset, minOf(offset + width, turn.length))
+                    offset += message.length
+                    session.append(message)
+                    streamed += message
+                    messages += 1
+                    if (draw(4L) == 0L) {
+                        tick()
+                    }
+                }
+                // The turn boundary always renders; everything but the
+                // still-hot last block is now settled.
+                tick()
+                frozen =
+                    session.document.content.dropLast(1).mapIndexed { index, node ->
+                        Triple(index, node.id, node.revision)
+                    }
+            }
+            assertTrue(messages > 9)
+            assertTrue(commits < messages)
+            assertEquals(
+                Document.parse(turns.joinToString(separator = "")).dump(),
+                session.document.dump(),
+            )
+
+            // Near-O(n) pipeline: total delta traffic stays within one add
+            // per final node plus bounded frontier churn per tick. A full
+            // rebuild per tick would be on the order of commits * nodes.
+            var nodes = 0
+            MarkupWalker.walk(session.document) { event, _, _ ->
+                if (event == WalkEvent.ENTERING) {
+                    nodes += 1
+                }
+            }
+            assertTrue(touched < nodes + 16 * commits)
+        }
+    }
 
     @Test
     fun snapshotsAreValuesAndIdsAreStableDictionaryKeys() {

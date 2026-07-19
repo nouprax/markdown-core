@@ -24,7 +24,7 @@ import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 
-export interface Visitor<Result> {
+export interface MarkupVisitor<Result> {
     visitDocument(this: void, node: Document): Result;
     visitBlockQuote(this: void, node: BlockQuote): Result;
     visitParagraph(this: void, node: Paragraph): Result;
@@ -55,7 +55,7 @@ export interface Visitor<Result> {
     visitFootnoteReference(this: void, node: FootnoteReference): Result;
 }
 
-export function visit<Result>(node: Markup, visitor: Visitor<Result>): Result {
+export function visit<Result>(node: Markup, visitor: MarkupVisitor<Result>): Result {
     switch (node.kind) {
         case "document":
             return visitor.visitDocument(node);
