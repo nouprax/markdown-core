@@ -143,9 +143,14 @@ each commit, an edit inside an unclosed fence, raw-HTML block, or directive
 reparses forward to end of input, and changing a link-reference definition
 re-resolves the references that used it. Every commit produces an immutable
 document snapshot that structurally shares unchanged nodes with the previous
-snapshot, plus a delta — the exact set of stable node ids the commit added,
-removed, or changed. After any sequence of commits the document is
-byte-for-byte dump-equal to a from-scratch parse of the same text.
+snapshot, plus a delta of four disjoint stable-id sets: nodes the commit
+added, removed, or changed, and ancestors whose revision bubbled only
+because a descendant changed. Applying all four to a mirror of the previous
+revision (materialize added and changed, relink bubbled, evict removed)
+reproduces the new tree exactly — mirrors that skip bubbled keep stale
+ancestor revisions after descendant-only edits. After any sequence of
+commits the document is byte-for-byte dump-equal to a from-scratch parse of
+the same text.
 
 The session type is `MarkupSession` in Swift, Kotlin, and ECMAScript, and
 `markdown_core_session_*` in C:
@@ -185,7 +190,7 @@ markdown_core_session_edit(session, 0, 0, (const uint8_t *)"# Hello\n", 8, NULL)
 markdown_core_delta *delta = NULL;
 markdown_core_session_commit(session, &delta, NULL);
 const markdown_core_document *document = markdown_core_session_document(session);
-/* delta ids via markdown_core_delta_added/removed/changed */
+/* delta ids via markdown_core_delta_added/removed/changed/bubbled */
 markdown_core_delta_free(delta);
 markdown_core_session_free(session);
 ```

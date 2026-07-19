@@ -14,9 +14,10 @@ promised to remain compatible between releases.
   per the sessions-and-deltas cost model, never worse than a small multiple
   of one full parse per commit.
 - Each commit produces an immutable snapshot that structurally shares
-  unchanged nodes, plus a `Delta` of added, removed, and changed stable node
-  ids with before/after revisions; `MarkupID` values resolve against the
-  latest snapshot for as long as the node survives.
+  unchanged nodes, plus a `Delta` of four disjoint stable-id sets — added,
+  removed, changed, and ancestors whose revision bubbled because a
+  descendant changed — with before/after revisions; `MarkupID` values
+  resolve against the latest snapshot for as long as the node survives.
 - Guarantee dump-equality with a from-scratch parse after any edit sequence,
   enforced by replay, seeded random-edit, and coverage-guided fuzzing suites
   over the shared conformance fixtures and the CommonMark corpus.
