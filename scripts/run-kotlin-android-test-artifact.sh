@@ -136,7 +136,11 @@ fi
 "$adb" -s "$serial" shell pm list instrumentation | tee "$diagnostic_dir/instrumentation.txt"
 
 instrumentation_output="$diagnostic_dir/instrumentation-${suite}.txt"
-"$adb" -s "$serial" shell am instrument -w -r \
+# Bounded like the boot phases: a wedged emulator stack can hang
+# `am instrument -w` indefinitely, which the caller's fresh-AVD retry can
+# only absorb as a failure, never as a hang riding out the job timeout.
+# The suites finish in well under two minutes on a healthy emulator.
+timeout 480s "$adb" -s "$serial" shell am instrument -w -r \
     "${runner_arguments[@]}" \
     com.nouprax.markdown.core.test/androidx.test.runner.AndroidJUnitRunner \
     | tee "$instrumentation_output"

@@ -683,7 +683,9 @@ jobs:
                   done
                   exit 1
             - name: Upload Android test failure evidence
-              if: failure()
+              # A job-timeout kill cancels the run step rather than failing
+              # it; the evidence must survive that path too.
+              if: failure() || cancelled()
               uses: actions/upload-artifact@v7
               with:
                   name: android-${{ matrix.page-size }}-${{ matrix.suite }}-failure-${{ github.run_attempt }}
