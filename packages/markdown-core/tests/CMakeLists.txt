@@ -101,8 +101,10 @@ else()
 endif()
 
 # Shared native test support: fixture loading, in-process conversion, byte
-# comparison, deterministic diffs, PRNG, and timing.
-add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h)
+# comparison, deterministic diffs, PRNG, timing, and the session replay
+# harness (shadow text, delta mirror, per-commit equivalence verification).
+add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/session_replay.c
+                                              support/session_replay.h)
 target_include_directories(
     markdown-core-test-support
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
@@ -421,7 +423,9 @@ endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.
 # Long-running campaigns stay in the explicit AFL/libFuzzer maintenance
-# targets and reuse the corpus under core/afl_test_cases.
+# targets and reuse the corpus under core/afl_test_cases; the session
+# edit-script campaign (fuzz_session_edits) shares the script format the
+# seeded smoke below drives deterministically.
 markdown_core_add_test(
     fuzz_smoke
     fuzz
@@ -443,6 +447,7 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/structure.md"
     --generated
     256)
+markdown_core_add_test(fuzz_script_smoke fuzz 240 fuzz_smoke_runner --generated 0 --script-generated 512)
 
 # packaging: corpus/workspace policy guard, also run before benchmarks.
 markdown_core_add_test(packaging_corpus_guard packaging 60 corpus_guard --root "${CMAKE_SOURCE_DIR}")

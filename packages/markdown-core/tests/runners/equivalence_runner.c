@@ -2,7 +2,8 @@
  * dump byte-identically to a one-shot parse of the same final text, and its
  * deltas must account for every observable node change.
  *
- * Every replay drives the public facade only.  A shadow text buffer receives
+ * Every replay drives the public facade only, through the shared session
+ * replay harness (support/session_replay.h): a shadow text buffer receives
  * the same edits as the session, so each commit can be checked against
  * markdown_core_document_parse of the shadow bytes; a shadow id->revision
  * mirror is maintained purely from deltas and compared against a fresh
@@ -20,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "session_replay.h"
 #include "test_support.h"
 
 #include <markdown_core.h>
@@ -38,531 +40,22 @@ static void eq_fail(const char *context, const char *message) {
     failures++;
 }
 
-/* --- shadow text -------------------------------------------------------- */
-
-typedef struct eq_text {
-    uint8_t *bytes;
-    size_t length;
-    size_t capacity;
-} eq_text;
-
-/* The buffer is always allocated (even for an empty text, so no pointer
- * arithmetic ever touches NULL) and always NUL-terminated one byte past
- * `length` (the link_ref_edits script locates edit positions with strstr). */
-static int eq_text_splice(eq_text *text, size_t start, size_t end, const uint8_t *insert, size_t insert_length) {
-    size_t removed = end - start;
-    size_t new_length = text->length - removed + insert_length;
-    if (new_length + 1 > text->capacity) {
-        size_t capacity = text->capacity ? text->capacity : 64;
-        uint8_t *grown;
-        while (capacity < new_length + 1) {
-            capacity *= 2;
-        }
-        grown = (uint8_t *)realloc(text->bytes, capacity);
-        if (!grown) {
-            return -1;
-        }
-        text->bytes = grown;
-        text->capacity = capacity;
-    }
-    memmove(text->bytes + start + insert_length, text->bytes + end, text->length - end);
-    if (insert_length) {
-        memcpy(text->bytes + start, insert, insert_length);
-    }
-    text->bytes[new_length] = '\0';
-    text->length = new_length;
-    return 0;
+/* Failures inside the shared harness land in the same counter as the
+ * runner's own checks. */
+static void eq_report(void *user, const char *context, const char *message) {
+    (void)user;
+    eq_fail(context, message);
 }
 
-/* --- delta mirror ---------------------------------------------------- */
-
-typedef struct eq_mirror_entry {
-    markdown_core_node_id id;
-    uint64_t revision;
-} eq_mirror_entry;
-
-typedef struct eq_mirror {
-    eq_mirror_entry *entries;
-    size_t count;
-    size_t capacity;
-} eq_mirror;
-
-static eq_mirror_entry *eq_mirror_find(eq_mirror *mirror, markdown_core_node_id id) {
-    size_t i;
-    for (i = 0; i < mirror->count; i++) {
-        if (mirror->entries[i].id == id) {
-            return &mirror->entries[i];
-        }
-    }
-    return NULL;
+static int eq_open(sr_replay *replay, const char *context, const markdown_core_parse_options *options) {
+    return sr_replay_open(replay, context, options, eq_report, NULL);
 }
 
-static int eq_mirror_insert(eq_mirror *mirror, markdown_core_node_id id, uint64_t revision) {
-    if (mirror->count == mirror->capacity) {
-        size_t capacity = mirror->capacity ? mirror->capacity * 2 : 64;
-        eq_mirror_entry *grown = (eq_mirror_entry *)realloc(mirror->entries, capacity * sizeof(*grown));
-        if (!grown) {
-            return -1;
-        }
-        mirror->entries = grown;
-        mirror->capacity = capacity;
-    }
-    mirror->entries[mirror->count].id = id;
-    mirror->entries[mirror->count].revision = revision;
-    mirror->count++;
-    return 0;
-}
-
-static void eq_mirror_remove(eq_mirror *mirror, eq_mirror_entry *entry) {
-    *entry = mirror->entries[mirror->count - 1];
-    mirror->count--;
-}
-
-/* --- replay harness ------------------------------------------------------ */
-
-typedef struct eq_replay {
-    const char *context;
-    markdown_core_session *session;
-    eq_text shadow;
-    eq_mirror mirror;
-    const markdown_core_parse_options *options;
-} eq_replay;
-
-static int eq_replay_open(eq_replay *replay, const char *context, const markdown_core_parse_options *options) {
-    markdown_core_error *error = NULL;
-    memset(replay, 0, sizeof(*replay));
-    replay->context = context;
-    replay->options = options;
-    replay->session = markdown_core_session_open(options, &error);
-    if (!replay->session) {
-        markdown_core_error_free(error);
-        eq_fail(context, "session open failed");
+static int eq_replay_append_commit(sr_replay *replay, const uint8_t *bytes, size_t length) {
+    if (sr_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
         return -1;
     }
-    /* Revision 0 (empty document) seeds the mirror. */
-    {
-        const markdown_core_document *document = markdown_core_session_document(replay->session);
-        const markdown_core_node *root = markdown_core_document_root(document);
-        if (!root ||
-            eq_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
-                0) {
-            eq_fail(context, "empty session has no addressable root");
-            return -1;
-        }
-    }
-    return 0;
-}
-
-static void eq_replay_close(eq_replay *replay) {
-    markdown_core_session_free(replay->session);
-    free(replay->shadow.bytes);
-    free(replay->mirror.entries);
-    memset(replay, 0, sizeof(*replay));
-}
-
-static int eq_replay_edit(eq_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
-    markdown_core_error *error = NULL;
-    if (!markdown_core_session_edit(replay->session, start, end, bytes, length, &error)) {
-        markdown_core_error_free(error);
-        eq_fail(replay->context, "session edit failed");
-        return -1;
-    }
-    if (eq_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
-        eq_fail(replay->context, "shadow splice allocation failed");
-        return -1;
-    }
-    return 0;
-}
-
-static int eq_delta_disjoint(eq_replay *replay, markdown_core_delta *changes) {
-    const markdown_core_node_id *arrays[4];
-    size_t counts[4];
-    size_t a;
-    size_t b;
-    size_t i;
-    size_t k;
-
-    counts[0] = markdown_core_delta_added(changes, &arrays[0]);
-    counts[1] = markdown_core_delta_removed(changes, &arrays[1]);
-    counts[2] = markdown_core_delta_changed(changes, &arrays[2]);
-    counts[3] = markdown_core_delta_bubbled(changes, &arrays[3]);
-    for (a = 0; a < 4; a++) {
-        for (i = 0; i < counts[a]; i++) {
-            for (b = a; b < 4; b++) {
-                for (k = b == a ? i + 1 : 0; k < counts[b]; k++) {
-                    if (arrays[a][i] == arrays[b][k]) {
-                        eq_fail(replay->context, "delta arrays repeat an id");
-                        return -1;
-                    }
-                }
-            }
-        }
-    }
-    return 0;
-}
-
-static int eq_apply_delta(eq_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
-    const markdown_core_node_id *ids;
-    size_t count;
-    size_t i;
-    uint64_t before;
-    uint64_t after;
-
-    markdown_core_delta_revisions(changes, &before, &after);
-    if (after != expected_after) {
-        eq_fail(replay->context, "delta revisions disagree with the session");
-        return -1;
-    }
-
-    if (eq_delta_disjoint(replay, changes) != 0) {
-        return -1;
-    }
-
-    count = markdown_core_delta_removed(changes, &ids);
-    for (i = 0; i < count; i++) {
-        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            eq_fail(replay->context, "delta removed an id the mirror never saw");
-            return -1;
-        }
-        eq_mirror_remove(&replay->mirror, entry);
-    }
-
-    count = markdown_core_delta_added(changes, &ids);
-    for (i = 0; i < count; i++) {
-        if (eq_mirror_find(&replay->mirror, ids[i])) {
-            eq_fail(replay->context, "delta added an id that already exists");
-            return -1;
-        }
-        if (eq_mirror_insert(&replay->mirror, ids[i], after) != 0) {
-            eq_fail(replay->context, "mirror allocation failed");
-            return -1;
-        }
-    }
-
-    count = markdown_core_delta_changed(changes, &ids);
-    for (i = 0; i < count; i++) {
-        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            eq_fail(replay->context, "delta changed an id the mirror never saw");
-            return -1;
-        }
-        entry->revision = after;
-    }
-
-    count = markdown_core_delta_bubbled(changes, &ids);
-    for (i = 0; i < count; i++) {
-        eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            eq_fail(replay->context, "delta bubbled an id the mirror never saw");
-            return -1;
-        }
-        entry->revision = after;
-    }
-
-    return 0;
-}
-
-/* --- footnote query equivalence ------------------------------------------ */
-
-typedef struct eq_id_list {
-    markdown_core_node_id *ids;
-    size_t count;
-    size_t capacity;
-    int failed;
-} eq_id_list;
-
-static int eq_id_collect_visit(const markdown_core_node *node, void *context) {
-    eq_id_list *list = (eq_id_list *)context;
-    if (list->count == list->capacity) {
-        size_t capacity = list->capacity ? list->capacity * 2 : 64;
-        markdown_core_node_id *grown = (markdown_core_node_id *)realloc(list->ids, capacity * sizeof(*grown));
-        if (!grown) {
-            list->failed = 1;
-            return 1;
-        }
-        list->ids = grown;
-        list->capacity = capacity;
-    }
-    list->ids[list->count++] = markdown_core_node_get_id(node);
-    return 0;
-}
-
-typedef struct eq_ordinal {
-    markdown_core_node_id id;
-    size_t position;
-} eq_ordinal;
-
-static int eq_ordinal_compare(const void *a, const void *b) {
-    markdown_core_node_id ia = ((const eq_ordinal *)a)->id;
-    markdown_core_node_id ib = ((const eq_ordinal *)b)->id;
-    return ia < ib ? -1 : (ia > ib ? 1 : 0);
-}
-
-/* Walk position of `id`, or SIZE_MAX for id 0 and ids outside the tree. */
-static size_t eq_position_of(const eq_ordinal *ordinals, size_t count, markdown_core_node_id id) {
-    size_t lo = 0;
-    size_t hi = count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (ordinals[mid].id == id) {
-            return ordinals[mid].position;
-        }
-        if (ordinals[mid].id < id) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return SIZE_MAX;
-}
-
-static eq_ordinal *eq_ordinals_build(const eq_id_list *list) {
-    eq_ordinal *ordinals = (eq_ordinal *)malloc((list->count ? list->count : 1) * sizeof(*ordinals));
-    size_t i;
-    if (!ordinals) {
-        return NULL;
-    }
-    for (i = 0; i < list->count; i++) {
-        ordinals[i].id = list->ids[i];
-        ordinals[i].position = i;
-    }
-    qsort(ordinals, list->count, sizeof(*ordinals), eq_ordinal_compare);
-    return ordinals;
-}
-
-/* With footnotes enabled, every commit's numbering, resolution, and
- * back-reference answers must equal a fresh session's on the same text.
- * Node identity maps positionally: the dumps already compared equal, so both
- * trees walk the same shape and the i-th node of one corresponds to the i-th
- * node of the other. */
-static int eq_check_footnote_queries(eq_replay *replay) {
-    markdown_core_session *fresh = NULL;
-    markdown_core_error *error = NULL;
-    eq_id_list mine = {NULL, 0, 0, 0};
-    eq_id_list theirs = {NULL, 0, 0, 0};
-    eq_ordinal *mine_ordinals = NULL;
-    eq_ordinal *theirs_ordinals = NULL;
-    int result = -1;
-    size_t i;
-
-    fresh = markdown_core_session_open(replay->options, &error);
-    if (!fresh || !markdown_core_session_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
-        !markdown_core_session_commit(fresh, NULL, &error)) {
-        markdown_core_error_free(error);
-        eq_fail(replay->context, "fresh footnote reference session failed");
-        goto done;
-    }
-    if (ts_ast_walk(
-            markdown_core_document_root(markdown_core_session_document(replay->session)),
-            eq_id_collect_visit,
-            &mine
-        ) < 0 ||
-        mine.failed ||
-        ts_ast_walk(markdown_core_document_root(markdown_core_session_document(fresh)), eq_id_collect_visit, &theirs) <
-            0 ||
-        theirs.failed) {
-        eq_fail(replay->context, "footnote walk failed to allocate");
-        goto done;
-    }
-    if (mine.count != theirs.count) {
-        eq_fail(replay->context, "footnote sessions walk different node counts");
-        goto done;
-    }
-    mine_ordinals = eq_ordinals_build(&mine);
-    theirs_ordinals = eq_ordinals_build(&theirs);
-    if (!mine_ordinals || !theirs_ordinals) {
-        eq_fail(replay->context, "footnote ordinal map failed to allocate");
-        goto done;
-    }
-
-    for (i = 0; i < mine.count; i++) {
-        markdown_core_footnote_info a;
-        markdown_core_footnote_info b;
-        bool found_a = markdown_core_session_footnote_info(replay->session, mine.ids[i], &a);
-        bool found_b = markdown_core_session_footnote_info(fresh, theirs.ids[i], &b);
-        if (found_a != found_b) {
-            eq_fail(replay->context, "footnote info presence diverged from a fresh session");
-            goto done;
-        }
-        if (!found_a) {
-            continue;
-        }
-        if (a.number != b.number || a.reference_ordinal != b.reference_ordinal ||
-            a.reference_count != b.reference_count ||
-            eq_position_of(mine_ordinals, mine.count, a.definition) !=
-                eq_position_of(theirs_ordinals, theirs.count, b.definition)) {
-            eq_fail(replay->context, "footnote info diverged from a fresh session");
-            goto done;
-        }
-    }
-
-    {
-        const markdown_core_node_id *a_ids;
-        const markdown_core_node_id *b_ids;
-        size_t a_count = markdown_core_session_footnotes(replay->session, &a_ids);
-        size_t b_count = markdown_core_session_footnotes(fresh, &b_ids);
-        if (a_count != b_count) {
-            eq_fail(replay->context, "footnote first-use list length diverged from a fresh session");
-            goto done;
-        }
-        for (i = 0; i < a_count; i++) {
-            const markdown_core_node_id *a_refs;
-            const markdown_core_node_id *b_refs;
-            size_t a_refs_count;
-            size_t b_refs_count;
-            size_t k;
-            if (eq_position_of(mine_ordinals, mine.count, a_ids[i]) !=
-                eq_position_of(theirs_ordinals, theirs.count, b_ids[i])) {
-                eq_fail(replay->context, "footnote first-use order diverged from a fresh session");
-                goto done;
-            }
-            a_refs_count = markdown_core_session_footnote_references(replay->session, a_ids[i], &a_refs);
-            b_refs_count = markdown_core_session_footnote_references(fresh, b_ids[i], &b_refs);
-            if (a_refs_count != b_refs_count) {
-                eq_fail(replay->context, "footnote back-reference count diverged from a fresh session");
-                goto done;
-            }
-            for (k = 0; k < a_refs_count; k++) {
-                if (eq_position_of(mine_ordinals, mine.count, a_refs[k]) !=
-                    eq_position_of(theirs_ordinals, theirs.count, b_refs[k])) {
-                    eq_fail(replay->context, "footnote back-reference order diverged from a fresh session");
-                    goto done;
-                }
-            }
-        }
-    }
-
-    result = 0;
-done:
-    markdown_core_session_free(fresh);
-    free(mine.ids);
-    free(theirs.ids);
-    free(mine_ordinals);
-    free(theirs_ordinals);
-    return result;
-}
-
-typedef struct eq_walk_state {
-    eq_replay *replay;
-    size_t seen;
-    int failed;
-} eq_walk_state;
-
-static int eq_walk_visit(const markdown_core_node *node, void *context) {
-    eq_walk_state *state = (eq_walk_state *)context;
-    eq_replay *replay = state->replay;
-    markdown_core_node_id id = markdown_core_node_get_id(node);
-    eq_mirror_entry *entry = eq_mirror_find(&replay->mirror, id);
-
-    state->seen++;
-    if (!entry) {
-        eq_fail(replay->context, "tree holds an id the delta stream never added");
-        state->failed = 1;
-        return 1;
-    }
-    if (entry->revision != markdown_core_node_get_revision(node)) {
-        eq_fail(replay->context, "node revision changed without a delta notification");
-        state->failed = 1;
-        return 1;
-    }
-    if (markdown_core_session_node_by_id(replay->session, id) != node) {
-        eq_fail(replay->context, "node_by_id disagrees with the committed tree");
-        state->failed = 1;
-        return 1;
-    }
-    return 0;
-}
-
-/* Commits the session, folds the delta into the mirror, verifies the
- * mirror against a fresh walk, and compares the session dump with a one-shot
- * parse of the shadow text. */
-static int eq_replay_commit(eq_replay *replay) {
-    markdown_core_error *error = NULL;
-    markdown_core_delta *changes = NULL;
-    const markdown_core_document *document;
-    const markdown_core_node *root;
-    markdown_core_document *reference = NULL;
-    uint8_t *session_dump = NULL;
-    uint8_t *reference_dump = NULL;
-    size_t session_dump_length = 0;
-    size_t reference_dump_length = 0;
-    eq_walk_state state;
-    int result = -1;
-
-    if (!markdown_core_session_commit(replay->session, &changes, &error)) {
-        markdown_core_error_free(error);
-        eq_fail(replay->context, "commit failed");
-        return -1;
-    }
-    if (!changes) {
-        eq_fail(replay->context, "commit produced no delta");
-        return -1;
-    }
-    if (eq_apply_delta(replay, changes, markdown_core_session_revision(replay->session)) != 0) {
-        goto done;
-    }
-
-    document = markdown_core_session_document(replay->session);
-    root = markdown_core_document_root(document);
-    state.replay = replay;
-    state.seen = 0;
-    state.failed = 0;
-    if (ts_ast_walk(root, eq_walk_visit, &state) < 0 || state.failed) {
-        if (!state.failed) {
-            eq_fail(replay->context, "mirror walk failed to allocate");
-        }
-        goto done;
-    }
-    if (state.seen != replay->mirror.count) {
-        eq_fail(replay->context, "mirror holds ids that are no longer in the tree");
-        goto done;
-    }
-
-    if (!markdown_core_document_dump(document, &session_dump, &session_dump_length, &error)) {
-        markdown_core_error_free(error);
-        error = NULL;
-        eq_fail(replay->context, "session dump failed");
-        goto done;
-    }
-    reference = markdown_core_document_parse(replay->shadow.bytes, replay->shadow.length, replay->options, &error);
-    if (!reference) {
-        markdown_core_error_free(error);
-        error = NULL;
-        eq_fail(replay->context, "one-shot reference parse failed");
-        goto done;
-    }
-    if (!markdown_core_document_dump(reference, &reference_dump, &reference_dump_length, &error)) {
-        markdown_core_error_free(error);
-        error = NULL;
-        eq_fail(replay->context, "reference dump failed");
-        goto done;
-    }
-    if (session_dump_length != reference_dump_length ||
-        memcmp(session_dump, reference_dump, reference_dump_length) != 0) {
-        eq_fail(replay->context, "session dump diverged from the one-shot parse");
-        ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)session_dump);
-        goto done;
-    }
-
-    if (replay->options->footnotes && eq_check_footnote_queries(replay) != 0) {
-        goto done;
-    }
-
-    result = 0;
-done:
-    markdown_core_dump_free(session_dump);
-    markdown_core_dump_free(reference_dump);
-    markdown_core_document_free(reference);
-    markdown_core_delta_free(changes);
-    return result;
-}
-
-static int eq_replay_append_commit(eq_replay *replay, const uint8_t *bytes, size_t length) {
-    if (eq_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
-        return -1;
-    }
-    return eq_replay_commit(replay);
+    return sr_replay_commit(replay);
 }
 
 /* --- replays over one input --------------------------------------------- */
@@ -573,11 +66,11 @@ static int eq_replay_per_line(
     size_t length,
     const markdown_core_parse_options *options
 ) {
-    eq_replay replay;
+    sr_replay replay;
     size_t offset = 0;
     int result = -1;
 
-    if (eq_replay_open(&replay, context, options) != 0) {
+    if (eq_open(&replay, context, options) != 0) {
         return -1;
     }
     while (offset < length) {
@@ -594,12 +87,12 @@ static int eq_replay_per_line(
         offset = line_end;
     }
     /* Empty inputs still must commit cleanly. */
-    if (length == 0 && eq_replay_commit(&replay) != 0) {
+    if (length == 0 && sr_replay_commit(&replay) != 0) {
         goto done;
     }
     result = 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
@@ -609,11 +102,11 @@ static int eq_replay_per_byte(
     size_t length,
     const markdown_core_parse_options *options
 ) {
-    eq_replay replay;
+    sr_replay replay;
     size_t offset;
     int result = -1;
 
-    if (eq_replay_open(&replay, context, options) != 0) {
+    if (eq_open(&replay, context, options) != 0) {
         return -1;
     }
     for (offset = 0; offset < length; offset++) {
@@ -623,7 +116,7 @@ static int eq_replay_per_byte(
     }
     result = 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
@@ -644,7 +137,7 @@ static int eq_replay_random_edits(
     int inserted[EQ_MAX_CHUNKS] = {0};
     size_t chunk_count;
     size_t i;
-    eq_replay replay;
+    sr_replay replay;
     int result = -1;
 
     chunk_count = length ? 1 + (size_t)(ts_prng_next(prng) % EQ_MAX_CHUNKS) : 0;
@@ -676,7 +169,7 @@ static int eq_replay_random_edits(
         order[j] = swap;
     }
 
-    if (eq_replay_open(&replay, context, options) != 0) {
+    if (eq_open(&replay, context, options) != 0) {
         return -1;
     }
 
@@ -689,7 +182,7 @@ static int eq_replay_random_edits(
                 position += boundaries[k + 1] - boundaries[k];
             }
         }
-        if (eq_replay_edit(
+        if (sr_replay_edit(
                 &replay,
                 position,
                 position,
@@ -700,11 +193,11 @@ static int eq_replay_random_edits(
         }
         inserted[chunk] = 1;
         /* Commit roughly every other insertion to cover coalesced edits. */
-        if ((ts_prng_next(prng) & 1) && eq_replay_commit(&replay) != 0) {
+        if ((ts_prng_next(prng) & 1) && sr_replay_commit(&replay) != 0) {
             goto done;
         }
     }
-    if (eq_replay_commit(&replay) != 0) {
+    if (sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -712,10 +205,10 @@ static int eq_replay_random_edits(
     {
         static const uint8_t noise[] = "*[zz](x\n> ~~q~~\n";
         size_t position = replay.shadow.length ? (size_t)(ts_prng_next(prng) % replay.shadow.length) : 0;
-        if (eq_replay_edit(&replay, position, position, noise, sizeof(noise) - 1) != 0 ||
-            eq_replay_commit(&replay) != 0 ||
-            eq_replay_edit(&replay, position, position + sizeof(noise) - 1, NULL, 0) != 0 ||
-            eq_replay_commit(&replay) != 0) {
+        if (sr_replay_edit(&replay, position, position, noise, sizeof(noise) - 1) != 0 ||
+            sr_replay_commit(&replay) != 0 ||
+            sr_replay_edit(&replay, position, position + sizeof(noise) - 1, NULL, 0) != 0 ||
+            sr_replay_commit(&replay) != 0) {
             goto done;
         }
     }
@@ -726,7 +219,7 @@ static int eq_replay_random_edits(
     }
     result = 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
@@ -908,63 +401,63 @@ static int case_link_ref_edits(void) {
                                   "[label]: /first \"one\"\n"
                                   "[label]: /second \"two\"\n";
     static const char early_definition[] = "[label]: /zero\n\n";
-    eq_replay replay;
+    sr_replay replay;
     markdown_core_parse_options options;
     int result = -1;
     size_t position;
 
     markdown_core_parse_options_init(&options);
-    if (eq_replay_open(&replay, "link_ref_edits", &options) != 0) {
+    if (eq_open(&replay, "link_ref_edits", &options) != 0) {
         return -1;
     }
 
     /* Duplicate labels: the first definition wins. */
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Deleting the winning definition re-elects the later duplicate. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]: /first") - (char *)replay.shadow.bytes);
-    if (eq_replay_edit(&replay, position, position + strlen("[label]: /first \"one\"\n"), NULL, 0) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, position, position + strlen("[label]: /first \"one\"\n"), NULL, 0) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A definition inserted earlier in the document takes the label over. */
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)early_definition, sizeof(early_definition) - 1) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)early_definition, sizeof(early_definition) - 1) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Editing the winning definition's destination re-resolves the links. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "/zero") - (char *)replay.shadow.bytes);
-    if (eq_replay_edit(&replay, position, position + strlen("/zero"), (const uint8_t *)"/elsewhere", 10) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, position, position + strlen("/zero"), (const uint8_t *)"/elsewhere", 10) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A definition for the second label appears after its reference. */
-    if (eq_replay_edit(
+    if (sr_replay_edit(
             &replay,
             replay.shadow.length,
             replay.shadow.length,
             (const uint8_t *)"\n[other]: /other\n",
             17
         ) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Removing every definition degrades the references to literal text. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]:") - (char *)replay.shadow.bytes);
-    if (eq_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     result = failures ? -1 : 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
@@ -977,19 +470,19 @@ static int case_footnote_edits(void) {
     static const char initial[] = "alpha[^a] then beta[^b] then beta again[^b]\n"
                                   "\n"
                                   "[^b]: b body\n";
-    eq_replay replay;
+    sr_replay replay;
     markdown_core_parse_options options;
     int result = -1;
     size_t position;
 
     markdown_core_parse_options_init(&options);
-    if (eq_replay_open(&replay, "footnote_edits", &options) != 0) {
+    if (eq_open(&replay, "footnote_edits", &options) != 0) {
         return -1;
     }
 
     /* [^a] is unresolved; [^b] is number 1 with two references. */
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -1000,27 +493,27 @@ static int case_footnote_edits(void) {
     }
 
     /* An early reference to a brand-new label shifts every later ordinal. */
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)"first[^c]\n\n[^c]: c body\n\n", 25) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)"first[^c]\n\n[^c]: c body\n\n", 25) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A duplicate definition earlier in the document takes the label over. */
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)"[^b]: usurper\n\n", 15) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)"[^b]: usurper\n\n", 15) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Deleting a definition flips its references back to unresolved; the
      * definition node itself stays only if its text stays. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[^a]: a body") - (char *)replay.shadow.bytes);
-    if (eq_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || sr_replay_commit(&replay) != 0) {
         goto done;
     }
 
     result = failures ? -1 : 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
@@ -1388,17 +881,17 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
 };
 
 static int eq_run_script(const eq_script *script) {
-    eq_replay replay;
+    sr_replay replay;
     markdown_core_parse_options options;
     size_t i;
     int result = -1;
 
     markdown_core_parse_options_init(&options);
-    if (eq_replay_open(&replay, script->name, &options) != 0) {
+    if (eq_open(&replay, script->name, &options) != 0) {
         return -1;
     }
-    if (eq_replay_edit(&replay, 0, 0, (const uint8_t *)script->initial, strlen(script->initial)) != 0 ||
-        eq_replay_commit(&replay) != 0) {
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)script->initial, strlen(script->initial)) != 0 ||
+        sr_replay_commit(&replay) != 0) {
         goto done;
     }
     for (i = 0; i < script->step_count; i++) {
@@ -1418,20 +911,20 @@ static int eq_run_script(const eq_script *script) {
         if (delete_length == (size_t)-1) {
             delete_length = replay.shadow.length - position;
         }
-        if (eq_replay_edit(
+        if (sr_replay_edit(
                 &replay,
                 position,
                 position + delete_length,
                 (const uint8_t *)step->insert,
                 strlen(step->insert)
             ) != 0 ||
-            eq_replay_commit(&replay) != 0) {
+            sr_replay_commit(&replay) != 0) {
             goto done;
         }
     }
     result = 0;
 done:
-    eq_replay_close(&replay);
+    sr_replay_close(&replay);
     return result;
 }
 
