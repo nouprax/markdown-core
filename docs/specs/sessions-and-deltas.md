@@ -181,7 +181,7 @@ The tree is source-faithful (`canonical-ast.md`, footnote semantics):
 definitions never move and references always carry their label. Everything
 presentational is a query against the session's committed revision:
 
-- `footnoteInfo(id)` — for a `FootnoteReference`: the winning definition's id
+- `footnote(id)` — for a `FootnoteReference`: the winning definition's id
   (0 while unresolved), the label's 1-based first-use `number` (0 while
   unresolved), the reference's 1-based ordinal among the label's references
   in document order, and how many references share the label. For a
@@ -190,7 +190,7 @@ presentational is a query against the session's committed revision:
   (0 when unreferenced), and ordinal 0.
 - `footnotes()` — the referenced winning definitions in first-use order (the
   order a renderer lists them in).
-- `footnoteReferences(definition)` — the references resolving to a winning
+- `references(definition)` — the references resolving to a winning
   definition, in document order (back-reference targets); empty for
   shadowed, unreferenced, or non-definition ids.
 
@@ -244,7 +244,7 @@ one-shot nodes carry ids) and `MarkupSession`:
 | `updates(feeding:)` | async sugar: feed a token stream, yield one `Commit` per token |
 | `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
 | `node(for:)` | the committed snapshot's current value for an id |
-| `footnoteInfo(of:)` / `footnotes()` / `footnoteReferences(of:)` | the footnote queries below |
+| `footnote(of:)` / `footnotes()` / `references(of:)` | the footnote queries below |
 
 Shared platform types, named identically on all three platforms:
 

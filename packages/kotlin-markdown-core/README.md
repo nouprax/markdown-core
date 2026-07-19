@@ -93,7 +93,7 @@ MarkupSession().use { session ->
 ```
 
 `updates(input: Flow<String>): Flow<Commit>` streams one commit per token, and
-`footnoteInfo(id)` / `footnotes()` / `footnoteReferences(id)` answer footnote
+`footnote(id)` / `footnotes()` / `references(id)` answer footnote
 numbering, resolution, and back-reference ordinals as queries against the
 committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
 scopes materialized while their snapshot was current stay usable after

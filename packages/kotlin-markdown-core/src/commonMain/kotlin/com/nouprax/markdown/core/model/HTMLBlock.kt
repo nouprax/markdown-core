@@ -5,7 +5,7 @@ public class HTMLBlock internal constructor(
     override val revision: ULong,
     public val literal: String,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitHTMLBlock(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

@@ -6,7 +6,7 @@ public class Heading internal constructor(
     public val level: Int,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitHeading(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

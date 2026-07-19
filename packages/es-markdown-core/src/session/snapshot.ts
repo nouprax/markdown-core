@@ -11,7 +11,7 @@ import type { ScopeResolver } from "./scope-resolver.js";
  * properties, keeping the node a plain value for enumeration and
  * serialization.
  */
-export function adoptDocument(value: DocumentValue, resolver: ScopeResolver): Document {
+export function adopt(value: DocumentValue, resolver: ScopeResolver): Document {
     const document = {
         kind: value.kind,
         id: value.id,

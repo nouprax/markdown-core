@@ -8,7 +8,7 @@ public class List internal constructor(
     public val tight: Boolean,
     public val items: kotlin.collections.List<ListItem>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitList(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
@@ -21,7 +21,7 @@ public class ListItem internal constructor(
     public val checked: Boolean?,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitListItem(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

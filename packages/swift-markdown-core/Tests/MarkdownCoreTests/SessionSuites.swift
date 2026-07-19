@@ -134,20 +134,20 @@ import Testing
         #expect(footnotes.map(\.label) == ["b", "a"])
 
         let definitionA = try #require(footnotes.last)
-        let infoA = try #require(session.footnoteInfo(of: definitionA.id))
+        let infoA = try #require(session.footnote(of: definitionA.id))
         #expect(infoA.number == 2)
         #expect(infoA.definition == definitionA.id)
         #expect(infoA.referenceCount == 1)
         #expect(infoA.referenceOrdinal == nil)
 
-        let references = session.footnoteReferences(of: definitionA.id)
+        let references = session.references(of: definitionA.id)
         #expect(references.map(\.label) == ["a"])
-        let referenceInfo = try #require(session.footnoteInfo(of: references[0].id))
+        let referenceInfo = try #require(session.footnote(of: references[0].id))
         #expect(referenceInfo.number == 2)
         #expect(referenceInfo.referenceOrdinal == 1)
 
         // A non-footnote id answers nil.
-        #expect(session.footnoteInfo(of: commit.document.id) == nil)
+        #expect(session.footnote(of: commit.document.id) == nil)
 
         // An ordinal shift surfaces as changed entries with identical dumps.
         let dumpBefore = session.document.dump()

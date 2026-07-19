@@ -10,7 +10,7 @@ public class CodeBlock internal constructor(
     public val fenced: Boolean,
     public val closed: Boolean,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitCodeBlock(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

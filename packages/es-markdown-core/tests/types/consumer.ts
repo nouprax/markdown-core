@@ -95,7 +95,7 @@ const commit: Commit = session.commit();
 const changes: Delta = commit.changes;
 const added: readonly MarkupID[] = changes.added;
 const currentValue: Markup | null = session.node(document.id);
-const info: FootnoteInfo | null = session.footnoteInfo(document.id);
+const info: FootnoteInfo | null = session.footnote(document.id);
 const sessionLineage: bigint = session.lineage;
 async function stream(tokens: AsyncIterable<string>): Promise<void> {
     for await (const each of session.updates(tokens)) {

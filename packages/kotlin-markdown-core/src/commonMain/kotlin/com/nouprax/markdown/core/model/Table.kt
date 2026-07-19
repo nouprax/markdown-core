@@ -5,7 +5,7 @@ public class TableCell internal constructor(
     override val revision: ULong,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableCell(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
@@ -18,7 +18,7 @@ public class TableRow internal constructor(
     public val isHeader: Boolean,
     public val cells: kotlin.collections.List<TableCell>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTableRow(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
@@ -32,7 +32,7 @@ public class Table internal constructor(
     public val header: TableRow,
     public val rows: kotlin.collections.List<TableRow>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitTable(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

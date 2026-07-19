@@ -151,23 +151,23 @@ test("sessions: footnote queries answer numbering, resolution, and back-referenc
         );
 
         const definitionA = footnotes.at(-1);
-        const infoA = session.footnoteInfo(definitionA.id);
+        const infoA = session.footnote(definitionA.id);
         assert.equal(infoA.number, 2);
         assert.equal(infoA.definition, definitionA.id);
         assert.equal(infoA.referenceCount, 1);
         assert.equal(infoA.referenceOrdinal, null);
 
-        const references = session.footnoteReferences(definitionA.id);
+        const references = session.references(definitionA.id);
         assert.deepEqual(
             references.map((reference) => reference.label),
             ["a"]
         );
-        const referenceInfo = session.footnoteInfo(references[0].id);
+        const referenceInfo = session.footnote(references[0].id);
         assert.equal(referenceInfo.number, 2);
         assert.equal(referenceInfo.referenceOrdinal, 1);
 
         // A non-footnote id answers null.
-        assert.equal(session.footnoteInfo(commit.document.id), null);
+        assert.equal(session.footnote(commit.document.id), null);
 
         // An ordinal shift surfaces as changed entries with identical dump
         // content.

@@ -16,7 +16,7 @@ import MarkdownCoreC
 public final class MarkupSession {
     let session: OpaquePointer
     var mirror: [UInt64: any Markup] = [:]
-    private var currentResolver: ScopeResolver?
+    private var resolver: ScopeResolver?
 
     public let options: ParseOptions
 
@@ -29,7 +29,7 @@ public final class MarkupSession {
     public private(set) var document: Document
 
     public init(options: ParseOptions = .init()) throws {
-        var nativeOptions = options.nativeValue
+        var nativeOptions = options.native
         var nativeError: OpaquePointer?
         guard let session = markdown_core_session_open(&nativeOptions, &nativeError) else {
             defer { markdown_core_error_free(nativeError) }
@@ -57,13 +57,13 @@ public final class MarkupSession {
         )
         let resolver = ScopeResolver(session: session)
         document.resolver = resolver
-        currentResolver = resolver
+        self.resolver = resolver
         mirror[document.id.rawValue] = document
         self.document = document
     }
 
     deinit {
-        currentResolver?.detach()
+        resolver?.detach()
         markdown_core_session_free(session)
     }
 
@@ -116,14 +116,14 @@ public final class MarkupSession {
         // positions as its own — a racing reader either materialized from
         // the still-unchanged tree or takes the documented
         // superseded-snapshot trap.
-        let previousResolver = currentResolver
-        previousResolver?.detach()
+        let previous = resolver
+        previous?.detach()
         guard markdown_core_session_commit(session, &nativeChanges, &nativeError) else {
             defer { markdown_core_error_free(nativeError) }
             // The native commit failed transactionally: the tree is
             // unchanged at the previous revision, the previous snapshot
             // becomes current again, and the commit may be retried.
-            previousResolver?.reattach(session: session)
+            previous?.reattach(session: session)
             throw ParseError(from: nativeError)
         }
         guard let nativeChanges else {
@@ -142,55 +142,30 @@ public final class MarkupSession {
             // skips the by-id lookups and depth sort of the delta path. This
             // is also what keeps the one-shot `Document.parse` sugar on the
             // v1 performance budget.
-            mirror[markdown_core_node_get_id(root)] = bulkBuild(root)
+            mirror[markdown_core_node_get_id(root)] = build(root)
         } else {
             for id in changes.removed {
                 mirror.removeValue(forKey: id.rawValue)
             }
-            let builder = MarkupBuilder(lineage: lineage) { [self] node in childValues(of: node) }
-            for rebuild in rebuildsByDepth(changes) {
+            let builder = MarkupBuilder(lineage: lineage) { [self] node in children(of: node) }
+            for rebuild in rebuilds(of: changes) {
                 mirror[rebuild.rawID] = builder.markup(from: rebuild.node)
             }
         }
 
-        return Commit(document: adoptSnapshot(root: root), changes: changes)
+        return Commit(document: adopt(root: root), changes: changes)
     }
 
-    private func adoptSnapshot(root: OpaquePointer) -> Document {
+    private func adopt(root: OpaquePointer) -> Document {
         guard var document = mirror[markdown_core_node_get_id(root)] as? Document else {
             preconditionFailure("session committed without a document root")
         }
         let resolver = ScopeResolver(session: session)
         document.resolver = resolver
-        currentResolver = resolver
+        self.resolver = resolver
         mirror[document.id.rawValue] = document
         self.document = document
         return document
-    }
-
-    /// One-shot support: the first commit without materializing a delta (the
-    /// C out-parameter stays NULL, exactly the C-consumer knob). The bulk
-    /// rebuild needs no delta and `Document.parse` discards it.
-    func commitBulk() throws -> Document {
-        precondition(revision == 0, "commitBulk is only the first commit")
-        var nativeError: OpaquePointer?
-        // Same detach-before-commit ordering as `commit()`; the intermediate
-        // snapshot is never exposed by `Document.parse`, so this only keeps
-        // the two commit paths on one contract.
-        let previousResolver = currentResolver
-        previousResolver?.detach()
-        guard markdown_core_session_commit(session, nil, &nativeError) else {
-            defer { markdown_core_error_free(nativeError) }
-            previousResolver?.reattach(session: session)
-            throw ParseError(from: nativeError)
-        }
-        guard let view = markdown_core_session_document(session),
-            let root = markdown_core_document_root(view)
-        else {
-            preconditionFailure("session committed without a document root")
-        }
-        mirror[markdown_core_node_get_id(root)] = bulkBuild(root)
-        return adoptSnapshot(root: root)
     }
 
     /// The committed snapshot's current value for `id`; nil when no node
@@ -199,10 +174,10 @@ public final class MarkupSession {
         id.lineage == lineage ? mirror[id.rawValue] : nil
     }
 
-    private func bulkBuild(_ root: OpaquePointer) -> any Markup {
+    private func build(_ root: OpaquePointer) -> any Markup {
         // Post-order over an explicit stack (adversarial nesting must not
         // exhaust native recursion). Child arrays assemble in sibling frames
-        // so the bulk build costs one mirror write per node and no reads.
+        // so the full-tree pass costs one mirror write per node and no reads.
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
         let builder = MarkupBuilder(lineage: lineage) { _ in completed }
@@ -229,7 +204,7 @@ public final class MarkupSession {
             }
         }
         guard let value = frames.first?.first else {
-            preconditionFailure("bulk build did not reach the root")
+            preconditionFailure("build did not reach the root")
         }
         return value
     }
@@ -240,7 +215,7 @@ public final class MarkupSession {
         let depth: Int
     }
 
-    private func rebuildsByDepth(_ changes: Delta) -> [Rebuild] {
+    private func rebuilds(of changes: Delta) -> [Rebuild] {
         var rebuilds: [Rebuild] = []
         rebuilds.reserveCapacity(
             changes.added.count + changes.changed.count + changes.bubbled.count
@@ -262,7 +237,7 @@ public final class MarkupSession {
         return rebuilds.sorted { $0.depth > $1.depth }
     }
 
-    private func childValues(of node: OpaquePointer) -> [any Markup] {
+    private func children(of node: OpaquePointer) -> [any Markup] {
         var result: [any Markup] = []
         result.reserveCapacity(markdown_core_node_child_count(node))
         var child = markdown_core_node_get_first_child(node)

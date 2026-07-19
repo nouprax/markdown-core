@@ -6,7 +6,7 @@ public class Document internal constructor(
     public val content: kotlin.collections.List<Markup>,
     internal val resolver: ScopeResolver,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDocument(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

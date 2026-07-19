@@ -198,20 +198,20 @@ class SessionTest {
             assertEquals(listOf("b", "a"), footnotes.map { it.label })
 
             val definitionA = footnotes.last()
-            val infoA = requireNotNull(session.footnoteInfo(definitionA.id))
+            val infoA = requireNotNull(session.footnote(definitionA.id))
             assertEquals(2, infoA.number)
             assertEquals(definitionA.id, infoA.definition)
             assertEquals(1, infoA.referenceCount)
             assertNull(infoA.referenceOrdinal)
 
-            val references = session.footnoteReferences(definitionA.id)
+            val references = session.references(definitionA.id)
             assertEquals(listOf("a"), references.map { it.label })
-            val referenceInfo = requireNotNull(session.footnoteInfo(references[0].id))
+            val referenceInfo = requireNotNull(session.footnote(references[0].id))
             assertEquals(2, referenceInfo.number)
             assertEquals(1, referenceInfo.referenceOrdinal)
 
             // A non-footnote id answers null.
-            assertNull(session.footnoteInfo(commit.document.id))
+            assertNull(session.footnote(commit.document.id))
 
             // An ordinal shift surfaces as changed entries with identical
             // dump content.

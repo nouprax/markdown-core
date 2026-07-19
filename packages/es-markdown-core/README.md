@@ -85,6 +85,6 @@ session.close();
 Snapshots are plain immutable values that share every unchanged node with the
 previous snapshot and stay usable after the session advances or closes.
 `session.node(id)` answers the committed value for an id, and
-`session.footnotes()`, `session.footnoteInfo(id)`, and
-`session.footnoteReferences(id)` answer footnote numbering, resolution, and
+`session.footnotes()`, `session.footnote(id)`, and
+`session.references(id)` answer footnote numbering, resolution, and
 back-reference ordinals as queries against the committed revision.

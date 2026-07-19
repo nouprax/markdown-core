@@ -45,7 +45,7 @@ public class FootnoteInfo internal constructor(
  * committed revision; null when [id] does not name a footnote node of this
  * session.
  */
-public fun MarkupSession.footnoteInfo(id: MarkupID): FootnoteInfo? {
+public fun MarkupSession.footnote(id: MarkupID): FootnoteInfo? {
     if (id.lineage != lineage) {
         return null
     }
@@ -71,7 +71,7 @@ public fun MarkupSession.footnotes(): kotlin.collections.List<FootnoteDefinition
  * renderer's back-reference targets. Empty unless [definition] is a
  * referenced winning definition of this session.
  */
-public fun MarkupSession.footnoteReferences(definition: MarkupID): kotlin.collections.List<FootnoteReference> {
+public fun MarkupSession.references(definition: MarkupID): kotlin.collections.List<FootnoteReference> {
     if (definition.lineage != lineage) {
         return emptyList()
     }

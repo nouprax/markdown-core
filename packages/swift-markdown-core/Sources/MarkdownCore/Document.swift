@@ -79,14 +79,14 @@ public struct Document: Markup {
         // the snapshot must leave it self-contained.
         let session = try MarkupSession(options: options)
         try session.append(source)
-        let document = try session.commitBulk()
+        let document = try session.commit().document
         document.resolver.materialize()
         return document
     }
 }
 
 extension ParseOptions {
-    var nativeValue: markdown_core_parse_options {
+    var native: markdown_core_parse_options {
         markdown_core_parse_options(
             smart_punctuation: smartPunctuation,
             footnotes: footnotes,

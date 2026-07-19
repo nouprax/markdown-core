@@ -6,7 +6,7 @@ public class FootnoteDefinition internal constructor(
     public val label: String,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitFootnoteDefinition(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
@@ -18,7 +18,7 @@ public class FootnoteReference internal constructor(
     override val revision: ULong,
     public val label: String,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitFootnoteReference(this)
+    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
