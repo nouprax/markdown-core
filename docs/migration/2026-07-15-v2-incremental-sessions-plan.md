@@ -857,6 +857,25 @@ Equality everywhere is `(lineage, id, revision)`.
   complexity gate asserting commit ≤ K x one-shot on the degenerate
   corpora.
 
+  Optimization headroom for the degenerate constant, measured
+  2026-07-19 by forcing the full path (`refmap_stale`) on the same
+  contents: routing a whole-document restart through `commit_full`
+  saves 5% on the one-enormous-paragraph shape and 31% on definition
+  churn (wholesale table/index rebuilds beat per-node splice
+  maintenance when everything is stale) — but the dominant term in
+  both paths is adoption pairing itself, the inherent cost of keeping
+  node identity across a whole-document reparse (~3x a bare parse).
+  Post-2.0 roadmap, in impact order: (1) label-scoped dependent
+  narrowing (already a planned refinement in the contract) removes the
+  definition-churn degradation outright; (2) fusing the splice-phase
+  walks (chain counting into sealing, graveyard free into adoption)
+  trims the constant everywhere; (3) inline-level damage inside one
+  leaf — the only true fix for the enormous-paragraph shape — is an
+  architectural extension the damage planner's restart-stack
+  abstraction was designed to admit.  None of these ship before 2.0.0:
+  the wins concentrate in rare shapes while the regression risk spans
+  the whole matrix.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical
