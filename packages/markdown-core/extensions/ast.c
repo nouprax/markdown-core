@@ -901,23 +901,117 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     }
 }
 
+// Content equality; a NULL view and an empty view compare equal, matching
+// the dump output both sides of a delta are held to.
+static bool view_content_equal(markdown_core_string_view a, markdown_core_string_view b) {
+    return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
+}
+
+// Optional-string equality: the dump distinguishes an absent string (null)
+// from a present empty one, so presence must match before content.
+static bool view_optional_equal(markdown_core_string_view a, markdown_core_string_view b) {
+    return (a.data == NULL) == (b.data == NULL) && view_content_equal(a, b);
+}
+
 bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_core_node *b) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
-    dump_buffer buffer_a = {0}, buffer_b = {0};
-    bool equal;
+    markdown_core_string_view a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
+    markdown_core_string_view b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
     // Callers pair nodes by raw type, so the facade kinds already match;
     // facade-invisible nodes (directive labels) have no fields.
-    if (kind == MARKDOWN_CORE_KIND_NONE) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_HEADING: {
+        int32_t level_a, level_b;
+        markdown_core_node_heading_level(a, &level_a);
+        markdown_core_node_heading_level(b, &level_b);
+        return level_a == level_b;
+    }
+    case MARKDOWN_CORE_KIND_LIST: {
+        markdown_core_list_flavor flavor_a, flavor_b;
+        markdown_core_optional_i64 start_a, start_b;
+        bool tight_a, tight_b;
+        markdown_core_node_list_properties(a, &flavor_a, &start_a, &tight_a);
+        markdown_core_node_list_properties(b, &flavor_b, &start_b, &tight_b);
+        return flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
+               (!start_a.has_value || start_a.value == start_b.value);
+    }
+    case MARKDOWN_CORE_KIND_LIST_ITEM: {
+        markdown_core_optional_bool checked_a, checked_b;
+        markdown_core_node_list_item_checked(a, &checked_a);
+        markdown_core_node_list_item_checked(b, &checked_b);
+        return checked_a.has_value == checked_b.has_value &&
+               (!checked_a.has_value || checked_a.value == checked_b.value);
+    }
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: {
+        bool fenced_a, closed_a, fenced_b, closed_b;
+        markdown_core_node_code_block_properties(a, &a1, &a2, &a3, &fenced_a, &closed_a);
+        markdown_core_node_code_block_properties(b, &b1, &b2, &b3, &fenced_b, &closed_b);
+        return fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
+               view_optional_equal(a2, b2) && view_content_equal(a3, b3);
+    }
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_CODE:
+        markdown_core_node_literal(a, &a1);
+        markdown_core_node_literal(b, &b1);
+        return view_content_equal(a1, b1);
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA: {
+        markdown_core_placement_mode mode_a, mode_b;
+        markdown_core_node_formula_properties(a, &mode_a, &a1);
+        markdown_core_node_formula_properties(b, &mode_b, &b1);
+        return mode_a == mode_b && view_content_equal(a1, b1);
+    }
+    case MARKDOWN_CORE_KIND_TABLE: {
+        size_t count_a, count_b, i;
+        markdown_core_node_table_column_count(a, &count_a);
+        markdown_core_node_table_column_count(b, &count_b);
+        if (count_a != count_b) {
+            return false;
+        }
+        for (i = 0; i < count_a; i++) {
+            markdown_core_table_alignment alignment_a, alignment_b;
+            markdown_core_node_table_alignment_at(a, i, &alignment_a);
+            markdown_core_node_table_alignment_at(b, i, &alignment_b);
+            if (alignment_a != alignment_b) {
+                return false;
+            }
+        }
         return true;
     }
-    dump_fields(&buffer_a, a, kind);
-    dump_fields(&buffer_b, b, kind);
-    // Allocation failure must never suppress a revision bump.
-    equal = !buffer_a.failed && !buffer_b.failed && buffer_a.size == buffer_b.size &&
-            (buffer_a.size == 0 || memcmp(buffer_a.data, buffer_b.data, buffer_a.size) == 0);
-    free(buffer_a.data);
-    free(buffer_b.data);
-    return equal;
+    case MARKDOWN_CORE_KIND_TABLE_ROW: {
+        bool header_a, header_b;
+        markdown_core_node_table_row_is_header(a, &header_a);
+        markdown_core_node_table_row_is_header(b, &header_b);
+        return header_a == header_b;
+    }
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        markdown_core_placement_mode mode_a, mode_b;
+        bool has_label_a, has_label_b;
+        size_t label_a, label_b;
+        markdown_core_node_directive_properties(a, &mode_a, &a1, &a2, &has_label_a, &label_a);
+        markdown_core_node_directive_properties(b, &mode_b, &b1, &b2, &has_label_b, &label_b);
+        return mode_a == mode_b && view_content_equal(a1, b1) && view_optional_equal(a2, b2) &&
+               has_label_a == has_label_b && (!has_label_a || label_a == label_b);
+    }
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+        markdown_core_node_footnote_id(a, &a1);
+        markdown_core_node_footnote_id(b, &b1);
+        return view_content_equal(a1, b1);
+    case MARKDOWN_CORE_KIND_LINK:
+        markdown_core_node_link_properties(a, &a1, &a2);
+        markdown_core_node_link_properties(b, &b1, &b2);
+        return view_optional_equal(a1, b1) && view_optional_equal(a2, b2);
+    case MARKDOWN_CORE_KIND_IMAGE:
+        markdown_core_node_image_properties(a, &a1, &a2);
+        markdown_core_node_image_properties(b, &b1, &b2);
+        return view_optional_equal(a1, b1) && view_optional_equal(a2, b2);
+    default:
+        return true;
+    }
 }
 
 // `parent_start_line` is the absolute start line of the node's canonical

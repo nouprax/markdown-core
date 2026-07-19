@@ -1730,7 +1730,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     }
 
     // --- 2. staged reparse with resync probing ---
-    parser = markdown_core_session_new_parser(session, error);
+    parser = markdown_core_session_acquire_parser(session, error);
     if (!parser) {
         goto failed;
     }
@@ -1931,7 +1931,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         map->max_ref_size = budget;
         parser->refmap = own_map;
         own_map = NULL;
-        markdown_core_parser_free(parser);
+        markdown_core_session_release_parser(session, parser);
         parser = NULL;
         if (!root || parse_lost) {
             goto failed;
@@ -2567,7 +2567,7 @@ failed:
     }
     if (parser) {
         parser->refmap = own_map;
-        markdown_core_parser_free(parser);
+        markdown_core_session_release_parser(session, parser);
     }
     if (root) {
         markdown_core_node_free(root);
