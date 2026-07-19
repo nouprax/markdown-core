@@ -641,16 +641,58 @@ Equality everywhere is `(lineage, id, revision)`.
   edit an incremental resynced commit; a quote-cluster front edit resyncs at
   the second quote), the `session_quote_suffix` complexity case (front edits
   flat across a 1024x quote-suffix spread, 0.9x measured), and the
-  `session_footnote_defs` complexity case. The latter gates a same-size
-  ratio — last-definition body edit within 3x of a site-free control edit on
-  the same corpus (measured 1.3x/1.0x small/large; 6.4x/7.0x before the
-  change) — because the accepted O(#sites) footnote index refresh (#14)
-  runs against every commit and scales with the cluster itself, so
-  cross-size wall-clock flatness is a #14 property, not a restart-locality
-  one. Fuzz campaign at delivery: 688K executions / 2.5 minutes of the
-  session edit-script target, zero failures; correctness + ASan/UBSan
-  presets green. Remaining in M5: pathological corpus, perf tuning, release
-  prep.
+  `session_footnote_defs` complexity case (last-definition body edits flat
+  across a 1024x cluster spread, 0.97x measured — see the footnote-index
+  rework below, which the flat form of this gate depends on). Fuzz campaign
+  at delivery: 688K executions / 2.5 minutes of the session edit-script
+  target, zero failures; correctness + ASan/UBSan presets green.
+
+  Footnote index made damage-proportional, delivered 2026-07-19 with the
+  same workstream. Gating #26 exposed that the #14-era refresh — an
+  O(#sites) merge copy, a full rebuild that case-folded every label, and an
+  O(#sites) diff — ran against every footnote-enabled commit, so even
+  site-free edits against a 65K-definition corpus cost ~7.3ms and no
+  growing-cluster gate could be wall-clock flat. The index is now
+  maintained across commits:
+
+  - **Session-persistent label interning** (`footnote_labels`): one owned
+    normalized string per distinct label, folded once when a site first
+    carries it; sites store label slots, and no commit path re-normalizes
+    at rest (the profile's dominant cost — `utf8proc` folding plus
+    `key_index` churn per site per commit — is gone).
+  - **Sequence-preserving fast path**: the stale site ranges are two
+    O(log #sites) probes over the persistent document-ordered lists
+    (anchor lines, old coordinates; graveyard anchors keep theirs); when
+    the stale and staged runs — and every rebuilt unit's run — carry
+    identical label sequences with stable definition ids, the commit
+    patches pointers and churned reference ids in place. Churned ids
+    tombstone first and reinsert after (adoption can swap ids between
+    positions), repointing their group entries through the site's stored
+    group position. No aggregate can have moved, so no delta and no
+    rebuild: O(staged + stale + rebuilt) per commit.
+  - **Slow path**: any other commit merges the site lists in document
+    order (the #14 merge, now post-adoption and clone-anchor tolerant) and
+    rebuilds the derived structures from label-slot integers, diffing per
+    node id against a hash-keyed record table (sorted array replaced;
+    tombstoned open addressing, growth only through a fallible reserve so
+    applies never allocate).
+  - The refresh runs post-adoption as before; a fallback now clears the
+    delta's id arrays so the full path re-records cleanly, and the
+    label table survives every path — full rebuilds, failed commits, and
+    index swaps included.
+
+  Measured at 65K definitions: site-free edits 7.3ms → 1.3µs/commit,
+  last-definition body edits 7.7ms → 1.6µs (both flat from 256 to 65K
+  definitions); `session_footnote_shift` (the structural label-flip slow
+  path over a fixed cluster) stays flat at 0.96x. Structure-changing
+  commits pay the slow path's O(#sites) integer pass — comparable to the
+  text memmove the edit itself already costs — and their deltas are
+  output-sensitive either way. Gates: the flat `session_footnote_defs`
+  above, every footnote boundary script and the per-commit footnote query
+  equivalence in the replay harness, the OOM sweep (which caught a
+  zero-capacity label-table probe on the injected-failure path), and a
+  470K-execution fuzz campaign; correctness + ASan/UBSan presets green.
+  Remaining in M5: pathological corpus, perf tuning, release prep.
 
 ## Verification
 

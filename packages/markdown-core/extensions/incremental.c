@@ -1202,7 +1202,12 @@ static markdown_core_incremental_result merge_site_list(
             }
             continue;
         }
-        if (site->anchor->parent != doc) {
+        found = site->unit && clone_count ? clone_key_find(clone_keys, clone_count, site->unit) : SIZE_MAX;
+        // A top-level rebuilt unit was already swapped out of the tree (the
+        // merge runs post-adoption), so its sites anchor at an unlinked
+        // node; the clone match below replaces them, and their stored line
+        // still orders the staged emission correctly.
+        if (found == SIZE_MAX && site->anchor->parent != doc) {
             return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
         }
         if (!staged_emitted && site->anchor->start_line + 1 >= restart_line) {
@@ -1211,7 +1216,6 @@ static markdown_core_incremental_result merge_site_list(
             }
             staged_emitted = true;
         }
-        found = site->unit && clone_count ? clone_key_find(clone_keys, clone_count, site->unit) : SIZE_MAX;
         if (found != SIZE_MAX) {
             if (!clone_emitted[found]) {
                 if (!site_run_append(mem, out, &clone_runs[found])) {
@@ -1231,59 +1235,166 @@ static markdown_core_incremental_result merge_site_list(
     return MARKDOWN_CORE_INCREMENTAL_COMMITTED;
 }
 
-/* Builds the next commit's footnote site lists from the previous index and
- * the freshly parsed material. Runs pre-adoption: node pointers are final,
- * ids are not, and nothing here touches the committed tree. On COMMITTED the
- * out lists hold the merged document order; otherwise they are released. A
- * clone that gains footnote sites where its unit had none has no merge
- * position and returns FALLBACK (the link/footnote-reference kind flip). */
-static markdown_core_incremental_result footnote_sites_merge(
+/* An anchor's absolute first line. Stale and graveyard anchors keep their
+ * pre-commit lines — exactly the coordinate space of restart_line and
+ * boundary_line — and the suffix shift runs after the refresh, so every
+ * comparison below happens in old coordinates. */
+static int site_anchor_line(const markdown_core_footnote_site *site) { return site->anchor->start_line + 1; }
+
+/* First site whose anchor starts at or beyond `line`. */
+static size_t site_lower_bound(const markdown_core_footnote_site_list *list, int line) {
+    size_t lo = 0;
+    size_t hi = list->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (site_anchor_line(&list->items[mid]) < line) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+/* One churned reference id staged for reinsertion: its record already
+ * repointed at the replacement node, plus the group position that repoints
+ * the label's group entry. */
+typedef struct {
+    markdown_core_footnote_record record;
+    size_t group_pos;
+} churn_stash;
+
+/* Fast-path apply, pass 1: tombstone every churned id in the run, stashing
+ * its record for reinsertion. Adoption can swap ids between positions of
+ * one commit, so every removal must land before any reinsert. */
+static size_t stash_ref_churn(
+    markdown_core_footnote_index *fn,
+    const markdown_core_footnote_site *old_sites,
+    const markdown_core_footnote_site *new_sites,
+    size_t count,
+    churn_stash *stash,
+    size_t filled
+) {
+    size_t i;
+    for (i = 0; i < count; i++) {
+        if (old_sites[i].node->id != new_sites[i].node->id) {
+            markdown_core_footnote_record *record =
+                markdown_core_footnote_table_find(&fn->records, old_sites[i].node->id);
+            stash[filled].record = *record;
+            stash[filled].record.node = new_sites[i].node;
+            stash[filled].group_pos = old_sites[i].group_pos;
+            markdown_core_footnote_table_remove(&fn->records, old_sites[i].node->id);
+            filled++;
+        }
+    }
+    return filled;
+}
+
+/* Fast-path apply, pass 2: refresh the run's pointers in place; the label
+ * (equal by the fast-path check) and group position survive. Unchurned ids
+ * repoint their records here; churned ones reinsert from the stash. */
+static void patch_ref_run(
+    markdown_core_footnote_index *fn,
+    markdown_core_footnote_site *old_sites,
+    const markdown_core_footnote_site *new_sites,
+    size_t count
+) {
+    size_t i;
+    for (i = 0; i < count; i++) {
+        markdown_core_footnote_site *old_site = &old_sites[i];
+        const markdown_core_footnote_site *new_site = &new_sites[i];
+        if (old_site->node->id == new_site->node->id) {
+            markdown_core_footnote_table_find(&fn->records, old_site->node->id)->node = new_site->node;
+        }
+        old_site->node = new_site->node;
+        old_site->anchor = new_site->anchor;
+        old_site->unit = new_site->unit;
+    }
+}
+
+/* One rebuilt unit's current reference run inside the persistent list, and
+ * the anchor its surviving sites carry (the old unit itself for a top-level
+ * rebuild — the clone took its place in the tree — or the surviving
+ * container for a nested one). */
+typedef struct {
+    size_t start;
+    size_t count;
+    markdown_core_node *anchor;
+} unit_run;
+
+/* Refreshes the session's footnote index for one incremental commit. Runs
+ * post-adoption (ids final), before the point of no return. A commit whose
+ * stale ranges and rebuilt units carry the same label sequences as their
+ * replacements patches the persistent index in place — pointer and
+ * churned-id updates only, no aggregate can have moved — at
+ * O(staged + stale + rebuilt) after two O(log sites) range probes. Any
+ * other commit merges the site lists in document order and rebuilds the
+ * derived structures from label slots (*out_built set, caller swaps at the
+ * point of no return), diffing per node id to bump exactly the answers
+ * that changed. A clone that gains sites where its unit had none, or holds
+ * a definition, falls back to the full path as before. */
+static markdown_core_incremental_result footnote_refresh(
     markdown_core_session *session,
-    markdown_core_node *root,
+    markdown_core_footnote_site_list *staged_defs,
+    markdown_core_footnote_site_list *staged_refs,
     const uint64_t *stale_ids,
     size_t stale_count,
     int restart_line,
+    int boundary_line,
     dependent_unit *dependents,
     size_t dependent_count,
-    markdown_core_footnote_site_list *out_defs,
-    markdown_core_footnote_site_list *out_refs
+    uint64_t new_rev,
+    markdown_core_delta *changes,
+    markdown_core_footnote_index *out_index,
+    bool *out_built
 ) {
     markdown_core_mem *mem = session->mem;
     markdown_core_node *doc = session->view.root;
-    markdown_core_footnote_site_list staged_defs = {NULL, 0, 0};
-    markdown_core_footnote_site_list staged_refs = {NULL, 0, 0};
+    markdown_core_footnote_index *fn = &session->footnotes;
+    markdown_core_footnote_site_list def_sites = {NULL, 0, 0};
+    markdown_core_footnote_site_list ref_sites = {NULL, 0, 0};
     markdown_core_footnote_site_list *clone_runs = NULL;
     clone_key *clone_keys = NULL;
     bool *clone_emitted = NULL;
+    unit_run *runs = NULL;
     markdown_core_incremental_result result = MARKDOWN_CORE_INCREMENTAL_FAILED;
+    size_t d0 = site_lower_bound(&fn->defs, restart_line);
+    size_t d1 = site_lower_bound(&fn->defs, boundary_line);
+    size_t r0 = site_lower_bound(&fn->refs, restart_line);
+    size_t r1 = site_lower_bound(&fn->refs, boundary_line);
+    size_t churn = 0;
+    bool fast;
     size_t i;
-
-    // The staged region's sites, anchored at the staged document children.
-    if (!markdown_core_footnote_collect_sites(mem, root, NULL, &staged_defs, &staged_refs)) {
-        goto done;
-    }
 
     if (dependent_count) {
         clone_runs = (markdown_core_footnote_site_list *)mem->calloc(dependent_count, sizeof(*clone_runs));
         clone_keys = (clone_key *)mem->calloc(dependent_count, sizeof(*clone_keys));
         clone_emitted = (bool *)mem->calloc(dependent_count, sizeof(*clone_emitted));
-        if (!clone_runs || !clone_keys || !clone_emitted) {
+        runs = (unit_run *)mem->calloc(dependent_count, sizeof(*runs));
+        if (!clone_runs || !clone_keys || !clone_emitted || !runs) {
             goto done;
         }
         for (i = 0; i < dependent_count; i++) {
-            markdown_core_node *top = dependents[i].unit;
-            markdown_core_node *anchor;
+            markdown_core_node *top = dependents[i].staged;
             markdown_core_footnote_site_list clone_defs = {NULL, 0, 0};
+            markdown_core_footnote_site_list no_defs = {NULL, 0, 0};
             bool collected;
+            size_t at;
             while (top->parent && top->parent != doc) {
                 top = top->parent;
             }
             // A top-level unit anchors its clone's sites at the clone (the
-            // splice puts it where the unit was); a nested one at its
-            // surviving container.
-            anchor = top == dependents[i].unit ? dependents[i].staged : top;
-            collected =
-                markdown_core_footnote_collect_sites(mem, dependents[i].staged, anchor, &clone_defs, &clone_runs[i]);
+            // splice put it where the unit was); a nested one at its
+            // surviving container. The unit's surviving sites carry the old
+            // unit / the same container respectively.
+            runs[i].anchor = top == dependents[i].staged ? dependents[i].unit : top;
+            collected = markdown_core_footnote_collect_sites(
+                mem,
+                dependents[i].staged,
+                top == dependents[i].staged ? dependents[i].staged : top,
+                &clone_defs,
+                &clone_runs[i]
+            );
             if (clone_defs.count) {
                 // A rebuilt leaf can never hold a definition; one appearing
                 // means the lists no longer describe the tree.
@@ -1292,7 +1403,23 @@ static markdown_core_incremental_result footnote_sites_merge(
                 goto done;
             }
             markdown_core_footnote_site_list_release(mem, &clone_defs);
-            if (!collected) {
+            if (!collected || !markdown_core_session_footnote_label_sites(session, &no_defs, &clone_runs[i])) {
+                goto done;
+            }
+            at = site_lower_bound(&fn->refs, runs[i].anchor->start_line + 1);
+            while (at < fn->refs.count && fn->refs.items[at].anchor == runs[i].anchor &&
+                   fn->refs.items[at].unit != dependents[i].unit) {
+                at++;
+            }
+            runs[i].start = at;
+            while (at < fn->refs.count && fn->refs.items[at].unit == dependents[i].unit) {
+                at++;
+            }
+            runs[i].count = at - runs[i].start;
+            if (runs[i].count == 0 && clone_runs[i].count) {
+                // Sites gained where the unit had none have no position (the
+                // link/footnote-reference kind flip).
+                result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
                 goto done;
             }
             clone_keys[i].unit = dependents[i].unit;
@@ -1301,43 +1428,145 @@ static markdown_core_incremental_result footnote_sites_merge(
         qsort(clone_keys, dependent_count, sizeof(*clone_keys), clone_key_compare);
     }
 
+    // --- fast path: sequence-preserving commit ---
+    fast = staged_defs->count == d1 - d0 && staged_refs->count == r1 - r0;
+    for (i = 0; fast && i < staged_defs->count; i++) {
+        const markdown_core_footnote_site *old_site = &fn->defs.items[d0 + i];
+        const markdown_core_footnote_site *new_site = &staged_defs->items[i];
+        // A churned definition id can be a label's winner, embedded in every
+        // record of the label; the rebuild handles that cascade.
+        if (old_site->label != new_site->label || old_site->node->id != new_site->node->id) {
+            fast = false;
+        }
+    }
+    for (i = 0; fast && i < staged_refs->count; i++) {
+        const markdown_core_footnote_site *old_site = &fn->refs.items[r0 + i];
+        const markdown_core_footnote_site *new_site = &staged_refs->items[i];
+        if (old_site->label != new_site->label) {
+            fast = false;
+        } else if (old_site->node->id != new_site->node->id) {
+            if (!markdown_core_footnote_table_find(&fn->records, old_site->node->id)) {
+                fast = false;
+            } else {
+                churn++;
+            }
+        }
+    }
+    for (i = 0; fast && i < dependent_count; i++) {
+        size_t k;
+        if (runs[i].start + runs[i].count > r0 && runs[i].start < r1) {
+            fast = false; // a rebuilt unit inside the stale range: not a position we patch
+            break;
+        }
+        if (clone_runs[i].count != runs[i].count) {
+            fast = false;
+            break;
+        }
+        for (k = 0; fast && k < runs[i].count; k++) {
+            const markdown_core_footnote_site *old_site = &fn->refs.items[runs[i].start + k];
+            const markdown_core_footnote_site *new_site = &clone_runs[i].items[k];
+            if (old_site->label != new_site->label) {
+                fast = false;
+            } else if (old_site->node->id != new_site->node->id) {
+                if (!markdown_core_footnote_table_find(&fn->records, old_site->node->id)) {
+                    fast = false;
+                } else {
+                    churn++;
+                }
+            }
+        }
+    }
+
+    if (fast) {
+        churn_stash *stash = NULL;
+        size_t stashed = 0;
+        if (churn) {
+            stash = (churn_stash *)mem->calloc(churn, sizeof(*stash));
+            if (!stash || !markdown_core_footnote_table_reserve(mem, &fn->records, churn)) {
+                if (stash) {
+                    mem->free(stash);
+                }
+                goto done;
+            }
+        }
+        // Infallible from here: pointer and id patches only.
+        for (i = 0; i < staged_defs->count; i++) {
+            markdown_core_footnote_site *old_site = &fn->defs.items[d0 + i];
+            const markdown_core_footnote_site *new_site = &staged_defs->items[i];
+            markdown_core_footnote_table_find(&fn->records, new_site->node->id)->node = new_site->node;
+            old_site->node = new_site->node;
+            old_site->anchor = new_site->anchor;
+        }
+        stashed = stash_ref_churn(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count, stash, stashed);
+        for (i = 0; i < dependent_count; i++) {
+            stashed =
+                stash_ref_churn(fn, fn->refs.items + runs[i].start, clone_runs[i].items, runs[i].count, stash, stashed);
+        }
+        patch_ref_run(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count);
+        for (i = 0; i < dependent_count; i++) {
+            patch_ref_run(fn, fn->refs.items + runs[i].start, clone_runs[i].items, runs[i].count);
+        }
+        for (i = 0; i < stashed; i++) {
+            markdown_core_footnote_table_put(&fn->records, stash[i].record);
+            if (stash[i].record.info.number) {
+                size_t group = (size_t)(stash[i].record.info.number - 1);
+                fn->references[fn->reference_offsets[group] + stash[i].group_pos] = stash[i].record.node->id;
+            }
+        }
+        if (stash) {
+            mem->free(stash);
+        }
+        (void)new_rev;
+        (void)changes;
+        *out_built = false;
+        result = MARKDOWN_CORE_INCREMENTAL_COMMITTED;
+        goto done;
+    }
+
+    // --- slow path: merge in document order, rebuild, diff ---
     result = merge_site_list(
         session,
-        &session->footnotes.defs,
+        &fn->defs,
         stale_ids,
         stale_count,
         restart_line,
-        &staged_defs,
+        staged_defs,
         NULL,
         NULL,
         NULL,
         0,
-        out_defs
+        &def_sites
     );
     if (result == MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
         result = merge_site_list(
             session,
-            &session->footnotes.refs,
+            &fn->refs,
             stale_ids,
             stale_count,
             restart_line,
-            &staged_refs,
+            staged_refs,
             clone_keys,
             clone_runs,
             clone_emitted,
             dependent_count,
-            out_refs
+            &ref_sites
         );
     }
-    for (i = 0; result == MARKDOWN_CORE_INCREMENTAL_COMMITTED && i < dependent_count; i++) {
-        if (!clone_emitted[i] && clone_runs[i].count) {
-            result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+    if (result == MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
+        result = MARKDOWN_CORE_INCREMENTAL_FAILED;
+        if (markdown_core_footnote_index_build_sites(mem, &def_sites, &ref_sites, out_index)) {
+            if (markdown_core_footnote_index_diff(mem, fn, out_index, new_rev, changes)) {
+                *out_built = true;
+                result = MARKDOWN_CORE_INCREMENTAL_COMMITTED;
+            } else {
+                markdown_core_footnote_index_release(mem, out_index);
+            }
         }
     }
 
 done:
-    markdown_core_footnote_site_list_release(mem, &staged_defs);
-    markdown_core_footnote_site_list_release(mem, &staged_refs);
+    markdown_core_footnote_site_list_release(mem, &def_sites);
+    markdown_core_footnote_site_list_release(mem, &ref_sites);
     if (clone_runs) {
         for (i = 0; i < dependent_count; i++) {
             markdown_core_footnote_site_list_release(mem, &clone_runs[i]);
@@ -1350,9 +1579,8 @@ done:
     if (clone_emitted) {
         mem->free(clone_emitted);
     }
-    if (result != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
-        markdown_core_footnote_site_list_release(mem, out_defs);
-        markdown_core_footnote_site_list_release(mem, out_refs);
+    if (runs) {
+        mem->free(runs);
     }
     return result;
 }
@@ -1407,8 +1635,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     uint64_t *stale_ids = NULL;
     size_t stale_count = 0;
     markdown_core_footnote_index footnotes;
-    markdown_core_footnote_site_list def_sites = {NULL, 0, 0};
-    markdown_core_footnote_site_list ref_sites = {NULL, 0, 0};
+    markdown_core_footnote_site_list staged_defs = {NULL, 0, 0};
+    markdown_core_footnote_site_list staged_refs = {NULL, 0, 0};
     bool footnotes_built = false;
     markdown_core_lookup_recording recording;
     markdown_core_unit_lookups *bundles = NULL;
@@ -1713,22 +1941,14 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         }
     }
 
-    // Footnote sites of the next tree, merged while falling back is still
-    // free: adoption has not run, so the delta holds nothing yet.
+    // Footnote sites of the staged region, collected and interned while
+    // falling back is still free. Classification against the persistent
+    // lists waits until adoption has fixed node ids: a sequence-preserving
+    // commit then patches the index in place, anything else merges and
+    // rebuilds.
     if (session->options.footnotes) {
-        markdown_core_incremental_result merged = footnote_sites_merge(
-            session,
-            root,
-            stale_ids,
-            stale_count,
-            restart_line,
-            dependents,
-            dependent_count,
-            &def_sites,
-            &ref_sites
-        );
-        if (merged != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
-            result = merged;
+        if (!markdown_core_footnote_collect_sites(mem, root, NULL, &staged_defs, &staged_refs) ||
+            !markdown_core_session_footnote_label_sites(session, &staged_defs, &staged_refs)) {
             goto failed;
         }
     }
@@ -1970,9 +2190,23 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         }
 
         if (session->options.footnotes) {
-            if (!markdown_core_footnote_index_build_sites(mem, &def_sites, &ref_sites, &footnotes) ||
-                !markdown_core_footnote_index_diff(mem, &session->footnotes, &footnotes, new_rev, changes)) {
-                markdown_core_footnote_index_release(mem, &footnotes);
+            markdown_core_incremental_result refreshed = footnote_refresh(
+                session,
+                &staged_defs,
+                &staged_refs,
+                stale_ids,
+                stale_count,
+                restart_line,
+                boundary_line,
+                dependents,
+                dependent_count,
+                new_rev,
+                changes,
+                &footnotes,
+                &footnotes_built
+            );
+            if (refreshed != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
+                result = refreshed;
                 {
                     size_t i;
                     doc->last_changed_rev = previous_doc_rev;
@@ -2035,9 +2269,17 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                         doc->last_child = last_stale;
                     }
                 }
+                // The refresh runs post-adoption, so the delta already
+                // holds this attempt's ids; a fallback re-records against
+                // the full path and a failure reports nothing.
+                if (changes) {
+                    changes->added.count = 0;
+                    changes->removed.count = 0;
+                    changes->changed.count = 0;
+                    changes->bubbled.count = 0;
+                }
                 goto failed;
             }
-            footnotes_built = true;
         }
 
         // --- point of no return: nothing below can fail ---
@@ -2323,8 +2565,8 @@ done:
     map->lookup_sink = NULL;
     map->lookup_context = NULL;
     map->lookup_unit = NULL;
-    markdown_core_footnote_site_list_release(mem, &def_sites);
-    markdown_core_footnote_site_list_release(mem, &ref_sites);
+    markdown_core_footnote_site_list_release(mem, &staged_defs);
+    markdown_core_footnote_site_list_release(mem, &staged_refs);
     markdown_core_lookup_recording_release(&recording);
     markdown_core_unit_lookups_free(mem, bundles, bundle_count);
     reconcile_release(mem, &reconcile);
