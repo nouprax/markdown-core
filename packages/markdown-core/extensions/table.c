@@ -40,14 +40,14 @@ typedef struct {
 
 static void free_table_cell(markdown_core_mem *mem, node_cell *cell) {
     markdown_core_strbuf_free((markdown_core_strbuf *)cell->buf);
-    mem->free(cell->buf);
+    mem->free(mem, cell->buf);
 }
 
 static void free_row_cells(markdown_core_mem *mem, table_row *row) {
     while (row->n_columns > 0) {
         free_table_cell(mem, &row->cells[--row->n_columns]);
     }
-    mem->free(row->cells);
+    mem->free(mem, row->cells);
     row->cells = NULL;
 }
 
@@ -57,16 +57,16 @@ static void free_table_row(markdown_core_mem *mem, table_row *row) {
     }
 
     free_row_cells(mem, row);
-    mem->free(row);
+    mem->free(mem, row);
 }
 
 static void free_node_table(markdown_core_mem *mem, void *ptr) {
     node_table *t = (node_table *)ptr;
-    mem->free(t->alignments);
-    mem->free(t);
+    mem->free(mem, t->alignments);
+    mem->free(mem, t);
 }
 
-static void free_node_table_row(markdown_core_mem *mem, void *ptr) { mem->free(ptr); }
+static void free_node_table_row(markdown_core_mem *mem, void *ptr) { mem->free(mem, ptr); }
 
 static int get_n_table_columns(markdown_core_node *node) {
     if (!node || node->type != MARKDOWN_CORE_NODE_TABLE || !node->as.opaque) {
@@ -131,7 +131,7 @@ static int set_cell_index(markdown_core_node *node, int i) {
 }
 
 static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned char *string, bufsize_t len) {
-    markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(1, sizeof(markdown_core_strbuf));
+    markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(mem, 1, sizeof(markdown_core_strbuf));
     bufsize_t r, w;
 
     if (!res) {
@@ -170,7 +170,7 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
             return NULL;
         }
         // Use realloc to double the size of the buffer.
-        node_cell *cells = (node_cell *)mem->realloc(row->cells, (2 * n_columns - 1) * sizeof(node_cell));
+        node_cell *cells = (node_cell *)mem->realloc(mem, row->cells, (2 * n_columns - 1) * sizeof(node_cell));
         if (!cells) {
             /* Allocation loss, not the column limit: report it so the parse
              * fails instead of silently degrading the table to a paragraph. */
@@ -202,7 +202,7 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
     int row_end_offset = 0;
     int int_overflow_abort = 0;
 
-    row = (table_row *)parser->mem->calloc(1, sizeof(table_row));
+    row = (table_row *)parser->mem->calloc(parser->mem, 1, sizeof(table_row));
     if (!row) {
         parser->oom = true;
         return NULL;
@@ -233,7 +233,7 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
                 parser->oom = true;
                 int_overflow_abort = 1;
                 markdown_core_strbuf_free(cell_buf);
-                parser->mem->free(cell_buf);
+                parser->mem->free(parser->mem, cell_buf);
                 break;
             }
             markdown_core_strbuf_trim(cell_buf);
@@ -247,7 +247,7 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
                 if (!cell) {
                     int_overflow_abort = 1;
                     markdown_core_strbuf_free(cell_buf);
-                    parser->mem->free(cell_buf);
+                    parser->mem->free(parser->mem, cell_buf);
                     break;
                 }
                 cell->buf = cell_buf;
@@ -316,10 +316,10 @@ static void try_inserting_table_header_paragraph(
     markdown_core_strbuf_trim(paragraph_content);
     markdown_core_node_set_string_content(paragraph, (char *)paragraph_content->ptr);
     markdown_core_strbuf_free(paragraph_content);
-    parser->mem->free(paragraph_content);
+    parser->mem->free(parser->mem, paragraph_content);
 
     if (!markdown_core_node_insert_before(parent_container, paragraph)) {
-        parser->mem->free(paragraph);
+        parser->mem->free(parser->mem, paragraph);
     }
 }
 
@@ -396,7 +396,7 @@ static markdown_core_node *try_opening_table_header(
      * payload -- every table helper tolerates that -- and the sticky flag
      * makes the parse fail, so nothing downstream trusts the node. */
     markdown_core_node_set_extension(parent_container, self);
-    parent_container->as.opaque = parser->mem->calloc(1, sizeof(node_table));
+    parent_container->as.opaque = parser->mem->calloc(parser->mem, 1, sizeof(node_table));
     if (!parent_container->as.opaque) {
         parser->oom = true;
         free_table_row(parser->mem, header_row);
@@ -407,7 +407,7 @@ static markdown_core_node *try_opening_table_header(
 
     // allocate alignments based on delimiter_row->n_columns
     // since we populate the alignments array based on delimiter_row->cells
-    uint8_t *alignments = (uint8_t *)parser->mem->calloc(delimiter_row->n_columns, sizeof(uint8_t));
+    uint8_t *alignments = (uint8_t *)parser->mem->calloc(parser->mem, delimiter_row->n_columns, sizeof(uint8_t));
     if (!alignments) {
         parser->oom = true;
         free_table_row(parser->mem, header_row);
@@ -443,7 +443,7 @@ static markdown_core_node *try_opening_table_header(
     table_header->end_column = parent_container->start_column + (int)strlen(parent_string) - 2;
     table_header->start_line = table_header->end_line = parent_container->start_line;
 
-    table_header->as.opaque = ntr = (node_table_row *)parser->mem->calloc(1, sizeof(node_table_row));
+    table_header->as.opaque = ntr = (node_table_row *)parser->mem->calloc(parser->mem, 1, sizeof(node_table_row));
     if (!ntr) {
         parser->oom = true;
         free_table_row(parser->mem, header_row);
@@ -514,7 +514,7 @@ static markdown_core_node *try_opening_table_row(
     }
     markdown_core_node_set_extension(table_row_block, self);
     table_row_block->end_column = parent_container->end_column;
-    table_row_block->as.opaque = parser->mem->calloc(1, sizeof(node_table_row));
+    table_row_block->as.opaque = parser->mem->calloc(parser->mem, 1, sizeof(node_table_row));
     if (!table_row_block->as.opaque) {
         parser->oom = true;
         markdown_core_node_free(table_row_block);
@@ -660,11 +660,11 @@ static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, 
     /* A NULL payload is tolerated by every table property helper; the node
      * then reports zero columns/alignments. */
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
-        node->as.opaque = mem->calloc(1, sizeof(node_table));
+        node->as.opaque = mem->calloc(mem, 1, sizeof(node_table));
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        node->as.opaque = mem->calloc(1, sizeof(node_table_row));
+        node->as.opaque = mem->calloc(mem, 1, sizeof(node_table_row));
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
-        node->as.opaque = mem->calloc(1, sizeof(node_cell));
+        node->as.opaque = mem->calloc(mem, 1, sizeof(node_cell));
     }
 }
 
@@ -714,7 +714,7 @@ int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_
 }
 
 int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments) {
-    uint8_t *a = (uint8_t *)markdown_core_node_mem(node)->calloc(1, ncols);
+    uint8_t *a = (uint8_t *)markdown_core_node_mem(node)->calloc(markdown_core_node_mem(node), 1, ncols);
     if (!a) {
         return 0;
     }

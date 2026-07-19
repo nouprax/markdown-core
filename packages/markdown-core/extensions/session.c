@@ -40,10 +40,10 @@ static uint64_t mix64(uint64_t x) {
 
 static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
     if (table->keys) {
-        mem->free(table->keys);
+        mem->free(mem, table->keys);
     }
     if (table->values) {
-        mem->free(table->values);
+        mem->free(mem, table->values);
     }
     table->keys = NULL;
     table->values = NULL;
@@ -72,8 +72,8 @@ static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core
     while (capacity < entries * 2) {
         capacity *= 2;
     }
-    out->keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(markdown_core_node_id));
-    out->values = (markdown_core_node **)mem->calloc(capacity, sizeof(markdown_core_node *));
+    out->keys = (markdown_core_node_id *)mem->calloc(mem, capacity, sizeof(markdown_core_node_id));
+    out->values = (markdown_core_node **)mem->calloc(mem, capacity, sizeof(markdown_core_node *));
     out->count = 0;
     if (!out->keys || !out->values) {
         id_table_release(mem, out);
@@ -450,7 +450,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
         !markdown_core_session_index_definitions(session, map, &def_index, &def_count)) {
         id_table_release(session->mem, &ids);
         if (clean.items) {
-            session->mem->free(clean.items);
+            session->mem->free(session->mem, clean.items);
         }
         markdown_core_footnote_index_release(session->mem, &footnotes);
         markdown_core_lookup_table_release(session->mem, &lookups);
@@ -472,10 +472,10 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     markdown_core_lookup_table_release(session->mem, &session->lookups);
     markdown_core_map_free(session->refmap);
     if (session->clean.items) {
-        session->mem->free(session->clean.items);
+        session->mem->free(session->mem, session->clean.items);
     }
     if (session->def_index) {
-        session->mem->free(session->def_index);
+        session->mem->free(session->mem, session->def_index);
     }
     session->def_index = def_index;
     session->def_count = def_count;
@@ -612,10 +612,10 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_lookup_table_release(session->mem, &session->lookups);
     markdown_core_map_free(session->refmap);
     if (session->clean.items) {
-        session->mem->free(session->clean.items);
+        session->mem->free(session->mem, session->clean.items);
     }
     if (session->def_index) {
-        session->mem->free(session->def_index);
+        session->mem->free(session->mem, session->def_index);
     }
     markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
     if (session->warm_parser) {

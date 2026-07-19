@@ -34,11 +34,11 @@ void markdown_core_lookup_recording_release(markdown_core_lookup_recording *reco
     size_t i;
     for (i = 0; i < recording->count; i++) {
         if (recording->items[i].label) {
-            recording->mem->free(recording->items[i].label);
+            recording->mem->free(recording->mem, recording->items[i].label);
         }
     }
     if (recording->items) {
-        recording->mem->free(recording->items);
+        recording->mem->free(recording->mem, recording->items);
     }
     recording->items = NULL;
     recording->count = 0;
@@ -76,7 +76,8 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
     if (recording->count == recording->capacity) {
         size_t capacity = recording->capacity ? recording->capacity * 2 : 32;
         markdown_core_lookup_event *grown =
-            (markdown_core_lookup_event *)recording->mem->realloc(recording->items, capacity * sizeof(*grown));
+            (markdown_core_lookup_event *)
+                recording->mem->realloc(recording->mem, recording->items, capacity * sizeof(*grown));
         if (!grown) {
             recording->lost = true;
             return;
@@ -86,7 +87,7 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
     }
 
     label_size = strlen((const char *)label) + 1;
-    copy = (unsigned char *)recording->mem->calloc(1, label_size);
+    copy = (unsigned char *)recording->mem->calloc(recording->mem, 1, label_size);
     if (!copy) {
         recording->lost = true;
         return;
@@ -122,7 +123,7 @@ bool markdown_core_lookup_recording_bundle(
             bundle_count++;
         }
     }
-    bundles = (markdown_core_unit_lookups *)mem->calloc(bundle_count, sizeof(*bundles));
+    bundles = (markdown_core_unit_lookups *)mem->calloc(mem, bundle_count, sizeof(*bundles));
     if (!bundles) {
         return false;
     }
@@ -135,7 +136,7 @@ bool markdown_core_lookup_recording_bundle(
                 size_t run_length = i - run_start;
                 markdown_core_unit_lookups *bundle = &bundles[filled];
                 bundle->unit = recording->items[run_start].unit;
-                bundle->record.labels = (unsigned char **)mem->calloc(run_length, sizeof(unsigned char *));
+                bundle->record.labels = (unsigned char **)mem->calloc(mem, run_length, sizeof(unsigned char *));
                 if (!bundle->record.labels) {
                     markdown_core_unit_lookups_free(mem, bundles, bundle_count);
                     return false;
@@ -160,11 +161,11 @@ static void lookup_record_release(markdown_core_mem *mem, markdown_core_lookup_r
     size_t i;
     for (i = 0; i < record->count; i++) {
         if (record->labels[i]) {
-            mem->free(record->labels[i]);
+            mem->free(mem, record->labels[i]);
         }
     }
     if (record->labels) {
-        mem->free(record->labels);
+        mem->free(mem, record->labels);
     }
     record->labels = NULL;
     record->count = 0;
@@ -178,7 +179,7 @@ void markdown_core_unit_lookups_free(markdown_core_mem *mem, markdown_core_unit_
     for (i = 0; i < count; i++) {
         lookup_record_release(mem, &bundles[i].record);
     }
-    mem->free(bundles);
+    mem->free(mem, bundles);
 }
 
 // --- persistent table --------------------------------------------------------
@@ -191,10 +192,10 @@ void markdown_core_lookup_table_release(markdown_core_mem *mem, markdown_core_lo
         }
     }
     if (table->keys) {
-        mem->free(table->keys);
+        mem->free(mem, table->keys);
     }
     if (table->records) {
-        mem->free(table->records);
+        mem->free(mem, table->records);
     }
     table->keys = NULL;
     table->records = NULL;
@@ -235,14 +236,14 @@ bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lo
     while (capacity < needed * 2) {
         capacity *= 2;
     }
-    grown.keys = (markdown_core_node_id *)mem->calloc(capacity, sizeof(*grown.keys));
-    grown.records = (markdown_core_lookup_record *)mem->calloc(capacity, sizeof(*grown.records));
+    grown.keys = (markdown_core_node_id *)mem->calloc(mem, capacity, sizeof(*grown.keys));
+    grown.records = (markdown_core_lookup_record *)mem->calloc(mem, capacity, sizeof(*grown.records));
     if (!grown.keys || !grown.records) {
         if (grown.keys) {
-            mem->free(grown.keys);
+            mem->free(mem, grown.keys);
         }
         if (grown.records) {
-            mem->free(grown.records);
+            mem->free(mem, grown.records);
         }
         return false;
     }
@@ -253,10 +254,10 @@ bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lo
         }
     }
     if (table->keys) {
-        mem->free(table->keys);
+        mem->free(mem, table->keys);
     }
     if (table->records) {
-        mem->free(table->records);
+        mem->free(mem, table->records);
     }
     *table = grown;
     return true;

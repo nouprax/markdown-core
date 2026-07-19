@@ -34,7 +34,8 @@ static int fb_block_slot_tables;
 static int fb_block_pointer_arrays;
 static int fb_block_all_callocs;
 
-static void *fb_calloc(size_t nmemb, size_t size) {
+static void *fb_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    (void)mem;
     if (fb_block_all_callocs) {
         fb_blocked_allocations++;
         return NULL;
@@ -50,9 +51,15 @@ static void *fb_calloc(size_t nmemb, size_t size) {
     return calloc(nmemb, size);
 }
 
-static void *fb_realloc(void *pointer, size_t size) { return realloc(pointer, size); }
+static void *fb_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    (void)mem;
+    return realloc(pointer, size);
+}
 
-static void fb_free(void *pointer) { free(pointer); }
+static void fb_free(markdown_core_mem *mem, void *pointer) {
+    (void)mem;
+    free(pointer);
+}
 
 static markdown_core_mem fb_failing_mem = {fb_calloc, fb_realloc, fb_free};
 
@@ -62,7 +69,8 @@ static unsigned long fb_sweep_count;
 static unsigned long fb_sweep_fail_at; /* 0 = count only */
 static int fb_sweep_fired;
 
-static void *fb_sweep_calloc(size_t nmemb, size_t size) {
+static void *fb_sweep_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    (void)mem;
     if (++fb_sweep_count == fb_sweep_fail_at) {
         fb_sweep_fired = 1;
         return NULL;
@@ -70,7 +78,8 @@ static void *fb_sweep_calloc(size_t nmemb, size_t size) {
     return calloc(nmemb, size);
 }
 
-static void *fb_sweep_realloc(void *pointer, size_t size) {
+static void *fb_sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    (void)mem;
     if (++fb_sweep_count == fb_sweep_fail_at) {
         fb_sweep_fired = 1;
         return NULL;
