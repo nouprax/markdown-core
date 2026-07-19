@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupSession } from "../dist/index.js";
+import { Document, MarkupSession, Walker, WalkEvent } from "../dist/index.js";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
     const session = new MarkupSession();
@@ -191,31 +191,46 @@ test("sessions: conflated streaming with irregular ticks over a multi-turn conve
     // frozen while later turns stream.
     const turns = [
         "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
-            "and the heading keeps its identity from the first render on.",
+            "and the heading keeps its identity from the first render on.\n\n" +
+            "Deltas stay proportional to what changed, so a renderer " +
+            "reconciles by id instead of walking the whole tree.\n\n" +
+            "> Snapshots are values: whatever a tick captured stays valid " +
+            "while the socket races ahead.",
         "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
-            "\n\n```swift\nlet constant = 1\n```",
-        "\n\nA table lands in one turn:\n\n| a | b |\n| - | - |\n| 1 | 2 |" +
-            "\n\nTail with a footnote[^n].\n\n[^n]: Resolved at the end."
+            "\n- identical items stress identity\n- identical items stress identity" +
+            "\n\n```swift\nlet constant = 1\nlet mirror = [Int: String]()\n" +
+            "for index in 0..<3 {\n    print(index, constant)\n}\n```\n\n" +
+            "Fenced code arrives line by line and only closes at the final tick.",
+        "\n\nA table lands late in the conversation:\n\n" +
+            "| stage | commits | messages |\n| - | - | - |\n| one | 3 | 9 |\n" +
+            "| two | 5 | 14 |\n| three | 8 | 21 |\n\n" +
+            "Tail with a footnote[^n] whose definition arrives last.\n\n" +
+            "[^n]: Resolved at the end, after every reference already rendered."
     ];
-    // One fixed generator drives message widths and tick timing, so the
-    // burst shapes are irregular but reproducible — and identical in the
-    // Swift and Kotlin mirrors of this test.
+    // One fixed generator drives batch sizes and tick timing, so the burst
+    // shapes are irregular but reproducible — and identical in the Swift and
+    // Kotlin mirrors of this test.
     const mask = (1n << 64n) - 1n;
     let state = 0x9e3779b97f4a7c15n;
     function draw(bound) {
         state = (state * 6364136223846793005n + 1442695040888963407n) & mask;
         return Number((state >> 33n) % bound);
     }
-
     const session = new MarkupSession();
     try {
         let streamed = "";
         let frozen = [];
         let messages = 0;
         let commits = 0;
+        let touched = 0;
         function tick() {
             const commit = session.commit();
             commits += 1;
+            touched +=
+                commit.delta.added.length +
+                commit.delta.removed.length +
+                commit.delta.changed.length +
+                commit.delta.bubbled.length;
             assert.equal(commit.document.dump(), Document.parse(streamed).dump());
             for (const [index, id, revision] of frozen) {
                 const node = commit.document.content[index];
@@ -227,7 +242,13 @@ test("sessions: conflated streaming with irregular ticks over a multi-turn conve
         for (const turn of turns) {
             let offset = 0;
             while (offset < turn.length) {
-                const message = turn.slice(offset, offset + 2 + draw(29n));
+                // Mostly a 20-30 token batch (80-150 characters), with
+                // occasional tiny flushes of a few words. Cuts land at raw
+                // character offsets — mid-word, mid-marker, even between
+                // the two newlines of a block boundary — because that is
+                // the steady state of LLM output.
+                const width = draw(10n) < 2 ? 2 + draw(18n) : 80 + draw(71n);
+                const message = turn.slice(offset, offset + width);
                 offset += message.length;
                 session.append(message);
                 streamed += message;
@@ -241,9 +262,18 @@ test("sessions: conflated streaming with irregular ticks over a multi-turn conve
                 .slice(0, -1)
                 .map((node, index) => [index, node.id, node.revision]);
         }
-        assert.ok(messages > 12);
+        assert.ok(messages > 9);
         assert.ok(commits < messages);
         assert.equal(session.document.dump(), Document.parse(turns.join("")).dump());
+
+        // Near-O(n) pipeline: total delta traffic stays within one add per
+        // final node plus bounded frontier churn per tick. A full rebuild
+        // per tick would be on the order of commits * nodes.
+        let nodes = 0;
+        new Walker().walk(session.document, (event) => {
+            if (event === WalkEvent.entering) nodes += 1;
+        });
+        assert.ok(touched < nodes + 16 * commits);
     } finally {
         session.close();
     }

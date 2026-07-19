@@ -229,13 +229,23 @@ class SessionTest {
         val turns =
             listOf(
                 "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
-                    "and the heading keeps its identity from the first render on.",
+                    "and the heading keeps its identity from the first render on.\n\n" +
+                    "Deltas stay proportional to what changed, so a renderer " +
+                    "reconciles by id instead of walking the whole tree.\n\n" +
+                    "> Snapshots are values: whatever a tick captured stays valid " +
+                    "while the socket races ahead.",
                 "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
-                    "\n\n```swift\nlet constant = 1\n```",
-                "\n\nA table lands in one turn:\n\n| a | b |\n| - | - |\n| 1 | 2 |" +
-                    "\n\nTail with a footnote[^n].\n\n[^n]: Resolved at the end.",
+                    "\n- identical items stress identity\n- identical items stress identity" +
+                    "\n\n```swift\nlet constant = 1\nlet mirror = [Int: String]()\n" +
+                    "for index in 0..<3 {\n    print(index, constant)\n}\n```\n\n" +
+                    "Fenced code arrives line by line and only closes at the final tick.",
+                "\n\nA table lands late in the conversation:\n\n" +
+                    "| stage | commits | messages |\n| - | - | - |\n| one | 3 | 9 |\n" +
+                    "| two | 5 | 14 |\n| three | 8 | 21 |\n\n" +
+                    "Tail with a footnote[^n] whose definition arrives last.\n\n" +
+                    "[^n]: Resolved at the end, after every reference already rendered.",
             )
-        // One fixed generator drives message widths and tick timing, so the
+        // One fixed generator drives batch sizes and tick timing, so the
         // burst shapes are irregular but reproducible — and identical in the
         // Swift and ES mirrors of this test.
         var state = 0x9E3779B97F4A7C15UL.toLong()
@@ -243,15 +253,17 @@ class SessionTest {
             state = state * 6364136223846793005L + 1442695040888963407L
             return (state ushr 33) % bound
         }
-
         MarkupSession().use { session ->
             var streamed = ""
             var frozen = emptyList<Triple<Int, MarkupID, ULong>>()
             var messages = 0
             var commits = 0
+            var touched = 0
             fun tick() {
                 val commit = session.commit()
                 commits += 1
+                touched += commit.delta.added.size + commit.delta.removed.size +
+                    commit.delta.changed.size + commit.delta.bubbled.size
                 assertEquals(Document.parse(streamed).dump(), commit.document.dump())
                 for ((index, id, revision) in frozen) {
                     val node = commit.document.content[index]
@@ -263,7 +275,13 @@ class SessionTest {
             for (turn in turns) {
                 var offset = 0
                 while (offset < turn.length) {
-                    val width = 2 + draw(29L).toInt()
+                    // Mostly a 20-30 token batch (80-150 characters), with
+                    // occasional tiny flushes of a few words. Cuts land at
+                    // raw character offsets — mid-word, mid-marker, even
+                    // between the two newlines of a block boundary —
+                    // because that is the steady state of LLM output.
+                    val width =
+                        if (draw(10L) < 2L) 2 + draw(18L).toInt() else 80 + draw(71L).toInt()
                     val message = turn.substring(offset, minOf(offset + width, turn.length))
                     offset += message.length
                     session.append(message)
@@ -281,12 +299,23 @@ class SessionTest {
                         Triple(index, node.id, node.revision)
                     }
             }
-            assertTrue(messages > 12)
+            assertTrue(messages > 9)
             assertTrue(commits < messages)
             assertEquals(
                 Document.parse(turns.joinToString(separator = "")).dump(),
                 session.document.dump(),
             )
+
+            // Near-O(n) pipeline: total delta traffic stays within one add
+            // per final node plus bounded frontier churn per tick. A full
+            // rebuild per tick would be on the order of commits * nodes.
+            var nodes = 0
+            Walker.walk(session.document) { event, _, _ ->
+                if (event == WalkEvent.ENTERING) {
+                    nodes += 1
+                }
+            }
+            assertTrue(touched < nodes + 16 * commits)
         }
     }
 
