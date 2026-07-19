@@ -1,6 +1,6 @@
 {
     "name": "@nouprax/es-markdown-core",
-    "version": "1.0.3",
+    "version": "2.0.0",
     "private": false,
     "description": "ECMAScript and TypeScript bindings for Markdown Core",
     "type": "module",
