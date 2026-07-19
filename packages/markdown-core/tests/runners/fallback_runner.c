@@ -904,7 +904,7 @@ static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) 
  * most one failure per run). `stage_dumps[i]` receives the dump after stage
  * i's commit; failed commits are checked against the last committed dump. */
 static int fb_session_run(markdown_core_mem *mem, uint8_t **stage_dumps, size_t *stage_lengths) {
-    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, NULL);
+    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, false, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;

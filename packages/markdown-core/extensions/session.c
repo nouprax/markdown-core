@@ -559,6 +559,7 @@ static bool commit_internal(
 markdown_core_session *markdown_core_session_open_with_mem(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
+    bool pooled,
     markdown_core_error **error
 ) {
     clear_error(error);
@@ -573,6 +574,23 @@ markdown_core_session *markdown_core_session_open_with_mem(
         session->options = *options;
     } else {
         markdown_core_parse_options_init(&session->options);
+    }
+#if MARKDOWN_CORE_ASAN
+    // Slab-carved and freelist-reused blocks are invisible to
+    // AddressSanitizer, so pooling would blind the ASan suites to
+    // use-after-free and overflow inside session memory. The sanitizer
+    // build exercises the exact same allocation paths against the base
+    // allocator instead.
+    pooled = false;
+#endif
+    if (pooled) {
+        session->arena = markdown_core_arena_new(mem);
+        if (!session->arena) {
+            free(session);
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
+            return NULL;
+        }
+        mem = markdown_core_arena_mem(session->arena);
     }
     session->mem = mem;
     markdown_core_text_init(&session->text, mem);
@@ -596,11 +614,19 @@ markdown_core_session *markdown_core_session_open_with_mem(
 
 markdown_core_session *
 markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error) {
-    return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), error);
+    return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), true, error);
 }
 
 void markdown_core_session_free(markdown_core_session *session) {
     if (!session) {
+        return;
+    }
+    if (session->arena) {
+        // Everything session-owned came from the arena (deltas and errors
+        // are caller-owned system allocations); one release replaces the
+        // per-structure teardown below.
+        markdown_core_arena_release(session->arena);
+        free(session);
         return;
     }
     if (session->view.root) {
