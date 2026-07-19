@@ -154,6 +154,16 @@ commit = try session.commit()          // one incremental reparse
 print(commit.delta.changed)            // stable MarkupID values
 ```
 
+```kotlin
+MarkupSession().use { session ->
+    session.append("# Hello\nworld\n")
+    var commit = session.commit()
+    session.replace(2, 7, "Goodbye")   // byte range in the stored text
+    commit = session.commit()
+    println(commit.delta.changed)      // stable MarkupID values
+}
+```
+
 ```js
 const session = new MarkupSession();
 session.append("# Hello\nworld\n");
@@ -163,9 +173,21 @@ session.replace(2, 7, "Goodbye");      // byte range in the stored text
 session.close();
 ```
 
-Node identity is stable across commits: a `MarkupID` keeps addressing the
-same node until that node is removed, and `node(id)` resolves ids against
-the latest snapshot. Sessions also answer footnote queries (numbering,
+```c
+markdown_core_session *session = markdown_core_session_open(NULL, NULL);
+markdown_core_session_edit(session, 0, 0, (const uint8_t *)"# Hello\n", 8, NULL);
+markdown_core_delta *delta = NULL;
+markdown_core_session_commit(session, &delta, NULL);
+const markdown_core_document *document = markdown_core_session_document(session);
+/* delta ids via markdown_core_delta_added/removed/changed */
+markdown_core_delta_free(delta);
+markdown_core_session_free(session);
+```
+
+In C the committed document is a borrowed view, valid until the next commit
+or free; deltas are caller-owned. Node identity is stable across commits: a
+`MarkupID` keeps addressing the same node until that node is removed, and
+`node(id)` resolves ids against the latest snapshot. Sessions also answer footnote queries (numbering,
 resolution, first-use order, back-references) directly. Any number of
 sessions may run concurrently; there is no shared or global parser state.
 One-shot `Document.parse` is unchanged and keeps its v1 memory profile.
