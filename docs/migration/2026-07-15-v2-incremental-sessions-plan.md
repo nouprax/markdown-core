@@ -755,31 +755,32 @@ Equality everywhere is `(lineage, id, revision)`.
     kind through the same accessors the dump uses; optional strings keep
     the dump's null/empty distinction, and the no-allocation path also
     retires the "allocation failure forces a revision bump" caveat.
-  - **Parser recycling** (`blocks.c` + session): every commit built and
+  - **Warm parser** (`blocks.c` + session): every commit built and
     tore down a full parser — struct calloc, line buffers, an empty
     reference map the incremental path never reads (it swaps the
     session's map in), extension attachments, special-character
     re-derivation (6% of a storm commit, 12% of a bounded-stream
-    commit).  A session now keeps one recycled parser
-    (`session->kept_parser`): `markdown_core_parser_recycle` (core)
+    commit).  A session now keeps one parser warm between commits
+    (`session->warm_parser`): `markdown_core_parser_renew` (core)
     resets a parser whose parse ended while keeping the line buffers'
     capacity, its own (empty) reference map when the caller left one
     attached, and the extension attachments.  Commit paths acquire/release
     through the session; a poisoned parser (allocation failure during the
-    parse or the recycle) is freed instead of kept, so the cache never
+    parse or the renewal) is freed instead of held, so the session never
     holds a broken parser, and the full path — which consumes the
     parser's map as the session's next refmap — hands the parser back
-    with `refmap == NULL` and the recycle replaces it.  A fallback
+    with `refmap == NULL` and the renewal replaces it.  A fallback
     releases the staged parser before the full path acquires, so even
     degraded commits reuse the shell.
 
   Measured on the profile driver (Release, M-series): storm 3.47→2.58
   µs/commit, bounded stream 1.11→0.82, retarget 9.68→5.85, footnote-defs
   0.98→0.75; complexity-runner session gates all improved and stay flat
-  across the 1024x size spread.  Remaining hotspots (id-table
-  maintenance ~11%, subtree frees ~9%, allocator churn) are arena-shaped
-  and deliberately out of scope before 2.0.0.  Remaining in M5: release
-  prep.
+  across the 1024x size spread.  The remaining hotspots — id-table
+  maintenance (~11%), subtree frees (~9%), and general allocator churn —
+  are arena-shaped; resolving them was pulled into M5 ahead of the
+  release (decision 2026-07-19), as the final perf workstream before
+  release prep.
 
 ## Verification
 

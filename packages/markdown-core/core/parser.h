@@ -80,7 +80,7 @@ struct markdown_core_parser {
  * post-construction state for another parse, keeping the line buffers'
  * capacity, an attached (empty) reference map, and the extension
  * attachments. Allocation failure poisons the parser like a failed reset. */
-void markdown_core_parser_recycle(markdown_core_parser *parser);
+void markdown_core_parser_renew(markdown_core_parser *parser);
 
 #ifdef __cplusplus
 }

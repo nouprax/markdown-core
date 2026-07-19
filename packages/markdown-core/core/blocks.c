@@ -236,7 +236,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
  * one), and the extension attachments. A kept map must be empty — the caller
  * either never inserted into it or took it away. Failure poisons the parser
  * exactly like a failed reset. */
-void markdown_core_parser_recycle(markdown_core_parser *parser) {
+void markdown_core_parser_renew(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->extensions;
     markdown_core_llist *saved_inline_exts = parser->inline_extensions;
     int saved_options = parser->options;

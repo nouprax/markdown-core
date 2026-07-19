@@ -243,9 +243,9 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
 
 markdown_core_parser *
 markdown_core_session_acquire_parser(markdown_core_session *session, markdown_core_error **error) {
-    markdown_core_parser *parser = session->kept_parser;
+    markdown_core_parser *parser = session->warm_parser;
     if (parser) {
-        session->kept_parser = NULL;
+        session->warm_parser = NULL;
         return parser;
     }
     return markdown_core_session_new_parser(session, error);
@@ -255,10 +255,10 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
     if (!parser) {
         return;
     }
-    if (!parser->oom && !session->kept_parser) {
-        markdown_core_parser_recycle(parser);
+    if (!parser->oom && !session->warm_parser) {
+        markdown_core_parser_renew(parser);
         if (!parser->oom) {
-            session->kept_parser = parser;
+            session->warm_parser = parser;
             return;
         }
     }
@@ -618,8 +618,8 @@ void markdown_core_session_free(markdown_core_session *session) {
         session->mem->free(session->def_index);
     }
     markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
-    if (session->kept_parser) {
-        markdown_core_parser_free(session->kept_parser);
+    if (session->warm_parser) {
+        markdown_core_parser_free(session->warm_parser);
     }
     free(session);
 }
