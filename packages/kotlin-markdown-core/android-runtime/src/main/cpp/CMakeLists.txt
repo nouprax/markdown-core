@@ -26,6 +26,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/text.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/ast.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/session.c"
+    "${MARKDOWN_CORE_EXTENSIONS_DIR}/arena.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/adopt.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/incremental.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/lookups.c"

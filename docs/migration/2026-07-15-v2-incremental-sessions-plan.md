@@ -823,6 +823,21 @@ Equality everywhere is `(lineage, id, revision)`.
   walk (~22%) — no allocator or table maintenance dominates any
   workload anymore.
 
+  The arena surfaced a latent WASM limit: the ES module was built
+  without `ALLOW_MEMORY_GROWTH`, so the heap was fixed at emscripten's
+  16 MiB default and emscripten's malloc hangs the module once a parse
+  exceeds it (the engine itself fails permanent exhaustion cleanly —
+  probed natively with a hard-cutoff allocator at 19 budgets across a
+  395 KB pooled commit; every one failed transactionally).  The
+  arena's class rounding lowered the threshold into the ES robustness
+  suite's range, but any sufficiently large document hit the same wall
+  before it.  The module now links with memory growth enabled and the
+  runtime supplies `emscripten_notify_memory_growth`; no view
+  refreshing is needed because every DataView/Uint8Array over wasm
+  memory is created at its use site.  Session memory characteristics
+  (high-water retention) are now bounded by the host's memory limits,
+  matching the documented session cost model.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical
