@@ -39,14 +39,10 @@ static uint64_t mix64(uint64_t x) {
 // --- id table ---------------------------------------------------------------
 
 static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
-    if (table->keys) {
-        mem->free(mem, table->keys);
+    if (table->slots) {
+        mem->free(mem, table->slots);
     }
-    if (table->values) {
-        mem->free(mem, table->values);
-    }
-    table->keys = NULL;
-    table->values = NULL;
+    table->slots = NULL;
     table->capacity = 0;
     table->count = 0;
 }
@@ -54,15 +50,15 @@ static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *tab
 static void id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
     size_t mask = table->capacity - 1;
     size_t slot = (size_t)mix64(id) & mask;
-    while (table->keys[slot] != 0) {
-        if (table->keys[slot] == id) {
-            table->values[slot] = node;
+    while (table->slots[slot].id != 0) {
+        if (table->slots[slot].id == id) {
+            table->slots[slot].node = node;
             return;
         }
         slot = (slot + 1) & mask;
     }
-    table->keys[slot] = id;
-    table->values[slot] = node;
+    table->slots[slot].id = id;
+    table->slots[slot].node = node;
     table->count++;
 }
 
@@ -72,11 +68,9 @@ static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core
     while (capacity < entries * 2) {
         capacity *= 2;
     }
-    out->keys = (markdown_core_node_id *)mem->calloc(mem, capacity, sizeof(markdown_core_node_id));
-    out->values = (markdown_core_node **)mem->calloc(mem, capacity, sizeof(markdown_core_node *));
+    out->slots = (markdown_core_id_slot *)mem->calloc(mem, capacity, sizeof(markdown_core_id_slot));
     out->count = 0;
-    if (!out->keys || !out->values) {
-        id_table_release(mem, out);
+    if (!out->slots) {
         return false;
     }
     out->capacity = capacity;
@@ -85,7 +79,7 @@ static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core
 
 bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra) {
     markdown_core_id_table *table = &session->ids;
-    markdown_core_id_table grown = {NULL, NULL, 0, 0};
+    markdown_core_id_table grown = {NULL, 0, 0};
     size_t i;
 
     if (table->capacity && (table->count + extra) * 2 <= table->capacity) {
@@ -95,8 +89,8 @@ bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t ex
         return false;
     }
     for (i = 0; i < table->capacity; i++) {
-        if (table->keys[i] != 0) {
-            id_table_insert(&grown, table->keys[i], table->values[i]);
+        if (table->slots[i].id != 0) {
+            id_table_insert(&grown, table->slots[i].id, table->slots[i].node);
         }
     }
     id_table_release(session->mem, table);
@@ -120,8 +114,8 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
     }
     mask = table->capacity - 1;
     slot = (size_t)mix64(id) & mask;
-    while (table->keys[slot] != id) {
-        if (table->keys[slot] == 0) {
+    while (table->slots[slot].id != id) {
+        if (table->slots[slot].id == 0) {
             return;
         }
         slot = (slot + 1) & mask;
@@ -132,17 +126,16 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
     // guarantees an empty slot, so the walk terminates.
     gap = slot;
     scan = (gap + 1) & mask;
-    while (table->keys[scan] != 0) {
-        size_t home = (size_t)mix64(table->keys[scan]) & mask;
+    while (table->slots[scan].id != 0) {
+        size_t home = (size_t)mix64(table->slots[scan].id) & mask;
         if (((scan - home) & mask) >= ((scan - gap) & mask)) {
-            table->keys[gap] = table->keys[scan];
-            table->values[gap] = table->values[scan];
+            table->slots[gap] = table->slots[scan];
             gap = scan;
         }
         scan = (scan + 1) & mask;
     }
-    table->keys[gap] = 0;
-    table->values[gap] = NULL;
+    table->slots[gap].id = 0;
+    table->slots[gap].node = NULL;
     table->count--;
 }
 
@@ -441,7 +434,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
 
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
-    markdown_core_id_table ids = {NULL, NULL, 0, 0};
+    markdown_core_id_table ids = {NULL, 0, 0};
     markdown_core_clean_index clean = {NULL, 0, 0};
     markdown_core_map_entry **def_index = NULL;
     size_t def_count = 0;
@@ -749,9 +742,9 @@ markdown_core_session_node_by_id(const markdown_core_session *session, markdown_
     }
     size_t mask = session->ids.capacity - 1;
     size_t slot = (size_t)mix64(id) & mask;
-    while (session->ids.keys[slot] != 0) {
-        if (session->ids.keys[slot] == id) {
-            return session->ids.values[slot];
+    while (session->ids.slots[slot].id != 0) {
+        if (session->ids.slots[slot].id == id) {
+            return session->ids.slots[slot].node;
         }
         slot = (slot + 1) & mask;
     }

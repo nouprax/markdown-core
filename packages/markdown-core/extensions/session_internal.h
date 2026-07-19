@@ -26,10 +26,17 @@
 #endif
 
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
-// session-unique node ids (0 marks an empty slot, ids start at 1).
+// session-unique node ids (0 marks an empty slot, ids start at 1). Id and
+// node share a slot so every probe costs one cache line, not two — the
+// table dwarfs the cache at document scale and probes dominate the
+// commit's table maintenance.
 typedef struct {
-    markdown_core_node_id *keys;
-    markdown_core_node **values;
+    markdown_core_node_id id; // 0 marks an empty slot
+    markdown_core_node *node;
+} markdown_core_id_slot;
+
+typedef struct {
+    markdown_core_id_slot *slots;
     size_t capacity; // power of two, 0 when unallocated
     size_t count;
 } markdown_core_id_table;
