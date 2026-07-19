@@ -7,5 +7,17 @@ macro(fuzzer name)
     target_link_libraries(${name} libmarkdown-core-extensions_static libmarkdown-core_static)
 endmacro()
 
-fuzzer(fuzz_quadratic)
-fuzzer(fuzz_quadratic_brackets)
+if(MARKDOWN_CORE_FUZZ_QUADRATIC)
+    fuzzer(fuzz_quadratic)
+    fuzzer(fuzz_quadratic_brackets)
+endif()
+
+# The session edit-script target verifies through the shared replay harness,
+# which lives in the test support library.
+if(MARKDOWN_CORE_FUZZ_SESSION)
+    if(NOT MARKDOWN_CORE_TESTS)
+        message(FATAL_ERROR "MARKDOWN_CORE_FUZZ_SESSION requires MARKDOWN_CORE_TESTS=ON")
+    endif()
+    fuzzer(fuzz_session_edits)
+    target_link_libraries(fuzz_session_edits markdown-core-test-support)
+endif()
