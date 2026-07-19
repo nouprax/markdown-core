@@ -838,6 +838,25 @@ Equality everywhere is `(lineage, id, revision)`.
   (high-water retention) are now bounded by the host's memory limits,
   matching the documented session cost model.
 
+  Degenerate-shape asymptotics measured 2026-07-19 (pre-release review
+  question: is the degraded path really O(document)?).  Per-commit cost
+  at 4x size steps, against `Document.parse` of the same text: an edit
+  inside an unclosed head fence over the whole document is 4.06x per 4x
+  size and ≈1.06x one one-shot parse — the cleanest bound; a
+  mid-paragraph edit in a document that is one enormous paragraph is
+  4.09x per 4x at 2→8 MiB (the 7x seen at 256 KiB→1 MiB is a cache-tier
+  transition, not asymptotic) and ≈3–4x a one-shot parse; flipping a
+  definition URL that every unit references is likewise linear at
+  ≈3x a one-shot parse.  All three are O(document) per commit; the
+  extra constant over a bare parse is the adoption walk, delta
+  recording, and id/lookup-table upkeep over the reparsed material.
+  The contract's cost-model bullet now states the small-constant-
+  multiple bound instead of a literal "one full parse"; README,
+  CHANGELOG, and the 2.0.0 notes qualify the "independent of document
+  size" claim the same way.  Follow-up candidate (post-2.0): a
+  complexity gate asserting commit ≤ K x one-shot on the degenerate
+  corpora.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical

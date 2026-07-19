@@ -9,7 +9,10 @@ promised to remain compatible between releases.
 - Add incremental parsing sessions on every platform: `MarkupSession` in
   Swift, Kotlin, and ECMAScript and `markdown_core_session_*` in C apply
   byte-range edits and commit, reparsing only the stale region at a
-  per-commit cost independent of document size.
+  per-commit cost proportional to that region — for typical documents,
+  independent of total document size; non-local shapes degrade gracefully
+  per the sessions-and-deltas cost model, never worse than a small multiple
+  of one full parse per commit.
 - Each commit produces an immutable snapshot that structurally shares
   unchanged nodes, plus a `Delta` of added, removed, and changed stable node
   ids with before/after revisions; `MarkupID` values resolve against the

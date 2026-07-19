@@ -135,7 +135,13 @@ after all access to that document has finished. The complete C contract is in
 A session owns one Markdown text and its living AST. Apply byte-range edits
 (appending a streamed token is an edit at end-of-text), then commit: the
 engine reparses only the stale region around the edits, at a per-commit cost
-that is independent of document size. Every commit produces an immutable
+proportional to that region — for typical documents, independent of total
+document size. Non-local shapes degrade gracefully and stay linear in the
+document, never worse than a small multiple of one full parse per commit:
+streaming into one enormous paragraph reparses that paragraph's inlines
+each commit, an edit inside an unclosed fence, raw-HTML block, or directive
+reparses forward to end of input, and changing a link-reference definition
+re-resolves the references that used it. Every commit produces an immutable
 document snapshot that structurally shares unchanged nodes with the previous
 snapshot, plus a delta — the exact set of stable node ids the commit added,
 removed, or changed. After any sequence of commits the document is
