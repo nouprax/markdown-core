@@ -1497,14 +1497,30 @@ static markdown_core_incremental_result footnote_refresh(
             old_site->node = new_site->node;
             old_site->anchor = new_site->anchor;
         }
-        stashed = stash_ref_churn(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count, stash, stashed);
-        for (i = 0; i < dependent_count; i++) {
-            stashed =
-                stash_ref_churn(fn, fn->refs.items + runs[i].start, clone_runs[i].items, runs[i].count, stash, stashed);
+        // Empty runs skip the calls outright: offsetting a NULL items array
+        // by even zero is undefined.
+        if (staged_refs->count) {
+            stashed = stash_ref_churn(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count, stash, stashed);
         }
-        patch_ref_run(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count);
         for (i = 0; i < dependent_count; i++) {
-            patch_ref_run(fn, fn->refs.items + runs[i].start, clone_runs[i].items, runs[i].count);
+            if (runs[i].count) {
+                stashed = stash_ref_churn(
+                    fn,
+                    fn->refs.items + runs[i].start,
+                    clone_runs[i].items,
+                    runs[i].count,
+                    stash,
+                    stashed
+                );
+            }
+        }
+        if (staged_refs->count) {
+            patch_ref_run(fn, fn->refs.items + r0, staged_refs->items, staged_refs->count);
+        }
+        for (i = 0; i < dependent_count; i++) {
+            if (runs[i].count) {
+                patch_ref_run(fn, fn->refs.items + runs[i].start, clone_runs[i].items, runs[i].count);
+            }
         }
         for (i = 0; i < stashed; i++) {
             markdown_core_footnote_table_put(&fn->records, stash[i].record);
