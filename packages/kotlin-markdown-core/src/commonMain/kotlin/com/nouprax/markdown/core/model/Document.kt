@@ -6,7 +6,7 @@ public class Document internal constructor(
     public val content: kotlin.collections.List<Markup>,
     internal val resolver: ScopeResolver,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitDocument(this)
+    override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 
@@ -17,7 +17,7 @@ public class Document internal constructor(
      * the snapshot's one-time materialization.
      *
      * A one-shot [parse] result always answers. A session snapshot
-     * materializes its scopes on first use (of [scope], a [Walker] walk, or
+     * materializes its scopes on first use (of [scope], a [MarkupWalker] walk, or
      * [dump]) while it is the session's current snapshot and is
      * self-contained afterwards — including after the session advances or is
      * closed. Requesting a scope from a snapshot that was superseded before
@@ -39,7 +39,7 @@ public class Document internal constructor(
     }
 
     /** Returns the canonical diagnostic dump for this document. */
-    public fun dump(): String = TreeDumper.dump(this)
+    public fun dump(): String = MarkupDumper.dump(this)
 
     public companion object {
         public fun parse(

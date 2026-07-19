@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, TreeDumper, visit, Walker, WalkEvent } from "../dist/index.js";
+import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
@@ -13,7 +13,7 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
         "heading:1"
     );
     const events = [];
-    new Walker().walk(document, (event, node) => events.push(`${event}-${node.kind}`));
+    new MarkupWalker().walk(document, (event, node) => events.push(`${event}-${node.kind}`));
     assert.equal(events[0], `${WalkEvent.entering}-document`);
     assert.equal(events.at(-1), `${WalkEvent.exiting}-document`);
 });
@@ -33,9 +33,9 @@ test("ast: typed fields are copied from direct WASM accessors", () => {
 
 test("ast: the document mediates the canonical diagnostic dump", () => {
     const document = Document.parse("Lead\n\n# Heading\n");
-    assert.equal(document.dump(), TreeDumper.dump(document));
+    assert.equal(document.dump(), MarkupDumper.dump(document));
     // A subtree dump prints scopes with the subtree as origin.
-    assert.match(TreeDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
+    assert.match(MarkupDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
     assert.equal(Object.keys(document).includes("dump"), false);
     assert.equal(Object.keys(document).includes("scope"), false);
 });

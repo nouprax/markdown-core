@@ -26,7 +26,7 @@ or semantics.
   allocation-free — and equal nodes are guaranteed to have identical AST
   content. See the identity and equality section.
 - Nodes do not store absolute source positions. Scopes are resolved through
-  the owning snapshot (`document.scope(of:)`), supplied with every `Walker`
+  the owning snapshot (`document.scope(of:)`), supplied with every `MarkupWalker`
   event, and printed by the dump; see `sessions-and-deltas.md` for the
   resolution rules.
 - AST values are immutable after construction and own their strings and
@@ -225,9 +225,9 @@ when `formulas` is false. Scope tracking is mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 
-## Visitor and Walker
+## MarkupVisitor and MarkupWalker
 
-The typed `Visitor<Result>` has one dispatch method for every `Markup` kind in
+The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup` kind in
 the node inventory, including `TableRow` and `TableCell`. A directive label has
 no dispatch method because it is a typed collection edge, not synthetic
 `Markup`. The interface is exhaustive: every typed method is required, there is
@@ -236,10 +236,10 @@ fallback. Adding a `Markup` kind must therefore produce compile errors in every
 visitor until the new case is handled. Visiting one node does not implicitly
 recurse.
 
-The standard read-only `Walker` walks a `Document` snapshot (whole or from
+The standard read-only `MarkupWalker` walks a `Document` snapshot (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
 every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
-exhaustive Visitor on `entering` invokes it exactly once per node. Walker owns
+exhaustive MarkupVisitor on `entering` invokes it exactly once per node. MarkupWalker owns
 the typed-property rules, so consumers never inspect kinds to discover
 structure:
 
@@ -251,16 +251,16 @@ structure:
 - `Link` and `Image` traverse their inline `content`.
 
 Rows and cells produce normal visitor callbacks before their descendants.
-Visitor and Walker expose no replace, remove, setter, parent mutation, or
+MarkupVisitor and MarkupWalker expose no replace, remove, setter, parent mutation, or
 native-handle callback.
 
 ## Diagnostic dump
 
-Swift, Kotlin, and TypeScript publish `TreeDumper.dump(document)` with a
+Swift, Kotlin, and TypeScript publish `MarkupDumper.dump(document)` with a
 convenience `document.dump()`, plus a subtree form
-`TreeDumper.dump(document, of: node)` / `document.dump(of: node)`. All
-traverse that platform's immutable typed tree through its exhaustive Visitor
-and read-only Walker; they do not call the C diagnostic dump. Dumping is
+`MarkupDumper.dump(document, of: node)` / `document.dump(of: node)`. All
+traverse that platform's immutable typed tree through its exhaustive MarkupVisitor
+and read-only MarkupWalker; they do not call the C diagnostic dump. Dumping is
 document-mediated because scopes are (subtree dumps print scopes with the
 subtree as origin — see `canonical-ast-dump.md`). The canonical text grammar
 is defined in `canonical-ast-dump.md` and is diagnostic rather than a

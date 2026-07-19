@@ -25,7 +25,7 @@ class ApiTest {
         val visitor = KindVisitor()
         assertEquals("heading:1", document.content.first().accept(visitor))
         val recordingVisitor = RecordingVisitor()
-        Walker.walk(document, recordingVisitor)
+        MarkupWalker.walk(document, recordingVisitor)
         assertEquals("Document", recordingVisitor.visited.first())
         assertTrue("Heading" in recordingVisitor.visited && "Text" in recordingVisitor.visited)
     }

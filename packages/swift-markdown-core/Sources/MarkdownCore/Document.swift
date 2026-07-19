@@ -61,7 +61,7 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
 /// snapshot; a one-shot `Document.parse` is a self-contained value.
 ///
 /// Absolute source positions are not stored on nodes: resolve them with
-/// `scope(of:)`, receive them from `Walker` events, or print them with
+/// `scope(of:)`, receive them from `MarkupWalker` events, or print them with
 /// `dump()`. A session snapshot resolves scopes against its session the
 /// first time any of these is used and is self-contained from then on; see
 /// `scope(of:)` for the exact rules.
@@ -79,14 +79,14 @@ public struct Document: Markup {
         // the snapshot must leave it self-contained.
         let session = try MarkupSession(options: options)
         try session.append(source)
-        let document = try session.commitBulk()
+        let document = try session.commit().document
         document.resolver.materialize()
         return document
     }
 }
 
 extension ParseOptions {
-    var nativeValue: markdown_core_parse_options {
+    var native: markdown_core_parse_options {
         markdown_core_parse_options(
             smart_punctuation: smartPunctuation,
             footnotes: footnotes,

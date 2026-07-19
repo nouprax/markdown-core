@@ -29,7 +29,7 @@ extension MarkupSession {
     /// Answers for the footnote reference or definition with `id` at the
     /// committed revision; nil when `id` does not name a footnote node of
     /// this session.
-    public func footnoteInfo(of id: MarkupID) -> FootnoteInfo? {
+    public func footnote(of id: MarkupID) -> FootnoteInfo? {
         guard id.lineage == lineage else { return nil }
         var info = markdown_core_footnote_info()
         guard markdown_core_session_footnote_info(session, id.rawValue, &info) else {
@@ -61,7 +61,7 @@ extension MarkupSession {
     /// The references that resolve to `definition`, in document order — the
     /// renderer's back-reference targets. Empty unless `definition` is a
     /// referenced winning definition of this session.
-    public func footnoteReferences(of definition: MarkupID) -> [FootnoteReference] {
+    public func references(of definition: MarkupID) -> [FootnoteReference] {
         guard definition.lineage == lineage else { return [] }
         var ids: UnsafePointer<UInt64>?
         let count = markdown_core_session_footnote_references(session, definition.rawValue, &ids)

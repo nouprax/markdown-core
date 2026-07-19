@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
-public object TreeDumper {
+public object MarkupDumper {
     /** Returns the canonical diagnostic dump for [document] and its
      * descendants, resolving absolute scopes through the snapshot. */
     public fun dump(document: Document): String {
@@ -9,7 +9,7 @@ public object TreeDumper {
         val remainingChildren = mutableListOf<Int>()
         val lines = mutableListOf<String>()
 
-        Walker.walk(document) { event, node, scope ->
+        MarkupWalker.walk(document) { event, node, scope ->
             when (event) {
                 WalkEvent.ENTERING -> {
                     val record = node.accept(visitor)
@@ -49,19 +49,19 @@ private data class DumpRecord(
     }
 }
 
-private class DumpVisitor : Visitor<DumpRecord> {
-    override fun visitDocument(node: Document): DumpRecord = record("Document", children = node.content.size)
+private class DumpVisitor : MarkupVisitor<DumpRecord> {
+    override fun visit(node: Document): DumpRecord = record("Document", children = node.content.size)
 
-    override fun visitBlockQuote(node: BlockQuote): DumpRecord = record("BlockQuote", children = node.content.size)
+    override fun visit(node: BlockQuote): DumpRecord = record("BlockQuote", children = node.content.size)
 
-    override fun visitParagraph(node: Paragraph): DumpRecord = record("Paragraph", children = node.content.size)
+    override fun visit(node: Paragraph): DumpRecord = record("Paragraph", children = node.content.size)
 
-    override fun visitHeading(node: Heading): DumpRecord =
+    override fun visit(node: Heading): DumpRecord =
         record("Heading", fields = listOf("level=${node.level}"), children = node.content.size)
 
-    override fun visitThematicBreak(node: ThematicBreak): DumpRecord = record("ThematicBreak")
+    override fun visit(node: ThematicBreak): DumpRecord = record("ThematicBreak")
 
-    override fun visitList(node: List): DumpRecord =
+    override fun visit(node: List): DumpRecord =
         record(
             "List",
             fields =
@@ -73,14 +73,14 @@ private class DumpVisitor : Visitor<DumpRecord> {
             children = node.items.size,
         )
 
-    override fun visitListItem(node: ListItem): DumpRecord =
+    override fun visit(node: ListItem): DumpRecord =
         record(
             "ListItem",
             fields = listOf("checked=${node.checked ?: "null"}"),
             children = node.content.size,
         )
 
-    override fun visitCodeBlock(node: CodeBlock): DumpRecord =
+    override fun visit(node: CodeBlock): DumpRecord =
         record(
             "CodeBlock",
             fields =
@@ -94,75 +94,72 @@ private class DumpVisitor : Visitor<DumpRecord> {
                 ),
         )
 
-    override fun visitHTMLBlock(node: HTMLBlock): DumpRecord =
+    override fun visit(node: HTMLBlock): DumpRecord =
         record("HTMLBlock", fields = listOf("literal=${jsonString(node.literal)}"))
 
-    override fun visitFormulaBlock(node: FormulaBlock): DumpRecord =
+    override fun visit(node: FormulaBlock): DumpRecord =
         record(
             "FormulaBlock",
             fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
         )
 
-    override fun visitTable(node: Table): DumpRecord =
+    override fun visit(node: Table): DumpRecord =
         record(
             "Table",
             fields = listOf("alignments=[${node.alignments.joinToString(",") { it.token() }}]"),
             children = 1 + node.rows.size,
         )
 
-    override fun visitTableRow(node: TableRow): DumpRecord =
+    override fun visit(node: TableRow): DumpRecord =
         record(
             "TableRow",
             fields = listOf("isHeader=${node.isHeader}"),
             children = node.cells.size,
         )
 
-    override fun visitTableCell(node: TableCell): DumpRecord = record("TableCell", children = node.content.size)
+    override fun visit(node: TableCell): DumpRecord = record("TableCell", children = node.content.size)
 
-    override fun visitDirectiveBlock(node: DirectiveBlock): DumpRecord =
+    override fun visit(node: DirectiveBlock): DumpRecord =
         record(
             "DirectiveBlock",
             fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
             children = node.label.orEmpty().size + node.content.size,
         )
 
-    override fun visitFootnoteDefinition(node: FootnoteDefinition): DumpRecord =
+    override fun visit(node: FootnoteDefinition): DumpRecord =
         record(
             "FootnoteDefinition",
             fields = listOf("id=${jsonString(node.label)}"),
             children = node.content.size,
         )
 
-    override fun visitText(node: Text): DumpRecord =
-        record("Text", fields = listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(node: Text): DumpRecord = record("Text", fields = listOf("literal=${jsonString(node.literal)}"))
 
-    override fun visitSoftBreak(node: SoftBreak): DumpRecord = record("SoftBreak")
+    override fun visit(node: SoftBreak): DumpRecord = record("SoftBreak")
 
-    override fun visitLineBreak(node: LineBreak): DumpRecord = record("LineBreak")
+    override fun visit(node: LineBreak): DumpRecord = record("LineBreak")
 
-    override fun visitCode(node: Code): DumpRecord =
+    override fun visit(node: Code): DumpRecord =
         record(
             "Code",
             fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
         )
 
-    override fun visitHTML(node: HTML): DumpRecord =
-        record("HTML", fields = listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(node: HTML): DumpRecord = record("HTML", fields = listOf("literal=${jsonString(node.literal)}"))
 
-    override fun visitFormula(node: Formula): DumpRecord =
+    override fun visit(node: Formula): DumpRecord =
         record(
             "Formula",
             fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
         )
 
-    override fun visitEmphasis(node: Emphasis): DumpRecord = record("Emphasis", children = node.content.size)
+    override fun visit(node: Emphasis): DumpRecord = record("Emphasis", children = node.content.size)
 
-    override fun visitStrong(node: Strong): DumpRecord = record("Strong", children = node.content.size)
+    override fun visit(node: Strong): DumpRecord = record("Strong", children = node.content.size)
 
-    override fun visitStrikethrough(node: Strikethrough): DumpRecord =
-        record("Strikethrough", children = node.content.size)
+    override fun visit(node: Strikethrough): DumpRecord = record("Strikethrough", children = node.content.size)
 
-    override fun visitLink(node: Link): DumpRecord =
+    override fun visit(node: Link): DumpRecord =
         record(
             "Link",
             fields =
@@ -173,7 +170,7 @@ private class DumpVisitor : Visitor<DumpRecord> {
             children = node.content.size,
         )
 
-    override fun visitImage(node: Image): DumpRecord =
+    override fun visit(node: Image): DumpRecord =
         record(
             "Image",
             fields =
@@ -184,14 +181,14 @@ private class DumpVisitor : Visitor<DumpRecord> {
             children = node.content.size,
         )
 
-    override fun visitDirective(node: Directive): DumpRecord =
+    override fun visit(node: Directive): DumpRecord =
         record(
             "Directive",
             fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
             children = node.label.orEmpty().size,
         )
 
-    override fun visitFootnoteReference(node: FootnoteReference): DumpRecord =
+    override fun visit(node: FootnoteReference): DumpRecord =
         record("FootnoteReference", fields = listOf("id=${jsonString(node.label)}"))
 }
 

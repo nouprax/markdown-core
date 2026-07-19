@@ -45,29 +45,29 @@ and read-only AST traversal, not rendering or mutation.
 
 ## Traverse and Inspect
 
-Use `Walker` for a depth-first traversal; every event carries the node's
+Use `MarkupWalker` for a depth-first traversal; every event carries the node's
 resolved absolute scope:
 
 ```kotlin
 import com.nouprax.markdown.core.WalkEvent
-import com.nouprax.markdown.core.Walker
+import com.nouprax.markdown.core.MarkupWalker
 
-Walker.walk(document) { event, node, scope ->
+MarkupWalker.walk(document) { event, node, scope ->
     if (event == WalkEvent.ENTERING) {
         println("$node at ${scope.start.line}")
     }
 }
 ```
 
-`Document` exposes `dump()`, which delegates to the public `TreeDumper` and
+`Document` exposes `dump()`, which delegates to the public `MarkupDumper` and
 returns the canonical file-tree diagnostic for the snapshot:
 
 ```kotlin
-import com.nouprax.markdown.core.TreeDumper
+import com.nouprax.markdown.core.MarkupDumper
 
 val document = Document.parse("# Hello")
 println(document.dump())
-println(TreeDumper.dump(document))
+println(MarkupDumper.dump(document))
 ```
 
 ## Incremental Sessions
@@ -88,14 +88,16 @@ MarkupSession().use { session ->
     session.append(" world")
     val second = session.commit()
     check(second.document.content[1].id == first.document.content[1].id)
-    check(second.changes.added.isEmpty())
+    check(second.delta.added.isEmpty())
 }
 ```
 
-`updates(input: Flow<String>): Flow<Commit>` streams one commit per token, and
-`footnoteInfo(id)` / `footnotes()` / `footnoteReferences(id)` answer footnote
-numbering, resolution, and back-reference ordinals as queries against the
-committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
+Streaming consumers keep the two primitives on their natural cadences:
+`append` on every socket message (cheap — nothing parses), `commit()` on the
+render tick, so messages between ticks conflate into one commit and the parse
+rate follows the display, not the socket. `footnote(id)` / `footnotes()` /
+`references(id)` answer footnote numbering, resolution, and back-reference
+ordinals as queries against the committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
 scopes materialized while their snapshot was current stay usable after
 `close()`.
 

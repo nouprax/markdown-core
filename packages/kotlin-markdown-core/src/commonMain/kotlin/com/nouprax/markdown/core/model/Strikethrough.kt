@@ -5,7 +5,7 @@ public class Strikethrough internal constructor(
     override val revision: ULong,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
-    override fun <Result> accept(visitor: Visitor<Result>): Result = visitor.visitStrikethrough(this)
+    override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
 

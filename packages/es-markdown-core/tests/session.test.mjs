@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupSession } from "../dist/index.js";
+import { Document, MarkupSession, MarkupWalker, WalkEvent } from "../dist/index.js";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
     const session = new MarkupSession();
@@ -23,8 +23,8 @@ test("sessions: streaming keeps frontier ids and bumps the trailing text revisio
         assert.ok(secondText.revision > firstText.revision);
         // An unchanged node is the same object across snapshots.
         assert.equal(secondHeading, firstHeading);
-        assert.equal(second.changes.added.includes(secondParagraph.id), false);
-        assert.equal(second.changes.removed.includes(firstText.id), false);
+        assert.equal(second.delta.added.includes(secondParagraph.id), false);
+        assert.equal(second.delta.removed.includes(firstText.id), false);
     } finally {
         session.close();
     }
@@ -43,7 +43,7 @@ test("sessions: a clean-boundary insert at the top leaves downstream identity in
         assert.equal(after.document.content.length, 4);
         const inserted = after.document.content[0];
         assert.equal(inserted.kind, "heading");
-        assert.ok(after.changes.added.includes(inserted.id));
+        assert.ok(after.delta.added.includes(inserted.id));
         after.document.content.slice(1).forEach((node, index) => {
             assert.equal(node.id, downstreamBefore[index][0]);
             assert.equal(node.revision, downstreamBefore[index][1]);
@@ -75,8 +75,8 @@ test("sessions: a kind change is reported as removed plus added", () => {
         const heading = after.document.content[0];
         assert.equal(heading.kind, "heading");
 
-        assert.ok(after.changes.removed.includes(paragraph.id));
-        assert.ok(after.changes.added.includes(heading.id));
+        assert.ok(after.delta.removed.includes(paragraph.id));
+        assert.ok(after.delta.added.includes(heading.id));
         assert.notEqual(paragraph.id, heading.id);
     } finally {
         session.close();
@@ -96,10 +96,10 @@ test("sessions: a blank-line-only edit commits an empty delta yet shifts scopes"
         const after = session.commit();
         const omegaAfter = after.document.content[1];
 
-        assert.deepEqual(after.changes.added, []);
-        assert.deepEqual(after.changes.removed, []);
-        assert.deepEqual(after.changes.changed, []);
-        assert.deepEqual(after.changes.bubbled, []);
+        assert.deepEqual(after.delta.added, []);
+        assert.deepEqual(after.delta.removed, []);
+        assert.deepEqual(after.delta.changed, []);
+        assert.deepEqual(after.delta.bubbled, []);
         assert.equal(omegaAfter, omegaBefore);
         assert.equal(after.document.scope(omegaAfter).start.line, 3);
         assert.equal(after.document.dump(), Document.parse("Alpha\n\nOmega\n").dump());
@@ -151,23 +151,23 @@ test("sessions: footnote queries answer numbering, resolution, and back-referenc
         );
 
         const definitionA = footnotes.at(-1);
-        const infoA = session.footnoteInfo(definitionA.id);
+        const infoA = session.footnote(definitionA.id);
         assert.equal(infoA.number, 2);
         assert.equal(infoA.definition, definitionA.id);
         assert.equal(infoA.referenceCount, 1);
         assert.equal(infoA.referenceOrdinal, null);
 
-        const references = session.footnoteReferences(definitionA.id);
+        const references = session.references(definitionA.id);
         assert.deepEqual(
             references.map((reference) => reference.label),
             ["a"]
         );
-        const referenceInfo = session.footnoteInfo(references[0].id);
+        const referenceInfo = session.footnote(references[0].id);
         assert.equal(referenceInfo.number, 2);
         assert.equal(referenceInfo.referenceOrdinal, 1);
 
         // A non-footnote id answers null.
-        assert.equal(session.footnoteInfo(commit.document.id), null);
+        assert.equal(session.footnote(commit.document.id), null);
 
         // An ordinal shift surfaces as changed entries with identical dump
         // content.
@@ -177,22 +177,101 @@ test("sessions: footnote queries answer numbering, resolution, and back-referenc
             session.footnotes().map((definition) => definition.label),
             ["a", "b"]
         );
-        assert.ok(shifted.changes.changed.length > 0);
+        assert.ok(shifted.delta.changed.length > 0);
     } finally {
         session.close();
     }
 });
 
-test("sessions: updates yields one commit per token", async () => {
+test("sessions: conflated streaming with irregular ticks over a multi-turn conversation", () => {
+    // The shape of a real LLM consumer: every socket message appends
+    // (nothing parses), only an irregular render tick commits, and the
+    // messages between ticks conflate into that one commit. Three assistant
+    // turns extend one document; blocks settled at a turn boundary must stay
+    // frozen while later turns stream.
+    const turns = [
+        "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
+            "and the heading keeps its identity from the first render on.\n\n" +
+            "Deltas stay proportional to what changed, so a renderer " +
+            "reconciles by id instead of walking the whole tree.\n\n" +
+            "> Snapshots are values: whatever a tick captured stays valid " +
+            "while the socket races ahead.",
+        "\n\n- append per message\n- commit per tick\n- settled blocks stay frozen" +
+            "\n- identical items stress identity\n- identical items stress identity" +
+            "\n\n```swift\nlet constant = 1\nlet mirror = [Int: String]()\n" +
+            "for index in 0..<3 {\n    print(index, constant)\n}\n```\n\n" +
+            "Fenced code arrives line by line and only closes at the final tick.",
+        "\n\nA table lands late in the conversation:\n\n" +
+            "| stage | commits | messages |\n| - | - | - |\n| one | 3 | 9 |\n" +
+            "| two | 5 | 14 |\n| three | 8 | 21 |\n\n" +
+            "Tail with a footnote[^n] whose definition arrives last.\n\n" +
+            "[^n]: Resolved at the end, after every reference already rendered."
+    ];
+    // One fixed generator drives batch sizes and tick timing, so the burst
+    // shapes are irregular but reproducible — and identical in the Swift and
+    // Kotlin mirrors of this test.
+    const mask = (1n << 64n) - 1n;
+    let state = 0x9e3779b97f4a7c15n;
+    function draw(bound) {
+        state = (state * 6364136223846793005n + 1442695040888963407n) & mask;
+        return Number((state >> 33n) % bound);
+    }
     const session = new MarkupSession();
     try {
-        const tokens = ["# Str", "eamed\n", "\nBody *tok", "ens*.\n"];
-        const commits = [];
-        for await (const commit of session.updates(tokens)) commits.push(commit);
-        assert.equal(commits.length, tokens.length);
-        assert.equal(commits.at(-1).document.dump(), Document.parse(tokens.join("")).dump());
-        // The streamed heading kept its identity from the first commit on.
-        assert.equal(commits[0].document.content[0].id, commits.at(-1).document.content[0].id);
+        let streamed = "";
+        let frozen = [];
+        let messages = 0;
+        let commits = 0;
+        let touched = 0;
+        function tick() {
+            const commit = session.commit();
+            commits += 1;
+            touched +=
+                commit.delta.added.length +
+                commit.delta.removed.length +
+                commit.delta.changed.length +
+                commit.delta.bubbled.length;
+            assert.equal(commit.document.dump(), Document.parse(streamed).dump());
+            for (const [index, id, revision] of frozen) {
+                const node = commit.document.content[index];
+                assert.equal(node.id, id);
+                assert.equal(node.revision, revision);
+            }
+        }
+
+        for (const turn of turns) {
+            let offset = 0;
+            while (offset < turn.length) {
+                // Mostly a 20-30 token batch (80-150 characters), with
+                // occasional tiny flushes of a few words. Cuts land at raw
+                // character offsets — mid-word, mid-marker, even between
+                // the two newlines of a block boundary — because that is
+                // the steady state of LLM output.
+                const width = draw(10n) < 2 ? 2 + draw(18n) : 80 + draw(71n);
+                const message = turn.slice(offset, offset + width);
+                offset += message.length;
+                session.append(message);
+                streamed += message;
+                messages += 1;
+                if (draw(4n) === 0) tick();
+            }
+            // The turn boundary always renders; everything but the still-hot
+            // last block is now settled.
+            tick();
+            frozen = session.document.content.slice(0, -1).map((node, index) => [index, node.id, node.revision]);
+        }
+        assert.ok(messages > 9);
+        assert.ok(commits < messages);
+        assert.equal(session.document.dump(), Document.parse(turns.join("")).dump());
+
+        // Near-O(n) pipeline: total delta traffic stays within one add per
+        // final node plus bounded frontier churn per tick. A full rebuild
+        // per tick would be on the order of commits * nodes.
+        let nodes = 0;
+        new MarkupWalker().walk(session.document, (event) => {
+            if (event === WalkEvent.entering) nodes += 1;
+        });
+        assert.ok(touched < nodes + 16 * commits);
     } finally {
         session.close();
     }

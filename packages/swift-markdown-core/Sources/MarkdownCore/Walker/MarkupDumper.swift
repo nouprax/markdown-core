@@ -1,5 +1,5 @@
 /// Produces the canonical diagnostic tree for immutable Markdown markup.
-public enum TreeDumper {
+public enum MarkupDumper {
     private struct Frame {
         var remainingChildren: Int
     }
@@ -20,7 +20,7 @@ public enum TreeDumper {
         var frames: [Frame] = []
         var lines: [String] = []
 
-        Walker().walk(document, from: node) { event, current, resolved in
+        MarkupWalker().walk(document, from: node) { event, current, resolved in
             switch event {
             case .entering:
                 let record = current.accept(&visitor)
@@ -56,11 +56,11 @@ public enum TreeDumper {
 
 extension Document {
     /// Returns the canonical diagnostic dump for this document.
-    public func dump() -> String { TreeDumper.dump(self) }
+    public func dump() -> String { MarkupDumper.dump(self) }
 
     /// Returns the canonical diagnostic dump for the subtree rooted at
     /// `node`, with the subtree as scope origin.
-    public func dump(of node: some Markup) -> String { TreeDumper.dump(self, of: node) }
+    public func dump(of node: some Markup) -> String { MarkupDumper.dump(self, of: node) }
 }
 
 private struct DumpRecord {

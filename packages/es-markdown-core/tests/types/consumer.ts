@@ -1,9 +1,9 @@
 import {
     Document,
     MarkupSession,
-    TreeDumper,
+    MarkupDumper,
     visit,
-    Walker,
+    MarkupWalker,
     type Commit,
     type Delta,
     type FootnoteInfo,
@@ -14,22 +14,22 @@ import {
     type Table,
     type TableCell,
     type TableRow,
-    type Visitor
+    type MarkupVisitor
 } from "@nouprax/es-markdown-core";
 import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# typed", { tables: true });
 const parsedDocument: ParsedDocument = document;
 const diagnostic: string = document.dump();
-const explicitDiagnostic: string = TreeDumper.dump(document);
-const subtreeDiagnostic: string = TreeDumper.dump(document, document.content[0]);
+const explicitDiagnostic: string = MarkupDumper.dump(document);
+const subtreeDiagnostic: string = MarkupDumper.dump(document, document.content[0]);
 void diagnostic;
 void explicitDiagnostic;
 void subtreeDiagnostic;
 void parsedDocument;
 // @ts-expect-error Document values are created only by Document.parse
 new Document();
-const visitor: Visitor<string> = {
+const visitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind,
     visitBlockQuote: (node) => node.kind,
     visitParagraph: (node) => node.kind,
@@ -62,12 +62,12 @@ const visitor: Visitor<string> = {
     visitFootnoteReference: (node) => node.label
 };
 visit(document, visitor);
-new Walker().walk(document, (_event, node, scope) => {
+new MarkupWalker().walk(document, (_event, node, scope) => {
     const resolved: Scope = scope;
     void resolved;
     visit(node, visitor);
 });
-new Walker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
+new MarkupWalker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced
@@ -92,23 +92,16 @@ void documentScope;
 const session = new MarkupSession({ tables: true });
 const snapshot: ParsedDocument = session.document;
 const commit: Commit = session.commit();
-const changes: Delta = commit.changes;
-const added: readonly MarkupID[] = changes.added;
+const delta: Delta = commit.delta;
+const added: readonly MarkupID[] = delta.added;
 const currentValue: Markup | null = session.node(document.id);
-const info: FootnoteInfo | null = session.footnoteInfo(document.id);
+const info: FootnoteInfo | null = session.footnote(document.id);
 const sessionLineage: bigint = session.lineage;
-async function stream(tokens: AsyncIterable<string>): Promise<void> {
-    for await (const each of session.updates(tokens)) {
-        const streamed: Commit = each;
-        void streamed;
-    }
-}
 void snapshot;
 void added;
 void currentValue;
 void info;
 void sessionLineage;
-void stream;
 // @ts-expect-error session options are immutable for the session lifetime
 session.options.tables = false;
 session.close();
@@ -122,8 +115,8 @@ void rowMarkup;
 void cellMarkup;
 void cell;
 
-// @ts-expect-error Visitor is exhaustive and requires one method per Markup kind
-const incompleteVisitor: Visitor<string> = {
+// @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
+const incompleteVisitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind
 };
 void incompleteVisitor;

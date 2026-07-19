@@ -7,7 +7,7 @@ package com.nouprax.markdown.core
  * allocation-free: two nodes are equal exactly when they have the same [id]
  * and the same [revision], which the engine guarantees implies identical AST
  * content (fields and descendants). Absolute source position is not content —
- * resolve it with [Document.scope] or receive it from [Walker] events.
+ * resolve it with [Document.scope] or receive it from [MarkupWalker] events.
  */
 public sealed interface Markup {
     /**
@@ -23,7 +23,7 @@ public sealed interface Markup {
      */
     public val revision: ULong
 
-    public fun <Result> accept(visitor: Visitor<Result>): Result
+    public fun <Result> accept(visitor: MarkupVisitor<Result>): Result
 }
 
 internal fun markupEquals(

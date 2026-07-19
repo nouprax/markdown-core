@@ -58,7 +58,7 @@ import Testing
         let manifest = try loadManifest()
         for testCase in manifest.cases {
             let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
-            #expect(TreeDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
+            #expect(MarkupDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
@@ -83,12 +83,12 @@ import Testing
                 // Delta-mirror integrity: every node outside the
                 // delta kept its exact revision, removed ids are gone,
                 // and the four arrays are disjoint.
-                let changes = commit.changes
-                let touched = [changes.added, changes.changed, changes.bubbled]
+                let delta = commit.delta
+                let touched = [delta.added, delta.changed, delta.bubbled]
                     .joined().map(\.rawValue)
                 #expect(
-                    touched.count + changes.removed.count
-                        == Set(touched).union(changes.removed.map(\.rawValue)).count
+                    touched.count + delta.removed.count
+                        == Set(touched).union(delta.removed.map(\.rawValue)).count
                 )
                 var current: [UInt64: UInt64] = [:]
                 let touchedSet = Set(touched)
@@ -98,7 +98,7 @@ import Testing
                         #expect(previous[node.id.rawValue] == node.revision)
                     }
                 }
-                for removed in changes.removed {
+                for removed in delta.removed {
                     #expect(current[removed.rawValue] == nil)
                 }
                 previous = current
@@ -179,7 +179,7 @@ private struct CanonicalParseOptions: Decodable {
 
 private func flatten(_ document: Document) -> [any Markup] {
     var result: [any Markup] = []
-    Walker().walk(document) { event, node, _ in
+    MarkupWalker().walk(document) { event, node, _ in
         if case .entering = event { result.append(node) }
     }
     return result

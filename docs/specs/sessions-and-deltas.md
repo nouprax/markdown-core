@@ -93,7 +93,7 @@ Nodes do not store absolute source positions. The public API is:
 
 - `document.scope(of: node)` — resolves the absolute `Scope` (start/end
   line:column) of a node within that snapshot, O(depth).
-- `Walker` supplies the resolved scope with every event; `TreeDumper` prints
+- `MarkupWalker` supplies the resolved scope with every event; `MarkupDumper` prints
   absolute scopes for a `Document` root, byte-identical to the v1 dump
   grammar. Dumping a non-`Document` subtree prints scopes with the subtree as
   origin.
@@ -104,7 +104,7 @@ identically in both modes.
 Session snapshots resolve scopes lazily: deltas deliberately omit pure
 positional shifts (an edit that only moves later content commits an empty
 delta), so a snapshot cannot carry positions in its shared node values.
-Instead, the first scope use on a snapshot — `scope(of:)`, a `Walker` walk,
+Instead, the first scope use on a snapshot — `scope(of:)`, a `MarkupWalker` walk,
 or a dump — materializes every scope from the session's native tree in one
 walk and caches the table; the snapshot is self-contained from then on,
 including after the session advances or is freed. Queueing edits does not
@@ -181,7 +181,7 @@ The tree is source-faithful (`canonical-ast.md`, footnote semantics):
 definitions never move and references always carry their label. Everything
 presentational is a query against the session's committed revision:
 
-- `footnoteInfo(id)` — for a `FootnoteReference`: the winning definition's id
+- `footnote(id)` — for a `FootnoteReference`: the winning definition's id
   (0 while unresolved), the label's 1-based first-use `number` (0 while
   unresolved), the reference's 1-based ordinal among the label's references
   in document order, and how many references share the label. For a
@@ -190,7 +190,7 @@ presentational is a query against the session's committed revision:
   (0 when unreferenced), and ordinal 0.
 - `footnotes()` — the referenced winning definitions in first-use order (the
   order a renderer lists them in).
-- `footnoteReferences(definition)` — the references resolving to a winning
+- `references(definition)` — the references resolving to a winning
   definition, in document order (back-reference targets); empty for
   shadowed, unreferenced, or non-definition ids.
 
@@ -240,18 +240,17 @@ one-shot nodes carry ids) and `MarkupSession`:
 | --- | --- |
 | `MarkupSession(options)` | options are immutable for the session lifetime |
 | `replace` / `append` | queue edits as defined above (byte ranges of the stored text) |
-| `commit()` | returns a `Commit` value: the new `document` plus its `changes: Delta` |
-| `updates(feeding:)` | async sugar: feed a token stream, yield one `Commit` per token |
+| `commit()` | returns a `Commit` value: the new `document` plus its `delta: Delta` |
 | `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
 | `node(for:)` | the committed snapshot's current value for an id |
-| `footnoteInfo(of:)` / `footnotes()` / `footnoteReferences(of:)` | the footnote queries below |
+| `footnote(of:)` / `footnotes()` / `references(of:)` | the footnote queries below |
 
 Shared platform types, named identically on all three platforms:
 
 - `MarkupID` — node identity: the session's `lineage` salt plus the raw
   64-bit id. `Identifiable`-style APIs use `MarkupID` (revision-free, stable
   across commits); node equality is `MarkupID` plus `revision`.
-- `Commit` — `{ document, changes: Delta }`.
+- `Commit` — `{ document, delta: Delta }`.
 - `Delta` — `{ beforeRevision, afterRevision, added, removed, changed,
   bubbled }` as arrays of `MarkupID`. Always present on a platform `Commit`
   (the C-level nullable out-parameter is a C-consumer knob only).
@@ -268,5 +267,5 @@ The C facade exposes the same model as
 `markdown_core_delta_*` accessors; node handles borrowed from a session
 are valid until the next mutating call on that session.
 
-`ParseOptions` is unchanged from `canonical-ast.md`. Visitor and Walker
+`ParseOptions` is unchanged from `canonical-ast.md`. MarkupVisitor and MarkupWalker
 contracts are unchanged; walker events additionally carry the resolved scope.

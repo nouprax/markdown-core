@@ -1,8 +1,5 @@
 package com.nouprax.markdown.core
 
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-
 /**
  * The single mutable owner of one Markdown text and its living AST.
  *
@@ -32,7 +29,7 @@ public class MarkupSession(
 
     internal val mirror: HashMap<ULong, Markup> = HashMap()
     private val rootId: ULong = native.rootId()
-    private var currentResolver: ScopeResolver
+    private var resolver: ScopeResolver
     private var closed = false
     private var failed = false
 
@@ -45,7 +42,7 @@ public class MarkupSession(
 
     init {
         val resolver = ScopeResolver.live(native)
-        currentResolver = resolver
+        this.resolver = resolver
         // The revision-0 root is always an empty document.
         val root = Document(MarkupID(lineage, rootId), 0UL, emptyList(), resolver)
         mirror[rootId] = root
@@ -74,7 +71,7 @@ public class MarkupSession(
     public fun append(text: String) {
         requireOpen()
         val end = native.length()
-        applyEdit(end, end, text)
+        edit(end, end, text)
     }
 
     /**
@@ -90,10 +87,10 @@ public class MarkupSession(
     ) {
         requireOpen()
         require(start in 0..end) { "invalid edit range [$start, $end)" }
-        applyEdit(start.toLong(), end.toLong(), replacement)
+        edit(start.toLong(), end.toLong(), replacement)
     }
 
-    private fun applyEdit(
+    private fun edit(
         start: Long,
         end: Long,
         replacement: String,
@@ -115,16 +112,16 @@ public class MarkupSession(
         // positions as its own — a racing reader either materialized from
         // the still-unchanged tree or takes the documented
         // superseded-snapshot failure.
-        val previousResolver = currentResolver
-        previousResolver.detach()
-        val changes =
+        val previous = resolver
+        previous.detach()
+        val delta =
             try {
                 WireDecoder.decodeCommit(native.commit(), lineage, mirror)
             } catch (failure: ParseException) {
                 // The native commit failed transactionally: the tree is
                 // unchanged at the previous revision, the previous snapshot
                 // becomes current again, and the commit may be retried.
-                previousResolver.reattach(native)
+                previous.reattach(native)
                 throw failure
             } catch (failure: Throwable) {
                 // The native tree may have advanced while the payload or the
@@ -134,13 +131,13 @@ public class MarkupSession(
                 throw failure
             }
         val resolver = ScopeResolver.live(native)
-        currentResolver = resolver
+        this.resolver = resolver
         val root = mirror[rootId]
         check(root is Document) { "session committed without a document root" }
         val adopted = Document(root.id, root.revision, root.content, resolver)
         mirror[rootId] = adopted
         document = adopted
-        return Commit(adopted, changes)
+        return Commit(adopted, delta)
     }
 
     /**
@@ -148,21 +145,6 @@ public class MarkupSession(
      * with that identity exists at the committed revision.
      */
     public fun node(id: MarkupID): Markup? = if (id.lineage == lineage) mirror[id.rawValue] else null
-
-    /**
-     * Async sugar over the streaming hot path: appends each token from
-     * [input] and commits, yielding one [Commit] per token. Collect on the
-     * context that owns the session; coalescing tokens before feeding them
-     * trades latency for throughput exactly as manual [append] + [commit]
-     * does.
-     */
-    public fun updates(input: Flow<String>): Flow<Commit> =
-        flow {
-            input.collect { token ->
-                append(token)
-                emit(commit())
-            }
-        }
 
     /**
      * Releases the native session. Idempotent. Snapshots, deltas, and scopes
@@ -174,7 +156,7 @@ public class MarkupSession(
             return
         }
         closed = true
-        currentResolver.detach()
+        resolver.detach()
         native.free()
     }
 

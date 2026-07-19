@@ -4,7 +4,7 @@ import MarkdownCoreC
 /// exact difference from the previous revision.
 public struct Commit: Sendable {
     public let document: Document
-    public let changes: Delta
+    public let delta: Delta
 }
 
 /// The id sets of one commit. The four arrays are disjoint: `added` and
@@ -23,17 +23,17 @@ public struct Delta: Sendable, Hashable {
 }
 
 extension Delta {
-    init(from changes: OpaquePointer, lineage: UInt64) {
+    init(from native: OpaquePointer, lineage: UInt64) {
         var before: UInt64 = 0
         var after: UInt64 = 0
-        markdown_core_delta_revisions(changes, &before, &after)
+        markdown_core_delta_revisions(native, &before, &after)
         self.init(
             beforeRevision: before,
             afterRevision: after,
-            added: Self.ids(lineage) { markdown_core_delta_added(changes, &$0) },
-            removed: Self.ids(lineage) { markdown_core_delta_removed(changes, &$0) },
-            changed: Self.ids(lineage) { markdown_core_delta_changed(changes, &$0) },
-            bubbled: Self.ids(lineage) { markdown_core_delta_bubbled(changes, &$0) }
+            added: Self.ids(lineage) { markdown_core_delta_added(native, &$0) },
+            removed: Self.ids(lineage) { markdown_core_delta_removed(native, &$0) },
+            changed: Self.ids(lineage) { markdown_core_delta_changed(native, &$0) },
+            bubbled: Self.ids(lineage) { markdown_core_delta_bubbled(native, &$0) }
         )
     }
 

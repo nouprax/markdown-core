@@ -5,10 +5,10 @@ public enum class WalkEvent {
     EXITING,
 }
 
-public object Walker {
+public object MarkupWalker {
     public fun walk(
         document: Document,
-        visitor: Visitor<Unit>,
+        visitor: MarkupVisitor<Unit>,
     ) {
         walk(document) { event, node, _ ->
             if (event == WalkEvent.ENTERING) {
