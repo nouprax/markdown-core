@@ -1908,9 +1908,12 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             // every-unit-affected shape). Only the small staged region's
             // parse is discarded by falling back here.
             if (dependent_count >= 64) {
+                // Count one child past the threshold: stopping exactly at
+                // it would make the comparison true for every larger
+                // document too.
                 size_t children = 0;
                 markdown_core_node *child;
-                for (child = doc->first_child; child && children < dependent_count * 2; child = child->next) {
+                for (child = doc->first_child; child && children <= dependent_count * 2; child = child->next) {
                     children++;
                 }
                 if (dependent_count * 2 >= children) {
