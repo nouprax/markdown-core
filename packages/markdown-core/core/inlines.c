@@ -1752,11 +1752,65 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
 }
 
 // Parse inlines from parent's string_content, adding as children of parent.
+/* Longest line-aligned common prefix of two content buffers that is also
+ * inert for inline parsing: no special character (the parser's table, which
+ * includes every attached extension's) and, under SMART, no smart
+ * punctuation; '\n' and '\r' delimit lines rather than disqualifying. Such
+ * a prefix parses to exactly one Text and one break per line, and nothing at
+ * or after the returned offset can pair with, or reshape, anything before it
+ * — every pairing construct (emphasis, code spans, links, images, smart
+ * quotes) needs an opener, and the prefix admits none. Returns 0 when no
+ * usable seam exists; a nonzero seam always leaves a nonempty suffix on both
+ * buffers. */
+bufsize_t markdown_core_inline_seam_prefix(
+    const markdown_core_parser *parser,
+    const unsigned char *a,
+    bufsize_t a_len,
+    const unsigned char *b,
+    bufsize_t b_len,
+    int options
+) {
+    bufsize_t limit = a_len < b_len ? a_len : b_len;
+    bufsize_t i = 0;
+    bufsize_t seam = 0;
+    while (i < limit) {
+        unsigned char c = a[i];
+        if (c != b[i]) {
+            break;
+        }
+        if (c == '\n') {
+            seam = i + 1;
+        } else if (c != '\r') {
+            if (parser->special_chars[c]) {
+                break;
+            }
+            if ((options & MARKDOWN_CORE_OPT_SMART) && SMART_PUNCT_CHARS[c]) {
+                break;
+            }
+        }
+        i++;
+    }
+    if (seam >= a_len || seam >= b_len) {
+        return 0;
+    }
+    return seam;
+}
+
 void markdown_core_parse_inlines(
     markdown_core_parser *parser,
     markdown_core_node *parent,
     markdown_core_map *refmap,
     int options
+) {
+    markdown_core_parse_inlines_from(parser, parent, refmap, options, 0);
+}
+
+void markdown_core_parse_inlines_from(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_map *refmap,
+    int options,
+    bufsize_t start
 ) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
@@ -1770,6 +1824,24 @@ void markdown_core_parse_inlines(
         refmap
     );
     markdown_core_chunk_rtrim(&subj.input);
+
+    // Fast-forward over a caller-guaranteed inert prefix: same position
+    // bookkeeping a real scan would leave (column = pos + 1 + column_offset
+    // + block_offset; every newline resets column_offset to -pos and
+    // advances the line).
+    if (start > 0) {
+        bufsize_t i;
+        bufsize_t bound = start < subj.input.len ? start : subj.input.len;
+        for (i = 0; i < start && i < content.len; i++) {
+            if (content.data[i] == '\n') {
+                subj.line++;
+            }
+        }
+        // A seam at or past the rtrimmed end leaves nothing to parse; the
+        // clamp keeps is_eof true instead of rescanning from zero.
+        subj.pos = bound;
+        subj.column_offset = -(int)start;
+    }
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
         ;

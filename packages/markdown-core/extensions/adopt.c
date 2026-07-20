@@ -144,10 +144,38 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
 
     size_t n_old = child_count_raw(old);
     size_t n_new = child_count_raw(nw);
-    size_t pairable = n_old < n_new ? n_old : n_new;
+    size_t pairable;
 
     markdown_core_node *o = old->first_child;
     markdown_core_node *w = nw->first_child;
+
+    // An inline seam (user_data = offset + 1, set by the commit pipeline)
+    // reserves the old leaf's prefix children — one Text and one break per
+    // seam line — for transplant: they survive as-is, so pairing starts
+    // past them and they never enter the removal records. The count is
+    // derived from the seam bytes, which both contents share.
+    if (nw->user_data) {
+        bufsize_t seam = (bufsize_t)((uintptr_t)nw->user_data - 1);
+        bufsize_t i;
+        size_t reserved = 0;
+        for (i = 0; i < seam; i++) {
+            if (nw->content.ptr[i] == '\n') {
+                reserved += 2;
+            }
+        }
+        for (; reserved > 0; reserved--) {
+            if (!o) {
+                // The seam model guarantees the children exist; a violation
+                // means the commit must not proceed on this tree.
+                ctx->failed = true;
+                return false;
+            }
+            o = o->next;
+            n_old--;
+        }
+    }
+    markdown_core_node *o_start = o;
+    pairable = n_old < n_new ? n_old : n_new;
     size_t prefix = 0;
     while (prefix < pairable && o->type == w->type) {
         prefix++;
@@ -167,7 +195,7 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
     adopt_frame *frame = &stack->frames[stack->length++];
     frame->old = old;
     frame->nw = nw;
-    frame->oc = old->first_child;
+    frame->oc = o_start;
     frame->wc = nw->first_child;
     frame->prefix_left = prefix;
     frame->middle_old = n_old - prefix - suffix;
