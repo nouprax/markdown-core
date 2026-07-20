@@ -131,20 +131,55 @@ typedef struct {
 
 // Per-unit record of the normalized labels the unit's inline parse looked up
 // (hits and misses alike: every lookup is an answer a definition edit can
-// change). Labels are owned NUL-terminated strings.
+// change). Labels are owned NUL-terminated strings; `positions` runs
+// parallel to `labels` and holds each label's entry position inside its
+// posting, so removal fixes the posting in O(1).
 typedef struct {
     unsigned char **labels;
+    size_t *positions;
     size_t count;
 } markdown_core_lookup_record;
 
+// One posting entry: a unit whose record holds the posting's label, plus the
+// label's ordinal inside that record so a swap-remove can repoint the moved
+// entry's stored position.
+typedef struct {
+    markdown_core_node_id unit;
+    size_t ordinal;
+} markdown_core_lookup_posting_entry;
+
+// Every unit that recorded a lookup of one label, unordered. The label key
+// is an owned copy with posting lifetime; a posting that empties stays and
+// is reused when its label returns, mirroring the footnote label interning
+// lifetime rules (slots never move or free for the session's lifetime).
+typedef struct {
+    unsigned char *label; // owned NUL-terminated copy
+    markdown_core_lookup_posting_entry *items;
+    size_t count;
+    size_t capacity;
+    size_t staged; // this commit's pending appends, tallied by the reserve
+} markdown_core_lookup_posting;
+
+// Inverted index over the lookup table: label -> the units that looked it
+// up. A commit whose definition reconciliation changed per-label winners
+// walks the changed labels' postings, so dependent collection costs
+// O(affected units), not O(units with lookups).
+typedef struct {
+    markdown_core_lookup_posting *items;
+    size_t count;
+    size_t capacity;
+    markdown_core_key_index by_label; // label -> posting index + 1
+} markdown_core_lookup_postings;
+
 // Open-addressing unit-id -> lookup-record table, persistent across commits
-// (0 marks an empty slot, ids start at 1). A commit whose definition
-// reconciliation changed per-label winners scans it for the dependent units.
+// (0 marks an empty slot, ids start at 1), plus the label->units postings
+// maintained by every put and remove.
 typedef struct {
     markdown_core_node_id *keys;
     markdown_core_lookup_record *records;
     size_t capacity; // power of two, 0 when unallocated
     size_t count;
+    markdown_core_lookup_postings postings;
 } markdown_core_lookup_table;
 
 // One observed lookup, keyed by the attribution node pointer while ids are
@@ -492,6 +527,22 @@ void markdown_core_lookup_table_release(markdown_core_mem *mem, markdown_core_lo
 
 /** Grows the table so the next `extra` puts cannot fail. */
 bool markdown_core_lookup_table_reserve(markdown_core_mem *mem, markdown_core_lookup_table *table, size_t extra);
+
+/** Ensures the postings can absorb every label of `bundles` without
+ * allocating, so the puts inside the transactional splice cannot fail.
+ * Creates empty postings (and interns their label keys) for labels the
+ * table has never seen; those persist even if the commit later fails,
+ * which is harmless — an empty posting carries no dependency answer. */
+bool markdown_core_lookup_postings_reserve(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    const markdown_core_unit_lookups *bundles,
+    size_t bundle_count
+);
+
+/** The posting for `label`, or NULL when no unit ever recorded it. */
+const markdown_core_lookup_posting *
+markdown_core_lookup_postings_find(const markdown_core_lookup_table *table, const unsigned char *label);
 
 /** Installs `record` for `id`, replacing (and freeing) any previous record.
  * Never fails within a reserved budget; the table takes ownership. */

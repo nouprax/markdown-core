@@ -203,6 +203,13 @@ static const cc_case_entry CC_CASES[] = {
  * resync at the first boundary regardless of how many quotes follow. */
 #define CC_SESSION_QUOTE_STANZA "> q aaaa line\n\n"
 #define CC_SESSION_QUOTE_BODY_OFFSET 4
+/* The def-spread corpus interleaves a definition with a unit referencing
+ * that same label, one pair per stanza; the edit retargets the FIRST
+ * definition's URL. Exactly one unit depends on the changed label, so the
+ * inverted lookup postings must keep dependent collection — and the whole
+ * commit — independent of how many other labels and referencing units
+ * exist. */
+#define CC_SESSION_DEF_SPREAD_WIDTH 42 /* strlen("[dNNNNNN]: /aaaa\n\nuses [u][dNNNNNN] here\n\n") */
 #define CC_SESSION_OPS 64
 static const size_t CC_SESSION_SIZES[] = {4096, 4194304};
 
@@ -213,7 +220,8 @@ enum {
     CC_SESSION_FOOTNOTE,
     CC_SESSION_HEAD_DEFS,
     CC_SESSION_FOOTNOTE_DEFS,
-    CC_SESSION_QUOTE_SUFFIX
+    CC_SESSION_QUOTE_SUFFIX,
+    CC_SESSION_DEF_SPREAD
 };
 
 static int cc_session_mode_footnote_defs(int mode) { return mode == CC_SESSION_FOOTNOTE_DEFS; }
@@ -224,9 +232,12 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
     const char *stanza = mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE
                              ? CC_SESSION_PLAIN_STANZA
                              : (mode == CC_SESSION_QUOTE_SUFFIX ? CC_SESSION_QUOTE_STANZA : CC_SESSION_STANZA);
-    size_t stanza_length = mode == CC_SESSION_HEAD_DEFS
-                               ? CC_SESSION_DEF_WIDTH
-                               : (cc_session_mode_footnote_defs(mode) ? CC_SESSION_FOOTNOTE_DEF_WIDTH : strlen(stanza));
+    size_t stanza_length =
+        mode == CC_SESSION_HEAD_DEFS
+            ? CC_SESSION_DEF_WIDTH
+            : (mode == CC_SESSION_DEF_SPREAD
+                   ? CC_SESSION_DEF_SPREAD_WIDTH
+                   : (cc_session_mode_footnote_defs(mode) ? CC_SESSION_FOOTNOTE_DEF_WIDTH : strlen(stanza)));
     size_t count = size / stanza_length ? size / stanza_length : 1;
     size_t extras =
         mode == CC_SESSION_RETARGET
@@ -251,6 +262,11 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
         for (i = 0; i < count; i++) {
             sprintf(fill, "[d%06zu]: /aaaa\n\n", i % 1000000);
             fill += CC_SESSION_DEF_WIDTH;
+        }
+    } else if (mode == CC_SESSION_DEF_SPREAD) {
+        for (i = 0; i < count; i++) {
+            sprintf(fill, "[d%06zu]: /aaaa\n\nuses [u][d%06zu] here\n\n", i % 1000000, i % 1000000);
+            fill += CC_SESSION_DEF_SPREAD_WIDTH;
         }
     } else if (cc_session_mode_footnote_defs(mode)) {
         for (i = 0; i < count; i++) {
@@ -336,6 +352,13 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             size_t base = (stanza_count - 1) * CC_SESSION_FOOTNOTE_DEF_WIDTH + CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET;
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(session, base, base + 4, body, 4, NULL);
+        } else if (mode == CC_SESSION_DEF_SPREAD) {
+            // The LAST pair: editing the first definition would measure the
+            // def-index splice (a known O(defs) memmove) instead of the
+            // dependent collection this case pins.
+            size_t base = (stanza_count - 1) * CC_SESSION_DEF_SPREAD_WIDTH + CC_SESSION_DEF_URL_OFFSET;
+            const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
+            ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_QUOTE_SUFFIX) {
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(
@@ -433,6 +456,7 @@ static const char *const CC_SESSION_CASES[] = {
     "session_head_defs",
     "session_footnote_defs",
     "session_quote_suffix",
+    "session_def_spread",
 };
 
 static int cc_measure(const char *input, size_t length, double *seconds) {
@@ -567,6 +591,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_quote_suffix") == 0) {
         return cc_run_session(case_name, CC_SESSION_QUOTE_SUFFIX) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_def_spread") == 0) {
+        return cc_run_session(case_name, CC_SESSION_DEF_SPREAD) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;
