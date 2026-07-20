@@ -467,6 +467,8 @@ markdown_core_add_test(
     fuzz_smoke_runner
     --generated
     0
+    --script
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-extension-specials.bin"
     --script-generated
     512)
 

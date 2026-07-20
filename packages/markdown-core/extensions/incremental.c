@@ -1958,7 +1958,12 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH && !parser->root->first_child->extension &&
         markdown_core_node_owns_inlines(parser->root->first_child)) {
         markdown_core_node *staged_leaf = parser->root->first_child;
-        bufsize_t seam = markdown_core_inline_seam_prefix(
+        bufsize_t seam;
+        // The scan must see every attached extension's special characters
+        // (directive ':', strikethrough '~', ...); outside process_inlines
+        // they are not yet folded into the parser's table.
+        markdown_core_parser_manage_extensions_special_characters(parser, true);
+        seam = markdown_core_inline_seam_prefix(
             parser,
             (const unsigned char *)restart_node->content.ptr,
             (bufsize_t)restart_node->content.size,
@@ -1966,6 +1971,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             (bufsize_t)staged_leaf->content.size,
             parser->options
         );
+        markdown_core_parser_manage_extensions_special_characters(parser, false);
         if (seam > 0) {
             staged_leaf->user_data = (void *)(uintptr_t)((size_t)seam + 1);
         }
