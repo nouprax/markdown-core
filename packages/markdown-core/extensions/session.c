@@ -271,8 +271,9 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
 // treats an unsealed node's fields as final, so the markers stay zero and
 // their descendants' deltas (computed against the raw zero here) still
 // resolve exactly as a fresh parse would.
-void markdown_core_session_seal_positions(markdown_core_node *root) {
+size_t markdown_core_session_seal_positions(markdown_core_node *root) {
     markdown_core_node *node = root;
+    size_t sealed = 0;
     for (;;) {
         if (node->first_child) {
             node = node->first_child;
@@ -280,6 +281,7 @@ void markdown_core_session_seal_positions(markdown_core_node *root) {
         }
         for (;;) {
             int start_line = node->start_line;
+            sealed++;
             if (start_line != 0) {
                 if (node->parent) {
                     node->start_line = start_line - node->parent->start_line;
@@ -288,7 +290,7 @@ void markdown_core_session_seal_positions(markdown_core_node *root) {
                 node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
             }
             if (node == root) {
-                return;
+                return sealed;
             }
             if (node->next) {
                 node = node->next;

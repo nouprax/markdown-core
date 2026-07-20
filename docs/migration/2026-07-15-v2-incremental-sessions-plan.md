@@ -862,6 +862,26 @@ Equality everywhere is `(lineage, id, revision)`.
   otherwise), and the table rehash must copy the postings struct into
   the grown table before the swap or they leak away.
 
+  Whole-document routing and walk fusion delivered 2026-07-19 (second
+  degenerate-cost item).  Two routing triggers send commits whose
+  incremental machinery cannot win to the full path, whose wholesale
+  table and index rebuilds beat per-node splice maintenance: (a)
+  pre-parse and free — a head restart with no clean boundary at or
+  beyond the damage can never resync, so the whole-text insert and
+  every whole-document reshape route before anything is staged; (b)
+  post-collection — when the changed labels' dependents reach half the
+  document's children (checked only past 64 dependents, with an
+  early-exit child count), the commit discards only the small staged
+  region and reruns full.  The seal walks now return their node count
+  and replace the separate chain_node_count pass that sized the id
+  reservation.  Numbers: one-enormous-paragraph 137.9->119.1 ms/commit
+  at 1 MiB (-14%), definition churn 23.6->16.2 ms at 256 KiB (-31%);
+  defspread stays flat; storm pays ~5% for the postings maintenance the
+  narrowing added (measured and accepted — 0.1 us/commit against the
+  removed O(units) scan).  White-box counter expectations updated: the
+  whole-text insert is now a full commit by design
+  (restart_locality_counters pins 2 full / N restarted / N resynced).
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical

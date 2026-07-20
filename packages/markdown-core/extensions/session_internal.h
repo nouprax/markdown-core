@@ -452,9 +452,10 @@ markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session
 void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
 
 /** Seals a freshly parsed tree: positions become parent-relative deltas and
- * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Defined in
- * session.c. */
-void markdown_core_session_seal_positions(markdown_core_node *root);
+ * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Returns the number
+ * of nodes visited (the subtree size, wrappers included), so callers sizing
+ * id reservations reuse the walk. Defined in session.c. */
+size_t markdown_core_session_seal_positions(markdown_core_node *root);
 
 /** Grows the id table so the next `extra` markdown_core_session_ids_put
  * calls cannot fail. */
