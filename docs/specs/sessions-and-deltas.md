@@ -163,8 +163,13 @@ advances or is freed.
 - Documents parsed mid-stream behave as if the input ended at the current
   text: unterminated constructs parse exactly as `Document.parse` would parse
   them (for example `CodeBlock.closed == false`).
-- Non-local Markdown constructs degrade gracefully, never worse than one full
-  parse per commit: an edit inside an unclosed fence, raw-HTML block, or
+- Non-local Markdown constructs degrade gracefully and stay linear in the
+  document — bounded by one full reparse of the affected material plus the
+  per-node adoption, delta, and index upkeep over it, a small constant
+  multiple of `Document.parse` on the same text (measured ≈3–4x for
+  whole-document reparses; a bare reparse without adoption is what "one
+  full parse" alone would buy, and a commit must also re-identify every
+  surviving node): an edit inside an unclosed fence, raw-HTML block, or
   directive reparses forward to end of input; an edit that changes the
   document's link-reference definitions (label, destination, or title —
   a reparse that re-harvests byte-identical definitions does not count)

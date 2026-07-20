@@ -903,6 +903,23 @@ Equality everywhere is `(lineage, id, revision)`.
   scripts as repro anchors; the shipped head-pair scope is green across
   every gate.
 
+  Degenerate-shape asymptotics, measured 2026-07-19 when a pre-release
+  review asked whether the degraded paths are really O(document):
+  per-commit cost at 4x size steps against `Document.parse` of the same
+  text — an edit inside an unclosed head fence is 4.06x per 4x size and
+  ~1.06x one one-shot parse; a mid-paragraph edit in a
+  single-enormous-paragraph document is 4.09x per 4x at 2-8 MiB (the 7x
+  seen at 256 KiB-1 MiB is a cache-tier transition, not asymptotic) at
+  ~3-4x a one-shot parse; definition churn with every unit affected is
+  likewise linear at ~3x.  All three were O(document) per commit; the
+  constant over a bare parse is adoption, delta recording, and table
+  upkeep over the reparsed material.  The contract, README, CHANGELOG,
+  and release notes were qualified accordingly.  The follow-up decision
+  (2026-07-19) pulled the three remaining optimizations into the
+  release as blockers; they shipped as the postings narrowing, the
+  whole-document routing with walk fusion, and the inline seam —
+  delivery records above.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical

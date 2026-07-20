@@ -6,7 +6,7 @@
 
     <groupId>com.nouprax.consumer</groupId>
     <artifactId>kotlin-markdown-core-jvm-maven-consumer</artifactId>
-    <version>1.0.3</version>
+    <version>2.0.0</version>
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
@@ -17,7 +17,7 @@
         <dependency>
             <groupId>com.nouprax</groupId>
             <artifactId>kotlin-markdown-core-jvm</artifactId>
-            <version>1.0.3</version>
+            <version>2.0.0</version>
         </dependency>
     </dependencies>
 
