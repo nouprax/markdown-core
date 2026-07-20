@@ -2498,6 +2498,14 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 tail->next = NULL;
                 for (walk = head; walk; walk = walk->next) {
                     walk->parent = staged_first;
+                    // Text literals borrow the parent block's content
+                    // buffer; the old leaf's buffer dies with it, so rebase
+                    // each borrowed chunk onto the staged leaf's identical
+                    // prefix bytes.
+                    if (walk->type == MARKDOWN_CORE_NODE_TEXT && walk->as.literal.alloc == 0 && walk->as.literal.data) {
+                        walk->as.literal.data =
+                            staged_first->content.ptr + (walk->as.literal.data - first_stale->content.ptr);
+                    }
                 }
                 if (staged_first->first_child) {
                     tail->next = staged_first->first_child;

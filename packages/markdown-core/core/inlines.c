@@ -1780,11 +1780,22 @@ bufsize_t markdown_core_inline_seam_prefix(
         }
         if (c == '\n') {
             seam = i + 1;
-        } else if (c != '\r') {
+        } else if (c == '\r') {
+            // A carriage return is a line ending of its own (lone or as
+            // CRLF), so it would break the one-Text-one-break-per-'\n'
+            // accounting the transplant relies on; end the seam before it.
+            break;
+        } else {
             if (parser->special_chars[c]) {
                 break;
             }
             if ((options & MARKDOWN_CORE_OPT_SMART) && SMART_PUNCT_CHARS[c]) {
+                break;
+            }
+            // Dollar formulas are a postprocess construct: '$' is invisible
+            // to the inline pass, but a $$..$$ span can merge nodes across
+            // lines afterwards, so it must end the seam like a special.
+            if ((options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS) && c == '$') {
                 break;
             }
         }
