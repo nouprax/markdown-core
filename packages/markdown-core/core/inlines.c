@@ -1787,15 +1787,28 @@ bufsize_t markdown_core_inline_seam_prefix(
             break;
         } else {
             if (parser->special_chars[c]) {
-                break;
+                // Only the autolink extension registers 'w', and its match
+                // needs the full "www." trigger; a lone 'w' in prose is
+                // inert. Everything else in the table ends the seam.
+                if (c != 'w' || i + 3 >= limit || a[i + 1] != 'w' || a[i + 2] != 'w' || a[i + 3] != '.') {
+                    if (c != 'w') {
+                        break;
+                    }
+                    if (i + 3 < limit && a[i + 1] == 'w' && a[i + 2] == 'w' && a[i + 3] == '.') {
+                        break;
+                    }
+                } else {
+                    break;
+                }
             }
             if ((options & MARKDOWN_CORE_OPT_SMART) && SMART_PUNCT_CHARS[c]) {
                 break;
             }
-            // Dollar formulas are a postprocess construct: '$' is invisible
-            // to the inline pass, but a $$..$$ span can merge nodes across
-            // lines afterwards, so it must end the seam like a special.
-            if ((options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS) && c == '$') {
+            // Email autolinks have no trigger character in the table; an
+            // '@' can turn surrounding prefix text into a link during the
+            // autolink postprocess, so it ends the seam whenever the
+            // autolink extension is attached (only it registers 'w').
+            if (c == '@' && parser->special_chars['w']) {
                 break;
             }
         }

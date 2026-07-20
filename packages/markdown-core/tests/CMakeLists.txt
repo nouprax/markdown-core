@@ -469,6 +469,8 @@ markdown_core_add_test(
     0
     --script
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-extension-specials.bin"
+    --script
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-column-environment.bin"
     --script-generated
     512)
 

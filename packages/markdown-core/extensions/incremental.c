@@ -1953,9 +1953,16 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // line) survive as-is: inline parsing starts at the seam
     // (S_parse_node_inlines), adoption skips the reserved old children
     // (adopt_push), and the splice transplants them into the staged leaf.
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
     if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
-        restart_node->first_child && parser->root && parser->root->first_child &&
-        parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH && !parser->root->first_child->extension &&
+        restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
+        parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !parser->root->first_child->extension && parser->root->first_child->start_line != 0 &&
+        parser->root->first_child->start_column == restart_node->start_column &&
+        parser->root->first_child->internal_offset == restart_node->internal_offset &&
         markdown_core_node_owns_inlines(parser->root->first_child)) {
         markdown_core_node *staged_leaf = parser->root->first_child;
         bufsize_t seam;
