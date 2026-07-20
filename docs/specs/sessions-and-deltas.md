@@ -173,8 +173,10 @@ advances or is freed.
   directive reparses forward to end of input; an edit that changes the
   document's link-reference definitions (label, destination, or title —
   a reparse that re-harvests byte-identical definitions does not count)
-  re-resolves every affected reference within that bound (narrowing this to
-  exactly the blocks that referenced the label is a planned refinement); a
+  re-resolves exactly the blocks that looked the changed labels up — an
+  inverted label-to-units index makes collecting them O(affected), so a
+  definition edit costs the affected blocks' reparse, not a scan of every
+  block with references; a
   footnote ordinal or resolution change bumps only the revisions of the
   references whose query answers changed (definitions stay at their source
   position; numbering and resolution are index-backed queries, per the

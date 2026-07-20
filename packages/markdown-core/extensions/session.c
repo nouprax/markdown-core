@@ -271,8 +271,9 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
 // treats an unsealed node's fields as final, so the markers stay zero and
 // their descendants' deltas (computed against the raw zero here) still
 // resolve exactly as a fresh parse would.
-void markdown_core_session_seal_positions(markdown_core_node *root) {
+size_t markdown_core_session_seal_positions(markdown_core_node *root) {
     markdown_core_node *node = root;
+    size_t sealed = 0;
     for (;;) {
         if (node->first_child) {
             node = node->first_child;
@@ -280,6 +281,7 @@ void markdown_core_session_seal_positions(markdown_core_node *root) {
         }
         for (;;) {
             int start_line = node->start_line;
+            sealed++;
             if (start_line != 0) {
                 if (node->parent) {
                     node->start_line = start_line - node->parent->start_line;
@@ -288,7 +290,7 @@ void markdown_core_session_seal_positions(markdown_core_node *root) {
                 node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
             }
             if (node == root) {
-                return;
+                return sealed;
             }
             if (node->next) {
                 node = node->next;
@@ -384,13 +386,14 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     // take their retraction ids, and lookup records can bind to unit ids.
     markdown_core_session_resolve_definition_owners(map);
 
-    markdown_core_lookup_table lookups = {NULL, NULL, 0, 0};
+    markdown_core_lookup_table lookups = {NULL, NULL, 0, 0, {NULL, 0, 0, {NULL, NULL, 0, 0}}};
     {
         markdown_core_unit_lookups *bundles = NULL;
         size_t bundle_count = 0;
         size_t i;
         bool bound = markdown_core_lookup_recording_bundle(&recording, &bundles, &bundle_count) &&
-                     markdown_core_lookup_table_reserve(session->mem, &lookups, bundle_count);
+                     markdown_core_lookup_table_reserve(session->mem, &lookups, bundle_count) &&
+                     markdown_core_lookup_postings_reserve(session->mem, &lookups, bundles, bundle_count);
         if (!bound) {
             markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);
             markdown_core_lookup_recording_release(&recording);
@@ -407,6 +410,7 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
         for (i = 0; i < bundle_count; i++) {
             markdown_core_lookup_table_put(session->mem, &lookups, bundles[i].unit->id, bundles[i].record);
             bundles[i].record.labels = NULL; // moved into the table
+            bundles[i].record.positions = NULL;
             bundles[i].record.count = 0;
         }
         markdown_core_unit_lookups_free(session->mem, bundles, bundle_count);

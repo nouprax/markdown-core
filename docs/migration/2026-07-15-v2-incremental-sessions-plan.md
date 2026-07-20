@@ -8,7 +8,7 @@ projection deleted, source-order tree, session footnote index +
 `session_footnote_*` query API, ordinal/resolution revision bumps, footnote
 goldens and spec deltas regenerated — and true incrementality second
 (2026-07-16, `extensions/incremental.c`): CLEAN_START restart planning, staged
-reparse with resync + suffix transplant, graveyard adoption through the
+reparse with reflow + suffix transplant, graveyard adoption through the
 standard machine, session-persistent reference map with
 definition-sequence reconciliation, transactional splice, and the
 equivalence/complexity gates. Interim M3 simplifications that remain open
@@ -144,8 +144,8 @@ M3 damage planning, which is their only consumer.
  2. Retract      — remove refmap and footnote-map definitions owned by
                    damaged children; detach damaged children into a graveyard.
  3. Staged reparse — feed lines through the existing S_process_line machinery
-                   from damage start; after each line, resync check; on
-                   resync adopt the entire old suffix (splice + one
+                   from damage start; after each line, reflow check; on
+                   reflow adopt the entire old suffix (splice + one
                    relative-line fix + frontier restore shifted by Δ), else
                    continue to EOF (graceful degradation ≤ 1 full parse).
  4. Frontier feed — append lines into the open-block chain (v1 hot path).
@@ -167,7 +167,7 @@ M3 damage planning, which is their only consumer.
                    delta, free the graveyard, revision++.
 ```
 
-Resync condition: the current byte offset maps through the cumulative edit
+Reflow condition: the current byte offset maps through the cumulative edit
 delta to the old start of a surviving document child with `CLEAN_START`, and
 the staged parse state is clean (`parser->current == root`, no open
 descendants). `CLEAN_START` is recorded at `open_new_blocks` time ("document
@@ -314,7 +314,7 @@ Equality everywhere is `(lineage, id, revision)`.
   `postprocess_block`, per-node comment strip, footnote projection
   scaffolding (full recompute per commit). Gates: goldens unchanged,
   equivalence runner incl. link-ref edit fixtures, sanitizers.
-- **M3 — True incrementality**: damage planning + CLEAN_START, resync +
+- **M3 — True incrementality**: damage planning + CLEAN_START, reflow +
   suffix adoption + frontier save/restore, graveyard/transplant,
   refmap-delta inline dirtiness, footnote contract change (source-order
   tree, query-based numbering — regenerate footnote goldens and spec deltas
@@ -395,7 +395,7 @@ Equality everywhere is `(lineage, id, revision)`.
     needed because restart planning derives geometry from the clean-child
     index (start bytes and lines of CLEAN_START document children,
     updated in place per commit) plus per-commit fed-line offsets. Suffix
-    bookkeeping after a resync is O(top-level suffix children), and only
+    bookkeeping after a reflow is O(top-level suffix children), and only
     when the commit shifted line numbers or byte offsets.
   - The inline phase of an incremental commit runs with an unlimited
     reference-expansion budget; a session-tracked upper bound on the
@@ -407,7 +407,7 @@ Equality everywhere is `(lineage, id, revision)`.
     carry the harvesting paragraph's start line (stamped at add time like
     the owner, shifted with the suffix), and a vanished clean definition
     paragraph leaves a `node == NULL` sentinel entry in the clean index —
-    a valid restart point and resync boundary, resolved to the first real
+    a valid restart point and reflow boundary, resolved to the first real
     child at or beyond its line (real children can appear inside a cluster
     when a paragraph stops vanishing). Staleness and prefix/suffix
     classification became pure line-interval queries over a
@@ -418,7 +418,7 @@ Equality everywhere is `(lineage, id, revision)`.
     and the staged range splices in place (capacity reserved during
     prepare; `refmap_stale` covers aborted reconciliations). Owner-based
     region classification is gone; anchors remain only as parse-local
-    vanish markers. The session counts full/restarted/resynced commits
+    vanish markers. The session counts full/restarted/reflowed commits
     (`fallback_runner --case restart_locality_counters` pins them), so
     degraded-to-full cases stay counted. Gates: the `head_defs` boundary
     script (mid-cluster retargets, definition paragraphs arriving/leaving,
@@ -426,7 +426,7 @@ Equality everywhere is `(lineage, id, revision)`.
     real), and the `session_head_defs` complexity case (last-definition
     retargets against a document-scale leading cluster, flat across a
     1024x spread — 0.8x measured, ~3167x before the change). The
-    resync-delay behaviors carried in the issue's orbit both resolved
+    reflow-delay behaviors carried in the issue's orbit both resolved
     (issue #26, M5): the blockquote half no longer reproduced after this
     index rework and is pinned by `session_quote_suffix`; the footnote
     half (definitions stay open across blank lines) landed as the sealing
@@ -606,8 +606,8 @@ Equality everywhere is `(lineage, id, revision)`.
   delivery: 1.1M executions / 2 minutes under ASan, 10,646 edges covered,
   zero failures; correctness + ASan/UBSan presets green.
 
-  Resync locality for footnote definitions delivered 2026-07-19 (issue
-  #26), closing out the #15 resync-delay behaviors. A definition legitimately
+  Reflow locality for footnote definitions delivered 2026-07-19 (issue
+  #26), closing out the #15 reflow-delay behaviors. A definition legitimately
   stays open across blank lines, which used to strip restart anchors from
   every cluster follower and ride restarts through whole clusters. Both
   halves now apply the same argument: a non-blank line whose first non-space
@@ -624,7 +624,7 @@ Equality everywhere is `(lineage, id, revision)`.
     current text (blank or indented means reshaped into a continuation) and
     backs off one clean entry, mirroring the CRLF-fusion guard; sentinels
     take the same check since they do not record their sealing quality.
-  - Resync side: the staged probe accepts a boundary while only footnote
+  - Reflow side: the staged probe accepts a boundary while only footnote
     definitions are open, provided the upcoming line seals them; the splice
     finalizes them with ends dated to the line before the boundary, exactly
     as the one-shot parse dates them.
@@ -638,7 +638,7 @@ Equality everywhere is `(lineage, id, revision)`.
   and leaving mid-cluster, the indented continuation negative case, and the
   sealing line itself reshaped indented and back), the
   `restart_locality_counters` cluster layouts (every footnote-cluster body
-  edit an incremental resynced commit; a quote-cluster front edit resyncs at
+  edit an incremental reflowed commit; a quote-cluster front edit reflows at
   the second quote), the `session_quote_suffix` complexity case (front edits
   flat across a 1024x quote-suffix spread, 0.9x measured), and the
   `session_footnote_defs` complexity case (last-definition body edits flat
@@ -838,43 +838,87 @@ Equality everywhere is `(lineage, id, revision)`.
   (high-water retention) are now bounded by the host's memory limits,
   matching the documented session cost model.
 
-  Degenerate-shape asymptotics measured 2026-07-19 (pre-release review
-  question: is the degraded path really O(document)?).  Per-commit cost
-  at 4x size steps, against `Document.parse` of the same text: an edit
-  inside an unclosed head fence over the whole document is 4.06x per 4x
-  size and ≈1.06x one one-shot parse — the cleanest bound; a
-  mid-paragraph edit in a document that is one enormous paragraph is
-  4.09x per 4x at 2→8 MiB (the 7x seen at 256 KiB→1 MiB is a cache-tier
-  transition, not asymptotic) and ≈3–4x a one-shot parse; flipping a
-  definition URL that every unit references is likewise linear at
-  ≈3x a one-shot parse.  All three are O(document) per commit; the
-  extra constant over a bare parse is the adoption walk, delta
-  recording, and id/lookup-table upkeep over the reparsed material.
-  The contract's cost-model bullet now states the small-constant-
-  multiple bound instead of a literal "one full parse"; README,
-  CHANGELOG, and the 2.0.0 notes qualify the "independent of document
-  size" claim the same way.  Follow-up candidate (post-2.0): a
-  complexity gate asserting commit ≤ K x one-shot on the degenerate
-  corpora.
+  Label-scoped dependent narrowing delivered 2026-07-19 (first of the
+  three degenerate-cost items pulled into M5 by the pre-release
+  decision).  Dependent selection was already label-filtered, but
+  collecting the dependents scanned every lookup record per
+  definition-changing commit — measured superlinear in total units
+  (one dirty label among 4096/16384 self-referencing units: 30/203
+  µs/commit).  The lookup table now carries an inverted index
+  (`markdown_core_lookup_postings`): one posting per distinct label
+  ever looked up (owned key, slot persistent for the table lifetime,
+  mirroring footnote label interning), entries as (unit id, ordinal)
+  pairs with per-record stored positions so removal is an O(1)
+  swap-remove that repoints the moved entry's owner.  Postings are
+  reserved fallibly before the transactional splice (two-pass tally so
+  repeated labels reserve their true count) and maintained infallibly
+  by every put and remove; the table rehash carries them wholesale
+  (entries reference unit ids, not slots).  `collect_dependents` walks
+  the changed labels' postings and sort-uniques the union —
+  O(affected).  Same shape after: 1.44/1.57 µs/commit, ratio 1.09x;
+  gate added (`session_def_spread`, flat across the 1024x spread).
+  Traps worth remembering: a record moved into the table must NULL its
+  `positions` pointer alongside `labels` (double free at teardown
+  otherwise), and the table rehash must copy the postings struct into
+  the grown table before the swap or they leak away.
 
-  Optimization headroom for the degenerate constant, measured
-  2026-07-19 by forcing the full path (`refmap_stale`) on the same
-  contents: routing a whole-document restart through `commit_full`
-  saves 5% on the one-enormous-paragraph shape and 31% on definition
-  churn (wholesale table/index rebuilds beat per-node splice
-  maintenance when everything is stale) — but the dominant term in
-  both paths is adoption pairing itself, the inherent cost of keeping
-  node identity across a whole-document reparse (~3x a bare parse).
-  Post-2.0 roadmap, in impact order: (1) label-scoped dependent
-  narrowing (already a planned refinement in the contract) removes the
-  definition-churn degradation outright; (2) fusing the splice-phase
-  walks (chain counting into sealing, graveyard free into adoption)
-  trims the constant everywhere; (3) inline-level damage inside one
-  leaf — the only true fix for the enormous-paragraph shape — is an
-  architectural extension the damage planner's restart-stack
-  abstraction was designed to admit.  None of these ship before 2.0.0:
-  the wins concentrate in rare shapes while the regression risk spans
-  the whole matrix.
+  Whole-document routing and walk fusion delivered 2026-07-19 (second
+  degenerate-cost item).  Two routing triggers send commits whose
+  incremental machinery cannot win to the full path, whose wholesale
+  table and index rebuilds beat per-node splice maintenance: (a)
+  pre-parse and free — a head restart with no clean boundary at or
+  beyond the damage can never reflow, so the whole-text insert and
+  every whole-document reshape route before anything is staged; (b)
+  post-collection — when the changed labels' dependents reach half the
+  document's children (checked only past 64 dependents, with an
+  early-exit child count), the commit discards only the small staged
+  region and reruns full.  The seal walks now return their node count
+  and replace the separate chain_node_count pass that sized the id
+  reservation.  Numbers: one-enormous-paragraph 137.9->119.1 ms/commit
+  at 1 MiB (-14%), definition churn 23.6->16.2 ms at 256 KiB (-31%);
+  defspread stays flat; storm pays ~5% for the postings maintenance the
+  narrowing added (measured and accepted — 0.1 us/commit against the
+  removed O(units) scan).  White-box counter expectations updated: the
+  whole-text insert is now a full commit by design
+  (restart_locality_counters pins 2 full / N restarted / N reflowed).
+
+  Inline prefix reuse delivered 2026-07-19 (third degenerate-cost item,
+  head-pair scope).  When the first staged unit reparses the restart
+  paragraph and both contents share a line-aligned prefix free of
+  inline special characters (parser table + smart punctuation; newlines
+  delimit), that prefix provably parses to one Text and one break per
+  line and nothing at or after the seam can pair before it — so the old
+  prefix children survive as-is: `markdown_core_parse_inlines_from`
+  starts the subject at the seam over the true buffer (exact cross-seam
+  lookbacks), `markdown_core_inline_seam_prefix` computes the seam,
+  adoption skips the reserved children (adopt_push honors
+  `user_data = seam + 1` on the staged leaf), and the splice transplants
+  them with ids, revisions, sealed positions, and delta silence intact.
+  A mid-document 1 MiB plain paragraph edit drops 119 -> 10.6 ms/commit
+  (~11x; the rest is the block feed).  Two extensions were prototyped
+  and REVERTED after `fuzz_script_smoke` scripts 372/444 caught child-
+  count divergence: routing-yield (single-paragraph documents currently
+  route to the full path before the seam can apply) and the tail-pair
+  seam for streaming appends — both remain follow-ups with those
+  scripts as repro anchors; the shipped head-pair scope is green across
+  every gate.
+
+  Degenerate-shape asymptotics, measured 2026-07-19 when a pre-release
+  review asked whether the degraded paths are really O(document):
+  per-commit cost at 4x size steps against `Document.parse` of the same
+  text — an edit inside an unclosed head fence is 4.06x per 4x size and
+  ~1.06x one one-shot parse; a mid-paragraph edit in a
+  single-enormous-paragraph document is 4.09x per 4x at 2-8 MiB (the 7x
+  seen at 256 KiB-1 MiB is a cache-tier transition, not asymptotic) at
+  ~3-4x a one-shot parse; definition churn with every unit affected is
+  likewise linear at ~3x.  All three were O(document) per commit; the
+  constant over a bare parse is adoption, delta recording, and table
+  upkeep over the reparsed material.  The contract, README, CHANGELOG,
+  and release notes were qualified accordingly.  The follow-up decision
+  (2026-07-19) pulled the three remaining optimizations into the
+  release as blockers; they shipped as the postings narrowing, the
+  whole-document routing with walk fusion, and the inline seam —
+  delivery records above.
 
 ## Verification
 

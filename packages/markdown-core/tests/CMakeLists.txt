@@ -246,6 +246,7 @@ if(MARKDOWN_CORE_STATIC)
         map_prepare_oom
         constructor_oom
         oom_sweep
+        seam_static_literal
         session_oom_sweep
         session_oom_sweep_pooled
         restart_locality_counters)
@@ -426,7 +427,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     session_footnote_shift
     session_head_defs
     session_footnote_defs
-    session_quote_suffix)
+    session_quote_suffix
+    session_def_spread)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})
@@ -466,6 +468,10 @@ markdown_core_add_test(
     fuzz_smoke_runner
     --generated
     0
+    --script
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-extension-specials.bin"
+    --script
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-column-environment.bin"
     --script-generated
     512)
 

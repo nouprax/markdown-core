@@ -1068,6 +1068,62 @@ done:
     return result;
 }
 
+/* Review regression (#35): with smart punctuation off, '.' and '-' produce
+ * Text nodes backed by immortal static string literals, not the block's
+ * content buffer. A seam that covers such a line must transplant them
+ * without rebasing; a blind rebase pointed them into arbitrary staged
+ * memory. The incremental dump must match a fresh session's. */
+static int case_seam_static_literal(void) {
+    static const char initial[] = "\n.\nold\n\nnext\n";
+    markdown_core_parse_options options;
+    markdown_core_session *session = NULL;
+    markdown_core_session *fresh = NULL;
+    uint8_t *incremental_dump = NULL;
+    size_t incremental_length = 0;
+    uint8_t *fresh_dump = NULL;
+    size_t fresh_length = 0;
+    int result = -1;
+
+    markdown_core_parse_options_init(&options);
+    options.smart_punctuation = false;
+
+    session = markdown_core_session_open(&options, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
+        goto done;
+    }
+    /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
+    if (!markdown_core_session_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
+        goto done;
+    }
+    incremental_dump = fb_session_dump(session, &incremental_length);
+
+    fresh = markdown_core_session_open(&options, NULL);
+    if (!fresh ||
+        !markdown_core_session_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
+        !markdown_core_session_commit(fresh, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
+        goto done;
+    }
+    fresh_dump = fb_session_dump(fresh, &fresh_length);
+
+    if (!incremental_dump || !fresh_dump || incremental_length != fresh_length ||
+        memcmp(incremental_dump, fresh_dump, fresh_length) != 0) {
+        fputs("FAILED: seam_static_literal: incremental dump diverged from a fresh session\n", stderr);
+        goto done;
+    }
+    result = 0;
+done:
+    free(incremental_dump);
+    free(fresh_dump);
+    markdown_core_session_free(session);
+    markdown_core_session_free(fresh);
+    return result;
+}
+
 static int case_session_oom_sweep(void) { return fb_session_sweep(false); }
 
 /* The pooled sweep drives the same script through a session arena over the
@@ -1084,8 +1140,10 @@ typedef struct {
 } rl_edit;
 
 /* Opens a session over `initial`, applies each edit as its own commit, and
- * pins the whole inventory: exactly one full commit (the empty open), and
- * every edit an incremental, resynced restart. */
+ * pins the whole inventory: exactly two full commits (the empty open and the
+ * whole-text insert, which routes to the full path — a head restart with no
+ * boundary beyond the damage), and every edit an incremental, reflowed
+ * restart. */
 static int rl_cluster_scenario(const char *name, const char *initial, const rl_edit *edits, size_t edit_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
@@ -1117,18 +1175,18 @@ static int rl_cluster_scenario(const char *name, const char *initial, const rl_e
             goto done;
         }
     }
-    if (session->full_commits != 1 || session->restarted_commits != 1 + edit_count ||
-        session->resynced_commits != edit_count) {
+    if (session->full_commits != 2 || session->restarted_commits != edit_count ||
+        session->reflowed_commits != edit_count) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: %s: expected 1 full / %zu restarted / %zu resynced, "
+            "FAILED: restart_locality_counters: %s: expected 2 full / %zu restarted / %zu reflowed, "
             "got %zu / %zu / %zu\n",
             name,
-            1 + edit_count,
+            edit_count,
             edit_count,
             session->full_commits,
             session->restarted_commits,
-            session->resynced_commits
+            session->reflowed_commits
         );
         goto done;
     }
@@ -1138,9 +1196,9 @@ done:
     return result;
 }
 
-/* Head-of-document definition clusters must restart and resync at sentinel
+/* Head-of-document definition clusters must restart and reflow at sentinel
  * clean entries: retargeting the last definition of a leading cluster is an
- * incremental, resynced commit, never a full reparse. The counters are the
+ * incremental, reflowed commit, never a full reparse. The counters are the
  * session's restart-locality inventory. */
 static int case_restart_locality_counters(void) {
     static const char initial[] = "[a]: /a1\n"
@@ -1165,9 +1223,12 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: initial commit failed\n");
         goto done;
     }
-    /* Opening a session commits the empty document through the full path. */
-    if (session->full_commits != 1 || session->restarted_commits != 1) {
-        fprintf(stderr, "FAILED: restart_locality_counters: initial commit was not an incremental restart\n");
+    /* Opening a session commits the empty document through the full path,
+     * and the whole-text insert routes there too: a head restart with no
+     * clean boundary at or beyond the damage reparses everything, and the
+     * full path does that with wholesale rebuilds. */
+    if (session->full_commits != 2 || session->restarted_commits != 0) {
+        fprintf(stderr, "FAILED: restart_locality_counters: whole-text insert did not route to the full path\n");
         goto done;
     }
     /* Retarget the last head definition: [c]'s destination at bytes 24..27. */
@@ -1176,28 +1237,28 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: retarget commit failed\n");
         goto done;
     }
-    if (session->full_commits != 1) {
+    if (session->full_commits != 2) {
         fprintf(stderr, "FAILED: restart_locality_counters: a head-cluster edit fell back to a full reparse\n");
         goto done;
     }
-    if (session->restarted_commits != 2 || session->resynced_commits != 1) {
+    if (session->restarted_commits != 1 || session->reflowed_commits != 1) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: expected a resynced restart (restarted %zu, resynced %zu)\n",
+            "FAILED: restart_locality_counters: expected a reflowed restart (restarted %zu, reflowed %zu)\n",
             session->restarted_commits,
-            session->resynced_commits
+            session->reflowed_commits
         );
         goto done;
     }
 
     /* Blank-separated footnote definitions stay open across their blanks, so
-     * interior and tail body edits restart at sealing anchors and resync at
+     * interior and tail body edits restart at sealing anchors and reflow at
      * the next sealing line — two fed lines per commit, never a full
      * reparse. */
     {
         static const rl_edit edits[] = {
-            {17, 20, "TWO"},   /* interior body: resync at [^c] */
-            {28, 33, "THREE"}, /* tail body: resync at the tail paragraph */
+            {17, 20, "TWO"},   /* interior body: reflow at [^c] */
+            {28, 33, "THREE"}, /* tail body: reflow at the tail paragraph */
         };
         if (rl_cluster_scenario(
                 "footnote cluster",
@@ -1216,7 +1277,7 @@ static int case_restart_locality_counters(void) {
     }
 
     /* Blank-separated top-level quotes restart cleanly (the resolved half of
-     * the resync-delay pair): a front edit resyncs at the second quote. */
+     * the reflow-delay pair): a front edit reflows at the second quote. */
     {
         static const rl_edit edits[] = {
             {4, 7, "ONE"},
@@ -1253,6 +1314,7 @@ static const fb_case_entry FB_CASES[] = {
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
+    {"seam_static_literal", case_seam_static_literal},
     {"session_oom_sweep", case_session_oom_sweep},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
     {"restart_locality_counters", case_restart_locality_counters},
