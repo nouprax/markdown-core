@@ -36,7 +36,7 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
-.package(url: "https://github.com/nouprax/markdown-core", from: "1.0.3")
+.package(url: "https://github.com/nouprax/markdown-core", from: "2.0.0")
 ```
 
 ```swift
@@ -60,7 +60,7 @@ Use the root Maven coordinate from a Kotlin Multiplatform source set:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
+            implementation("com.nouprax:kotlin-markdown-core:2.0.0")
         }
     }
 }
@@ -129,6 +129,83 @@ The library initializes itself on the first parse. Concurrent parsing and
 read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
+
+## Incremental sessions
+
+A session owns one Markdown text and its living AST. Apply byte-range edits
+(appending a streamed token is an edit at end-of-text), then commit: the
+engine reparses only the stale region around the edits, at a per-commit cost
+proportional to that region — for typical documents, independent of total
+document size. Non-local shapes degrade gracefully and stay linear in the
+document, never worse than a small multiple of one full parse per commit:
+streaming into one enormous paragraph reparses that paragraph's inlines
+each commit, an edit inside an unclosed fence, raw-HTML block, or directive
+reparses forward to end of input, and changing a link-reference definition
+re-resolves the references that used it. Every commit produces an immutable
+document snapshot that structurally shares unchanged nodes with the previous
+snapshot, plus a delta of four disjoint stable-id sets: nodes the commit
+added, removed, or changed, and ancestors whose revision bubbled only
+because a descendant changed. Applying all four to a mirror of the previous
+revision (materialize added and changed, relink bubbled, evict removed)
+reproduces the new tree exactly — mirrors that skip bubbled keep stale
+ancestor revisions after descendant-only edits. After any sequence of
+commits the document is byte-for-byte dump-equal to a from-scratch parse of
+the same text.
+
+The session type is `MarkupSession` in Swift, Kotlin, and ECMAScript, and
+`markdown_core_session_*` in C:
+
+```swift
+let session = try MarkupSession()
+try session.append("# Hello\n")
+var commit = try session.commit()
+try session.append("world ")
+try session.append("again\n")
+commit = try session.commit()          // one incremental reparse
+print(commit.delta.changed)            // stable MarkupID values
+```
+
+```kotlin
+MarkupSession().use { session ->
+    session.append("# Hello\nworld\n")
+    var commit = session.commit()
+    session.replace(2, 7, "Goodbye")   // byte range in the stored text
+    commit = session.commit()
+    println(commit.delta.changed)      // stable MarkupID values
+}
+```
+
+```js
+const session = new MarkupSession();
+session.append("# Hello\nworld\n");
+let { document, delta } = session.commit();
+session.replace(2, 7, "Goodbye");      // byte range in the stored text
+({ document, delta } = session.commit());
+session.close();
+```
+
+```c
+markdown_core_session *session = markdown_core_session_open(NULL, NULL);
+markdown_core_session_edit(session, 0, 0, (const uint8_t *)"# Hello\n", 8, NULL);
+markdown_core_delta *delta = NULL;
+markdown_core_session_commit(session, &delta, NULL);
+const markdown_core_document *document = markdown_core_session_document(session);
+/* delta ids via markdown_core_delta_added/removed/changed/bubbled */
+markdown_core_delta_free(delta);
+markdown_core_session_free(session);
+```
+
+In C the committed document is a borrowed view, valid until the next commit
+or free; deltas are caller-owned. Node identity is stable across commits: a
+`MarkupID` keeps addressing the same node until that node is removed, and
+`node(id)` resolves ids against the latest snapshot. Sessions also answer footnote queries (numbering,
+resolution, first-use order, back-references) directly. Any number of
+sessions may run concurrently; there is no shared or global parser state.
+One-shot `Document.parse` is unchanged and keeps its v1 memory profile.
+
+The language-neutral contract — identity and ordering rules, delta
+semantics, and the incremental cost model — is specified in
+[`docs/specs/sessions-and-deltas.md`](docs/specs/sessions-and-deltas.md).
 
 ## Repository layout
 

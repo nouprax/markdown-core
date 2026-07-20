@@ -10,14 +10,14 @@ Use the root coordinate from a Kotlin Multiplatform or Android project:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
+            implementation("com.nouprax:kotlin-markdown-core:2.0.0")
         }
     }
 }
 ```
 
 JVM-only Gradle and Maven consumers can use
-`com.nouprax:kotlin-markdown-core-jvm:1.0.3`. Published targets are Android API
+`com.nouprax:kotlin-markdown-core-jvm:2.0.0`. Published targets are Android API
 21 or later, JVM 17, macOS arm64, and Linux x64.
 
 ## Parse Markdown

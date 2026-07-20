@@ -7,7 +7,7 @@ parser as SwiftPM targets — no wire, no separate runtime.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/nouprax/markdown-core", from: "1.0.3")
+    .package(url: "https://github.com/nouprax/markdown-core", from: "2.0.0")
 ],
 targets: [
     .target(
