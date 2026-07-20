@@ -353,15 +353,12 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(session, base, base + 4, body, 4, NULL);
         } else if (mode == CC_SESSION_DEF_SPREAD) {
+            // The LAST pair: editing the first definition would measure the
+            // def-index splice (a known O(defs) memmove) instead of the
+            // dependent collection this case pins.
+            size_t base = (stanza_count - 1) * CC_SESSION_DEF_SPREAD_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(
-                session,
-                CC_SESSION_DEF_URL_OFFSET,
-                CC_SESSION_DEF_URL_OFFSET + 4,
-                url,
-                4,
-                NULL
-            );
+            ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_QUOTE_SUFFIX) {
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
             ok = markdown_core_session_edit(
