@@ -4,7 +4,7 @@ All notable release changes are recorded here. Markdown Core follows Semantic
 Versioning for source packages and public API behavior; the C binary ABI is not
 promised to remain compatible between releases.
 
-## 2.0.0 - 2026-07-19
+## 2.0.0 - 2026-07-20
 
 - Add incremental parsing sessions on every platform: `MarkupSession` in
   Swift, Kotlin, and ECMAScript and `markdown_core_session_*` in C apply
