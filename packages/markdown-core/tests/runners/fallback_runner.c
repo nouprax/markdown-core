@@ -1086,7 +1086,7 @@ typedef struct {
 /* Opens a session over `initial`, applies each edit as its own commit, and
  * pins the whole inventory: exactly two full commits (the empty open and the
  * whole-text insert, which routes to the full path — a head restart with no
- * boundary beyond the damage), and every edit an incremental, resynced
+ * boundary beyond the damage), and every edit an incremental, reflowed
  * restart. */
 static int rl_cluster_scenario(const char *name, const char *initial, const rl_edit *edits, size_t edit_count) {
     markdown_core_parse_options options;
@@ -1120,17 +1120,17 @@ static int rl_cluster_scenario(const char *name, const char *initial, const rl_e
         }
     }
     if (session->full_commits != 2 || session->restarted_commits != edit_count ||
-        session->resynced_commits != edit_count) {
+        session->reflowed_commits != edit_count) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: %s: expected 2 full / %zu restarted / %zu resynced, "
+            "FAILED: restart_locality_counters: %s: expected 2 full / %zu restarted / %zu reflowed, "
             "got %zu / %zu / %zu\n",
             name,
             edit_count,
             edit_count,
             session->full_commits,
             session->restarted_commits,
-            session->resynced_commits
+            session->reflowed_commits
         );
         goto done;
     }
@@ -1140,9 +1140,9 @@ done:
     return result;
 }
 
-/* Head-of-document definition clusters must restart and resync at sentinel
+/* Head-of-document definition clusters must restart and reflow at sentinel
  * clean entries: retargeting the last definition of a leading cluster is an
- * incremental, resynced commit, never a full reparse. The counters are the
+ * incremental, reflowed commit, never a full reparse. The counters are the
  * session's restart-locality inventory. */
 static int case_restart_locality_counters(void) {
     static const char initial[] = "[a]: /a1\n"
@@ -1185,24 +1185,24 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: a head-cluster edit fell back to a full reparse\n");
         goto done;
     }
-    if (session->restarted_commits != 1 || session->resynced_commits != 1) {
+    if (session->restarted_commits != 1 || session->reflowed_commits != 1) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: expected a resynced restart (restarted %zu, resynced %zu)\n",
+            "FAILED: restart_locality_counters: expected a reflowed restart (restarted %zu, reflowed %zu)\n",
             session->restarted_commits,
-            session->resynced_commits
+            session->reflowed_commits
         );
         goto done;
     }
 
     /* Blank-separated footnote definitions stay open across their blanks, so
-     * interior and tail body edits restart at sealing anchors and resync at
+     * interior and tail body edits restart at sealing anchors and reflow at
      * the next sealing line — two fed lines per commit, never a full
      * reparse. */
     {
         static const rl_edit edits[] = {
-            {17, 20, "TWO"},   /* interior body: resync at [^c] */
-            {28, 33, "THREE"}, /* tail body: resync at the tail paragraph */
+            {17, 20, "TWO"},   /* interior body: reflow at [^c] */
+            {28, 33, "THREE"}, /* tail body: reflow at the tail paragraph */
         };
         if (rl_cluster_scenario(
                 "footnote cluster",
@@ -1221,7 +1221,7 @@ static int case_restart_locality_counters(void) {
     }
 
     /* Blank-separated top-level quotes restart cleanly (the resolved half of
-     * the resync-delay pair): a front edit resyncs at the second quote. */
+     * the reflow-delay pair): a front edit reflows at the second quote. */
     {
         static const rl_edit edits[] = {
             {4, 7, "ONE"},
