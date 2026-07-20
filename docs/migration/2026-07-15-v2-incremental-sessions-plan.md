@@ -882,6 +882,27 @@ Equality everywhere is `(lineage, id, revision)`.
   whole-text insert is now a full commit by design
   (restart_locality_counters pins 2 full / N restarted / N reflowed).
 
+  Inline prefix reuse delivered 2026-07-19 (third degenerate-cost item,
+  head-pair scope).  When the first staged unit reparses the restart
+  paragraph and both contents share a line-aligned prefix free of
+  inline special characters (parser table + smart punctuation; newlines
+  delimit), that prefix provably parses to one Text and one break per
+  line and nothing at or after the seam can pair before it — so the old
+  prefix children survive as-is: `markdown_core_parse_inlines_from`
+  starts the subject at the seam over the true buffer (exact cross-seam
+  lookbacks), `markdown_core_inline_seam_prefix` computes the seam,
+  adoption skips the reserved children (adopt_push honors
+  `user_data = seam + 1` on the staged leaf), and the splice transplants
+  them with ids, revisions, sealed positions, and delta silence intact.
+  A mid-document 1 MiB plain paragraph edit drops 119 -> 10.6 ms/commit
+  (~11x; the rest is the block feed).  Two extensions were prototyped
+  and REVERTED after `fuzz_script_smoke` scripts 372/444 caught child-
+  count divergence: routing-yield (single-paragraph documents currently
+  route to the full path before the seam can apply) and the tail-pair
+  seam for streaming appends — both remain follow-ups with those
+  scripts as repro anchors; the shipped head-pair scope is green across
+  every gate.
+
 ## Verification
 
 - **Equivalence gate** (`equivalence_runner.c`, CTest): every canonical
