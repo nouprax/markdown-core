@@ -1018,8 +1018,15 @@ static markdown_core_node *clone_unit_shell(markdown_core_session *session, mark
     return clone;
 }
 
-/* Scans the session's lookup records for units that depend on a label whose
- * winner changed, skipping units the staged reparse rebuilds anyway. Returns
+static int candidate_id_compare(const void *a, const void *b) {
+    markdown_core_node_id x = *(const markdown_core_node_id *)a;
+    markdown_core_node_id y = *(const markdown_core_node_id *)b;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+/* Collects the units that depend on a label whose winner changed by walking
+ * the changed labels' postings — O(affected units), not O(units with
+ * lookups) — skipping units the staged reparse rebuilds anyway. Returns
  * false with *fallback set when a dependent cannot be rebuilt per-unit (an
  * extension-owned unit, or a record that no longer matches the tree), and
  * false with *fallback clear on allocation loss. */
@@ -1038,7 +1045,11 @@ static bool collect_dependents(
     dependent_unit *dependents = NULL;
     size_t count = 0;
     size_t capacity = 0;
+    markdown_core_node_id *candidates = NULL;
+    size_t candidate_count = 0;
+    size_t candidate_capacity = 0;
     size_t slot;
+    size_t c;
 
     *out = NULL;
     *out_count = 0;
@@ -1046,27 +1057,46 @@ static bool collect_dependents(
     if (dirty->size == 0) {
         return true;
     }
-    for (slot = 0; slot < table->capacity; slot++) {
-        const markdown_core_lookup_record *record = &table->records[slot];
+    // Union of the dirty labels' postings; the same unit may sit under
+    // several dirty labels, so sort and unique before the per-unit checks.
+    for (slot = 0; slot < dirty->capacity; slot++) {
+        const markdown_core_lookup_posting *posting;
+        size_t i;
+        if (!dirty->slots[slot].key) {
+            continue;
+        }
+        posting = markdown_core_lookup_postings_find(table, dirty->slots[slot].key);
+        if (!posting) {
+            continue;
+        }
+        for (i = 0; i < posting->count; i++) {
+            if (candidate_count == candidate_capacity) {
+                size_t grown_capacity = candidate_capacity ? candidate_capacity * 2 : 16;
+                markdown_core_node_id *grown =
+                    (markdown_core_node_id *)mem->realloc(mem, candidates, grown_capacity * sizeof(*grown));
+                if (!grown) {
+                    if (candidates) {
+                        mem->free(mem, candidates);
+                    }
+                    return false;
+                }
+                candidates = grown;
+                candidate_capacity = grown_capacity;
+            }
+            candidates[candidate_count++] = posting->items[i].unit;
+        }
+    }
+    if (candidate_count > 1) {
+        qsort(candidates, candidate_count, sizeof(*candidates), candidate_id_compare);
+    }
+    for (c = 0; c < candidate_count; c++) {
         markdown_core_node *unit;
         markdown_core_node *top;
-        size_t i;
-        bool depends = false;
 
-        if (table->keys[slot] == 0) {
+        if (c > 0 && candidates[c] == candidates[c - 1]) {
             continue;
         }
-        for (i = 0; i < record->count && !depends; i++) {
-            depends = markdown_core_key_index_lookup(
-                          dirty,
-                          record->labels[i],
-                          (bufsize_t)strlen((const char *)record->labels[i])
-                      ) != NULL;
-        }
-        if (!depends) {
-            continue;
-        }
-        unit = (markdown_core_node *)markdown_core_session_node_by_id(session, table->keys[slot]);
+        unit = (markdown_core_node *)markdown_core_session_node_by_id(session, candidates[c]);
         if (!unit) {
             goto fall_back;
         }
@@ -1089,6 +1119,9 @@ static bool collect_dependents(
                 if (dependents) {
                     mem->free(mem, dependents);
                 }
+                if (candidates) {
+                    mem->free(mem, candidates);
+                }
                 return false;
             }
             dependents = grown;
@@ -1099,6 +1132,9 @@ static bool collect_dependents(
         dependents[count].changed = false;
         count++;
     }
+    if (candidates) {
+        mem->free(mem, candidates);
+    }
     *out = dependents;
     *out_count = count;
     return true;
@@ -1106,6 +1142,9 @@ static bool collect_dependents(
 fall_back:
     if (dependents) {
         mem->free(mem, dependents);
+    }
+    if (candidates) {
+        mem->free(mem, candidates);
     }
     *fallback = true;
     return false;
@@ -2076,7 +2115,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             }
             if (staged_ok) {
                 staged_ok = markdown_core_lookup_recording_bundle(&recording, &bundles, &bundle_count) &&
-                            markdown_core_lookup_table_reserve(mem, &session->lookups, bundle_count);
+                            markdown_core_lookup_table_reserve(mem, &session->lookups, bundle_count) &&
+                            markdown_core_lookup_postings_reserve(mem, &session->lookups, bundles, bundle_count);
             }
             for (i = 0; i < dependent_count && staged_ok; i++) {
                 markdown_core_node *ancestor;
@@ -2427,6 +2467,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             for (i = 0; i < bundle_count; i++) {
                 markdown_core_lookup_table_put(mem, &session->lookups, bundles[i].unit->id, bundles[i].record);
                 bundles[i].record.labels = NULL; // moved into the table
+                bundles[i].record.positions = NULL;
                 bundles[i].record.count = 0;
             }
         }

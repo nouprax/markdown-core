@@ -426,7 +426,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     session_footnote_shift
     session_head_defs
     session_footnote_defs
-    session_quote_suffix)
+    session_quote_suffix
+    session_def_spread)
 foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
     markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
                            ${case})
