@@ -198,9 +198,9 @@ static const cc_case_entry CC_CASES[] = {
 #define CC_SESSION_FOOTNOTE_DEF_WIDTH 18 /* strlen("[^dNNNNNN]: aaaa\n\n") */
 #define CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET 12
 #define CC_SESSION_FOOTNOTE_DEF_USE "uses [^d000000] tail\n\nplain para line\n"
-/* The quote-suffix corpus pins the resolved half of the resync-delay pair:
+/* The quote-suffix corpus pins the resolved half of the reflow-delay pair:
  * blank-separated top-level quotes restart cleanly, so a front edit must
- * resync at the first boundary regardless of how many quotes follow. */
+ * reflow at the first boundary regardless of how many quotes follow. */
 #define CC_SESSION_QUOTE_STANZA "> q aaaa line\n\n"
 #define CC_SESSION_QUOTE_BODY_OFFSET 4
 /* The def-spread corpus interleaves a definition with a unit referencing

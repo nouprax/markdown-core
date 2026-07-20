@@ -18,11 +18,11 @@
 //                      the last CLEAN_START document child at or before the
 //                      first edited byte (byte 0 when none). Children before
 //                      it are untouched prefix; it and everything after it
-//                      until resync are the stale region.
+//                      until reflow are the stale region.
 //   2. Staged reparse — the stale bytes feed line by line through a fresh
 //                      parser sharing the session's reference map. Once past
 //                      the last edited byte, each clean line boundary that
-//                      maps onto an old CLEAN_START child resyncs: the old
+//                      maps onto an old CLEAN_START child reflows: the old
 //                      suffix survives wholesale with a one-line relative
 //                      shift per child. Otherwise parsing continues to EOF
 //                      (graceful degradation, never worse than a full parse).
@@ -127,7 +127,7 @@ static bool line_seals(const unsigned char *bytes, size_t length, size_t offset)
 
 /* The staged parser's open chain is nonempty and consists solely of footnote
  * definitions. Together with a sealing upcoming line this makes the position
- * a valid resync boundary: a one-shot parse closes those definitions on that
+ * a valid reflow boundary: a one-shot parse closes those definitions on that
  * very line, so finalizing them before the splice reproduces its tree, ends
  * dated to the line before the boundary either way. */
 static bool parser_open_defs_only(const markdown_core_parser *parser) {
@@ -193,7 +193,7 @@ bool markdown_core_session_index_clean_children(
         }
     }
     // Head sentinels: vanished clean definition paragraphs leave no tree
-    // node but remain safe restart and resync points; one entry per
+    // node but remain safe restart and reflow points; one entry per
     // distinct line, and every one precedes the first real child.
     for (entry = map ? map->refs : NULL; entry; entry = entry->next) {
         if (entry->owner == 0 && entry->from_vanished_clean) {
@@ -1746,7 +1746,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     }
 
     // Routing: a restart at the document head with no clean boundary at or
-    // beyond the damage reparses everything and no resync can cut the
+    // beyond the damage reparses everything and no reflow can cut the
     // suffix. The full path runs the same parse with wholesale table and
     // index rebuilds instead of per-node splice maintenance (measured up to
     // 31% cheaper on whole-document shapes), and falling back here is free —
@@ -1757,7 +1757,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
     }
 
-    // --- 2. staged reparse with resync probing ---
+    // --- 2. staged reparse with reflow probing ---
     parser = markdown_core_session_acquire_parser(session, error);
     if (!parser) {
         goto failed;
@@ -1818,7 +1818,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     }
     total_lines = parser->line_number;
     last_line_length = parser->last_line_length;
-    // On resync the last fed line is the one just before the boundary; its
+    // On reflow the last fed line is the one just before the boundary; its
     // terminator-stripped length re-dates transplanted ends below.
     staged_tail_length = parser->last_line_length;
 
@@ -2001,7 +2001,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         // Rebuilt units seal like parse roots (absolute start kept, children
         // relativized), then take the replaced unit's stored start: the
         // position did not change, so the parent-relative value is already
-        // right — and stays right when a resync later line-shifts a suffix
+        // right — and stays right when a reflow later line-shifts a suffix
         // ancestor.
         size_t i;
         for (i = 0; i < dependent_count; i++) {
@@ -2578,7 +2578,7 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         session->revision = new_rev;
         session->restarted_commits++;
         if (boundary_pos >= 0) {
-            session->resynced_commits++;
+            session->reflowed_commits++;
         }
         session->pending.dirty = false;
         session->pending.new_lo = 0;
