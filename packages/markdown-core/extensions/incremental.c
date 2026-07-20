@@ -8,6 +8,7 @@
 #include "directive.h"
 
 #include <node.h>
+#include <inlines.h>
 #include <parser.h>
 #include <references.h>
 
@@ -1948,6 +1949,56 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         }
     }
 
+    // --- inline seam: reuse the restart unit's inert inline prefix ---
+    // When the first staged unit reparses the restart paragraph and both
+    // contents share a line-aligned prefix free of inline special
+    // characters, that prefix's inline nodes (one Text and one break per
+    // line) survive as-is: inline parsing starts at the seam
+    // (S_parse_node_inlines), adoption skips the reserved old children
+    // (adopt_push), and the splice transplants them into the staged leaf.
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
+        restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
+        parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !parser->root->first_child->extension && parser->root->first_child->start_line != 0 &&
+        parser->root->first_child->start_column == restart_node->start_column &&
+        parser->root->first_child->internal_offset == restart_node->internal_offset &&
+        markdown_core_node_owns_inlines(parser->root->first_child)) {
+        markdown_core_node *staged_leaf = parser->root->first_child;
+        bufsize_t seam;
+        // The scan must see every attached extension's special characters
+        // (directive ':', strikethrough '~', ...); outside process_inlines
+        // they are not yet folded into the parser's table.
+        markdown_core_parser_manage_extensions_special_characters(parser, true);
+        seam = markdown_core_inline_seam_prefix(
+            parser,
+            (const unsigned char *)restart_node->content.ptr,
+            (bufsize_t)restart_node->content.size,
+            (const unsigned char *)staged_leaf->content.ptr,
+            (bufsize_t)staged_leaf->content.size,
+            parser->options
+        );
+        markdown_core_parser_manage_extensions_special_characters(parser, false);
+        if (seam > 0) {
+            staged_leaf->user_data = (void *)(uintptr_t)((size_t)seam + 1);
+        }
+    }
+
     // --- 4. inline phase over the staged region and the dependent units ---
     // Unlimited budget: the estimate check below proves a one-shot parse
     // stays within its own budget, so no lookup can be denied in either.
@@ -2443,6 +2494,64 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                         anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
                 }
             }
+        }
+
+        // Inline seam transplant: the reserved prefix children move from the
+        // replaced leaf into its staged successor ahead of the reparsed
+        // suffix, keeping their ids, revisions, sealed positions, and delta
+        // silence; the stale walks below then never see them.
+        if (staged_first && staged_first->user_data && first_stale && first_stale == restart_node) {
+            bufsize_t seam = (bufsize_t)((uintptr_t)staged_first->user_data - 1);
+            size_t reserved = 0;
+            bufsize_t b;
+            for (b = 0; b < seam; b++) {
+                if (staged_first->content.ptr[b] == '\n') {
+                    reserved += 2;
+                }
+            }
+            if (reserved) {
+                markdown_core_node *head = first_stale->first_child;
+                markdown_core_node *tail = head;
+                markdown_core_node *walk;
+                size_t k;
+                for (k = 1; k < reserved; k++) {
+                    tail = tail->next;
+                }
+                first_stale->first_child = tail->next;
+                if (tail->next) {
+                    tail->next->prev = NULL;
+                } else {
+                    first_stale->last_child = NULL;
+                }
+                tail->next = NULL;
+                for (walk = head; walk; walk = walk->next) {
+                    walk->parent = staged_first;
+                    // Text literals that borrow the parent block's content
+                    // buffer must move to the staged leaf's identical prefix
+                    // bytes — the old buffer dies with the old leaf. Only
+                    // chunks provably inside that buffer rebase: unallocated
+                    // chunks can also point at immortal static tokens
+                    // (handle_period's ".", handle_hyphen's "-"), which must
+                    // stay exactly where they are.
+                    if (walk->type == MARKDOWN_CORE_NODE_TEXT && walk->as.literal.alloc == 0 && walk->as.literal.data) {
+                        uintptr_t data = (uintptr_t)walk->as.literal.data;
+                        uintptr_t lo = (uintptr_t)first_stale->content.ptr;
+                        uintptr_t hi = lo + first_stale->content.size;
+                        if (data >= lo && data + walk->as.literal.len <= hi) {
+                            walk->as.literal.data = staged_first->content.ptr + (data - lo);
+                        }
+                    }
+                }
+                if (staged_first->first_child) {
+                    tail->next = staged_first->first_child;
+                    staged_first->first_child->prev = tail;
+                } else {
+                    staged_first->last_child = tail;
+                }
+                staged_first->first_child = head;
+                head->prev = NULL;
+            }
+            staged_first->user_data = NULL;
         }
 
         // Id table: repoint adopted ids at their staged nodes, then drop

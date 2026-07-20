@@ -486,6 +486,19 @@ int sr_replay_commit(sr_replay *replay) {
         memcmp(session_dump, reference_dump, reference_dump_length) != 0) {
         sr_fail(replay, "session dump diverged from the one-shot parse");
         ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)session_dump);
+        if (getenv("SR_DEBUG_DUMPS")) {
+            size_t di;
+            fprintf(stderr, "=== text (%zu) ===\n", replay->shadow.length);
+            for (di = 0; di < replay->shadow.length; di++) {
+                fprintf(stderr, "%02x%s", replay->shadow.bytes[di], (di + 1) % 24 ? " " : "\n");
+            }
+            fprintf(
+                stderr,
+                "\n=== reference ===\n%s\n=== session ===\n%s\n",
+                (const char *)reference_dump,
+                (const char *)session_dump
+            );
+        }
         goto done;
     }
 
