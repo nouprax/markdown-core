@@ -646,7 +646,7 @@ static const eq_script_step EQ_PREV_LINE_LENGTH_STEPS[] = {
     {"x?>", 0, 1, "y"},
 };
 
-/* Lengthening the line just before a resync boundary (trailing spaces on the
+/* Lengthening the line just before a reflow boundary (trailing spaces on the
  * closing fence) must re-date a transplanted first suffix child that closed
  * inside its own first line: its end borrows that staged line's length. */
 static const eq_script_step EQ_TRANSPLANT_END_STEPS[] = {
@@ -720,7 +720,7 @@ static const eq_script_step EQ_REF_CARET_FLIP_STEPS[] = {
  * rebuild (the staged run must precede the clone runs), winner-delta
  * rebuilds of paragraphs holding references (top-level and quoted), and a
  * definition deleted from the tail cluster. The staged insert ends in a
- * plain paragraph so the resync lands right after it rather than riding an
+ * plain paragraph so the reflow lands right after it rather than riding an
  * open footnote definition past the dependents. */
 static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
     {"filler", 0, 6, "middle"},
@@ -733,14 +733,14 @@ static const eq_script_step EQ_FOOTNOTE_SITES_STEPS[] = {
     {"[l]: /three\n", 0, 12, "coda[^e]\n\n[^e]: e body\n\n[l]: /four\n"},
 };
 
-/* A leading definition cluster restarts and resyncs inside itself: the
+/* A leading definition cluster restarts and reflows inside itself: the
  * vanished paragraphs anchor sentinel clean entries, so a head edit
  * retracts only the reparsed definitions while dependents re-refine. The
  * script also walks a definition in and out of tree existence (a paragraph
  * that stops vanishing turns its head entries into anchored ones). */
 static const eq_script_step EQ_HEAD_DEFS_STEPS[] = {
     {"/c1", 0, 3, "/c9"},                 /* retarget the cluster's last paragraph */
-    {"/a1", 0, 3, "/a9"},                 /* retarget the first; resync mid-cluster */
+    {"/a1", 0, 3, "/a9"},                 /* retarget the first; reflow mid-cluster */
     {"[c]: /c9\n", 0, 0, "[n]: /n1\n\n"}, /* a new definition paragraph arrives */
     {"[n]: /n1\n\n", 0, 10, ""},          /* and leaves again */
     {"[c]: /c9\n", 9, 0, "\n"},           /* widen the gap: a pure shift below the cluster */
@@ -758,7 +758,7 @@ static const eq_script_step EQ_HEAD_DEFS_STEPS[] = {
  * line forces restart planning to back off a damaged sealing anchor. */
 static const eq_script_step EQ_FOOTNOTE_DEFS_STEPS[] = {
     {"alpha", 0, 5, "ALPHA"},             /* head body edit */
-    {"beta", 0, 4, "BETA"},               /* interior body edit; resync mid-cluster */
+    {"beta", 0, 4, "BETA"},               /* interior body edit; reflow mid-cluster */
     {"gamma", 0, 5, "GAMMA"},             /* tail body edit */
     {"[^b]:", 4, 1, ""},                  /* colon leaves: definition -> paragraph */
     {"[^b]", 4, 0, ":"},                  /* and returns */

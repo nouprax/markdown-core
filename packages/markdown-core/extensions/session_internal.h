@@ -207,7 +207,7 @@ typedef struct {
 } markdown_core_unit_lookups;
 
 // One CLEAN_START document child of the committed tree, in document order.
-// These are the only safe incremental restart and resync points; children
+// These are the only safe incremental restart and reflow points; children
 // without the flag are fused to their predecessor and always reparse with it.
 typedef struct {
     size_t start_byte;        // byte offset of the child's first line, current text
@@ -279,11 +279,11 @@ struct markdown_core_session {
     size_t expansion_estimate;
     // Restart-locality inventory (white-box, asserted by fallback_runner):
     // full-reparse commits, incremental restarts, and restarts that
-    // resynced at a boundary. Degraded-to-full cases stay counted instead
+    // reflowed at a boundary. Degraded-to-full cases stay counted instead
     // of accumulating silently.
     size_t full_commits;
     size_t restarted_commits;
-    size_t resynced_commits;
+    size_t reflowed_commits;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty
     // reference map, extension attachments) is commit-invariant, so
@@ -568,7 +568,7 @@ typedef enum {
 } markdown_core_incremental_result;
 
 /** Attempts the incremental commit pipeline (restart plan, staged reparse
- * with resync, suffix transplant, id adoption, footnote refresh, seal).
+ * with reflow, suffix transplant, id adoption, footnote refresh, seal).
  * Transactional: on FAILED or FALLBACK the committed tree, id table, refmap,
  * footnote index, and geometry are exactly as before the call. Defined in
  * incremental.c. */
