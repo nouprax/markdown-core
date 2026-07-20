@@ -1068,6 +1068,62 @@ done:
     return result;
 }
 
+/* Review regression (#35): with smart punctuation off, '.' and '-' produce
+ * Text nodes backed by immortal static string literals, not the block's
+ * content buffer. A seam that covers such a line must transplant them
+ * without rebasing; a blind rebase pointed them into arbitrary staged
+ * memory. The incremental dump must match a fresh session's. */
+static int case_seam_static_literal(void) {
+    static const char initial[] = "\n.\nold\n\nnext\n";
+    markdown_core_parse_options options;
+    markdown_core_session *session = NULL;
+    markdown_core_session *fresh = NULL;
+    uint8_t *incremental_dump = NULL;
+    size_t incremental_length = 0;
+    uint8_t *fresh_dump = NULL;
+    size_t fresh_length = 0;
+    int result = -1;
+
+    markdown_core_parse_options_init(&options);
+    options.smart_punctuation = false;
+
+    session = markdown_core_session_open(&options, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
+        goto done;
+    }
+    /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
+    if (!markdown_core_session_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
+        goto done;
+    }
+    incremental_dump = fb_session_dump(session, &incremental_length);
+
+    fresh = markdown_core_session_open(&options, NULL);
+    if (!fresh ||
+        !markdown_core_session_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
+        !markdown_core_session_commit(fresh, NULL, NULL)) {
+        fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
+        goto done;
+    }
+    fresh_dump = fb_session_dump(fresh, &fresh_length);
+
+    if (!incremental_dump || !fresh_dump || incremental_length != fresh_length ||
+        memcmp(incremental_dump, fresh_dump, fresh_length) != 0) {
+        fputs("FAILED: seam_static_literal: incremental dump diverged from a fresh session\n", stderr);
+        goto done;
+    }
+    result = 0;
+done:
+    free(incremental_dump);
+    free(fresh_dump);
+    markdown_core_session_free(session);
+    markdown_core_session_free(fresh);
+    return result;
+}
+
 static int case_session_oom_sweep(void) { return fb_session_sweep(false); }
 
 /* The pooled sweep drives the same script through a session arena over the
@@ -1258,6 +1314,7 @@ static const fb_case_entry FB_CASES[] = {
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},
+    {"seam_static_literal", case_seam_static_literal},
     {"session_oom_sweep", case_session_oom_sweep},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
     {"restart_locality_counters", case_restart_locality_counters},
