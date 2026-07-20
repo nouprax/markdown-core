@@ -1964,16 +1964,14 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // transplant is only sound when the two leaves share the same column
     // environment (start column and internal offset) and neither is a
     // position-free synthesized block (start_line 0).
-    if (getenv("SEAM_DEBUG") && restart_node) {
-        fprintf(
-            stderr,
-            "[seam?] t=%d sealed=%d kids=%d | ft=%d\n",
-            restart_node->type,
-            !!(restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE),
-            restart_node->first_child != NULL,
-            parser->root && parser->root->first_child ? parser->root->first_child->type : -1
-        );
-    }
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
     if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
         restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
         parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
