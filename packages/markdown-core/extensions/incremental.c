@@ -1960,6 +1960,20 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // transplant is only sound when the two leaves share the same column
     // environment (start column and internal offset) and neither is a
     // position-free synthesized block (start_line 0).
+    // Columns are raw line-local values that sealing never adjusts, so the
+    // transplant is only sound when the two leaves share the same column
+    // environment (start column and internal offset) and neither is a
+    // position-free synthesized block (start_line 0).
+    if (getenv("SEAM_DEBUG") && restart_node) {
+        fprintf(
+            stderr,
+            "[seam?] t=%d sealed=%d kids=%d | ft=%d\n",
+            restart_node->type,
+            !!(restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE),
+            restart_node->first_child != NULL,
+            parser->root && parser->root->first_child ? parser->root->first_child->type : -1
+        );
+    }
     if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
         restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
         parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
@@ -2514,13 +2528,20 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 tail->next = NULL;
                 for (walk = head; walk; walk = walk->next) {
                     walk->parent = staged_first;
-                    // Text literals borrow the parent block's content
-                    // buffer; the old leaf's buffer dies with it, so rebase
-                    // each borrowed chunk onto the staged leaf's identical
-                    // prefix bytes.
+                    // Text literals that borrow the parent block's content
+                    // buffer must move to the staged leaf's identical prefix
+                    // bytes — the old buffer dies with the old leaf. Only
+                    // chunks provably inside that buffer rebase: unallocated
+                    // chunks can also point at immortal static tokens
+                    // (handle_period's ".", handle_hyphen's "-"), which must
+                    // stay exactly where they are.
                     if (walk->type == MARKDOWN_CORE_NODE_TEXT && walk->as.literal.alloc == 0 && walk->as.literal.data) {
-                        walk->as.literal.data =
-                            staged_first->content.ptr + (walk->as.literal.data - first_stale->content.ptr);
+                        uintptr_t data = (uintptr_t)walk->as.literal.data;
+                        uintptr_t lo = (uintptr_t)first_stale->content.ptr;
+                        uintptr_t hi = lo + first_stale->content.size;
+                        if (data >= lo && data + walk->as.literal.len <= hi) {
+                            walk->as.literal.data = staged_first->content.ptr + (data - lo);
+                        }
                     }
                 }
                 if (staged_first->first_child) {

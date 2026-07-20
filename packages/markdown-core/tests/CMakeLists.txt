@@ -246,6 +246,7 @@ if(MARKDOWN_CORE_STATIC)
         map_prepare_oom
         constructor_oom
         oom_sweep
+        seam_static_literal
         session_oom_sweep
         session_oom_sweep_pooled
         restart_locality_counters)
