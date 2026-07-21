@@ -53,6 +53,14 @@ for (const variant of moduleMetadata.variants) {
 }
 writeFileSync(modulePath, `${JSON.stringify(moduleMetadata, null, 2)}\n`);
 
+// The staged repository carries Maven checksum sidecars next to every file;
+// the two files mutated above must have theirs recomputed or a
+// checksum-verifying consumer (and a Central upload) rejects the merged
+// publication.
+for (const mutated of [jvmJar, modulePath]) {
+    refreshSidecars(mutated);
+}
+
 const entries = execFileSync("unzip", ["-Z1", jvmJar], { encoding: "utf8" });
 for (const required of [
     "com/nouprax/markdown/core/native/linux-x64/libmarkdown_core_kotlin.so",
@@ -89,4 +97,12 @@ function walk(directory, prefix = "") {
 
 function digest(algorithm, bytes) {
     return createHash(algorithm).update(bytes).digest("hex");
+}
+
+function refreshSidecars(file) {
+    const contents = readFileSync(file);
+    for (const algorithm of ["md5", "sha1", "sha256", "sha512"]) {
+        const sidecar = `${file}.${algorithm}`;
+        if (existsSync(sidecar)) writeFileSync(sidecar, digest(algorithm, contents));
+    }
 }
