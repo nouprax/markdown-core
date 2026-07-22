@@ -987,6 +987,9 @@ jobs:
                   name: c-ubuntu-latest-clang-ON-${{ github.sha }}
                   path: build/ci-artifacts/c
             - name: Run C benchmark suite without building
+              # The explicit bash shell adds -o pipefail; the default run
+              # shell would let tee's zero status mask a benchmark failure.
+              shell: bash
               run: |
                   mkdir -p build/pr-metrics-logs
                   scripts/run-c-test-artifact.sh build/ci-artifacts/c benchmark \
@@ -1025,6 +1028,9 @@ jobs:
                   name: kotlin-host-linux-x64-${{ github.sha }}
                   path: build/ci-artifacts/kotlin-linuxX64
             - name: Run Kotlin benchmark suite without building
+              # The explicit bash shell adds -o pipefail; the default run
+              # shell would let tee's zero status mask a benchmark failure.
+              shell: bash
               run: |
                   mkdir -p build/pr-metrics-logs
                   scripts/run-kotlin-host-test-artifact.sh \
@@ -1060,6 +1066,9 @@ jobs:
                   name: es-test-${{ github.sha }}
                   path: build/ci-artifacts/es
             - name: Run ES benchmark suite without building
+              # The explicit bash shell adds -o pipefail; the default run
+              # shell would let tee's zero status mask a benchmark failure.
+              shell: bash
               run: |
                   mkdir -p build/pr-metrics-logs
                   scripts/run-es-test-artifact.sh build/ci-artifacts/es node-benchmark \
@@ -1097,6 +1106,9 @@ jobs:
                   name: swift-test-${{ github.sha }}
                   path: build/ci-artifacts/swift
             - name: Run Swift benchmark suite without building
+              # The explicit bash shell adds -o pipefail; the default run
+              # shell would let tee's zero status mask a benchmark failure.
+              shell: bash
               run: |
                   mkdir -p build/pr-metrics-logs
                   scripts/run-swift-test-artifact.sh build/ci-artifacts/swift macos-benchmark \
