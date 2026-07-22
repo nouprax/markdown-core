@@ -395,11 +395,21 @@ jobs:
                   cp release-npm/*.tgz release-files/
                   archive_version=$(tar -xOf release-npm/*.tgz package/package.json | jq -r '.version')
                   test "$archive_version" = "$(cat VERSION)"
+            - name: Publish through the npm trusted publisher
+              run: |
+                  version=$(cat VERSION)
+                  if npm view "@nouprax/es-markdown-core@$version" version \
+                      --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+                      echo "@nouprax/es-markdown-core@$version is already published"
+                  else
+                      npm publish ./release-npm/*.tgz --access public
+                  fi
             - name: Commit the validated Central deployment
-              # The original run may have failed between the npm publish and
-              # the Central commit; the deployment must reach PUBLISHED
-              # before the GitHub Release exists. Committing is idempotent
-              # here: an already-published deployment short-circuits.
+              # Runs after the idempotent npm publish, preserving the formal
+              # ordering: Central commit is the irreversible step and must
+              # not precede a possibly-failing npm publish. Committing is
+              # idempotent here: an already-published deployment
+              # short-circuits, so resumes from any failure point converge.
               env:
                   DEPLOYMENT_ID: ${{ inputs.central-deployment-id }}
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
@@ -416,15 +426,6 @@ jobs:
                           echo "Central deployment $DEPLOYMENT_ID is not resumable from state: $state" >&2
                           exit 1 ;;
                   esac
-            - name: Publish through the npm trusted publisher
-              run: |
-                  version=$(cat VERSION)
-                  if npm view "@nouprax/es-markdown-core@$version" version \
-                      --registry=https://registry.npmjs.org >/dev/null 2>&1; then
-                      echo "@nouprax/es-markdown-core@$version is already published"
-                  else
-                      npm publish ./release-npm/*.tgz --access public
-                  fi
             - name: Create release checksums
               run: scripts/create-release-checksums.sh release-files
             - name: Attest release artifact provenance
