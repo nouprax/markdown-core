@@ -241,10 +241,14 @@ search '^        environment: release$' "$release"
 search '^    quality:$' "$release"
 search '^        name: Quality Gate - Release$' "$release"
 search '^        uses: \./\.github/workflows/ci\.yml$' "$release"
-if search 'GITHUB_SHA|check-runs|merge-base|CodeQL gate|Required gates|Development branch gates' "$release"; then
+# The ban is on consulting historical check results; the tag-ancestry
+# guard (git merge-base --is-ancestor against origin/main) is tag-local
+# validation and stays allowed.
+if search 'GITHUB_SHA|check-runs|CodeQL gate|Required gates|Development branch gates' "$release"; then
     echo "formal release must run tag-local quality gates instead of querying historical checks" >&2
     exit 1
 fi
+search 'merge-base --is-ancestor HEAD origin/main' "$release"
 if [ "$(grep -c '^        needs: quality$' "$release")" -ne 5 ]; then
     echo "every initial release artifact job must wait for tag-local quality gates" >&2
     exit 1
