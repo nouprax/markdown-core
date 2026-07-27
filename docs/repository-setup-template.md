@@ -896,6 +896,17 @@ if [ "$actual_default" != "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
+# Linear history: squash is the only merge method, and every squash commit
+# is titled by the pull request ("title (#N)" + description body). The
+# merge queue builds its commits from these same settings.
+gh api --method PATCH "repos/$GH_REPO" \
+  -F allow_squash_merge=true \
+  -F allow_merge_commit=false \
+  -F allow_rebase_merge=false \
+  -f squash_merge_commit_title=PR_TITLE \
+  -f squash_merge_commit_message=PR_BODY >/dev/null
+echo "merge policy: squash-only, PR-title squash messages"
+
 upsert_ruleset() {
   local name=$1
   local payload=$2
