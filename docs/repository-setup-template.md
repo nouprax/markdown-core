@@ -857,6 +857,8 @@ TAG_RULESET_NAME=${TAG_RULESET_NAME:-release tag protection}
 TAG_PATTERN=${TAG_PATTERN:-v*.*.*}
 RULESET_ENFORCEMENT=${RULESET_ENFORCEMENT:-evaluate}
 PREVENT_SELF_REVIEW=${PREVENT_SELF_REVIEW:-false}
+MERGE_QUEUE=${MERGE_QUEUE:-true}
+MAIN_ADMIN_BYPASS=${MAIN_ADMIN_BYPASS:-true}
 
 case "$RULESET_ENFORCEMENT" in
   disabled|evaluate|active) ;;
@@ -867,6 +869,16 @@ case "$PREVENT_SELF_REVIEW" in
   true|false) ;;
   *) echo "PREVENT_SELF_REVIEW must be true or false" >&2; exit 2 ;;
 esac
+
+for flag in MERGE_QUEUE MAIN_ADMIN_BYPASS; do
+  case "${!flag}" in
+    true|false) ;;
+    *)
+      echo "$flag must be true or false" >&2
+      exit 2
+      ;;
+  esac
+done
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -895,6 +907,18 @@ if [ "$actual_default" != "$DEFAULT_BRANCH" ]; then
   echo "default branch is '$actual_default', expected '$DEFAULT_BRANCH'" >&2
   exit 1
 fi
+
+# Linear history: squash is the only merge method. The title/message
+# settings are repository defaults — a direct merge can still edit them
+# before confirming — while merge-queue commits apply them mechanically
+# ("title (#N)" + description body).
+gh api --method PATCH "repos/$GH_REPO" \
+  -F allow_squash_merge=true \
+  -F allow_merge_commit=false \
+  -F allow_rebase_merge=false \
+  -f squash_merge_commit_title=PR_TITLE \
+  -f squash_merge_commit_message=PR_BODY >/dev/null
+echo "merge policy: squash-only; squash messages default to the PR title"
 
 upsert_ruleset() {
   local name=$1
@@ -965,14 +989,20 @@ if [ "$policy_count" -ne 1 ]; then
   exit 1
 fi
 
+# The merge queue keeps every PR's required checks green against the
+# latest default branch and squashes with the repository's message
+# defaults. The admin bypass mirrors the operator's standing exception;
+# disable either through its variable for the hardened shape.
 jq -n \
   --arg name "$MAIN_RULESET_NAME" \
-  --arg enforcement "$RULESET_ENFORCEMENT" '{
+  --arg enforcement "$RULESET_ENFORCEMENT" \
+  --argjson queue "$MERGE_QUEUE" \
+  --argjson admin_bypass "$MAIN_ADMIN_BYPASS" '{
     name: $name,
     target: "branch",
     enforcement: $enforcement,
     conditions: {ref_name: {exclude: [], include: ["~DEFAULT_BRANCH"]}},
-    rules: [
+    rules: ([
       {type: "deletion"},
       {type: "non_fast_forward"},
       {type: "pull_request", parameters: {
@@ -990,8 +1020,20 @@ jq -n \
           {context: "CodeQL gate"}
         ]
       }}
-    ],
-    bypass_actors: []
+    ] + (if $queue then [
+      {type: "merge_queue", parameters: {
+        merge_method: "SQUASH",
+        grouping_strategy: "ALLGREEN",
+        max_entries_to_build: 5,
+        min_entries_to_merge: 1,
+        max_entries_to_merge: 5,
+        min_entries_to_merge_wait_minutes: 5,
+        check_response_timeout_minutes: 60
+      }}
+    ] else [] end)),
+    bypass_actors: (if $admin_bypass then [
+      {actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always"}
+    ] else [] end)
   }' >"$tmp/main-ruleset.json"
 upsert_ruleset "$MAIN_RULESET_NAME" "$tmp/main-ruleset.json"
 
