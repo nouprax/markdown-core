@@ -25,6 +25,15 @@ else
     }
 fi
 
+# Supply-chain pinning: every workflow action must reference an immutable
+# commit SHA (a movable major tag lets a tag replacement change the code CI
+# and release jobs execute without a reviewed diff).
+if grep -rhoE 'uses: [^ ]+' .github/workflows/ | grep -vE 'uses: [^ ]+@[0-9a-f]{40}$' | grep -v 'uses: \./' | grep -q .; then
+    echo "workflow action references must be pinned to a full commit SHA:" >&2
+    grep -rnE 'uses: [^ ]+' .github/workflows/ | grep -vE '@[0-9a-f]{40}( #.*)?$' | grep -v 'uses: \./' >&2
+    exit 1
+fi
+
 for required in \
     "$ci" \
     "$codeql" \
