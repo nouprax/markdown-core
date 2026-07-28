@@ -6,13 +6,25 @@ public enum class WalkEvent {
 }
 
 public object MarkupWalker {
+    /**
+     * Walks the document depth-first, dispatching each node to [visitor] in
+     * preorder. Scope-free by construction: a structural visitor neither
+     * pays scope materialization nor depends on the snapshot's resolver
+     * state, so a retained snapshot traverses regardless of whether it ever
+     * resolved scopes.
+     */
     public fun walk(
         document: Document,
         visitor: MarkupVisitor<Unit>,
     ) {
-        walk(document) { event, node, _ ->
-            if (event == WalkEvent.ENTERING) {
-                node.accept(visitor)
+        val stack = ArrayDeque<Markup>()
+        stack.addLast(document)
+        while (stack.isNotEmpty()) {
+            val node = stack.removeLast()
+            node.accept(visitor)
+            val children = node.childValues()
+            for (index in children.indices.reversed()) {
+                stack.addLast(children[index])
             }
         }
     }
@@ -32,82 +44,114 @@ public object MarkupWalker {
         from: Markup,
         visit: (WalkEvent, Markup, Scope) -> Unit,
     ) {
-        val scope = document.scope(from)
-        visit(WalkEvent.ENTERING, from, scope)
-        from.walkChildren { child -> walk(document, child, visit) }
-        visit(WalkEvent.EXITING, from, scope)
+        // Nesting depth is input-controlled, so the traversal runs over an
+        // explicit frame stack: a document that parsed must also walk,
+        // whatever its depth. Children are pushed reversed so pops preserve
+        // the recursive ENTERING/EXITING order exactly.
+        val stack = ArrayDeque<WalkFrame>()
+        stack.addLast(WalkFrame.Enter(from))
+        while (stack.isNotEmpty()) {
+            when (val frame = stack.removeLast()) {
+                is WalkFrame.Exit -> {
+                    visit(WalkEvent.EXITING, frame.node, frame.scope)
+                }
+
+                is WalkFrame.Enter -> {
+                    val node = frame.node
+                    val scope = document.scope(node)
+                    visit(WalkEvent.ENTERING, node, scope)
+                    stack.addLast(WalkFrame.Exit(node, scope))
+                    val children = node.childValues()
+                    for (index in children.indices.reversed()) {
+                        stack.addLast(WalkFrame.Enter(children[index]))
+                    }
+                }
+            }
+        }
     }
 
-    private fun Markup.walkChildren(walkChild: (Markup) -> Unit) {
+    private sealed interface WalkFrame {
+        class Enter(
+            val node: Markup,
+        ) : WalkFrame
+
+        class Exit(
+            val node: Markup,
+            val scope: Scope,
+        ) : WalkFrame
+    }
+
+    private fun Markup.childValues(): kotlin.collections.List<Markup> =
         when (this) {
             is Document -> {
-                content.forEach(walkChild)
+                content
             }
 
             is BlockQuote -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Paragraph -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Heading -> {
-                content.forEach(walkChild)
+                content
             }
 
             is List -> {
-                items.forEach(walkChild)
+                items
             }
 
             is ListItem -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Table -> {
-                walkChild(header)
-                rows.forEach(walkChild)
+                buildList {
+                    add(header)
+                    addAll(rows)
+                }
             }
 
             is TableRow -> {
-                cells.forEach(walkChild)
+                cells
             }
 
             is TableCell -> {
-                content.forEach(walkChild)
+                content
             }
 
             is DirectiveBlock -> {
-                label?.forEach(walkChild)
-                content.forEach(walkChild)
+                label.orEmpty() + content
             }
 
             is FootnoteDefinition -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Emphasis -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Strong -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Strikethrough -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Link -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Image -> {
-                content.forEach(walkChild)
+                content
             }
 
             is Directive -> {
-                label?.forEach(walkChild)
+                label.orEmpty()
             }
 
             is ThematicBreak,
@@ -121,7 +165,8 @@ public object MarkupWalker {
             is HTML,
             is Formula,
             is FootnoteReference,
-            -> {}
+            -> {
+                emptyList()
+            }
         }
-    }
 }

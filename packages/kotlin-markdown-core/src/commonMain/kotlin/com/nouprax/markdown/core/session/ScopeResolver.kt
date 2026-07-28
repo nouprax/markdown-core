@@ -28,21 +28,38 @@ internal class ScopeResolver private constructor(
 ) {
     private object Detached
 
-    // CSession (pending) | Map<ULong, ScopeEntry> (materialized) |
-    // Detached. Reads between the owning session's mutating calls are safe
-    // by the native contract; the atomic keeps concurrent readers and the
-    // session's detach consistent with each other.
+    private object Materializing
+
+    // CSession (pending) | Materializing (one reader owns the native
+    // scopes() call) | Map<ULong, ScopeEntry> (materialized) | Detached.
+    // The Materializing state is what makes the native call atomic with the
+    // owning session's detach: a writer that wants to commit or close spins
+    // in detach() until the in-flight reader publishes its table, so the
+    // native session can never be mutated or freed under a reader.
     private val state = AtomicReference(initial)
 
     /**
      * Called by the owning session before the native tree is replaced or
-     * freed. A materialized resolver keeps answering from its cache.
+     * freed. Waits for an in-flight materialization to publish, then leaves
+     * a materialized resolver answering from its cache.
      */
     fun detach() {
         while (true) {
-            val current = state.load()
-            if (current !is CSession) return
-            if (state.compareAndSet(current, Detached)) return
+            when (val current = state.load()) {
+                is CSession -> {
+                    if (state.compareAndSet(current, Detached)) {
+                        return
+                    }
+                }
+
+                Materializing -> {
+                    materializeWaitHint()
+                }
+
+                else -> {
+                    return
+                }
+            }
         }
     }
 
@@ -68,7 +85,25 @@ internal class ScopeResolver private constructor(
         while (true) {
             when (val current = state.load()) {
                 is CSession -> {
-                    state.compareAndSet(current, WireDecoder.decodeScopes(current.scopes()))
+                    if (state.compareAndSet(current, Materializing)) {
+                        materializeProbe?.invoke()
+                        val table =
+                            try {
+                                WireDecoder.decodeScopes(current.scopes())
+                            } catch (failure: Throwable) {
+                                // The snapshot is still current: hand the
+                                // session back so another reader may retry,
+                                // and let a spinning detach reclaim it.
+                                state.store(current)
+                                throw failure
+                            }
+                        state.store(table)
+                        return table[rawValue]
+                    }
+                }
+
+                Materializing -> {
+                    materializeWaitHint()
                 }
 
                 Detached -> {
@@ -89,6 +124,11 @@ internal class ScopeResolver private constructor(
         /** Placeholder carried by mirror-internal [Document] values; every
          * exposed snapshot swaps in a live or materialized resolver. */
         val unresolvable = ScopeResolver(Detached)
+
+        /** Test seam: runs on the materializing reader between winning the
+         * state and issuing the native call, so interleaving tests can hold
+         * the reader exactly inside the window detach must respect. */
+        var materializeProbe: (() -> Unit)? = null
 
         fun live(session: CSession): ScopeResolver = ScopeResolver(session)
 
