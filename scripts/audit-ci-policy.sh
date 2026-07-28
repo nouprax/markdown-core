@@ -57,6 +57,23 @@ for required in \
     fi
 done
 
+# The repo-managed installers must stay content-pinned: the emsdk manager
+# to the immutable commit of its release tag, and the Python tool venvs to
+# hash-locked requirements so an index-side replacement cannot change the
+# bytes the tools run.
+grep -q 'EMSCRIPTEN_COMMIT=[0-9a-f]\{40\}' scripts/init-environment.sh || {
+    echo "init-environment.sh must pin the emsdk commit" >&2
+    exit 1
+}
+grep -q -- '--require-hashes' scripts/init-environment.sh || {
+    echo "init-environment.sh must install Python tools with --require-hashes" >&2
+    exit 1
+}
+grep -q -- '--require-hashes' scripts/format-cmake.sh || {
+    echo "format-cmake.sh must install Python tools with --require-hashes" >&2
+    exit 1
+}
+
 for adapter in \
     c \
     es \
