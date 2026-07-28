@@ -33,8 +33,13 @@ class WalkerTraversalTest {
     @Test
     fun adversarialNestingWalksAndDumpsBeyondTheCallStackBudget() {
         // 3072 nested quotes overflowed the recursive walker on the default
-        // JVM stack; the explicit frame stack must keep walking, dumping,
-        // and the delta path of an incremental commit working at 4096.
+        // JVM stack; the explicit frame stack must keep walking and the
+        // delta path of an incremental commit working at 4096. Walking is
+        // stack-bound but dumping is heap-bound — the canonical dump's
+        // per-line prefixes make dump bytes quadratic in depth, beyond the
+        // Android instrumentation heap at this depth — so full-depth
+        // verification is structural and dump equality is pinned at a
+        // depth whose volume every platform affords.
         val depth = 4096
         val source = "> ".repeat(depth) + "leaf\n"
         val document = Document.parse(source)
@@ -51,7 +56,6 @@ class WalkerTraversalTest {
         // Every node enters exactly once and exits exactly once: the
         // document, the quote chain, and the innermost paragraph and text.
         assertEquals(2 * (depth + 3), events)
-        assertTrue(document.dump().contains("BlockQuote"))
 
         val structural = RecordingVisitor()
         MarkupWalker.walk(document, structural)
@@ -59,6 +63,29 @@ class WalkerTraversalTest {
 
         MarkupSession().use { session ->
             session.append(source)
+            session.commit()
+            session.replace(depth * 2, depth * 2 + 4, "seed")
+            val second = session.commit()
+            var seedSeen = false
+            var secondEvents = 0
+            MarkupWalker.walk(second.document) { event, node, _ ->
+                secondEvents += 1
+                if (event == WalkEvent.ENTERING && node is Text) {
+                    seedSeen = node.literal == "seed"
+                }
+            }
+            assertEquals(2 * (depth + 3), secondEvents)
+            assertTrue(seedSeen)
+        }
+    }
+
+    @Test
+    fun deepIncrementalCommitDumpsIdenticallyToAOneShotParse() {
+        // Byte-for-byte dump equality for the deep delta path, at a depth
+        // whose quadratic dump volume fits every platform's test heap.
+        val depth = 512
+        MarkupSession().use { session ->
+            session.append("> ".repeat(depth) + "leaf\n")
             session.commit()
             session.replace(depth * 2, depth * 2 + 4, "seed")
             val second = session.commit()

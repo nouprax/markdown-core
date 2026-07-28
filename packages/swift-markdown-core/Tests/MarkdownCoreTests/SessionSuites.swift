@@ -1,3 +1,4 @@
+import Foundation
 import MarkdownCore
 import Testing
 
@@ -299,34 +300,71 @@ private final class ConflationDriver {
 }
 
 @Suite("depth") struct DepthSuite {
-    @Test("adversarial nesting walks, dumps, and commits beyond the call-stack budget")
-    func adversarialNestingDepth() throws {
-        // 4096 nested quotes overflowed the recursive walker; the explicit
-        // frame stack must keep parse, walk, dump, and the delta path of an
-        // incremental commit working at the same depth.
-        let depth = 4096
-        let source = String(repeating: "> ", count: depth) + "leaf\n"
-        let document = try Document.parse(source)
-
+    /// Primitive results ferried out of the worker threads; access is
+    /// sequenced by thread completion, never concurrent.
+    private final class Outcome: @unchecked Sendable {
+        var failure: String?
         var quoteEnters = 0
         var events = 0
-        MarkupWalker().walk(document) { event, node, _ in
-            events += 1
-            if event == .entering, node is BlockQuote { quoteEnters += 1 }
+        var dumpHasQuote = false
+        var commitMatchesReference = false
+    }
+
+    @Test("adversarial nesting walks, dumps, and commits beyond the call-stack budget")
+    func adversarialNestingDepth() throws {
+        // 4096 nested quotes overflowed the recursive walker. Two explicit
+        // stacks make the proof exact: deep value trees deallocate through
+        // recursive ARC releases, so every deep document lives and dies on
+        // a 16 MiB-stack thread, while the walk and dump run on a 512 KiB
+        // stack that recursive traversal at this depth could not survive.
+        let depth = 4096
+        let outcome = Outcome()
+        let finished = DispatchSemaphore(value: 0)
+        let owner = Thread {
+            defer { finished.signal() }
+            do {
+                let source = String(repeating: "> ", count: depth) + "leaf\n"
+                let document = try Document.parse(source)
+
+                let walked = DispatchSemaphore(value: 0)
+                let walker = Thread {
+                    defer { walked.signal() }
+                    var quoteEnters = 0
+                    var events = 0
+                    MarkupWalker().walk(document) { event, node, _ in
+                        events += 1
+                        if event == .entering, node is BlockQuote { quoteEnters += 1 }
+                    }
+                    outcome.quoteEnters = quoteEnters
+                    outcome.events = events
+                    outcome.dumpHasQuote = document.dump().contains("BlockQuote")
+                }
+                walker.stackSize = 512 * 1024
+                walker.start()
+                walked.wait()
+
+                let session = try MarkupSession()
+                try session.append(source)
+                _ = try session.commit()
+                try session.replace((depth * 2)..<(depth * 2 + 4), with: "seed")
+                let second = try session.commit()
+                let reference = try Document.parse(String(repeating: "> ", count: depth) + "seed\n")
+                outcome.commitMatchesReference = second.document.dump() == reference.dump()
+            } catch {
+                outcome.failure = String(describing: error)
+            }
         }
-        #expect(quoteEnters == depth)
+        owner.stackSize = 16 * 1024 * 1024
+        owner.start()
+        finished.wait()
+
+        #expect(outcome.failure == nil)
+        #expect(outcome.quoteEnters == depth)
         // Every node enters exactly once and exits exactly once: the
         // document, the quote chain, and the innermost paragraph and text.
-        #expect(events == 2 * (depth + 3))
-        #expect(document.dump().contains("BlockQuote"))
-
-        let session = try MarkupSession()
-        try session.append(source)
-        _ = try session.commit()
-        try session.replace((depth * 2)..<(depth * 2 + 4), with: "seed")
-        let second = try session.commit()
-        let reference = try Document.parse(String(repeating: "> ", count: depth) + "seed\n")
-        #expect(second.document.dump() == reference.dump())
+        #expect(outcome.events == 2 * (depth + 3))
+        #expect(outcome.dumpHasQuote)
+        #expect(outcome.commitMatchesReference)
     }
 }
 
