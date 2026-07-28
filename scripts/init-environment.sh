@@ -10,6 +10,9 @@ JAVA_VERSION=26
 XCODE_VERSION=26.6
 SWIFT_VERSION=6.3.3
 EMSCRIPTEN_VERSION=4.0.23
+# The emsdk repository commit of the 4.0.23 release tag; keep the pair in
+# lockstep when bumping the version.
+EMSCRIPTEN_COMMIT=c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
 CLANG_FORMAT_VERSION=22.1.8
 CMAKE_FORMAT_VERSION=0.6.13
 SWIFTLINT_VERSION=0.65.0
@@ -434,6 +437,16 @@ install_emscripten() {
         mkdir -p "$(dirname "$directory")"
         git clone --filter=blob:none https://github.com/emscripten-core/emsdk.git "$directory"
     fi
+    # Pin the emsdk manager itself to the immutable commit of the release
+    # tag matching EMSCRIPTEN_VERSION: a moved tag or new default-branch
+    # commit must never change the bytes this installer executes.
+    git -C "$directory" fetch --filter=blob:none origin "$EMSCRIPTEN_COMMIT"
+    git -C "$directory" checkout --quiet "$EMSCRIPTEN_COMMIT"
+    actual_commit=$(git -C "$directory" rev-parse HEAD)
+    [ "$actual_commit" = "$EMSCRIPTEN_COMMIT" ] || {
+        fail "emsdk checkout is $actual_commit, expected $EMSCRIPTEN_COMMIT"
+        return
+    }
     "$directory/emsdk" install "$EMSCRIPTEN_VERSION"
     "$directory/emsdk" activate "$EMSCRIPTEN_VERSION"
 }
@@ -444,7 +457,7 @@ install_tools() {
     if [ ! -x "$clang_directory/venv/bin/clang-format" ]; then
         python3 -m venv "$clang_directory/venv"
         "$clang_directory/venv/bin/python" -m pip install --disable-pip-version-check --quiet \
-            "clang-format==$CLANG_FORMAT_VERSION"
+            --require-hashes --requirement "$root/scripts/requirements/clang-format.txt"
     fi
     CMAKE_FORMAT_TOOL_DIR="$root/.tools/cmakelang/$CMAKE_FORMAT_VERSION" \
         scripts/format-cmake.sh --check
