@@ -8,8 +8,7 @@ VENV="$TOOL_DIR/venv"
 if [ ! -x "$VENV/bin/cmake-format" ] || ! "$VENV/bin/python" -c 'import yaml' 2>/dev/null; then
     python3 -m venv "$VENV"
     "$VENV/bin/python" -m pip install --disable-pip-version-check --quiet \
-        "cmakelang==$VERSION" \
-        "PyYAML==6.0.3"
+        --require-hashes --requirement "$(dirname "$0")/requirements/cmakelang.txt"
 fi
 
 actual_version=$("$VENV/bin/cmake-format" --version)
