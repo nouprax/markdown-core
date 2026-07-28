@@ -133,6 +133,14 @@ uint64_t es_node_id(const markdown_core_node *node) { return markdown_core_node_
 
 uint64_t es_node_revision(const markdown_core_node *node) { return markdown_core_node_get_revision(node); }
 
+const markdown_core_node *es_session_node_by_id(const markdown_core_session *session, uint64_t id) {
+    return markdown_core_session_node_by_id(session, id);
+}
+
+const markdown_core_node *es_node_parent(const markdown_core_node *node) {
+    return markdown_core_node_get_parent(node);
+}
+
 int32_t es_error_code(const markdown_core_error *error) {
     return (int32_t)markdown_core_error_get_code(error);
 }

@@ -413,3 +413,90 @@ test("sessions: worker threads replay sessions on isolated engine instances", as
         assert.deepEqual(dumps, references);
     }
 });
+
+test("sessions: lineages are unique across isolated worker runtimes", async () => {
+    // Every worker gets a lockstep-identical WASM instance: same allocator
+    // state, same coarse clocks. Distinct first-session lineages therefore
+    // prove the host-entropy source, not incidental timing.
+    const { Worker } = await import("node:worker_threads");
+    const lineages = await Promise.all(
+        Array.from(
+            { length: 8 },
+            () =>
+                new Promise((resolve, reject) => {
+                    const worker = new Worker(new URL("./worker-lineage.mjs", import.meta.url));
+                    worker.once("message", resolve);
+                    worker.once("error", reject);
+                })
+        )
+    );
+    assert.equal(new Set(lineages).size, lineages.length);
+});
+
+test("sessions: adversarial nesting decodes and commits beyond the JS call-stack budget", () => {
+    // Depth 8192 is four times the depth that overflowed the recursive
+    // decoder; the explicit-frame decoder must handle it in one-shot parse,
+    // first commit, and the delta path of a follow-up commit.
+    const depth = 8192;
+    const source = "> ".repeat(depth) + "leaf\n";
+    const reference = Document.parse(source);
+    let node = reference;
+    let levels = 0;
+    while (node.content.length === 1 && node.content[0].kind === "blockQuote") {
+        node = node.content[0];
+        levels += 1;
+    }
+    assert.equal(levels, depth);
+
+    const session = new MarkupSession();
+    try {
+        session.append(source);
+        session.commit();
+        session.replace(depth * 2, depth * 2 + 4, "seed");
+        const second = session.commit();
+        assert.equal(second.document.dump(), Document.parse("> ".repeat(depth) + "seed\n").dump());
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: a narrow edit in a wide document relinks instead of re-decoding siblings", () => {
+    // The delta path must reuse untouched root children as the same objects
+    // and only replace the edited one — the mechanism that keeps a small
+    // commit proportional to the delta, not to document width.
+    const width = 2000;
+    const session = new MarkupSession();
+    try {
+        session.append("a\n\n".repeat(width));
+        const first = session.commit();
+        session.replace(0, 1, "b");
+        const second = session.commit();
+        assert.equal(second.document.content.length, width);
+        assert.notEqual(second.document.content[0], first.document.content[0]);
+        assert.equal(second.document.content[0].content[0].literal, "b");
+        for (let index = 1; index < width; index += 1) {
+            assert.equal(second.document.content[index], first.document.content[index]);
+        }
+        assert.equal(second.document.dump(), Document.parse("b\n\n" + "a\n\n".repeat(width - 1)).dump());
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: an explicitly materialized snapshot stays usable across commits and close", () => {
+    const session = new MarkupSession();
+    try {
+        session.append("First\n\nSecond\n");
+        const first = session.commit();
+        // The explicit contract: materialize while current, stay
+        // self-contained forever after.
+        first.document.materialize();
+        session.append("\nThird\n");
+        session.commit();
+        session.close();
+        assert.equal(first.document.scope(first.document.content[1]).start.line, 3);
+        assert.ok(first.document.dump().includes("Paragraph"));
+    } finally {
+        session.close();
+    }
+});

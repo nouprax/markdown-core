@@ -1,6 +1,22 @@
+#if defined(_WIN32) && !defined(_CRT_RAND_S)
+// rand_s is the linkage-free CSPRNG on Windows and must be requested before
+// the first stdlib.h include.
+#define _CRT_RAND_S
+#endif
+#if (defined(__EMSCRIPTEN__) || defined(__wasi__)) && !defined(_GNU_SOURCE)
+// musl only declares getentropy outside strict-standard mode.
+#define _GNU_SOURCE
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#if defined(__EMSCRIPTEN__) || defined(__wasi__)
+#include <unistd.h>
+#elif !defined(__APPLE__) && !defined(_WIN32)
+#include <stdio.h>
+#endif
 
 #include "session_internal.h"
 
@@ -551,6 +567,36 @@ static bool commit_internal(
     return true;
 }
 
+// One 64-bit read from the host CSPRNG. Sessions stay free of any library-
+// owned RNG state: every source below is the platform's own, shared-nothing
+// entropy service.
+static bool session_host_entropy(uint64_t *value) {
+#if defined(__EMSCRIPTEN__) || defined(__wasi__)
+    // Standalone WASM lowers getentropy to the WASI random_get import; hosts
+    // without the import report failure here instead of trapping.
+    return getentropy(value, sizeof(*value)) == 0;
+#elif defined(__APPLE__)
+    arc4random_buf(value, sizeof(*value));
+    return true;
+#elif defined(_WIN32)
+    unsigned int low = 0;
+    unsigned int high = 0;
+    if (rand_s(&low) != 0 || rand_s(&high) != 0) {
+        return false;
+    }
+    *value = ((uint64_t)high << 32) | (uint64_t)low;
+    return true;
+#else
+    FILE *source = fopen("/dev/urandom", "rb");
+    bool complete = false;
+    if (source) {
+        complete = fread(value, sizeof(*value), 1, source) == 1;
+        fclose(source);
+    }
+    return complete;
+#endif
+}
+
 // --- public API -------------------------------------------------------------
 
 markdown_core_session *markdown_core_session_open_with_mem(
@@ -595,11 +641,19 @@ markdown_core_session *markdown_core_session_open_with_mem(
     session->revision = 0;
     session->record_lookups = true;
 
-    // Purely local entropy: no global RNG state. The lineage only has to make
-    // accidental cross-session id equality vanishingly unlikely.
+    // The address/time/clock mix alone is deterministic for the first
+    // session of lockstep-started isolated runtimes (one WASM instance per
+    // worker reproduces the same allocator state and coarse clocks), so the
+    // host CSPRNG carries the cross-runtime uniqueness contract. The local
+    // mix stays folded in as a best-effort fallback when the host read
+    // fails.
     uint64_t entropy = (uint64_t)(uintptr_t)session;
+    uint64_t host_entropy = 0;
     entropy ^= mix64((uint64_t)time(NULL));
     entropy ^= mix64((uint64_t)clock()) << 1;
+    if (session_host_entropy(&host_entropy)) {
+        entropy ^= host_entropy;
+    }
     session->lineage = mix64(entropy);
 
     if (!commit_internal(session, true, NULL, error)) {

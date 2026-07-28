@@ -109,6 +109,17 @@ final class ScopeResolver: Sendable {
 }
 
 extension Document {
+    /// Resolves and caches every scope of this snapshot now, making the
+    /// retained value self-contained regardless of later commits or session
+    /// deinitialization — the explicit form of the materialization that
+    /// `scope(of:)`, a walk, or `dump()` would perform implicitly on first
+    /// use. Call while the snapshot is current (before the owning session's
+    /// next successful commit). Idempotent; a one-shot `Document.parse`
+    /// result is always materialized.
+    public func materialize() {
+        resolver.materialize()
+    }
+
     /// Resolves the absolute scope of `node` within this snapshot, O(1)
     /// after the snapshot's one-time materialization.
     ///

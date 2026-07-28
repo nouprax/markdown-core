@@ -1757,6 +1757,40 @@ static void session_append_id_stability(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+/* The lineage contract requires collision resistance beyond the local
+ * address/time mix: sequential open/free pairs revisit the same allocator
+ * address within one wall-clock second, so distinct lineages here prove the
+ * host-entropy source is live. */
+static void session_lineage_entropy(test_batch_runner *runner) {
+    enum { SESSIONS = 64 };
+    uint64_t lineages[SESSIONS];
+    markdown_core_error *error = NULL;
+    bool distinct = true;
+    bool nonzero = true;
+    int i;
+    int j;
+
+    for (i = 0; i < SESSIONS; i++) {
+        markdown_core_session *session = markdown_core_session_open(NULL, &error);
+        OK(runner, session != NULL, "entropy session opens");
+        if (!session) {
+            markdown_core_error_free(error);
+            return;
+        }
+        lineages[i] = markdown_core_session_lineage(session);
+        markdown_core_session_free(session);
+    }
+    for (i = 0; i < SESSIONS; i++) {
+        nonzero = nonzero && lineages[i] != 0;
+        for (j = i + 1; j < SESSIONS; j++) {
+            distinct = distinct && lineages[i] != lineages[j];
+        }
+    }
+    OK(runner, nonzero, "every lineage is nonzero");
+    OK(runner, distinct, "sequential same-address sessions never share a lineage");
+    markdown_core_error_free(error);
+}
+
 static void session_suffix_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_session *session = markdown_core_session_open(NULL, &error);
@@ -2238,6 +2272,7 @@ int main(void) {
     autolink_source_pos(runner);
     session_streaming_equivalence(runner);
     session_append_id_stability(runner);
+    session_lineage_entropy(runner);
     session_suffix_id_stability(runner);
     session_utf8_split_append(runner);
     session_edit_errors(runner);

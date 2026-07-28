@@ -26,6 +26,8 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;
+    es_session_node_by_id(session: number, id: bigint): number;
+    es_node_parent(node: number): number;
     es_error_code(error: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;
@@ -69,7 +71,9 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     // reported value a full second past the previous call: the entropy mix
     // survives libc only at seconds granularity, and a freed-and-reallocated
     // session at the same address within the same wall-clock second would
-    // otherwise mint the same lineage.
+    // otherwise mint the same lineage. The clock is only the fallback layer
+    // of the seed; random_get below carries the cross-runtime uniqueness
+    // contract.
     let lastNanoseconds = 0n;
     const wasi = {
         clock_time_get: (_clockId: number, _precision: bigint, timePtr: number): number => {
@@ -78,6 +82,16 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             const now = BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6));
             lastNanoseconds = now > lastNanoseconds + 1_000_000_000n ? now : lastNanoseconds + 1_000_000_000n;
             new DataView(memory.buffer).setBigUint64(timePtr, lastNanoseconds, true);
+            return 0;
+        },
+        // Backs the engine's getentropy: per-session lineages must stay
+        // collision-resistant across isolated runtimes (workers, processes),
+        // where every deterministic input — allocator state, coarse clocks —
+        // repeats exactly.
+        random_get: (bufferPointer: number, bufferLength: number): number => {
+            const memory = memoryHolder.memory;
+            if (!memory) return 28; // WASI EINVAL; unreachable in practice
+            crypto.getRandomValues(new Uint8Array(memory.buffer, bufferPointer, bufferLength));
             return 0;
         },
         fd_close: (): number => 0,

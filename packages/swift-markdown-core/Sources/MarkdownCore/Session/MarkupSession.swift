@@ -18,6 +18,7 @@ public final class MarkupSession {
     var mirror: [UInt64: any Markup] = [:]
     private var resolver: ScopeResolver?
 
+    /// The session's options, normalized and immutable for its lifetime.
     public let options: ParseOptions
 
     /// Per-session random salt; nodes from different sessions never compare
@@ -28,6 +29,8 @@ public final class MarkupSession {
     /// the first commit.
     public private(set) var document: Document
 
+    /// Opens an empty session at revision 0; throws `ParseError` when the
+    /// native session cannot be allocated.
     public init(options: ParseOptions = .init()) throws {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?
@@ -220,17 +223,34 @@ public final class MarkupSession {
         rebuilds.reserveCapacity(
             delta.added.count + delta.changed.count + delta.bubbled.count
         )
+        // Memoized depths: the delta carries every ancestor of a change, so
+        // each parent link is walked once across the whole delta — O(delta),
+        // not O(depth) per entry.
+        var depths: [UInt64: Int] = [:]
+        func depth(of node: OpaquePointer) -> Int {
+            var chain: [UInt64] = []
+            var current: OpaquePointer? = node
+            var resolved = -1
+            while let pointer = current {
+                let rawID = markdown_core_node_get_id(pointer)
+                if let cached = depths[rawID] {
+                    resolved = cached
+                    break
+                }
+                chain.append(rawID)
+                current = markdown_core_node_get_parent(pointer)
+            }
+            for rawID in chain.reversed() {
+                resolved += 1
+                depths[rawID] = resolved
+            }
+            return resolved
+        }
         for id in [delta.added, delta.changed, delta.bubbled].joined() {
             guard let node = markdown_core_session_node_by_id(session, id.rawValue) else {
                 preconditionFailure("delta names a node the session cannot resolve")
             }
-            var depth = 0
-            var parent = markdown_core_node_get_parent(node)
-            while let current = parent {
-                depth += 1
-                parent = markdown_core_node_get_parent(current)
-            }
-            rebuilds.append(Rebuild(rawID: id.rawValue, node: node, depth: depth))
+            rebuilds.append(Rebuild(rawID: id.rawValue, node: node, depth: depth(of: node)))
         }
         // Children before parents: a rebuilt parent assembles its child
         // values from the mirror.

@@ -23,6 +23,10 @@ public sealed interface Markup {
      */
     public val revision: ULong
 
+    /** [revision] as a bit-preserving signed value: the Java view of the
+     * unsigned accessor, whose mangled name Java sources cannot write. */
+    public fun revisionBits(): Long = revision.toLong()
+
     public fun <Result> accept(visitor: MarkupVisitor<Result>): Result
 }
 

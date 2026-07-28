@@ -1,3 +1,4 @@
+import Foundation
 import MarkdownCore
 import Testing
 
@@ -33,6 +34,23 @@ import Testing
     @Test("empty input maps to an empty document")
     func empty() throws {
         #expect(try Document.parse("").children.isEmpty)
+    }
+
+    @Test("ParseError carries its native message through every presentation path")
+    func parseErrorPresentation() throws {
+        let session = try MarkupSession()
+        do {
+            try session.replace(5..<9, with: "beyond the stored text")
+            Issue.record("an out-of-range edit must throw")
+        } catch let error as ParseError {
+            #expect(error.code == .invalidArgument)
+            #expect(!error.message.isEmpty)
+            // String interpolation and Foundation presentation must agree:
+            // localizedDescription previously degraded to a bare domain/code.
+            #expect(String(describing: error) == error.message)
+            #expect(error.localizedDescription == error.message)
+            #expect((error as NSError).localizedDescription == error.message)
+        }
     }
 }
 

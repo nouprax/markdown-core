@@ -1,3 +1,4 @@
+import Foundation
 import MarkdownCore
 import Testing
 
@@ -295,5 +296,96 @@ private final class ConflationDriver {
             #expect(node.id == entry.id)
             #expect(node.revision == entry.revision)
         }
+    }
+}
+
+@Suite("depth") struct DepthSuite {
+    /// Primitive results ferried out of the worker threads; access is
+    /// sequenced by thread completion, never concurrent.
+    private final class Outcome: @unchecked Sendable {
+        var failure: String?
+        var quoteEnters = 0
+        var events = 0
+        var dumpHasQuote = false
+        var commitMatchesReference = false
+    }
+
+    @Test("adversarial nesting walks, dumps, and commits beyond the call-stack budget")
+    func adversarialNestingDepth() throws {
+        // 4096 nested quotes overflowed the recursive walker. Two explicit
+        // stacks make the proof exact: deep value trees deallocate through
+        // recursive ARC releases, so every deep document lives and dies on
+        // a 16 MiB-stack thread, while the walk and dump run on a 512 KiB
+        // stack that recursive traversal at this depth could not survive.
+        let depth = 4096
+        let outcome = Outcome()
+        let finished = DispatchSemaphore(value: 0)
+        let owner = Thread {
+            defer { finished.signal() }
+            do {
+                let source = String(repeating: "> ", count: depth) + "leaf\n"
+                let document = try Document.parse(source)
+
+                let walked = DispatchSemaphore(value: 0)
+                let walker = Thread {
+                    defer { walked.signal() }
+                    var quoteEnters = 0
+                    var events = 0
+                    MarkupWalker().walk(document) { event, node, _ in
+                        events += 1
+                        if event == .entering, node is BlockQuote { quoteEnters += 1 }
+                    }
+                    outcome.quoteEnters = quoteEnters
+                    outcome.events = events
+                    outcome.dumpHasQuote = document.dump().contains("BlockQuote")
+                }
+                walker.stackSize = 512 * 1024
+                walker.start()
+                walked.wait()
+
+                let session = try MarkupSession()
+                try session.append(source)
+                _ = try session.commit()
+                try session.replace((depth * 2)..<(depth * 2 + 4), with: "seed")
+                let second = try session.commit()
+                let reference = try Document.parse(String(repeating: "> ", count: depth) + "seed\n")
+                outcome.commitMatchesReference = second.document.dump() == reference.dump()
+            } catch {
+                outcome.failure = String(describing: error)
+            }
+        }
+        owner.stackSize = 16 * 1024 * 1024
+        owner.start()
+        finished.wait()
+
+        #expect(outcome.failure == nil)
+        #expect(outcome.quoteEnters == depth)
+        // Every node enters exactly once and exits exactly once: the
+        // document, the quote chain, and the innermost paragraph and text.
+        #expect(outcome.events == 2 * (depth + 3))
+        #expect(outcome.dumpHasQuote)
+        #expect(outcome.commitMatchesReference)
+    }
+}
+
+@Suite("materialization") struct MaterializationSuite {
+    @Test("an explicitly materialized snapshot stays usable across commits and deinit")
+    func explicitMaterialization() throws {
+        var retained: Document?
+        do {
+            let session = try MarkupSession()
+            try session.append("First\n\nSecond\n")
+            let first = try session.commit()
+            // The explicit contract: materialize while current, stay
+            // self-contained forever after.
+            first.document.materialize()
+            try session.append("\nThird\n")
+            _ = try session.commit()
+            retained = first.document
+        }
+        let document = try #require(retained)
+        let second = try #require(document.children[1] as? Paragraph)
+        #expect(document.scope(of: second).start.line == 3)
+        #expect(document.dump().contains("Paragraph"))
     }
 }

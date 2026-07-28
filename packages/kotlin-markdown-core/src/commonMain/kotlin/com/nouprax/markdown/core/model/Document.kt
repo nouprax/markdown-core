@@ -1,5 +1,8 @@
 package com.nouprax.markdown.core
 
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
+
 public class Document internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
@@ -38,10 +41,26 @@ public class Document internal constructor(
         return entry.scope
     }
 
+    /**
+     * Resolves and caches every scope of this snapshot now, making the
+     * retained value self-contained regardless of later commits or session
+     * close — the explicit form of the materialization that [scope], a
+     * walk, or [dump] would perform implicitly on first use. Call while the
+     * snapshot is current (before the owning session's next successful
+     * commit). Idempotent; a one-shot [parse] result is always materialized.
+     */
+    public fun materialize() {
+        resolver.materialize()
+    }
+
     /** Returns the canonical diagnostic dump for this document. */
     public fun dump(): String = MarkupDumper.dump(this)
 
     public companion object {
+        /** Parses [source] in one shot into a self-contained snapshot;
+         * statically callable from Java as `Document.parse(...)`. */
+        @JvmStatic
+        @JvmOverloads
         public fun parse(
             source: String,
             options: ParseOptions = ParseOptions(),

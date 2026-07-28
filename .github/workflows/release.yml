@@ -14,17 +14,16 @@ on:
                 description: Tag release run containing the validated artifacts
                 required: true
                 type: string
-            central-deployment-id:
-                description: Central deployment id from the source run's Maven stage
-                required: true
-                type: string
 
 permissions:
     actions: read
     contents: read
 
 concurrency:
-    group: release-${{ github.ref }}
+    # Key on the effective release tag: a tag push and a manual resume for
+    # the same release share one lock, while resumes for different tags
+    # dispatched from the same branch do not collide.
+    group: release-${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.release-tag) || github.ref }}
     cancel-in-progress: false
 
 jobs:
@@ -262,7 +261,23 @@ jobs:
               run: |
                   deployment=$(scripts/central-portal.sh upload build/markdown-core-maven-central.zip)
                   echo "deployment-id=$deployment" >>"$GITHUB_OUTPUT"
+                  mkdir -p build/central-deployment
+                  {
+                      echo "deployment-id=$deployment"
+                      echo "release-tag=$GITHUB_REF_NAME"
+                      echo "version=$(cat VERSION)"
+                  } >build/central-deployment/central-deployment.env
                   scripts/wait-central-deployment.sh "$deployment" VALIDATED
+            - name: Publish the deployment binding for manual resume
+              # Uploaded even when the VALIDATED wait above fails: a resume
+              # must recover the deployment this run created, and only this
+              # run's own record can prove which deployment that is.
+              if: ${{ always() }}
+              uses: actions/upload-artifact@v7
+              with:
+                  name: release-central-deployment
+                  path: build/central-deployment
+                  if-no-files-found: ignore
 
     npm-publish:
         name: Publish Release - ES / npm
@@ -377,13 +392,31 @@ jobs:
             - name: Validate the source run against the tag
               # A stale or mistyped run id must not attach another version's
               # artifacts to this tag: the source run must be the push-
-              # triggered release run of exactly this tag and commit.
+              # triggered release run of exactly this tag and commit, and it
+              # must have finished — a resume racing a still-publishing run
+              # would double-publish.
               run: |
                   run_info=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")
                   test "$(jq -r '.path' <<<"$run_info")" = ".github/workflows/release.yml"
                   test "$(jq -r '.event' <<<"$run_info")" = "push"
                   test "$(jq -r '.head_branch' <<<"$run_info")" = "$RELEASE_TAG"
                   test "$(jq -r '.head_sha' <<<"$run_info")" = "$(git rev-parse HEAD)"
+                  test "$(jq -r '.status' <<<"$run_info")" = "completed"
+            - name: Bind the Central deployment produced by the source run
+              # The deployment id is not an operator input: it is downloaded
+              # from the validated source run itself, so a resume can never
+              # pair this tag's artifacts with another release's Central
+              # deployment. The recorded tag and version are cross-checked
+              # against this run's checkout of the protected tag.
+              run: |
+                  gh run download "$SOURCE_RUN_ID" --name release-central-deployment --dir central-deployment
+                  deployment_id=$(sed -n 's/^deployment-id=//p' central-deployment/central-deployment.env)
+                  bound_tag=$(sed -n 's/^release-tag=//p' central-deployment/central-deployment.env)
+                  bound_version=$(sed -n 's/^version=//p' central-deployment/central-deployment.env)
+                  test -n "$deployment_id"
+                  test "$bound_tag" = "$RELEASE_TAG"
+                  test "$bound_version" = "$(cat VERSION)"
+                  echo "DEPLOYMENT_ID=$deployment_id" >>"$GITHUB_ENV"
             - name: Download the validated release artifacts
               run: |
                   mkdir -p release-npm release-files
@@ -411,7 +444,6 @@ jobs:
               # idempotent here: an already-published deployment
               # short-circuits, so resumes from any failure point converge.
               env:
-                  DEPLOYMENT_ID: ${{ inputs.central-deployment-id }}
                   MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
                   MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
               run: |

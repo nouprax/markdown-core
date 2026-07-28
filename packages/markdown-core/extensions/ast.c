@@ -1016,66 +1016,138 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     }
 }
 
-// `parent_start_line` is the absolute start line of the node's canonical
-// parent (0 for the root call): resolving sealed parent-relative lines with a
-// running accumulator keeps the dump linear instead of walking the parent
-// chain per node.
-static void dump_node(dump_buffer *buffer, const markdown_core_node *node, size_t depth, int parent_start_line) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_scope scope;
-    const markdown_core_node *child;
-    size_t count = markdown_core_node_child_count(node);
-    size_t i;
-    int start_line = node->start_line;
-    int end_line = node->end_line;
-    if (kind == MARKDOWN_CORE_KIND_NONE) {
+// One preorder emission frame. `parent_start_line` is the absolute start
+// line of the node's canonical parent (0 for the root): resolving sealed
+// parent-relative lines with the parent's resolved value keeps the dump
+// linear instead of walking the parent chain per node. `has_next` records
+// whether a following sibling exists — it lands in `more[depth - 1]` when
+// the frame is emitted, exactly where the branch-prefix rendering reads it.
+typedef struct dump_frame {
+    const markdown_core_node *node;
+    int parent_start_line;
+    size_t depth;
+    bool has_next;
+} dump_frame;
+
+static bool dump_frames_reserve(dump_buffer *buffer, dump_frame **stack, size_t *capacity, size_t needed) {
+    dump_frame *grown;
+    size_t next_capacity;
+    if (needed <= *capacity) {
+        return true;
+    }
+    next_capacity = *capacity ? *capacity : 64;
+    while (next_capacity < needed) {
+        next_capacity *= 2;
+    }
+    grown = (dump_frame *)realloc(*stack, next_capacity * sizeof(*grown));
+    if (!grown) {
         buffer->failed = true;
+        return false;
+    }
+    *stack = grown;
+    *capacity = next_capacity;
+    return true;
+}
+
+// Depth is input-controlled (nested block quotes nest one node per two input
+// bytes), so the canonical dump must not recurse: explicit frames keep the
+// public dump as depth-proof as the parser and the native iterator.
+static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
+    dump_frame *stack = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    if (!dump_frames_reserve(buffer, &stack, &capacity, 1)) {
         return;
     }
-    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        // The canonical traversal hides directive-label wrappers, so a hidden
-        // wrapper between this node and its canonical parent contributes its
-        // own delta.
-        start_line += parent_start_line;
-        if (is_label(node->parent)) {
-            start_line += node->parent->start_line;
+    stack[count].node = root;
+    stack[count].parent_start_line = 0;
+    stack[count].depth = 0;
+    stack[count].has_next = false;
+    count++;
+    while (count) {
+        dump_frame frame = stack[--count];
+        const markdown_core_node *node = frame.node;
+        markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+        markdown_core_scope scope;
+        const markdown_core_node *child;
+        size_t child_count = markdown_core_node_child_count(node);
+        size_t first_pushed;
+        size_t i;
+        int start_line = node->start_line;
+        int end_line = node->end_line;
+        if (kind == MARKDOWN_CORE_KIND_NONE) {
+            buffer->failed = true;
+            break;
         }
-        end_line += start_line;
-    }
-    scope.start.line = start_line;
-    scope.start.column = node->start_column;
-    scope.end.line = end_line;
-    scope.end.column = node->end_column;
-    if (depth) {
-        for (i = 0; i + 1 < depth; i++) {
-            buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
+        if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+            // The canonical traversal hides directive-label wrappers, so a
+            // hidden wrapper between this node and its canonical parent
+            // contributes its own delta.
+            start_line += frame.parent_start_line;
+            if (is_label(node->parent)) {
+                start_line += node->parent->start_line;
+            }
+            end_line += start_line;
         }
-        buffer_cstr(buffer, buffer->more[depth - 1] ? "├── " : "└── ");
-    }
-    buffer_cstr(buffer, markdown_core_node_kind_name(kind));
-    buffer_cstr(buffer, " scope=");
-    buffer_i64(buffer, scope.start.line);
-    buffer_cstr(buffer, ":");
-    buffer_i64(buffer, scope.start.column);
-    buffer_cstr(buffer, "..");
-    buffer_i64(buffer, scope.end.line);
-    buffer_cstr(buffer, ":");
-    buffer_i64(buffer, scope.end.column);
-    dump_fields(buffer, node, kind);
-    buffer_cstr(buffer, " children=");
-    buffer_i64(buffer, (int64_t)count);
-    buffer_cstr(buffer, "\n");
+        scope.start.line = start_line;
+        scope.start.column = node->start_column;
+        scope.end.line = end_line;
+        scope.end.column = node->end_column;
+        if (frame.depth) {
+            // Ancestor slots below depth - 1 keep the values written when
+            // those ancestors were emitted; descendants only ever write
+            // deeper slots, and siblings rewrite a slot only after this
+            // subtree has fully emitted.
+            if (!ensure_more(buffer, frame.depth - 1)) {
+                break;
+            }
+            buffer->more[frame.depth - 1] = frame.has_next;
+            for (i = 0; i + 1 < frame.depth; i++) {
+                buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
+            }
+            buffer_cstr(buffer, buffer->more[frame.depth - 1] ? "├── " : "└── ");
+        }
+        buffer_cstr(buffer, markdown_core_node_kind_name(kind));
+        buffer_cstr(buffer, " scope=");
+        buffer_i64(buffer, scope.start.line);
+        buffer_cstr(buffer, ":");
+        buffer_i64(buffer, scope.start.column);
+        buffer_cstr(buffer, "..");
+        buffer_i64(buffer, scope.end.line);
+        buffer_cstr(buffer, ":");
+        buffer_i64(buffer, scope.end.column);
+        dump_fields(buffer, node, kind);
+        buffer_cstr(buffer, " children=");
+        buffer_i64(buffer, (int64_t)child_count);
+        buffer_cstr(buffer, "\n");
 
-    child = markdown_core_node_get_first_child(node);
-    while (child) {
-        const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
-        if (!ensure_more(buffer, depth)) {
-            return;
+        // Append the children in source order, then reverse the appended
+        // range: the singly linked child list offers no reverse pass, and
+        // pops must emit the first child first.
+        first_pushed = count;
+        child = markdown_core_node_get_first_child(node);
+        while (child) {
+            const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
+            if (!dump_frames_reserve(buffer, &stack, &capacity, count + 1)) {
+                break;
+            }
+            stack[count].node = child;
+            stack[count].parent_start_line = start_line;
+            stack[count].depth = frame.depth + 1;
+            stack[count].has_next = next != NULL;
+            count++;
+            child = next;
         }
-        buffer->more[depth] = next != NULL;
-        dump_node(buffer, child, depth + 1, start_line);
-        child = next;
+        if (buffer->failed) {
+            break;
+        }
+        for (i = 0; i < (count - first_pushed) / 2; i++) {
+            dump_frame swapped = stack[first_pushed + i];
+            stack[first_pushed + i] = stack[count - 1 - i];
+            stack[count - 1 - i] = swapped;
+        }
     }
+    free(stack);
 }
 
 bool markdown_core_document_dump(
@@ -1092,7 +1164,7 @@ bool markdown_core_document_dump(
     }
     *output = NULL;
     *length = 0;
-    dump_node(&buffer, document->root, 0, 0);
+    dump_tree(&buffer, document->root);
     free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);

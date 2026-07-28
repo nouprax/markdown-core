@@ -17,6 +17,10 @@ Makefile
 packages/markdown-core/tests/fixtures/
 packages/markdown-core/tests/canonical-ast/
 
+# Harness-owned state: local settings and agent worktrees live here, never
+# repository sources.
+.claude/
+
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold_switch.inc
 packages/markdown-core/core/entities.inc

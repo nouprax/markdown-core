@@ -87,6 +87,15 @@ static int thread_spawn(thread_handle *handle, thread_entry entry, void *argumen
     return 0;
 }
 
+static int thread_spawn_with_stack(thread_handle *handle, thread_entry entry, void *argument, unsigned int stack_size) {
+    uintptr_t raw = _beginthreadex(NULL, stack_size, entry, argument, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+    if (!raw) {
+        return 1;
+    }
+    *handle = (HANDLE)raw;
+    return 0;
+}
+
 static void thread_join(thread_handle handle) {
     WaitForSingleObject(handle, INFINITE);
     CloseHandle(handle);
@@ -128,6 +137,25 @@ typedef void *(*thread_entry)(void *);
 
 static int thread_spawn(thread_handle *handle, thread_entry entry, void *argument) {
     return pthread_create(handle, NULL, entry, argument) != 0;
+}
+
+#ifndef PTHREAD_STACK_MIN
+#define PTHREAD_STACK_MIN (16 * 1024)
+#endif
+
+static int thread_spawn_with_stack(thread_handle *handle, thread_entry entry, void *argument, size_t stack_size) {
+    pthread_attr_t attributes;
+    int failed;
+    if (pthread_attr_init(&attributes) != 0) {
+        return 1;
+    }
+    if (stack_size < (size_t)PTHREAD_STACK_MIN) {
+        stack_size = (size_t)PTHREAD_STACK_MIN;
+    }
+    failed = pthread_attr_setstacksize(&attributes, stack_size) != 0 ||
+             pthread_create(handle, &attributes, entry, argument) != 0;
+    pthread_attr_destroy(&attributes);
+    return failed;
 }
 
 static void thread_join(thread_handle handle) { pthread_join(handle, NULL); }
@@ -730,18 +758,85 @@ static int case_lifecycle(void) {
     return failed;
 }
 
+#define SMALL_STACK_QUOTE_DEPTH 4096
+
+typedef struct small_stack_context {
+    int failed;
+    markdown_core_document *document;
+    char *input;
+} small_stack_context;
+
+// Worker for dump_small_stack: parse and dump a quote chain whose depth
+// would need several times this thread's stack if either path recursed.
+// The parse and the dump run here; ownership returns to the spawning
+// thread, which frees outside the constrained stack.
+static THREAD_RETURN dump_small_stack_worker(void *user) {
+    small_stack_context *context = (small_stack_context *)user;
+    size_t input_length = (size_t)SMALL_STACK_QUOTE_DEPTH * 2 + 2;
+    markdown_core_parse_options options;
+    markdown_core_error *error = NULL;
+    context->failed = 1;
+    context->input = (char *)malloc(input_length + 1);
+    if (!context->input) {
+        return THREAD_RESULT;
+    }
+    for (size_t level = 0; level < (size_t)SMALL_STACK_QUOTE_DEPTH; level++) {
+        context->input[level * 2] = '>';
+        context->input[level * 2 + 1] = ' ';
+    }
+    context->input[input_length - 2] = 'a';
+    context->input[input_length - 1] = '\n';
+    context->input[input_length] = '\0';
+    markdown_core_parse_options_init(&options);
+    context->document = markdown_core_document_parse((const uint8_t *)context->input, input_length, &options, &error);
+    if (context->document && !error) {
+        uint8_t *dump = NULL;
+        size_t dump_length = 0;
+        if (markdown_core_document_dump(context->document, &dump, &dump_length, &error) && !error) {
+            // Every level contributes one line whose prefix grows with
+            // depth; a truncated dump would be far smaller.
+            context->failed = dump_length < (size_t)SMALL_STACK_QUOTE_DEPTH * 4;
+            markdown_core_dump_free(dump);
+        }
+    }
+    markdown_core_error_free(error);
+    return THREAD_RESULT;
+}
+
+static int case_dump_small_stack(void) {
+    // The public parse and canonical dump are iterative, so adversarial
+    // nesting must survive a deliberately small thread stack — 256 KiB is
+    // far below what recursive descent at this depth would need.
+    thread_handle thread;
+    small_stack_context context = {1, NULL, NULL};
+    if (thread_spawn_with_stack(&thread, dump_small_stack_worker, &context, 256 * 1024)) {
+        fprintf(stderr, "concurrency: could not spawn the small-stack thread\n");
+        return 1;
+    }
+    thread_join(thread);
+    markdown_core_document_free(context.document);
+    free(context.input);
+    if (context.failed) {
+        fprintf(stderr, "concurrency: deep dump failed on a small thread stack\n");
+    }
+    return context.failed;
+}
+
 int main(int argc, char **argv) {
     const char *case_name = NULL;
     for (int index = 1; index < argc; index++) {
         if (strcmp(argv[index], "--case") == 0 && index + 1 < argc) {
             case_name = argv[++index];
         } else {
-            fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions\n");
+            fprintf(
+                stderr,
+                "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions|dump_small_stack\n"
+            );
             return 1;
         }
     }
     if (!case_name) {
-        fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions\n");
+        fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions|dump_small_stack\n");
         return 1;
     }
     if (strcmp(case_name, "first_parse") == 0) {
@@ -755,6 +850,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "sessions") == 0) {
         return case_sessions();
+    }
+    if (strcmp(case_name, "dump_small_stack") == 0) {
+        return case_dump_small_stack();
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 1;

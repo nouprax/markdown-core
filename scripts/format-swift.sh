@@ -10,7 +10,9 @@ fi
 
 case "${1:-}" in
     --check)
-        swift_format_args="lint"
+        # --strict promotes findings (including missing public API
+        # documentation) to errors so CI fails instead of logging warnings.
+        swift_format_args="lint --strict"
         ;;
     "")
         swift_format_args="--in-place"

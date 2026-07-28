@@ -8,9 +8,9 @@ import type { NativeExports } from "../runtime/native.js";
 import type { ScopeEntry } from "../session/scope-resolver.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before snapshot adoption wires its scope and dump
- * mediators to a resolver. */
-export type DocumentValue = Omit<Document, "scope" | "dump">;
+/** A decoded document before snapshot adoption wires its scope, dump, and
+ * materialize mediators to a resolver. */
+export type DocumentValue = Omit<Document, "scope" | "dump" | "materialize">;
 
 /**
  * One decode pass over the native committed tree. One-shot parses decode
@@ -50,6 +50,17 @@ const stringField = {
 
 const scratchSize = 4 * BigUint64Array.BYTES_PER_ELEMENT;
 
+/** One explicit decode-stack entry; `values` collects the direct child
+ * values until the node itself can be assembled. */
+interface DecodeFrame {
+    readonly node: number;
+    readonly id: MarkupID;
+    readonly revision: number;
+    readonly pointers: readonly number[];
+    readonly values: Markup[];
+    index: number;
+}
+
 export class NodeDecoder {
     private scratch: number;
     private context: DecodeContext | null = null;
@@ -83,7 +94,7 @@ export class NodeDecoder {
                 kind: "document",
                 id: context.ids(this.rawId(root)),
                 revision: this.revisionOf(root),
-                content: this.content(root)
+                content: this.decodeChildren(root)
             });
             context.mirror?.set(document.id.rawValue, document);
             return document;
@@ -125,57 +136,94 @@ export class NodeDecoder {
         return converted;
     }
 
-    private rawId(node: number): number {
+    rawId(node: number): number {
         return this.toSafeNumber(this.native.es_node_id(node), "node id");
     }
 
-    private revisionOf(node: number): number {
+    revisionOf(node: number): number {
         return this.toSafeNumber(this.native.es_node_revision(node), "node revision");
     }
 
-    private copyMarkup(node: number): Markup {
-        const context = this.context!;
-        const rawId = this.rawId(node);
-        const revision = this.revisionOf(node);
-        if (context.touched !== null && !context.touched.has(rawId)) {
-            const existing = context.mirror?.get(rawId);
-            if (existing === undefined || existing.revision !== revision) {
-                throw new Error("the delta omitted a node the session mirror does not carry");
-            }
-            return existing;
-        }
-        const value = this.copyMarkupValue(node, context.ids(rawId), revision);
-        context.mirror?.set(rawId, value);
-        return value;
+    /** One decode frame: a node whose value is assembled once every direct
+     * child value in `values` is ready. */
+    private static frame(node: number, id: MarkupID, revision: number, pointers: number[]): DecodeFrame {
+        return { node, id, revision, pointers, values: [], index: 0 };
     }
 
-    private copyMarkupValue(node: number, id: MarkupID, revision: number): Markup {
+    /**
+     * Decodes the direct children of `parent` post-order over an explicit
+     * frame stack: nesting depth is input-controlled, so the decoder must
+     * not grow the JavaScript call stack with it. Nodes outside the
+     * context's `touched` set reuse their mirror value, subtree and all.
+     */
+    private decodeChildren(parent: number): Markup[] {
+        const context = this.context!;
+        const stack: DecodeFrame[] = [
+            NodeDecoder.frame(
+                parent,
+                context.ids(this.rawId(parent)),
+                this.revisionOf(parent),
+                this.childPointers(parent)
+            )
+        ];
+        while (true) {
+            const top = stack[stack.length - 1]!;
+            if (top.index < top.pointers.length) {
+                const pointer = top.pointers[top.index]!;
+                top.index += 1;
+                const rawId = this.rawId(pointer);
+                const revision = this.revisionOf(pointer);
+                if (context.touched !== null && !context.touched.has(rawId)) {
+                    const existing = context.mirror?.get(rawId);
+                    if (existing === undefined || existing.revision !== revision) {
+                        throw new Error("the delta omitted a node the session mirror does not carry");
+                    }
+                    top.values.push(existing);
+                    continue;
+                }
+                stack.push(NodeDecoder.frame(pointer, context.ids(rawId), revision, this.childPointers(pointer)));
+                continue;
+            }
+            stack.pop();
+            if (stack.length === 0) return top.values;
+            const value = this.decodeValue(top.node, top.id, top.revision, top.values);
+            context.mirror?.set(top.id.rawValue, value);
+            stack[stack.length - 1]!.values.push(value);
+        }
+    }
+
+    /**
+     * Assembles one node's value from its native fields and its ready direct
+     * child values. Context-free: session rebuilds call this per delta entry
+     * with mirror-sourced children.
+     */
+    decodeValue(node: number, id: MarkupID, revision: number, children: readonly Markup[]): Markup {
         const kind = this.kind(node);
         switch (kind) {
             case "document":
                 throw new Error("native parser returned a nested document node");
             case "blockQuote":
-                return { kind, id, revision, content: this.content(node) };
+                return { kind, id, revision, content: children };
             case "paragraph":
-                return { kind, id, revision, content: this.content(node) };
+                return { kind, id, revision, content: children };
             case "heading": {
                 const level = this.native.es_node_heading_level(node);
                 if (!Number.isInteger(level) || level < 1 || level > 6) {
                     throw new Error(`native parser returned an invalid heading level ${level}`);
                 }
-                return { kind, id, revision, level, content: this.content(node) };
+                return { kind, id, revision, level, content: children };
             }
             case "thematicBreak":
                 return { kind, id, revision };
             case "list":
-                return this.copyList(node, id, revision);
+                return this.copyList(node, id, revision, children);
             case "listItem":
                 return {
                     kind,
                     id,
                     revision,
                     checked: this.nullableBoolean(this.native.es_node_checked(node), "list item checked state"),
-                    content: this.content(node)
+                    content: children
                 };
             case "codeBlock":
                 return {
@@ -197,9 +245,9 @@ export class NodeDecoder {
                 return { kind, id, revision, mode, literal: this.requiredString(node, stringField.formulaLiteral) };
             }
             case "table":
-                return this.copyTable(node, id, revision);
+                return this.copyTable(node, id, revision, children);
             case "directiveBlock": {
-                const fields = this.directiveFields(node);
+                const fields = this.directiveFields(node, children);
                 if (fields.mode !== "standalone") {
                     throw new Error("native parser returned an embedded directive block");
                 }
@@ -211,7 +259,7 @@ export class NodeDecoder {
                     id,
                     revision,
                     label: this.requiredString(node, stringField.footnoteLabel),
-                    content: this.content(node)
+                    content: children
                 };
             case "text":
                 return { kind, id, revision, literal: this.requiredString(node, stringField.literal) };
@@ -238,11 +286,11 @@ export class NodeDecoder {
                     literal: this.requiredString(node, stringField.formulaLiteral)
                 };
             case "emphasis":
-                return { kind, id, revision, content: this.content(node) };
+                return { kind, id, revision, content: children };
             case "strong":
-                return { kind, id, revision, content: this.content(node) };
+                return { kind, id, revision, content: children };
             case "strikethrough":
-                return { kind, id, revision, content: this.content(node) };
+                return { kind, id, revision, content: children };
             case "link":
                 return {
                     kind,
@@ -250,7 +298,7 @@ export class NodeDecoder {
                     revision,
                     destination: this.readString(node, stringField.linkDestination),
                     title: this.readString(node, stringField.linkTitle),
-                    content: this.content(node)
+                    content: children
                 };
             case "image":
                 return {
@@ -259,10 +307,10 @@ export class NodeDecoder {
                     revision,
                     source: this.readString(node, stringField.imageSource),
                     title: this.readString(node, stringField.imageTitle),
-                    content: this.content(node)
+                    content: children
                 };
             case "directive": {
-                const fields = this.directiveFields(node);
+                const fields = this.directiveFields(node, children);
                 if (fields.mode !== "embedded") throw new Error("native parser returned a standalone directive");
                 if (fields.content.length !== 0) throw new Error("inline directive contains block content");
                 return {
@@ -278,21 +326,25 @@ export class NodeDecoder {
             case "footnoteReference":
                 return { kind, id, revision, label: this.requiredString(node, stringField.footnoteLabel) };
             case "tableRow":
-                return this.copyTableRow(node, id, revision);
+                return this.copyTableRow(node, id, revision, children);
             case "tableCell":
-                return this.copyTableCell(node, id, revision);
+                return this.copyTableCell(id, revision, children);
         }
         return unreachable(kind);
     }
 
-    private copyList(node: number, id: MarkupID, revision: number): Extract<Markup, { kind: "list" }> {
+    private copyList(
+        node: number,
+        id: MarkupID,
+        revision: number,
+        children: readonly Markup[]
+    ): Extract<Markup, { kind: "list" }> {
         const flavor = this.listFlavor(this.native.es_node_list_flavor(node));
         const start = this.readStart(node);
         if (flavor === "bullet" && start !== null) {
             throw new Error("native parser returned a start value for a bullet list");
         }
-        const items = this.childPointers(node).map((child) => {
-            const item = this.copyMarkup(child);
+        const items = children.map((item) => {
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
             return item;
         });
@@ -307,13 +359,17 @@ export class NodeDecoder {
         };
     }
 
-    private copyTable(node: number, id: MarkupID, revision: number): Extract<Markup, { kind: "table" }> {
+    private copyTable(
+        node: number,
+        id: MarkupID,
+        revision: number,
+        children: readonly Markup[]
+    ): Extract<Markup, { kind: "table" }> {
         const columnCount = this.count(this.native.es_node_table_column_count(node), "table column count");
         const alignments = Array.from({ length: columnCount }, (_, index) =>
             this.tableAlignment(this.native.es_node_table_alignment(node, index))
         );
-        const rows = this.childPointers(node).map((child) => {
-            const row = this.copyMarkup(child);
+        const rows = children.map((row) => {
             if (row.kind !== "tableRow") throw new Error("table contains a non-row node");
             return row;
         });
@@ -329,52 +385,49 @@ export class NodeDecoder {
         };
     }
 
-    private copyTableRow(node: number, id: MarkupID, revision: number): TableRow {
+    private copyTableRow(node: number, id: MarkupID, revision: number, children: readonly Markup[]): TableRow {
         return {
             kind: "tableRow",
             id,
             revision,
             isHeader: this.boolean(this.native.es_node_table_row_header(node), "table header state"),
-            cells: this.childPointers(node).map((child) => {
-                const cell = this.copyMarkup(child);
+            cells: children.map((cell) => {
                 if (cell.kind !== "tableCell") throw new Error("table row contains a non-cell node");
                 return cell;
             })
         };
     }
 
-    private copyTableCell(node: number, id: MarkupID, revision: number): TableCell {
-        return { kind: "tableCell", id, revision, content: this.content(node) };
+    private copyTableCell(id: MarkupID, revision: number, children: readonly Markup[]): TableCell {
+        return { kind: "tableCell", id, revision, content: children };
     }
 
-    private directiveFields(node: number): {
+    private directiveFields(
+        node: number,
+        children: readonly Markup[]
+    ): {
         readonly mode: PlacementMode;
         readonly name: string;
         readonly attributes: string | null;
         readonly label: readonly Markup[] | null;
         readonly content: readonly Markup[];
     } {
-        const childPointers = this.childPointers(node);
         const labelCount = this.native.es_node_directive_label_count(node);
-        if (!Number.isInteger(labelCount) || labelCount < -1 || labelCount > childPointers.length) {
+        if (!Number.isInteger(labelCount) || labelCount < -1 || labelCount > children.length) {
             throw new Error(`native parser returned an invalid directive label count ${labelCount}`);
         }
-        const label = labelCount < 0 ? null : childPointers.slice(0, labelCount).map((child) => this.copyMarkup(child));
+        const label = labelCount < 0 ? null : children.slice(0, labelCount);
         const contentOffset = labelCount < 0 ? 0 : labelCount;
         return {
             mode: this.placement(this.native.es_node_directive_mode(node)),
             name: this.requiredString(node, stringField.directiveName),
             attributes: this.readString(node, stringField.directiveAttributes),
             label,
-            content: childPointers.slice(contentOffset).map((child) => this.copyMarkup(child))
+            content: children.slice(contentOffset)
         };
     }
 
-    private content(node: number): readonly Markup[] {
-        return this.childPointers(node).map((child) => this.copyMarkup(child));
-    }
-
-    private childPointers(node: number): number[] {
+    childPointers(node: number): number[] {
         const result: number[] = [];
         for (
             let child = this.native.es_node_first_child(node);
