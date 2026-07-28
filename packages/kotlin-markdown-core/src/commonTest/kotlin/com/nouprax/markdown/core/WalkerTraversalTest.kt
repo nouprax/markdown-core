@@ -82,7 +82,12 @@ class SnapshotMaterializationTest {
                 it.commit()
                 commit
             }
-        assertEquals(3, first.document.scope(first.document.content[1]).start.line)
+        assertEquals(
+            3,
+            first.document
+                .scope(first.document.content[1])
+                .start.line,
+        )
         assertTrue(first.document.dump().contains("Paragraph"))
     }
 }

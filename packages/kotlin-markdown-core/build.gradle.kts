@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+import java.io.DataInputStream
 import java.util.zip.ZipFile
 
 @CacheableTask
@@ -170,11 +171,23 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.dokka)
     `maven-publish`
 }
 
 group = "com.nouprax"
 version = rootProject.file("VERSION").readText().trim()
+
+dokka {
+    dokkaSourceSets.configureEach {
+        // The entire public API lives in commonMain; the platform source
+        // sets hold internal actuals only (and the two Kotlin/Native sets
+        // share one source root, which Dokka rejects outright).
+        if (name != "commonMain") {
+            suppress.set(true)
+        }
+    }
+}
 
 dependencyLocking {
     lockAllConfigurations()
@@ -186,6 +199,7 @@ val generatedCanonicalAstSource =
     layout.buildDirectory.file(
         "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/CanonicalAstCases.kt",
     )
+
 // The one closed model of supported build hosts. Every host-dependent
 // decision — JNI resource path, native library file name, Kotlin/Native
 // test target, managed-device ABI, publish-local target — derives from this
@@ -588,6 +602,9 @@ afterEvaluate {
 val javadocJar =
     tasks.register<Jar>("javadocJar") {
         archiveClassifier.set("javadoc")
+        // Real generated API reference first; the canonical AST spec and
+        // README ride along as supplementary content.
+        from(tasks.named("dokkaGeneratePublicationHtml"))
         from(repositoryRoot.file("docs/specs/canonical-ast.md"))
         from(layout.projectDirectory.file("README.md"))
     }
@@ -644,10 +661,135 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
     testedAbi.set(androidManagedDeviceTestAbi)
 }
 
+// Freezes the JVM artifact's Java-visible surface. Kotlin compiles internal
+// declarations to public bytecode, so the honest gate is a snapshot: every
+// public class and its public or protected non-synthetic members must match
+// jvm-abi.txt exactly. Regenerate deliberately with -PwriteJvmAbi.
+val verifyJvmAbi =
+    tasks.register("verifyJvmAbi") {
+        group = "verification"
+        description = "Compares the JVM jar's public ABI against the checked-in snapshot."
+        dependsOn("jvmJar")
+        val jarFile =
+            layout.buildDirectory
+                .file("libs/kotlin-markdown-core-jvm-$version.jar")
+        val snapshotFile = layout.projectDirectory.file("jvm-abi.txt").asFile
+        val write = providers.gradleProperty("writeJvmAbi").isPresent
+        inputs.file(jarFile)
+
+        doLast {
+            fun utf8At(
+                pool: Array<Any?>,
+                index: Int,
+            ): String = pool[index] as? String ?: error("constant pool index $index is not utf8")
+
+            fun classSurface(bytes: ByteArray): kotlin.collections.List<String> {
+                val input = DataInputStream(bytes.inputStream())
+                require(input.readInt() == -0x35014542) { "not a class file" }
+                input.readUnsignedShort()
+                input.readUnsignedShort()
+                val poolCount = input.readUnsignedShort()
+                val pool = arrayOfNulls<Any?>(poolCount)
+                val classRefs = IntArray(poolCount)
+                var slot = 1
+                while (slot < poolCount) {
+                    when (val tag = input.readUnsignedByte()) {
+                        1 -> {
+                            pool[slot] = input.readUTF()
+                        }
+
+                        7 -> {
+                            classRefs[slot] = input.readUnsignedShort()
+                        }
+
+                        8, 16, 19, 20 -> {
+                            input.skipBytes(2)
+                        }
+
+                        15 -> {
+                            input.skipBytes(3)
+                        }
+
+                        3, 4, 9, 10, 11, 12, 17, 18 -> {
+                            input.skipBytes(4)
+                        }
+
+                        5, 6 -> {
+                            input.skipBytes(8)
+                            slot += 1
+                        }
+
+                        else -> {
+                            error("unsupported constant pool tag $tag")
+                        }
+                    }
+                    slot += 1
+                }
+                val access = input.readUnsignedShort()
+                val thisClass = input.readUnsignedShort()
+                val className = utf8At(pool, classRefs[thisClass])
+                // Non-public and synthetic classes are invisible to Java.
+                if ((access and 0x0001) == 0 || (access and 0x1000) != 0) {
+                    return emptyList()
+                }
+                input.readUnsignedShort()
+                repeat(input.readUnsignedShort()) { input.skipBytes(2) }
+                val surface = mutableListOf("class $className")
+                for (section in listOf("field", "method")) {
+                    repeat(input.readUnsignedShort()) {
+                        val memberAccess = input.readUnsignedShort()
+                        val name = utf8At(pool, input.readUnsignedShort())
+                        val descriptor = utf8At(pool, input.readUnsignedShort())
+                        repeat(input.readUnsignedShort()) {
+                            input.skipBytes(2)
+                            input.skipBytes(input.readInt())
+                        }
+                        val visible = (memberAccess and 0x0005) != 0
+                        val synthetic = (memberAccess and 0x1000) != 0
+                        if (visible && !synthetic) {
+                            surface += "  $section $className.$name $descriptor"
+                        }
+                    }
+                }
+                return surface
+            }
+
+            val lines = mutableListOf<String>()
+            ZipFile(jarFile.get().asFile).use { archive ->
+                for (entry in archive.entries()) {
+                    if (!entry.name.endsWith(".class") || !entry.name.startsWith("com/nouprax/")) {
+                        continue
+                    }
+                    lines += classSurface(archive.getInputStream(entry).use { it.readBytes() })
+                }
+            }
+            val rendered = lines.sorted().joinToString("\n") + "\n"
+            if (write) {
+                snapshotFile.writeText(rendered)
+                logger.lifecycle("Wrote JVM ABI snapshot: ${snapshotFile.absolutePath}")
+                return@doLast
+            }
+            check(snapshotFile.isFile) {
+                "jvm-abi.txt is missing; generate it with ./gradlew :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi"
+            }
+            val expected = snapshotFile.readText()
+            check(rendered == expected) {
+                val actualLines = rendered.lines().toSet()
+                val expectedLines = expected.lines().toSet()
+                val added = (actualLines - expectedLines).sorted().joinToString("\n")
+                val removed = (expectedLines - actualLines).sorted().joinToString("\n")
+                "JVM public ABI drifted from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed\n" +
+                    "If the change is intentional, regenerate with -PwriteJvmAbi."
+            }
+        }
+    }
+
 tasks.register("kotlinTest") {
     group = "verification"
     description = "Runs JVM, Android host, and the current host's Kotlin/Native correctness suites."
-    dependsOn(listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinNativePackaging"))
+    dependsOn(
+        listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinNativePackaging", "verifyJvmAbi"),
+    )
 }
 
 tasks.register("allKotlinTests") {
@@ -687,13 +829,15 @@ tasks.register("verifyKotlinNativePackaging") {
         // file with the right name exists.
         fun binaryArchitecture(bytes: ByteArray): String {
             require(bytes.size >= 20) { "native library header is truncated" }
+
             fun u16(offset: Int) = (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
+
             fun u32(offset: Int) =
                 (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8) or
                     ((bytes[offset + 2].toInt() and 0xff) shl 16) or ((bytes[offset + 3].toInt() and 0xff) shl 24)
             return when {
                 bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() &&
-                    bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte() ->
+                    bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte() -> {
                     when (u16(18)) {
                         0x3e -> "elf-x64"
                         0xb7 -> "elf-arm64"
@@ -701,15 +845,19 @@ tasks.register("verifyKotlinNativePackaging") {
                         0x03 -> "elf-x86"
                         else -> "elf-unknown-${u16(18)}"
                     }
+                }
 
-                u32(0) == 0xfeedfacf.toInt() ->
+                u32(0) == 0xfeedfacf.toInt() -> {
                     when (u32(4)) {
                         0x0100000c -> "macho-arm64"
                         0x01000007 -> "macho-x64"
                         else -> "macho-unknown-${u32(4)}"
                     }
+                }
 
-                else -> "unknown"
+                else -> {
+                    "unknown"
+                }
             }
         }
 

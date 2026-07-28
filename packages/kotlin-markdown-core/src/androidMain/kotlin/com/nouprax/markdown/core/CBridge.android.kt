@@ -89,12 +89,17 @@ private object AndroidNativeLoader {
                     "classpath at ${resource ?: "com/nouprax/markdown/core/native/<platform>/$filename"}.",
             )
         }
-        val directory = java.nio.file.Files.createTempDirectory("markdown-core-")
+        val directory =
+            java.nio.file.Files
+                .createTempDirectory("markdown-core-")
         val library = directory.resolve(filename)
         // deleteOnExit removes entries in reverse registration order, so the
         // directory must be registered before its child.
         directory.toFile().deleteOnExit()
-        stream.use { java.nio.file.Files.copy(it, library) }
+        stream.use {
+            java.nio.file.Files
+                .copy(it, library)
+        }
         library.toFile().deleteOnExit()
         System.load(library.toAbsolutePath().toString())
     }

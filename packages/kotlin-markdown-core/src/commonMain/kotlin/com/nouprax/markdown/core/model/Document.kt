@@ -1,5 +1,8 @@
 package com.nouprax.markdown.core
 
+import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmStatic
+
 public class Document internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
@@ -54,6 +57,10 @@ public class Document internal constructor(
     public fun dump(): String = MarkupDumper.dump(this)
 
     public companion object {
+        /** Parses [source] in one shot into a self-contained snapshot;
+         * statically callable from Java as `Document.parse(...)`. */
+        @JvmStatic
+        @JvmOverloads
         public fun parse(
             source: String,
             options: ParseOptions = ParseOptions(),
