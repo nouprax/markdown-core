@@ -151,6 +151,19 @@ function auditPom(file, coordinate) {
         !/(?:junit|kotlin-test|testng|mockito|kotest|hamcrest|opentest4j)/iu.test(pom),
         `${path.basename(file)} publishes a test framework dependency`
     );
+    // The library's only external dependency is the Kotlin standard
+    // library: every declared POM dependency must come from the project
+    // itself or be kotlin-stdlib, so an accidental api(...) addition fails
+    // the audit instead of widening every consumer's dependency graph.
+    for (const match of pom.matchAll(/<dependency>[\s\S]*?<\/dependency>/gu)) {
+        const dependency = match[0];
+        const group = dependency.match(/<groupId>(.*?)<\/groupId>/u)?.[1];
+        const artifact = dependency.match(/<artifactId>(.*?)<\/artifactId>/u)?.[1];
+        assert.ok(
+            group === "com.nouprax" || (group === "org.jetbrains.kotlin" && artifact?.startsWith("kotlin-stdlib")),
+            `${path.basename(file)} publishes unexpected dependency ${group}:${artifact}`
+        );
+    }
 }
 
 function auditModule(file) {
@@ -179,6 +192,12 @@ function auditModule(file) {
             assert.ok(
                 !/(?:junit|kotlin-test|testng|mockito|kotest|hamcrest|opentest4j)/iu.test(coordinate),
                 `${path.basename(file)} publishes test dependency ${coordinate}`
+            );
+            assert.ok(
+                dependency.group === "com.nouprax" ||
+                    (dependency.group === "org.jetbrains.kotlin" &&
+                        String(dependency.module ?? "").startsWith("kotlin-stdlib")),
+                `${path.basename(file)} publishes unexpected dependency ${coordinate}`
             );
         }
     }

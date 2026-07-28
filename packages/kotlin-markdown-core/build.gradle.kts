@@ -186,27 +186,57 @@ val generatedCanonicalAstSource =
     layout.buildDirectory.file(
         "generated/canonicalAstCommonTest/kotlin/com/nouprax/markdown/core/CanonicalAstCases.kt",
     )
-val hostOs = System.getProperty("os.name").lowercase()
-val hostArchitecture = System.getProperty("os.arch").lowercase()
-val androidManagedDeviceTestAbi =
-    when (hostArchitecture) {
-        "aarch64", "arm64" -> "arm64-v8a"
-        "amd64", "x86_64" -> "x86_64"
-        else -> error("Unsupported Android managed-device host architecture: $hostArchitecture")
+// The one closed model of supported build hosts. Every host-dependent
+// decision — JNI resource path, native library file name, Kotlin/Native
+// test target, managed-device ABI, publish-local target — derives from this
+// object, and a host outside the support matrix stops configuration here
+// instead of silently producing artifacts labeled for another platform.
+data class HostTriple(
+    val os: String,
+    val architecture: String,
+) {
+    val platform: String get() = "$os-$architecture"
+    val kotlinNativeTarget: String get() = if (os == "macos") "macosArm64" else "linuxX64"
+    val managedDeviceAbi: String get() = if (architecture == "arm64") "arm64-v8a" else "x86_64"
+    val nativeLibraryFileName: String
+        get() = if (os == "macos") "libmarkdown_core_kotlin.dylib" else "libmarkdown_core_kotlin.so"
+}
+
+val supportedHostTriples =
+    setOf(
+        HostTriple("macos", "arm64"),
+        HostTriple("linux", "x64"),
+    )
+
+val hostTriple =
+    run {
+        val osName = System.getProperty("os.name").lowercase()
+        val architectureName = System.getProperty("os.arch").lowercase()
+        val os =
+            when {
+                osName.contains("mac") -> "macos"
+                osName.contains("linux") -> "linux"
+                osName.contains("windows") -> "windows"
+                else -> osName
+            }
+        val architecture =
+            when (architectureName) {
+                "aarch64", "arm64" -> "arm64"
+                "amd64", "x86_64" -> "x64"
+                else -> architectureName
+            }
+        val triple = HostTriple(os, architecture)
+        require(triple in supportedHostTriples) {
+            "Unsupported build host: $osName/$architectureName. Supported hosts: " +
+                supportedHostTriples.joinToString { it.platform } + "."
+        }
+        triple
     }
+
+val androidManagedDeviceTestAbi = hostTriple.managedDeviceAbi
 val jvmNativeBuildDirectory = layout.buildDirectory.dir("native/jvm")
 val jvmNativeResourceDirectory = layout.buildDirectory.dir("generated/jvmResources")
-val desktopPlatform =
-    when {
-        System.getProperty("os.name").lowercase().contains("mac") &&
-            hostArchitecture in setOf("aarch64", "arm64") -> "macos-arm64"
-
-        System.getProperty("os.name").lowercase().contains("mac") -> "macos-x64"
-
-        System.getProperty("os.name").lowercase().contains("windows") -> "windows-x64"
-
-        else -> "linux-x64"
-    }
+val desktopPlatform = hostTriple.platform
 val nativeOutputDirectory =
     jvmNativeResourceDirectory.map {
         it.dir("com/nouprax/markdown/core/native/$desktopPlatform")
@@ -291,18 +321,8 @@ fun KotlinNativeTarget.configureNativeBridge() {
     }
 }
 
-val hostNativeTest =
-    when {
-        hostOs.contains("mac") -> "macosArm64Test"
-        hostOs.contains("linux") -> "linuxX64Test"
-        else -> null
-    }
-val hostNativeConformanceTest =
-    when {
-        hostOs.contains("mac") -> "macosArm64ConformanceTest"
-        hostOs.contains("linux") -> "linuxX64ConformanceTest"
-        else -> null
-    }
+val hostNativeTest = "${hostTriple.kotlinNativeTarget}Test"
+val hostNativeConformanceTest = "${hostTriple.kotlinNativeTarget}ConformanceTest"
 
 val configureJvmNative =
     tasks.register<Exec>("configureJvmNative") {
@@ -361,7 +381,13 @@ kotlin {
     }
 
     jvm {
-        compilerOptions.jvmTarget.set(JvmTarget.JVM_17)
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+            // jvmTarget only pins the classfile version; -Xjdk-release also
+            // pins the JDK API surface, so a reference to a post-17 Java API
+            // fails compilation instead of shipping silently.
+            freeCompilerArgs.add("-Xjdk-release=17")
+        }
         withSourcesJar(publish = true)
         testRuns["test"].executionTask.configure {
             useJUnitPlatform()
@@ -434,7 +460,6 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(libs.kotlin.stdlib)
-            api(libs.kotlinx.coroutines.core)
         }
         commonTest {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
@@ -532,15 +557,8 @@ val hostNativeLibraryPath =
     nativeOutputDirectory
         .get()
         .asFile
-        .resolve(
-            if (desktopPlatform.startsWith("macos")) {
-                "libmarkdown_core_kotlin.dylib"
-            } else if (desktopPlatform.startsWith("windows")) {
-                "markdown_core_kotlin.dll"
-            } else {
-                "libmarkdown_core_kotlin.so"
-            },
-        ).absolutePath
+        .resolve(hostTriple.nativeLibraryFileName)
+        .absolutePath
 tasks.withType<Test>().matching { it.name == "testAndroidHostTest" }.configureEach {
     dependsOn(buildJvmNative)
     filter.excludeTestsMatching("*AstTest*")
@@ -658,41 +676,79 @@ tasks.register("verifyKotlinNativePackaging") {
     val runtimeAarFile = androidRuntimeAar.get().asFile
     val desktopOutputDirectory = nativeOutputDirectory.get().asFile
     val expectedDesktopPlatform = desktopPlatform
+    val desktopLibrary = hostTriple.nativeLibraryFileName
+    val expectedDesktopArchitecture =
+        if (hostTriple.os == "macos") "macho-${hostTriple.architecture}" else "elf-${hostTriple.architecture}"
     inputs.file(runtimeAarFile)
 
     doLast {
-        val expectedAndroidEntries =
-            setOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64").map {
-                "jni/$it/libmarkdown_core_kotlin.so"
-            }
-        ZipFile(runtimeAarFile).use { archive ->
-            val entries =
-                archive
-                    .entries()
-                    .asSequence()
-                    .map { it.name }
-                    .toSet()
-            check(entries.containsAll(expectedAndroidEntries)) {
-                "Android runtime AAR is missing: ${expectedAndroidEntries - entries}"
+        // Reads enough of an ELF or Mach-O header to name the machine architecture,
+        // so packaging checks verify what a native library is, not merely that a
+        // file with the right name exists.
+        fun binaryArchitecture(bytes: ByteArray): String {
+            require(bytes.size >= 20) { "native library header is truncated" }
+            fun u16(offset: Int) = (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
+            fun u32(offset: Int) =
+                (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+                    ((bytes[offset + 2].toInt() and 0xff) shl 16) or ((bytes[offset + 3].toInt() and 0xff) shl 24)
+            return when {
+                bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() &&
+                    bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte() ->
+                    when (u16(18)) {
+                        0x3e -> "elf-x64"
+                        0xb7 -> "elf-arm64"
+                        0x28 -> "elf-arm32"
+                        0x03 -> "elf-x86"
+                        else -> "elf-unknown-${u16(18)}"
+                    }
+
+                u32(0) == 0xfeedfacf.toInt() ->
+                    when (u32(4)) {
+                        0x0100000c -> "macho-arm64"
+                        0x01000007 -> "macho-x64"
+                        else -> "macho-unknown-${u32(4)}"
+                    }
+
+                else -> "unknown"
             }
         }
 
-        val desktopLibrary =
-            when {
-                expectedDesktopPlatform.startsWith("macos") -> "libmarkdown_core_kotlin.dylib"
-                expectedDesktopPlatform.startsWith("windows") -> "markdown_core_kotlin.dll"
-                else -> "libmarkdown_core_kotlin.so"
+        val expectedAndroidArchitectures =
+            mapOf(
+                "arm64-v8a" to "elf-arm64",
+                "armeabi-v7a" to "elf-arm32",
+                "x86" to "elf-x86",
+                "x86_64" to "elf-x64",
+            )
+        ZipFile(runtimeAarFile).use { archive ->
+            for ((abi, expectedArchitecture) in expectedAndroidArchitectures) {
+                val entry =
+                    archive.getEntry("jni/$abi/libmarkdown_core_kotlin.so")
+                        ?: error("Android runtime AAR is missing jni/$abi/libmarkdown_core_kotlin.so")
+                val header = archive.getInputStream(entry).use { it.readNBytes(20) }
+                val architecture = binaryArchitecture(header)
+                check(architecture == expectedArchitecture) {
+                    "Android $abi payload has architecture $architecture, expected $expectedArchitecture"
+                }
             }
-        check(desktopOutputDirectory.resolve(desktopLibrary).isFile) {
+        }
+
+        val desktopFile = desktopOutputDirectory.resolve(desktopLibrary)
+        check(desktopFile.isFile) {
             "JVM native payload is missing for $expectedDesktopPlatform"
+        }
+        val desktopArchitecture = binaryArchitecture(desktopFile.inputStream().use { it.readNBytes(20) })
+        check(desktopArchitecture == expectedDesktopArchitecture) {
+            "JVM native payload for $expectedDesktopPlatform has architecture " +
+                "$desktopArchitecture, expected $expectedDesktopArchitecture"
         }
     }
 }
 
 tasks.withType<org.gradle.api.publish.maven.tasks.PublishToMavenLocal>().configureEach {
     when {
-        name.contains("LinuxX64") && !hostOs.contains("linux") -> enabled = false
-        name.contains("MacosArm64") && !hostOs.contains("mac") -> enabled = false
+        name.contains("LinuxX64") && hostTriple.os != "linux" -> enabled = false
+        name.contains("MacosArm64") && hostTriple.os != "macos" -> enabled = false
     }
 }
 
@@ -703,11 +759,7 @@ tasks.register("publishKotlinToMavenLocal") {
         "publishKotlinMultiplatformPublicationToMavenLocal",
         "publishJvmPublicationToMavenLocal",
         "publishAndroidPublicationToMavenLocal",
-        if (hostOs.contains("mac")) {
-            "publishMacosArm64PublicationToMavenLocal"
-        } else {
-            "publishLinuxX64PublicationToMavenLocal"
-        },
+        "publish${hostTriple.kotlinNativeTarget.replaceFirstChar { it.uppercase() }}PublicationToMavenLocal",
         ":packages:kotlin-markdown-core:android-runtime:publishToMavenLocal",
     )
 }

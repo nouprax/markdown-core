@@ -40,6 +40,13 @@ fi
     -p packages/kotlin-markdown-core/consumers/jvm-gradle run
 "$gradle" --warning-mode=fail "$property" "-PconsumerRepository=$repository" \
     -p packages/kotlin-markdown-core/consumers/android assembleDebug
+# The Maven consumer runs on the advertised JVM floor when the caller
+# provides one (CI passes a JDK 17 home); Gradle consumers keep the
+# toolchain JDK for AGP.
+if [ -n "${MARKDOWN_CORE_MAVEN_CONSUMER_JAVA_HOME:-}" ]; then
+    export JAVA_HOME="$MARKDOWN_CORE_MAVEN_CONSUMER_JAVA_HOME"
+    "$JAVA_HOME/bin/java" -version 2>&1 | head -1
+fi
 MAVEN_USER_HOME="$root/build/maven-user-home" \
     MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }--enable-native-access=ALL-UNNAMED" \
     "$root/mvnw" --batch-mode --no-transfer-progress \
