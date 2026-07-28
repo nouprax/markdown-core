@@ -329,3 +329,25 @@ private final class ConflationDriver {
         #expect(second.document.dump() == reference.dump())
     }
 }
+
+@Suite("materialization") struct MaterializationSuite {
+    @Test("an explicitly materialized snapshot stays usable across commits and deinit")
+    func explicitMaterialization() throws {
+        var retained: Document?
+        do {
+            let session = try MarkupSession()
+            try session.append("First\n\nSecond\n")
+            let first = try session.commit()
+            // The explicit contract: materialize while current, stay
+            // self-contained forever after.
+            first.document.materialize()
+            try session.append("\nThird\n")
+            _ = try session.commit()
+            retained = first.document
+        }
+        let document = try #require(retained)
+        let second = try #require(document.children[1] as? Paragraph)
+        #expect(document.scope(of: second).start.line == 3)
+        #expect(document.dump().contains("Paragraph"))
+    }
+}

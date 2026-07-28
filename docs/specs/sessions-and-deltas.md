@@ -113,6 +113,14 @@ successful commit does. Requesting a scope from a snapshot that was
 superseded before it ever materialized is a documented programmer error
 (platforms trap), as is passing a node of a different session or revision.
 
+A caller that retains a snapshot across commits makes the contract explicit
+with `materialize()` on the snapshot: it performs the same one-time
+resolution immediately, so the retained value's usability no longer depends
+on whether some other read happened to run while the snapshot was current.
+Structural traversal never depends on materialization: the scope-free
+visitor overload of `MarkupWalker` walks any retained snapshot regardless of
+resolver state.
+
 ## Edits
 
 - `edit(byteStart, byteEnd, replacement)` replaces the byte range

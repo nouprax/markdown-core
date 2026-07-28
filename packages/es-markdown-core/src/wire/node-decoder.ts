@@ -8,9 +8,9 @@ import type { NativeExports } from "../runtime/native.js";
 import type { ScopeEntry } from "../session/scope-resolver.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before snapshot adoption wires its scope and dump
- * mediators to a resolver. */
-export type DocumentValue = Omit<Document, "scope" | "dump">;
+/** A decoded document before snapshot adoption wires its scope, dump, and
+ * materialize mediators to a resolver. */
+export type DocumentValue = Omit<Document, "scope" | "dump" | "materialize">;
 
 /**
  * One decode pass over the native committed tree. One-shot parses decode

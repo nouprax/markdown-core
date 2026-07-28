@@ -66,3 +66,23 @@ class WalkerTraversalTest {
         }
     }
 }
+
+class SnapshotMaterializationTest {
+    @Test
+    fun anExplicitlyMaterializedSnapshotStaysUsableAcrossCommitsAndClose() {
+        val session = MarkupSession()
+        val first =
+            session.use {
+                it.append("First\n\nSecond\n")
+                val commit = it.commit()
+                // The explicit contract: materialize while current, stay
+                // self-contained forever after.
+                commit.document.materialize()
+                it.append("\nThird\n")
+                it.commit()
+                commit
+            }
+        assertEquals(3, first.document.scope(first.document.content[1]).start.line)
+        assertTrue(first.document.dump().contains("Paragraph"))
+    }
+}

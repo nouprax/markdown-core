@@ -482,3 +482,21 @@ test("sessions: a narrow edit in a wide document relinks instead of re-decoding 
         session.close();
     }
 });
+
+test("sessions: an explicitly materialized snapshot stays usable across commits and close", () => {
+    const session = new MarkupSession();
+    try {
+        session.append("First\n\nSecond\n");
+        const first = session.commit();
+        // The explicit contract: materialize while current, stay
+        // self-contained forever after.
+        first.document.materialize();
+        session.append("\nThird\n");
+        session.commit();
+        session.close();
+        assert.equal(first.document.scope(first.document.content[1]).start.line, 3);
+        assert.ok(first.document.dump().includes("Paragraph"));
+    } finally {
+        session.close();
+    }
+});

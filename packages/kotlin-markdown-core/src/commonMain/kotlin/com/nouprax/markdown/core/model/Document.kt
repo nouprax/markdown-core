@@ -38,6 +38,18 @@ public class Document internal constructor(
         return entry.scope
     }
 
+    /**
+     * Resolves and caches every scope of this snapshot now, making the
+     * retained value self-contained regardless of later commits or session
+     * close — the explicit form of the materialization that [scope], a
+     * walk, or [dump] would perform implicitly on first use. Call while the
+     * snapshot is current (before the owning session's next successful
+     * commit). Idempotent; a one-shot [parse] result is always materialized.
+     */
+    public fun materialize() {
+        resolver.materialize()
+    }
+
     /** Returns the canonical diagnostic dump for this document. */
     public fun dump(): String = MarkupDumper.dump(this)
 
