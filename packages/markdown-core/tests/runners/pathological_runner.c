@@ -16,9 +16,9 @@
  * sessions via the shared replay harness: every commit checks the session
  * dump against a one-shot parse of the same text, folds the delta stream
  * into an id->revision mirror, and (with footnotes enabled) compares
- * footnote queries against a fresh session.  Session trees pass through
- * the recursive dump on every commit, so their nesting depths stay well
- * below the one-shot cases'.
+ * footnote queries against a fresh session.  The canonical dump is
+ * iterative like every other traversal, so session cases run at the same
+ * adversarial depths as the one-shot cases.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -894,16 +894,18 @@ done:
     return result;
 }
 
-/* 1024-deep block quotes: the open chain spans the whole document on every
- * commit.  The innermost text edit rides the full chain; the mid-chain
- * marker flip re-kinds level 64 and everything below it into a list and
- * back. */
+/* 50000-deep block quotes — the same depth as the one-shot cases now that
+ * the canonical dump verifying every commit is iterative.  The open chain
+ * spans the whole document on every commit.  The innermost text edit rides
+ * the full chain; the mid-chain marker flip re-kinds level 64 and
+ * everything below it into a list and back. */
 static int case_session_quotes_deep(pc_context *context) {
+    enum { QUOTE_DEPTH = 50000 };
     markdown_core_parse_options options;
     sr_replay replay;
     int result = -1;
 
-    if (pc_build(context, NULL, "> ", 1024, "a") != 0) {
+    if (pc_build(context, NULL, "> ", QUOTE_DEPTH, "a") != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
@@ -911,23 +913,24 @@ static int case_session_quotes_deep(pc_context *context) {
         return -1;
     }
     if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1024, "BlockQuote") != 0) {
+        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0) {
         goto done;
     }
-    /* Innermost text, under 1024 open quotes. */
-    if (ps_splice(&replay, 2048, 2049, "b") != 0 || ps_splice(&replay, 2048, 2049, "a") != 0) {
+    /* Innermost text, under QUOTE_DEPTH open quotes. */
+    if (ps_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "b") != 0 ||
+        ps_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "a") != 0) {
         goto done;
     }
     /* Level 64's marker becomes a list bullet (list markers only open below
      * the engine's MAX_LIST_DEPTH, so the flip sits shallow): 64 quotes
-     * above, one list item holding the remaining 959 quotes below. */
+     * above, one list item holding the remaining quotes below. */
     if (ps_splice(&replay, 64 * 2, 64 * 2 + 2, "- ") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1023, "BlockQuote") != 0 ||
+        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH - 1, "BlockQuote") != 0 ||
         ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 1, "List") != 0) {
         goto done;
     }
     if (ps_splice(&replay, 64 * 2, 64 * 2 + 2, "> ") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1024, "BlockQuote") != 0 ||
+        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0 ||
         ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 0, "List") != 0) {
         goto done;
     }

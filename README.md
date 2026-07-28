@@ -92,16 +92,16 @@ pnpm add @nouprax/es-markdown-core
 ```
 
 ```js
-import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
+import { Document, MarkupDumper, MarkupWalker } from "@nouprax/es-markdown-core";
 
 const document = Document.parse("# Hello", { directives: false });
-new Walker().walk(document, (event, node) => {
-  console.log(event, node.kind, node.scope);
+new MarkupWalker().walk(document, (event, node, scope) => {
+  console.log(event, node.kind, scope.start.line);
 });
-console.log(TreeDumper.dump(document));
+console.log(MarkupDumper.dump(document));
 ```
 
-The package supports Node.js 20 or later and browser environments that can load
+The package supports Node.js 24 or later and browser environments that can load
 its WebAssembly asset. Module import completes WebAssembly initialization, so
 parsing is synchronous after the import resolves. The generated TypeScript
 surface is recursively readonly; JavaScript objects are not runtime-frozen.

@@ -5,8 +5,11 @@ import type { MarkupID } from "../model/markup-id.js";
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
 import { CSession } from "../runtime/c-session.js";
+import type { RawDelta } from "../runtime/c-session.js";
 import type { Commit, Delta } from "./commit.js";
 import type { FootnoteInfo } from "./footnote-info.js";
+import { relink } from "./relink.js";
+import type { ChildSwap } from "./relink.js";
 import { ScopeResolver } from "./scope-resolver.js";
 import { adopt } from "./snapshot.js";
 
@@ -177,13 +180,19 @@ export class MarkupSession {
                     { kind: "document", id: value.id, revision: value.revision, content: value.content },
                     resolver
                 );
-            } else {
+            } else if (raw.beforeRevision === 0) {
+                // First commit: every node is fresh, so one full decode pass
+                // skips the by-id lookups and depth ordering of the delta
+                // path. This is also what keeps the one-shot `Document.parse`
+                // sugar on the v1 performance budget.
                 document = this.native.decoder.decodeDocument(this.native.rootPointer(), {
                     ids: (rawValue) => this.identity(rawValue),
                     adopt: (value) => adopt(value, resolver),
                     mirror: this.mirror,
                     touched
                 });
+            } else {
+                document = this.rebuild(raw, resolver);
             }
             for (const rawValue of raw.removed) {
                 this.mirror.delete(rawValue);
@@ -199,6 +208,100 @@ export class MarkupSession {
         } finally {
             this.native.deltaFree(deltaPointer);
         }
+    }
+
+    /**
+     * Applies one delta to the mirror: materialize `added` and `changed`
+     * from the native tree, relink `bubbled` from their previous values,
+     * children before parents. Untouched siblings are never enumerated
+     * through the native boundary, keeping the commit proportional to the
+     * delta (plus the pure-JavaScript child-array copies of relinked
+     * parents), not to document width.
+     */
+    private rebuild(raw: RawDelta, resolver: ScopeResolver): Document {
+        const decoder = this.native.decoder;
+        const rebuilt = new Set<number>([...raw.added, ...raw.changed]);
+        const depths = new Map<number, number>();
+        const depthOf = (rawValue: number, pointer: number): number => {
+            // Memoized: the delta carries every ancestor of a change, so the
+            // combined walks stay O(delta), not O(depth) per entry.
+            const chain: number[] = [];
+            let currentRaw = rawValue;
+            let currentPointer = pointer;
+            let depth = -1;
+            while (true) {
+                const cached = depths.get(currentRaw);
+                if (cached !== undefined) {
+                    depth = cached;
+                    break;
+                }
+                chain.push(currentRaw);
+                const parent = this.native.nodeParent(currentPointer);
+                if (!parent) break;
+                currentPointer = parent;
+                currentRaw = decoder.rawId(parent);
+            }
+            for (let index = chain.length - 1; index >= 0; index -= 1) {
+                depth += 1;
+                depths.set(chain[index]!, depth);
+            }
+            return depth;
+        };
+        const entries = [...raw.added, ...raw.changed, ...raw.bubbled].map((rawValue) => {
+            const pointer = this.native.nodeById(rawValue);
+            if (!pointer) throw new Error("the delta names a node the session cannot resolve");
+            return { rawValue, pointer, depth: depthOf(rawValue, pointer) };
+        });
+        // Children before parents: a rebuilt or relinked parent assembles
+        // its child values from the already-updated mirror.
+        entries.sort((a, b) => b.depth - a.depth);
+        const swaps = new Map<number, ChildSwap[]>();
+        let adopted: Document | null = null;
+        for (const entry of entries) {
+            const previous = this.mirror.get(entry.rawValue);
+            const revision = decoder.revisionOf(entry.pointer);
+            let value: Markup;
+            if (rebuilt.has(entry.rawValue)) {
+                const children = decoder.childPointers(entry.pointer).map((childPointer) => {
+                    const child = this.mirror.get(decoder.rawId(childPointer));
+                    if (child === undefined || child.revision !== decoder.revisionOf(childPointer)) {
+                        throw new Error("the delta omitted a node the session mirror does not carry");
+                    }
+                    return child;
+                });
+                value =
+                    entry.rawValue === this.rootRawValue
+                        ? adopt({ kind: "document", id: this.identity(entry.rawValue), revision, content: children }, resolver)
+                        : decoder.decodeValue(entry.pointer, this.identity(entry.rawValue), revision, children);
+            } else {
+                if (previous === undefined) {
+                    throw new Error("the delta bubbled a node the session mirror does not carry");
+                }
+                const relinked = relink(previous, revision, swaps.get(entry.rawValue) ?? []);
+                value =
+                    entry.rawValue === this.rootRawValue && relinked.kind === "document"
+                        ? adopt(
+                              { kind: "document", id: relinked.id, revision: relinked.revision, content: relinked.content },
+                              resolver
+                          )
+                        : relinked;
+            }
+            this.mirror.set(entry.rawValue, value);
+            if (entry.rawValue === this.rootRawValue && value.kind === "document") adopted = value;
+            if (previous !== undefined) {
+                const parentPointer = this.native.nodeParent(entry.pointer);
+                if (parentPointer) {
+                    const parentRaw = decoder.rawId(parentPointer);
+                    if (!rebuilt.has(parentRaw)) {
+                        const list = swaps.get(parentRaw);
+                        if (list) list.push({ previous, next: value });
+                        else swaps.set(parentRaw, [{ previous, next: value }]);
+                    }
+                }
+            }
+        }
+        if (adopted === null) throw new Error("the delta did not include the document root");
+        return adopted;
     }
 
     /** The committed snapshot's current value for `id`; null when no node

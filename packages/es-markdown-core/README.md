@@ -9,7 +9,7 @@ same C parser compiled to WebAssembly.
 pnpm add @nouprax/es-markdown-core
 ```
 
-The package is ESM-only and supports Node.js 20 or later and browsers that can
+The package is ESM-only and supports Node.js 24 or later and browsers that can
 load its WebAssembly asset. Importing the module completes WebAssembly
 initialization, so `Document.parse` is synchronous.
 

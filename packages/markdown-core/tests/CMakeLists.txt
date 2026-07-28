@@ -411,6 +411,10 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()
+# The mid-chain marker flips re-kind the full 50000-deep quote chain twice,
+# each commit re-verified by a full dump-equality pass, so this case earns
+# the complexity-tier budget instead of the per-case default.
+set_tests_properties(pathological_session_quotes_deep PROPERTIES TIMEOUT 120)
 
 set(MARKDOWN_CORE_COMPLEXITY_CASES
     valid_long_quoted_value

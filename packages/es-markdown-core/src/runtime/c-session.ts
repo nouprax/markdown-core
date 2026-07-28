@@ -138,6 +138,17 @@ export class CSession {
         return root;
     }
 
+    /** The committed tree's node for `rawValue`; 0 when no such node
+     * exists at the committed revision. */
+    nodeById(rawValue: number): number {
+        return native.es_session_node_by_id(this.requirePointer(), BigInt(rawValue));
+    }
+
+    /** The canonical parent of a committed-tree node; 0 for the root. */
+    nodeParent(pointer: number): number {
+        return native.es_node_parent(pointer);
+    }
+
     rootIdentity(): { readonly rawValue: number; readonly revision: number } {
         const root = this.rootPointer();
         return {
