@@ -1,5 +1,6 @@
 import MarkdownCoreC
 
+/// A table column's declared alignment.
 public enum TableAlignment: String, Sendable {
     case none
     case left
@@ -7,13 +8,20 @@ public enum TableAlignment: String, Sendable {
     case right
 }
 
+/// A pipe table (the tables extension) with one header row.
 public struct Table: Markup {
+    /// The node's session-scoped identity; see `MarkupID`.
     public let id: MarkupID
+    /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// Per-column alignments, one entry per column.
     public let alignments: [TableAlignment]
+    /// The single header row.
     public let header: TableRow
+    /// The body rows, header excluded.
     public let rows: [TableRow]
 
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
@@ -45,12 +53,18 @@ extension Table {
     }
 }
 
+/// One row of a `Table`.
 public struct TableRow: Markup {
+    /// The node's session-scoped identity; see `MarkupID`.
     public let id: MarkupID
+    /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// Whether this is the table's header row.
     public let isHeader: Bool
+    /// The row's cells in column order.
     public let cells: [TableCell]
 
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
@@ -69,11 +83,16 @@ extension TableRow {
     }
 }
 
+/// One cell of a `TableRow`.
 public struct TableCell: Markup {
+    /// The node's session-scoped identity; see `MarkupID`.
     public let id: MarkupID
+    /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The cell's inline content.
     public let content: [any Markup]
 
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 

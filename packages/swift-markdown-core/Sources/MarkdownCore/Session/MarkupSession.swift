@@ -18,6 +18,7 @@ public final class MarkupSession {
     var mirror: [UInt64: any Markup] = [:]
     private var resolver: ScopeResolver?
 
+    /// The session's options, normalized and immutable for its lifetime.
     public let options: ParseOptions
 
     /// Per-session random salt; nodes from different sessions never compare
@@ -28,6 +29,8 @@ public final class MarkupSession {
     /// the first commit.
     public private(set) var document: Document
 
+    /// Opens an empty session at revision 0; throws `ParseError` when the
+    /// native session cannot be allocated.
     public init(options: ParseOptions = .init()) throws {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?

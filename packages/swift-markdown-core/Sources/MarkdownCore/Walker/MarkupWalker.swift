@@ -1,9 +1,14 @@
+/// Whether a walk callback fires on entering or leaving a node.
 public enum WalkEvent: Sendable {
     case entering
     case exiting
 }
 
+/// A read-only depth-first traversal that supplies each event with the
+/// node's resolved absolute scope. Traversal is iterative: documents walk
+/// at any nesting depth that parses.
 public struct MarkupWalker: Sendable {
+    /// Creates a walker; walkers are stateless and reusable.
     public init() {}
 
     /// Walks the document depth-first, supplying each event with the node's
