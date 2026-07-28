@@ -297,3 +297,35 @@ private final class ConflationDriver {
         }
     }
 }
+
+@Suite("depth") struct DepthSuite {
+    @Test("adversarial nesting walks, dumps, and commits beyond the call-stack budget")
+    func adversarialNestingDepth() throws {
+        // 4096 nested quotes overflowed the recursive walker; the explicit
+        // frame stack must keep parse, walk, dump, and the delta path of an
+        // incremental commit working at the same depth.
+        let depth = 4096
+        let source = String(repeating: "> ", count: depth) + "leaf\n"
+        let document = try Document.parse(source)
+
+        var quoteEnters = 0
+        var events = 0
+        MarkupWalker().walk(document) { event, node, _ in
+            events += 1
+            if event == .entering, node is BlockQuote { quoteEnters += 1 }
+        }
+        #expect(quoteEnters == depth)
+        // Every node enters exactly once and exits exactly once: the
+        // document, the quote chain, and the innermost paragraph and text.
+        #expect(events == 2 * (depth + 3))
+        #expect(document.dump().contains("BlockQuote"))
+
+        let session = try MarkupSession()
+        try session.append(source)
+        _ = try session.commit()
+        try session.replace((depth * 2)..<(depth * 2 + 4), with: "seed")
+        let second = try session.commit()
+        let reference = try Document.parse(String(repeating: "> ", count: depth) + "seed\n")
+        #expect(second.document.dump() == reference.dump())
+    }
+}

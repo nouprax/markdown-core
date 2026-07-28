@@ -1,3 +1,4 @@
+import Foundation
 import MarkdownCoreC
 
 public struct ParseOptions: Sendable, Hashable {
@@ -52,6 +53,13 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
     public let scope: Scope?
 
     public var description: String { message }
+}
+
+extension ParseError: LocalizedError {
+    /// The native parser's actionable message — the same text as
+    /// `description` — so Foundation error presentation (alerts, logs,
+    /// `NSError` bridging) never degrades to a bare domain and code.
+    public var errorDescription: String? { message }
 }
 
 /// An immutable snapshot of a parsed Markdown document.
