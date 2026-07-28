@@ -287,6 +287,23 @@ search 'npm publish \./release-npm/\*\.tgz --access public' "$release"
 search '^    resume-publish:$' "$release"
 search "if: github.event_name == 'workflow_dispatch'" "$release"
 search 'gh run download "\$SOURCE_RUN_ID" --name release-npm-package' "$release"
+# Tag publication and manual resume for the same release must share one
+# concurrency lock: the group derives from the effective release tag for
+# both events, never from the dispatch branch ref.
+grep -Fq "group: release-\${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.release-tag) || github.ref }}" "$release"
+# A resume must reject a source run that is still publishing.
+grep -Fq "test \"\$(jq -r '.status' <<<\"\$run_info\")\" = \"completed\"" "$release"
+# The Central deployment id is bound to the source run, never operator
+# input: the stage records it as a run artifact and the resume downloads
+# and cross-checks it against the protected tag and version.
+if search 'central-deployment-id' "$release"; then
+    echo "release resume must not accept a free-form Central deployment id" >&2
+    exit 1
+fi
+grep -Fq 'name: release-central-deployment' "$release"
+search 'gh run download "\$SOURCE_RUN_ID" --name release-central-deployment' "$release"
+grep -Fq 'test "$bound_tag" = "$RELEASE_TAG"' "$release"
+grep -Fq 'test "$bound_version" = "$(cat VERSION)"' "$release"
 grep -Fq 'test -s "docs/releases/$(cat VERSION).md"' "$release"
 grep -Fq -- '--notes-file "docs/releases/$(cat VERSION).md"' "$release"
 if search -- '--generate-notes' "$release"; then
