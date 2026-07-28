@@ -19,7 +19,7 @@ jobs:
         steps:
             - name: Resolve exact base run and validate artifact metadata
               id: artifacts
-              uses: actions/github-script@v9
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               with:
                   script: |
                       const allowedNames = new Set([
@@ -122,7 +122,7 @@ jobs:
             - name: Download head metrics as untrusted data
               if: ${{ steps.artifacts.outputs.head_safe == 'true' }}
               continue-on-error: true
-              uses: actions/download-artifact@v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
                   run-id: ${{ github.event.workflow_run.id }}
@@ -133,7 +133,7 @@ jobs:
             - name: Download exact-base metrics as untrusted data
               if: ${{ steps.artifacts.outputs.base_safe == 'true' }}
               continue-on-error: true
-              uses: actions/download-artifact@v8
+              uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
                   github-token: ${{ secrets.GITHUB_TOKEN }}
                   run-id: ${{ steps.artifacts.outputs.base_run_id }}
@@ -142,7 +142,7 @@ jobs:
                   merge-multiple: true
 
             - name: Create or update the metrics diff comment
-              uses: actions/github-script@v9
+              uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
               env:
                   BASE_RUN_URL: ${{ steps.artifacts.outputs.base_run_url }}
                   BASE_SHA: ${{ steps.artifacts.outputs.base_sha }}

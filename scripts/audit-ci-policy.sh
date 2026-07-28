@@ -25,6 +25,22 @@ else
     }
 fi
 
+# Supply-chain pinning: every workflow action must reference an immutable
+# commit SHA (a movable major tag lets a tag replacement change the code CI
+# and release jobs execute without a reviewed diff). Repository-local
+# composite actions (uses: ./…) are exempt from the SHA rule, but their
+# manifests execute in the same jobs, so they are scanned alongside the
+# workflows.
+action_sources=(.github/workflows/)
+if [ -d .github/actions ]; then
+    action_sources+=(.github/actions/)
+fi
+if grep -rhoE 'uses: [^ ]+' "${action_sources[@]}" | grep -vE 'uses: [^ ]+@[0-9a-f]{40}$' | grep -v 'uses: \./' | grep -q .; then
+    echo "workflow action references must be pinned to a full commit SHA:" >&2
+    grep -rnE 'uses: [^ ]+' "${action_sources[@]}" | grep -vE '@[0-9a-f]{40}( #.*)?$' | grep -v 'uses: \./' >&2
+    exit 1
+fi
+
 for required in \
     "$ci" \
     "$codeql" \
