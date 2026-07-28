@@ -439,8 +439,11 @@ install_emscripten() {
     fi
     # Pin the emsdk manager itself to the immutable commit of the release
     # tag matching EMSCRIPTEN_VERSION: a moved tag or new default-branch
-    # commit must never change the bytes this installer executes.
-    git -C "$directory" fetch --filter=blob:none origin "$EMSCRIPTEN_COMMIT"
+    # commit must never change the bytes this installer executes. The
+    # fetch runs only when the commit is absent so a re-run stays
+    # idempotent without network access.
+    git -C "$directory" rev-parse --quiet --verify "$EMSCRIPTEN_COMMIT^{commit}" >/dev/null \
+        || git -C "$directory" fetch --filter=blob:none origin "$EMSCRIPTEN_COMMIT"
     git -C "$directory" checkout --quiet "$EMSCRIPTEN_COMMIT"
     actual_commit=$(git -C "$directory" rev-parse HEAD)
     [ "$actual_commit" = "$EMSCRIPTEN_COMMIT" ] || {
