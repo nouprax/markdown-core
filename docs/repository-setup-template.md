@@ -926,6 +926,14 @@ gh api --method PATCH "repos/$GH_REPO" \
   -f squash_merge_commit_message=PR_BODY >/dev/null
 echo "merge policy: squash-only; squash messages default to the PR title"
 
+enforcement_rank() {
+  case "$1" in
+    active) echo 2 ;;
+    evaluate) echo 1 ;;
+    *) echo 0 ;;
+  esac
+}
+
 upsert_ruleset() {
   local name=$1
   local payload=$2
@@ -942,23 +950,30 @@ upsert_ruleset() {
     exit 1
   elif [ "$count" -eq 1 ]; then
     # Fail closed on protection downgrades: a maintenance re-run must
-    # not weaken a live ruleset (active -> evaluate/disabled) or add a
-    # bypass where none exists, unless the operator says so explicitly.
+    # not weaken a live ruleset (lowering enforcement, or granting a
+    # bypass to any actor that does not already hold one — including
+    # swapping one actor for another), unless the operator says so
+    # explicitly.
     if [ "$ALLOW_PROTECTION_DOWNGRADE" != "true" ]; then
-      local current_enforcement current_bypasses requested_enforcement requested_bypasses
+      local current_enforcement requested_enforcement
+      local current_actors requested_actors new_bypasses
       current_enforcement=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
         "repos/$GH_REPO/rulesets/$ids" --jq .enforcement)
-      current_bypasses=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-        "repos/$GH_REPO/rulesets/$ids" --jq '.bypass_actors | length')
       requested_enforcement=$(jq -r .enforcement "$payload")
-      requested_bypasses=$(jq -r '.bypass_actors | length' "$payload")
-      if [ "$current_enforcement" = "active" ] && [ "$requested_enforcement" != "active" ]; then
-        echo "refusing to downgrade '$name' from active to $requested_enforcement;" >&2
+      if [ "$(enforcement_rank "$requested_enforcement")" -lt "$(enforcement_rank "$current_enforcement")" ]; then
+        echo "refusing to downgrade '$name' from $current_enforcement to $requested_enforcement;" >&2
         echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
         exit 1
       fi
-      if [ "$requested_bypasses" -gt "$current_bypasses" ]; then
-        echo "refusing to add bypass actors to '$name' ($current_bypasses -> $requested_bypasses);" >&2
+      current_actors=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+        "repos/$GH_REPO/rulesets/$ids" \
+        --jq '[.bypass_actors[]? | {actor_id, actor_type, bypass_mode}]')
+      requested_actors=$(jq \
+        '[.bypass_actors[]? | {actor_id, actor_type, bypass_mode}]' "$payload")
+      new_bypasses=$(jq -n --argjson current "$current_actors" \
+        --argjson requested "$requested_actors" '$requested - $current | length')
+      if [ "$new_bypasses" -gt 0 ]; then
+        echo "refusing to grant bypass on '$name' to $new_bypasses actor(s) not currently granted;" >&2
         echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
         exit 1
       fi
