@@ -17,8 +17,9 @@
  * dump against a one-shot parse of the same text, folds the delta stream
  * into an id->revision mirror, and (with footnotes enabled) compares
  * footnote queries against a fresh session.  The canonical dump is
- * iterative like every other traversal, so session cases run at the same
- * adversarial depths as the one-shot cases.
+ * iterative like every other traversal; session-case depths are bounded
+ * only by the dump volume the per-commit verification materializes (dump
+ * bytes grow quadratically with depth), never by a stack budget.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -894,13 +895,17 @@ done:
     return result;
 }
 
-/* 50000-deep block quotes — the same depth as the one-shot cases now that
- * the canonical dump verifying every commit is iterative.  The open chain
- * spans the whole document on every commit.  The innermost text edit rides
- * the full chain; the mid-chain marker flip re-kinds level 64 and
- * everything below it into a list and back. */
+/* 4096-deep block quotes.  Depth here is bounded by dump volume, not by
+ * any stack: the replay harness verifies every commit with two canonical
+ * dumps whose per-line prefixes grow with depth, so dump bytes are
+ * quadratic in depth (50000 deep would be ~5 GiB per dump).  Stack safety
+ * at adversarial depth is pinned separately by the small-stack dump case
+ * in the concurrency runner and the 50000-deep structural one-shot cases.
+ * The open chain spans the whole document on every commit.  The innermost
+ * text edit rides the full chain; the mid-chain marker flip re-kinds level
+ * 64 and everything below it into a list and back. */
 static int case_session_quotes_deep(pc_context *context) {
-    enum { QUOTE_DEPTH = 50000 };
+    enum { QUOTE_DEPTH = 4096 };
     markdown_core_parse_options options;
     sr_replay replay;
     int result = -1;

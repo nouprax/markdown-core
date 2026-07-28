@@ -732,9 +732,20 @@ val verifyJvmAbi =
                 if ((access and 0x0001) == 0 || (access and 0x1000) != 0) {
                     return emptyList()
                 }
-                input.readUnsignedShort()
-                repeat(input.readUnsignedShort()) { input.skipBytes(2) }
-                val surface = mutableListOf("class $className")
+                // The type hierarchy is ABI too: dropping an implemented
+                // interface breaks Java callers without touching members.
+                val superName =
+                    input.readUnsignedShort().let { index ->
+                        if (index == 0) "-" else utf8At(pool, classRefs[index])
+                    }
+                val interfaces =
+                    (0 until input.readUnsignedShort())
+                        .map { utf8At(pool, classRefs[input.readUnsignedShort()]) }
+                        .sorted()
+                val surface =
+                    mutableListOf(
+                        "class $className extends $superName implements ${interfaces.joinToString(",")}",
+                    )
                 for (section in listOf("field", "method")) {
                     repeat(input.readUnsignedShort()) {
                         val memberAccess = input.readUnsignedShort()

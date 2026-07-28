@@ -515,73 +515,73 @@
   method com/nouprax/markdown/core/WireReader.scope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/WireReader.string ()Ljava/lang/String;
   method com/nouprax/markdown/core/WireReader.ulong-s-VKNKU ()J
-class com/nouprax/markdown/core/BlockQuote
-class com/nouprax/markdown/core/CBridge_jvmKt
-class com/nouprax/markdown/core/CSession
-class com/nouprax/markdown/core/Code
-class com/nouprax/markdown/core/CodeBlock
-class com/nouprax/markdown/core/Commit
-class com/nouprax/markdown/core/Delta
-class com/nouprax/markdown/core/Directive
-class com/nouprax/markdown/core/DirectiveBlock
-class com/nouprax/markdown/core/Document
-class com/nouprax/markdown/core/Document$Companion
-class com/nouprax/markdown/core/Emphasis
-class com/nouprax/markdown/core/FootnoteDefinition
-class com/nouprax/markdown/core/FootnoteInfo
-class com/nouprax/markdown/core/FootnoteQueriesKt
-class com/nouprax/markdown/core/FootnoteReference
-class com/nouprax/markdown/core/Formula
-class com/nouprax/markdown/core/FormulaBlock
-class com/nouprax/markdown/core/HTML
-class com/nouprax/markdown/core/HTMLBlock
-class com/nouprax/markdown/core/Heading
-class com/nouprax/markdown/core/Image
-class com/nouprax/markdown/core/ImmutableListKt
-class com/nouprax/markdown/core/JvmNative
-class com/nouprax/markdown/core/LineBreak
-class com/nouprax/markdown/core/Link
-class com/nouprax/markdown/core/List
-class com/nouprax/markdown/core/ListFlavor
-class com/nouprax/markdown/core/ListItem
-class com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/Markup$DefaultImpls
-class com/nouprax/markdown/core/MarkupDumper
-class com/nouprax/markdown/core/MarkupDumperKt
-class com/nouprax/markdown/core/MarkupID
-class com/nouprax/markdown/core/MarkupID$Companion
-class com/nouprax/markdown/core/MarkupKt
-class com/nouprax/markdown/core/MarkupSession
-class com/nouprax/markdown/core/MarkupVisitor
-class com/nouprax/markdown/core/MarkupWalker
-class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Enter
-class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit
-class com/nouprax/markdown/core/Paragraph
-class com/nouprax/markdown/core/ParseErrorCode
-class com/nouprax/markdown/core/ParseException
-class com/nouprax/markdown/core/ParseOptions
-class com/nouprax/markdown/core/ParseOptionsKt
-class com/nouprax/markdown/core/PlacementMode
-class com/nouprax/markdown/core/Position
-class com/nouprax/markdown/core/ReadOnlyList$Companion
-class com/nouprax/markdown/core/Scope
-class com/nouprax/markdown/core/ScopeEntry
-class com/nouprax/markdown/core/ScopeResolver
-class com/nouprax/markdown/core/ScopeResolver$Companion
-class com/nouprax/markdown/core/SoftBreak
-class com/nouprax/markdown/core/Spin_jvmKt
-class com/nouprax/markdown/core/Strikethrough
-class com/nouprax/markdown/core/Strong
-class com/nouprax/markdown/core/Table
-class com/nouprax/markdown/core/TableAlignment
-class com/nouprax/markdown/core/TableCell
-class com/nouprax/markdown/core/TableRow
-class com/nouprax/markdown/core/Text
-class com/nouprax/markdown/core/ThematicBreak
-class com/nouprax/markdown/core/WalkEvent
-class com/nouprax/markdown/core/WireDecoder
-class com/nouprax/markdown/core/WireDecoderKt
-class com/nouprax/markdown/core/WireKind
-class com/nouprax/markdown/core/WireKind$Companion
-class com/nouprax/markdown/core/WireMarkupDecoderKt
-class com/nouprax/markdown/core/WireReader
+class com/nouprax/markdown/core/BlockQuote extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/CBridge_jvmKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/CSession extends java/lang/Object implements 
+class com/nouprax/markdown/core/Code extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/CodeBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Commit extends java/lang/Object implements 
+class com/nouprax/markdown/core/Delta extends java/lang/Object implements 
+class com/nouprax/markdown/core/Directive extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/DirectiveBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Document extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Document$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/Emphasis extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/FootnoteDefinition extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/FootnoteInfo extends java/lang/Object implements 
+class com/nouprax/markdown/core/FootnoteQueriesKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/FootnoteReference extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Formula extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/FormulaBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/HTML extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/HTMLBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Heading extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Image extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ImmutableListKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/JvmNative extends java/lang/Object implements 
+class com/nouprax/markdown/core/LineBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Link extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/List extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ListFlavor extends java/lang/Enum implements 
+class com/nouprax/markdown/core/ListItem extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Markup extends java/lang/Object implements 
+class com/nouprax/markdown/core/Markup$DefaultImpls extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupDumper extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupDumperKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupID extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupID$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupSession extends java/lang/Object implements java/lang/AutoCloseable
+class com/nouprax/markdown/core/MarkupVisitor extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupWalker extends java/lang/Object implements 
+class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Enter extends java/lang/Object implements com/nouprax/markdown/core/MarkupWalker$WalkFrame
+class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit extends java/lang/Object implements com/nouprax/markdown/core/MarkupWalker$WalkFrame
+class com/nouprax/markdown/core/Paragraph extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ParseErrorCode extends java/lang/Enum implements 
+class com/nouprax/markdown/core/ParseException extends java/lang/RuntimeException implements 
+class com/nouprax/markdown/core/ParseOptions extends java/lang/Object implements 
+class com/nouprax/markdown/core/ParseOptionsKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/PlacementMode extends java/lang/Enum implements 
+class com/nouprax/markdown/core/Position extends java/lang/Object implements 
+class com/nouprax/markdown/core/ReadOnlyList$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/Scope extends java/lang/Object implements 
+class com/nouprax/markdown/core/ScopeEntry extends java/lang/Object implements 
+class com/nouprax/markdown/core/ScopeResolver extends java/lang/Object implements 
+class com/nouprax/markdown/core/ScopeResolver$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/SoftBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Spin_jvmKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/Strikethrough extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Strong extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Table extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/TableAlignment extends java/lang/Enum implements 
+class com/nouprax/markdown/core/TableCell extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/TableRow extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/Text extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ThematicBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/WalkEvent extends java/lang/Enum implements 
+class com/nouprax/markdown/core/WireDecoder extends java/lang/Object implements 
+class com/nouprax/markdown/core/WireDecoderKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/WireKind extends java/lang/Enum implements 
+class com/nouprax/markdown/core/WireKind$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/WireMarkupDecoderKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/WireReader extends java/lang/Object implements 
