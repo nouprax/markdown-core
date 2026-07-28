@@ -855,10 +855,16 @@ OWNER_REVIEW_BYPASS_USER=${OWNER_REVIEW_BYPASS_USER:-$RELEASE_REVIEWER}
 OWNER_REVIEW_RULESET_NAME=${OWNER_REVIEW_RULESET_NAME:-owner approval gate}
 TAG_RULESET_NAME=${TAG_RULESET_NAME:-release tag protection}
 TAG_PATTERN=${TAG_PATTERN:-v*.*.*}
-RULESET_ENFORCEMENT=${RULESET_ENFORCEMENT:-evaluate}
+# Mature-repository defaults: full enforcement, no standing bypass. A
+# re-run with only the required inputs must never weaken protections that
+# are already active; pass ALLOW_PROTECTION_DOWNGRADE=true explicitly to
+# downgrade a live ruleset (initial bootstrap of a fresh repository can
+# still opt into RULESET_ENFORCEMENT=evaluate while CI stabilizes).
+RULESET_ENFORCEMENT=${RULESET_ENFORCEMENT:-active}
 PREVENT_SELF_REVIEW=${PREVENT_SELF_REVIEW:-false}
 MERGE_QUEUE=${MERGE_QUEUE:-true}
-MAIN_ADMIN_BYPASS=${MAIN_ADMIN_BYPASS:-true}
+MAIN_ADMIN_BYPASS=${MAIN_ADMIN_BYPASS:-false}
+ALLOW_PROTECTION_DOWNGRADE=${ALLOW_PROTECTION_DOWNGRADE:-false}
 
 case "$RULESET_ENFORCEMENT" in
   disabled|evaluate|active) ;;
@@ -935,6 +941,28 @@ upsert_ruleset() {
     echo "multiple rulesets named '$name'; refusing ambiguous update" >&2
     exit 1
   elif [ "$count" -eq 1 ]; then
+    # Fail closed on protection downgrades: a maintenance re-run must
+    # not weaken a live ruleset (active -> evaluate/disabled) or add a
+    # bypass where none exists, unless the operator says so explicitly.
+    if [ "$ALLOW_PROTECTION_DOWNGRADE" != "true" ]; then
+      local current_enforcement current_bypasses requested_enforcement requested_bypasses
+      current_enforcement=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+        "repos/$GH_REPO/rulesets/$ids" --jq .enforcement)
+      current_bypasses=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+        "repos/$GH_REPO/rulesets/$ids" --jq '.bypass_actors | length')
+      requested_enforcement=$(jq -r .enforcement "$payload")
+      requested_bypasses=$(jq -r '.bypass_actors | length' "$payload")
+      if [ "$current_enforcement" = "active" ] && [ "$requested_enforcement" != "active" ]; then
+        echo "refusing to downgrade '$name' from active to $requested_enforcement;" >&2
+        echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
+        exit 1
+      fi
+      if [ "$requested_bypasses" -gt "$current_bypasses" ]; then
+        echo "refusing to add bypass actors to '$name' ($current_bypasses -> $requested_bypasses);" >&2
+        echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
+        exit 1
+      fi
+    fi
     gh api -H "X-GitHub-Api-Version: 2026-03-10" --method PUT \
       "repos/$GH_REPO/rulesets/$ids" --input "$payload" >/dev/null
   else
@@ -1122,6 +1150,11 @@ scripts/bootstrap-repository.sh
 直接切换为 active。如果只有 reviewer 本人可以发布，`PREVENT_SELF_REVIEW=true` 会造成死锁；
 有独立 reviewer/team 后再开启。脚本不会删除未知 deployment policies，而是在发现额外策略时
 fail closed。
+
+脚本默认 `RULESET_ENFORCEMENT=active` 且 `MAIN_ADMIN_BYPASS=false`：维护性 re-run 不会把已
+active 的 ruleset 降级为 evaluate/disabled，也不会给现有 ruleset 新增 bypass actor；确需放宽时
+显式传 `ALLOW_PROTECTION_DOWNGRADE=true`。首次迁移按上文显式传 `RULESET_ENFORCEMENT=evaluate`
+即可。
 
 ## 11. 外部 registry 一次性设置
 
