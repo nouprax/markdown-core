@@ -76,7 +76,11 @@ printf '%s\n' \
 
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \
     swift run --disable-sandbox --package-path "$consumer" Consumer >/dev/null
+# The compiler's index store mirrors SDK header names (Foundation ships
+# NSScriptWhoseTests.h, for example), so it is excluded: the gate is about
+# this repository's test and benchmark content reaching the product build.
 if find "$consumer/.build" -type f \
+    -not -path '*/index/*' \
     \( -iname '*test*' -o -iname '*benchmark*' -o -name 'CanonicalAstCases.swift' \
     -o -name manifest.json -o -name '*.ast' \) -print | grep -q .; then
     echo "product-only Swift consumer built or carried test or benchmark content" >&2

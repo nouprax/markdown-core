@@ -32,6 +32,12 @@ export function adopt(value: DocumentValue, resolver: ScopeResolver): Document {
             return entry.scope;
         }
     });
+    Object.defineProperty(document, "materialize", {
+        enumerable: false,
+        value(): void {
+            resolver.materialize();
+        }
+    });
     Object.defineProperty(document, "dump", {
         enumerable: false,
         value(this: Document): string {

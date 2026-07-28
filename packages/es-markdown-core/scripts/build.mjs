@@ -64,6 +64,8 @@ const exported = [
     "es_document_root",
     "es_node_id",
     "es_node_revision",
+    "es_session_node_by_id",
+    "es_node_parent",
     "es_error_code",
     "es_error_free",
     "es_node_kind",

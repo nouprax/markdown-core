@@ -20,6 +20,23 @@ JVM-only Gradle and Maven consumers can use
 `com.nouprax:kotlin-markdown-core-jvm:2.0.0`. Published targets are Android API
 21 or later, JVM 17, macOS arm64, and Linux x64.
 
+### Android local and Robolectric tests
+
+On a device or emulator the Android artifact loads its bundled native
+library automatically. Local unit tests (including Robolectric) run on the
+host JVM, where the Android artifact needs a host build of
+`markdown_core_kotlin`. Provide it one of two ways:
+
+- pass `-Dmarkdown.core.hostNativeLibrary=/path/to/libmarkdown_core_kotlin.dylib`
+  (or `.so`) to the test JVM, or
+- put a host build on the test classpath at
+  `com/nouprax/markdown/core/native/<os>-<arch>/<library>`, the same layout
+  the JVM artifact uses (for example
+  `com/nouprax/markdown/core/native/macos-arm64/libmarkdown_core_kotlin.dylib`).
+
+Without either, the first parse fails with an `IllegalStateException` that
+names both remedies.
+
 ## Parse Markdown
 
 ```kotlin

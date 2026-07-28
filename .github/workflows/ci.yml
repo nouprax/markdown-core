@@ -542,7 +542,13 @@ jobs:
               with:
                   cache: gradle
                   distribution: temurin
-                  java-version: 26
+                  # Two JDKs: the last listed becomes the default JAVA_HOME
+                  # for Gradle and AGP, while 17 is exported as
+                  # JAVA_HOME_17_X64 so the Maven consumer exercises the
+                  # published artifact on the advertised JVM 17 floor.
+                  java-version: |
+                      17
+                      26
             - uses: actions/setup-node@v7
               with:
                   node-version: 26.5.0
@@ -554,6 +560,8 @@ jobs:
             - name: Install Android build dependencies
               run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Verify Kotlin publication consumers
+              env:
+                  MARKDOWN_CORE_MAVEN_CONSUMER_JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
               run: pnpm check:kotlin-consumers
 
     kotlin-android-test-build:

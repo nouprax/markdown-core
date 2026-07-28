@@ -199,6 +199,10 @@ markdown_core_add_test(facade_concurrent_sessions facade 600 concurrency_runner 
 # and facade failure paths.
 markdown_core_add_test(regression_registry_lifecycle regression 240 concurrency_runner --case lifecycle)
 
+# The iterative parse/traversal/dump contract on a deliberately small
+# thread stack: adversarial nesting must not consume stack anywhere.
+markdown_core_add_test(regression_dump_small_stack regression 120 concurrency_runner --case dump_small_stack)
+
 # Large/deep/repeated-input correctness checks are distinct from timed
 # benchmark workloads over related input shapes.
 foreach(stress_case large_document deep_nesting repeated_release)

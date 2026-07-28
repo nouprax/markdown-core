@@ -76,6 +76,35 @@ try {
         );
         if (consumer.status !== 0) throw new Error(consumer.stderr || `consumer exited ${consumer.status}`);
         console.log("consumer: packed npm artifact imported and parsed successfully");
+
+        // Every README snippet that imports the package runs against the
+        // packed artifact, so documented import names and API shapes cannot
+        // drift from the real exports. Two outcomes are tolerated: a
+        // ReferenceError (snippets may reference documented consumer-side
+        // identifiers such as a socket or renderer), and a timeout (snippets
+        // may model long-running loops). A SyntaxError — including a missing
+        // export name at module link time — always fails.
+        const readmes = [path.resolve(packageDirectory, "../../README.md"), path.join(packageDirectory, "README.md")];
+        for (const readme of readmes) {
+            const text = await readFile(readme, "utf8");
+            const snippets = [...text.matchAll(/```js\n([\s\S]*?)```/g)]
+                .map((match) => match[1])
+                .filter((snippet) => snippet.includes("@nouprax/es-markdown-core"));
+            if (snippets.length === 0) throw new Error(`no runnable package snippet found in ${readme}`);
+            for (const snippet of snippets) {
+                const ran = spawnSync("node", ["--input-type=module", "--eval", snippet], {
+                    cwd: temporary,
+                    encoding: "utf8",
+                    timeout: 10_000
+                });
+                const timedOut = ran.signal === "SIGTERM";
+                const externalReference = ran.status !== 0 && /ReferenceError/.test(ran.stderr ?? "");
+                if (ran.status !== 0 && !timedOut && !externalReference) {
+                    throw new Error(`README snippet failed in ${readme}:\n${ran.stderr}`);
+                }
+            }
+        }
+        console.log("consumer: README snippets ran against the packed artifact");
     }
 } finally {
     await rm(temporary, { recursive: true, force: true });

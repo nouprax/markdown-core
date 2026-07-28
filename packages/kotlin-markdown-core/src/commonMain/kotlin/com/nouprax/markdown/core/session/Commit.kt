@@ -25,6 +25,12 @@ public class Delta internal constructor(
     public val changed: kotlin.collections.List<MarkupID>,
     public val bubbled: kotlin.collections.List<MarkupID>,
 ) {
+    /** [beforeRevision] as a bit-preserving signed value for Java callers. */
+    public fun beforeRevisionBits(): Long = beforeRevision.toLong()
+
+    /** [afterRevision] as a bit-preserving signed value for Java callers. */
+    public fun afterRevisionBits(): Long = afterRevision.toLong()
+
     override fun equals(other: Any?): Boolean =
         other is Delta &&
             other.beforeRevision == beforeRevision &&

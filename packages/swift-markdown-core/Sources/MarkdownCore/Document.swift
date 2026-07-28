@@ -1,18 +1,33 @@
+import Foundation
 import MarkdownCoreC
 
+/// The feature switches for one parse or session, fixed for its lifetime.
+/// Every option defaults to `true`.
 public struct ParseOptions: Sendable, Hashable {
+    /// Replaces straight quotes, dashes, and ellipses with typographic forms.
     public let smartPunctuation: Bool
+    /// Parses footnote definitions and references.
     public let footnotes: Bool
+    /// Removes HTML comments instead of passing them through.
     public let stripHTMLComments: Bool
+    /// Parses pipe tables.
     public let tables: Bool
+    /// Parses `~~strikethrough~~` spans.
     public let strikethrough: Bool
+    /// Recognizes bare URLs and email addresses as links.
     public let autolinks: Bool
+    /// Parses `[ ]`/`[x]` task-list item markers.
     public let taskLists: Bool
+    /// Parses formula spans and blocks.
     public let formulas: Bool
+    /// Recognizes `$…$` and `$$…$$` formula delimiters.
     public let dollarFormulaDelimiters: Bool
+    /// Recognizes `\(…\)` and `\[…\]` formula delimiters.
     public let latexFormulaDelimiters: Bool
+    /// Parses inline and container directives.
     public let directives: Bool
 
+    /// Creates a fixed option set; every switch defaults to `true`.
     public init(
         smartPunctuation: Bool = true,
         footnotes: Bool = true,
@@ -40,18 +55,32 @@ public struct ParseOptions: Sendable, Hashable {
     }
 }
 
+/// The category of a native parse or session failure.
 public enum ParseErrorCode: Int32, Sendable {
     case invalidArgument = 1
     case allocationFailed = 2
     case `internal` = 3
 }
 
+/// A native parse or session failure, carrying the engine's message and,
+/// when the input position is known, the failing scope.
 public struct ParseError: Error, Sendable, CustomStringConvertible {
+    /// The failure category.
     public let code: ParseErrorCode
+    /// The engine's actionable description of the failure.
     public let message: String
+    /// The failing input extent, when the engine could attribute one.
     public let scope: Scope?
 
+    /// The engine's message, so string interpolation prints it directly.
     public var description: String { message }
+}
+
+extension ParseError: LocalizedError {
+    /// The native parser's actionable message — the same text as
+    /// `description` — so Foundation error presentation (alerts, logs,
+    /// `NSError` bridging) never degrades to a bare domain and code.
+    public var errorDescription: String? { message }
 }
 
 /// An immutable snapshot of a parsed Markdown document.
@@ -66,13 +95,21 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
 /// first time any of these is used and is self-contained from then on; see
 /// `scope(of:)` for the exact rules.
 public struct Document: Markup {
+    /// The node's session-scoped identity; see `MarkupID`.
     public let id: MarkupID
+    /// The commit revision at which this document's content last changed.
     public let revision: UInt64
+    /// The document's top-level blocks in source order.
     public let children: [any Markup]
     var resolver: ScopeResolver
 
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
+    /// Parses `source` in one shot and returns a self-contained immutable
+    /// snapshot; throws `ParseError` when the engine rejects the input.
+    /// Semantically identical to committing the same text through a
+    /// `MarkupSession`.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
         // A one-shot parse is literally a single-commit session. Scopes
         // materialize eagerly because the session dies with this call and

@@ -3,7 +3,9 @@ import MarkdownCoreC
 /// The result of one session commit: the new immutable snapshot and the
 /// exact difference from the previous revision.
 public struct Commit: Sendable {
+    /// The new committed snapshot.
     public let document: Document
+    /// The exact difference from the previous revision.
     public let delta: Delta
 }
 
@@ -14,11 +16,17 @@ public struct Commit: Sendable {
 /// of removed nodes are retired and never reused. A pure positional shift is
 /// not a change and produces no entry.
 public struct Delta: Sendable, Hashable {
+    /// The revision the session held before this commit.
     public let beforeRevision: UInt64
+    /// The revision this commit produced.
     public let afterRevision: UInt64
+    /// Nodes that did not exist at the previous revision.
     public let added: [MarkupID]
+    /// Nodes that no longer exist; their ids are retired, never reused.
     public let removed: [MarkupID]
+    /// Nodes whose own fields or direct child list changed.
     public let changed: [MarkupID]
+    /// Ancestors whose revision advanced only because a descendant changed.
     public let bubbled: [MarkupID]
 }
 

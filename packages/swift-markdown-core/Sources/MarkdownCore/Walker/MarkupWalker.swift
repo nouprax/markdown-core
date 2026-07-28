@@ -1,9 +1,14 @@
+/// Whether a walk callback fires on entering or leaving a node.
 public enum WalkEvent: Sendable {
     case entering
     case exiting
 }
 
+/// A read-only depth-first traversal that supplies each event with the
+/// node's resolved absolute scope. Traversal is iterative: documents walk
+/// at any nesting depth that parses.
 public struct MarkupWalker: Sendable {
+    /// Creates a walker; walkers are stateless and reusable.
     public init() {}
 
     /// Walks the document depth-first, supplying each event with the node's
@@ -24,18 +29,35 @@ public struct MarkupWalker: Sendable {
         try walk(node: node, document: document, visit: visit)
     }
 
+    private enum Frame {
+        case enter(any Markup)
+        case exit(any Markup, Scope)
+    }
+
     private func walk(
         node: any Markup,
         document: Document,
         visit: (WalkEvent, any Markup, Scope) throws -> Void
     ) rethrows {
-        let scope = document.scope(of: node)
-        try visit(.entering, node, scope)
-        var visitor = ChildrenVisitor()
-        for child in node.accept(&visitor) {
-            try walk(node: child, document: document, visit: visit)
+        // Nesting depth is input-controlled, so the traversal runs over an
+        // explicit frame stack: a document that parsed must also walk,
+        // whatever its depth. Children are pushed reversed so pops preserve
+        // the recursive `.entering`/`.exiting` order exactly.
+        var stack: [Frame] = [.enter(node)]
+        while let frame = stack.popLast() {
+            switch frame {
+            case .exit(let node, let scope):
+                try visit(.exiting, node, scope)
+            case .enter(let node):
+                let scope = document.scope(of: node)
+                try visit(.entering, node, scope)
+                stack.append(.exit(node, scope))
+                var visitor = ChildrenVisitor()
+                for child in node.accept(&visitor).reversed() {
+                    stack.append(.enter(child))
+                }
+            }
         }
-        try visit(.exiting, node, scope)
     }
 }
 
