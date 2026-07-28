@@ -159,7 +159,12 @@ export class NodeDecoder {
     private decodeChildren(parent: number): Markup[] {
         const context = this.context!;
         const stack: DecodeFrame[] = [
-            NodeDecoder.frame(parent, context.ids(this.rawId(parent)), this.revisionOf(parent), this.childPointers(parent))
+            NodeDecoder.frame(
+                parent,
+                context.ids(this.rawId(parent)),
+                this.revisionOf(parent),
+                this.childPointers(parent)
+            )
         ];
         while (true) {
             const top = stack[stack.length - 1]!;

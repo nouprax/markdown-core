@@ -73,6 +73,7 @@ public func append(_ text: String) throws
 public func commit() throws -> Commit
 public func footnote(of id: MarkupID) -> FootnoteInfo?
 public func footnotes() -> [FootnoteDefinition]
+public func materialize()
 public func node(for id: MarkupID) -> (any Markup)?
 public func references(of definition: MarkupID) -> [FootnoteReference]
 public func replace(_ range: Range<Int>, with text: String) throws
@@ -140,10 +141,14 @@ public class MarkupSession
 public fun MarkupSession.footnote
 public fun MarkupSession.footnotes
 public fun MarkupSession.references
+public fun afterRevisionBits
 public fun append
+public fun beforeRevisionBits
 public fun commit
+public fun lineageBits
 public fun node
 public fun replace
+public fun revisionBits
 public val added
 public val afterRevision
 public val beforeRevision
@@ -210,6 +215,8 @@ constructor(options: ParseOptions = {})
 export class MarkupSession
 export class ScopeResolver
 export function adopt(value: DocumentValue, resolver: ScopeResolver): Document
+export function relink(previous: Markup, revision: number, swaps: readonly ChildSwap[]): Markup
+export interface ChildSwap
 export interface Commit
 export interface Delta
 export interface FootnoteInfo

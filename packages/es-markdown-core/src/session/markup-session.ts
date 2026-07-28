@@ -271,7 +271,10 @@ export class MarkupSession {
                 });
                 value =
                     entry.rawValue === this.rootRawValue
-                        ? adopt({ kind: "document", id: this.identity(entry.rawValue), revision, content: children }, resolver)
+                        ? adopt(
+                              { kind: "document", id: this.identity(entry.rawValue), revision, content: children },
+                              resolver
+                          )
                         : decoder.decodeValue(entry.pointer, this.identity(entry.rawValue), revision, children);
             } else {
                 if (previous === undefined) {
@@ -281,7 +284,12 @@ export class MarkupSession {
                 value =
                     entry.rawValue === this.rootRawValue && relinked.kind === "document"
                         ? adopt(
-                              { kind: "document", id: relinked.id, revision: relinked.revision, content: relinked.content },
+                              {
+                                  kind: "document",
+                                  id: relinked.id,
+                                  revision: relinked.revision,
+                                  content: relinked.content
+                              },
                               resolver
                           )
                         : relinked;
