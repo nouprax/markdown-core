@@ -12,5 +12,6 @@
 markdown_core_extension *markdown_core_directive_extension(void);
 
 int markdown_core_directive_has_label(markdown_core_node *node);
+size_t markdown_core_directive_label_count(const markdown_core_node *node);
 
 #endif

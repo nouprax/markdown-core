@@ -20,8 +20,6 @@
 
 #include "session_internal.h"
 
-#include "directive.h"
-
 #include <iterator.h>
 #include <node.h>
 #include <parser.h>
@@ -174,10 +172,6 @@ static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, mar
             continue;
         }
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        // Directive-label wrappers are facade-invisible and not addressable.
-        if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
-            continue;
-        }
         id_table_insert(out, node->id, node);
     }
     markdown_core_iter_free(iter);
@@ -253,9 +247,9 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
     if (!parser) {
         return;
     }
-    if (!parser->oom && !session->warm_parser) {
+    if (!parser->oom && !parser->internal_error && !session->warm_parser) {
         markdown_core_parser_renew(parser);
-        if (!parser->oom) {
+        if (!parser->oom && !parser->internal_error) {
             session->warm_parser = parser;
             return;
         }
@@ -353,9 +347,14 @@ static bool commit_full(
     last_line_length = parser->last_line_length;
     root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
+        bool internal_error = parser->internal_error;
         markdown_core_parser_free(parser); // frees the staged map with it
         markdown_core_lookup_recording_release(&recording);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not parse the session text");
+        markdown_core_ast_set_error(
+            error,
+            internal_error ? MARKDOWN_CORE_ERROR_INTERNAL : MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            internal_error ? "parser refinement invariant failed" : "could not parse the session text"
+        );
         return false;
     }
     map = parser->refmap;

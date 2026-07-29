@@ -2,23 +2,20 @@
 
 #include "session_internal.h"
 
-#include "directive.h"
-
 #include <node.h>
 
 // Id adoption between the previous committed tree and a freshly parsed tree.
 //
-// Children are paired with a prefix/suffix sweep on the raw child lists:
+// Children are paired with a prefix/suffix sweep on the refined child lists:
 // leading children whose raw types match pair up front-to-back, trailing
 // children pair back-to-front, and the unpaired middle is reported as
 // removed (old) plus added (new). Pairing by position and kind is what keeps
 // the streaming frontier stable: an append extends the tail of the document,
 // so every prefix node keeps its id, and a kind change never adopts.
 //
-// Directive-label wrapper nodes are facade-invisible. They pair and carry
-// ids like any raw child, but they are never recorded in deltas, and a
-// change inside a label marks the owning directive as `changed` (a label is
-// a typed property edge of its directive, not ordinary content).
+// Parser-only storage owners have already been eliminated by refinement, so
+// this tree is the canonical tree: every node receives an id and normal
+// changed-versus-bubbled classification applies uniformly.
 //
 // Every walk here is iterative with an explicit heap stack: adversarial
 // inputs nest tens of thousands of levels deep, which native recursion does
@@ -31,13 +28,11 @@ typedef struct {
     bool failed;
 } adopt_ctx;
 
-static bool is_wrapper(const markdown_core_node *node) { return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL; }
-
 typedef enum { REC_ADDED, REC_REMOVED, REC_CHANGED, REC_BUBBLED } rec_kind;
 
 static void record(adopt_ctx *ctx, rec_kind kind, const markdown_core_node *node) {
     markdown_core_id_array *array;
-    if (!ctx->changes || is_wrapper(node)) {
+    if (!ctx->changes) {
         return;
     }
     switch (kind) {
@@ -99,10 +94,26 @@ static void record_removed_subtree(adopt_ctx *ctx, const markdown_core_node *roo
 
 static size_t child_count_raw(const markdown_core_node *node) {
     size_t count = 0;
-    for (const markdown_core_node *child = node->first_child; child; child = child->next) {
+    const markdown_core_node *child;
+    for (child = node->first_child; child; child = child->next) {
         count++;
+        if (child == node->last_child) {
+            break;
+        }
     }
     return count;
+}
+
+static markdown_core_node *child_run_last(markdown_core_node *first, size_t count) {
+    markdown_core_node *last = first;
+    size_t i;
+    if (count == 0) {
+        return NULL;
+    }
+    for (i = 1; i < count && last; i++) {
+        last = last->next;
+    }
+    return last;
 }
 
 // One in-flight (old, new) pair of the iterative adoption machine.
@@ -119,7 +130,6 @@ typedef struct adopt_frame {
     bool direct_changed;
     bool descendant_changed;
     bool child_list_changed;
-    bool pending_child_is_wrapper;
 } adopt_frame;
 
 typedef struct adopt_stack {
@@ -129,8 +139,39 @@ typedef struct adopt_stack {
     markdown_core_mem *mem;
 } adopt_stack;
 
-// Pushes a pair and computes its pairing plan (prefix/suffix sweeps).
-static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
+// Pushes a pair whose child domains are already bounded and computes its
+// prefix/suffix pairing plan. Descendant pushes pass complete child lists;
+// an inline-domain root can pass a strict prefix without detaching it from
+// the committed owner.
+static bool adopt_push_bounded(
+    adopt_ctx *ctx,
+    adopt_stack *stack,
+    markdown_core_node *old,
+    markdown_core_node *nw,
+    markdown_core_node *o_start,
+    size_t n_old,
+    markdown_core_node *w_start,
+    size_t n_new
+) {
+    markdown_core_node *o = o_start;
+    markdown_core_node *w = w_start;
+    markdown_core_node *o_end;
+    markdown_core_node *w_end;
+    adopt_frame *frame;
+    size_t pairable;
+    size_t prefix = 0;
+    size_t suffix = 0;
+
+    if ((n_old != 0 && !o_start) || (n_new != 0 && !w_start)) {
+        ctx->failed = true;
+        return false;
+    }
+    o_end = child_run_last(o_start, n_old);
+    w_end = child_run_last(w_start, n_new);
+    if ((n_old != 0 && !o_end) || (n_new != 0 && !w_end)) {
+        ctx->failed = true;
+        return false;
+    }
     if (stack->length == stack->capacity) {
         size_t capacity = stack->capacity ? stack->capacity * 2 : 256;
         adopt_frame *grown = (adopt_frame *)stack->mem->realloc(stack->mem, stack->frames, capacity * sizeof(*grown));
@@ -142,12 +183,43 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
         stack->capacity = capacity;
     }
 
+    pairable = n_old < n_new ? n_old : n_new;
+    while (prefix < pairable && o->type == w->type) {
+        prefix++;
+        o = o->next;
+        w = w->next;
+    }
+
+    while (suffix < pairable - prefix && o_end->type == w_end->type) {
+        suffix++;
+        o_end = o_end->prev;
+        w_end = w_end->prev;
+    }
+
+    frame = &stack->frames[stack->length++];
+    frame->old = old;
+    frame->nw = nw;
+    frame->oc = o_start;
+    frame->wc = w_start;
+    frame->prefix_left = prefix;
+    frame->middle_old = n_old - prefix - suffix;
+    frame->middle_new = n_new - prefix - suffix;
+    frame->suffix_left = suffix;
+    frame->middle_done = false;
+    frame->direct_changed = false;
+    frame->descendant_changed = false;
+    frame->child_list_changed = (n_old != n_new) || (prefix + suffix < pairable);
+
+    nw->id = old->id;
+    return true;
+}
+
+// Complete-node entry: derives the full child domains, including the
+// incremental seam's reserved old prefix.
+static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
     size_t n_old = child_count_raw(old);
     size_t n_new = child_count_raw(nw);
-    size_t pairable;
-
     markdown_core_node *o = old->first_child;
-    markdown_core_node *w = nw->first_child;
 
     // An inline seam (user_data = offset + 1, set by the commit pipeline)
     // reserves the old leaf's prefix children — one Text and one break per
@@ -165,8 +237,6 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
         }
         for (; reserved > 0; reserved--) {
             if (!o) {
-                // The seam model guarantees the children exist; a violation
-                // means the commit must not proceed on this tree.
                 ctx->failed = true;
                 return false;
             }
@@ -174,61 +244,21 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
             n_old--;
         }
     }
-    markdown_core_node *o_start = o;
-    pairable = n_old < n_new ? n_old : n_new;
-    size_t prefix = 0;
-    while (prefix < pairable && o->type == w->type) {
-        prefix++;
-        o = o->next;
-        w = w->next;
-    }
-
-    markdown_core_node *o_end = old->last_child;
-    markdown_core_node *w_end = nw->last_child;
-    size_t suffix = 0;
-    while (suffix < pairable - prefix && o_end->type == w_end->type) {
-        suffix++;
-        o_end = o_end->prev;
-        w_end = w_end->prev;
-    }
-
-    adopt_frame *frame = &stack->frames[stack->length++];
-    frame->old = old;
-    frame->nw = nw;
-    frame->oc = o_start;
-    frame->wc = nw->first_child;
-    frame->prefix_left = prefix;
-    frame->middle_old = n_old - prefix - suffix;
-    frame->middle_new = n_new - prefix - suffix;
-    frame->suffix_left = suffix;
-    frame->middle_done = false;
-    frame->direct_changed = false;
-    frame->descendant_changed = false;
-    frame->child_list_changed = (n_old != n_new) || (prefix + suffix < pairable);
-    frame->pending_child_is_wrapper = false;
-
-    nw->id = old->id;
-    return true;
+    return adopt_push_bounded(ctx, stack, old, nw, o, n_old, nw->first_child, n_new);
 }
 
-// Runs the machine over the pair (old_root, new_root).
-static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
-    adopt_stack stack = {NULL, 0, 0, ctx->session->mem};
+// Runs the one adoption machine after either a complete-node or bounded-root
+// initializer has pushed its first frame. Descendant pairs always enter
+// through adopt_push and therefore keep complete-node semantics.
+static void adopt_run(adopt_ctx *ctx, adopt_stack *stack) {
     bool child_result = false;
     bool have_result = false;
 
-    if (!adopt_push(ctx, &stack, old_root, new_root)) {
-        return;
-    }
-
-    while (stack.length > 0 && !ctx->failed) {
-        adopt_frame *top = &stack.frames[stack.length - 1];
+    while (stack->length > 0 && !ctx->failed) {
+        adopt_frame *top = &stack->frames[stack->length - 1];
 
         if (have_result) {
             top->descendant_changed |= child_result;
-            if (child_result && top->pending_child_is_wrapper) {
-                top->direct_changed = true;
-            }
             top->oc = top->oc->next;
             top->wc = top->wc->next;
             if (top->prefix_left > 0) {
@@ -244,8 +274,7 @@ static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_co
             // the pair first.
             markdown_core_node *oc = top->oc;
             markdown_core_node *wc = top->wc;
-            top->pending_child_is_wrapper = is_wrapper(wc);
-            if (!adopt_push(ctx, &stack, oc, wc)) {
+            if (!adopt_push(ctx, stack, oc, wc)) {
                 break;
             }
             continue;
@@ -279,12 +308,75 @@ static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_co
 
         child_result = direct || top->child_list_changed || top->descendant_changed;
         have_result = true;
-        stack.length--;
+        stack->length--;
     }
+}
 
+// Runs the machine over a pair whose root child domains can be explicitly
+// bounded; only this initial frame is bounded.
+static void adopt_pair_bounded(
+    adopt_ctx *ctx,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    markdown_core_node *old_first,
+    size_t old_count,
+    markdown_core_node *new_first,
+    size_t new_count
+) {
+    adopt_stack stack = {NULL, 0, 0, ctx->session->mem};
+
+    if (adopt_push_bounded(ctx, &stack, old_root, new_root, old_first, old_count, new_first, new_count)) {
+        adopt_run(ctx, &stack);
+    }
     if (stack.frames) {
         ctx->session->mem->free(ctx->session->mem, stack.frames);
     }
+}
+
+static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
+    adopt_stack stack = {NULL, 0, 0, ctx->session->mem};
+
+    if (adopt_push(ctx, &stack, old_root, new_root)) {
+        adopt_run(ctx, &stack);
+    }
+    if (stack.frames) {
+        ctx->session->mem->free(ctx->session->mem, stack.frames);
+    }
+}
+
+bool markdown_core_session_adopt_inline_domain(
+    markdown_core_session *session,
+    markdown_core_node *old_owner,
+    size_t old_count,
+    markdown_core_node *staged_owner,
+    uint64_t new_rev,
+    markdown_core_delta *changes,
+    size_t *staged_count,
+    uint64_t *owner_revision
+) {
+    adopt_ctx ctx = {session, changes, new_rev, false};
+    markdown_core_node old_root;
+    markdown_core_node new_root;
+    size_t new_count = child_count_raw(staged_owner);
+
+    memset(&old_root, 0, sizeof(old_root));
+    memset(&new_root, 0, sizeof(new_root));
+    old_root.type = MARKDOWN_CORE_NODE_DOCUMENT;
+    old_root.id = old_owner->id;
+    old_root.last_changed_rev = old_owner->last_changed_rev;
+    old_root.first_child = old_owner->first_child;
+    old_root.last_child = child_run_last(old_root.first_child, old_count);
+    new_root.type = MARKDOWN_CORE_NODE_DOCUMENT;
+    new_root.first_child = staged_owner->first_child;
+    new_root.last_child = staged_owner->last_child;
+
+    adopt_pair_bounded(&ctx, &old_root, &new_root, old_root.first_child, old_count, new_root.first_child, new_count);
+    if (ctx.failed) {
+        return false;
+    }
+    *staged_count = new_count;
+    *owner_revision = new_root.last_changed_rev;
+    return true;
 }
 
 bool markdown_core_session_adopt(

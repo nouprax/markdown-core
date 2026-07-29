@@ -27,6 +27,8 @@ struct markdown_core_extension {
     markdown_core_get_type_string_func get_type_string;
     markdown_core_can_contain_func can_contain;
     markdown_core_contains_inlines_func contains_inlines;
+    markdown_core_finalize_transient_inline_owner_func finalize_transient_inline_owner;
+    markdown_core_prepare_inline_domain_func prepare_inline_domain;
     markdown_core_accepts_lines_func accepts_lines;
     markdown_core_postprocess_block_func postprocess_block;
     markdown_core_alloc_opaque_func alloc_opaque;

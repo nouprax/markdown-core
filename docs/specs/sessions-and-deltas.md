@@ -197,6 +197,14 @@ session or delta is released and must be freed with
 - Inline content is reparsed per touched leaf block (inline syntax is
   non-local within a leaf). Streaming into one enormous paragraph is
   therefore linear per commit in that paragraph's size.
+- Reference-dependent inline reparsing operates on one complete ownership
+  domain: a stable semantic owner, its contiguous inline child span, and the
+  owner content buffer backing that span. Paragraph, Heading, and TableCell
+  domains contain all direct children; a DirectiveBlock domain is its direct
+  inline label prefix. Replacement moves the complete span and backing
+  together through the ordinary adopter. The committed tree has no
+  directive-label wrapper, and empty, singleton, or large domains never
+  select a different algorithm.
 - Documents parsed mid-stream behave as if the input ended at the current
   text: unterminated constructs parse exactly as `Document.parse` would parse
   them (for example `CodeBlock.closed == false`).

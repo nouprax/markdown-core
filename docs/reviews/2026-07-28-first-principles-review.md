@@ -25,6 +25,42 @@ invariant that makes them genuinely different operations, with independent
 correctness and complexity coverage. This rule is also part of the durable
 repository test contract and the root agent instructions.
 
+### Directive label representation
+
+The canonical `label: [Markup]?` edge is also the refined C tree's direct
+edge. Inline directive labels attach their already-parsed children directly.
+A block directive temporarily needs an inline-owning node while its opening
+line's label bytes pass through inline parsing and every block-local
+postprocessor. That node is only a parse-time lifecycle carrier; it has no
+canonical identity and is eliminated before position sealing, id adoption,
+indexing, or public traversal.
+
+The shared mechanism is an **inline ownership domain**, not a transparent
+edge. Each domain consists of a stable semantic owner, one contiguous child
+span, and the `owner->content` buffer that backs any borrowed chunks in that
+span. A Paragraph or Heading owns all of its children, a TableCell owns all of
+its children, and a DirectiveBlock owns its label prefix. Refinement and
+incremental replacement move the child span and its backing together as one
+ownership transaction; they never transplant an arbitrary subspan away from
+the buffer it borrows. The DirectiveBlock remains the stable owner, and the
+ordinary adopter sees the same refined direct-child topology as every other
+consumer. Empty, singleton, and multi-node labels use this one mechanism:
+there is no cardinality routing.
+
+Consequently the canonical AST has no directive-label wrapper and no
+directive-specific edge delta. A “canonical edge delta” would preserve two
+topologies—storage edges plus a compensating semantic overlay—and would force
+parent/sibling traversal, scopes, ids, lookup ownership, and delta adoption to
+agree through parallel special rules. It also would not express the decisive
+memory invariant that the complete child span and its backing buffer must
+travel together. The discrepancy exists only during parsing, so the correct
+abstraction closes it at the lifecycle boundary instead of teaching the
+committed tree how to hide it.
+
+A label descendant field edit therefore follows the ordinary delta contract
+(`changed` child, `bubbled` ancestors), while a label topology or presence
+change changes the directive's own direct-child list or fields.
+
 ## Status summary
 
 The branch contains the completed WP1-WP6 work packages plus the final C
@@ -85,8 +121,8 @@ These are GitHub issue numbers, not finding identifiers from this ledger.
 | #62 | The development lockfile resolves `brace-expansion` to patched release 5.0.8; a frozen clean install and package audit verify the resolved graph rather than the pre-existing workspace contents. |
 | #68 | C now owns one caller-freed canonical-preorder `(id, revision, scope)` table for a document. One shared canonical iterator resolves scopes for both the table and canonical dumps with O(n) traversal work and O(depth) state; its frames carry the resolved parent line and pending sibling, so neither consumer performs a count pre-pass, ancestor walk, or second traversal. Dump formatting remains Θ(output bytes), which is necessarily Θ(n²) for a deep tree's indentation. C also owns the single `(id, parent, change)` materialization order for surviving delta nodes: a lineage- and revision-checked, children-before-parents Kahn pass replaces the three bindings' depth calculations and comparison sorts, preserves a self-contained parent relation for the WASM boundary, and rejects duplicate, missing, cyclic, or overflowing input atomically. Swift, Kotlin, and ECMAScript consume these tables instead of duplicating traversal or ordering rules; ECMAScript indexes a bubbled parent's replacements once, then performs one replacement-lookup pass and at most one linear copy per child field instead of searching the same wide array per change. Swift one-shot parsing is eager and self-contained again, while session snapshots retain their lazy first-use contract; all three bindings also expose scope-free structural traversal for an unmaterialized retained snapshot. |
 
-Validation recorded for the final source state: C correctness 104/104, conformance 2/2,
-benchmark 8/8, ASan/UBSan/TSan 82/82 each, and 22 complexity cases; C lint, C/CMake
+Validation recorded for the final source state: C correctness 106/106, conformance 2/2,
+benchmark 8/8, ASan/UBSan/TSan 84/84 each, and 22 complexity cases; C lint, C/CMake
 formatting, and generated-scanner reproducibility; Swift correctness 20/20, external
 consumer 1/1, conformance 6/6, five benchmark workloads, the product-only source
 archive consumer, and the iOS 18/26 plus macOS 15/26 deployment matrix; Kotlin JVM
@@ -209,7 +245,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 ### I61 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/session.c:441
 
 - Verdict: CONFIRMED
-- Finding: commit_full builds and diffs the footnote index unconditionally, even when session->options.footnotes is false — markdown_core_footnote_collect_sites still walks the entire tree with an iterator per full commit. The incremental path guards its site collection with `if (session->options.footnotes)` (incremental.c:2069), so the full path pays a whole-tree walk the incremental path proves unnecessary. For footnotes-disabled sessions every full commit (including the routed whole-document-edit cases) carries this dead pass.
+- Finding: commit_full builds and diffs the footnote index unconditionally, even when session->options.footnotes is false — markdown_core_footnote_collect_sites still walks the entire tree with an iterator per full commit. The incremental path guards its site collection with `if (session->options.footnotes)` (incremental.c:2069), so the full path pays a whole-tree walk the incremental path proves unnecessary. For footnotes-disabled sessions every full commit (including the whole-document edits routed there at the time of this finding) carries this dead pass.
 - Evidence: session.c:441 calls markdown_core_footnote_index_build unconditionally in commit_full; footnote.c:517-533 routes to markdown_core_footnote_collect_sites (footnote.c:87-126), which iterates the ENTIRE tree with markdown_core_iter regardless of options. The incremental path guards the identical collection with `if (session->options.footnotes)` at incremental.c:2069-2074. With footnotes disabled the parser creates no FOOTNOTE_DEFINITION/REFERENCE nodes (OPT_FOOTNOTES gated at session.c:207), so the walk provably finds nothing — a dead full-tree pass per full commit. Classified P2 not P1: footnotes default to true (ast.c:72 markdown_core_parse_options_init), so only sessions that explicitly disable footnotes pay it, and I did not measure it in isolation.
 - Fix plan: In commit_full (session.c:441), guard the footnote_index_build/diff pair with `if (session->options.footnotes)`, mirroring incremental.c:2069; leave the memset-zeroed `footnotes` struct to be installed as session->footnotes (queries on a footnotes-off session already answer empty, and footnote_index_release on a zeroed struct is a no-op — the same code path runs today for footnote-free documents).
 - Tests: equivalence_runner fixtures with footnote masks off and tests/api cover the guarded path.

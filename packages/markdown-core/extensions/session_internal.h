@@ -342,6 +342,24 @@ bool markdown_core_session_adopt(
     markdown_core_delta *changes
 );
 
+/** Runs the canonical adoption machine over one owner's complete inline
+ * ownership domain while keeping the semantic owner stable. `old_count`
+ * bounds the committed owner's domain (it may be a strict child prefix);
+ * every child of `staged_owner` is the rebuilt domain. On success the
+ * staged descendants carry their final ids/revisions, `staged_count`
+ * reports their top-level count, and `owner_revision` reports the stable
+ * owner's changed/bubbled/unchanged verdict. */
+bool markdown_core_session_adopt_inline_domain(
+    markdown_core_session *session,
+    markdown_core_node *old_owner,
+    size_t old_count,
+    markdown_core_node *staged_owner,
+    uint64_t new_rev,
+    markdown_core_delta *changes,
+    size_t *staged_count,
+    uint64_t *owner_revision
+);
+
 /** Records every facade-visible node of `root`'s subtree as removed in
  * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
 bool markdown_core_session_record_removed(
@@ -470,10 +488,11 @@ markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session
  * map. Defined in session.c. */
 void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
 
-/** Seals a freshly parsed tree: positions become parent-relative deltas and
- * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Returns the number
- * of nodes visited (the subtree size, wrappers included), so callers sizing
- * id reservations reuse the walk. Defined in session.c. */
+/** Seals a freshly refined tree: positions become parent-relative deltas and
+ * every positioned node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Returns
+ * the number of canonical nodes visited, so callers sizing id reservations
+ * reuse the walk. Parser-only inline owners are eliminated before this call.
+ * Defined in session.c. */
 size_t markdown_core_session_seal_positions(markdown_core_node *root);
 
 /** Grows the id table so the next `extra` markdown_core_session_ids_put
@@ -481,8 +500,7 @@ size_t markdown_core_session_seal_positions(markdown_core_node *root);
 bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra);
 
 /** Points `id` at `node`, inserting or repointing. Never fails within a
- * reserved budget. Directive-label wrappers are not addressable and must not
- * be put. */
+ * reserved budget. */
 void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node);
 
 /** Drops `id` from the table (backward-shift deletion; missing ids are a

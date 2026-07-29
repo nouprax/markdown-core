@@ -601,8 +601,8 @@ static const eq_script_step EQ_NO_BLANK_STEPS[] = {
 };
 
 /* Cross-boundary reference edits: touching the paragraphs must not disturb
- * resolution, editing the definition re-resolves both sides (full-reparse
- * fallback), and a same-text definition rewrite must stay incremental. */
+ * resolution, editing the definition must re-resolve both sides, and a
+ * same-text definition rewrite must retain one-shot equivalence. */
 static const eq_script_step EQ_CROSS_REF_STEPS[] = {
     {"here", 0, 4, "there"},
     {"/one", 0, 4, "/two"},
@@ -697,8 +697,8 @@ static const eq_script_step EQ_REF_RENUMBER_STEPS[] = {
     {"[c]: /3", 6, 1, "9"},
 };
 
-/* A dependent inside a table cell cannot be rebuilt per-unit; the commit
- * must fall back to a full reparse and still match one-shot output. */
+/* A reference inside a table cell remains nested in the enclosing table when
+ * its definition is retargeted and then removed, matching one-shot output. */
 static const eq_script_step EQ_REF_TABLE_CELL_STEPS[] = {
     {"/one", 0, 4, "/two"},
     {"[l]: /two\n", 0, 10, ""},

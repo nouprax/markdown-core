@@ -1,5 +1,6 @@
 #include <markdown-core-extension-api.h>
 #include <parser.h>
+#include <assert.h>
 #include <string.h>
 
 #include "ext_scanners.h"
@@ -663,6 +664,43 @@ static int contains_inlines(markdown_core_extension *extension, markdown_core_no
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
+static int prepare_inline_domain(
+    markdown_core_extension *extension,
+    const markdown_core_node *committed_owner,
+    markdown_core_inline_domain *out
+) {
+    markdown_core_node *clone;
+    const markdown_core_node *child;
+
+    memset(out, 0, sizeof(*out));
+    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_TABLE_CELL ||
+        committed_owner->extension != extension) {
+        assert(0 && "table reparse requested for an unsupported owner");
+        return 0;
+    }
+    clone = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TABLE_CELL, committed_owner->content.mem);
+    if (!clone) {
+        return 0;
+    }
+    clone->extension = extension;
+    clone->as.cell_index = committed_owner->as.cell_index;
+    clone->start_line = clone->end_line = 1;
+    clone->start_column = committed_owner->start_column;
+    clone->end_column = committed_owner->end_column;
+    clone->internal_offset = committed_owner->internal_offset;
+    markdown_core_strbuf_put(&clone->content, committed_owner->content.ptr, committed_owner->content.size);
+    if (clone->content.oom) {
+        markdown_core_node_free(clone);
+        return 0;
+    }
+
+    out->staged_owner = clone;
+    for (child = committed_owner->first_child; child; child = child->next) {
+        out->committed_child_count++;
+    }
+    return 1;
+}
+
 static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload is tolerated by every table property helper; the node
      * then reports zero columns/alignments. */
@@ -690,6 +728,7 @@ static const markdown_core_extension table_extension = {
     .get_type_string = get_type_string,
     .can_contain = can_contain,
     .contains_inlines = contains_inlines,
+    .prepare_inline_domain = prepare_inline_domain,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
 };

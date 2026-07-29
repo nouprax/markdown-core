@@ -232,7 +232,7 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
-/** Canonical traversal hides directive-label wrapper nodes. */
+/** Canonical traversal follows the refined AST's direct semantic edges. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
@@ -449,8 +449,7 @@ MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
 MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_node *node);
 
-/** Canonical parent: NULL for the root; a directive-label child's parent is
- * its owning directive (label wrappers are never exposed). */
+/** Canonical parent, or NULL for the root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
 
 /** Delta accessors. The four arrays are disjoint: `added` and `removed`

@@ -5,6 +5,7 @@
 #include "markdown-core.h"
 #include "node.h"
 #include "markdown-core-extensions.h"
+#include "directive.h"
 
 #include <markdown_core.h>
 
@@ -664,6 +665,186 @@ static void directive_extension_accessors(test_batch_runner *runner) {
         "{\"data-x\":\"1\",\"class\":\"ordinary\"}",
         "directive attributes retain first-key source order"
     );
+    markdown_core_node_free(doc);
+}
+
+static void directive_refined_tree_layout(test_batch_runner *runner) {
+    markdown_core_node *doc = parse_with_directive_extension(
+        ":outer[first *second*]\n"
+        "\n"
+        "::leaf[Title *bold*]\n"
+        "\n"
+        ":::container[Heading]\n"
+        "Body\n"
+        ":::\n"
+        "\n"
+        ":::empty[]\n"
+        "Body\n"
+        ":::\n"
+    );
+    markdown_core_node *paragraph;
+    markdown_core_node *inline_directive;
+    markdown_core_node *leaf;
+    markdown_core_node *container;
+    markdown_core_node *empty;
+    markdown_core_iter *iter;
+    markdown_core_event_type event;
+    size_t label_count;
+    int transient_count = 0;
+
+    OK(runner, doc != NULL, "directive layout parse succeeds");
+    if (!doc) {
+        return;
+    }
+
+    iter = markdown_core_iter_new(doc);
+    OK(runner, iter != NULL, "directive layout raw iterator opens");
+    if (iter) {
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (event == MARKDOWN_CORE_EVENT_ENTER &&
+                markdown_core_node_get_type(markdown_core_iter_get_node(iter)) == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+                transient_count++;
+            }
+        }
+        markdown_core_iter_free(iter);
+    }
+    INT_EQ(runner, transient_count, 0, "refined tree contains no directive-label parse owners");
+    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "refined directive tree satisfies raw node invariants");
+
+    paragraph = markdown_core_node_first_child(doc);
+    inline_directive = markdown_core_node_first_child(paragraph);
+    label_count = markdown_core_directive_label_count(inline_directive);
+    INT_EQ(runner, (int)label_count, 2, "inline directive stores its final label children directly");
+    OK(runner,
+       markdown_core_node_parent(markdown_core_node_first_child(inline_directive)) == inline_directive,
+       "inline label child has the directive as its raw parent");
+
+    leaf = markdown_core_node_next(paragraph);
+    INT_EQ(
+        runner,
+        (int)markdown_core_directive_label_count(leaf),
+        2,
+        "leaf block records its finalized label boundary"
+    );
+    OK(runner,
+       markdown_core_node_parent(markdown_core_node_first_child(leaf)) == leaf,
+       "block label child has the directive as its raw parent");
+
+    container = markdown_core_node_next(leaf);
+    INT_EQ(runner, (int)markdown_core_directive_label_count(container), 1, "container block records one label child");
+    {
+        markdown_core_node *label = markdown_core_node_first_child(container);
+        markdown_core_node *content = markdown_core_node_next(label);
+        OK(runner,
+           content != NULL && markdown_core_node_get_type(content) == MARKDOWN_CORE_NODE_PARAGRAPH,
+           "block content follows the direct label prefix");
+        OK(runner,
+           markdown_core_node_directive_first_content_child(container) == content,
+           "facade content boundary matches the raw refined layout");
+    }
+
+    empty = markdown_core_node_next(container);
+    INT_EQ(runner, (int)markdown_core_directive_label_count(empty), 0, "explicit empty label has a zero boundary");
+    OK(runner,
+       markdown_core_node_directive_first_label_child(empty) == NULL,
+       "explicit empty label has no synthetic child");
+    OK(runner,
+       markdown_core_node_get_first_child(empty) == markdown_core_node_directive_first_content_child(empty),
+       "empty label leaves block content as the first semantic child");
+
+    markdown_core_node_free(doc);
+}
+
+static void directive_empty_label_representation(test_batch_runner *runner) {
+    markdown_core_node *doc = parse_with_directive_extension(
+        ":absent{} :empty[]\n"
+        "\n"
+        "::absent{}\n"
+        "\n"
+        "::empty[]\n"
+    );
+    const markdown_core_node *paragraph;
+    const markdown_core_node *inline_absent;
+    const markdown_core_node *inline_empty;
+    const markdown_core_node *block_absent;
+    const markdown_core_node *block_empty;
+    markdown_core_placement_mode mode;
+    markdown_core_string_view name;
+    markdown_core_string_view attributes;
+    markdown_core_iter *iter;
+    markdown_core_event_type event;
+    bool has_label;
+    size_t label_count;
+    int transient_count = 0;
+
+    OK(runner, doc != NULL, "absent/empty directive-label representation parses");
+    if (!doc) {
+        return;
+    }
+
+    paragraph = markdown_core_node_get_first_child(doc);
+    inline_absent = markdown_core_node_get_first_child(paragraph);
+    inline_empty = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(inline_absent));
+    block_absent = markdown_core_node_get_next_sibling(paragraph);
+    block_empty = markdown_core_node_get_next_sibling(block_absent);
+
+    has_label = true;
+    label_count = SIZE_MAX;
+    OK(runner,
+       markdown_core_node_directive_properties(inline_absent, &mode, &name, &attributes, &has_label, &label_count),
+       "inline directive without a label exposes properties");
+    OK(runner, !has_label, "inline absent label is distinguishable from explicit empty");
+    INT_EQ(runner, (int)label_count, 0, "inline absent label has no label children");
+    OK(runner,
+       markdown_core_node_directive_first_label_child(inline_absent) == NULL,
+       "inline absent label has no synthetic child");
+
+    has_label = false;
+    label_count = SIZE_MAX;
+    OK(runner,
+       markdown_core_node_directive_properties(inline_empty, &mode, &name, &attributes, &has_label, &label_count),
+       "inline directive with an empty label exposes properties");
+    OK(runner, has_label, "inline explicit-empty label preserves presence");
+    INT_EQ(runner, (int)label_count, 0, "inline explicit-empty label has no label children");
+    OK(runner,
+       markdown_core_node_directive_first_label_child(inline_empty) == NULL,
+       "inline explicit-empty label has no synthetic child");
+
+    has_label = true;
+    label_count = SIZE_MAX;
+    OK(runner,
+       markdown_core_node_directive_properties(block_absent, &mode, &name, &attributes, &has_label, &label_count),
+       "block directive without a label exposes properties");
+    OK(runner, !has_label, "block absent label is distinguishable from explicit empty");
+    INT_EQ(runner, (int)label_count, 0, "block absent label has no label children");
+    OK(runner,
+       markdown_core_node_directive_first_label_child(block_absent) == NULL,
+       "block absent label has no synthetic child");
+
+    has_label = false;
+    label_count = SIZE_MAX;
+    OK(runner,
+       markdown_core_node_directive_properties(block_empty, &mode, &name, &attributes, &has_label, &label_count),
+       "block directive with an empty label exposes properties");
+    OK(runner, has_label, "block explicit-empty label preserves presence");
+    INT_EQ(runner, (int)label_count, 0, "block explicit-empty label has no label children");
+    OK(runner,
+       markdown_core_node_directive_first_label_child(block_empty) == NULL,
+       "block explicit-empty label has no synthetic child");
+
+    iter = markdown_core_iter_new(doc);
+    OK(runner, iter != NULL, "absent/empty representation raw iterator opens");
+    if (iter) {
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            if (event == MARKDOWN_CORE_EVENT_ENTER &&
+                markdown_core_node_get_type(markdown_core_iter_get_node(iter)) == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+                transient_count++;
+            }
+        }
+        markdown_core_iter_free(iter);
+    }
+    INT_EQ(runner, transient_count, 0, "absent and explicit-empty labels leave no refined wrapper");
+
     markdown_core_node_free(doc);
 }
 
@@ -1912,17 +2093,466 @@ static void session_directive_label_parent(test_batch_runner *runner) {
         OK(runner, markdown_core_node_get_parent(root) == NULL, "root has no parent");
         OK(runner, markdown_core_node_get_id(directive) != 0, "one-shot documents carry ids");
         if (label) {
-            /* Scope resolution walks the raw parent chain, which passes
-             * through the hidden label wrapper: ":video[" puts the label text
-             * at columns 8..15 of line 1. */
+            /* Refined label children use the directive as both their raw and
+             * canonical parent; ":video[" puts this text at columns 8..15. */
             markdown_core_scope scope = markdown_core_node_scope(label);
-            INT_EQ(runner, (int)scope.start.line, 1, "label scope resolves through the hidden wrapper");
+            INT_EQ(runner, (int)scope.start.line, 1, "label scope resolves through its directive parent");
             INT_EQ(runner, (int)scope.start.column, 8, "label start column is absolute");
             INT_EQ(runner, (int)scope.end.line, 1, "label end line is absolute");
             INT_EQ(runner, (int)scope.end.column, 15, "label end column is absolute");
         }
     }
     markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
+static void session_directive_label_delta_classification(test_batch_runner *runner) {
+    static const uint8_t source[] = ":x[abc]\n";
+    static const uint8_t replacement = 'd';
+    static const uint8_t reshaped[] = ":x[*adc*]\n";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_delta *changes = NULL;
+    markdown_core_node_id root_id = 0;
+    markdown_core_node_id paragraph_id = 0;
+    markdown_core_node_id directive_id = 0;
+    markdown_core_node_id text_id = 0;
+    const markdown_core_node_id *ids = NULL;
+    size_t count;
+
+    OK(runner, session != NULL, "directive delta session opens");
+    if (!session) {
+        markdown_core_error_free(error);
+        return;
+    }
+    OK(runner,
+       markdown_core_session_edit(session, 0, 0, source, sizeof(source) - 1, &error) &&
+           markdown_core_session_commit(session, NULL, &error),
+       "directive delta baseline commits");
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *text = markdown_core_node_get_first_child(directive);
+        root_id = markdown_core_node_get_id(root);
+        paragraph_id = markdown_core_node_get_id(paragraph);
+        directive_id = markdown_core_node_get_id(directive);
+        text_id = markdown_core_node_get_id(text);
+    }
+
+    OK(runner,
+       markdown_core_session_edit(session, 4, 5, &replacement, 1, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "directive label literal edit commits");
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, text_id), "edited label Text is changed");
+    OK(runner, !delta_contains(ids, count, directive_id), "label literal edit does not change directive fields");
+    count = markdown_core_delta_bubbled(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "label literal edit bubbles through the directive");
+    OK(runner, delta_contains(ids, count, paragraph_id), "label literal edit bubbles through the paragraph");
+    OK(runner, delta_contains(ids, count, root_id), "label literal edit bubbles through the document");
+    markdown_core_delta_free(changes);
+    changes = NULL;
+
+    OK(runner,
+       markdown_core_session_edit(session, 0, sizeof(source) - 1, reshaped, sizeof(reshaped) - 1, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "directive label topology edit commits");
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "label direct-child topology change marks directive changed");
+
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_directive_empty_label_delta_classification(test_batch_runner *runner) {
+    static const uint8_t inline_source[] = ":x{}\n";
+    static const uint8_t block_source[] = "::x{}\n";
+    static const uint8_t empty_label[] = "[]";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_delta *changes = NULL;
+    markdown_core_node_id directive_id = 0;
+    const markdown_core_node_id *ids = NULL;
+    markdown_core_placement_mode mode;
+    markdown_core_string_view name;
+    markdown_core_string_view attributes;
+    bool has_label;
+    size_t label_count;
+    size_t count;
+
+    OK(runner, session != NULL, "inline empty-label delta session opens");
+    if (!session) {
+        markdown_core_error_free(error);
+        return;
+    }
+    OK(runner,
+       markdown_core_session_edit(session, 0, 0, inline_source, sizeof(inline_source) - 1, &error) &&
+           markdown_core_session_commit(session, NULL, &error),
+       "inline absent-label baseline commits");
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+        const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
+        directive_id = markdown_core_node_get_id(directive);
+        has_label = true;
+        label_count = SIZE_MAX;
+        OK(runner,
+           markdown_core_node_directive_properties(directive, &mode, &name, &attributes, &has_label, &label_count) &&
+               !has_label && label_count == 0,
+           "inline baseline records an absent zero-child label");
+    }
+
+    OK(runner,
+       markdown_core_session_edit(session, 2, 2, empty_label, sizeof(empty_label) - 1, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "inline absent-to-empty label edit commits");
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        has_label = false;
+        label_count = SIZE_MAX;
+        OK(runner,
+           directive &&
+               markdown_core_node_directive_properties(
+                   directive,
+                   &mode,
+                   &name,
+                   &attributes,
+                   &has_label,
+                   &label_count
+               ) &&
+               has_label && label_count == 0,
+           "inline absent-to-empty preserves identity and explicit presence");
+    }
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "inline absent-to-empty marks the directive changed");
+    markdown_core_delta_free(changes);
+    changes = NULL;
+
+    OK(runner,
+       markdown_core_session_edit(session, 2, 4, NULL, 0, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "inline empty-to-absent label edit commits");
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        has_label = true;
+        label_count = SIZE_MAX;
+        OK(runner,
+           directive &&
+               markdown_core_node_directive_properties(
+                   directive,
+                   &mode,
+                   &name,
+                   &attributes,
+                   &has_label,
+                   &label_count
+               ) &&
+               !has_label && label_count == 0,
+           "inline empty-to-absent preserves identity and removes presence");
+    }
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "inline empty-to-absent marks the directive changed");
+    markdown_core_delta_free(changes);
+    changes = NULL;
+    markdown_core_session_free(session);
+    session = markdown_core_session_open(NULL, &error);
+
+    OK(runner, session != NULL, "block empty-label delta session opens");
+    if (!session) {
+        markdown_core_error_free(error);
+        return;
+    }
+    OK(runner,
+       markdown_core_session_edit(session, 0, 0, block_source, sizeof(block_source) - 1, &error) &&
+           markdown_core_session_commit(session, NULL, &error),
+       "block absent-label baseline commits");
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *directive = markdown_core_node_get_first_child(root);
+        directive_id = markdown_core_node_get_id(directive);
+        has_label = true;
+        label_count = SIZE_MAX;
+        OK(runner,
+           markdown_core_node_directive_properties(directive, &mode, &name, &attributes, &has_label, &label_count) &&
+               !has_label && label_count == 0,
+           "block baseline records an absent zero-child label");
+    }
+
+    OK(runner,
+       markdown_core_session_edit(session, 3, 3, empty_label, sizeof(empty_label) - 1, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "block absent-to-empty label edit commits");
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        has_label = false;
+        label_count = SIZE_MAX;
+        OK(runner,
+           directive &&
+               markdown_core_node_directive_properties(
+                   directive,
+                   &mode,
+                   &name,
+                   &attributes,
+                   &has_label,
+                   &label_count
+               ) &&
+               has_label && label_count == 0,
+           "block absent-to-empty preserves identity and explicit presence");
+    }
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "block absent-to-empty marks the directive changed");
+    markdown_core_delta_free(changes);
+    changes = NULL;
+
+    OK(runner,
+       markdown_core_session_edit(session, 3, 5, NULL, 0, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "block empty-to-absent label edit commits");
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        has_label = true;
+        label_count = SIZE_MAX;
+        OK(runner,
+           directive &&
+               markdown_core_node_directive_properties(
+                   directive,
+                   &mode,
+                   &name,
+                   &attributes,
+                   &has_label,
+                   &label_count
+               ) &&
+               !has_label && label_count == 0,
+           "block empty-to-absent preserves identity and removes presence");
+    }
+    count = markdown_core_delta_changed(changes, &ids);
+    OK(runner, delta_contains(ids, count, directive_id), "block empty-to-absent marks the directive changed");
+
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
+    markdown_core_error_free(error);
+}
+
+static void session_block_directive_label_lookup(test_batch_runner *runner) {
+    static const char source[] = ":::note[See [reference] and note[^n]]\n"
+                                 "Body *stable*\n"
+                                 ":::\n"
+                                 "\n"
+                                 "[reference]: /a\n"
+                                 "[^n]: Footnote body\n";
+    static const uint8_t replacement[] = "/b";
+    static const uint8_t prefix[] = "Head\n\n";
+    markdown_core_error *error = NULL;
+    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_delta *changes = NULL;
+    markdown_core_node_id directive_id = 0;
+    markdown_core_node_id label_text_id = 0;
+    markdown_core_node_id link_id = 0;
+    markdown_core_node_id footnote_reference_id = 0;
+    markdown_core_node_id footnote_definition_id = 0;
+    markdown_core_node_id body_id = 0;
+    uint64_t label_text_revision = 0;
+    uint64_t link_revision = 0;
+    uint64_t footnote_reference_revision = 0;
+    uint64_t body_revision = 0;
+    markdown_core_scope label_scope = {{0, 0}, {0, 0}};
+    const char *destination_at = strstr(source, "/a");
+
+    OK(runner, session != NULL && destination_at != NULL, "block-label lookup session opens");
+    if (!session || !destination_at) {
+        markdown_core_session_free(session);
+        markdown_core_error_free(error);
+        return;
+    }
+    OK(runner,
+       markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error) &&
+           markdown_core_session_commit(session, NULL, &error),
+       "block-label lookup baseline commits");
+    {
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *directive = markdown_core_node_get_first_child(root);
+        const markdown_core_node *label_text = markdown_core_node_directive_first_label_child(directive);
+        const markdown_core_node *body = markdown_core_node_directive_first_content_child(directive);
+        const markdown_core_node *link = NULL;
+        const markdown_core_node *footnote_reference = NULL;
+        const markdown_core_node *footnote_definition = NULL;
+        const markdown_core_node *child;
+        markdown_core_footnote_info footnote_info;
+        const markdown_core_node_id *footnote_ids = NULL;
+        size_t footnote_count;
+        markdown_core_string_view destination;
+        markdown_core_string_view title;
+
+        for (child = label_text; child && child != body; child = markdown_core_node_get_next_sibling(child)) {
+            if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_LINK) {
+                link = child;
+            } else if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
+                footnote_reference = child;
+            }
+        }
+        for (child = markdown_core_node_get_next_sibling(directive); child;
+             child = markdown_core_node_get_next_sibling(child)) {
+            if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION) {
+                footnote_definition = child;
+                break;
+            }
+        }
+        directive_id = markdown_core_node_get_id(directive);
+        label_text_id = markdown_core_node_get_id(label_text);
+        link_id = markdown_core_node_get_id(link);
+        footnote_reference_id = markdown_core_node_get_id(footnote_reference);
+        footnote_definition_id = markdown_core_node_get_id(footnote_definition);
+        body_id = markdown_core_node_get_id(body);
+        label_text_revision = markdown_core_node_get_revision(label_text);
+        link_revision = markdown_core_node_get_revision(link);
+        footnote_reference_revision = markdown_core_node_get_revision(footnote_reference);
+        body_revision = markdown_core_node_get_revision(body);
+        label_scope = markdown_core_node_scope(label_text);
+        OK(runner,
+           label_text && markdown_core_node_get_parent(label_text) == directive,
+           "block label Text is a direct child of its semantic directive");
+        INT_EQ(runner, (int)label_scope.start.line, 1, "block label Text starts on the directive line");
+        INT_EQ(runner, (int)label_scope.start.column, 9, "block label Text has an absolute start column");
+        INT_EQ(runner, (int)label_scope.end.line, 1, "block label Text ends on the directive line");
+        INT_EQ(runner, (int)label_scope.end.column, 12, "block label Text has an absolute end column");
+        OK(runner,
+           markdown_core_node_link_properties(link, &destination, &title) && destination.length == 2 &&
+               memcmp(destination.data, "/a", 2) == 0,
+           "block-label reference resolves before its parse owner is released");
+        OK(runner,
+           footnote_reference && markdown_core_node_get_parent(footnote_reference) == directive &&
+               footnote_definition &&
+               markdown_core_session_footnote_info(session, footnote_reference_id, &footnote_info) &&
+               footnote_info.definition == footnote_definition_id && footnote_info.number == 1 &&
+               footnote_info.reference_ordinal == 1 && footnote_info.reference_count == 1,
+           "block-label footnote reference is indexed through the semantic directive owner");
+        footnote_count = markdown_core_session_footnotes(session, &footnote_ids);
+        OK(runner,
+           footnote_count == 1 && footnote_ids && footnote_ids[0] == footnote_definition_id,
+           "block-label footnote contributes one referenced definition");
+        footnote_count = markdown_core_session_footnote_references(session, footnote_definition_id, &footnote_ids);
+        OK(runner,
+           footnote_count == 1 && footnote_ids && footnote_ids[0] == footnote_reference_id,
+           "block-label footnote contributes one back-reference");
+        OK(runner,
+           body && markdown_core_node_get_kind(body) == MARKDOWN_CORE_KIND_PARAGRAPH,
+           "container directive exposes its block body after the direct label prefix");
+    }
+
+    {
+        size_t offset = (size_t)(destination_at - source);
+        OK(runner,
+           markdown_core_session_edit(session, offset, offset + 2, replacement, sizeof(replacement) - 1, &error) &&
+               markdown_core_session_commit(session, &changes, &error),
+           "block-label reference definition edit commits");
+    }
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        const markdown_core_node *label_text = markdown_core_session_node_by_id(session, label_text_id);
+        const markdown_core_node *link = markdown_core_session_node_by_id(session, link_id);
+        const markdown_core_node *footnote_reference = markdown_core_session_node_by_id(session, footnote_reference_id);
+        const markdown_core_node *body = markdown_core_session_node_by_id(session, body_id);
+        const markdown_core_node_id *ids = NULL;
+        const markdown_core_node_id *footnote_ids = NULL;
+        markdown_core_footnote_info footnote_info;
+        markdown_core_string_view destination;
+        markdown_core_string_view title;
+        size_t count;
+        OK(runner,
+           directive && label_text && markdown_core_node_get_parent(label_text) == directive,
+           "reparsed block label remains directly owned by its directive");
+        OK(runner,
+           label_text && markdown_core_node_get_revision(label_text) == label_text_revision,
+           "unmodified block-label Text keeps its revision");
+        OK(runner,
+           link && markdown_core_node_link_properties(link, &destination, &title) && destination.length == 2 &&
+               memcmp(destination.data, "/b", 2) == 0,
+           "lookup attribution survives transient label-owner finalization");
+        OK(runner,
+           link && markdown_core_node_get_revision(link) > link_revision,
+           "changed block-label reference advances its revision");
+        OK(runner,
+           footnote_reference && markdown_core_node_get_parent(footnote_reference) == directive &&
+               markdown_core_node_get_revision(footnote_reference) == footnote_reference_revision,
+           "unmodified block-label footnote keeps its id, parent, and revision");
+        OK(runner,
+           markdown_core_session_footnote_info(session, footnote_reference_id, &footnote_info) &&
+               footnote_info.definition == footnote_definition_id && footnote_info.number == 1 &&
+               footnote_info.reference_ordinal == 1 && footnote_info.reference_count == 1,
+           "link retarget preserves block-label footnote resolution and ordinals");
+        count = markdown_core_session_footnotes(session, &footnote_ids);
+        OK(runner,
+           count == 1 && footnote_ids && footnote_ids[0] == footnote_definition_id,
+           "link retarget does not duplicate the block-label footnote");
+        count = markdown_core_session_footnote_references(session, footnote_definition_id, &footnote_ids);
+        OK(runner,
+           count == 1 && footnote_ids && footnote_ids[0] == footnote_reference_id,
+           "link retarget preserves exactly one block-label back-reference");
+        OK(runner,
+           directive && body && markdown_core_node_directive_first_content_child(directive) == body &&
+               markdown_core_node_get_revision(body) == body_revision,
+           "block-label reparse preserves the block body's identity and revision");
+        count = markdown_core_delta_changed(changes, &ids);
+        OK(runner, delta_contains(ids, count, link_id), "re-resolved block-label Link is changed");
+        OK(runner,
+           !delta_contains(ids, count, footnote_reference_id),
+           "unmodified block-label footnote is absent from changed delta");
+        count = markdown_core_delta_bubbled(changes, &ids);
+        OK(runner, delta_contains(ids, count, directive_id), "re-resolved block-label Link bubbles its directive");
+    }
+
+    markdown_core_delta_free(changes);
+    changes = NULL;
+
+    OK(runner,
+       markdown_core_session_edit(session, 0, 0, prefix, sizeof(prefix) - 1, &error) &&
+           markdown_core_session_commit(session, &changes, &error),
+       "head insertion before a block directive commits");
+    {
+        const markdown_core_node *directive = markdown_core_session_node_by_id(session, directive_id);
+        const markdown_core_node *label_text = markdown_core_session_node_by_id(session, label_text_id);
+        const markdown_core_node *body = markdown_core_session_node_by_id(session, body_id);
+        markdown_core_scope shifted_scope =
+            label_text ? markdown_core_node_scope(label_text) : (markdown_core_scope){{0, 0}, {0, 0}};
+        OK(runner,
+           directive && label_text && markdown_core_node_get_parent(label_text) == directive,
+           "shifted block label keeps its id and direct directive parent");
+        OK(runner,
+           label_text && markdown_core_node_get_revision(label_text) == label_text_revision,
+           "scope-only shift leaves the block-label Text revision unchanged");
+        INT_EQ(
+            runner,
+            (int)shifted_scope.start.line,
+            (int)label_scope.start.line + 2,
+            "block label start line shifts after head insertion"
+        );
+        INT_EQ(
+            runner,
+            (int)shifted_scope.end.line,
+            (int)label_scope.end.line + 2,
+            "block label end line shifts after head insertion"
+        );
+        INT_EQ(
+            runner,
+            (int)shifted_scope.start.column,
+            (int)label_scope.start.column,
+            "block label start column survives a line-only shift"
+        );
+        INT_EQ(
+            runner,
+            (int)shifted_scope.end.column,
+            (int)label_scope.end.column,
+            "block label end column survives a line-only shift"
+        );
+        OK(runner,
+           directive && body && markdown_core_node_directive_first_content_child(directive) == body &&
+               markdown_core_node_get_revision(body) == body_revision,
+           "head insertion preserves the block body's identity and revision");
+    }
+
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2226,6 +2856,8 @@ int main(void) {
     accessors(runner);
     formula_extension_accessors(runner);
     directive_extension_accessors(runner);
+    directive_refined_tree_layout(runner);
+    directive_empty_label_representation(runner);
     node_check(runner);
     iterator(runner);
     iterator_delete(runner);
@@ -2250,6 +2882,9 @@ int main(void) {
     session_utf8_split_append(runner);
     session_edit_errors(runner);
     session_directive_label_parent(runner);
+    session_directive_label_delta_classification(runner);
+    session_directive_empty_label_delta_classification(runner);
+    session_block_directive_label_lookup(runner);
     session_scope_shift_invariance(runner);
     session_footnote_queries(runner);
     session_footnote_revision_bumps(runner);

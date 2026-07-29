@@ -254,6 +254,8 @@ if(MARKDOWN_CORE_STATIC)
         session_oom_sweep
         session_oom_sweep_delta
         session_oom_sweep_pooled
+        block_directive_label_lookup_locality
+        reference_fanout_uniform_routing
         restart_locality_counters)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})

@@ -289,10 +289,6 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
     return names[kind];
 }
 
-static bool is_label(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-}
-
 markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     markdown_core_scope scope = {{0, 0}, {0, 0}};
     const markdown_core_node *ancestor;
@@ -323,37 +319,22 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-static markdown_core_scope scope_with_parent_start(
-    const markdown_core_node *canonical_node,
-    int32_t canonical_parent_resolved_start_line
-) {
+static markdown_core_scope scope_with_parent_start(const markdown_core_node *node, int32_t parent_resolved_start_line) {
     markdown_core_scope scope = {{0, 0}, {0, 0}};
     int start_line, end_line;
-    if (!canonical_node) {
+    if (!node) {
         return scope;
     }
-    start_line = canonical_node->start_line;
-    end_line = canonical_node->end_line;
-    if (canonical_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        const markdown_core_node *storage_parent = canonical_node->parent;
-        // Canonical traversal hides directive-label wrappers. Reproduce the
-        // raw ancestor rule exactly: an unsealed wrapper contributes its own
-        // absolute start and terminates resolution; a relative wrapper also
-        // needs the canonical parent's resolved start.
-        if (is_label(storage_parent)) {
-            start_line += storage_parent->start_line;
-            if (storage_parent->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-                start_line += canonical_parent_resolved_start_line;
-            }
-        } else {
-            start_line += canonical_parent_resolved_start_line;
-        }
+    start_line = node->start_line;
+    end_line = node->end_line;
+    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+        start_line += parent_resolved_start_line;
         end_line += start_line;
     }
     scope.start.line = start_line;
-    scope.start.column = canonical_node->start_column;
+    scope.start.column = node->start_column;
     scope.end.line = end_line;
-    scope.end.column = canonical_node->end_column;
+    scope.end.column = node->end_column;
     return scope;
 }
 
@@ -362,44 +343,15 @@ markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) 
 uint64_t markdown_core_node_get_revision(const markdown_core_node *node) { return node ? node->last_changed_rev : 0; }
 
 const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node) {
-    const markdown_core_node *parent;
-    if (!node) {
-        return NULL;
-    }
-    parent = node->parent;
-    // Canonical traversal hides directive-label wrappers, so a label child's
-    // parent is its owning directive.
-    if (is_label(parent)) {
-        parent = parent->parent;
-    }
-    return parent;
+    return node ? node->parent : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    const markdown_core_node *child;
-    if (!node) {
-        return NULL;
-    }
-    child = node->first_child;
-    if (is_label(child)) {
-        return child->first_child ? child->first_child : child->next;
-    }
-    return child;
+    return node ? node->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
-    const markdown_core_node *next;
-    if (!node) {
-        return NULL;
-    }
-    next = node->next;
-    if (next && is_label(next)) {
-        return next->first_child ? next->first_child : next->next;
-    }
-    if (!next && is_label(node->parent)) {
-        return node->parent->next;
-    }
-    return next;
+    return node ? node->next : NULL;
 }
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
@@ -803,13 +755,6 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
-static const markdown_core_node *directive_label_node(const markdown_core_node *node) {
-    if (!node || (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
-        return NULL;
-    }
-    return is_label(node->first_child) ? node->first_child : NULL;
-}
-
 bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
@@ -819,8 +764,6 @@ bool markdown_core_node_directive_properties(
     size_t *label_count
 ) {
     const char *value;
-    const markdown_core_node *label;
-    const markdown_core_node *child;
     if (!node || !mode || !name || !attributes || !has_label || !label_count ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
@@ -834,28 +777,26 @@ bool markdown_core_node_directive_properties(
     attributes->data = (const uint8_t *)value;
     attributes->length = value ? strlen(value) : 0;
     *has_label = markdown_core_directive_has_label((markdown_core_node *)node) != 0;
-    *label_count = 0;
-    label = directive_label_node(node);
-    child = label ? label->first_child : NULL;
-    while (child) {
-        (*label_count)++;
-        child = child->next;
-    }
+    *label_count = markdown_core_directive_label_count(node);
     return true;
 }
 
 const markdown_core_node *markdown_core_node_directive_first_label_child(const markdown_core_node *node) {
-    const markdown_core_node *label = directive_label_node(node);
-    return label ? label->first_child : NULL;
+    return markdown_core_directive_label_count(node) ? node->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_node_directive_first_content_child(const markdown_core_node *node) {
-    const markdown_core_node *label;
+    const markdown_core_node *content;
+    size_t label_count;
     if (!node || node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return NULL;
     }
-    label = directive_label_node(node);
-    return label ? label->next : node->first_child;
+    content = node->first_child;
+    label_count = markdown_core_directive_label_count(node);
+    while (label_count-- && content) {
+        content = content->next;
+    }
+    return content;
 }
 
 static bool link_properties(
@@ -1161,8 +1102,7 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
     markdown_core_string_view a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
     markdown_core_string_view b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
-    // Callers pair nodes by raw type, so the facade kinds already match;
-    // facade-invisible nodes (directive labels) have no fields.
+    // Callers pair nodes by raw type, so the facade kinds already match.
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level_a, level_b;
@@ -1232,13 +1172,25 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        markdown_core_placement_mode mode_a, mode_b;
+        const char *name_a = markdown_core_extensions_get_directive_name((markdown_core_node *)a);
+        const char *name_b = markdown_core_extensions_get_directive_name((markdown_core_node *)b);
+        const char *attributes_a = markdown_core_extensions_get_directive_attributes((markdown_core_node *)a);
+        const char *attributes_b = markdown_core_extensions_get_directive_attributes((markdown_core_node *)b);
         bool has_label_a, has_label_b;
-        size_t label_a, label_b;
-        markdown_core_node_directive_properties(a, &mode_a, &a1, &a2, &has_label_a, &label_a);
-        markdown_core_node_directive_properties(b, &mode_b, &b1, &b2, &has_label_b, &label_b);
-        return mode_a == mode_b && view_content_equal(a1, b1) && view_optional_equal(a2, b2) &&
-               has_label_a == has_label_b && (!has_label_a || label_a == label_b);
+        a1.data = (const uint8_t *)name_a;
+        a1.length = name_a ? strlen(name_a) : 0;
+        b1.data = (const uint8_t *)name_b;
+        b1.length = name_b ? strlen(name_b) : 0;
+        a2.data = (const uint8_t *)attributes_a;
+        a2.length = attributes_a ? strlen(attributes_a) : 0;
+        b2.data = (const uint8_t *)attributes_b;
+        b2.length = attributes_b ? strlen(attributes_b) : 0;
+        has_label_a = markdown_core_directive_has_label((markdown_core_node *)a) != 0;
+        has_label_b = markdown_core_directive_has_label((markdown_core_node *)b) != 0;
+        /* Label count is derived from the direct child list, whose change is
+         * classified independently by adoption. Only absent versus present
+         * (including explicit empty) is an own field. */
+        return view_content_equal(a1, b1) && view_optional_equal(a2, b2) && has_label_a == has_label_b;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:

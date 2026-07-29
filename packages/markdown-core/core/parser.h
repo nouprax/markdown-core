@@ -63,6 +63,10 @@ struct markdown_core_parser {
      * markdown_core_parser_finish reports the whole parse as failed (NULL)
      * instead of returning a silently truncated document. */
     bool oom;
+    /* Sticky engine-invariant failure. This is separate from allocation loss
+     * so facade callers can report MARKDOWN_CORE_ERROR_INTERNAL rather than
+     * misclassifying a broken refinement lifecycle as OOM. */
+    bool internal_error;
     bool last_buffer_ended_with_cr;
     size_t total_size;
     markdown_core_llist *extensions;

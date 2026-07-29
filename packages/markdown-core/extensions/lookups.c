@@ -2,8 +2,6 @@
 
 #include "session_internal.h"
 
-#include "directive.h"
-
 #include <node.h>
 
 // Reference-lookup records: which inline-owning unit depends on which
@@ -48,11 +46,6 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
     unsigned char *copy;
     size_t i;
 
-    /* Directive-label wrappers are facade-invisible and cannot anchor a
-     * dependency; the directive they label can. */
-    if (unit && unit->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL && unit->parent) {
-        unit = unit->parent;
-    }
     if (!unit) {
         recording->lost = true;
         return;

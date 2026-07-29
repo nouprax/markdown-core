@@ -666,10 +666,10 @@ void markdown_core_parser_manage_extensions_special_characters(markdown_core_par
     }
 }
 
-/* The node a lookup observed during `node`'s inline parse is attributed to:
+/* The node a lookup observed during `node`'s inline parse is attributed to
  * the outermost inline-owning node of the parent chain (the unit the
- * per-block postprocess pipeline visits). The sink may re-attribute units it
- * knows to be facade-invisible (directive-label wrappers). */
+ * per-block postprocess pipeline visits). A transient owner is attributed to
+ * the semantic owner that will survive its finalization. */
 static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
     markdown_core_node *unit = node;
     markdown_core_node *up;
@@ -677,6 +677,14 @@ static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
         if (contains_inlines(up)) {
             unit = up;
         }
+    }
+    if (unit->extension && unit->extension->finalize_transient_inline_owner) {
+        /* The descriptor contract makes every extension-owned inline unit a
+         * transient direct child. A missing parent is an invalid parse tree;
+         * returning NULL poisons session lookup recording until refinement
+         * reports the structural failure itself. */
+        assert(unit->parent);
+        unit = unit->parent;
     }
     return unit;
 }
@@ -1792,11 +1800,13 @@ finished:
 }
 
 /* Runs the block-local postprocess pipeline for one unit: text
- * consolidation, extension block postprocess hooks in attachment order, and
- * HTML-comment strip. Effects never leave the unit's subtree, and the unit
- * may end up replaced (formula promotion) or removed (comment HTML block);
- * the caller must precompute its traversal successor. Returns the node the
- * unit became (the unit itself when nothing replaced it). */
+ * consolidation, extension block postprocess hooks in attachment order,
+ * HTML-comment stripping, then elimination of an extension-owned transient
+ * inline owner. The finalizer runs last so every cross-extension transform
+ * sees the complete parse unit, and before position sealing so the returned
+ * tree stores only semantic parent edges. The caller precomputes its
+ * traversal successor because the unit may be replaced, removed, or
+ * flattened. Returns the surviving node/owner. */
 static markdown_core_node *S_postprocess_unit(
     markdown_core_parser *parser,
     markdown_core_node *unit,
@@ -1804,6 +1814,21 @@ static markdown_core_node *S_postprocess_unit(
 ) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
+    markdown_core_node *transient_unit = NULL;
+    markdown_core_node *semantic_owner = NULL;
+    markdown_core_extension *transient_extension = NULL;
+    markdown_core_finalize_transient_inline_owner_func transient_finalizer = NULL;
+
+    if (owns_inlines && unit->extension && unit->extension->finalize_transient_inline_owner) {
+        transient_unit = unit;
+        semantic_owner = unit->parent;
+        transient_extension = unit->extension;
+        transient_finalizer = unit->extension->finalize_transient_inline_owner;
+        if (!semantic_owner) {
+            parser->internal_error = true;
+            return unit;
+        }
+    }
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
@@ -1829,18 +1854,35 @@ static markdown_core_node *S_postprocess_unit(
             parser->oom = true;
         }
     }
+    if (transient_finalizer) {
+        /* A transient parse unit is one lifecycle object, not a replaceable
+         * semantic node. Finalization is the only operation allowed to
+         * eliminate it, and it always folds into the parent captured before
+         * cross-extension postprocessing began. */
+        if (unit != transient_unit || transient_unit->parent != semantic_owner ||
+            transient_unit->extension != transient_extension ||
+            !transient_finalizer(transient_extension, transient_unit, semantic_owner)) {
+            parser->internal_error = true;
+            return unit;
+        }
+        unit = semantic_owner;
+    }
     return unit;
 }
 
-/* Drives S_postprocess_unit over every block and inline-owning node in
- * document order. Inline-owning units are pipeline leaves: their inline
- * subtrees are handled by the unit pass itself, so traversal never descends
- * into them (a directive label wrapper nested in a paragraph is covered by
- * the paragraph's pass). Successors are computed before a unit runs because
- * the pipeline may replace or free the unit node. */
-static void S_postprocess_blocks(markdown_core_parser *parser) {
-    markdown_core_node *root = parser->root;
-    markdown_core_node *node = root->first_child;
+/* Drives S_postprocess_unit over a bounded subtree in document order.
+ * Inline-owning units are pipeline leaves: their inline subtrees are handled
+ * by the unit pass itself, so traversal never descends into them. Successors
+ * are computed before a unit runs because the pipeline may replace, free, or
+ * flatten the unit node. Returns the node occupying `first`'s position after
+ * processing; callers use this when the bounded root itself may be replaced. */
+static markdown_core_node *S_postprocess_subtree(
+    markdown_core_parser *parser,
+    markdown_core_node *boundary,
+    markdown_core_node *first
+) {
+    markdown_core_node *result = first;
+    markdown_core_node *node = first;
 
     while (node) {
         bool owns_inlines = contains_inlines(node);
@@ -1849,7 +1891,7 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
         if (!owns_inlines && node->first_child) {
             next = node->first_child;
         } else {
-            for (markdown_core_node *up = node; up != root; up = up->parent) {
+            for (markdown_core_node *up = node; up != boundary; up = up->parent) {
                 if (up->next) {
                     next = up->next;
                     break;
@@ -1857,8 +1899,20 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
             }
         }
 
-        S_postprocess_unit(parser, node, owns_inlines);
+        {
+            markdown_core_node *processed = S_postprocess_unit(parser, node, owns_inlines);
+            if (node == first) {
+                result = processed;
+            }
+        }
         node = next;
+    }
+    return result;
+}
+
+static void S_postprocess_blocks(markdown_core_parser *parser) {
+    if (parser->root->first_child) {
+        S_postprocess_subtree(parser, parser->root, parser->root->first_child);
     }
 }
 
@@ -1883,7 +1937,7 @@ markdown_core_node *markdown_core_parser_refine_unit(
     }
     markdown_core_iter_free(iter);
 
-    return S_postprocess_unit(parser, unit, contains_inlines(unit));
+    return S_postprocess_subtree(parser, unit, unit);
 }
 
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {
@@ -1902,7 +1956,7 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
     if (parser->refmap && parser->refmap->oom) {
         parser->oom = true;
     }
-    if (parser->oom) {
+    if (parser->oom || parser->internal_error) {
         markdown_core_node_free(parser->root);
         parser->root = NULL;
         return NULL;
