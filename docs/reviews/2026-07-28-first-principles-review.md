@@ -12,14 +12,66 @@ fresh session can pick up any work package without this conversation.
 
 ## Status summary
 
-- Fixed on this branch: 23
-- Pending, grouped into work packages: 66
+Nine commits are on `refactor/first-principles-sweep`; the working tree additionally
+holds three work packages' uncommitted implementations (see "Session hand-off state").
 
-Fixed so far (commit - ids):
-- `13e58c7` - I26, I27, I29, I32, I40, I41, I88
-- `8361aff` - I28, I33, I35, I36, I38, I39, I42, I44, I45, I69, I71, I80
-- `fa8fc66` - I43
-- `0b2faab` - I46, I67, I68
+### Fixed and committed (WP1 complete + earlier sweeps)
+
+| Commit | Findings |
+| --- | --- |
+| `13e58c7` | I26, I27, I29, I32, I40, I41, I88 — CLI rewrite, dead scanners, CLI-only options |
+| `8361aff` | I28, I33, I35, I36, I38, I39, I42, I44, I45, I69, I71, I80 — dead internal API surface |
+| `fa8fc66` | I43 — sorted-fallback leftmost binary search |
+| `0b2faab` | I46, I67, I68 — config-header consolidation, Windows guard, pkg-config |
+| `7c5025d` | I76, I77, I83 (+I62 comment dedup) — emphasis flanking, tasklist checked-state |
+| `2113480` | I34 — U+FFFF/U+FFFE UTF-8 encoding |
+| `c5e0490` | I24, I37, I70 — mandatory multiline scope tracking; new multiline-spans oracle case |
+| `ddaaaee` | I59 — inline seam armed only for genuinely stale restarts; seam_over_sentinel script |
+
+WP1 (all six behavioral findings) is fully landed; C suite is 96/96 with the new
+regression fixtures, and the frozen specs/canonical-ast oracle gained the
+multiline-spans case (platform conformance suites must re-run against it).
+
+### Session hand-off state (uncommitted working tree, 2026-07-28 evening)
+
+- **WP3-swift: implemented, validated, UNCOMMITTED.** Agent report: all findings
+  I14-I23 done (I23 via paired comments only); test:swift-macos 18+1 pass,
+  conformance:swift-macos 6 pass (2 new tests), lint/format clean, benchmarks show
+  deep_nesting ~15-23% faster and session peak RSS ~-10%. Breaking Swift renames
+  recorded in CHANGELOG "Unreleased". Follow-up found: scripts/check-swift-source-archive.sh:74
+  still uses `document.children.first` and must be updated to `content` before CI.
+- **WP4-kotlin: implemented, validated, UNCOMMITTED.** Agent report: I05-I13 done
+  (I11 skipped by design, I58 belongs to scripts); jvmTest 31 pass, jvm/androidHost/macosArm64
+  conformance 7 pass each, testAndroidHostTest 27, macosArm64Test 27; POMs byte-identical;
+  jvm-abi.txt legitimately regenerated for the I06 additions.
+- **WP5-es: PARTIAL, agent stopped mid-validation.** Source edits are in the tree
+  (7 files under packages/es-markdown-core); the agent was re-running the build after
+  its X01 guard test wiped dist/. A fresh session must rebuild
+  (source .tools/emsdk/4.0.23/emsdk_env.sh; pnpm run test:es-node && conformance:es-node)
+  and verify I00-I04+X01 before committing; treat every edit as unreviewed.
+- **WP6-infra: PARTIAL, agent stopped mid-validation.** ~22 script/build files edited
+  (Makefile, CMakePresets.json, CMakeLists version floors, scripts/lib extraction,
+  audit-public-surface three-way check, check-generated-scanners.sh, etc.); the agent
+  was about to re-run audit:packages with the emsdk on PATH. A fresh session must run
+  the five pnpm audit:* gates plus cmake --preset default and bash -n over changed
+  scripts before committing; treat every edit as unreviewed.
+- specs/canonical-ast/manifest.json was reformatted by a prettier run mid-session;
+  verify `node scripts/check-canonical-ast-fixtures.mjs` still passes before commit.
+
+### Recommended dispatch for follow-up sessions
+
+1. Review + commit WP4 (kotlin) and WP3 (swift) as separate commits from the current
+   tree (their suites were green at hand-off; re-run before committing). Include the
+   one-line check-swift-source-archive.sh fix with WP3.
+2. Finish WP5 (es): rebuild, validate, commit.
+3. Finish WP6 (infra): validate audits, commit.
+4. WP2 (C perf/hygiene, below) is untouched except I62; largest wins are I25
+   (quadratic brackets), I78 (autolink email sourcepos), I60 (one-shot session
+   index cost). Each entry below is self-contained.
+5. Final gate for the whole branch: full multi-platform suites
+   (test:c-host, asan/ubsan via make asan-test ubsan-test, test:swift-macos,
+   test:kotlin-jvm, test:es-node, all conformance:* targets) so the new
+   multiline-spans oracle case is proven on every platform, then pnpm verify.
 
 Priority key: P0-bug = observable wrong behavior vs spec/CommonMark; P1-perf = measured
 performance problem; P2-hygiene = dead code/duplication/build hygiene; P3-cosmetic.
@@ -31,7 +83,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## WP1-c-behavior: C engine behavioral fixes (dump output changes; coordinate fixture re-bless)
 
-### I24 [P0-bug] packages/markdown-core/core/inlines.c:357
+### I24 [FIXED `c5e0490`] [P0-bug] packages/markdown-core/core/inlines.c:357
 
 - Verdict: CONFIRMED; changes canonical dump/parse output
 - Finding: adjust_subj_node_newlines early-returns unless MARKDOWN_CORE_OPT_SOURCEPOS is set, but nothing in the entire repo ever sets that bit: not session.c native_options_from (the canonical entry for all three bindings), not main.c's CLI, not any test (repo-wide grep finds only the define and this check). So newline accounting after multi-line code spans and multi-line inline HTML never runs: the span's end scope stays on its start line, and every subsequent inline in the block reports the wrong line AND column. Verified with the built CLI: 'before `code\nspan` after *emph*' yields Code scope=1:9..1:17 (closing backtick is really 2:5) and the following Text at 1:19 instead of 2:7. tests/fixtures/spec.txt:6734 pins the wrong value (Code scope=1:2..1:15 for a span ending at 2:4, column 15 past end of line 1). This contradicts docs/specs/canonical-ast.md ('Scope tracking is mandatory and is not an option') — the gate is a cmark vestige from when sourcepos was renderer-opt-in.
@@ -39,7 +91,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In packages/markdown-core/core/inlines.c delete the early-return gate in adjust_subj_node_newlines (lines 356-359), then delete the now-unreferenced MARKDOWN_CORE_OPT_SOURCEPOS define (core/markdown-core.h:594) and, optionally, the now-unused options parameter threading into adjust_subj_node_newlines and its two call sites (inlines.c:472 code spans, inlines.c:1117 inline HTML). Regenerate the 11 changed expected dumps in packages/markdown-core/tests/fixtures/spec.txt. Add a multi-line code-span and a multi-line inline-HTML fixture to specs/canonical-ast (new .md/.ast pair + manifest) and re-bless the platform conformance snapshots generated from them. Do not instead set the bit in session.c/main.c — the spec says scope tracking is not an option, so the option should cease to exist.
 - Tests: Covered by spec_runner (11 fixture dumps regenerate), the dump CLI runner, and equivalence_runner — run the latter to confirm incremental-session vs one-shot parity holds with the adjustment live (subj->line/column_offset updates now execute during block reparse). New coverage needed: a specs/canonical-ast fixture with a multi-line code span and multi-line inline HTML so the frozen oracle pins the corrected scopes.
 
-### I34 [P0-bug] packages/markdown-core/core/utf8.c:213
+### I34 [FIXED `2113480`] [P0-bug] packages/markdown-core/core/utf8.c:213
 
 - Verdict: CONFIRMED; changes canonical dump/parse output
 - Finding: markdown_core_utf8proc_encode_char emits raw single bytes 0xFF for U+FFFF and 0xFE for U+FFFE (utf8.c:213-218), an inherited cmark quirk. The numeric-entity clamp in houdini_html_u.c:74 rejects only 0, surrogates, and >=0x110000, so input `&#xffff;` or `&#xfffe;` flows through markdown_core_houdini_unescape_ent into a Text literal containing invalid UTF-8. The facade always sets OPT_VALIDATE_UTF8 (session.c:203) precisely to guarantee valid UTF-8, but this byte is generated after input validation. Literals cross the FFI as strings: Swift/Kotlin/JS decoders will fail or replace differently per platform, breaking the identical-AST contract; the canonical dump also emits the invalid bytes. Same bytes can enter normalized reference labels via case folding of a literal U+FFFF (utf8proc_valid accepts noncharacters), though that is internal-only.
@@ -47,7 +99,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the two special cases (uc==0xFFFF, uc==0xFFFE) in markdown_core_utf8proc_encode_char in packages/markdown-core/core/utf8.c so those code points fall into the normal 'uc < 0x10000' 3-byte branch (EF BF BF / EF BF BE) — minimal fix, consistent with literal U+FFFF bytes in source text already passing validation (utf8proc accepts noncharacters). Add api tests beside tests/api/main.c:1160 for &#xffff; and &#xfffe; asserting the 3-byte encodings, plus a .ast fixture pinning the dump bytes.
 - Tests: tests/api/main.c entity tests (test_md_paragraph_text) cover numeric entities; add &#xffff;/&#xfffe; cases and a canonical-ast fixture. Frozen canonical-ast manifest unaffected (no existing fixture contains these entities).
 
-### I59 [P0-bug] packages/markdown-core/extensions/incremental.c:1975
+### I59 [FIXED `ddaaaee`] [P0-bug] packages/markdown-core/extensions/incremental.c:1975
 
 - Verdict: CONFIRMED; changes canonical dump/parse output
 - Finding: The inline-seam block sets the transplant marker (staged_leaf->user_data = seam+1, line 1997) whenever restart_node and the first staged leaf are compatible paragraphs with a shared inert line-aligned prefix — but it never checks that restart_node will actually be in the graveyard. When the restart entry is a head sentinel (vanished definition paragraph) whose entry_node_at resolution lands on the same child as the reflow boundary (restart_node == boundary_node), first_stale is NULL: the staged leaf's inline parse starts at the seam offset (core blocks.c:681 parse_inlines_from), adoption mints it without consuming the seam (the dummy document has no children to pair), and the transplant at line 2503 is skipped because its guard requires first_stale == restart_node. The committed leaf then permanently lacks its prefix inline nodes and keeps a bogus integer in user_data. Concrete repro: text "[a]: /u\n\nplain text\nmore\n"; edit replaces bytes [0,7) with "plain text\nmore2" and commit — restart entry is the sentinel at byte 0, entry_node_at returns the "plain text" paragraph P, the reflow boundary also resolves to P, the seam against P's content is 11 ("plain text\n"), and the committed first paragraph ends up with children [Text "more2"] instead of [Text "plain text", SoftBreak, Text "more2"] — the canonical dump diverges from Document.parse of the same bytes, violating the equivalence invariant (docs/specs/sessions-and-deltas.md, Equivalence invariant).
@@ -55,7 +107,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In packages/markdown-core/extensions/incremental.c, hoist the boundary_node resolution (entry_node_at on boundary_pos, currently at 2081-2082) above the inline-seam block at ~1975 and add `&& restart_node != boundary_node` to the seam gate (i.e., only set staged_leaf->user_data when the restart node is genuinely stale so the 2503 transplant guard is guaranteed to fire); additionally clear staged_first->user_data at the splice if the transplant guard fails, so no committed node retains a bogus user_data integer. Add an equivalence_runner session script where an edit turns a head definition paragraph into a paragraph sharing a line-aligned inert prefix with the following paragraph (the current head-definition scripts produce '['-leading staged content whose seam is 0, so nothing triggers the path).
 - Tests: equivalence_runner (canonical/spec/random_edits, EQ_HEAD_DEFS_STEPS) covers the area but no current script triggers this corner; add the targeted seam-over-sentinel script above. fallback_runner OOM sweep covers rollback paths.
 
-### I76 [P0-bug] packages/markdown-core/extensions/tasklist.c:103
+### I76 [FIXED `7c5025d`] [P0-bug] packages/markdown-core/extensions/tasklist.c:103
 
 - Verdict: CONFIRMED; changes canonical dump/parse output
 - Finding: Checked state is computed with strstr over the ENTIRE line — `parent_container->as.list.checked = (strstr((char *)input, "[x]") || strstr((char *)input, "[X]"))` — not from the marker that scan_tasklist matched at parser->first_nonspace. Confirmed on a fresh build: `- [ ] call me [x] later` dumps `ListItem checked=true`. Any unchecked item whose text (or container prefix) contains a literal "[x]" is reported checked. This is an old cmark-gfm bug that upstream later fixed by inspecting input[parser->first_nonspace + 1].
@@ -63,7 +115,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Replace tasklist.c:103 with `parent_container->as.list.checked = (input[parser->first_nonspace + 1] == 'x' || input[parser->first_nonspace + 1] == 'X');` (position guaranteed valid because scan_tasklist matched at first_nonspace). Add a regression fixture: an unchecked item containing literal '[x]' in its text (e.g. '- [ ] call me [x] later' expecting checked=false) to tests/fixtures/extensions.txt and/or a specs corpus case.
 - Tests: Existing: extensions.txt tasklist section, specs/canonical-ast blocks/completeness (unaffected). New: the '[x]-in-text' regression case above.
 
-### I77 [P0-bug] packages/markdown-core/extensions/directive.c:1660
+### I77 [FIXED `7c5025d`] [P0-bug] packages/markdown-core/extensions/directive.c:1660
 
 - Verdict: CONFIRMED; changes canonical dump/parse output
 - Finding: `.emphasis = true` on the directive descriptor (and formula.c:745) puts ALL of the extension's special_inline_chars into parser->skip_chars, and scan_delims (core/inlines.c:492,520) skips those characters when computing emphasis flanking. Result, confirmed empirically with an isolated harness: core-only parse of `a:_b_` yields `text emphasis` (matches reference cmark), but with directive attached it yields plain text; same deviation for `a$_b_` with formula and `a}_b_` with directive. Since ParseOptions defaults enable directives and formulas, the DEFAULT canonical pipeline deviates from CommonMark emphasis behavior around ordinary ':', '}', '$' text. The gfm mechanism was designed for '~' only (strikethrough); sweeping in real text characters like ':' looks like an unintended side effect of reusing one `emphasis` flag for the whole special-char list (the sentinel delim bytes 0x01-0x04/0x08 are harmless in skip_chars because they cannot appear as text). Neither docs/specs nor specs/canonical-ast pins the deviant behavior — no fixture covers colon/dollar/brace-adjacent emphasis.
@@ -71,7 +123,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Split 'flanking-skip characters' from 'trigger characters' in the extension descriptor (extension.h): e.g. add `const unsigned char *emphasis_skip_chars` (or a per-char flag array) consumed by blocks.c:649's markdown_core_inlines_add_special_character call, so only strikethrough's '~' and the non-textual sentinel delim bytes (0x01-0x08 range, which cannot appear in text) enter skip_chars; ':', ']', '}', '$', '\\' remain ordinary characters for scan_delims while staying trigger chars for match_inline. Rerun/review the full canonical-AST corpus and all golden fixtures; add fixtures pinning 'a:_b_', 'a$_b_', 'a}_b_' emphasis under default options.
 - Tests: spec_runner (tests/fixtures/spec.txt) currently passes and must keep passing; extensions-directive/formula fixtures cover trigger behavior; add the emphasis-adjacency regression fixtures above.
 
-### I83 [P0-bug] packages/markdown-core/extensions/directive.c:1644
+### I83 [FIXED `7c5025d`] [P0-bug] packages/markdown-core/extensions/directive.c:1644
 
 - Verdict: CONFIRMED; changes canonical dump/parse output; surface: internal
 - Finding: directive_special_chars registers '}' but match() (directive.c:1278-1301) only ever handles ':' and ']'; no directive delimiter uses '}' as delim_char. Its only effects are cost and harm: every '}' in every document breaks the inline text run and walks the extension list for a guaranteed-NULL match, it makes the incremental inert-prefix seam (inlines.c:1789) end at every '}', and — via .emphasis=true — it is one of the three characters causing the confirmed emphasis-flanking deviation (`a}_b_` loses emphasis when directive is attached).
@@ -193,7 +245,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Move the lines 21-27 comment block in core/inlines.h down to sit immediately above the markdown_core_parse_inlines_from declaration at line 40; leave the seam-prefix comment (28-30) where it is.
 - Tests: None applicable — comment-only move; compilation of any TU including inlines.h suffices.
 
-### I62 [P3-cosmetic] packages/markdown-core/extensions/incremental.c:1959
+### I62 [FIXED `ddaaaee`] [P3-cosmetic] packages/markdown-core/extensions/incremental.c:1959
 
 - Verdict: CONFIRMED
 - Finding: The four-line comment "Columns are raw line-local values that sealing never adjusts..." is pasted four times back to back (lines 1959-1974) — an obvious editing artifact directly above the seam block.
