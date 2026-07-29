@@ -14,15 +14,6 @@
 // definition consults the table to re-refine exactly the dependent units
 // (incremental.c) instead of falling back to a full reparse.
 
-static uint64_t lookup_mix64(uint64_t x) {
-    x ^= x >> 30;
-    x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27;
-    x *= 0x94d049bb133111ebULL;
-    x ^= x >> 31;
-    return x;
-}
-
 // --- recording (one staged parse) -------------------------------------------
 
 void markdown_core_lookup_recording_init(markdown_core_lookup_recording *recording, markdown_core_mem *mem) {
@@ -179,16 +170,21 @@ static void lookup_record_release(markdown_core_mem *mem, markdown_core_lookup_r
 // --- postings ----------------------------------------------------------------
 
 static markdown_core_lookup_posting *posting_of(const markdown_core_lookup_table *table, const unsigned char *label) {
-    void *value =
-        markdown_core_key_index_lookup(&table->postings.by_label, label, (bufsize_t)strlen((const char *)label));
+    void *value = markdown_core_key_index_lookup(
+        &table->postings.by_label,
+        label,
+        (markdown_core_bufsize)strlen((const char *)label)
+    );
     if (!value) {
         return NULL;
     }
     return &table->postings.items[(size_t)(uintptr_t)value - 1];
 }
 
-const markdown_core_lookup_posting *
-markdown_core_lookup_postings_find(const markdown_core_lookup_table *table, const unsigned char *label) {
+const markdown_core_lookup_posting *markdown_core_lookup_postings_find(
+    const markdown_core_lookup_table *table,
+    const unsigned char *label
+) {
     if (table->postings.by_label.capacity == 0) {
         return NULL;
     }
@@ -198,8 +194,11 @@ markdown_core_lookup_postings_find(const markdown_core_lookup_table *table, cons
 /* Finds the posting for `label`, creating an empty one (owned label copy,
  * index entry) when the table has never seen it. Fallible; runs only from
  * the pre-splice reserve step. */
-static markdown_core_lookup_posting *
-posting_find_or_create(markdown_core_mem *mem, markdown_core_lookup_table *table, const unsigned char *label) {
+static markdown_core_lookup_posting *posting_find_or_create(
+    markdown_core_mem *mem,
+    markdown_core_lookup_table *table,
+    const unsigned char *label
+) {
     markdown_core_lookup_postings *postings = &table->postings;
     markdown_core_lookup_posting *posting = postings->by_label.capacity ? posting_of(table, label) : NULL;
     size_t length;
@@ -237,7 +236,7 @@ posting_find_or_create(markdown_core_mem *mem, markdown_core_lookup_table *table
     if (!markdown_core_key_index_insert(
             &postings->by_label,
             copy,
-            (bufsize_t)length,
+            (markdown_core_bufsize)length,
             (void *)(uintptr_t)(postings->count + 1),
             0,
             NULL
@@ -411,7 +410,7 @@ void markdown_core_lookup_table_release(markdown_core_mem *mem, markdown_core_lo
 
 static markdown_core_lookup_record *lookup_table_find(markdown_core_lookup_table *table, markdown_core_node_id id) {
     size_t mask = table->capacity - 1;
-    size_t slot = (size_t)lookup_mix64(id) & mask;
+    size_t slot = (size_t)markdown_core_mix64(id) & mask;
     while (table->keys[slot] != id) {
         if (table->keys[slot] == 0) {
             return NULL;
@@ -452,7 +451,7 @@ static void lookup_table_insert(
     markdown_core_lookup_record record
 ) {
     size_t mask = table->capacity - 1;
-    size_t slot = (size_t)lookup_mix64(id) & mask;
+    size_t slot = (size_t)markdown_core_mix64(id) & mask;
     while (table->keys[slot] != 0) {
         if (table->keys[slot] == id) {
             record_postings_remove(table, &table->records[slot]);
@@ -535,7 +534,7 @@ void markdown_core_lookup_table_remove(
         return;
     }
     mask = table->capacity - 1;
-    slot = (size_t)lookup_mix64(id) & mask;
+    slot = (size_t)markdown_core_mix64(id) & mask;
     while (table->keys[slot] != id) {
         if (table->keys[slot] == 0) {
             return;
@@ -549,7 +548,7 @@ void markdown_core_lookup_table_remove(
     gap = slot;
     scan = (gap + 1) & mask;
     while (table->keys[scan] != 0) {
-        size_t home = (size_t)lookup_mix64(table->keys[scan]) & mask;
+        size_t home = (size_t)markdown_core_mix64(table->keys[scan]) & mask;
         if (((scan - home) & mask) >= ((scan - gap) & mask)) {
             table->keys[gap] = table->keys[scan];
             table->records[gap] = table->records[scan];

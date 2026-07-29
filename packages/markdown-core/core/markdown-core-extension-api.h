@@ -106,8 +106,8 @@ typedef struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;
     markdown_core_node *inl_text;
-    bufsize_t position;
-    bufsize_t length;
+    markdown_core_bufsize position;
+    markdown_core_bufsize length;
     unsigned char delim_char;
     int can_open;
     int can_close;
@@ -391,6 +391,15 @@ void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *p
 
 MARKDOWN_CORE_EXPORT
 delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
+
+/** Returns the nearest opener of `delim_char` not balanced by a later closer.
+ * This phase-one lookup is O(1) and ignores delimiters of every other
+ * character. */
+MARKDOWN_CORE_EXPORT
+delimiter *markdown_core_inline_parser_get_last_open_delimiter(
+    markdown_core_inline_parser *parser,
+    unsigned char delim_char
+);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser);

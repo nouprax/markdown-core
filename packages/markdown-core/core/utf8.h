@@ -9,16 +9,16 @@ extern "C" {
 #endif
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len);
+void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, markdown_core_bufsize len);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst);
+int markdown_core_utf8proc_iterate(const uint8_t *str, markdown_core_bufsize str_len, int32_t *dst);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_utf8proc_check(markdown_core_strbuf *dest, const uint8_t *line, bufsize_t size);
+void markdown_core_utf8proc_check(markdown_core_strbuf *dest, const uint8_t *line, markdown_core_bufsize size);
 
 MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_is_space(int32_t uc);

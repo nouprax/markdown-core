@@ -118,6 +118,11 @@ find_package(markdown-core CONFIG REQUIRED)
 target_link_libraries(my-app PRIVATE markdown-core::markdown-core)
 ```
 
+The installed facade intentionally has no compile-time version macro or
+runtime version function. Discover its package version with
+`pkg-config --modversion markdown-core`, or request a compatible version in
+`find_package(markdown-core <version> CONFIG REQUIRED)`.
+
 Include the read-only facade as `#include <markdown_core.h>`. Pass `NULL` for
 parse options to use the defaults, and release every successful parse with
 `markdown_core_document_free`. Nodes and string views borrow from their owning

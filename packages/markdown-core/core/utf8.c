@@ -20,7 +20,7 @@ static void encode_unknown(markdown_core_strbuf *buf) {
     markdown_core_strbuf_put(buf, repl, 3);
 }
 
-static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
+static int utf8proc_charlen(const uint8_t *str, markdown_core_bufsize str_len) {
     int length, i;
 
     if (!str_len) {
@@ -33,7 +33,7 @@ static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
         return -1;
     }
 
-    if (str_len >= 0 && (bufsize_t)length > str_len) {
+    if (str_len >= 0 && (markdown_core_bufsize)length > str_len) {
         return -str_len;
     }
 
@@ -47,14 +47,14 @@ static int utf8proc_charlen(const uint8_t *str, bufsize_t str_len) {
 }
 
 // Validate a single UTF-8 character according to RFC 3629.
-static int utf8proc_valid(const uint8_t *str, bufsize_t str_len) {
+static int utf8proc_valid(const uint8_t *str, markdown_core_bufsize str_len) {
     int length = utf8proc_utf8class[str[0]];
 
     if (!length) {
         return -1;
     }
 
-    if ((bufsize_t)length > str_len) {
+    if ((markdown_core_bufsize)length > str_len) {
         return -str_len;
     }
 
@@ -116,11 +116,11 @@ static int utf8proc_valid(const uint8_t *str, bufsize_t str_len) {
     return length;
 }
 
-void markdown_core_utf8proc_check(markdown_core_strbuf *ob, const uint8_t *line, bufsize_t size) {
-    bufsize_t i = 0;
+void markdown_core_utf8proc_check(markdown_core_strbuf *ob, const uint8_t *line, markdown_core_bufsize size) {
+    markdown_core_bufsize i = 0;
 
     while (i < size) {
-        bufsize_t org = i;
+        markdown_core_bufsize org = i;
         int charlen = 0;
 
         while (i < size) {
@@ -155,7 +155,7 @@ void markdown_core_utf8proc_check(markdown_core_strbuf *ob, const uint8_t *line,
     }
 }
 
-int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_t *dst) {
+int markdown_core_utf8proc_iterate(const uint8_t *str, markdown_core_bufsize str_len, int32_t *dst) {
     int length;
     int32_t uc = -1;
 
@@ -199,7 +199,7 @@ int markdown_core_utf8proc_iterate(const uint8_t *str, bufsize_t str_len, int32_
 
 void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
     uint8_t dst[4];
-    bufsize_t len = 0;
+    markdown_core_bufsize len = 0;
 
     assert(uc >= 0);
 
@@ -229,13 +229,13 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
     markdown_core_strbuf_put(buf, dst, len);
 }
 
-void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, bufsize_t len) {
+void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t *str, markdown_core_bufsize len) {
     int32_t c;
 
 #define bufpush(x) markdown_core_utf8proc_encode_char(x, dest)
 
     while (len > 0) {
-        bufsize_t char_len = markdown_core_utf8proc_iterate(str, len, &c);
+        markdown_core_bufsize char_len = markdown_core_utf8proc_iterate(str, len, &c);
 
         if (char_len >= 0) {
 #include "case_fold_switch.inc"

@@ -155,8 +155,8 @@ static bool adopt_push(adopt_ctx *ctx, adopt_stack *stack, markdown_core_node *o
     // past them and they never enter the removal records. The count is
     // derived from the seam bytes, which both contents share.
     if (nw->user_data) {
-        bufsize_t seam = (bufsize_t)((uintptr_t)nw->user_data - 1);
-        bufsize_t i;
+        markdown_core_bufsize seam = (markdown_core_bufsize)((uintptr_t)nw->user_data - 1);
+        markdown_core_bufsize i;
         size_t reserved = 0;
         for (i = 0; i < seam; i++) {
             if (nw->content.ptr[i] == '\n') {

@@ -69,6 +69,7 @@ typedef struct markdown_core_node markdown_core_node;
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_iter markdown_core_iter;
 typedef struct markdown_core_extension markdown_core_extension;
+typedef int32_t markdown_core_bufsize;
 
 /**
  * ## Custom memory allocator support
@@ -133,8 +134,10 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
  * allocator used to allocate the node.  Note:  be sure to use the same
  * allocator for every node in a tree, or bad things can happen.
  */
-MARKDOWN_CORE_EXPORT markdown_core_node *
-markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem);
+MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem(
+    markdown_core_node_type type,
+    markdown_core_mem *mem
+);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_node_type type,
@@ -528,8 +531,6 @@ const char *markdown_core_version_string(void);
  *
  * John MacFarlane, Vicent Marti,  Kārlis Gaņģis, Nick Wellnhofer.
  */
-
-typedef int32_t bufsize_t;
 
 #ifdef __cplusplus
 }

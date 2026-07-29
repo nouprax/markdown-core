@@ -35,7 +35,7 @@ typedef struct markdown_core_map_entry markdown_core_map_entry;
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
-    bufsize_t key_len;
+    markdown_core_bufsize key_len;
     void *value;
 } markdown_core_key_index_slot;
 
@@ -85,16 +85,24 @@ void markdown_core_key_index_free(markdown_core_key_index *index);
 int markdown_core_key_index_insert(
     markdown_core_key_index *index,
     const unsigned char *key,
-    bufsize_t key_len,
+    markdown_core_bufsize key_len,
     void *value,
     int replace,
     void **existing
 );
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
+void *markdown_core_key_index_lookup(
+    const markdown_core_key_index *index,
+    const unsigned char *key,
+    markdown_core_bufsize key_len
+);
 /* Removes a key via backward-shift deletion. Returns 1 when the key was
  * present. Never violates the probe-window invariant: shifting only moves
  * entries closer to their home slot. */
-int markdown_core_key_index_remove(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
+int markdown_core_key_index_remove(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    markdown_core_bufsize key_len
+);
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_func free);
 void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);

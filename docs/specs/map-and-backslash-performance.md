@@ -71,7 +71,7 @@ slowdown 实测为 4.442。
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
-    bufsize_t key_len;
+    markdown_core_bufsize key_len;
     void *value;
 } markdown_core_key_index_slot;
 ```

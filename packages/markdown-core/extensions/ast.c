@@ -101,8 +101,9 @@ markdown_core_document *markdown_core_document_parse(
     if (!session) {
         return NULL;
     }
-    // A one-shot parse never commits again, so per-unit lookup records would
-    // be pure overhead.
+    // A one-shot parse never commits again, so session indexes and per-unit
+    // lookup records would be pure overhead.
+    session->one_shot = true;
     session->record_lookups = false;
     if (length && (!markdown_core_session_edit(session, 0, 0, source, length, error) ||
                    !markdown_core_session_commit(session, NULL, error))) {

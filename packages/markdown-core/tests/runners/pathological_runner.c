@@ -36,6 +36,7 @@ typedef struct pc_context {
 } pc_context;
 
 static const char *const PC_TABLE_ONLY[] = {"table", NULL};
+static const char *const PC_AUTOLINK_ONLY[] = {"autolink", NULL};
 static const char *const PC_DIRECTIVE_ONLY[] = {"directive", NULL};
 static const char *const PC_FORMULA[] = {"formula", "dollar-formula-delimiters", "latex-formula-delimiters", NULL};
 
@@ -576,6 +577,24 @@ static int case_reference_collisions(pc_context *context) {
         return -1;
     }
     return 0;
+}
+
+/* One text node with 50000 email links.  Source-position bookkeeping must
+ * advance with the links instead of rescanning the whole prefix and suffix
+ * for every split; the sibling complexity case pins doubling behavior. */
+static int case_many_email_autolinks(pc_context *context) {
+    enum { EMAILS = 50000 };
+
+    if (pc_build(context, NULL, "a@b.c ", EMAILS, "tail") != 0) {
+        return -1;
+    }
+    if (pc_parse(context, PC_AUTOLINK_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, EMAILS, "Link") != 0) {
+        return -1;
+    }
+    return pc_expect_text_is_input(context);
 }
 
 /* Directive pathological cases -------------------------------------------- */
@@ -1267,6 +1286,7 @@ static const pc_case_entry PC_CASES[] = {
     {"unclosed_comment", case_unclosed_comment},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"many_email_autolinks", case_many_email_autolinks},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

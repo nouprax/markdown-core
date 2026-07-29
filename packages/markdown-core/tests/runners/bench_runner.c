@@ -114,8 +114,13 @@ static int compare_u64(const void *left, const void *right) {
     return a < b ? -1 : (a > b ? 1 : 0);
 }
 
-static int
-bench_measure(const char *name, const char *input, size_t length, const bench_options *options, double *median_ms) {
+static int bench_measure(
+    const char *name,
+    const char *input,
+    size_t length,
+    const bench_options *options,
+    double *median_ms
+) {
     uint64_t samples[BENCH_MAX_REPEATS];
     uint64_t elapsed;
     int i;
@@ -325,6 +330,37 @@ static int workload_extensions(const bench_options *options) {
     return bench_doubling("extensions", options, build_extension_document, scales, 3);
 }
 
+static char *build_large_table(const bench_options *options, size_t scale, size_t *length) {
+    static const char prefix[] = "| h1 | h2 | h3 | h4 | h5 | h6 | h7 | h8 |\n"
+                                 "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+    static const char row[] = "| alpha \\| beta | gamma delta | epsilon zeta | eta theta | iota kappa |"
+                              " lambda mu | nu xi | omicron pi |\n";
+    const size_t prefix_length = sizeof(prefix) - 1;
+    const size_t row_length = sizeof(row) - 1;
+    char *input;
+    size_t i;
+    (void)options;
+    if (scale > (SIZE_MAX - prefix_length - 1) / row_length) {
+        return NULL;
+    }
+    *length = prefix_length + row_length * scale;
+    input = (char *)malloc(*length + 1);
+    if (!input) {
+        return NULL;
+    }
+    memcpy(input, prefix, prefix_length);
+    for (i = 0; i < scale; i++) {
+        memcpy(input + prefix_length + i * row_length, row, row_length);
+    }
+    input[*length] = 0;
+    return input;
+}
+
+static int workload_large_table(const bench_options *options) {
+    static const size_t scales[] = {10000, 20000, 40000};
+    return bench_doubling("large_table", options, build_large_table, scales, 3);
+}
+
 static char *build_adversarial_links(const bench_options *options, size_t scale, size_t *length) {
     (void)options;
     return ts_repeat("[a](b", scale, length);
@@ -354,6 +390,7 @@ static const bench_workload WORKLOADS[] = {
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
     {"extensions", workload_extensions},
+    {"large_table", workload_large_table},
     {"adversarial", workload_adversarial},
 };
 

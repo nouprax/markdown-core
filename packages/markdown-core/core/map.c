@@ -5,9 +5,9 @@
 #define KEY_INDEX_MIN_CAPACITY 16
 #define KEY_INDEX_MAX_PROBES 64
 
-static uint64_t hash_key(const unsigned char *key, bufsize_t key_len) {
+static uint64_t hash_key(const unsigned char *key, markdown_core_bufsize key_len) {
     uint64_t hash = UINT64_C(1469598103934665603);
-    bufsize_t i;
+    markdown_core_bufsize i;
     for (i = 0; i < key_len; i++) {
         hash ^= key[i];
         hash *= UINT64_C(1099511628211);
@@ -25,7 +25,7 @@ static markdown_core_key_index_slot *find_key_slot(
     size_t capacity,
     uint64_t hash,
     const unsigned char *key,
-    bufsize_t key_len
+    markdown_core_bufsize key_len
 ) {
     size_t position = (size_t)hash & (capacity - 1);
     size_t probe;
@@ -108,7 +108,7 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
 int markdown_core_key_index_insert(
     markdown_core_key_index *index,
     const unsigned char *key,
-    bufsize_t key_len,
+    markdown_core_bufsize key_len,
     void *value,
     int replace,
     void **existing
@@ -163,8 +163,11 @@ int markdown_core_key_index_insert(
     return 1;
 }
 
-void *
-markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len) {
+void *markdown_core_key_index_lookup(
+    const markdown_core_key_index *index,
+    const unsigned char *key,
+    markdown_core_bufsize key_len
+) {
     uint64_t hash = hash_key(key, key_len);
     size_t position = (size_t)hash & (index->capacity - 1);
     size_t probe;
@@ -181,7 +184,11 @@ markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsig
     return NULL;
 }
 
-int markdown_core_key_index_remove(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len) {
+int markdown_core_key_index_remove(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    markdown_core_bufsize key_len
+) {
     uint64_t hash = hash_key(key, key_len);
     size_t mask;
     size_t position;
@@ -332,7 +339,14 @@ static size_t map_index_expected_size(markdown_core_map *map) {
         return map->size;
     }
     for (ref = map->refs; ref && sampled < sample_limit; ref = ref->next, sampled++) {
-        if (!markdown_core_key_index_insert(&sample, ref->label, (bufsize_t)strlen((char *)ref->label), ref, 0, NULL)) {
+        if (!markdown_core_key_index_insert(
+                &sample,
+                ref->label,
+                (markdown_core_bufsize)strlen((char *)ref->label),
+                ref,
+                0,
+                NULL
+            )) {
             markdown_core_key_index_free(&sample);
             return map->size;
         }
@@ -346,7 +360,7 @@ static size_t map_index_expected_size(markdown_core_map *map) {
  * keeps the index slot pointing at the bucket head (the winner). Returns 0
  * when the index could not take the label. */
 static int bucket_attach(markdown_core_map *map, markdown_core_map_entry *entry) {
-    bufsize_t label_len = (bufsize_t)strlen((char *)entry->label);
+    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
     markdown_core_map_entry *head =
         (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
     markdown_core_map_entry *cur;
@@ -464,7 +478,7 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 
     if (map->indexed) {
         r = (markdown_core_map_entry *)
-            markdown_core_key_index_lookup(&map->index, norm, (bufsize_t)strlen((char *)norm));
+            markdown_core_key_index_lookup(&map->index, norm, (markdown_core_bufsize)strlen((char *)norm));
     } else {
         r = sorted_winner(map, norm);
     }
@@ -509,7 +523,7 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
 /* Unlinks `entry` from its bucket and keeps the index slot on the winner.
  * Returns 0 when the index state could not be kept coherent. */
 static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry) {
-    bufsize_t label_len = (bufsize_t)strlen((char *)entry->label);
+    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
     markdown_core_map_entry *head =
         (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
     markdown_core_map_entry *cur;
@@ -530,7 +544,7 @@ static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry)
         return markdown_core_key_index_insert(
             &map->index,
             entry->bucket_next->label,
-            (bufsize_t)strlen((char *)entry->bucket_next->label),
+            (markdown_core_bufsize)strlen((char *)entry->bucket_next->label),
             entry->bucket_next,
             0,
             NULL

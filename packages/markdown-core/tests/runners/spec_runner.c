@@ -27,8 +27,11 @@ static void usage(FILE *stream) {
     );
 }
 
-static uint8_t *
-dump_example(const ts_spec_case *test_case, const markdown_core_parse_options *base, size_t *dump_length) {
+static uint8_t *dump_example(
+    const ts_spec_case *test_case,
+    const markdown_core_parse_options *base,
+    size_t *dump_length
+) {
     markdown_core_parse_options options = *base;
     markdown_core_document *document;
     markdown_core_error *error = NULL;

@@ -1,6 +1,7 @@
 #include "strikethrough.h"
 #include <parser.h>
 #include "extension.h"
+#include "inline_util.h"
 
 static markdown_core_node *match(
     markdown_core_extension *self,
@@ -57,7 +58,6 @@ static delimiter *insert(
 ) {
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
-    delimiter *delim, *tmp_delim;
     delimiter *res = closer->next;
 
     strikethrough = opener->inl_text;
@@ -87,14 +87,7 @@ static delimiter *insert(
     markdown_core_node_free(closer->inl_text);
 
 done:
-    delim = closer;
-    while (delim != NULL && delim != opener) {
-        tmp_delim = delim->previous;
-        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
-        delim = tmp_delim;
-    }
-
-    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
+    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
 
     return res;
 }
@@ -103,8 +96,11 @@ static const char *get_type_string(markdown_core_extension *extension, markdown_
     return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
-static int
-can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
+static int can_contain(
+    markdown_core_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
     if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
     }

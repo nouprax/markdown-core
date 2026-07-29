@@ -2,18 +2,22 @@
 
 Date: 2026-07-28. Branch: `refactor/first-principles-sweep`.
 
-Provenance: nine parallel subsystem readers produced 90 findings; every finding was
-then adversarially verified by an independent verifier (repro runs, per-symbol greps,
-timing measurements). Verdicts: CONFIRMED / PARTIAL (core right, details corrected) /
-REFUTED-stale (already fixed on this branch before verification re-ran).
+Provenance: this ledger contains 89 uniquely numbered findings from nine parallel
+subsystem readers; every recorded finding was then adversarially verified by an
+independent verifier (repro runs, per-symbol greps, timing measurements). Verdicts:
+CONFIRMED / PARTIAL (core right, details corrected). No recorded entry ultimately
+received a REFUTED-stale disposition. The original merge never assigned the
+identifier between I80 and I82, so the count follows the 89 actual entries rather
+than treating the numeric range as continuous.
 
 Each entry below is self-contained (file refs, evidence, fix plan, test guidance) so a
 fresh session can pick up any work package without this conversation.
 
 ## Status summary
 
-Nine commits are on `refactor/first-principles-sweep`; the working tree additionally
-holds three work packages' uncommitted implementations (see "Session hand-off state").
+The branch contains the completed WP1-WP6 work packages plus the final C
+performance/hygiene, incremental-pipeline, source-embedding, and review-closure
+changes recorded below.
 
 ### Fixed and committed (WP1 complete + earlier sweeps)
 
@@ -46,15 +50,36 @@ Note: the ES scope-table fix (I02) shipped as a native es_scope_table subtree wa
 (the fix plan's preferred O(n) option); the Swift one-shot laziness (I21) shipped as
 a resolver-owned native session rather than the native accumulator alternative.
 
-### Remaining work
+### Completed in the final sweep
 
-1. WP2 (C perf/hygiene, below) is the only open package; I62 already landed in
-   `ddaaaee`. Largest wins: I25 (quadratic brackets under default options, measured
-   4x time for 2x input), I78 (autolink email sourcepos O(n^2)), I60 (one-shot parse
-   builds then discards session indexes). Each entry below is self-contained.
-2. Suggested final gate once WP2 lands: make asan-test ubsan-test, plus one full
-   multi-platform conformance pass (all platforms already ran green against the new
-   multiline-spans oracle case during this session).
+| Scope | Findings | Result |
+| --- | --- | --- |
+| Quadratic inline paths | I25, I78 | Directive bracket cases now have 1.04x-1.15x normalized slowdown instead of 13.42x/14.85x on the old engine; email autolinks are about 1.00x |
+| Discarded/repeated work | I60, I61, I79, I87 | One-shot indexes and disabled-footnote walks are skipped; table validation no longer materializes rows; footnote renumbering is about 1.42x normalized instead of 11.76x |
+| C hygiene | I30, I31, I64, I65, I75, I82, I84, I85, I86, I89 | Duplicates/dead hooks/includes removed, internal type renamed, generated scanners reproduced exactly |
+| Incremental safety refactor | I63 | Reversible child-chain helpers and explicit pipeline/splice state now separate restart planning, staged parsing, definition reconciliation, inline refinement, adoption, fallible refresh/rollback, and infallible commit |
+| Review closure | I58, I73 | Toolchain discovery is shared, the Gradle Tooling API version follows the wrapper, and the installed C facade documents metadata-only version discovery |
+
+Validation recorded for the final source state: C correctness 102/102; C conformance 2/2;
+ASan 82/82; UBSan 82/82; C lint and C/CMake format checks; generated-scanner
+reproducibility; the new complexity/pathological/benchmark cases; Swift tests 18+1,
+conformance 6, and the source-archive external consumer; Kotlin JVM and Android-host
+tests plus conformance; ES Node tests 12+19 and conformance 17; repository and public
+surface audits.
+
+### Closure disposition
+
+1. All P0 behavioral and P1 performance findings are fixed. I63's former
+   ~1,000-line macro pipeline is phase-split behind explicit ownership and rollback
+   state.
+2. I11 is the sole accepted implementation exception: the bespoke JVM ABI snapshot
+   stays because it deliberately freezes Java-visible internal bytecode that the
+   standard Kotlin ABI tools omit. The unguarded KLIB ABI is an accepted P2 risk,
+   documented on I11 with a concrete revisit trigger.
+3. I72 is resolved by an ABI-preserving design decision: the inherited GNU symbol
+   version stays frozen until the next C ABI break.
+4. Every recorded finding is therefore fixed or explicitly dispositioned, and all
+   prescribed final gates are green for this source state.
 
 Priority key: P0-bug = observable wrong behavior vs spec/CommonMark; P1-perf = measured
 performance problem; P2-hygiene = dead code/duplication/build hygiene; P3-cosmetic.
@@ -116,7 +141,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## WP2-c-perf-hygiene: C engine performance + hygiene (no behavior change)
 
-### I25 [P1-perf] packages/markdown-core/core/inlines.c:1619
+### I25 [FIXED final sweep] [P1-perf] packages/markdown-core/core/inlines.c:1619
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: Quadratic inline parsing on ']'-heavy input in the DEFAULT configuration. Every ']' calls bracket_takes_close_bracket (inlines.c:1646), which unconditionally runs find_extension_opener_for_special_char: a walk of the ENTIRE delimiter stack, calling get_extension_for_special_char (a linear scan of the inline-extension list) for every delimiter — even delimiters no extension owns ('*', '_') and even when subj->last_bracket is NULL. The directive extension registers ']' (extensions/directive.c:1644), so this path is live whenever directives are on (ParseOptions default: true). Measured with the built CLI: '*a'x20000 + ']'x20000 (40 KB) = 1.86 s; doubling to 80 KB = 7.63 s (4.1x — quadratic); profile puts the time inside markdown_core_parse_inlines_from and the directive match fn.
@@ -124,7 +149,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: The suggested fix is necessary but insufficient. Complete fix in packages/markdown-core/core/inlines.c + extensions/directive.c: (1) in bracket_takes_close_bracket, return false immediately when subj->last_bracket == NULL — provably semantics-preserving since the return value is 'subj->last_bracket && ...'; (2) restructure the delimiter stack so searches touch only relevant delimiters: thread delimiters into per-delim-char chains (or maintain per-char unmatched-opener counts plus an openers-bottom-style exhaustion memo, analogous to subj->backticks/scanned_for_backticks) used by BOTH inlines.c find_extension_opener_for_special_char and directive.c find_directive_opener (exposed via a new extension-API accessor next to markdown_core_inline_parser_get_last_delimiter). Skipping non-matching delim_chars preserves pairing exactly: both walks only read/mutate their balance state on matching delim_chars, so the visit order among matching delimiters — the only thing that determines the result — is unchanged. Verify directive label semantics against extensions-directive fixtures and re-run the 60KB/120KB and ':x[' repros expecting near-linear scaling. (3) Add a directive-enabled input to fuzz_quadratic_brackets and complexity_runner cases for both adversarial shapes.
 - Tests: Existing: extensions-directive fixture suite and spec_runner pin pairing semantics; fuzz_quadratic_brackets (must gain the directive extension); complexity_runner (must gain a delimiter+bracket case for '*a'^n']'^n and ':x['^n']'^n). No current gate would catch a regression — both new cases are required.
 
-### I78 [P1-perf] packages/markdown-core/extensions/autolink.c:200
+### I78 [FIXED final sweep] [P1-perf] packages/markdown-core/extensions/autolink.c:200
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: set_sourcepos_from_range walks detached_chunk from index 0 up to the link start to derive line/column, and postprocess_text calls it three times per email link found (link node, link text, prefix/post text). With k links in one text node this is O(k*n). Confirmed quadratic on a fresh Release build: a single line of 15,000 `a@b.c` tokens parses in 0.81s, 30,000 in 3.20s (2x input -> 4x time) — a DoS vector via the default-on autolink extension. www_match/url_match are fine (they use the inline parser's own line/column); only the '@' postprocess path scans repeatedly.
@@ -132,7 +157,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In postprocess_text (autolink.c:420-610), maintain a running (byte offset, line, column) cursor advanced incrementally as links are emitted left-to-right; change set_sourcepos_from_range to take the cursor position at 'start' instead of rescanning from 0 (or split it into advance_to(start)+measure(len) on the cursor). Sourcepos output must remain byte-identical — verify against the canonical dump corpus and autolink fixtures. Add a pathological_runner email-autolink case (e.g. 50k 'a@b.c' tokens on one line) with a linear-time bound.
 - Tests: Existing: autolink spec fixtures and canonical dump corpus lock sourcepos. New: pathological_runner case for many email autolinks in one text node.
 
-### I60 [P1-perf] packages/markdown-core/extensions/ast.c:100
+### I60 [FIXED final sweep] [P1-perf] packages/markdown-core/extensions/ast.c:100
 
 - Verdict: CONFIRMED
 - Finding: markdown_core_document_parse routes through commit_full (session.c:334), which builds every session index — id_table_build (two full iterator walks over the tree, session.c:461), markdown_core_footnote_index_build (another full iterator walk, footnote.c:94/517), the clean-child index (an O(text) line scan, incremental.c:174), and the sorted definition index — and then markdown_core_document_parse immediately detaches the root and frees the session, discarding all of it. The spec explicitly says one-shot documents do not carry the footnote index (docs/specs/sessions-and-deltas.md, Footnote queries), and node_by_id/clean/def indexes are meaningless for a session that never commits again. That is roughly four wasted full-tree/text passes plus hash-table allocations on the primary v1 parse path. The record_lookups=false flag (ast.c:106) is precedent for exactly this kind of one-shot suppression.
@@ -140,7 +165,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add `bool one_shot` to markdown_core_session (extensions/session internal struct); set it in markdown_core_document_parse next to record_lookups=false (ast.c:106); in commit_full, guard the footnote_index_build/diff (session.c:441-442), id_table_build (461), index_clean_children (462), and index_definitions (463) with !session->one_shot, leaving the corresponding session fields zeroed (release paths already tolerate zeroed structs — commit_full memsets footnotes and initializes ids/clean/def_index empty). Ids are minted in adopt, not id_table_build, so the spec's 'one-shot nodes carry ids' is unaffected; NUL/UTF-8 handling untouched.
 - Tests: spec_runner and equivalence_runner guard dump output (unchanged); bench_runner quantifies the win. Add nothing new beyond a possible bench case.
 
-### I61 [P2-hygiene] packages/markdown-core/extensions/session.c:441
+### I61 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/session.c:441
 
 - Verdict: CONFIRMED
 - Finding: commit_full builds and diffs the footnote index unconditionally, even when session->options.footnotes is false — markdown_core_footnote_collect_sites still walks the entire tree with an iterator per full commit. The incremental path guards its site collection with `if (session->options.footnotes)` (incremental.c:2069), so the full path pays a whole-tree walk the incremental path proves unnecessary. For footnotes-disabled sessions every full commit (including the routed whole-document-edit cases) carries this dead pass.
@@ -148,7 +173,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In commit_full (session.c:441), guard the footnote_index_build/diff pair with `if (session->options.footnotes)`, mirroring incremental.c:2069; leave the memset-zeroed `footnotes` struct to be installed as session->footnotes (queries on a footnotes-off session already answer empty, and footnote_index_release on a zeroed struct is a no-op — the same code path runs today for footnote-free documents).
 - Tests: equivalence_runner fixtures with footnote masks off and tests/api cover the guarded path.
 
-### I79 [P2-hygiene] packages/markdown-core/extensions/table.c:613
+### I79 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/table.c:613
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: Every line inside an open table is fully row-parsed twice: matches() (last_block_matches, table.c:602-625) calls row_from_string — which allocates a table_row, one strbuf per cell, unescapes pipes, and trims — solely to return a boolean, frees everything, and then try_opening_table_row (table.c:524) calls row_from_string again on the same line to build the real cells. try_opening_table_header additionally re-row-parses the whole paragraph content per candidate line. Inherited cmark-gfm shape; a per-row 2x cost with allocator churn on the subsystem's hottest scan path.
@@ -156,7 +181,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add a validation-only scanner (count cells/pipes/row-end without strbufs) used by matches(), carefully mirroring row_from_string acceptance including the paragraph_offset re-scan quirk; or cache the parsed row from matches() (keyed on parser line/offset) and let try_opening_table_row consume it. Verify no table-shape change against table fixtures, specs/canonical-ast tables, and pathological case_tables; benchmark before/after on a large-table input to confirm the win.
 - Tests: Existing: table fixtures, canonical-ast table specs, pathological_tables. New: none strictly required; a benchmark comparison in the PR.
 
-### I87 [P2-hygiene] packages/markdown-core/extensions/footnote.c:581
+### I87 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/footnote.c:581
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: markdown_core_footnote_index_diff deduplicates via node_list_holds — a linear scan over the changed/bubbled arrays — inside the per-record loop and again per ancestor while bubbling (lines 581-599). Worst case O(c^2 + c*d*b) for c changed footnote records and bubble-path length d. A commit that renumbers thousands of references (e.g. inserting a reference at the top of a footnote-heavy document) pays a quadratic diff step.
@@ -164,7 +189,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Replace the membership scans with an O(1) test: either a transient per-diff mark on the node (e.g. reuse last_changed_rev-style scratch field set in phase 1 and consumed in phase 2 — note phase 1 currently must not touch nodes, so a side hash set keyed by node pointer/id is the safer choice) sized to the record count. Preserve emitted delta order (arrays still drive phase 2). Keep the two-phase failure guarantee: allocate the set up front so phase 2 stays infallible.
 - Tests: Existing: pathological_session_footnote_labels, session delta suites. New: optionally a many-footnotes renumbering session case with a time bound.
 
-### I82 [P2-hygiene] packages/markdown-core/extensions/tasklist.c:40
+### I82 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/tasklist.c:40
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: parse_node_item_prefix (tasklist.c:40-59) is a line-for-line duplicate of the static parse_node_item_prefix in core/blocks.c:1154-1168 (via the public advance-offset wrappers). The duplication is forced because setting node->extension on a LIST_ITEM makes check_open_blocks route continuation through last_block_matches instead of the core list logic — so any future change to core list continuation (e.g. tab handling) must be mirrored here or task items silently continue differently from plain items.
@@ -172,7 +197,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Export one internal helper (e.g. bool markdown_core_parser_match_list_item_prefix(parser, chunk, container)) from core/blocks.c in an internal header (not the installed markdown_core.h), implemented as the existing static function; call it from both blocks.c:1255 and the tasklist matches hook (adapting the tasklist hook's char*/len signature to a chunk). Byte-identical behavior; list/tasklist fixtures must stay green.
 - Tests: Existing list + tasklist fixtures and canonical-ast completeness specs; no new test required.
 
-### I64 [P2-hygiene] packages/markdown-core/extensions/lookups.c:17
+### I64 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/lookups.c:17
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: lookup_mix64 is a byte-for-byte copy of mix64 in session.c:46 (same splitmix64 finalizer constants). Within incremental.c, id_compare (line 417) and candidate_id_compare (line 997) are identical uint64 qsort comparators in the same translation unit.
@@ -180,7 +205,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add static inline markdown_core_mix64 to extensions/session_internal.h; delete the two local copies in session.c and lookups.c. In incremental.c delete candidate_id_compare and use id_compare at line 1066 (cast is unnecessary since the types are the same). No output change; existing session suites cover both probe paths.
 - Tests: Existing session/incremental ctest suites (facade_concurrent_sessions, pathological session cases) exercise both hash consumers; no new test needed.
 
-### I84 [P2-hygiene] packages/markdown-core/extensions/formula.c:475
+### I84 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/formula.c:475
 
 - Verdict: CONFIRMED
 - Finding: Three helper sets are duplicated verbatim between formula.c and directive.c: remove_delimiters (formula.c:475-485 == directive.c:1429-1439), make_delimiter_text (formula.c:294-310 vs directive.c:1099-1118, identical modulo an offset parameter), and is_line_end/has_only_spaces_until_line_end (formula.c:172-182 vs directive.c:76-86). strikethrough.c:91-98 additionally hand-inlines the same remove-delimiters loop in insert().
@@ -188,7 +213,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Hoist remove_delimiters, make_delimiter_text (with the offset parameter, formula passing its computed offset), and is_line_end/has_only_spaces_until_line_end into a shared extensions-internal header or small TU (e.g. extensions/inline_util.h with static inline functions) and delete the three copies; replace strikethrough.c's hand-inlined loop with the shared remove_delimiters. Keep everything internal — no new public API or export-map entries.
 - Tests: Formula, directive, and strikethrough fixture suites (tests/fixtures/extensions-formula-*.txt, extensions-directive*.txt, extensions.txt) plus spec_runner fully cover the refactor; dump output must be byte-identical.
 
-### I85 [P2-hygiene] packages/markdown-core/extensions/ext_scanners.re:111
+### I85 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/ext_scanners.re:111
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: markdown_core_scan_formula_dollar_backtick_open (rule `formula_dollar_backtick_open` at line 39, function at line 111, macro in ext_scanners.h:29) has no callers anywhere: formula.c handles the `$`code`$` interaction inside insert_formula by inspecting literal[0]=='`' directly (formula.c:558). Only a pathological test's NAME references the syntax, not the scanner. The generated ext_scanners.c carries the dead DFA.
@@ -196,7 +221,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the formula_dollar_backtick_open rule and function from ext_scanners.re, the prototype (ext_scanners.h:16) and macro (ext_scanners.h:29-30), and regenerate ext_scanners.c with re2c in the same change so the generated file stays in sync.
 - Tests: Existing formula fixtures and pathological_formula_dollar_backtick_openers confirm the syntax still parses; compile proves no caller broke.
 
-### I86 [P3-cosmetic] packages/markdown-core/extensions/formula.c:614
+### I86 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/extensions/formula.c:614
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: can_contain reads `if (is_formula_node(node)) { return 0; } return 0;` — both branches return 0, so the hook unconditionally reports 'contains nothing'. The dead conditional invites the misreading that formula nodes are special-cased. Since a NULL can_contain hook already means 'no extension children' for leaf-only extensions (cf. autolink which omits it), the function may be droppable entirely if the core treats a missing hook the same way.
@@ -204,7 +229,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Remove .can_contain from formula_extension (formula.c:738) and delete the function (matching autolink, which omits the hook); or minimally collapse the body to a single 'return 0;'. Prefer removal since NULL is proven equivalent.
 - Tests: Existing formula fixtures and api tests; no new test needed.
 
-### I89 [P2-hygiene] packages/markdown-core/extensions/table.c:8
+### I89 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/table.c:8
 
 - Verdict: CONFIRMED
 - Finding: table.c includes strikethrough.h (line 8), references.h (line 4), and inlines.h (line 2) but uses no symbol from any of them (verified by grep: no markdown_core_reference_*, no inline-parser calls, no strikethrough symbol). All three are carried over from cmark-gfm's table.c, which had the same stray includes.
@@ -212,7 +237,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the three includes from packages/markdown-core/extensions/table.c (lines 2, 4, 8). Compile-only change.
 - Tests: Build success is the test; existing table suites unaffected.
 
-### I30 [P3-cosmetic] packages/markdown-core/core/inlines.c:1789
+### I30 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/core/inlines.c:1789
 
 - Verdict: CONFIRMED
 - Finding: In markdown_core_inline_seam_prefix, the 'w'/autolink special-case is a nested conditional whose inner branches re-test the exact negation of the outer condition: outer 'if (c != w || i+3 >= limit || not www.)' then inner 'if (c != w) break;' and a second 'if (i+3 < limit && www.) break;' that can never be true when reached, plus an else-break. Semantics collapse to a single condition. The convolution obscures a scope-safety-critical function (it licenses skipping inline reparse).
@@ -220,7 +245,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Replace the nested block at inlines.c (currently lines ~1782-1791; the 'if (parser->special_chars[c])' body's w-handling) with the single equivalent condition from the finding, keeping the explanatory comment about the autolink 'www.' trigger.
 - Tests: session_scripts incremental fixtures and equivalence_runner exercise seam computation; any semantic slip diverges incremental vs full reparse and fails equivalence. No new test needed for an identical-truth-table rewrite.
 
-### I31 [P3-cosmetic] packages/markdown-core/core/inlines.h:21
+### I31 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/core/inlines.h:21
 
 - Verdict: CONFIRMED
 - Finding: Doc comments are attached to the wrong declarations: the comment at inlines.h:21-28 describes markdown_core_parse_inlines_from ('Parses parent's inline content starting at byte start...') but sits directly above markdown_core_inline_seam_prefix, which has its own second comment (lines 29-31); markdown_core_parse_inlines_from itself (line 40) is left uncommented. Misleading for a subtle v2 API where the caller carries a safety obligation.
@@ -236,15 +261,15 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete three of the four copies of the comment paragraph at packages/markdown-core/extensions/incremental.c:1963-1974, keeping one.
 - Tests: None needed; comment-only.
 
-### I63 [P2-hygiene] packages/markdown-core/extensions/incremental.c:1646
+### I63 [FIXED final sweep] [P2-hygiene] packages/markdown-core/extensions/incremental.c:1619
 
 - Verdict: CONFIRMED
-- Finding: markdown_core_session_commit_incremental is a single ~1,130-line function (lines 1646-2775). In particular the failed-footnote-refresh rollback (lines 2337-2389) hand-writes the exact inverse of the splice performed at lines 2124-2256/2235-2256 (re-park rebuilt units under the holder, unsplice staged children, relink the graveyard), and the graveyard detach/undo pair appears twice more (2124-2141 vs 2216-2230). This mirrored manual pointer surgery is exactly the terrain where the seam/sentinel bug above hid; splice_replace (line 1625) shows the better pattern (self-inverse helper).
-- Evidence: markdown_core_session_commit_incremental spans incremental.c:1646-2775 (single function, ~1130 lines; verified the opening brace's matching close at 2775). The duplication is real: graveyard detach at 2123-2141 ('reversible pointer surgery') has its exact inverse hand-written at 2216-2232 ('Undo the detach') AND again inside the failed-footnote-refresh rollback at 2337-2389, which also re-parks rebuilt units under the holder via splice_replace and unsplices staged children — mirroring the forward splice at 2235-2256. splice_replace (1625-1643) is documented as 'its own inverse: swapping the arguments undoes it', the pattern the sibling-chain surgery lacks. This is the same region where the confirmed I59 seam/sentinel bug lives.
-- Fix plan: Extract self-inverse static helpers in incremental.c (e.g. chain_detach(doc, first, last, prefix_tail, suffix_head) / chain_splice(...)) used by the forward detach (2123), the undo (2216), the staged splice (2235), and the rollback (2337-2389); then split the pipeline's numbered phases into static functions taking a small context struct. Coordinate with the I59 fix so the seam gate lands first or together.
-- Tests: equivalence_runner (including random edits over the CommonMark spec corpus) and fallback_runner's OOM sweep give strong behavioral coverage for a pure refactor.
+- Finding (pre-fix): markdown_core_session_commit_incremental was a single ~1,130-line function (lines 1646-2775). In particular the failed-footnote-refresh rollback (lines 2337-2389) hand-wrote the exact inverse of the splice performed at lines 2124-2256/2235-2256 (re-park rebuilt units under the holder, unsplice staged children, relink the graveyard), and the graveyard detach/undo pair appeared twice more (2124-2141 vs 2216-2230). This mirrored manual pointer surgery is exactly the terrain where the seam/sentinel bug above hid; splice_replace showed the better self-inverse pattern.
+- Evidence (pre-fix): markdown_core_session_commit_incremental spanned incremental.c:1646-2775 (single function, ~1130 lines). The duplication was real: graveyard detach at 2123-2141 had its exact inverse hand-written at 2216-2232 and again inside the failed-footnote-refresh rollback at 2337-2389, which also re-parked rebuilt units under the holder, unspliced staged children, and relinked the graveyard.
+- Resolution: `assert_child_run`, `splice_replace`, `detach_child_chain`, `insert_child_chain`, `park_child`, and `unpark_child` now centralize the pointer surgery and assert run continuity plus ownership/adjacency contracts. `incremental_pipeline`, `incremental_restart_plan`, and `incremental_splice_state` make cross-phase resources and transaction state explicit. Static phase functions now isolate restart planning, block reparse, definition preparation, inline refinement/preflight, adoption, staged install plus footnote refresh, rollback, and the post-refresh infallible commit. The public entry at incremental.c:2983-3002 is a 20-line orchestrator with one abort/release path; abort also performs a state-driven rollback defensively. `reconcile_apply` remains the map's irreversible boundary, footnote refresh remains the final fallible operation, and rollback restores revision stamps, dependent swaps, the staged chain, the graveyard, and delta counts in the original order.
+- Tests: Directed equivalence/fallback/OOM/pathological coverage passes 16/16, including the new delta-aware session OOM sweep; full C correctness 102/102 and conformance 2/2 pass; ASan and UBSan correctness pass 82/82 each. Before the delta-aware case was registered, an independent differential review also passed the same Release OOM/equivalence set before and after the refactor (10/10 each) and the then-current ASan graph (111/111).
 
-### I65 [P3-cosmetic] packages/markdown-core/extensions/arena.h:16
+### I65 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/extensions/arena.h:16
 
 - Verdict: CONFIRMED
 - Finding: The header contract says "memory returns to the base allocator only at release, so a long-lived session holds its high-water mark", but arena_free (arena.c:209-214) returns large passthrough blocks (> 2032 bytes usable) to the base allocator immediately, and arena_realloc's large-growth path frees the old block through base realloc. Only class-sized blocks are held to release. The behavior is the better one (large transient buffers such as adoption stacks and staged content do not accumulate), but the documented invariant is wrong as stated and could mislead someone reasoning about session memory profiles or writing a leak test against the stated high-water-mark semantics.
@@ -252,7 +277,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Rewrite the arena.h header comment: class-sized blocks recycle through per-class freelists and return to the base allocator only at release; passthrough blocks above the largest class are tracked and returned to the base allocator immediately on free (release still frees any survivors wholesale). Documentation-only; do not change code.
 - Tests: None needed; comment-only change.
 
-### I37 [P2-hygiene] packages/markdown-core/core/markdown-core.h:594
+### I37 [FIXED `c5e0490`] [P2-hygiene] packages/markdown-core/core/markdown-core.h:594
 
 - Verdict: PARTIAL; surface: internal
 - Finding: MARKDOWN_CORE_OPT_SOURCEPOS is never set anywhere in the repository — not by the canonical facade (session.c:203-220 builds native options without it), not by main.c, tests, or fuzzers; its only consumer is the early-return gate in inlines.c:357 (adjust_subj_node_newlines), making that multiline-inline scope-adjustment path (plus count_newlines) permanently dead. The canonical-ast spec froze 'the native C parser's source-position values' as produced WITHOUT this option, so the option can never be turned on without changing the oracle. MARKDOWN_CORE_OPT_NORMALIZE (markdown-core.h:602) is likewise a documented no-op referenced nowhere else.
@@ -261,7 +286,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete MARKDOWN_CORE_OPT_SOURCEPOS from core/markdown-core.h and delete adjust_subj_node_newlines, count_newlines, and their two call sites in inlines.c (removal, NOT enablement — enabling would change frozen scope semantics in the canonical-ast oracle). Bit (1<<1) becomes reserved.
 - Tests: spec_runner/equivalence_runner dump comparisons guard against accidental semantic change; deleting an always-early-return function is byte-identical.
 
-### I70 [P2-hygiene] packages/markdown-core/core/markdown-core.h:594
+### I70 [FIXED `c5e0490`] [P2-hygiene] packages/markdown-core/core/markdown-core.h:594
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: MARKDOWN_CORE_OPT_SOURCEPOS is set by no code path in the repository — the facade's option mapping (extensions/session.c:202-223) never sets it, and neither does the CLI (core/main.c:142-203) — so adjust_subj_node_newlines (inlines.c:356) and count_newlines (inlines.c:332) never execute their payload: multiline end-position adjustment for code spans and inline raw HTML (call sites inlines.c:472/1117/1127) is permanently off, and the canonical dump fixtures pin that behavior. MARKDOWN_CORE_OPT_NORMALIZE (line 602, documented 'Legacy option (no effect)') has zero references anywhere. Text-node positions use the separate always-on S_update_text_sourcepos path (inlines.c:2102), so this machinery is not a hidden dependency of scope tracking.
@@ -271,7 +296,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## WP3-swift: Swift binding: canonical-ast contract alignment + perf + hygiene
 
-### I14 [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift:20
+### I14 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift:20
 
 - Verdict: CONFIRMED; surface: platform-public-api
 - Finding: Directive and DirectiveBlock expose `labelCount: Int?` plus a merged `children` array instead of the frozen contract's typed `label: [Markup]?` (and, for DirectiveBlock, a separate `content: [Markup]`). docs/specs/canonical-ast.md says a directive label 'is the typed `label` property of its directive' and that platform APIs 'must not change names, nullability, ownership'; Kotlin (model/Directive.kt:9 `label: List<Markup>?`) and ES (model/directive.ts, model/directive-block.ts with both `label` and `content`; wire/node-decoder.ts:415-420 does the slice) implement it verbatim. Swift consumers must slice `children[..<labelCount!]` by hand, and DirectiveBlock loses the label/content distinction entirely. Same divergence in DirectiveBlock.swift:20 and DirectiveValues.swift:7.
@@ -279,7 +304,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In Directive.swift/DirectiveBlock.swift store `label: [Markup]?` (nil vs [] preserved from the native has_label flag) and, on DirectiveBlock only, `content: [Markup]`; construct both by slicing builder.children(node) at DirectiveValues.labelCount (label = first labelCount children when has_label, content = remainder; inline Directive keeps only label per the inventory). Update MarkupWalker.ChildrenVisitor to return label-then-content explicitly, MarkupDumper.directiveFields to print label?.count, and the SessionSuites/ConformanceSuite call sites. Goldens (MarkdownCoreConformanceTests) are name-independent and guard the change.
 - Tests: MarkdownCoreConformanceTests (sharedCanonicalAST, sessionEquivalenceReplay) pin dump bytes; add a Swift unit asserting DirectiveBlock.label/content partition and nil-vs-empty label distinction mirroring the ES decoder semantics.
 
-### I15 [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Paragraph.swift:10
+### I15 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Paragraph.swift:10
 
 - Verdict: CONFIRMED; surface: platform-public-api
 - Finding: Every container renames the contract's `content` collection to `children` (Document, BlockQuote, Paragraph, Heading, ListItem, DirectiveBlock, FootnoteDefinition, Emphasis, Strong, Strikethrough, Link, Image, Directive), and List.swift:16 exposes untyped `children: [any Markup]` where canonical-ast.md specifies `items: [ListItem]` — losing the only-ListItem invariant that the same file's Table types (Table.swift) correctly encode via typed `header`/`rows`/`cells` edges. Kotlin (model/*.kt use `content`, List.kt:9 `items: List<ListItem>`) and ES (model/paragraph.ts `content`, model/list.ts) follow the frozen names; canonical-ast.md line 17-19 forbids changing names. README.md:32 and all tests are written against the divergent names.
@@ -287,7 +312,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Mechanical rename `children` -> `content` on Document, BlockQuote, Paragraph, Heading, ListItem, DirectiveBlock, FootnoteDefinition, Emphasis, Strong, Strikethrough, Link, Image, Directive (optionally keep a deprecated `children` computed alias for one release); give List a typed `items: [ListItem]` built with the same precondition-cast pattern Table.init uses (Table.swift:38-51). Touches MarkupWalker.ChildrenVisitor, MarkupDumper (children: node.content.count), MarkupSession build path, README, Benchmarks, and all test targets. Coordinate with the I14 and I18 fixes since they touch the same properties.
 - Tests: MarkdownCoreConformanceTests golden dumps (edge-name-free) plus MarkdownCoreTests api/session/depth suites cover the rename; add an assertion that List.items elements are ListItem (compile-time once typed).
 
-### I16 [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/CodeBlock.swift:4
+### I16 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/CodeBlock.swift:4
 
 - Verdict: CONFIRMED
 - Finding: CodeBlock and Code (Code.swift:4) omit the contract's `mode: PlacementMode` field (canonical-ast.md node inventory lists `mode` first for both; the PlacementMode invariant table names them explicitly), while the sibling kinds Formula/FormulaBlock in this same binding DO expose `mode`, and Kotlin (model/CodeBlock.kt:6) and ES (model/code-block.ts:5, model/code.ts) expose it on all four. The Swift dumper papers over the gap by hardcoding "mode=standalone" (MarkupDumper.swift:117) and "mode=embedded" (MarkupDumper.swift:172).
@@ -295,7 +320,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add `public let mode: PlacementMode` to Code and CodeBlock; populate in init(from:builder:) with .embedded/.standalone (the kinds' only legal values per the invariant table — no new native call needed, matching how the C facade fixes these modes). Replace the literal strings at MarkupDumper.swift:117 and :172 with \(node.mode.rawValue). Purely additive to the Swift surface.
 - Tests: MarkdownCoreConformanceTests golden dumps print mode= for every Code/CodeBlock line; ConformanceSuite.fieldsAndNullability covers field presence — extend it to read the new property.
 
-### I17 [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/List.swift:22
+### I17 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/List.swift:22
 
 - Verdict: CONFIRMED; surface: platform-public-api
 - Finding: Boolean contract fields are renamed with an `is` prefix: `tight`→`isTight` (List.swift:22), `checked`→`isChecked` (List.swift:55), `fenced`→`isFenced`/`closed`→`isClosed` (CodeBlock.swift:18,21). Swift API Design Guidelines arguably justify the prefix as 'idiomatic syntax', but canonical-ast.md freezes field names across platforms and Kotlin/ES both keep `tight`/`checked`/`fenced`/`closed`; note `isHeader` (TableRow) is the one is-name the contract itself defines, making the Swift surface internally plausible but cross-platform inconsistent. Related width inconsistency: Heading.level and Position.line/column are Int32 (Markup.swift:7-8, Heading.swift:12) where Kotlin uses Int and Swift convention is Int.
@@ -304,7 +329,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Fold into the I15 rename change: rename isTight->tight, isChecked->checked, isFenced->fenced, isClosed->closed on List/ListItem/CodeBlock (deprecated aliases optional); leave isHeader as-is (contract-defined). If maintainers instead choose to bless the is-prefix, amend canonical-ast.md explicitly — but do it once at the spec level. Treat Int32->Int migration as an optional style cleanup, not part of the contract fix.
 - Tests: ConformanceSuite.fieldsAndNullability and the golden dumps (keys unchanged) guard the rename; update the test call sites that read isChecked/isTight.
 
-### I18 [P2-hygiene] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Text.swift:10
+### I18 [FIXED `380cf0e`] [P2-hygiene] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Text.swift:10
 
 - Verdict: CONFIRMED; surface: platform-public-api
 - Finding: All eleven leaf kinds declare a stored, always-empty `public let children: [any Markup] = []` (Text, Code, HTML, HTMLBlock, CodeBlock, Formula, FormulaBlock, ThematicBreak, SoftBreak, LineBreak, FootnoteReference at Footnote.swift:40). The canonical inventory gives leaves no such field, no internal code reads it (ChildrenVisitor returns `[]` literals, DumpVisitor uses the default children: 0), and it costs 8 bytes per leaf instance in every heap-boxed existential plus public API surface that invites `node.children` structural inspection the contract routes through the visitor/walker instead.
@@ -312,7 +337,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the stored property from the eleven leaf structs and their memberwise-init call sites. Best done inside the I15 rename change (containers moving to `content` removes the concept of a uniform `children` property anyway). Source-breaking only for external consumers reading .children on a concrete leaf type.
 - Tests: No test reads a leaf's children (verified by grep), so existing MarkdownCoreTests + conformance suites pass unchanged; compile failure of removed init arguments catches all internal call sites.
 
-### I19 [P3-cosmetic] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Footnote.swift:12
+### I19 [FIXED `380cf0e`] [P3-cosmetic] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Footnote.swift:12
 
 - Verdict: CONFIRMED
 - Finding: FootnoteDefinition and FootnoteReference doc comments both say 'The footnote's normalized label' (lines 12 and 41), but the frozen contract says the label is carried 'exactly as written' between `[^` and `]` (canonical-ast.md footnote semantics; confirmed in the C facade, packages/markdown-core/extensions/ast.c:634 'Both kinds carry their own label exactly as written in the source'). Only matching is case-folded/whitespace-collapsed — the stored value is not normalized, so the doc comment asserts the opposite of the contract.
@@ -320,7 +345,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Reword both doc comments in packages/swift-markdown-core/Sources/MarkdownCore/Markup/Footnote.swift to: label exactly as written between [^ and ] without the delimiters; matching is case-folded with collapsed whitespace via the session's footnote queries. Doc-only; no code change.
 - Tests: None needed; no test asserts doc comments. SessionSuites.footnoteQueries already covers the real resolution path.
 
-### I20 [P3-cosmetic] packages/swift-markdown-core/Sources/MarkdownCore/Session/MarkupSession.swift:92
+### I20 [FIXED `380cf0e`] [P3-cosmetic] packages/swift-markdown-core/Sources/MarkdownCore/Session/MarkupSession.swift:92
 
 - Verdict: CONFIRMED
 - Finding: replace(_:with:) copies the payload with `let bytes = Array(text.utf8)` before handing it to markdown_core_session_edit, which copies again into the native text store. This sits on the documented hot path — 'append on every network message' (README streaming pattern) — so every streamed message pays an avoidable intermediate allocation and copy.
@@ -328,7 +353,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In replace(_:with:), use `var text = text; try text.withUTF8 { buffer in ... }` in place of the Array copy (withUTF8 is mutating, hence the var shadow; it provides contiguous UTF-8, copying only for non-contiguous strings). Behavior-identical; a one-line cleanup, not a performance win worth benchmarking gates.
 - Tests: SessionSuites and the conformance session replay fully cover replace(); streamed_document in Benchmarks/MarkdownCoreBenchmarks quantifies (expect noise-level change).
 
-### I21 [P1-perf] packages/swift-markdown-core/Sources/MarkdownCore/Document.swift:120
+### I21 [FIXED `380cf0e`] [P1-perf] packages/swift-markdown-core/Sources/MarkdownCore/Document.swift:120
 
 - Verdict: CONFIRMED
 - Finding: Document.parse eagerly materializes the entire scope table (`document.resolver.materialize()`): every one-shot parse pays an extra full native-tree walk plus an n-entry [UInt64: Entry] Dictionary even when the consumer never asks for a scope. The tradeoff is documented in-code (the session dies with the call, so the snapshot must be self-contained), but it inflates the native_parse_and_value_copy benchmark boundary for scope-free consumers, and an alternative exists: let the resolver own the native session pointer and free it on deinit, materializing lazily.
@@ -336,7 +361,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Do not switch to lazy materialization (the lifetime-extension alternative adds resident-memory and deinit-ordering complexity for at best the 15% flat-doc delta). Instead make materialization O(n): export a native accumulator-based subtree walk emitting (id, revision, scope) per node — the same facade fix ES finding I02's long-term plan needs — and have ScopeResolver.materialize consume it. This collapses both the Swift and ES super-linear paths with one native change. Verify with Benchmarks (large_document, deep_nesting) before/after.
 - Tests: MaterializationSuite, DepthSuite, and byte-exact conformance dumps pin scope correctness; MarkdownCoreBenchmarks deep_nesting quantifies. Add a deeper-nesting benchmark case (current depth 128 barely shows the quadratic term).
 
-### I22 [P2-hygiene] packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift:19
+### I22 [FIXED `380cf0e`] [P2-hygiene] packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift:19
 
 - Verdict: CONFIRMED
 - Finding: The warmup/measure/median/rusage/print harness is copy-pasted three times — benchmark (lines 11-37), benchmarkSession (lines 43-78), benchmarkDeepEdit (lines 82-118) — with only the workload closure and the printed boundary/fields differing. Sixty-odd duplicated lines that must be edited in triplicate to change repeat counts, percentile choice, or the output schema.
@@ -344,7 +369,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Extract one helper, e.g. measure(warmup:repeats:print boundary/workload/extra-fields:body:), that owns warmup, the ContinuousClock median loop, rusage, and the print; keep the three print formats byte-identical (boundary=, bytes=, commits= fields per call site). Benchmark-only change; no product code touched.
 - Tests: No unit tests; validate by diffing one local benchmark run's stdout lines before/after and confirming collect-pr-metrics.mjs still extracts all four swift rows.
 
-### I23 [P2-hygiene] packages/swift-markdown-core/Package.release.swift:14
+### I23 [FIXED `380cf0e`] [P2-hygiene] packages/swift-markdown-core/Package.release.swift:14
 
 - Verdict: CONFIRMED
 - Finding: The MarkdownCoreC target definition — the 30-file C source list plus cSettings — is duplicated verbatim between the root /Package.swift (lines 14-40) and Package.release.swift (lines 14-40). Adding a C engine file requires editing both manifests; drift is only caught indirectly and late, at the release-archive stage, when scripts/check-swift-source-archive.sh builds and links an external consumer against the release manifest.
@@ -354,7 +379,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## WP4-kotlin: Kotlin binding: spec parity + dedup + hygiene
 
-### I05 [P2-hygiene] packages/kotlin-markdown-core/src/androidMain/kotlin/com/nouprax/markdown/core/CBridge.android.kt:108
+### I05 [FIXED `e2bf558`] [P2-hygiene] packages/kotlin-markdown-core/src/androidMain/kotlin/com/nouprax/markdown/core/CBridge.android.kt:108
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: The `internal object JvmNative` (13 external fun declarations, lines 108-148) and the `actual class CSession` wrapper (lines 11-50) are byte-identical to jvmMain/CBridge.jvm.kt (verified with diff; only the loader object and its ensureLoaded() call differ). Additionally AndroidNativeLoader's host-JVM fallback (lines 66-105) re-implements DesktopNativeLoader's os/arch table and temp-dir extraction (~35 lines). Both targets compile to JVM bytecode, so JvmNative + CSession + the shared extraction helper belong in one intermediate source set (e.g. jvmSharedMain with dependsOn from jvmMain/androidMain), leaving only an expect/actual loader per target.
@@ -362,7 +387,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In packages/kotlin-markdown-core/build.gradle.kts create an intermediate source set (e.g. jvmSharedMain) with dependsOn from jvmMain and androidMain; move CSession, JvmNative, and a shared extract-library-from-classpath helper there keeping package com.nouprax.markdown.core and the exact class names; leave per-target loader objects (DesktopNativeLoader / AndroidNativeLoader) as the only target-specific code, with AndroidNativeLoader's host-JVM fallback delegating to the shared helper. Regenerate nothing: jvm-abi.txt and JNI symbol names are unchanged if names are preserved.
 - Tests: jvmTest, testAndroidHostTest, both Android managed-device suites, conformance runs, verifyJvmAbi and verifyKotlinNativePackaging all gate the refactor; no new test needed.
 
-### I06 [P0-bug] packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt:7
+### I06 [FIXED `e2bf558`] [P0-bug] packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt:7
 
 - Verdict: CONFIRMED; surface: platform-public-api
 - Finding: docs/specs/canonical-ast-dump.md (lines 14-18) requires: every platform Document offers dump() AND a focused subtree form that prints scopes with the subtree as origin. Swift has MarkupDumper.dump(_:of:) and Document.dump(of:) (Sources/MarkdownCore/Walker/MarkupDumper.swift:16,63) and ES has MarkupDumper.dump(document, node) with origin rebasing (es-markdown-core/src/markup-dumper.ts:38); Kotlin exposes only dump(document). The prerequisite walker overload walk(document, from, visit) already exists in MarkupWalker.kt, so this is a missing ~10-line surface, not a design gap.
@@ -370,7 +395,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add MarkupDumper.dump(document: Document, node: Markup): String to commonMain walker/MarkupDumper.kt implementing the origin rebase exactly as Swift/ES (offset = subtree start line - 1, columns unchanged, 0:0..0:0 markers printed as-is), plus Document.dump(node: Markup) delegating to it in model/Document.kt. Regenerate jvm-abi.txt with -PwriteJvmAbi (verifyJvmAbi fails otherwise). Additive API only; existing dump() output unchanged.
 - Tests: No Kotlin test covers subtree dumps today; port the Swift/ES subtree-dump conformance tests (rebase of start line, marker preservation) into commonTest.
 
-### I07 [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:125
+### I07 [FIXED `e2bf558`] [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:125
 
 - Verdict: CONFIRMED
 - Finding: GenerateCanonicalAstFixtures.appendStringProperty splits corpus text with value.chunked(30), which chunks by UTF-16 unit and can split a surrogate pair across two append(...) literals. destination.writeText (UTF-8) replaces lone surrogates with '?', silently corrupting the generated conformance fixture. Latent today — I verified specs/canonical-ast currently contains no non-BMP characters — but the repo's own tests and README use emoji, so a future corpus case with an astral char at a 30-char boundary trips it.
@@ -378,7 +403,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In appendStringProperty, chunk on code-point boundaries: after taking 30 UTF-16 units, if the last char isHighSurrogate() and the next isLowSurrogate(), extend the chunk by one (or emit non-ASCII as \uXXXX escapes keeping surrogate pairs in one chunk). Build-script-only change.
 - Tests: AstTest/SessionAstTest consume the generated fixtures and would fail loudly if generation regressed; optionally add a corpus case with an astral character positioned at a 30-unit boundary to pin the fix.
 
-### I08 [P2-hygiene] packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/MarkupSession.kt:72
+### I08 [FIXED `e2bf558`] [P2-hygiene] packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/MarkupSession.kt:72
 
 - Verdict: CONFIRMED
 - Finding: public val length: Int returns native.length().toInt(), silently truncating the native uint64 byte length. append() grows the native text without any Int bound (each call adds up to 2GiB), so a text past 2^31 bytes makes length negative/wrong, breaking the documented replace(0, session.length, "") reset idiom (used in ConcurrencyJvmTest:91) with a misleading IllegalArgumentException.
@@ -386,7 +411,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In the length getter, check(native.length() <= Int.MAX_VALUE) { "stored text exceeds Int.MAX_VALUE bytes; ..." } before toInt(); the check is inside the existing getter body so jvm-abi.txt is unchanged. Optionally add a Long-typed lengthBits()-style accessor later (that would need an abi regen).
 - Tests: SessionTest asserts length == 6; a 2GiB text is impractical to test — document the cap in the KDoc instead.
 
-### I09 [P2-hygiene] packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt:110
+### I09 [FIXED `e2bf558`] [P2-hygiene] packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt:110
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: Windows support exists only as vestiges: the "windows-x64" branches in DesktopNativeLoader (line 110) and AndroidNativeLoader (CBridge.android.kt:78), the Windows export file src/native/markdown_core_kotlin.def, and the WIN32 branch in src/native/CMakeLists.txt. The build's HostTriple model (build.gradle.kts:219-223) rejects Windows hosts and no CI or packaging step ever produces a windows-x64 payload (verifyKotlinNativePackaging checks macOS/Linux/Android only; README documents macOS arm64 + Linux x64), so the loader branch can only ever reach the 'native library is missing for windows-x64' failure.
@@ -394,7 +419,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the windows-x64 arms from DesktopNativeLoader and AndroidNativeLoader so unsupported Windows hosts hit the explicit 'unsupported native platform' error matching HostTriple's model; delete markdown_core_kotlin.def and the elseif(WIN32) branch in packages/kotlin-markdown-core/src/native/CMakeLists.txt (git history preserves them for a future Windows port).
 - Tests: Nothing tests either failure message; existing loader paths covered by jvmTest/testAndroidHostTest on supported hosts.
 
-### I10 [P3-cosmetic] gradle/libs.versions.toml:5
+### I10 [FIXED `e2bf558`] [P3-cosmetic] gradle/libs.versions.toml:5
 
 - Verdict: CONFIRMED
 - Finding: Unused version-catalog entries: `android-target-sdk` (line 5) and the `kotlinx-coroutines-core` library are referenced by no build script in the composite build (grep over all .kts confirms; commonTest uses only kotlinx-coroutines-test, and the standalone consumer builds hardcode their own versions and cannot see this catalog).
@@ -402,16 +427,17 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the android-target-sdk version and the kotlinx-coroutines-core library entry from gradle/libs.versions.toml; regenerate dependency lockfiles if any lock the removed coordinates.
 - Tests: None needed; any build script breakage fails configuration immediately.
 
-### I11 [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:669
+### I11 [ACCEPTED-DESIGN] [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:669
 
 - Verdict: PARTIAL
 - Finding: verifyJvmAbi hand-rolls a ~120-line JVM classfile/constant-pool parser inside the build script to snapshot the Java-visible surface into jvm-abi.txt. This duplicates kotlinx binary-compatibility-validator / Kotlin's built-in abiValidation (available on the Kotlin 2.4 toolchain this repo already uses), which also covers klib ABI for the native targets — something the current gate misses entirely (macosArm64/linuxX64 ABI is unguarded).
 - Correction: The bespoke ~130-line classfile/constant-pool parser (build.gradle.kts:668-800) and the unguarded klib ABI for macosArm64/linuxX64 (targets at lines 465-469) are real, but the proposed straight swap is wrong: binary-compatibility-validator and kotlin.abiValidation filter internal declarations via Kotlin metadata, so their dumps would omit JvmNative and other internal-but-public bytecode that the current gate deliberately freezes (the comment at line 664-667 states Java-visible internal surface is the point, and jvm-abi.txt has 15 JvmNative entries). The standard tool can only complement, not replace, the JVM snapshot unless its non-public-markers filtering is configured and verified to keep those classes.
 - Evidence: Read verifyJvmAbi (lines 668-800): hand-rolled DataInputStream constant-pool walk. Kotlin 2.4.0 in libs.versions.toml, so kotlin.abiValidation with klib support is available. grep jvm-abi.txt: JvmNative appears 15 times — BCV's default internal filtering would drop it.
-- Fix plan: Add kotlin.abiValidation (or BCV) for the klib ABI of macosArm64/linuxX64 and check its dumps in, closing the real gap; keep the JVM bytecode snapshot (or replace it only after proving the tool's dump still lists JvmNative/WireDecoder members).
-- Tests: kotlinTest aggregate exercises the gate; add the klib abiCheck task to the same aggregate.
+- Resolution: Accepted design exception. The repository keeps the bytecode-level JVM snapshot because it freezes the real Java-visible surface, including Kotlin-internal JvmNative/WireDecoder members that the standard metadata-aware ABI tools omit. Adding a second KLIB-only ABI mechanism now would create two differently filtered authorities for one package, while replacing the current gate would silently weaken the published JVM contract.
+- Accepted risk and revisit trigger: macosArm64/linuxX64 KLIB ABI is not independently snapshotted. Revisit when one standard ABI tool can retain the package's Java-visible internal bytecode while also covering KLIB, or when a stable public Kotlin/Native ABI becomes a release promise; at that point check the KLIB dump into the repository and wire its check into kotlinTest.
+- Tests: kotlinTest continues to exercise the retained JVM ABI gate.
 
-### I12 [P1-perf] packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c:71
+### I12 [FIXED `e2bf558`] [P1-perf] packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c:71
 
 - Verdict: CONFIRMED
 - Finding: All multi-byte writes funnel through put_u8 -> put_bytes -> reserve one byte at a time: put_u64 (line 71) performs 8 reserve/memcpy calls, and encode_scope_table emits 32 bytes per node as ~24 separate one-byte appends, so a large document's scope table does O(24n) function calls with per-call overflow checks. The record stream has the same shape. This is bridge-copy overhead on the exact path the jvmBenchmark 'jni_parse_and_value_copy' workload measures.
@@ -419,7 +445,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Rewrite put_i32/put_u64 to fill a 4/8-byte stack array and call put_bytes once (put_scope then becomes 4 bulk writes or one 16-byte buffer); no format change. Absolute end-to-end gain is modest (scope table is 32 bytes/node), so verify with the jvmBenchmark jni_parse_and_value_copy workload.
 - Tests: Full Kotlin conformance suites (AstTest byte-equality) catch any encoding slip; kotlinBenchmark measures the gain.
 
-### I13 [P3-cosmetic] packages/kotlin-markdown-core/android-runtime/build.gradle.kts:95
+### I13 [FIXED `e2bf558`] [P3-cosmetic] packages/kotlin-markdown-core/android-runtime/build.gradle.kts:95
 
 - Verdict: CONFIRMED
 - Finding: The full Maven POM block (name/licenses/scm/developers, ~30 lines) plus the releaseStaging repository wiring is copy-pasted between android-runtime/build.gradle.kts (lines 95-125) and the main build.gradle.kts publishing block (lines 612-647), differing only in name/description.
@@ -427,18 +453,19 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Extract a shared configurePom(name, description) helper (buildSrc convention plugin or a function in a shared .kts applied from both projects) that sets the common licenses/scm/developers and the releaseStaging repository; each project passes only its name/description.
 - Tests: publishKotlinToMavenLocal and the consumer smoke builds (scripts/check-kotlin-consumers.sh) validate the published metadata.
 
-### I58 [P3-cosmetic] scripts/gradle-model-smoke.sh:21
+### I58 [FIXED final sweep] [P3-cosmetic] scripts/gradle-model-smoke.sh:21
 
 - Verdict: PARTIAL
 - Finding: Two small copy-paste clusters: (1) the JAVA_HOME/ANDROID_HOME discovery block in scripts/gradle.sh lines 4–15 is duplicated verbatim in scripts/check-kotlin-consumers.sh lines 25–29 (where it is needed only for mvnw — the gradle calls already go through gradle.sh) and in gradle-model-smoke.sh lines 7–14; (2) the Gradle version string 9.6.1 is hard-coded twice in gradle-model-smoke.sh (find path line 21 and strip pattern line 29) in addition to gradle/wrapper/gradle-wrapper.properties and init-environment.sh GRADLE_VERSION, so a wrapper bump silently strands the smoke test looking for the old tooling JAR.
 - Correction: The duplication is near-verbatim, not verbatim: scripts/check-kotlin-consumers.sh (lines 25-29) copies only the JAVA_HOME half (inline export style, no ANDROID_HOME), and scripts/gradle-model-smoke.sh (lines 7-14) copies only the Android Studio JBR branch plus ANDROID_HOME (missing the Homebrew JDK branch — itself a small drift bug: on a Homebrew-JDK-only Mac the smoke script relies on JAVA_HOME already being set). The 9.6.1 literal appears three times in gradle-model-smoke.sh (lines 21, 25, 29), not twice; and init-environment.sh (GRADLE_VERSION=9.6.1, line 235-236) already cross-checks gradle-wrapper.properties, so a wrapper bump without touching init-environment fails loudly there as well.
 - Evidence: Read scripts/gradle.sh:4-15, scripts/check-kotlin-consumers.sh:25-29, scripts/gradle-model-smoke.sh:1-30; grep for 9.6.1/GRADLE_VERSION found gradle-wrapper.properties:4, gradle-model-smoke.sh:21,25,29, init-environment.sh:22,235.
 - Fix plan: Derive the version in gradle-model-smoke.sh from gradle/wrapper/gradle-wrapper.properties (parse distributionUrl); have check-kotlin-consumers.sh and gradle-model-smoke.sh source a shared discover-toolchain snippet (or route everything through scripts/gradle.sh) so the JDK/SDK discovery lives once, including the Homebrew branch.
+- Resolution: scripts/lib/discover-toolchain.sh is now the single JDK/Android SDK discovery fragment sourced by gradle.sh, check-kotlin-consumers.sh, and gradle-model-smoke.sh. The model smoke derives its Tooling API jar name and diagnostic from gradle-wrapper.properties, so it carries no independent Gradle version literal.
 - Tests: check:gradle-model runs in Health Check - Kotlin; the failure mode is a hard stop ('Tooling API ... was not found'), never a wrong pass.
 
 ## WP5-es: ES binding: spec parity + decode perf + hygiene
 
-### I00 [P0-bug] packages/es-markdown-core/src/markup-walker.ts:33
+### I00 [FIXED `030d5f6`] [P0-bug] packages/es-markdown-core/src/markup-walker.ts:33
 
 - Verdict: CONFIRMED
 - Finding: docs/specs/sessions-and-deltas.md (Scope section) requires: 'Structural traversal never depends on materialization: the scope-free visitor overload of MarkupWalker walks any retained snapshot regardless of resolver state.' The ES MarkupWalker has no such overload — both walk() overloads unconditionally resolve `document.scope(frame.node)` for every node, so structurally walking a retained snapshot that was superseded before it materialized throws 'scope requested from a superseded snapshot...'. Kotlin implements the required overload (MarkupWalker.kt walk(document, visitor: MarkupVisitor<Unit>), covered by WalkerTraversalTest.scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot); ES (and, noted in passing, Swift) do not, breaking the 'identical API across platforms' need. The exported one-node visit() is not a substitute — it dispatches a single node, not a traversal.
@@ -446,7 +473,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In packages/es-markdown-core/src/markup-walker.ts add a scope-free overload walk(document: Document, visitor: MarkupVisitor<void>): traverse with the existing children() helper and dispatch each node through visit() from src/markup-visitor.ts, never calling document.scope. Extend the runtime discrimination in the implementation signature (visitor is an object, existing params are function/Markup, so typeof-based dispatch extends cleanly). Port Kotlin's WalkerTraversalTest superseded-snapshot traversal test into tests/session.test.mjs (or a new walker test): retain an unmaterialized snapshot, supersede it with a commit, assert the visitor overload traverses while the scopeful overload still throws. Swift's identical gap should be tracked as its own follow-up (Sources/MarkdownCore/Walker/MarkupWalker.swift).
 - Tests: Existing: tests/node.test.mjs walker api test, conformance.test.mjs flatten(). New: ES twin of Kotlin WalkerTraversalTest.scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot.
 
-### I01 [P2-hygiene] packages/es-markdown-core/src/bridge.c:306
+### I01 [FIXED `030d5f6`] [P2-hygiene] packages/es-markdown-core/src/bridge.c:306
 
 - Verdict: PARTIAL
 - Finding: The native error carries an optional scope (markdown_core_error_get_scope, include/markdown_core.h:194) and both sibling bindings surface it — Swift NativeValues.swift decodes it into ParseError.scope, Kotlin markdown_core_kotlin_bridge.c:108 into ParseException.scope. The ES bridge never calls markdown_core_error_get_scope, and NodeDecoder.parseError (src/wire/node-decoder.ts:125-129) never passes the third ParseError constructor argument, so the public ES field ParseError.scope (src/parse-error.ts:7) is declared but unconditionally null — a silently degraded cross-platform surface and an effectively dead constructor parameter.
@@ -455,7 +482,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Parity plumbing as suggested: add es_error_scope(error, out) in packages/es-markdown-core/src/bridge.c backed by markdown_core_error_get_scope writing 4 i32s to scratch, declare it in src/runtime/native.ts NativeExports, decode it in NodeDecoder.parseError (src/wire/node-decoder.ts), and pass it as the third ParseError argument. Until the engine actually emits scoped errors this is untestable end-to-end beyond asserting scope === null; note in the PR that the engine currently never sets has_scope.
 - Tests: tests/session.test.mjs 'invalid edit ranges are rejected' asserts ParseError.code; can only assert scope stays null until the engine emits scoped errors (no engine path sets has_scope today).
 
-### I02 [P1-perf] packages/es-markdown-core/src/wire/node-decoder.ts:108
+### I02 [FIXED `030d5f6`] [P1-perf] packages/es-markdown-core/src/wire/node-decoder.ts:108
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: Scope-table materialization is quadratic in nesting depth: scopeTable() calls es_scope_coordinate four times per node (node-decoder.ts:449-460), and each call recomputes markdown_core_node_scope, which walks the ancestor chain (extensions/ast.c:293-321, O(depth) for sealed-relative storage) — so the table costs 4*n*O(depth) native work. Measured on this machine: one-shot Document.parse of '> '.repeat(8192)+'leaf' takes 621 ms while a 16384-paragraph document with 4x the nodes takes 39 ms; depth 4096 -> 8192 scales 122 ms -> 621 ms (super-linear). Every one-shot parse pays this eagerly (parser.ts:39 resolver.materialize()), every session snapshot pays it on first scope/walk/dump, and it dominates the 2.5 s 'adversarial nesting' test.
@@ -463,7 +490,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Two stages as suggested. Short term: replace 4 es_scope_coordinate crossings with one es_node_scope(node, out) in packages/es-markdown-core/src/bridge.c writing all four i32 coordinates into the existing 32-byte scratch; update NativeExports (src/runtime/native.ts) and NodeDecoder.scope (src/wire/node-decoder.ts) — saves 3 O(depth) recomputations + 3 crossings per node but stays O(n*depth). Real fix: export a native subtree walk (es_scope_table(root, ...) emitting (id, revision, scope) per node) using a parent-accumulator like ast.c's dump, making materialization O(n); scopeTable() then decodes one buffer. Wasm bridge exports are package-internal (consumed only by this package's decoder), so no public surface changes.
 - Tests: conformance.test.mjs canonical-AST fixture dumps verify every scope byte-for-byte; node.test.mjs scope assertions; session.test.mjs materialization + 'adversarial nesting' tests. Add/extend a timing sanity via scripts/benchmark.mjs before/after.
 
-### I03 [P2-hygiene] packages/es-markdown-core/src/bridge.c:182
+### I03 [FIXED `030d5f6`] [P2-hygiene] packages/es-markdown-core/src/bridge.c:182
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: Per-scalar bridge crossings re-fetch whole native property structs: decoding one list calls markdown_core_node_list_properties three times (es_node_list_flavor:182, es_node_list_tight:190, es_node_list_start_state:198); one code block calls markdown_core_node_code_block_properties five times (es_node_code_flag twice at 213 plus three es_string reads at 272-281); one directive calls markdown_core_node_directive_properties four times (mode:245, label_count:255, plus name/attributes strings at 288-291). Each JS-side scalar read also allocates a fresh DataView (node-decoder.ts dataView()). Constant-factor waste on the hot decode path, multiplied across every node of every commit.
@@ -471,7 +498,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: As suggested: add per-kind packed accessors in bridge.c (es_node_list_properties writing flavor/tight/start-flag/start into the 32-byte scratch in one crossing; likewise code-block flags and directive mode/label-count), have decodeValue read the scratch once per node, and reuse a single DataView per decode entry (created after any potential memory growth point, or re-created per node — note native.ts's comment that views are deliberately never cached across calls because of memory growth; a per-node view is still safe). Benchmark with scripts/benchmark.mjs before/after.
 - Tests: Canonical-AST fixture dumps (conformance.test.mjs, byte-equal oracle) plus node/session suites fully cover any repacking; run scripts/benchmark.mjs for the perf delta.
 
-### I04 [P3-cosmetic] packages/es-markdown-core/src/runtime/native.ts:61
+### I04 [FIXED `030d5f6`] [P3-cosmetic] packages/es-markdown-core/src/runtime/native.ts:61
 
 - Verdict: CONFIRMED
 - Finding: loadWasm copies the entire WASM binary a second time for no benefit: `Uint8Array.from(await fileSystem.readFile(wasmURL)).buffer` — readFile already returns an exact-size Uint8Array that is a valid BufferSource for WebAssembly.instantiate, so Uint8Array.from(...) plus .buffer is a redundant ~282 KiB copy per JS context (main thread and every worker). The browser branch similarly buffers the full response via fetch+arrayBuffer+instantiate instead of WebAssembly.instantiateStreaming (the test server already serves application/wasm).
@@ -481,7 +508,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## WP6-infra: Build/CI/scripts/docs hygiene
 
-### I47 [P2-hygiene] Makefile:113
+### I47 [FIXED `3ebd4e7`] [P2-hygiene] Makefile:113
 
 - Verdict: CONFIRMED
 - Finding: `make update-spec` curls raw.githubusercontent.com/jgm/CommonMark/master/spec.txt directly over packages/markdown-core/tests/fixtures/spec.txt. That fixture is not the CommonMark spec: it is the GFM 0.29 spec (header says 'GitHub Flavored Markdown Spec, version 0.29') whose 671 example blocks have been rewritten to canonical AST dumps per test-architecture.md §5. Running the target replaces the reviewed AST-dump corpus with a different upstream document whose expected blocks are HTML. The curl also lacks --fail, so an HTTP 404/500 body (or empty response) silently truncates the fixture with exit 0. audit-test-topology.sh §2 explicitly whitelists this target, so no audit catches it.
@@ -489,7 +516,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Rewrite the update-spec target in /Users/donz/Repos/GitHub/markdown-core/Makefile: fetch the pinned GFM 0.29 spec (https://raw.githubusercontent.com/github/cmark-gfm/<pinned-tag>/test/spec.txt) with 'curl --fail --proto =https --location' into a temp file, verify non-empty and show a diff against the current fixture before installing, and add a comment that the fixture's expected blocks are canonical AST dumps requiring 'spec_runner --rewrite' plus human review after any refresh. Alternatively delete the target as a cmark vestige and document the manual refresh procedure; either way keep the audit-test-topology whitelist consistent.
 - Tests: ctest -L spec (spec_runner byte-compares all 671 dumps) catches a clobbered fixture after the fact; no test covers the Makefile target itself. No new automated test needed beyond keeping the spec label suite green.
 
-### I48 [P2-hygiene] Makefile:58
+### I48 [FIXED `3ebd4e7`] [P2-hygiene] Makefile:58
 
 - Verdict: CONFIRMED
 - Finding: `make afl` runs `cmake --preset default -DMARKDOWN_CORE_TESTS=0 -DCMAKE_C_COMPILER=$(AFL_PATH)/afl-clang` and `make libFuzzer` runs `cmake --preset default -DCMAKE_BUILD_TYPE=Asan -DMARKDOWN_CORE_LIB_FUZZER=ON` — both mutate the shared build/cmake preset cache. Afterwards a plain `make test`/`pnpm test:c-host` re-runs `cmake --preset default`, which restores CMAKE_BUILD_TYPE=Release but leaves MARKDOWN_CORE_TESTS=0 (or MARKDOWN_CORE_LIB_FUZZER=ON, which injects -fsanitize-coverage=trace-pc-guard into every core target) in the cache. With tests off, `ctest --preset correctness` finds zero tests and exits 0 — a silent green run. Changing CMAKE_C_COMPILER in an existing cache additionally forces a cache wipe/error. The `@[ -n "$(AFL_PATH)" ]` guard is dead code since AFL_PATH defaults to /usr/local/bin (always non-empty).
@@ -497,7 +524,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In /Users/donz/Repos/GitHub/markdown-core/Makefile, give the fuzz campaigns dedicated binary dirs: replace 'cmake --preset default -D...' with explicit 'cmake -S . -B build/afl -DCMAKE_BUILD_TYPE=Release -DMARKDOWN_CORE_TESTS=0 -DCMAKE_C_COMPILER=$(AFL_PATH)/afl-clang' (and build/libfuzzer with -DCMAKE_BUILD_TYPE=Asan -DMARKDOWN_CORE_LIB_FUZZER=ON), update MARKDOWN_CORE/MARKDOWN_CORE_FUZZ paths for those targets, and drop the dead AFL_PATH non-empty guard (keep the LIB_FUZZER_PATH one, which has no default). Update the comment about findings staying in the build tree to name build/afl.
 - Tests: No automated coverage of the Makefile fuzz targets; manual smoke of 'make afl'/'make libFuzzer' configure steps plus a subsequent 'make test' showing a populated graph is sufficient. Pairs with I49's noTestsAction as defense in depth.
 
-### I49 [P2-hygiene] CMakePresets.json:48
+### I49 [FIXED `3ebd4e7`] [P2-hygiene] CMakePresets.json:48
 
 - Verdict: PARTIAL
 - Finding: None of the six test presets sets "noTestsAction": "error", so ctest exits 0 on an empty graph. docs/specs/test-architecture.md §1.1 states an empty CTest graph exiting 0 must never count as success ('不能把 CTest 的空图 exit 0 当成成功'). CI compensates only at the Build Test producer (scripts/build-c-test-artifact.sh line 36 asserts 'Total Tests: [1-9]'), but every local entry (`make test`, `make asan-test`, `pnpm test:c-host`, `pnpm conformance:c-host`) trusts the preset — combined with the Makefile cache-poisoning issue this yields a concrete silent-pass path locally.
@@ -506,7 +533,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add "execution": {"noTestsAction": "error"} to all six testPresets in /Users/donz/Repos/GitHub/markdown-core/CMakePresets.json (extend the benchmark preset's existing execution block to {"jobs":1,"noTestsAction":"error"}). No cmakeMinimumRequired change needed.
 - Tests: Every populated preset run in CI/local exercises the change; a quick negative check is 'ctest --preset correctness' against a MARKDOWN_CORE_TESTS=0 cache now failing. No dedicated new test required.
 
-### I50 [P2-hygiene] scripts/audit-ci-policy.sh:172
+### I50 [FIXED `3ebd4e7`] [P2-hygiene] scripts/audit-ci-policy.sh:172
 
 - Verdict: CONFIRMED
 - Finding: audit-ci-policy.sh (a required gate via `pnpm audit:ci` in Health Check - Repository) pins workflow implementation text, which docs/specs/test-architecture.md §8 explicitly excludes from required-gate policy ('具体实现文本…不得作为 required gate 的静态字符串 policy'). Concrete fragilities: line 172's sed range '/^    kotlin-android-test:$/,/^    es-test-build:$/' assumes es-test-build is the physically next job in ci.yml, so reordering jobs silently changes what the four-consumer count check (line 186, which also hard-codes 22-space indentation of 'suite:') inspects; lines 459–461 require the byte-exact JS ternaries `const indicator = percent <= 0 ? "✅" : "⚠️";` etc. from pr-metrics-comment.yml, so renaming a variable or reformatting the commenter script fails required CI; lines 236–248 pin exact display-name strings whose only consumer is human readability.
@@ -514,7 +541,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: In /Users/donz/Repos/GitHub/markdown-core/scripts/audit-ci-policy.sh: (1) replace the two-name sed slices (android_test_job and the consumer/producer/contract loops) with an awk extractor that starts at the named 4-space job key and ends at the next 4-space key whatever it is; (2) replace the suite-count indentation grep with a count of 'suite:' entries within the extracted job body regardless of indent; (3) replace the three byte-exact ternary greps with outcome-level assertions (grep the three threshold constants 0, 5, 50*1024 individually, or parse them); (4) drop or soften the pure display-name pins to a single check that visible names do not leak matrix fields (that check already exists). Preserve unchanged: SHA-pinned action checks, needs-barrier topology, ruleset JSON assertions, secret bans.
 - Tests: The audit itself runs in required CI on every PR, so any relaxation is exercised immediately; recommend a local negative test (temporarily reorder two ci.yml jobs in a scratch copy and confirm the awk extraction still isolates the right job).
 
-### I51 [P2-hygiene] Makefile:75
+### I51 [FIXED `3ebd4e7`] [P2-hygiene] Makefile:75
 
 - Verdict: CONFIRMED
 - Finding: `make clang-check` runs `clang-check -p build/cmake -analyze packages/markdown-core/core/*.c`, but nothing in the repo sets CMAKE_EXPORT_COMPILE_COMMANDS for build/cmake (grep across CMakeLists/CMakePresets/cmake/ finds no occurrence), so build/cmake never contains compile_commands.json and the target always fails. Its other half is scripts/lint-c.sh line 8, which sets -DCMAKE_EXPORT_COMPILE_COMMANDS=ON in build/lint-c and then never consumes the database — lint:c is actually just a -Werror rebuild. Both are cmark-gfm vestiges of a static-analysis flow that no longer exists; nothing in CI or package.json invokes clang-check.
@@ -522,7 +549,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the clang-check target and the CLANG_CHECK?=clang-check variable from /Users/donz/Repos/GitHub/markdown-core/Makefile (also remove clang-check from the .PHONY list), and drop -DCMAKE_EXPORT_COMPILE_COMMANDS=ON from /Users/donz/Repos/GitHub/markdown-core/scripts/lint-c.sh. If static analysis is wanted instead, keep the export flag in lint-c.sh and add a clang-tidy/clang-check step there pointing at build/lint-c so the database has exactly one owner and consumer.
 - Tests: None exist for either path; pnpm lint:c in CI (ci.yml line 76) verifies lint-c.sh still passes after the flag removal.
 
-### I52 [P2-hygiene] scripts/run-c-test-artifact.sh:20
+### I52 [FIXED `3ebd4e7`] [P2-hygiene] scripts/run-c-test-artifact.sh:20
 
 - Verdict: CONFIRMED
 - Finding: The ten artifact adapters each re-implement the same verify/extract preamble (sha check, kind= grep, source_sha grep, tar -xzf) and manifest/SHA256SUMS epilogue, and the copies have already drifted: build-c-product-artifact.sh (line 31), build-kotlin-host-test-artifact.sh (line 54) and run-kotlin-host-test-artifact.sh (line 12) carry a sha256sum→shasum fallback for hosts without coreutils, while run-c-test-artifact.sh (line 20), build-c-test-artifact.sh (line 54), build-es-test-artifact.sh, build-es-product-artifact.sh and run-es-test-artifact.sh call bare `sha256sum` — yet run-c-test-artifact.sh and build-c-test-artifact.sh are executed on macOS runners (c-test/c-test-build macos-latest legs) and on any developer Mac, where stock macOS has no sha256sum. ci.yml itself hedges the same operation a third way (lines 816–820 in the restore step use command -v detection).
@@ -530,7 +557,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add scripts/lib/artifact.sh with sha256_write/sha256_check (command -v sha256sum fallback to shasum -a 256), manifest write/verify helpers, and tar pack/extract; source it from the ten adapters, keeping per-platform build/run dispatch in the thin scripts. Land as a pure refactor with byte-identical manifest and SHA256SUMS formats. Optionally have the ci.yml inline restore step call the same helper.
 - Tests: The full CI DAG is the coverage — every producer/consumer job exercises the helper; verify a local macOS run of run-c-test-artifact.sh with sha256sum absent from PATH now passes via the fallback.
 
-### I53 [P2-hygiene] docs/specs/test-architecture.md:130
+### I53 [FIXED `3ebd4e7`] [P2-hygiene] docs/specs/test-architecture.md:130
 
 - Verdict: CONFIRMED
 - Finding: The frozen spec's C label table says every test carries exactly one label ('每个测试恰有一个 label') and lists 12 labels with no `complexity`, but the implementation registers complexity tests with two labels — packages/markdown-core/tests/CMakeLists.txt line 437: markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" …) — and both CMakePresets.json (correctness-asan/ubsan/tsan exclude ^(benchmark|complexity|conformance)$) and audit-test-topology.sh line 75 (requires label `complexity` to be non-empty) depend on the extra label. Spec §6 acknowledges complexity timeouts, so the taxonomy table and one-label invariant are simply stale.
@@ -538,7 +565,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Reviewed spec edit to /Users/donz/Repos/GitHub/markdown-core/docs/specs/test-architecture.md section 3: soften '每个测试恰有一个 label' to '每个测试恰有一个主 suite label', and add a complexity row (secondary scheduling label on pathological_complexity_* used by sanitizer presets to exclude timing gates). Doc-only; no code change.
 - Tests: scripts/audit-test-topology.sh already enforces the current dual-label reality and runs in required CI; no new test needed.
 
-### I54 [P2-hygiene] package.json:29
+### I54 [FIXED `3ebd4e7`] [P2-hygiene] package.json:29
 
 - Verdict: CONFIRMED
 - Finding: conformance:swift-ios-simulator (line 29) and test:swift-ios-simulator (line 57) hard-code `-destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest'`, the exact pattern the frozen spec bans for CI ('不把 artifact 绑定到…具体手机型号或移动的 OS=latest alias…禁止假设 hosted image 永远预创建某个型号') and that audit-ci-policy.sh line 160 rejects in build/run-swift-test-artifact.sh — but package.json is outside the audit's scan. The repo already owns the correct mechanism (scripts/prepare-swift-ios-simulator.sh discovers any installed iPhone runtime and creates one when absent), so this is a second, contradictory device-selection policy.
@@ -546,7 +573,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add a small wrapper (e.g. scripts/run-swift-ios-simulator-tests.sh <test-target>) that sets destination via scripts/prepare-swift-ios-simulator.sh and runs the xcodebuild test invocation with -only-testing:<target>; repoint the conformance:swift-ios-simulator and test:swift-ios-simulator pnpm scripts in /Users/donz/Repos/GitHub/markdown-core/package.json at it. Optionally extend the audit-ci-policy grep to include package.json so the pattern cannot recur.
 - Tests: No automated coverage of the pnpm entries; manual local run on a Mac (ideally with the pinned model absent from the device set) verifies discovery/creation. Extending the audit grep gives regression protection in required CI.
 
-### I55 [P2-hygiene] scripts/audit-test-topology.sh:146
+### I55 [FIXED `3ebd4e7`] [P2-hygiene] scripts/audit-test-topology.sh:146
 
 - Verdict: CONFIRMED
 - Finding: The Swift-discovery assertion is wrapped in `if command -v swift >/dev/null` and the only required-CI job that runs `pnpm audit:tests` is Health Check - Repository on ubuntu-latest, which has no Swift toolchain — so the check the spec §8 credits to this audit ('Swift suite discovery 非空') never actually executes in required CI, a silent skip in an audit whose own principles forbid silent skips. (Locally on macOS it runs.)
@@ -554,7 +581,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Add a non-empty discovery assertion to /Users/donz/Repos/GitHub/markdown-core/scripts/build-swift-test-artifact.sh after the --build-tests builds: run CLANG_MODULE_CACHE_PATH=... swift test --disable-sandbox list, fail if output has zero lines — mirroring the CTest inventory assertion in build-c-test-artifact.sh. Keep the local-macOS stanza in audit-test-topology.sh (or note it as local-only).
 - Tests: Build Test - Swift / Test Products in required CI exercises the new assertion on every PR; negative check locally by pointing the script at an empty package.
 
-### I56 [P3-cosmetic] CMakeLists.txt:1
+### I56 [FIXED `3ebd4e7`] [P3-cosmetic] CMakeLists.txt:1
 
 - Verdict: CONFIRMED
 - Finding: Version floors disagree: root and package CMakeLists declare cmake_minimum_required(3.20), CMakePresets.json declares cmakeMinimumRequired 3.21 (and presets schema v3 itself needs >= 3.21), and scripts/init-environment.sh line 203 accepts any CMake >= 3.20. A host with CMake 3.20 passes the environment check but every documented entry point (pnpm build:c/test:c-host, make build) uses `cmake --preset` and fails.
@@ -562,7 +589,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Align the floors at 3.21: bump the three cmake_minimum_required calls and the init-environment.sh version_at_least check (line 203) plus its error message. (If I49's noTestsAction fix lands, 3.21 is still sufficient — noTestsAction is schema v2/CMake 3.20 — so 3.21 remains the right floor.)
 - Tests: No test covers the environment-check-vs-entry-point gap; CI configure steps verify newer toolchains still pass. Optionally add a comment in init-environment.sh tying the floor to CMakePresets.json.
 
-### I57 [P3-cosmetic] package.json:65
+### I57 [FIXED `3ebd4e7`] [P3-cosmetic] package.json:65
 
 - Verdict: CONFIRMED
 - Finding: `pnpm verify` — presented by docs/development-environment.md (line 110) as the universal local validation step — is macOS-only in practice: it chains format:swift:check (needs `swift format` 6.3.0), lint:swift, and release:check-version (which shells `swift package dump-package` unconditionally, scripts/check-release-version.mjs line 69), while init-environment.sh line 56 deliberately excludes the swift component on non-Darwin hosts and check_swift fails outright on Linux. So on the OS required-CI itself uses (ubuntu), the documented verify chain cannot pass; CI avoids this only by decomposing verify into per-platform health-check jobs.
@@ -570,7 +597,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Either (a) document in docs/development-environment.md that pnpm verify is the macOS full-toolchain gate and list the per-family commands for Linux contributors, or (b) make verify platform-aware: route through a small script that on non-Darwin skips format:swift:check/lint:swift and passes --skip-swift to check-release-version.mjs, mirroring how CI decomposes the same checks. Option (a) is lowest-risk.
 - Tests: No automated coverage; verify remains exercised manually on macOS. If option (b), a Linux CI smoke of the routed verify would cover it.
 
-### I66 [P2-hygiene] packages/markdown-core/core/exports/markdown_core.exports:1
+### I66 [FIXED `3ebd4e7`] [P2-hygiene] packages/markdown-core/core/exports/markdown_core.exports:1
 
 - Verdict: CONFIRMED
 - Finding: The Darwin export allowlist is validated by nothing: scripts/audit-public-surface.sh's node script reads only markdown_core.map (c-naming.md's claim that it keeps 'both export allowlists' in sync is inaccurate), and the nm-based binary diff in scripts/audit-package-contents.sh runs only in the ubuntu package-audit job (.github/workflows/ci.yml:124). Indirect macOS coverage is link-time only: 8 of 52 exports (error_get_scope, node_code_block_properties, node_directive_first_content_child, node_footnote_id, node_image_properties, node_list_properties, node_table_alignment_at, node_table_column_count) are referenced by no C test or benchmark source, and the installed-consumer smoke test exercises just 6 symbols — a symbol dropped from .exports would ship silently in the macOS C release dylib. The two files are currently in sync (verified by diff, 52 symbols each).
@@ -578,23 +605,25 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Extend the node script in scripts/audit-public-surface.sh to also read core/exports/markdown_core.exports, strip the leading underscore, and fail unless header declarations, .map symbols, and .exports symbols are identical three ways. Also correct the c-naming.md:12-13 sentence once true.
 - Tests: The audit script itself is the test; runs in the health-checks/package-audit CI jobs.
 
-### I72 [P3-cosmetic] packages/markdown-core/core/exports/markdown_core.map:1
+### I72 [RESOLVED-DESIGN `3ebd4e7`] [P3-cosmetic] packages/markdown-core/core/exports/markdown_core.map:1
 
 - Verdict: CONFIRMED; surface: exported-symbol
 - Finding: The GNU symbol-version node is named MARKDOWN_CORE_1.0 while the released project is 2.0.0 (VERSION file; SOVERSION set to PROJECT_VERSION_MAJOR=2 at extensions/CMakeLists.txt:43). The v2.0.0 Linux shared artifact therefore tags every facade symbol @@MARKDOWN_CORE_1.0 — functionally harmless but permanently misleading metadata, and version nodes get harder to rename the longer they ship.
 - Evidence: core/exports/markdown_core.map line 1 names the version node MARKDOWN_CORE_1.0; VERSION file reads 2.0.0; SOVERSION is PROJECT_VERSION_MAJOR (extensions/CMakeLists.txt:43); CHANGELOG.md line 4 states 'the C binary ABI is not' covered by versioning. audit-package-contents.sh diffs symbol names only, so no test pins the node name.
 - Fix plan: Rename the node to MARKDOWN_CORE_2.0 in core/exports/markdown_core.map in the next release that already breaks C ABI (it changes the version tag of every symbol, so binaries linked against shipped 2.0.0 .so files would need a relink), or add one sentence to docs/specs/c-naming.md recording the 1.0 node name as intentional/frozen.
+- Resolution: The ABI-preserving documentation option landed in 3ebd4e7. docs/specs/c-naming.md records MARKDOWN_CORE_1.0 as intentionally frozen until the next C ABI break.
 - Tests: None assert the node name; if renamed, extend audit-package-contents.sh to assert the expected node.
 
-### I73 [P3-cosmetic] packages/markdown-core/include/markdown_core.h:1
+### I73 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/include/markdown_core.h:1
 
 - Verdict: CONFIRMED
 - Finding: The installed facade offers no version introspection at all: markdown_core_version()/markdown_core_version_string() exist only in the internal header (core/markdown-core.h:656) and are absent from both export allowlists, and the installed markdown_core.h carries no MARKDOWN_CORE_VERSION macro (markdown-core-version.h.in is configured into the build tree and never installed). A shared-library consumer can only learn the version from pkg-config/CMake package metadata, and cannot do the compile-time-vs-runtime mismatch check the internal header's docs advertise. Related: scripts/check-release-version.mjs verifies only the MARKDOWN_CORE_VERSION_STRING line of the checked-in core/include/markdown-core-version.h, so the numeric macro could silently drift from the string.
 - Evidence: markdown_core_version/version_string exist only in core/markdown-core.h:656/662 and markdown_core.c (plus the api test); grep for 'version' in both export allowlists returns nothing; installed include/markdown_core.h contains no VERSION macro (grep rc=1); markdown-core-version.h.in is configure_file'd into the binary dir only (core/CMakeLists.txt:62-63) and the only install(FILES ...) header rule installs markdown_core.h (core/CMakeLists.txt:125). scripts/check-release-version.mjs asserts only the MARKDOWN_CORE_VERSION_STRING line of core/include/markdown-core-version.h, so the numeric MARKDOWN_CORE_VERSION macro can drift from the string unchecked.
 - Fix plan: Minimal: document in include/markdown_core.h (and the release docs) that version discovery is via pkg-config/CMake package metadata, and extend check-release-version.mjs to also assert the numeric MARKDOWN_CORE_VERSION macro encodes the VERSION file. Larger option (needs the naming-freeze process): export the two functions through the facade — header + .map + .exports + audit-public-surface.sh in one change.
-- Tests: check-release-version.mjs is the guard; extend it for the numeric macro.
+- Resolution: The numeric macro guard landed in 3ebd4e7. The installed facade header and README C consumer guidance now explicitly define version discovery as pkg-config/CMake metadata-only; no frozen facade symbol was added.
+- Tests: check-release-version.mjs guards both the string and numeric version macros.
 
-### I74 [P3-cosmetic] docs/specs/c-naming.md:18
+### I74 [FIXED `3ebd4e7`] [P3-cosmetic] docs/specs/c-naming.md:18
 
 - Verdict: CONFIRMED
 - Finding: The M4 freeze record says the platform naming set was decided as 'Commit { document, changes: Delta }', but all three shipped platform surfaces name the field delta, pinned verbatim in scripts/audit-public-surface.sh (Swift 'public let delta: Delta', Kotlin 'public val delta', ES 'readonly delta: Delta'); only the C out-parameter is named changes. The frozen-naming document therefore misstates the shipped decision it exists to record.
@@ -602,7 +631,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Doc-only edit to /Users/donz/Repos/GitHub/markdown-core/docs/specs/c-naming.md line 17: change 'Commit { document, changes: Delta }' to 'Commit { document, delta: Delta }' and add a parenthetical that the C out-parameter keeps the name changes (predates the platform decision). Do not rename any surface.
 - Tests: audit-public-surface.sh pins the three platform surfaces and runs in required CI; no test reads the spec sentence.
 
-### I75 [P3-cosmetic] packages/markdown-core/core/markdown-core.h:669
+### I75 [FIXED final sweep] [P3-cosmetic] packages/markdown-core/core/markdown-core.h:669
 
 - Verdict: CONFIRMED; surface: internal
 - Finding: typedef int32_t bufsize_t; is an unprefixed type in a cross-TU header, contradicting c-naming.md rule 6 ('Types follow the same prefix rule ... even in internal headers'), and the _t suffix is POSIX-reserved. It is also oddly placed — dangling at the bottom of the public-facing section of the internal header after the AUTHORS block rather than with the other type definitions. The header is not installed, so the exposure is limited to source-embedding builds (SwiftPM/Kotlin/ES compile these sources directly).
@@ -638,11 +667,12 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 ## Extra findings surfaced while working (not from the reader sweep)
 
-- **X01** (packages/es-markdown-core/scripts/build.mjs:117) - when spawnSync fails to
+- **X01 [FIXED `030d5f6`]** (packages/es-markdown-core/scripts/build.mjs:117) - when spawnSync fails to
   launch emcc/tsc (ENOENT: tool not on PATH), result.stdout/stderr are undefined and
   process.stderr.write(undefined) throws, masking the real error. Guard with
   result.error and print an actionable message (run scripts/init-environment.sh
-  --install emscripten; source .tools/emsdk/<ver>/emsdk_env.sh). Assign to WP5.
-- **X02** (packages/markdown-core/core/scanners.c) - the committed re2c output had been
-  generated without the Makefile flags (--no-generation-date/-i), fixed in 13e58c7;
-  consider a CI check that scanners.c is reproducible from scanners.re. Assign to WP6.
+  --install emscripten; source .tools/emsdk/<ver>/emsdk_env.sh). The WP5 fix now
+  reports the launch error directly with the remediation hint.
+- **X02 [FIXED `3ebd4e7`]** (packages/markdown-core/core/scanners.c) - the committed re2c output had been
+  generated without the Makefile flags (--no-generation-date/-i). The output was
+  regenerated in 13e58c7, and WP6 added the pinned reproducibility gate.

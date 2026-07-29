@@ -2,31 +2,31 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$ROOT_DIR/scripts/lib/discover-toolchain.sh"
 cd "$ROOT_DIR"
-
-if [ -z "${JAVA_HOME:-}" ] && [ -x "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" ]; then
-    JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-    export JAVA_HOME
-fi
-if [ -z "${ANDROID_HOME:-}" ] && [ -d "$HOME/Library/Android/sdk" ]; then
-    ANDROID_HOME="$HOME/Library/Android/sdk"
-    export ANDROID_HOME
-fi
 
 # Download and validate the pinned distribution before locating its Tooling API.
 scripts/gradle.sh --version >/dev/null
 
-GRADLE_USER_HOME=${GRADLE_USER_HOME:-$HOME/.gradle}
-tooling_jar=$(find "$GRADLE_USER_HOME/wrapper/dists" \
-    -path '*/gradle-9.6.1/lib/gradle-tooling-api-9.6.1.jar' \
-    -print | head -n 1)
-
-if [ -z "$tooling_jar" ]; then
-    echo "Gradle Tooling API 9.6.1 was not found under $GRADLE_USER_HOME/wrapper/dists" >&2
+gradle_version=$(sed -n \
+    's#^distributionUrl=.*gradle-\([0-9][0-9.]*\)-bin\.zip$#\1#p' \
+    gradle/wrapper/gradle-wrapper.properties)
+if [ -z "$gradle_version" ]; then
+    echo "Could not derive the Gradle version from gradle-wrapper.properties" >&2
     exit 1
 fi
 
-gradle_home=${tooling_jar%/lib/gradle-tooling-api-9.6.1.jar}
+GRADLE_USER_HOME=${GRADLE_USER_HOME:-$HOME/.gradle}
+tooling_jar=$(find "$GRADLE_USER_HOME/wrapper/dists" \
+    -path "*/gradle-$gradle_version/lib/gradle-tooling-api-$gradle_version.jar" \
+    -print | head -n 1)
+
+if [ -z "$tooling_jar" ]; then
+    echo "Gradle Tooling API $gradle_version was not found under $GRADLE_USER_HOME/wrapper/dists" >&2
+    exit 1
+fi
+
+gradle_home=$(dirname "$(dirname "$tooling_jar")")
 temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 

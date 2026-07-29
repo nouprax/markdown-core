@@ -3,9 +3,9 @@
 #include <stdlib.h>
 #include "ext_scanners.h"
 
-bufsize_t markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset)
+markdown_core_bufsize markdown_core_ext_scan_at(markdown_core_bufsize (*scanner)(const unsigned char *), unsigned char *ptr, int len, markdown_core_bufsize offset)
 {
-	bufsize_t res;
+	markdown_core_bufsize res;
 
         if (ptr == NULL || offset >= len) {
           return 0;
@@ -36,7 +36,6 @@ bufsize_t markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *),
   tasklist = ("[ ]"|"[x]"|"[X]")spacechar+;
 
   formula_dollar_inline_open = [$];
-  formula_dollar_backtick_open = [$][`];
   formula_dollar_display_open = [$][$];
   formula_latex_backslash_inline_open = [\\][\\][(];
   formula_latex_backslash_display_open = [\\][\\]"[";
@@ -45,19 +44,19 @@ bufsize_t markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *),
   directive_name = directive_name_char+;
 */
 
-bufsize_t markdown_core_scan_table_start(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_table_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
   /*!re2c
     [|]? table_marker ([|] table_marker)* [|]? spacechar* newline {
-      return (bufsize_t)(p - start);
+      return (markdown_core_bufsize)(p - start);
     }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_table_cell(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_table_cell(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -65,92 +64,83 @@ bufsize_t markdown_core_scan_table_cell(const unsigned char *p)
     // In fact, `table_cell` matches non-empty table cells only. The empty
     // string is also a valid table cell, but is handled by the default rule.
     // This approach prevents re2c's match-empty-string warning.
-    table_cell { return (bufsize_t)(p - start); }
+    table_cell { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_table_cell_end(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_table_cell_end(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
-    [|] spacechar* { return (bufsize_t)(p - start); }
+    [|] spacechar* { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_table_row_end(const unsigned char *p)
-{
-  const unsigned char *marker = NULL;
-  const unsigned char *start = p;
-  /*!re2c
-    spacechar* newline { return (bufsize_t)(p - start); }
-    * { return 0; }
-  */
-}
-
-bufsize_t markdown_core_scan_tasklist(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_table_row_end(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
   /*!re2c
-    tasklist { return (bufsize_t)(p - start); }
+    spacechar* newline { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_formula_dollar_inline_open(const unsigned char *p)
-{
-  const unsigned char *start = p;
-  /*!re2c
-    formula_dollar_inline_open { return (bufsize_t)(p - start); }
-    * { return 0; }
-  */
-}
-
-bufsize_t markdown_core_scan_formula_dollar_backtick_open(const unsigned char *p)
-{
-  const unsigned char *start = p;
-  /*!re2c
-    formula_dollar_backtick_open { return (bufsize_t)(p - start); }
-    * { return 0; }
-  */
-}
-
-bufsize_t markdown_core_scan_formula_dollar_display_open(const unsigned char *p)
-{
-  const unsigned char *start = p;
-  /*!re2c
-    formula_dollar_display_open { return (bufsize_t)(p - start); }
-    * { return 0; }
-  */
-}
-
-bufsize_t markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_tasklist(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
   /*!re2c
-    formula_latex_backslash_inline_open { return (bufsize_t)(p - start); }
+    tasklist { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_formula_dollar_inline_open(const unsigned char *p)
+{
+  const unsigned char *start = p;
+  /*!re2c
+    formula_dollar_inline_open { return (markdown_core_bufsize)(p - start); }
+    * { return 0; }
+  */
+}
+
+markdown_core_bufsize markdown_core_scan_formula_dollar_display_open(const unsigned char *p)
+{
+  const unsigned char *start = p;
+  /*!re2c
+    formula_dollar_display_open { return (markdown_core_bufsize)(p - start); }
+    * { return 0; }
+  */
+}
+
+markdown_core_bufsize markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
   /*!re2c
-    formula_latex_backslash_display_open { return (bufsize_t)(p - start); }
+    formula_latex_backslash_inline_open { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }
 
-bufsize_t markdown_core_scan_directive_name(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p)
+{
+  const unsigned char *marker = NULL;
+  const unsigned char *start = p;
+  /*!re2c
+    formula_latex_backslash_display_open { return (markdown_core_bufsize)(p - start); }
+    * { return 0; }
+  */
+}
+
+markdown_core_bufsize markdown_core_scan_directive_name(const unsigned char *p)
 {
   const unsigned char *start = p;
   /*!re2c
-    directive_name { return (bufsize_t)(p - start); }
+    directive_name { return (markdown_core_bufsize)(p - start); }
     * { return 0; }
   */
 }

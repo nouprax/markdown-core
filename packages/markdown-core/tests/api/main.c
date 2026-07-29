@@ -59,8 +59,12 @@ static const char *const node_type_names[] = {
 };
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
-static void
-test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text, const char *msg);
+static void test_md_paragraph_text(
+    test_batch_runner *runner,
+    const char *markdown,
+    const char *expected_text,
+    const char *msg
+);
 
 static void test_md_paragraph_text_options(
     test_batch_runner *runner,
@@ -1252,8 +1256,12 @@ static void test_md_paragraph_text_options(
     markdown_core_node_free(doc);
 }
 
-static void
-test_md_paragraph_text(test_batch_runner *runner, const char *markdown, const char *expected_text, const char *msg) {
+static void test_md_paragraph_text(
+    test_batch_runner *runner,
+    const char *markdown,
+    const char *expected_text,
+    const char *msg
+) {
     test_md_paragraph_text_options(
         runner,
         markdown,

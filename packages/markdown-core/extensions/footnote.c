@@ -23,6 +23,21 @@ typedef struct {
     size_t capacity;
 } node_list;
 
+typedef struct {
+    markdown_core_node **slots;
+    size_t count;
+    size_t capacity;
+} node_set;
+
+static uint64_t footnote_mix64(uint64_t x) {
+    x ^= x >> 33;
+    x *= UINT64_C(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x *= UINT64_C(0xc4ceb9fe1a85ec53);
+    x ^= x >> 33;
+    return x;
+}
+
 static bool node_list_push(markdown_core_mem *mem, node_list *list, markdown_core_node *node) {
     if (list->count == list->capacity) {
         size_t capacity = list->capacity ? list->capacity * 2 : 16;
@@ -35,6 +50,84 @@ static bool node_list_push(markdown_core_mem *mem, node_list *list, markdown_cor
     }
     list->items[list->count++] = node;
     return true;
+}
+
+static bool node_set_grow(markdown_core_mem *mem, node_set *set) {
+    size_t capacity = set->capacity ? set->capacity * 2 : 16;
+    markdown_core_node **slots;
+    size_t i;
+
+    if (capacity < set->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
+        return false;
+    }
+    slots = (markdown_core_node **)mem->calloc(mem, capacity, sizeof(*slots));
+    if (!slots) {
+        return false;
+    }
+    for (i = 0; i < set->capacity; i++) {
+        markdown_core_node *node = set->slots[i];
+        if (node) {
+            size_t mask = capacity - 1;
+            size_t slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
+            while (slots[slot]) {
+                slot = (slot + 1) & mask;
+            }
+            slots[slot] = node;
+        }
+    }
+    if (set->slots) {
+        mem->free(mem, set->slots);
+    }
+    set->slots = slots;
+    set->capacity = capacity;
+    return true;
+}
+
+static bool node_set_holds(const node_set *set, const markdown_core_node *node) {
+    size_t mask;
+    size_t slot;
+
+    if (set->capacity == 0) {
+        return false;
+    }
+    mask = set->capacity - 1;
+    slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
+    while (set->slots[slot]) {
+        if (set->slots[slot] == node) {
+            return true;
+        }
+        slot = (slot + 1) & mask;
+    }
+    return false;
+}
+
+/* Growth is transactional and happens only during the collection phase,
+ * before any live node is mutated. */
+static bool node_set_put(markdown_core_mem *mem, node_set *set, markdown_core_node *node) {
+    if (set->capacity == 0 || set->count >= set->capacity / 2) {
+        if (!node_set_grow(mem, set)) {
+            return false;
+        }
+    }
+
+    size_t mask = set->capacity - 1;
+    size_t slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
+    while (set->slots[slot] && set->slots[slot] != node) {
+        slot = (slot + 1) & mask;
+    }
+    if (set->slots[slot] == node) {
+        return true;
+    }
+    set->slots[slot] = node;
+    set->count++;
+    return true;
+}
+
+static void node_set_release(markdown_core_mem *mem, node_set *set) {
+    if (set->slots) {
+        mem->free(mem, set->slots);
+    }
+    memset(set, 0, sizeof(*set));
 }
 
 bool markdown_core_footnote_site_push(
@@ -139,14 +232,17 @@ void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core
     memset(labels, 0, sizeof(*labels));
 }
 
-size_t
-markdown_core_session_footnote_label(markdown_core_session *session, const markdown_core_chunk *label, bool *failed) {
+size_t markdown_core_session_footnote_label(
+    markdown_core_session *session,
+    const markdown_core_chunk *label,
+    bool *failed
+) {
     markdown_core_mem *mem = session->mem;
     markdown_core_footnote_labels *labels = &session->footnote_labels;
     markdown_core_chunk copy = *label;
     int lost = 0;
     unsigned char *normalized;
-    bufsize_t normalized_len;
+    markdown_core_bufsize normalized_len;
     void *existing;
 
     *failed = false;
@@ -155,7 +251,7 @@ markdown_core_session_footnote_label(markdown_core_session *session, const markd
         *failed = lost != 0;
         return SIZE_MAX;
     }
-    normalized_len = (bufsize_t)strlen((char *)normalized);
+    normalized_len = (markdown_core_bufsize)strlen((char *)normalized);
 
     // A failed init leaves `mem` set with no slots; probe the slots so the
     // next call retries instead of walking a zero-capacity table.
@@ -228,17 +324,10 @@ bool markdown_core_session_footnote_label_sites(
 
 #define FOOTNOTE_TOMBSTONE UINT64_MAX
 
-static uint64_t footnote_mix64(uint64_t x) {
-    x ^= x >> 33;
-    x *= UINT64_C(0xff51afd7ed558ccd);
-    x ^= x >> 33;
-    x *= UINT64_C(0xc4ceb9fe1a85ec53);
-    x ^= x >> 33;
-    return x;
-}
-
-markdown_core_footnote_record *
-markdown_core_footnote_table_find(const markdown_core_footnote_table *table, markdown_core_node_id id) {
+markdown_core_footnote_record *markdown_core_footnote_table_find(
+    const markdown_core_footnote_table *table,
+    markdown_core_node_id id
+) {
     size_t mask;
     size_t slot;
     if (table->capacity == 0) {
@@ -533,24 +622,16 @@ bool markdown_core_footnote_index_build(
     return markdown_core_footnote_index_build_sites(mem, &defs, &refs, index);
 }
 
-static const markdown_core_footnote_record *
-find_record(const markdown_core_footnote_index *index, markdown_core_node_id id) {
+static const markdown_core_footnote_record *find_record(
+    const markdown_core_footnote_index *index,
+    markdown_core_node_id id
+) {
     return markdown_core_footnote_table_find(&index->records, id);
 }
 
 static bool info_equal(const markdown_core_footnote_info *a, const markdown_core_footnote_info *b) {
     return a->definition == b->definition && a->number == b->number && a->reference_ordinal == b->reference_ordinal &&
            a->reference_count == b->reference_count;
-}
-
-static bool node_list_holds(const node_list *list, const markdown_core_node *node) {
-    size_t i;
-    for (i = 0; i < list->count; i++) {
-        if (list->items[i] == node) {
-            return true;
-        }
-    }
-    return false;
 }
 
 bool markdown_core_footnote_index_diff(
@@ -567,6 +648,7 @@ bool markdown_core_footnote_index_diff(
     // committed node exactly as it was.
     node_list changed = {NULL, 0, 0};
     node_list bubbled = {NULL, 0, 0};
+    node_set affected = {NULL, 0, 0};
     bool ok = false;
     size_t i;
 
@@ -578,7 +660,7 @@ bool markdown_core_footnote_index_diff(
             continue;
         }
         node = next->records.records[i].node;
-        if (node->last_changed_rev == new_rev || node_list_holds(&changed, node) || node_list_holds(&bubbled, node)) {
+        if (node->last_changed_rev == new_rev || node_set_holds(&affected, node)) {
             continue; // already reported by the adoption walk or this diff
         }
         old = find_record(previous, node->id);
@@ -588,13 +670,19 @@ bool markdown_core_footnote_index_diff(
         if (!node_list_push(mem, &changed, node)) {
             goto done;
         }
+        if (!node_set_put(mem, &affected, node)) {
+            goto done;
+        }
         // Ancestors already carrying (or collected for) their own bump
         // covered the rest of the chain.
         for (parent = node->parent; parent && parent->last_changed_rev != new_rev; parent = parent->parent) {
-            if (node_list_holds(&bubbled, parent) || node_list_holds(&changed, parent)) {
+            if (node_set_holds(&affected, parent)) {
                 break;
             }
             if (!node_list_push(mem, &bubbled, parent)) {
+                goto done;
+            }
+            if (!node_set_put(mem, &affected, parent)) {
                 goto done;
             }
         }
@@ -626,6 +714,7 @@ done:
     if (bubbled.items) {
         mem->free(mem, bubbled.items);
     }
+    node_set_release(mem, &affected);
     return ok;
 }
 

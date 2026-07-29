@@ -440,8 +440,12 @@ typedef struct session_worker {
 
 // Clears the session text, then streams `input` byte-by-byte with a commit
 // (and discarded delta) per byte. Hands back a determinism-checked dump.
-static int
-session_stream_once(markdown_core_session *session, const char *input, uint8_t **dump_out, size_t *length_out) {
+static int session_stream_once(
+    markdown_core_session *session,
+    const char *input,
+    uint8_t **dump_out,
+    size_t *length_out
+) {
     markdown_core_error *error = NULL;
     size_t existing = markdown_core_session_length(session);
 

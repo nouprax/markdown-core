@@ -6,6 +6,15 @@
 #include <stdint.h>
 
 /*
+ * Version discovery
+ * =================
+ *
+ * This installed facade intentionally exposes no compile-time version macro
+ * or runtime version function. Discover the installed package version through
+ * its markdown-core pkg-config or CMake package metadata.
+ */
+
+/*
  * Thread safety and ownership contract
  * ====================================
  *
@@ -210,8 +219,10 @@ MARKDOWN_CORE_API bool markdown_core_node_list_properties(
     markdown_core_optional_i64 *start,
     bool *tight
 );
-MARKDOWN_CORE_API bool
-markdown_core_node_list_item_checked(const markdown_core_node *node, markdown_core_optional_bool *checked);
+MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(
+    const markdown_core_node *node,
+    markdown_core_optional_bool *checked
+);
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
     markdown_core_string_view *info,
@@ -241,10 +252,12 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     bool *has_label,
     size_t *label_count
 );
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_label_child(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_content_child(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_first_label_child(
+    const markdown_core_node *node
+);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_first_content_child(
+    const markdown_core_node *node
+);
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string_view *destination,
@@ -288,8 +301,10 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /** Opens an empty session at revision 0. `options == NULL` selects the
  * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_session *
-markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+);
 MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
 
 /** Replaces bytes [byte_start, byte_end) of the stored text with
@@ -323,8 +338,10 @@ MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_se
  * identity even when ids collide numerically. */
 MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
 MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_session_node_by_id(const markdown_core_session *session, markdown_core_node_id id);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(
+    const markdown_core_session *session,
+    markdown_core_node_id id
+);
 
 /*
  * Footnote queries
@@ -399,8 +416,11 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const 
  * fields or direct child list changed, and `bubbled` lists ancestors whose
  * revision advanced only because a descendant changed. Ids of removed nodes
  * are retired and never reused. */
-MARKDOWN_CORE_API void
-markdown_core_delta_revisions(const markdown_core_delta *changes, uint64_t *before, uint64_t *after);
+MARKDOWN_CORE_API void markdown_core_delta_revisions(
+    const markdown_core_delta *changes,
+    uint64_t *before,
+    uint64_t *after
+);
 MARKDOWN_CORE_API size_t
 markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t

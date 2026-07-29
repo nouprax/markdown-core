@@ -37,27 +37,6 @@ bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node
     }
 }
 
-static bool parse_node_item_prefix(markdown_core_parser *parser, const char *input, markdown_core_node *container) {
-    bool res = false;
-
-    if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
-        markdown_core_parser_advance_offset(
-            parser,
-            input,
-            container->as.list.marker_offset + container->as.list.padding,
-            true
-        );
-        res = true;
-    } else if (parser->blank && container->first_child != NULL) {
-        // if container->first_child is NULL, then the opening line
-        // of the list item was blank after the list marker; in this
-        // case, we are done with the list item.
-        markdown_core_parser_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
-        res = true;
-    }
-    return res;
-}
-
 static int matches(
     markdown_core_extension *self,
     markdown_core_parser *parser,
@@ -65,11 +44,15 @@ static int matches(
     int len,
     markdown_core_node *parent_container
 ) {
-    return parse_node_item_prefix(parser, (const char *)input, parent_container);
+    markdown_core_chunk input_chunk = {input, len, 0};
+    return markdown_core_parser_match_list_item_prefix(parser, &input_chunk, parent_container);
 }
 
-static int
-can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
+static int can_contain(
+    markdown_core_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
     return (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) ? 1 : 0;
 }
 
@@ -91,7 +74,7 @@ static markdown_core_node *open_tasklist_item(
     // there (rather than offset 0) lets us match task markers nested inside
     // container blocks like block quotes, where the input still starts with
     // the container's prefix.
-    bufsize_t matched = scan_tasklist(input, len, parser->first_nonspace);
+    markdown_core_bufsize matched = scan_tasklist(input, len, parser->first_nonspace);
     if (!matched) {
         return NULL;
     }

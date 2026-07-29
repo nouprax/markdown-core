@@ -3,9 +3,9 @@
 #include "chunk.h"
 #include "scanners.h"
 
-bufsize_t markdown_core_scan_at(bufsize_t (*scanner)(const unsigned char *), markdown_core_chunk *c, bufsize_t offset)
+markdown_core_bufsize markdown_core_scan_at(markdown_core_bufsize (*scanner)(const unsigned char *), markdown_core_chunk *c, markdown_core_bufsize offset)
 {
-	bufsize_t res;
+	markdown_core_bufsize res;
 	unsigned char *ptr = (unsigned char *)c->data;
 
         if (ptr == NULL || offset > c->len) {
@@ -24,7 +24,7 @@ bufsize_t markdown_core_scan_at(bufsize_t (*scanner)(const unsigned char *), mar
 
 
 // Try to match URI autolink after first <, returning number of chars matched.
-bufsize_t markdown_core_scan_autolink_uri(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_autolink_uri(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -180,7 +180,7 @@ yy8:
 	}
 yy9:
 	++p;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy10:
 	yych = *++p;
 	if (yych <= 0x7F) goto yy5;
@@ -657,7 +657,7 @@ yy17:
 }
 
 // Try to match email autolink after first <, returning num of chars matched.
-bufsize_t markdown_core_scan_autolink_email(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_autolink_email(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -829,7 +829,7 @@ yy27:
 	}
 yy28:
 	++p;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy29:
 	yych = *++p;
 	if (yych <= '9') {
@@ -3113,7 +3113,7 @@ yy149:
 }
 
 // Try to match an HTML tag after first <, returning num of chars matched.
-bufsize_t markdown_core_scan_html_tag(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_tag(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -3262,7 +3262,7 @@ yy160:
 	if (yych != '>') goto yy156;
 yy161:
 	++p;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy162:
 	yych = *++p;
 	if (yych <= 0x1F) {
@@ -3540,7 +3540,7 @@ yy190:
 
 }
 
-bufsize_t markdown_core_scan_html_comment(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_comment(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -3697,12 +3697,12 @@ yy204:
 		}
 	}
 	++p;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
 
-bufsize_t markdown_core_scan_html_pi(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_pi(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -3794,7 +3794,7 @@ yy209:
 		}
 	}
 yy210:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy211:
 	yyaccept = 1;
 	yych = *(marker = ++p);
@@ -3915,7 +3915,7 @@ yy227:
 
 }
 
-bufsize_t markdown_core_scan_html_declaration(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_declaration(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -3993,7 +3993,7 @@ yy232:
 		}
 	}
 yy233:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy234:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy234;
@@ -4043,7 +4043,7 @@ yy242:
 
 }
 
-bufsize_t markdown_core_scan_html_cdata(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_cdata(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -4139,7 +4139,7 @@ yy251:
 		}
 	}
 yy252:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy253:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy251;
@@ -4230,7 +4230,7 @@ yy261:
 // Try to match an HTML block tag start line, returning
 // an integer code for the type of block (1-6, matching the spec).
 // #7 is handled by a separate function, below.
-bufsize_t markdown_core_scan_html_block_start(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 
@@ -5538,7 +5538,7 @@ yy424:
 
 // Try to match an HTML block tag start line of type 7, returning
 // 7 if successful, 0 if not.
-bufsize_t markdown_core_scan_html_block_start_7(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_start_7(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 
@@ -5977,7 +5977,7 @@ yy465:
 }
 
 // Try to match an HTML block end line of type 1
-bufsize_t markdown_core_scan_html_block_end_1(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_end_1(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -6659,7 +6659,7 @@ yy501:
 		}
 	}
 yy502:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy503:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy481;
@@ -6873,7 +6873,7 @@ yy508:
 }
 
 // Try to match an HTML block end line of type 2
-bufsize_t markdown_core_scan_html_block_end_2(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_end_2(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -7145,13 +7145,13 @@ yy533:
 		}
 	}
 yy534:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
 
 // Try to match an HTML block end line of type 3
-bufsize_t markdown_core_scan_html_block_end_3(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_end_3(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -7401,13 +7401,13 @@ yy558:
 		}
 	}
 yy559:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
 
 // Try to match an HTML block end line of type 4
-bufsize_t markdown_core_scan_html_block_end_4(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_end_4(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -7512,7 +7512,7 @@ yy564:
 		}
 	}
 yy565:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy566:
 	yyaccept = 0;
 	yych = *(marker = ++p);
@@ -7622,7 +7622,7 @@ yy582:
 }
 
 // Try to match an HTML block end line of type 5
-bufsize_t markdown_core_scan_html_block_end_5(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_html_block_end_5(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -7894,7 +7894,7 @@ yy607:
 		}
 	}
 yy608:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
@@ -7902,7 +7902,7 @@ yy608:
 // Try to match a link title (in single quotes, in double quotes, or
 // in parentheses), returning number of chars matched.  Allow one
 // level of internal nesting (quotes within quotes).
-bufsize_t markdown_core_scan_link_title(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_link_title(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -8019,7 +8019,7 @@ yy616:
 yy617:
 	++p;
 yy618:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy619:
 	yych = *++p;
 	if (yybm[0+yych] & 16) goto yy614;
@@ -8105,7 +8105,7 @@ yy628:
 yy629:
 	++p;
 yy630:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy631:
 	yych = *++p;
 	if (yybm[0+yych] & 64) goto yy627;
@@ -8191,7 +8191,7 @@ yy640:
 yy641:
 	++p;
 yy642:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy643:
 	yych = *++p;
 	if (yych <= 0xDF) {
@@ -8331,7 +8331,7 @@ yy653:
 }
 
 // Match space characters, including newlines.
-bufsize_t markdown_core_scan_spacechars(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_spacechars(const unsigned char *p)
 {
   const unsigned char *start = p; \
 
@@ -8378,13 +8378,13 @@ bufsize_t markdown_core_scan_spacechars(const unsigned char *p)
 yy655:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy655;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
 
 // Match ATX heading start.
-bufsize_t markdown_core_scan_atx_heading_start(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_atx_heading_start(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -8446,7 +8446,7 @@ yy659:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy659;
 yy660:
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy661:
 	++p;
 	goto yy660;
@@ -8506,7 +8506,7 @@ yy664:
 
 // Match setext heading line.  Return 1 for level-1 heading,
 // 2 for level-2, 0 for no match.
-bufsize_t markdown_core_scan_setext_heading_line(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_setext_heading_line(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
 
@@ -8634,7 +8634,7 @@ yy677:
 }
 
 // Scan an opening code fence.
-bufsize_t markdown_core_scan_open_code_fence(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_open_code_fence(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -8831,7 +8831,7 @@ yy687:
 yy688:
 	++p;
 	p = marker;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy689:
 	yych = *++p;
 	if (yych <= 0x7F) goto yy683;
@@ -8893,7 +8893,7 @@ yy696:
 yy697:
 	++p;
 	p = marker;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy698:
 	yych = *++p;
 	if (yych <= 0x7F) goto yy683;
@@ -8934,7 +8934,7 @@ yy704:
 }
 
 // Scan a closing code fence with length at least len.
-bufsize_t markdown_core_scan_close_code_fence(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_close_code_fence(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -9058,7 +9058,7 @@ yy714:
 yy715:
 	++p;
 	p = marker;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 yy716:
 	yych = *++p;
 	if (yych <= '\f') {
@@ -9073,13 +9073,13 @@ yy716:
 yy717:
 	++p;
 	p = marker;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }
 
 // Scans a footnote definition opening.
-bufsize_t markdown_core_scan_footnote_definition(const unsigned char *p)
+markdown_core_bufsize markdown_core_scan_footnote_definition(const unsigned char *p)
 {
   const unsigned char *marker = NULL;
   const unsigned char *start = p;
@@ -9199,7 +9199,7 @@ yy731:
 yy732:
 	yych = *++p;
 	if (yybm[0+yych] & 128) goto yy732;
-	{ return (bufsize_t)(p - start); }
+	{ return (markdown_core_bufsize)(p - start); }
 }
 
 }

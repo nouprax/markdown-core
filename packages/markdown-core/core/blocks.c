@@ -44,7 +44,7 @@
 
 static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
     markdown_core_chunk *literal;
-    bufsize_t offset = 0;
+    markdown_core_bufsize offset = 0;
 
     if (node->type != MARKDOWN_CORE_NODE_HTML_BLOCK && node->type != MARKDOWN_CORE_NODE_HTML) {
         return false;
@@ -128,10 +128,14 @@ static MARKDOWN_CORE_INLINE bool S_is_space_or_tab(char c) { return (c == ' ' ||
 
 static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof);
 
-static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes);
+static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, markdown_core_bufsize bytes);
 
-static markdown_core_node *
-make_block(markdown_core_mem *mem, markdown_core_node_type tag, int start_line, int start_column) {
+static markdown_core_node *make_block(
+    markdown_core_mem *mem,
+    markdown_core_node_type tag,
+    int start_line,
+    int start_column
+) {
     markdown_core_node *e;
 
     e = (markdown_core_node *)mem->calloc(mem, 1, sizeof(*e));
@@ -302,7 +306,7 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b);
 
 // Returns true if line has only space characters, else false.
-static bool is_blank(markdown_core_strbuf *s, bufsize_t offset) {
+static bool is_blank(markdown_core_strbuf *s, markdown_core_bufsize offset) {
     while (offset < s->size) {
         switch (s->ptr[offset]) {
         case '\r':
@@ -363,7 +367,7 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
 }
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
-    bufsize_t i;
+    markdown_core_bufsize i;
     unsigned char c;
 
     for (i = ln->size - 1; i >= 0; --i) {
@@ -424,7 +428,7 @@ static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, mar
 
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
-    bufsize_t pos;
+    markdown_core_bufsize pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     if (parser->refmap) {
@@ -463,7 +467,7 @@ static void S_reanchor_vanishing_definitions(markdown_core_parser *parser, markd
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
-    bufsize_t pos;
+    markdown_core_bufsize pos;
     markdown_core_node *item;
     markdown_core_node *subitem;
     markdown_core_node *parent;
@@ -677,8 +681,12 @@ static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
     return unit;
 }
 
-static void
-S_parse_node_inlines(markdown_core_parser *parser, markdown_core_node *cur, markdown_core_map *refmap, int options) {
+static void S_parse_node_inlines(
+    markdown_core_parser *parser,
+    markdown_core_node *cur,
+    markdown_core_map *refmap,
+    int options
+) {
     if (refmap && refmap->lookup_sink) {
         refmap->lookup_unit = S_lookup_attribution(cur);
     }
@@ -687,7 +695,13 @@ S_parse_node_inlines(markdown_core_parser *parser, markdown_core_node *cur, mark
      * the commit transplants later, so inline parsing starts at the seam.
      * One-shot parses never set user_data. */
     if (cur->user_data) {
-        markdown_core_parse_inlines_from(parser, cur, refmap, options, (bufsize_t)((uintptr_t)cur->user_data - 1));
+        markdown_core_parse_inlines_from(
+            parser,
+            cur,
+            refmap,
+            options,
+            (markdown_core_bufsize)((uintptr_t)cur->user_data - 1)
+        );
         return;
     }
     markdown_core_parse_inlines(parser, cur, refmap, options);
@@ -724,18 +738,18 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
 // Attempts to parse a list item marker (bullet or enumerated).
 // On success, returns length of the marker, and populates
 // data with the details.  On failure, returns 0.
-static bufsize_t parse_list_marker(
+static markdown_core_bufsize parse_list_marker(
     markdown_core_parser *parser,
     markdown_core_chunk *input,
-    bufsize_t pos,
+    markdown_core_bufsize pos,
     bool interrupts_paragraph,
     markdown_core_list **dataptr
 ) {
     markdown_core_mem *mem = parser->mem;
     unsigned char c;
-    bufsize_t startpos;
+    markdown_core_bufsize startpos;
     markdown_core_list *data;
-    bufsize_t i;
+    markdown_core_bufsize i;
 
     startpos = pos;
     c = peek_at(input, pos);
@@ -892,7 +906,7 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
     parser->last_buffer_ended_with_cr = false;
     while (buffer < end) {
         const unsigned char *eol;
-        bufsize_t chunk_len;
+        markdown_core_bufsize chunk_len;
         bool process = false;
         for (eol = buffer; eol < end; ++eol) {
             if (S_is_line_end_char(*eol)) {
@@ -907,7 +921,7 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
             process = true;
         }
 
-        chunk_len = (bufsize_t)(eol - buffer);
+        chunk_len = (markdown_core_bufsize)(eol - buffer);
         if (process) {
             if (parser->linebuf.size > 0) {
                 markdown_core_strbuf_put(&parser->linebuf, buffer, chunk_len);
@@ -949,7 +963,7 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
 }
 
 static void chop_trailing_hashtags(markdown_core_chunk *ch) {
-    bufsize_t n, orig_n;
+    markdown_core_bufsize n, orig_n;
 
     markdown_core_chunk_rtrim(ch);
     orig_n = n = ch->len - 1;
@@ -972,8 +986,12 @@ static void chop_trailing_hashtags(markdown_core_chunk *ch) {
 // "...three or more hyphens, asterisks,
 // or underscores on a line by themselves. If you wish, you may use
 // spaces between the hyphens or asterisks."
-static int S_scan_thematic_break(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t offset) {
-    bufsize_t i;
+static int S_scan_thematic_break(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_bufsize offset
+) {
+    markdown_core_bufsize i;
     char c;
     char nextc = '\0';
     int count;
@@ -1040,7 +1058,12 @@ static void S_find_first_nonspace(markdown_core_parser *parser, markdown_core_ch
 // indicates a number of columns; otherwise, a number of bytes.
 // If advancing a certain number of columns partially consumes
 // a tab character, parser->partially_consumed_tab is set to true.
-static void S_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count, bool columns) {
+static void S_advance_offset(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_bufsize count,
+    bool columns
+) {
     char c;
     int chars_to_tab;
     int chars_to_advance;
@@ -1095,7 +1118,7 @@ static bool S_open_chain_defs_only(markdown_core_node *root) {
 
 static bool parse_block_quote_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
     bool res = false;
-    bufsize_t matched = 0;
+    markdown_core_bufsize matched = 0;
 
     matched = parser->indent <= 3 && peek_at(input, parser->first_nonspace) == '>';
     if (matched) {
@@ -1126,8 +1149,11 @@ static bool parse_footnote_definition_block_prefix(
     return false;
 }
 
-static bool
-parse_node_item_prefix(markdown_core_parser *parser, markdown_core_chunk *input, markdown_core_node *container) {
+bool markdown_core_parser_match_list_item_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container
+) {
     bool res = false;
 
     if (parser->indent >= container->as.list.marker_offset + container->as.list.padding) {
@@ -1160,7 +1186,7 @@ static bool parse_code_block_prefix(
             res = true;
         }
     } else { // fenced
-        bufsize_t matched = 0;
+        markdown_core_bufsize matched = 0;
 
         if (parser->indent <= 3 && (peek_at(input, parser->first_nonspace) == container->as.code.fence_char)) {
             matched = scan_close_code_fence(input, parser->first_nonspace);
@@ -1211,8 +1237,11 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
     return res;
 }
 
-static bool
-parse_extension_block(markdown_core_parser *parser, markdown_core_node *container, markdown_core_chunk *input) {
+static bool parse_extension_block(
+    markdown_core_parser *parser,
+    markdown_core_node *container,
+    markdown_core_chunk *input
+) {
     bool res = false;
 
     if (container->extension->last_block_matches) {
@@ -1233,8 +1262,11 @@ parse_extension_block(markdown_core_parser *parser, markdown_core_node *containe
  *
  * Returns: The last matching node, or NULL
  */
-static markdown_core_node *
-check_open_blocks(markdown_core_parser *parser, markdown_core_chunk *input, bool *all_matched) {
+static markdown_core_node *check_open_blocks(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    bool *all_matched
+) {
     bool should_continue = true;
     *all_matched = false;
     markdown_core_node *container = parser->root;
@@ -1260,7 +1292,7 @@ check_open_blocks(markdown_core_parser *parser, markdown_core_chunk *input, bool
             }
             break;
         case MARKDOWN_CORE_NODE_LIST_ITEM:
-            if (!parse_node_item_prefix(parser, input, container)) {
+            if (!markdown_core_parser_match_list_item_prefix(parser, input, container)) {
                 goto done;
             }
             break;
@@ -1316,7 +1348,7 @@ static void open_new_blocks(
     markdown_core_list *data = NULL;
     bool maybe_lazy = S_type(parser->current) == MARKDOWN_CORE_NODE_PARAGRAPH;
     markdown_core_node_type cont_type = S_type(*container);
-    bufsize_t matched = 0;
+    markdown_core_bufsize matched = 0;
     int lev = 0;
     bool save_partially_consumed_tab;
     bool has_content;
@@ -1332,7 +1364,7 @@ static void open_new_blocks(
 
         if (!indented && peek_at(input, parser->first_nonspace) == '>') {
 
-            bufsize_t blockquote_startpos = parser->first_nonspace;
+            markdown_core_bufsize blockquote_startpos = parser->first_nonspace;
 
             S_advance_offset(parser, input, parser->first_nonspace + 1 - parser->offset, false);
             // optional following character
@@ -1345,9 +1377,9 @@ static void open_new_blocks(
             }
 
         } else if (!indented && (matched = scan_atx_heading_start(input, parser->first_nonspace))) {
-            bufsize_t hashpos;
+            markdown_core_bufsize hashpos;
             int level = 0;
-            bufsize_t heading_startpos = parser->first_nonspace;
+            markdown_core_bufsize heading_startpos = parser->first_nonspace;
 
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_HEADING, heading_startpos + 1);
@@ -1668,7 +1700,7 @@ static void add_text_to_container(
 }
 
 /* See http://spec.commonmark.org/0.24/#phase-1-block-structure */
-static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, bufsize_t bytes) {
+static void S_process_line(markdown_core_parser *parser, const unsigned char *buffer, markdown_core_bufsize bytes) {
     markdown_core_node *last_matched_container;
     bool all_matched = true;
     markdown_core_node *container;
@@ -1765,8 +1797,11 @@ finished:
  * may end up replaced (formula promotion) or removed (comment HTML block);
  * the caller must precompute its traversal successor. Returns the node the
  * unit became (the unit itself when nothing replaced it). */
-static markdown_core_node *
-S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
+static markdown_core_node *S_postprocess_unit(
+    markdown_core_parser *parser,
+    markdown_core_node *unit,
+    bool owns_inlines
+) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
 
@@ -1827,8 +1862,11 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
     }
 }
 
-markdown_core_node *
-markdown_core_parser_refine_unit(markdown_core_parser *parser, markdown_core_map *refmap, markdown_core_node *unit) {
+markdown_core_node *markdown_core_parser_refine_unit(
+    markdown_core_parser *parser,
+    markdown_core_map *refmap,
+    markdown_core_node *unit
+) {
     markdown_core_iter *iter = markdown_core_iter_new(unit);
     markdown_core_node *cur;
     markdown_core_event_type ev_type;
@@ -1904,7 +1942,7 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser) {
 
 int markdown_core_parser_get_line_number(markdown_core_parser *parser) { return parser->line_number; }
 
-bufsize_t markdown_core_parser_get_offset(markdown_core_parser *parser) { return parser->offset; }
+markdown_core_bufsize markdown_core_parser_get_offset(markdown_core_parser *parser) { return parser->offset; }
 
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser) { return parser->first_nonspace; }
 

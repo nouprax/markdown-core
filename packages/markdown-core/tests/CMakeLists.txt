@@ -252,6 +252,7 @@ if(MARKDOWN_CORE_STATIC)
         oom_sweep
         seam_static_literal
         session_oom_sweep
+        session_oom_sweep_delta
         session_oom_sweep_pooled
         restart_locality_counters)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
@@ -394,6 +395,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     unclosed_comment
     tables
     reference_collisions
+    many_email_autolinks
     directive_unclosed_labels
     directive_unclosed_attributes
     directive_colon_pairs
@@ -425,10 +427,14 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_duplicate_attributes
     many_unique_references
     many_duplicate_references
+    directive_closers_after_emphasis
+    nested_directive_label_closers
+    many_email_autolinks
     session_stream_flat
     session_edit_storm
     session_ref_retarget
     session_footnote_shift
+    session_footnote_renumber
     session_head_defs
     session_footnote_defs
     session_quote_suffix
@@ -485,7 +491,14 @@ markdown_core_add_test(benchmark_corpus_guard benchmark 60 corpus_guard --root "
 
 # benchmark: independently scheduled performance workloads; serial, offline,
 # deterministic inputs, relative-scaling assertions only.
-set(MARKDOWN_CORE_BENCH_WORKLOADS binding_baseline representative large_document deep_nesting extensions adversarial)
+set(MARKDOWN_CORE_BENCH_WORKLOADS
+    binding_baseline
+    representative
+    large_document
+    deep_nesting
+    extensions
+    large_table
+    adversarial)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

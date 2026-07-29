@@ -24,7 +24,7 @@ const unsigned char markdown_core_strbuf__initbuf[1] = {0};
 #define MIN(x, y) ((x < y) ? x : y)
 #endif
 
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size) {
+void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, markdown_core_bufsize initial_size) {
     buf->mem = mem;
     buf->asize = 0;
     buf->size = 0;
@@ -36,11 +36,11 @@ void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf
     }
 }
 
-static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, bufsize_t add) {
+static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, markdown_core_bufsize add) {
     markdown_core_strbuf_grow(buf, buf->size + add);
 }
 
-void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {
+void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize target_size) {
     assert(target_size > 0);
 
     if (buf->oom || target_size < buf->asize) {
@@ -49,14 +49,14 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
 
     /* Both the size cap and allocator failure poison the buffer instead of
      * aborting; existing contents stay valid and later writes are no-ops. */
-    if (target_size > (bufsize_t)(INT32_MAX / 2)) {
+    if (target_size > (markdown_core_bufsize)(INT32_MAX / 2)) {
         buf->oom = 1;
         return;
     }
 
     /* Oversize the buffer by 50% to guarantee amortized linear time
      * complexity on append operations. */
-    bufsize_t new_size = target_size + target_size / 2;
+    markdown_core_bufsize new_size = target_size + target_size / 2;
     new_size += 1;
     new_size = (new_size + 7) & ~7;
 
@@ -69,7 +69,7 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
     buf->asize = new_size;
 }
 
-bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
+markdown_core_bufsize markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
 
 void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     if (!buf) {
@@ -91,7 +91,7 @@ void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
     }
 }
 
-void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
+void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len) {
     if (len <= 0 || data == NULL) {
         markdown_core_strbuf_clear(buf);
     } else {
@@ -110,7 +110,7 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
 }
 
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string) {
-    markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (bufsize_t)strlen(string) : 0);
+    markdown_core_strbuf_set(buf, (const unsigned char *)string, string ? (markdown_core_bufsize)strlen(string) : 0);
 }
 
 void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
@@ -122,7 +122,7 @@ void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {
     buf->ptr[buf->size] = '\0';
 }
 
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
+void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len) {
     if (len <= 0) {
         return;
     }
@@ -137,7 +137,7 @@ void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *da
 }
 
 void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string) {
-    markdown_core_strbuf_put(buf, (const unsigned char *)string, (bufsize_t)strlen(string));
+    markdown_core_strbuf_put(buf, (const unsigned char *)string, (markdown_core_bufsize)strlen(string));
 }
 
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
@@ -159,7 +159,7 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
     return data;
 }
 
-void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len) {
+void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, markdown_core_bufsize len) {
     if (len < 0) {
         len = 0;
     }
@@ -170,7 +170,7 @@ void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len) {
     }
 }
 
-void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n) {
+void markdown_core_strbuf_drop(markdown_core_strbuf *buf, markdown_core_bufsize n) {
     if (n > 0) {
         if (n > buf->size) {
             n = buf->size;
@@ -201,7 +201,7 @@ void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
 }
 
 void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
-    bufsize_t i = 0;
+    markdown_core_bufsize i = 0;
 
     if (!buf->size) {
         return;
@@ -220,7 +220,7 @@ void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
 // space and newline characters into a single space.
 void markdown_core_strbuf_normalize_whitespace(markdown_core_strbuf *s) {
     bool last_char_was_space = false;
-    bufsize_t r, w;
+    markdown_core_bufsize r, w;
 
     for (r = 0, w = 0; r < s->size; ++r) {
         if (markdown_core_isspace(s->ptr[r])) {
@@ -239,7 +239,7 @@ void markdown_core_strbuf_normalize_whitespace(markdown_core_strbuf *s) {
 
 // Destructively unescape a string: remove backslashes before punctuation chars.
 extern void markdown_core_strbuf_unescape(markdown_core_strbuf *buf) {
-    bufsize_t r, w;
+    markdown_core_bufsize r, w;
 
     for (r = 0, w = 0; r < buf->size; ++r) {
         if (buf->ptr[r] == '\\' && markdown_core_ispunct(buf->ptr[r + 1])) {

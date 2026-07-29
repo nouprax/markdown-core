@@ -92,7 +92,7 @@ static markdown_core_mem fb_sweep_mem = {fb_sweep_calloc, fb_sweep_realloc, fb_f
 static markdown_core_chunk fb_chunk(const char *text) {
     markdown_core_chunk chunk;
     chunk.data = (unsigned char *)text;
-    chunk.len = (bufsize_t)strlen(text);
+    chunk.len = (markdown_core_bufsize)strlen(text);
     chunk.alloc = 0;
     return chunk;
 }
@@ -120,7 +120,7 @@ static int fb_expect_url(markdown_core_map *map, const char *label, const char *
         fprintf(stderr, "%s: label '%s' did not resolve\n", context, label);
         return -1;
     }
-    if (ref->url.len != (bufsize_t)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
+    if (ref->url.len != (markdown_core_bufsize)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
         fprintf(
             stderr,
             "%s: label '%s' resolved to '%.*s', expected '%s'\n",
@@ -476,7 +476,7 @@ static int fb_check_key_index_remove(void) {
         if (!markdown_core_key_index_insert(
                 &index,
                 (const unsigned char *)keys[i],
-                (bufsize_t)strlen(keys[i]),
+                (markdown_core_bufsize)strlen(keys[i]),
                 (void *)(uintptr_t)(i + 1),
                 0,
                 NULL
@@ -492,7 +492,11 @@ static int fb_check_key_index_remove(void) {
     /* Remove every even key, then verify the odd ones still resolve through
      * the shifted probe runs. */
     for (i = 0; i < 10; i += 2) {
-        if (!markdown_core_key_index_remove(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]))) {
+        if (!markdown_core_key_index_remove(
+                &index,
+                (const unsigned char *)keys[i],
+                (markdown_core_bufsize)strlen(keys[i])
+            )) {
             fprintf(stderr, "key index remove %zu failed\n", i);
             goto done;
         }
@@ -502,8 +506,11 @@ static int fb_check_key_index_remove(void) {
         goto done;
     }
     for (i = 0; i < 10; i++) {
-        void *value =
-            markdown_core_key_index_lookup(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        void *value = markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[i],
+            (markdown_core_bufsize)strlen(keys[i])
+        );
         void *expected = (i % 2 == 0) ? NULL : (void *)(uintptr_t)(i + 1);
         if (value != expected) {
             fprintf(stderr, "lookup %zu after removal returned the wrong value\n", i);
@@ -514,13 +521,16 @@ static int fb_check_key_index_remove(void) {
     if (!markdown_core_key_index_insert(
             &index,
             (const unsigned char *)keys[0],
-            (bufsize_t)strlen(keys[0]),
+            (markdown_core_bufsize)strlen(keys[0]),
             (void *)(uintptr_t)99,
             0,
             NULL
         ) ||
-        markdown_core_key_index_lookup(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0])) !=
-            (void *)(uintptr_t)99) {
+        markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[0],
+            (markdown_core_bufsize)strlen(keys[0])
+        ) != (void *)(uintptr_t)99) {
         fputs("re-insert after removal failed\n", stderr);
         goto done;
     }
@@ -628,7 +638,7 @@ static int case_key_index_probe_growth(void) {
         if (!markdown_core_key_index_insert(
                 &index,
                 (const unsigned char *)keys[i],
-                (bufsize_t)strlen(keys[i]),
+                (markdown_core_bufsize)strlen(keys[i]),
                 (void *)(uintptr_t)(i + 1),
                 0,
                 NULL
@@ -644,7 +654,7 @@ static int case_key_index_probe_growth(void) {
     if (!markdown_core_key_index_insert(
             &index,
             (const unsigned char *)keys[FB_CLUSTER],
-            (bufsize_t)strlen(keys[FB_CLUSTER]),
+            (markdown_core_bufsize)strlen(keys[FB_CLUSTER]),
             (void *)(uintptr_t)(FB_CLUSTER + 1),
             0,
             NULL
@@ -662,8 +672,11 @@ static int case_key_index_probe_growth(void) {
         goto done;
     }
     for (i = 0; i < FB_CLUSTER + 1; i++) {
-        void *value =
-            markdown_core_key_index_lookup(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        void *value = markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[i],
+            (markdown_core_bufsize)strlen(keys[i])
+        );
         if (value != (void *)(uintptr_t)(i + 1)) {
             fprintf(stderr, "lookup %zu returned the wrong value after growth\n", i);
             goto done;
@@ -900,15 +913,238 @@ static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) 
     return dump;
 }
 
+typedef struct {
+    markdown_core_node_id id;
+    size_t ordinal;
+    markdown_core_node_type type;
+} fb_tree_entry;
+
+typedef struct {
+    fb_tree_entry *items;
+    size_t count;
+} fb_tree_snapshot;
+
+typedef struct {
+    size_t ordinal;
+    markdown_core_node_type type;
+} fb_delta_mark;
+
+typedef struct {
+    uint64_t before;
+    uint64_t after;
+    fb_delta_mark *marks[4];
+    size_t counts[4];
+} fb_delta_snapshot;
+
+static void fb_tree_snapshot_release(fb_tree_snapshot *snapshot) {
+    free(snapshot->items);
+    memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static int fb_tree_snapshot_capture(const markdown_core_session *session, fb_tree_snapshot *snapshot) {
+    const markdown_core_node *root = session->view.root;
+    const markdown_core_node *node = root;
+    size_t count = 0;
+    size_t ordinal = 0;
+
+    while (node) {
+        count++;
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != root && !node->next) {
+            node = node->parent;
+        }
+        node = node == root ? NULL : node->next;
+    }
+    snapshot->items = (fb_tree_entry *)malloc(count * sizeof(*snapshot->items));
+    if (!snapshot->items) {
+        return -1;
+    }
+    snapshot->count = count;
+    node = root;
+    while (node) {
+        snapshot->items[ordinal].id = node->id;
+        snapshot->items[ordinal].ordinal = ordinal;
+        snapshot->items[ordinal].type = (markdown_core_node_type)node->type;
+        ordinal++;
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != root && !node->next) {
+            node = node->parent;
+        }
+        node = node == root ? NULL : node->next;
+    }
+    return 0;
+}
+
+static const fb_tree_entry *fb_tree_snapshot_find(const fb_tree_snapshot *snapshot, markdown_core_node_id id) {
+    size_t i;
+    for (i = 0; i < snapshot->count; i++) {
+        if (snapshot->items[i].id == id) {
+            return &snapshot->items[i];
+        }
+    }
+    return NULL;
+}
+
+static size_t fb_delta_array(const markdown_core_delta *changes, size_t index, const markdown_core_node_id **ids) {
+    switch (index) {
+    case 0:
+        return markdown_core_delta_added(changes, ids);
+    case 1:
+        return markdown_core_delta_removed(changes, ids);
+    case 2:
+        return markdown_core_delta_changed(changes, ids);
+    default:
+        return markdown_core_delta_bubbled(changes, ids);
+    }
+}
+
+static void fb_delta_snapshot_release(fb_delta_snapshot *snapshot) {
+    size_t i;
+    for (i = 0; i < 4; i++) {
+        free(snapshot->marks[i]);
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static int fb_delta_mark_compare(const void *lhs, const void *rhs) {
+    const fb_delta_mark *a = (const fb_delta_mark *)lhs;
+    const fb_delta_mark *b = (const fb_delta_mark *)rhs;
+    if (a->ordinal != b->ordinal) {
+        return a->ordinal < b->ordinal ? -1 : 1;
+    }
+    if (a->type != b->type) {
+        return a->type < b->type ? -1 : 1;
+    }
+    return 0;
+}
+
+static int fb_delta_snapshot_capture(
+    fb_delta_snapshot *snapshot,
+    const markdown_core_session *session,
+    const fb_tree_snapshot *before_tree,
+    const markdown_core_delta *changes
+) {
+    fb_tree_snapshot after_tree = {0};
+    size_t i;
+
+    if (fb_tree_snapshot_capture(session, &after_tree) != 0) {
+        return -1;
+    }
+    markdown_core_delta_revisions(changes, &snapshot->before, &snapshot->after);
+    for (i = 0; i < 4; i++) {
+        const markdown_core_node_id *ids = NULL;
+        size_t count = fb_delta_array(changes, i, &ids);
+        const fb_tree_snapshot *tree = i == 1 ? before_tree : &after_tree;
+        size_t k;
+        if (count) {
+            snapshot->marks[i] = (fb_delta_mark *)malloc(count * sizeof(*snapshot->marks[i]));
+            if (!snapshot->marks[i]) {
+                fb_tree_snapshot_release(&after_tree);
+                fb_delta_snapshot_release(snapshot);
+                return -1;
+            }
+            for (k = 0; k < count; k++) {
+                const fb_tree_entry *entry = fb_tree_snapshot_find(tree, ids[k]);
+                if (!entry) {
+                    fb_tree_snapshot_release(&after_tree);
+                    fb_delta_snapshot_release(snapshot);
+                    return -1;
+                }
+                snapshot->marks[i][k].ordinal = entry->ordinal;
+                snapshot->marks[i][k].type = entry->type;
+            }
+            // Delta arrays are semantic sets. Raw ids are session-local, and
+            // an OOM retry may consume (but never reuse) ids or alter emission
+            // order, so compare their structural effects in canonical order.
+            qsort(snapshot->marks[i], count, sizeof(*snapshot->marks[i]), fb_delta_mark_compare);
+        }
+        snapshot->counts[i] = count;
+    }
+    fb_tree_snapshot_release(&after_tree);
+    return 0;
+}
+
+static int fb_delta_matches(
+    const markdown_core_delta *changes,
+    const markdown_core_session *session,
+    const fb_tree_snapshot *before_tree,
+    const fb_delta_snapshot *expected
+) {
+    fb_delta_snapshot actual = {0};
+    int matches = 1;
+    size_t i;
+
+    if (fb_delta_snapshot_capture(&actual, session, before_tree, changes) != 0) {
+        return 0;
+    }
+    matches = actual.before == expected->before && actual.after == expected->after;
+    if (!matches) {
+        fprintf(
+            stderr,
+            "delta revisions %llu..%llu != control %llu..%llu\n",
+            (unsigned long long)actual.before,
+            (unsigned long long)actual.after,
+            (unsigned long long)expected->before,
+            (unsigned long long)expected->after
+        );
+    }
+    for (i = 0; i < 4; i++) {
+        size_t k;
+        if (actual.counts[i] != expected->counts[i]) {
+            fprintf(stderr, "delta array %zu count %zu != control %zu\n", i, actual.counts[i], expected->counts[i]);
+            matches = 0;
+            break;
+        }
+        for (k = 0; k < actual.counts[i]; k++) {
+            if (actual.marks[i][k].ordinal != expected->marks[i][k].ordinal ||
+                actual.marks[i][k].type != expected->marks[i][k].type) {
+                fprintf(
+                    stderr,
+                    "delta array %zu item %zu mark (%zu,%d) != control (%zu,%d)\n",
+                    i,
+                    k,
+                    actual.marks[i][k].ordinal,
+                    (int)actual.marks[i][k].type,
+                    expected->marks[i][k].ordinal,
+                    (int)expected->marks[i][k].type
+                );
+                matches = 0;
+                break;
+            }
+        }
+        if (!matches) {
+            break;
+        }
+    }
+    fb_delta_snapshot_release(&actual);
+    return matches;
+}
+
 /* One scripted run: a failed step is retried once (the injector fires at
  * most one failure per run). `stage_dumps[i]` receives the dump after stage
- * i's commit; failed commits are checked against the last committed dump. */
-static int fb_session_run(markdown_core_mem *mem, bool pooled, uint8_t **stage_dumps, size_t *stage_lengths) {
+ * i's commit; failed commits are checked against the last committed dump.
+ * When delta snapshots are requested, every failed commit must leave the
+ * output null and every successful fallback/retry must match the control. */
+static int fb_session_run(
+    markdown_core_mem *mem,
+    bool pooled,
+    uint8_t **stage_dumps,
+    size_t *stage_lengths,
+    fb_delta_snapshot *captured_deltas,
+    const fb_delta_snapshot *expected_deltas
+) {
     markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, pooled, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;
     size_t committed_length = 0;
+    bool delta_aware = captured_deltas || expected_deltas;
     int stage;
     int result = -1;
 
@@ -943,29 +1179,71 @@ static int fb_session_run(markdown_core_mem *mem, bool pooled, uint8_t **stage_d
         }
         {
             uint64_t revision_before = markdown_core_session_revision(session);
-            if (!markdown_core_session_commit(session, NULL, NULL)) {
+            fb_tree_snapshot before_tree = {0};
+            markdown_core_delta *changes = NULL;
+            if (delta_aware && fb_tree_snapshot_capture(session, &before_tree) != 0) {
+                fputs("could not capture pre-commit tree\n", stderr);
+                goto done;
+            }
+            if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
                 uint8_t *view = NULL;
                 size_t view_length = 0;
+                if (changes) {
+                    fputs("failed commit exposed a partial delta\n", stderr);
+                    markdown_core_delta_free(changes);
+                    fb_tree_snapshot_release(&before_tree);
+                    goto done;
+                }
                 if (markdown_core_session_revision(session) != revision_before) {
                     fputs("failed commit advanced the revision\n", stderr);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
                 view = fb_session_dump(session, &view_length);
                 if (!view || view_length != committed_length || memcmp(view, committed_dump, view_length) != 0) {
                     fputs("failed commit disturbed the committed view\n", stderr);
                     free(view);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
                 free(view);
-                if (!markdown_core_session_commit(session, NULL, NULL)) {
+                if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
+                    if (changes) {
+                        fputs("failed commit retry exposed a partial delta\n", stderr);
+                        markdown_core_delta_free(changes);
+                    }
                     fputs("commit retry failed\n", stderr);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
             }
             if (markdown_core_session_revision(session) != revision_before + 1) {
                 fputs("commit did not advance the revision by one\n", stderr);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
                 goto done;
             }
+            if (delta_aware && !changes) {
+                fputs("successful commit did not return a delta\n", stderr);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            if (changes && expected_deltas &&
+                !fb_delta_matches(changes, session, &before_tree, &expected_deltas[stage])) {
+                fprintf(stderr, "stage %d delta diverged from control\n", stage + 1);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            if (changes && captured_deltas &&
+                fb_delta_snapshot_capture(&captured_deltas[stage], session, &before_tree, changes) != 0) {
+                fputs("could not capture control delta\n", stderr);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            markdown_core_delta_free(changes);
+            fb_tree_snapshot_release(&before_tree);
         }
         free(committed_dump);
         committed_dump = fb_session_dump(session, &committed_length);
@@ -1001,23 +1279,39 @@ done:
     return result;
 }
 
-static int fb_session_sweep(bool pooled) {
+static int fb_session_sweep(bool pooled, bool delta_aware) {
     uint8_t *control_dumps[3] = {NULL, NULL, NULL};
     size_t control_lengths[3] = {0, 0, 0};
+    fb_delta_snapshot control_deltas[3] = {0};
     uint8_t *counted_dumps[3] = {NULL, NULL, NULL};
     size_t counted_lengths[3] = {0, 0, 0};
     unsigned long total;
     unsigned long k;
+    size_t i;
     int result = -1;
 
-    if (fb_session_run(markdown_core_mem_default(), pooled, control_dumps, control_lengths) != 0) {
+    if (fb_session_run(
+            markdown_core_mem_default(),
+            pooled,
+            control_dumps,
+            control_lengths,
+            delta_aware ? control_deltas : NULL,
+            NULL
+        ) != 0) {
         fputs("control session run failed\n", stderr);
         goto done;
     }
 
     fb_sweep_count = 0;
     fb_sweep_fail_at = 0;
-    if (fb_session_run(&fb_sweep_mem, pooled, counted_dumps, counted_lengths) != 0 ||
+    if (fb_session_run(
+            &fb_sweep_mem,
+            pooled,
+            counted_dumps,
+            counted_lengths,
+            NULL,
+            delta_aware ? control_deltas : NULL
+        ) != 0 ||
         counted_lengths[2] != control_lengths[2] ||
         memcmp(counted_dumps[2], control_dumps[2], control_lengths[2]) != 0) {
         fputs("counting session run diverged from control\n", stderr);
@@ -1036,7 +1330,14 @@ static int fb_session_sweep(bool pooled) {
         fb_sweep_count = 0;
         fb_sweep_fail_at = k;
         fb_sweep_fired = 0;
-        run = fb_session_run(&fb_sweep_mem, pooled, final_dumps, final_lengths);
+        run = fb_session_run(
+            &fb_sweep_mem,
+            pooled,
+            final_dumps,
+            final_lengths,
+            NULL,
+            delta_aware ? control_deltas : NULL
+        );
         if (run < 0) {
             fprintf(stderr, "allocation %lu / %lu: session script broke\n", k, total);
             free(final_dumps[0]);
@@ -1065,6 +1366,9 @@ done:
     free(counted_dumps[0]);
     free(counted_dumps[1]);
     free(counted_dumps[2]);
+    for (i = 0; i < 3; i++) {
+        fb_delta_snapshot_release(&control_deltas[i]);
+    }
     return result;
 }
 
@@ -1124,13 +1428,15 @@ done:
     return result;
 }
 
-static int case_session_oom_sweep(void) { return fb_session_sweep(false); }
+static int case_session_oom_sweep(void) { return fb_session_sweep(false, false); }
+
+static int case_session_oom_sweep_delta(void) { return fb_session_sweep(false, true); }
 
 /* The pooled sweep drives the same script through a session arena over the
  * injected allocator, so every base refill — slab, passthrough block, the
  * arena itself — fails in turn; transactionality and retry convergence must
  * hold exactly as they do against direct allocation. */
-static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true); }
+static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, false); }
 
 /* One same-length in-place edit for a restart-locality scenario. */
 typedef struct {
@@ -1316,6 +1622,7 @@ static const fb_case_entry FB_CASES[] = {
     {"oom_sweep", case_oom_sweep},
     {"seam_static_literal", case_seam_static_literal},
     {"session_oom_sweep", case_session_oom_sweep},
+    {"session_oom_sweep_delta", case_session_oom_sweep_delta},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
     {"restart_locality_counters", case_restart_locality_counters},
 };

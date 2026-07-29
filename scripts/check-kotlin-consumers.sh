@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/discover-toolchain.sh"
 repository="$root/build/kotlin-consumer-repository"
 gradle="$root/scripts/gradle.sh"
 property="-Dmaven.repo.local=$repository"
@@ -20,12 +21,6 @@ if [ "${1:-}" = "--repository" ]; then
     property="-Dmaven.repo.local=$consumer_local_repository"
     maven_repository_arg="-Dmarkdown.core.consumer.repository=file://$repository"
     publish=false
-fi
-
-if [ -z "${JAVA_HOME:-}" ] && [ -x "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java" ]; then
-    export JAVA_HOME="/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home"
-elif [ -z "${JAVA_HOME:-}" ] && [ -x "/Applications/Android Studio.app/Contents/jbr/Contents/Home/bin/java" ]; then
-    export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 fi
 
 cd "$root"

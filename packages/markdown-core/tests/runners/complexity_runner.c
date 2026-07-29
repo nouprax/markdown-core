@@ -1,8 +1,10 @@
 /* Parser complexity suite.
  *
- * Measures parse time for directive attribute inputs at 4 KiB and 128 MiB,
- * then compares time per input byte.  The 32768x span makes n log n growth
- * visible without relying on absolute wall-clock thresholds.
+ * Measures parse time for adversarial directive inputs, then compares time
+ * per input byte. Attribute cases span 4 KiB to 128 MiB; delimiter-dense
+ * cases use a smaller 4 KiB to 64 KiB span so the regression test does not
+ * require millions of AST nodes. Both spans expose nonlinear growth without
+ * relying on absolute wall-clock thresholds.
  *
  *   complexity_runner --list
  *   complexity_runner --case NAME
@@ -14,6 +16,7 @@
 #include "test_support.h"
 
 static const size_t SCALING_SIZES[] = {4096, 134217728};
+static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
 #define SCALING_STEPS (sizeof(SCALING_SIZES) / sizeof(SCALING_SIZES[0]))
 #define SCALING_REPEATS 3
 #define MIN_SAMPLE_NS 25000000ULL
@@ -138,20 +141,74 @@ static char *cc_unique_references(size_t size, size_t *length) { return cc_refer
 
 static char *cc_duplicate_references(size_t size, size_t *length) { return cc_references(size, length, 1); }
 
+static char *cc_emphasis_then_closers(size_t size, size_t *length) {
+    size_t count = size / 3 ? size / 3 : 1;
+    char *input = (char *)malloc(count * 3 + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        input[i * 2] = '*';
+        input[i * 2 + 1] = 'a';
+    }
+    memset(input + count * 2, ']', count);
+    *length = count * 3;
+    input[*length] = '\0';
+    return input;
+}
+
+static char *cc_nested_directive_labels(size_t size, size_t *length) {
+    size_t count = size / 4 ? size / 4 : 1;
+    char *input = (char *)malloc(count * 4 + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(input + i * 3, ":x[", 3);
+    }
+    memset(input + count * 3, ']', count);
+    *length = count * 4;
+    input[*length] = '\0';
+    return input;
+}
+
+static char *cc_email_autolinks(size_t size, size_t *length) {
+    static const char token[] = "a@b.c ";
+    size_t count = size / (sizeof(token) - 1) ? size / (sizeof(token) - 1) : 1;
+    char *input = (char *)malloc(count * (sizeof(token) - 1) + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(input + i * (sizeof(token) - 1), token, sizeof(token) - 1);
+    }
+    *length = count * (sizeof(token) - 1);
+    input[*length] = '\0';
+    return input;
+}
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
+    const size_t *sizes;
+    const char *option;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value},
-    {"valid_consecutive_backslashes", cc_backslashes},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted},
-    {"unclosed_backslash_value", cc_unclosed_backslashes},
-    {"many_unique_attributes", cc_unique_attributes},
-    {"many_duplicate_attributes", cc_duplicate_attributes},
-    {"many_unique_references", cc_unique_references},
-    {"many_duplicate_references", cc_duplicate_references},
+    {"valid_long_quoted_value", cc_quoted_value, SCALING_SIZES, "directive"},
+    {"valid_consecutive_backslashes", cc_backslashes, SCALING_SIZES, "directive"},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, SCALING_SIZES, "directive"},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, SCALING_SIZES, "directive"},
+    {"many_unique_attributes", cc_unique_attributes, SCALING_SIZES, "directive"},
+    {"many_duplicate_attributes", cc_duplicate_attributes, SCALING_SIZES, "directive"},
+    {"many_unique_references", cc_unique_references, SCALING_SIZES, "directive"},
+    {"many_duplicate_references", cc_duplicate_references, SCALING_SIZES, "directive"},
+    {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive"},
+    {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive"},
+    {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink"},
 };
 
 /* --- session commit-cost cases -------------------------------------------
@@ -260,17 +317,23 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
     }
     if (mode == CC_SESSION_HEAD_DEFS) {
         for (i = 0; i < count; i++) {
-            sprintf(fill, "[d%06zu]: /aaaa\n\n", i % 1000000);
+            snprintf(fill, CC_SESSION_DEF_WIDTH + 1, "[d%06zu]: /aaaa\n\n", i % 1000000);
             fill += CC_SESSION_DEF_WIDTH;
         }
     } else if (mode == CC_SESSION_DEF_SPREAD) {
         for (i = 0; i < count; i++) {
-            sprintf(fill, "[d%06zu]: /aaaa\n\nuses [u][d%06zu] here\n\n", i % 1000000, i % 1000000);
+            snprintf(
+                fill,
+                CC_SESSION_DEF_SPREAD_WIDTH + 1,
+                "[d%06zu]: /aaaa\n\nuses [u][d%06zu] here\n\n",
+                i % 1000000,
+                i % 1000000
+            );
             fill += CC_SESSION_DEF_SPREAD_WIDTH;
         }
     } else if (cc_session_mode_footnote_defs(mode)) {
         for (i = 0; i < count; i++) {
-            sprintf(fill, "[^d%06zu]: aaaa\n\n", i % 1000000);
+            snprintf(fill, CC_SESSION_FOOTNOTE_DEF_WIDTH + 1, "[^d%06zu]: aaaa\n\n", i % 1000000);
             fill += CC_SESSION_FOOTNOTE_DEF_WIDTH;
         }
     } else {
@@ -448,23 +511,145 @@ static int cc_run_session(const char *name, int mode) {
     return failed ? -1 : 0;
 }
 
+/* A first-reference label flip renumbers every later footnote. This scales
+ * the number of query-only changed nodes, rather than unrelated document
+ * bulk, so the normalized ratio catches quadratic index-diff deduplication. */
+static const size_t CC_FOOTNOTE_RENUMBER_COUNTS[] = {256, 4096};
+#define CC_FOOTNOTE_RENUMBER_STEPS (sizeof(CC_FOOTNOTE_RENUMBER_COUNTS) / sizeof(CC_FOOTNOTE_RENUMBER_COUNTS[0]))
+#define CC_FOOTNOTE_RENUMBER_LABEL_OFFSET 10
+
+static markdown_core_session *cc_footnote_renumber_build(size_t count) {
+    markdown_core_parse_options options;
+    markdown_core_session *session = NULL;
+    size_t capacity;
+    size_t length = 0;
+    size_t i;
+    char *text;
+
+    if (count > (SIZE_MAX - 1) / 64) {
+        return NULL;
+    }
+    capacity = count * 64 + 1;
+    text = (char *)malloc(capacity);
+    if (!text) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        length += (size_t)snprintf(text + length, capacity - length, "r [^n%06zu]\n\n", i);
+    }
+    for (i = 0; i < count; i++) {
+        length += (size_t)snprintf(text + length, capacity - length, "[^n%06zu]: body\n\n", i);
+    }
+
+    ts_ast_options_none(&options);
+    options.footnotes = true;
+    session = markdown_core_session_open(&options, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        markdown_core_session_free(session);
+        session = NULL;
+    }
+    free(text);
+    return session;
+}
+
+static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit) {
+    double floor_seconds = 0.0;
+    size_t op_counter = 0;
+    markdown_core_session *session = cc_footnote_renumber_build(count);
+    int repeat;
+
+    if (!session) {
+        return -1;
+    }
+    for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t commits = 0;
+        do {
+            const uint8_t label = (op_counter & 1) ? '0' : '1';
+            markdown_core_delta *changes = NULL;
+            size_t changed;
+            if (!markdown_core_session_edit(
+                    session,
+                    CC_FOOTNOTE_RENUMBER_LABEL_OFFSET,
+                    CC_FOOTNOTE_RENUMBER_LABEL_OFFSET + 1,
+                    &label,
+                    1,
+                    NULL
+                ) ||
+                !markdown_core_session_commit(session, &changes, NULL)) {
+                markdown_core_delta_free(changes);
+                markdown_core_session_free(session);
+                return -1;
+            }
+            changed = markdown_core_delta_changed(changes, NULL);
+            markdown_core_delta_free(changes);
+            if (changed < count) {
+                markdown_core_session_free(session);
+                return -1;
+            }
+            op_counter++;
+            commits++;
+            elapsed = ts_monotonic_ns() - started;
+        } while (elapsed < MIN_SAMPLE_NS);
+        {
+            double sample = (double)elapsed / (1e9 * (double)commits);
+            if (repeat == 0 || sample < floor_seconds) {
+                floor_seconds = sample;
+            }
+        }
+    }
+    markdown_core_session_free(session);
+    *seconds_per_commit = floor_seconds;
+    return 0;
+}
+
+static int cc_run_footnote_renumber(const char *name) {
+    double timings[CC_FOOTNOTE_RENUMBER_STEPS];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < CC_FOOTNOTE_RENUMBER_STEPS; step++) {
+        if (cc_footnote_renumber_measure(CC_FOOTNOTE_RENUMBER_COUNTS[step], &timings[step]) != 0) {
+            fprintf(stderr, "session run failed for %s\n", name);
+            return -1;
+        }
+    }
+    {
+        double count_growth = (double)CC_FOOTNOTE_RENUMBER_COUNTS[CC_FOOTNOTE_RENUMBER_STEPS - 1] /
+                              (double)CC_FOOTNOTE_RENUMBER_COUNTS[0];
+        double normalized_slowdown = timings[CC_FOOTNOTE_RENUMBER_STEPS - 1] / timings[0] / count_growth;
+        if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN) {
+            failed = 1;
+        }
+        printf("%s ... %s (", name, failed ? "[FAILED non-linear diff scaling]" : "[PASSED]");
+        for (step = 0; step < CC_FOOTNOTE_RENUMBER_STEPS; step++) {
+            printf("%s%zu footnotes: %.9fs/commit", step ? ", " : "", CC_FOOTNOTE_RENUMBER_COUNTS[step], timings[step]);
+        }
+        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
+    }
+    return failed ? -1 : 0;
+}
+
 static const char *const CC_SESSION_CASES[] = {
     "session_stream_flat",
     "session_edit_storm",
     "session_ref_retarget",
     "session_footnote_shift",
+    "session_footnote_renumber",
     "session_head_defs",
     "session_footnote_defs",
     "session_quote_suffix",
     "session_def_spread",
 };
 
-static int cc_measure(const char *input, size_t length, double *seconds) {
+static int cc_measure(const char *input, size_t length, const char *option, double *seconds) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
     ts_ast_options_none(&options);
-    if (ts_ast_enable(&options, "directive") != 0) {
+    if (ts_ast_enable(&options, option) != 0) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
@@ -507,12 +692,12 @@ static int cc_run(const cc_case_entry *entry) {
 
     for (step = 0; step < SCALING_STEPS; step++) {
         size_t length = 0;
-        char *input = entry->build(SCALING_SIZES[step], &length);
+        char *input = entry->build(entry->sizes[step], &length);
         if (!input) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, &timings[step]) != 0) {
+        if (cc_measure(input, length, entry->option, &timings[step]) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;
@@ -582,6 +767,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_footnote_shift") == 0) {
         return cc_run_session(case_name, CC_SESSION_FOOTNOTE) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_footnote_renumber") == 0) {
+        return cc_run_footnote_renumber(case_name) == 0 ? 0 : 1;
     }
     if (strcmp(case_name, "session_head_defs") == 0) {
         return cc_run_session(case_name, CC_SESSION_HEAD_DEFS) == 0 ? 0 : 1;

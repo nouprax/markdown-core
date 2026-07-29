@@ -25,6 +25,16 @@
 #endif
 #endif
 
+/** SplitMix64 finalizer shared by the session's open-addressing tables. */
+static inline uint64_t markdown_core_mix64(uint64_t x) {
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
 // session-unique node ids (0 marks an empty slot, ids start at 1). Id and
 // node share a slot so every probe costs one cache line, not two — the
@@ -253,6 +263,9 @@ struct markdown_core_session {
     // when a commit changes per-label winners. Maintained by both commit
     // paths; skipped entirely for the one-shot convenience parse.
     markdown_core_lookup_table lookups;
+    // The detached one-shot document keeps node ids but never commits or
+    // answers session-only queries, so its commit skips every session index.
+    bool one_shot;
     bool record_lookups;
     // The incremental pipeline reconciled definitions in place and then could
     // not finish: the map no longer matches the committed tree, so the next
@@ -355,8 +368,11 @@ bool markdown_core_footnote_index_build(
  * slot; SIZE_MAX with *failed clear when the label normalizes to nothing
  * (it can never participate), SIZE_MAX with *failed set on allocation
  * loss. Idempotent — a failed commit leaves at worst unused slots. */
-size_t
-markdown_core_session_footnote_label(markdown_core_session *session, const markdown_core_chunk *label, bool *failed);
+size_t markdown_core_session_footnote_label(
+    markdown_core_session *session,
+    const markdown_core_chunk *label,
+    bool *failed
+);
 
 /** Stamps interned label slots on every site of both lists (used for
  * freshly collected sites, whose labels are not yet resolved). Returns
@@ -371,8 +387,10 @@ bool markdown_core_session_footnote_label_sites(
 void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core_footnote_labels *labels);
 
 /** Looks up a record by node id, NULL when absent. */
-markdown_core_footnote_record *
-markdown_core_footnote_table_find(const markdown_core_footnote_table *table, markdown_core_node_id id);
+markdown_core_footnote_record *markdown_core_footnote_table_find(
+    const markdown_core_footnote_table *table,
+    markdown_core_node_id id
+);
 
 /** Grows/compacts the record table so the next `extra` inserts cannot fail
  * (fallible; run before the point of no return). */
@@ -542,8 +560,10 @@ bool markdown_core_lookup_postings_reserve(
 );
 
 /** The posting for `label`, or NULL when no unit ever recorded it. */
-const markdown_core_lookup_posting *
-markdown_core_lookup_postings_find(const markdown_core_lookup_table *table, const unsigned char *label);
+const markdown_core_lookup_posting *markdown_core_lookup_postings_find(
+    const markdown_core_lookup_table *table,
+    const unsigned char *label
+);
 
 /** Installs `record` for `id`, replacing (and freeing) any previous record.
  * Never fails within a reserved budget; the table takes ownership. */

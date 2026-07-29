@@ -19,6 +19,7 @@ set(LIBRARY_SOURCES
     ext_scanners.c
     ext_scanners.re
     ext_scanners.h
+    inline_util.h
     tasklist.c)
 
 include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_INCLUDE_DIR}

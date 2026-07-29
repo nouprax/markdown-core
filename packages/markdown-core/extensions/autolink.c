@@ -15,7 +15,7 @@
 
 static int is_valid_hostchar(const uint8_t *link, size_t link_len) {
     int32_t ch;
-    int r = markdown_core_utf8proc_iterate(link, (bufsize_t)link_len, &ch);
+    int r = markdown_core_utf8proc_iterate(link, (markdown_core_bufsize)link_len, &ch);
     if (r < 0) {
         return 0;
     }
@@ -174,58 +174,80 @@ static size_t check_domain(uint8_t *data, size_t size, int allow_short) {
     }
 }
 
-static void clear_sourcepos(markdown_core_node *node) {
-    node->start_line = 0;
-    node->start_column = 0;
-    node->end_line = 0;
-    node->end_column = 0;
+typedef struct sourcepos_cursor {
+    size_t offset;
+    int line;
+    int column;
+} sourcepos_cursor;
+
+typedef struct sourcepos_range {
+    int start_line;
+    int start_column;
+    int end_line;
+    int end_column;
+} sourcepos_range;
+
+static void sourcepos_cursor_advance(sourcepos_cursor *cursor, const markdown_core_chunk *source, size_t target) {
+    assert(target >= cursor->offset && target <= (size_t)source->len);
+
+    if (cursor->line != 0) {
+        for (size_t i = cursor->offset; i < target; i++) {
+            if (source->data[i] == '\n') {
+                cursor->line++;
+                cursor->column = 1;
+            } else {
+                cursor->column++;
+            }
+        }
+    }
+    cursor->offset = target;
 }
 
-static void set_sourcepos_from_range(
-    markdown_core_node *node,
-    int source_start_line,
-    int source_start_column,
-    markdown_core_chunk *source,
-    size_t start,
+static sourcepos_range sourcepos_cursor_take(sourcepos_cursor *cursor, const markdown_core_chunk *source, size_t len) {
+    sourcepos_range range = {0, 0, 0, 0};
+    assert(len <= source->len - cursor->offset);
+
+    if (cursor->line != 0 && len != 0) {
+        range.start_line = cursor->line;
+        range.start_column = cursor->column;
+    }
+    sourcepos_cursor_advance(cursor, source, cursor->offset + len);
+    if (range.start_line != 0) {
+        range.end_line = cursor->line;
+        range.end_column = cursor->column - 1;
+    }
+    return range;
+}
+
+static sourcepos_range sourcepos_cursor_remainder(
+    const sourcepos_cursor *cursor,
+    const sourcepos_cursor *end,
     size_t len
 ) {
-    clear_sourcepos(node);
+    sourcepos_range range = {0, 0, 0, 0};
+    assert(cursor->offset <= end->offset && len == end->offset - cursor->offset);
 
-    if (source_start_line == 0 || len == 0) {
-        return;
+    if (cursor->line != 0 && len != 0) {
+        range.start_line = cursor->line;
+        range.start_column = cursor->column;
+        range.end_line = end->line;
+        range.end_column = end->column - 1;
     }
-
-    int line = source_start_line;
-    int column = source_start_column;
-    for (size_t i = 0; i < start; i++) {
-        if (source->data[i] == '\n') {
-            line++;
-            column = 1;
-        } else {
-            column++;
-        }
-    }
-
-    node->start_line = line;
-    node->start_column = column;
-
-    int end_line = line;
-    int end_column = column - 1;
-    for (size_t i = start; i < start + len; i++) {
-        if (source->data[i] == '\n') {
-            end_line++;
-            end_column = 0;
-        } else {
-            end_column++;
-        }
-    }
-
-    node->end_line = end_line;
-    node->end_column = end_column;
+    return range;
 }
 
-static markdown_core_node *
-www_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_inline_parser *inline_parser) {
+static void set_sourcepos(markdown_core_node *node, const sourcepos_range *range) {
+    node->start_line = range->start_line;
+    node->start_column = range->start_column;
+    node->end_line = range->end_line;
+    node->end_column = range->end_column;
+}
+
+static markdown_core_node *www_match(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_inline_parser *inline_parser
+) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     size_t max_rewind = markdown_core_inline_parser_get_offset(inline_parser);
     uint8_t *data = chunk->data + max_rewind;
@@ -269,7 +291,7 @@ www_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_cor
     markdown_core_strbuf buf;
     markdown_core_strbuf_init(parser->mem, &buf, 10);
     markdown_core_strbuf_puts(&buf, "http://");
-    markdown_core_strbuf_put(&buf, data, (bufsize_t)link_end);
+    markdown_core_strbuf_put(&buf, data, (markdown_core_bufsize)link_end);
     node->as.link.url = markdown_core_chunk_buf_detach(&buf);
     if (!node->as.link.url.data) {
         parser->oom = true;
@@ -281,7 +303,8 @@ www_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_cor
         markdown_core_node_free(node);
         return NULL;
     }
-    text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
+    text->as.literal =
+        markdown_core_chunk_dup(chunk, (markdown_core_bufsize)max_rewind, (markdown_core_bufsize)link_end);
     markdown_core_node_append_child(node, text);
 
     node->start_line = text->start_line = node->end_line = text->end_line =
@@ -293,8 +316,11 @@ www_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_cor
     return node;
 }
 
-static markdown_core_node *
-url_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_inline_parser *inline_parser) {
+static markdown_core_node *url_match(
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    markdown_core_inline_parser *inline_parser
+) {
     size_t link_end, domain_len;
     int rewind = 0;
 
@@ -345,7 +371,8 @@ url_match(markdown_core_parser *parser, markdown_core_node *parent, markdown_cor
         return NULL;
     }
 
-    markdown_core_chunk url = markdown_core_chunk_dup(chunk, max_rewind - rewind, (bufsize_t)(link_end + rewind));
+    markdown_core_chunk url =
+        markdown_core_chunk_dup(chunk, max_rewind - rewind, (markdown_core_bufsize)(link_end + rewind));
     node->as.link.url = url;
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
@@ -420,8 +447,7 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
 static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
-    int source_start_line = text->start_line;
-    int source_start_column = text->start_column;
+    sourcepos_cursor source_cursor = {0, text->start_line, text->start_column};
     // `text` is going to be split into a list of nodes containing shorter segments
     // of text, so we detach the memory buffer from text and use `markdown_core_chunk_dup` to
     // create references to it. Later, `markdown_core_chunk_to_cstr` is used to convert
@@ -429,6 +455,11 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     // return.
     markdown_core_chunk detached_chunk = text->as.literal;
     text->as.literal = markdown_core_chunk_dup(&detached_chunk, 0, detached_chunk.len);
+
+    // Cache the common end of every trailing segment once; source_cursor then
+    // consumes prefixes and links from left to right without rescanning them.
+    sourcepos_cursor source_end = source_cursor;
+    sourcepos_cursor_advance(&source_end, &detached_chunk, detached_chunk.len);
 
     uint8_t *data = text->as.literal.data;
     size_t remaining = text->as.literal.len;
@@ -533,28 +564,28 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         }
         size_t prefix_start = start;
         size_t prefix_len = offset + max_rewind - rewind;
-        size_t link_start = start + offset + max_rewind - rewind;
         size_t link_len = link_end + rewind;
         size_t post_start = start + offset + max_rewind + link_end;
         size_t post_len = remaining - offset - max_rewind - link_end;
+        assert(source_cursor.offset == prefix_start);
+        sourcepos_range prefix_sourcepos = sourcepos_cursor_take(&source_cursor, &detached_chunk, prefix_len);
+        sourcepos_range link_sourcepos = sourcepos_cursor_take(&source_cursor, &detached_chunk, link_len);
+        sourcepos_range post_sourcepos = sourcepos_cursor_remainder(&source_cursor, &source_end, post_len);
         markdown_core_strbuf buf;
         markdown_core_strbuf_init(parser->mem, &buf, 10);
         if (auto_mailto) {
             markdown_core_strbuf_puts(&buf, "mailto:");
         }
-        markdown_core_strbuf_put(&buf, data + start + offset + max_rewind - rewind, (bufsize_t)(link_end + rewind));
+        markdown_core_strbuf_put(
+            &buf,
+            data + start + offset + max_rewind - rewind,
+            (markdown_core_bufsize)(link_end + rewind)
+        );
         link_node->as.link.url = markdown_core_chunk_buf_detach(&buf);
         if (!link_node->as.link.url.data) {
             parser->oom = true;
         }
-        set_sourcepos_from_range(
-            link_node,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            link_start,
-            link_len
-        );
+        set_sourcepos(link_node, &link_sourcepos);
 
         markdown_core_node *link_text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
         if (!link_text) {
@@ -564,8 +595,8 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
         }
         markdown_core_chunk email = markdown_core_chunk_dup(
             &detached_chunk,
-            (bufsize_t)(start + offset + max_rewind - rewind),
-            (bufsize_t)(link_end + rewind)
+            (markdown_core_bufsize)(start + offset + max_rewind - rewind),
+            (markdown_core_bufsize)(link_end + rewind)
         );
         /* The copy must own its bytes before detached_chunk is freed below. */
         if (!markdown_core_chunk_to_cstr(parser->mem, &email)) {
@@ -573,14 +604,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             markdown_core_chunk_set_cstr(parser->mem, &email, NULL);
         }
         link_text->as.literal = email;
-        set_sourcepos_from_range(
-            link_text,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            link_start,
-            link_len
-        );
+        set_sourcepos(link_text, &link_sourcepos);
         markdown_core_node_append_child(link_node, link_text);
 
         markdown_core_node_insert_after(text, link_node);
@@ -590,24 +614,25 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             break;
         }
-        post->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)post_start, (bufsize_t)post_len);
-        set_sourcepos_from_range(post, source_start_line, source_start_column, &detached_chunk, post_start, post_len);
+        post->as.literal = markdown_core_chunk_dup(
+            &detached_chunk,
+            (markdown_core_bufsize)post_start,
+            (markdown_core_bufsize)post_len
+        );
+        set_sourcepos(post, &post_sourcepos);
 
         markdown_core_node_insert_after(link_node, post);
 
-        text->as.literal = markdown_core_chunk_dup(&detached_chunk, (bufsize_t)prefix_start, (bufsize_t)prefix_len);
+        text->as.literal = markdown_core_chunk_dup(
+            &detached_chunk,
+            (markdown_core_bufsize)prefix_start,
+            (markdown_core_bufsize)prefix_len
+        );
         if (!markdown_core_chunk_to_cstr(parser->mem, &text->as.literal)) {
             parser->oom = true;
             markdown_core_chunk_set_cstr(parser->mem, &text->as.literal, NULL);
         }
-        set_sourcepos_from_range(
-            text,
-            source_start_line,
-            source_start_column,
-            &detached_chunk,
-            prefix_start,
-            prefix_len
-        );
+        set_sourcepos(text, &prefix_sourcepos);
 
         text = post;
         start += offset + max_rewind + link_end;
@@ -626,8 +651,11 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     markdown_core_chunk_free(parser->mem, &detached_chunk);
 }
 
-static markdown_core_node *
-postprocess_block(markdown_core_extension *ext, markdown_core_parser *parser, markdown_core_node *block) {
+static markdown_core_node *postprocess_block(
+    markdown_core_extension *ext,
+    markdown_core_parser *parser,
+    markdown_core_node *block
+) {
     markdown_core_iter *iter;
     markdown_core_event_type ev;
     markdown_core_node *node;
