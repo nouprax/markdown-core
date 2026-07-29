@@ -1971,10 +1971,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // environment (start column and internal offset) and neither is a
     // position-free synthesized block (start_line 0).
     if (restart_node && restart_node != boundary_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-        !restart_node->extension &&
-        restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
-        parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-        !parser->root->first_child->extension && parser->root->first_child->start_line != 0 &&
+        !restart_node->extension && restart_node->first_child &&
+        (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root && parser->root->first_child &&
+        parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH && !parser->root->first_child->extension &&
+        parser->root->first_child->start_line != 0 &&
         parser->root->first_child->start_column == restart_node->start_column &&
         parser->root->first_child->internal_offset == restart_node->internal_offset &&
         markdown_core_node_owns_inlines(parser->root->first_child)) {
