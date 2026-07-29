@@ -1,12 +1,13 @@
 /* Parser complexity suite.
  *
- * Measures parse time for adversarial directive inputs, then compares time
- * per input byte. Attribute cases span 4 KiB to 128 MiB; delimiter-dense
- * cases use a smaller 4 KiB to 64 KiB span so the regression test does not
- * require millions of AST nodes. Both spans expose nonlinear growth without
- * relying on absolute wall-clock thresholds. Scope-table materialization
- * separately walks committed deep trees through the public batch API,
- * pinning the first-scope-use path to linear growth. Ordered delta
+ * Measures parse time for adversarial parser inputs, then compares time
+ * per input byte. Scanner/map/reference cases span 4 KiB to 128 MiB;
+ * delimiter-dense cases use a smaller 4 KiB to 64 KiB span so the regression
+ * test does not require millions of AST nodes. Every parse-scaling endpoint
+ * is warmed once before adaptive timed sampling. Both spans expose nonlinear
+ * growth without relying on absolute wall-clock thresholds. Scope-table
+ * materialization separately walks committed deep trees through the public
+ * batch API, pinning the first-scope-use path to linear growth. Ordered delta
  * materialization measures a deep touched path independently of parsing,
  * rejecting per-node ancestor walks.
  *
@@ -891,6 +892,15 @@ static int cc_measure(const char *input, size_t length, const char *option, doub
     if (ts_ast_enable(&options, option) != 0) {
         return -1;
     }
+    /* Warm every endpoint once outside the timer so the adaptive sampling
+     * policy never compares a hot short endpoint with a cold long endpoint. */
+    {
+        markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
+        if (!document) {
+            return -1;
+        }
+        markdown_core_document_free(document);
+    }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started;
         uint64_t elapsed;
@@ -906,9 +916,10 @@ static int cc_measure(const char *input, size_t length, const char *option, doub
             elapsed = ts_monotonic_ns() - started;
         } while (elapsed < MIN_SAMPLE_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
-        /* A single parse already gives a long, stable sample for the large
-         * endpoint.  Avoid tripling 128 MiB work on slow/sanitized builds. */
-        if (iterations == 1) {
+        /* Classify from the first post-warmup bucket. A single parse already
+         * gives a long, stable sample for the large endpoint; later one-parse
+         * buckets are scheduler outliers handled by the median below. */
+        if (repeat == 0 && iterations == 1) {
             *seconds = samples[repeat];
             return 0;
         }
