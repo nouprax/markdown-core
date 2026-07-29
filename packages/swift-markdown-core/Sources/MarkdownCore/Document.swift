@@ -100,7 +100,7 @@ public struct Document: Markup {
     /// The commit revision at which this document's content last changed.
     public let revision: UInt64
     /// The document's top-level blocks in source order.
-    public let children: [any Markup]
+    public let content: [any Markup]
     var resolver: ScopeResolver
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
@@ -111,13 +111,15 @@ public struct Document: Markup {
     /// Semantically identical to committing the same text through a
     /// `MarkupSession`.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        // A one-shot parse is literally a single-commit session. Scopes
-        // materialize eagerly because the session dies with this call and
-        // the snapshot must leave it self-contained.
+        // A one-shot parse is literally a single-commit session. The
+        // snapshot's resolver takes over the native session and scopes
+        // materialize lazily on first use, exactly as session snapshots
+        // do; the resolver frees the native session once the table is
+        // built, or with the snapshot when no scope is ever requested.
         let session = try MarkupSession(options: options)
         try session.append(source)
-        let document = try session.commit().document
-        document.resolver.materialize()
+        var document = try session.commit().document
+        document.resolver = ScopeResolver(owning: session.relinquishNativeSession())
         return document
     }
 }
@@ -199,7 +201,7 @@ extension Document {
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
+            content: builder.children(node),
             resolver: ScopeResolver.unresolvable
         )
     }

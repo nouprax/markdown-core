@@ -29,7 +29,7 @@ let document = try Document.parse(
     options: ParseOptions(directives: false)
 )
 
-print((document.children.first as? Heading)?.level ?? 0)
+print((document.content.first as? Heading)?.level ?? 0)
 print(document.dump())
 ```
 

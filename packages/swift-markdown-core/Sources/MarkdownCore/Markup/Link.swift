@@ -6,12 +6,12 @@ public struct Link: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// The node's direct children in source order.
-    public let children: [any Markup]
     /// The link destination URL, if present.
     public let destination: String?
     /// The optional link title.
     public let title: String?
+    /// The link's inline caption content in source order.
+    public let content: [any Markup]
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -26,9 +26,9 @@ extension Link {
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
             destination: destination.optionalString,
-            title: title.optionalString
+            title: title.optionalString,
+            content: builder.children(node)
         )
     }
 }

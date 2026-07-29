@@ -7,10 +7,12 @@ public struct FootnoteDefinition: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// The node's direct children in source order.
-    public let children: [any Markup]
-    /// The footnote's normalized label without the `[^` `]` delimiters.
+    /// The label exactly as written between `[^` and `]`, without the
+    /// delimiters. Matching is case-folded with collapsed whitespace via
+    /// the session's footnote queries; the stored value is not normalized.
     public let label: String
+    /// The definition's block content in source order.
+    public let content: [any Markup]
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -24,8 +26,8 @@ extension FootnoteDefinition {
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
-            label: label.requiredString
+            label: label.requiredString,
+            content: builder.children(node)
         )
     }
 }
@@ -36,9 +38,9 @@ public struct FootnoteReference: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// Always empty: this node is a leaf.
-    public let children: [any Markup] = []
-    /// The footnote's normalized label without the `[^` `]` delimiters.
+    /// The label exactly as written between `[^` and `]`, without the
+    /// delimiters. Matching is case-folded with collapsed whitespace via
+    /// the session's footnote queries; the stored value is not normalized.
     public let label: String
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.

@@ -71,7 +71,7 @@ printf '%s\n' \
     'import MarkdownCore' \
     '' \
     'let document = try Document.parse("## archived consumer")' \
-    'guard (document.children.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
+    'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
     'print(document.dump())' >"$consumer/Sources/Consumer/main.swift"
 
 CLANG_MODULE_CACHE_PATH="$temporary/consumer-module-cache" \

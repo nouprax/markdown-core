@@ -30,16 +30,45 @@ final class ScopeResolver: Sendable {
 
     private let state: Mutex<State>
 
+    // True when this resolver owns the native session outright (the
+    // one-shot `Document.parse` path): the session is freed as soon as the
+    // table materializes, or with the resolver when no scope was ever
+    // requested.
+    private let ownsSession: Bool
+
     /// Placeholder carried by mirror-internal `Document` values; every
     /// exposed snapshot swaps in a live or materialized resolver.
     static let unresolvable = ScopeResolver()
 
     private init() {
         state = Mutex(State(table: nil, session: nil))
+        ownsSession = false
     }
 
+    /// A resolver borrowing a session that the `MarkupSession` still owns;
+    /// the session detaches it before the native tree changes.
     init(session: OpaquePointer) {
         state = Mutex(State(table: nil, session: session))
+        ownsSession = false
+    }
+
+    /// A resolver owning a relinquished native session, so a one-shot
+    /// snapshot materializes lazily exactly as session snapshots do.
+    init(owning session: OpaquePointer) {
+        state = Mutex(State(table: nil, session: session))
+        ownsSession = true
+    }
+
+    deinit {
+        guard ownsSession else { return }
+        let unmaterialized = state.withLock { state -> OpaquePointer? in
+            let session = state.session
+            state.session = nil
+            return session
+        }
+        if let unmaterialized {
+            markdown_core_session_free(unmaterialized)
+        }
     }
 
     /// Called by the owning session before the native tree is replaced or
@@ -81,10 +110,12 @@ final class ScopeResolver: Sendable {
                 else {
                     state.table = [:]
                     state.session = nil
+                    if ownsSession { markdown_core_session_free(session) }
                     return nil
                 }
                 state.table = Self.materialize(root: root)
                 state.session = nil
+                if ownsSession { markdown_core_session_free(session) }
             }
             return state.table?[rawID]
         }
@@ -115,7 +146,8 @@ extension Document {
     /// `scope(of:)`, a walk, or `dump()` would perform implicitly on first
     /// use. Call while the snapshot is current (before the owning session's
     /// next successful commit). Idempotent; a one-shot `Document.parse`
-    /// result is always materialized.
+    /// result owns its native session and therefore always answers,
+    /// materializing lazily on first use.
     public func materialize() {
         resolver.materialize()
     }

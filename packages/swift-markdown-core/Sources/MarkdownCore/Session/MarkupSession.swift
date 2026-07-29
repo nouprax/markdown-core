@@ -17,6 +17,9 @@ public final class MarkupSession {
     let session: OpaquePointer
     var mirror: [UInt64: any Markup] = [:]
     private var resolver: ScopeResolver?
+    // False once `relinquishNativeSession()` transfers the native session
+    // to a one-shot snapshot's owning resolver; deinit then must not free.
+    private var ownsNativeSession = true
 
     /// The session's options, normalized and immutable for its lifetime.
     public let options: ParseOptions
@@ -55,7 +58,7 @@ public final class MarkupSession {
         var document = Document(
             id: MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root)),
             revision: markdown_core_node_get_revision(root),
-            children: [],
+            content: [],
             resolver: ScopeResolver.unresolvable
         )
         let resolver = ScopeResolver(session: session)
@@ -67,7 +70,20 @@ public final class MarkupSession {
 
     deinit {
         resolver?.detach()
-        markdown_core_session_free(session)
+        if ownsNativeSession {
+            markdown_core_session_free(session)
+        }
+    }
+
+    /// Transfers ownership of the native session to the caller (the
+    /// one-shot `Document.parse` path hands it to an owning
+    /// `ScopeResolver`). The session's own resolver is detached and the
+    /// session must not be used afterwards.
+    func relinquishNativeSession() -> OpaquePointer {
+        resolver?.detach()
+        resolver = nil
+        ownsNativeSession = false
+        return session
     }
 
     /// The revision of the last committed snapshot; 0 before the first
@@ -89,8 +105,12 @@ public final class MarkupSession {
     /// nothing is parsed until `commit()`.
     public func replace(_ range: Range<Int>, with text: String) throws {
         var nativeError: OpaquePointer?
-        let bytes = Array(text.utf8)
-        let applied = bytes.withUnsafeBufferPointer { buffer in
+        // `withUTF8` hands over the string's contiguous UTF-8 bytes in
+        // place (copying only for the rare non-contiguous string), so the
+        // native edit — which copies into the text store anyway — needs no
+        // intermediate Array allocation. Mutating, hence the shadow copy.
+        var text = text
+        let applied = text.withUTF8 { buffer in
             markdown_core_session_edit(
                 session,
                 range.lowerBound,

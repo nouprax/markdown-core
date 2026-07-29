@@ -25,4 +25,16 @@ struct DirectiveValues {
         attributes = nativeAttributes.optionalString
         labelCount = hasLabel ? nativeLabelCount : nil
     }
+
+    /// Splits a directive's native child list into the contract's typed
+    /// `label` prefix (nil when the directive declares no label — distinct
+    /// from an explicit empty `[]`) and the remaining block content.
+    func partition(_ children: [any Markup]) -> (label: [any Markup]?, content: [any Markup]) {
+        guard let labelCount else { return (nil, children) }
+        precondition(
+            labelCount >= 0 && labelCount <= children.count,
+            "native parser returned an invalid directive label count"
+        )
+        return (Array(children.prefix(labelCount)), Array(children.dropFirst(labelCount)))
+    }
 }

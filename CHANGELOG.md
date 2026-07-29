@@ -4,6 +4,32 @@ All notable release changes are recorded here. Markdown Core follows Semantic
 Versioning for source packages and public API behavior; the C binary ABI is not
 promised to remain compatible between releases.
 
+## Unreleased
+
+- Breaking (Swift): realign the Swift AST surface with the frozen
+  canonical-ast contract, which forbids per-platform renames. Canonical dump
+  output is unchanged.
+  - Every container's `children` collection is now `content` (`Document`,
+    `BlockQuote`, `Paragraph`, `Heading`, `ListItem`, `DirectiveBlock`,
+    `FootnoteDefinition`, `Emphasis`, `Strong`, `Strikethrough`, `Link`,
+    `Image`), and `List` exposes the contract's typed `items: [ListItem]`.
+  - Boolean fields return to their frozen names: `isTight` → `tight`,
+    `isChecked` → `checked`, `isFenced` → `fenced`, `isClosed` → `closed`
+    (`isHeader` is contract-defined and unchanged).
+  - `Directive` and `DirectiveBlock` replace `labelCount: Int?` plus a merged
+    `children` array with the contract's typed `label: [Markup]?` (nil when
+    no label was written, distinct from an explicit empty `[]`);
+    `DirectiveBlock` gains its separate block `content` collection.
+  - `Code` and `CodeBlock` gain the contract's `mode: PlacementMode` field
+    (`embedded`/`standalone` respectively).
+  - Leaf kinds no longer carry an always-empty public `children` property
+    (`Text`, `Code`, `CodeBlock`, `HTML`, `HTMLBlock`, `Formula`,
+    `FormulaBlock`, `ThematicBreak`, `SoftBreak`, `LineBreak`,
+    `FootnoteReference`); traverse structure through `MarkupWalker`.
+- Swift: `Document.parse` no longer materializes the scope table eagerly;
+  one-shot snapshots own their native session and resolve scopes lazily on
+  first use, exactly as session snapshots do.
+
 ## 2.0.0 - 2026-07-20
 
 - Add incremental parsing sessions on every platform: `MarkupSession` in

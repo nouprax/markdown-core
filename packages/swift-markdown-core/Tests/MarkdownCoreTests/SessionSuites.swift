@@ -8,15 +8,15 @@ import Testing
         let session = try MarkupSession()
         try session.append("# Title\n\nHello")
         let first = try session.commit()
-        let firstHeading = try #require(first.document.children[0] as? Heading)
-        let firstParagraph = try #require(first.document.children[1] as? Paragraph)
-        let firstText = try #require(firstParagraph.children[0] as? Text)
+        let firstHeading = try #require(first.document.content[0] as? Heading)
+        let firstParagraph = try #require(first.document.content[1] as? Paragraph)
+        let firstText = try #require(firstParagraph.content[0] as? Text)
 
         try session.append(" world")
         let second = try session.commit()
-        let secondHeading = try #require(second.document.children[0] as? Heading)
-        let secondParagraph = try #require(second.document.children[1] as? Paragraph)
-        let secondText = try #require(secondParagraph.children[0] as? Text)
+        let secondHeading = try #require(second.document.content[0] as? Heading)
+        let secondParagraph = try #require(second.document.content[1] as? Paragraph)
+        let secondText = try #require(secondParagraph.content[0] as? Text)
 
         #expect(secondText.literal == "Hello world")
         #expect(secondParagraph.id == firstParagraph.id)
@@ -32,26 +32,26 @@ import Testing
         let session = try MarkupSession()
         try session.append("First\n\nSecond\n\nThird\n")
         let before = try session.commit()
-        let downstreamBefore = before.document.children.map { ($0.id, $0.revision) }
+        let downstreamBefore = before.document.content.map { ($0.id, $0.revision) }
 
         try session.replace(0..<0, with: "# New\n\n")
         let after = try session.commit()
 
-        #expect(after.document.children.count == 4)
-        let inserted = try #require(after.document.children[0] as? Heading)
+        #expect(after.document.content.count == 4)
+        let inserted = try #require(after.document.content[0] as? Heading)
         #expect(after.delta.added.contains(inserted.id))
-        for (index, node) in after.document.children.dropFirst().enumerated() {
+        for (index, node) in after.document.content.dropFirst().enumerated() {
             #expect(node.id == downstreamBefore[index].0)
             #expect(node.revision == downstreamBefore[index].1)
         }
         // Downstream nodes shifted by two lines: equal values, new scopes.
-        let third = try #require(after.document.children[3] as? Paragraph)
+        let third = try #require(after.document.content[3] as? Paragraph)
         #expect(after.document.scope(of: third).start.line == 7)
         // An unchanged value carried over from the previous snapshot has the
         // same (id, revision) and resolves against the newer snapshot — at
         // its new position. (A stale value whose revision was superseded
         // traps instead of pairing old fields with a current scope.)
-        let thirdBefore = try #require(before.document.children[2] as? Paragraph)
+        let thirdBefore = try #require(before.document.content[2] as? Paragraph)
         #expect(after.document.scope(of: thirdBefore).start.line == 7)
         #expect(after.document.dump() == (try Document.parse("# New\n\nFirst\n\nSecond\n\nThird\n").dump()))
     }
@@ -61,11 +61,11 @@ import Testing
         let session = try MarkupSession()
         try session.append("text\n")
         let before = try session.commit()
-        let paragraph = try #require(before.document.children[0] as? Paragraph)
+        let paragraph = try #require(before.document.content[0] as? Paragraph)
 
         try session.replace(0..<0, with: "# ")
         let after = try session.commit()
-        let heading = try #require(after.document.children[0] as? Heading)
+        let heading = try #require(after.document.content[0] as? Heading)
 
         #expect(after.delta.removed.contains(paragraph.id))
         #expect(after.delta.added.contains(heading.id))
@@ -79,9 +79,9 @@ import Testing
         let second = try Document.parse(source)
         // Identical content from different parses never compares equal.
         #expect(first != second)
-        #expect(first.children[0] as? Paragraph != second.children[0] as? Paragraph)
+        #expect(first.content[0] as? Paragraph != second.content[0] as? Paragraph)
         // Within one snapshot, identity is value equality.
-        #expect(first.children[0] as? Paragraph == first.children[0] as? Paragraph)
+        #expect(first.content[0] as? Paragraph == first.content[0] as? Paragraph)
         #expect(first.id.lineage != second.id.lineage)
     }
 
@@ -90,13 +90,13 @@ import Testing
         let session = try MarkupSession()
         try session.append("Alpha\n\n\n\nOmega\n")
         let before = try session.commit()
-        let omegaBefore = try #require(before.document.children[1] as? Paragraph)
+        let omegaBefore = try #require(before.document.content[1] as? Paragraph)
         #expect(before.document.scope(of: omegaBefore).start.line == 5)
 
         // Delete two of the blank lines: no node's content changes.
         try session.replace(6..<8, with: "")
         let after = try session.commit()
-        let omegaAfter = try #require(after.document.children[1] as? Paragraph)
+        let omegaAfter = try #require(after.document.content[1] as? Paragraph)
 
         #expect(after.delta.added.isEmpty)
         #expect(after.delta.removed.isEmpty)
@@ -112,7 +112,7 @@ import Testing
         var session: MarkupSession? = try MarkupSession()
         try session?.append("One\n\nTwo\n")
         let first = try #require(try session?.commit())
-        let two = try #require(first.document.children[1] as? Paragraph)
+        let two = try #require(first.document.content[1] as? Paragraph)
         // Materialize while current.
         #expect(first.document.scope(of: two).start.line == 3)
 
@@ -181,11 +181,11 @@ import Testing
         requireSendable(MarkupID.self)
         requireSendable(FootnoteInfo.self)
         let session = try MarkupSession()
-        #expect(session.document.children.isEmpty)
+        #expect(session.document.content.isEmpty)
         #expect(session.revision == 0)
         try session.append("Alpha\n")
         let commit = try session.commit()
-        let paragraph = try #require(commit.document.children[0] as? Paragraph)
+        let paragraph = try #require(commit.document.content[0] as? Paragraph)
         var byID: [MarkupID: String] = [:]
         byID[paragraph.id] = "paragraph"
         #expect(session.node(for: paragraph.id)?.id == paragraph.id)
@@ -259,7 +259,7 @@ private final class ConflationDriver {
     /// block is now settled and must stay frozen through later turns.
     func settle() throws {
         try tick()
-        frozen = session.document.children.dropLast().enumerated().map {
+        frozen = session.document.content.dropLast().enumerated().map {
             Settled(index: $0.offset, id: $0.element.id, revision: $0.element.revision)
         }
     }
@@ -292,7 +292,7 @@ private final class ConflationDriver {
             + commit.delta.changed.count + commit.delta.bubbled.count
         #expect(commit.document.dump() == (try Document.parse(streamed).dump()))
         for entry in frozen {
-            let node = commit.document.children[entry.index]
+            let node = commit.document.content[entry.index]
             #expect(node.id == entry.id)
             #expect(node.revision == entry.revision)
         }
@@ -384,7 +384,7 @@ private final class ConflationDriver {
             retained = first.document
         }
         let document = try #require(retained)
-        let second = try #require(document.children[1] as? Paragraph)
+        let second = try #require(document.content[1] as? Paragraph)
         #expect(document.scope(of: second).start.line == 3)
         #expect(document.dump().contains("Paragraph"))
     }
