@@ -1949,6 +1949,16 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
         }
     }
 
+    // A sentinel boundary's suffix starts at the first real child whose
+    // start reaches it; real children between restart and boundary stay in
+    // the stale walk. Resolved before the inline seam arms so the seam only
+    // fires when the restart unit is genuinely stale: a sentinel restart
+    // that resolves to the boundary node is never replaced, so its reserved
+    // prefix children could never be transplanted and the staged leaf would
+    // silently lose its prefix inlines.
+    markdown_core_node *boundary_node =
+        boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
+
     // --- inline seam: reuse the restart unit's inert inline prefix ---
     // When the first staged unit reparses the restart paragraph and both
     // contents share a line-aligned prefix free of inline special
@@ -1960,19 +1970,8 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // transplant is only sound when the two leaves share the same column
     // environment (start column and internal offset) and neither is a
     // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
+    if (restart_node && restart_node != boundary_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !restart_node->extension &&
         restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
         parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
         !parser->root->first_child->extension && parser->root->first_child->start_line != 0 &&
@@ -2075,11 +2074,6 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
 
     // --- 5/6. adoption and the transactional splice ---
     {
-        // A sentinel boundary's suffix starts at the first real child whose
-        // start reaches it; real children between restart and boundary stay
-        // in the stale walk.
-        markdown_core_node *boundary_node =
-            boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
         markdown_core_node *first_stale = restart_node == boundary_node ? NULL : restart_node;
         markdown_core_node *last_stale = NULL;
         markdown_core_node *prefix_tail = NULL;
@@ -2551,6 +2545,11 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
                 staged_first->first_child = head;
                 head->prev = NULL;
             }
+            staged_first->user_data = NULL;
+        } else if (staged_first && staged_first->user_data) {
+            // Defense in depth: the seam gate above guarantees the guard
+            // fires whenever the marker is set, but a committed node must
+            // never retain the seam integer as bogus user_data.
             staged_first->user_data = NULL;
         }
 

@@ -784,7 +784,24 @@ static const eq_script_step EQ_SEALING_REBUILD_STEPS[] = {
     {"uses", 0, (size_t)-1, ""}, /* delete the tail at the damaged anchor */
 };
 
+/* A head-definition edit whose replacement paragraph shares a line-aligned
+ * inert prefix with the paragraph that follows: the restart resolves to a
+ * sentinel boundary (nothing is stale), so the inline seam must not arm —
+ * arming it would drop the staged leaf's prefix inlines because the
+ * transplant source is never replaced. */
+static const eq_script_step EQ_SEAM_OVER_SENTINEL_STEPS[] = {
+    {"[a]: /u", 0, 7, "plain text\nmore2"}, /* definition becomes a prefix-sharing paragraph */
+    {"more2", 0, 5, "more3"},               /* the seam-adjacent tail stays editable */
+};
+
 static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
+    {"seam_over_sentinel",
+     "[a]: /u\n"
+     "\n"
+     "plain text\n"
+     "more\n",
+     EQ_SEAM_OVER_SENTINEL_STEPS,
+     sizeof(EQ_SEAM_OVER_SENTINEL_STEPS) / sizeof(*EQ_SEAM_OVER_SENTINEL_STEPS)},
     {"setext_flip", "alpha\n\nbeta\ngamma\n", EQ_SETEXT_STEPS, sizeof(EQ_SETEXT_STEPS) / sizeof(*EQ_SETEXT_STEPS)},
     {"lazy_continuation", "> quote\n\ntail\n", EQ_LAZY_STEPS, sizeof(EQ_LAZY_STEPS) / sizeof(*EQ_LAZY_STEPS)},
     {"unclosed_fence", "first\n\n```\ncode\n", EQ_FENCE_STEPS, sizeof(EQ_FENCE_STEPS) / sizeof(*EQ_FENCE_STEPS)},
