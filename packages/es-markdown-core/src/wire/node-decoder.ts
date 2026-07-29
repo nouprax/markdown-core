@@ -33,19 +33,14 @@ export interface DecodeContext {
 }
 
 const stringField = {
-    codeInfo: 1,
-    codeLanguage: 2,
-    codeLiteral: 3,
-    literal: 4,
-    formulaLiteral: 5,
-    directiveName: 6,
-    directiveAttributes: 7,
-    linkDestination: 8,
-    linkTitle: 9,
-    imageSource: 10,
-    imageTitle: 11,
-    footnoteLabel: 12,
-    errorMessage: 13
+    literal: 1,
+    formulaLiteral: 2,
+    linkDestination: 3,
+    linkTitle: 4,
+    imageSource: 5,
+    imageTitle: 6,
+    footnoteLabel: 7,
+    errorMessage: 8
 } as const;
 
 const scratchSize = 4 * BigUint64Array.BYTES_PER_ELEMENT;
@@ -64,6 +59,7 @@ interface DecodeFrame {
 export class NodeDecoder {
     private scratch: number;
     private context: DecodeContext | null = null;
+    private cachedView: DataView | null = null;
     private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
 
     constructor(private readonly native: NativeExports) {
@@ -103,29 +99,63 @@ export class NodeDecoder {
         }
     }
 
-    /** One walk over the committed native tree: every node's (revision,
-     * absolute scope) keyed by raw id — the snapshot's scope table. */
+    /** One O(n) native walk over the committed tree: every node's
+     * (revision, absolute scope) keyed by raw id — the snapshot's scope
+     * table, decoded from a single packed row buffer. */
     scopeTable(root: number): Map<number, ScopeEntry> {
-        const table = new Map<number, ScopeEntry>();
-        const stack = [root];
-        while (stack.length > 0) {
-            const node = stack.pop()!;
-            table.set(this.rawId(node), { revision: this.revisionOf(node), scope: this.scope(node) });
-            for (
-                let child = this.native.es_node_first_child(node);
-                child;
-                child = this.native.es_node_next_sibling(child)
-            ) {
-                stack.push(child);
-            }
+        this.requireLive();
+        const rowBytes = 32;
+        const count = this.native.es_scope_table(root, this.scratch);
+        const data = this.dataView().getUint32(this.scratch, true);
+        if (!Number.isSafeInteger(count) || count <= 0 || !data) {
+            throw new ParseError("allocationFailed", "failed to allocate WASM memory");
         }
-        return table;
+        try {
+            if (count * rowBytes > this.native.memory.buffer.byteLength - data) {
+                throw new Error("native parser returned an out-of-bounds scope table");
+            }
+            const view = this.dataView();
+            const table = new Map<number, ScopeEntry>();
+            for (let index = 0; index < count; index += 1) {
+                const row = data + index * rowBytes;
+                table.set(this.toSafeNumber(view.getBigUint64(row, true), "node id"), {
+                    revision: this.toSafeNumber(view.getBigUint64(row + 8, true), "node revision"),
+                    scope: {
+                        start: { line: view.getInt32(row + 16, true), column: view.getInt32(row + 20, true) },
+                        end: { line: view.getInt32(row + 24, true), column: view.getInt32(row + 28, true) }
+                    }
+                });
+            }
+            return table;
+        } finally {
+            this.native.free(data);
+        }
     }
 
     parseError(error: number): ParseError {
         if (!error) return new ParseError("internal", "markdown parsing failed");
         const code = errorCode(this.native.es_error_code(error));
-        return new ParseError(code, this.readString(error, stringField.errorMessage) ?? "markdown parsing failed");
+        const message = this.readString(error, stringField.errorMessage) ?? "markdown parsing failed";
+        return new ParseError(code, message, this.errorScope(error));
+    }
+
+    /** The native error's absolute scope; null when the error carries none.
+     * (No engine path emits a scoped error today, so this stays null at
+     * runtime — parity plumbing with the Swift and Kotlin bridges.) */
+    private errorScope(error: number): Scope | null {
+        this.requireLive();
+        if (!this.native.es_error_scope(error, this.scratch)) return null;
+        const view = this.dataView();
+        return {
+            start: {
+                line: view.getInt32(this.scratch, true),
+                column: view.getInt32(this.scratch + 4, true)
+            },
+            end: {
+                line: view.getInt32(this.scratch + 8, true),
+                column: view.getInt32(this.scratch + 12, true)
+            }
+        };
     }
 
     toSafeNumber(value: bigint, field: string): number {
@@ -226,17 +256,7 @@ export class NodeDecoder {
                     content: children
                 };
             case "codeBlock":
-                return {
-                    kind,
-                    id,
-                    revision,
-                    mode: "standalone",
-                    info: this.readString(node, stringField.codeInfo),
-                    language: this.readString(node, stringField.codeLanguage),
-                    literal: this.requiredString(node, stringField.codeLiteral),
-                    fenced: this.boolean(this.native.es_node_code_flag(node, 0), "code fenced state"),
-                    closed: this.boolean(this.native.es_node_code_flag(node, 1), "code closed state")
-                };
+                return this.copyCodeBlock(node, id, revision);
             case "htmlBlock":
                 return { kind, id, revision, literal: this.requiredString(node, stringField.literal) };
             case "formulaBlock": {
@@ -333,14 +353,46 @@ export class NodeDecoder {
         return unreachable(kind);
     }
 
+    /** One packed crossing for every code-block field; scratch layout
+     * mirrors `es_node_code_properties`. */
+    private copyCodeBlock(node: number, id: MarkupID, revision: number): Extract<Markup, { kind: "codeBlock" }> {
+        this.requireLive();
+        this.native.es_node_code_properties(node, this.scratch);
+        const view = this.dataView();
+        const literal = this.scratchString(view, 16);
+        if (literal === null) throw new Error("native parser returned a missing string");
+        return {
+            kind: "codeBlock",
+            id,
+            revision,
+            mode: "standalone",
+            info: this.scratchString(view, 0),
+            language: this.scratchString(view, 8),
+            literal,
+            fenced: this.boolean(view.getInt32(this.scratch + 24, true), "code fenced state"),
+            closed: this.boolean(view.getInt32(this.scratch + 28, true), "code closed state")
+        };
+    }
+
     private copyList(
         node: number,
         id: MarkupID,
         revision: number,
         children: readonly Markup[]
     ): Extract<Markup, { kind: "list" }> {
-        const flavor = this.listFlavor(this.native.es_node_list_flavor(node));
-        const start = this.readStart(node);
+        this.requireLive();
+        this.native.es_node_list_properties(node, this.scratch);
+        const view = this.dataView();
+        const flavor = this.listFlavor(view.getInt32(this.scratch, true));
+        const tight = this.boolean(view.getInt32(this.scratch + 4, true), "list tight state");
+        let start: number | null = null;
+        if (this.boolean(view.getInt32(this.scratch + 8, true), "list start state")) {
+            const value = Number(view.getBigInt64(this.scratch + 16, true));
+            if (!Number.isSafeInteger(value)) {
+                throw new Error("native list start exceeds JavaScript integer precision");
+            }
+            start = value;
+        }
         if (flavor === "bullet" && start !== null) {
             throw new Error("native parser returned a start value for a bullet list");
         }
@@ -348,15 +400,7 @@ export class NodeDecoder {
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
             return item;
         });
-        return {
-            kind: "list",
-            id,
-            revision,
-            flavor,
-            start,
-            tight: this.boolean(this.native.es_node_list_tight(node), "list tight state"),
-            items
-        };
+        return { kind: "list", id, revision, flavor, start, tight, items };
     }
 
     private copyTable(
@@ -412,16 +456,23 @@ export class NodeDecoder {
         readonly label: readonly Markup[] | null;
         readonly content: readonly Markup[];
     } {
-        const labelCount = this.native.es_node_directive_label_count(node);
-        if (!Number.isInteger(labelCount) || labelCount < -1 || labelCount > children.length) {
+        // One packed crossing for every directive field; scratch layout
+        // mirrors `es_node_directive_properties`.
+        this.requireLive();
+        this.native.es_node_directive_properties(node, this.scratch);
+        const view = this.dataView();
+        const labelCount = view.getInt32(this.scratch + 4, true);
+        if (labelCount < -1 || labelCount > children.length) {
             throw new Error(`native parser returned an invalid directive label count ${labelCount}`);
         }
+        const name = this.scratchString(view, 8);
+        if (name === null) throw new Error("native parser returned a missing string");
         const label = labelCount < 0 ? null : children.slice(0, labelCount);
         const contentOffset = labelCount < 0 ? 0 : labelCount;
         return {
-            mode: this.placement(this.native.es_node_directive_mode(node)),
-            name: this.requiredString(node, stringField.directiveName),
-            attributes: this.readString(node, stringField.directiveAttributes),
+            mode: this.placement(view.getInt32(this.scratch, true)),
+            name,
+            attributes: this.scratchString(view, 16),
             label,
             content: children.slice(contentOffset)
         };
@@ -446,33 +497,10 @@ export class NodeDecoder {
         return kind;
     }
 
-    private scope(node: number): Scope {
-        return {
-            start: {
-                line: this.native.es_scope_coordinate(node, 0),
-                column: this.native.es_scope_coordinate(node, 1)
-            },
-            end: {
-                line: this.native.es_scope_coordinate(node, 2),
-                column: this.native.es_scope_coordinate(node, 3)
-            }
-        };
-    }
-
     readString(object: number, field: number): string | null {
         this.requireLive();
         this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT);
-        const view = this.dataView();
-        const data = view.getUint32(this.scratch, true);
-        const length = view.getUint32(this.scratch + Uint32Array.BYTES_PER_ELEMENT, true);
-        if (!data) {
-            if (length !== 0) throw new Error("native parser returned an invalid string view");
-            return null;
-        }
-        if (length > this.native.memory.buffer.byteLength - data) {
-            throw new Error("native parser returned an out-of-bounds string view");
-        }
-        return this.utf8Decoder.decode(new Uint8Array(this.native.memory.buffer, data, length));
+        return this.scratchString(this.dataView(), 0);
     }
 
     private requiredString(object: number, field: number): string {
@@ -481,14 +509,19 @@ export class NodeDecoder {
         return value;
     }
 
-    private readStart(node: number): number | null {
-        this.requireLive();
-        if (!this.boolean(this.native.es_node_list_start_state(node, this.scratch), "list start state")) {
+    /** Decodes the (data, length) string view stored at scratch `offset`;
+     * null for the null view. */
+    private scratchString(view: DataView, offset: number): string | null {
+        const data = view.getUint32(this.scratch + offset, true);
+        const length = view.getUint32(this.scratch + offset + Uint32Array.BYTES_PER_ELEMENT, true);
+        if (!data) {
+            if (length !== 0) throw new Error("native parser returned an invalid string view");
             return null;
         }
-        const value = Number(this.dataView().getBigInt64(this.scratch, true));
-        if (!Number.isSafeInteger(value)) throw new Error("native list start exceeds JavaScript integer precision");
-        return value;
+        if (length > this.native.memory.buffer.byteLength - data) {
+            throw new Error("native parser returned an out-of-bounds string view");
+        }
+        return this.utf8Decoder.decode(new Uint8Array(this.native.memory.buffer, data, length));
     }
 
     private placement(rawValue: number): PlacementMode {
@@ -528,8 +561,16 @@ export class NodeDecoder {
         return rawValue;
     }
 
+    /** A DataView over the current wasm memory. Cached per underlying
+     * buffer: growth replaces `memory.buffer` (detaching the old one), so
+     * revalidating against buffer identity on every access stays safe while
+     * dropping the per-scalar-read allocation. */
     dataView(): DataView {
-        return new DataView(this.native.memory.buffer);
+        const buffer = this.native.memory.buffer;
+        if (this.cachedView === null || this.cachedView.buffer !== buffer) {
+            this.cachedView = new DataView(buffer);
+        }
+        return this.cachedView;
     }
 
     private requireLive(): void {

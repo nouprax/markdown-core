@@ -68,6 +68,8 @@ new MarkupWalker().walk(document, (_event, node, scope) => {
     visit(node, visitor);
 });
 new MarkupWalker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
+// The scope-free structural overload dispatches the visitor per node.
+new MarkupWalker().walk(document, visitor);
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced

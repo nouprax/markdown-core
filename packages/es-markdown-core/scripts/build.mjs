@@ -67,25 +67,32 @@ const exported = [
     "es_session_node_by_id",
     "es_node_parent",
     "es_error_code",
+    "es_error_scope",
     "es_error_free",
     "es_node_kind",
     "es_node_first_child",
     "es_node_next_sibling",
-    "es_scope_coordinate",
+    "es_scope_table",
     "es_node_heading_level",
-    "es_node_list_flavor",
-    "es_node_list_tight",
-    "es_node_list_start_state",
+    "es_node_list_properties",
     "es_node_checked",
-    "es_node_code_flag",
+    "es_node_code_properties",
     "es_node_formula_mode",
     "es_node_table_column_count",
     "es_node_table_alignment",
     "es_node_table_row_header",
-    "es_node_directive_mode",
-    "es_node_directive_label_count",
+    "es_node_directive_properties",
     "es_string"
 ].map((name) => `_${name}`);
+/** A spawnSync result with `error` set means the tool never launched
+ * (typically ENOENT) and `stdout`/`stderr` are undefined — writing them
+ * would throw and mask the real failure. */
+function requireLaunched(result, tool, remedy) {
+    if (!result.error) return;
+    process.stderr.write(`failed to launch ${tool}: ${result.error.message}\n${remedy}\n`);
+    process.exit(1);
+}
+
 const result = spawnSync(
     "emcc",
     [
@@ -113,6 +120,12 @@ const result = spawnSync(
         env: { ...process.env, EM_CACHE: path.join(root, "build/emscripten-cache") }
     }
 );
+requireLaunched(
+    result,
+    "emcc",
+    "Install it with scripts/init-environment.sh --install emscripten, then activate it in this shell " +
+        "with: source .tools/emsdk/4.0.23/emsdk_env.sh"
+);
 if (result.status !== 0) {
     process.stderr.write(result.stdout);
     process.stderr.write(result.stderr);
@@ -122,6 +135,11 @@ const typescript = spawnSync(
     path.join(root, "node_modules/.bin/tsc"),
     ["-p", path.join(packageDirectory, "tsconfig.json")],
     { cwd: root, encoding: "utf8" }
+);
+requireLaunched(
+    typescript,
+    "tsc",
+    "Install JavaScript dependencies with scripts/init-environment.sh --install (or pnpm install)."
 );
 if (typescript.status !== 0) {
     process.stderr.write(typescript.stdout);

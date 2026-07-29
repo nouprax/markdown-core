@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Document, MarkupSession, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { kindVisitor } from "./visitor.mjs";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
     const session = new MarkupSession();
@@ -133,6 +134,33 @@ test("sessions: a superseded snapshot that never materialized fails instead of g
         session.append("\nTwo\n");
         session.commit();
         assert.throws(() => first.document.scope(first.document.content[0]), /superseded snapshot/);
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: the scope-free visitor traverses an unmaterialized superseded snapshot", () => {
+    const session = new MarkupSession();
+    try {
+        session.append("First\n\nSecond\n");
+        const first = session.commit();
+        session.append("\nThird\n");
+        session.commit();
+
+        // The retained snapshot never resolved scopes while it was current.
+        // Its immutable tree is complete, so the structural visitor overload
+        // must traverse it — and must therefore never request scope
+        // materialization.
+        const visited = [];
+        const recording = Object.fromEntries(
+            Object.entries(kindVisitor).map(([method, kindOf]) => [method, (node) => void visited.push(kindOf(node))])
+        );
+        new MarkupWalker().walk(first.document, recording);
+        assert.deepEqual(visited, ["document", "paragraph", "text", "paragraph", "text"]);
+
+        // The scopeful overload keeps the documented superseded-snapshot
+        // failure.
+        assert.throws(() => new MarkupWalker().walk(first.document, () => {}), /superseded snapshot/);
     } finally {
         session.close();
     }
@@ -324,9 +352,11 @@ test("sessions: invalid edit ranges are rejected", () => {
         // native length check; they must be rejected before the crossing.
         assert.throws(() => session.replace(2 ** 32, 2 ** 32, "x"), RangeError);
         assert.throws(() => session.replace(0, 2 ** 32 + 3, "x"), RangeError);
+        // scope stays null until an engine path emits scoped errors; the
+        // bridge plumbing is in place either way.
         assert.throws(
             () => session.replace(1, 9, "x"),
-            (error) => error.name === "ParseError" && error.code === "invalidArgument"
+            (error) => error.name === "ParseError" && error.code === "invalidArgument" && error.scope === null
         );
         // The session stays usable after a rejected edit.
         session.commit();

@@ -29,23 +29,34 @@ export interface NativeExports extends WebAssembly.Exports {
     es_session_node_by_id(session: number, id: bigint): number;
     es_node_parent(node: number): number;
     es_error_code(error: number): number;
+    /** Writes the error's four absolute scope coordinates to `output`;
+     * answers 0 when the error carries no scope. */
+    es_error_scope(error: number, output: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;
     es_node_next_sibling(node: number): number;
-    es_scope_coordinate(node: number, field: number): number;
+    /** One O(n) walk over the subtree at `root`: writes a malloc'd array of
+     * 32-byte (id u64, revision u64, scope 4×i32) rows to `dataOutput`
+     * (release with `free`) and returns the row count; 0 with a null
+     * pointer reports allocation failure. */
+    es_scope_table(root: number, dataOutput: number): number;
     es_node_heading_level(node: number): number;
-    es_node_list_flavor(node: number): number;
-    es_node_list_tight(node: number): number;
-    es_node_list_start_state(node: number, output: number): number;
+    /** Writes i32 flavor, i32 tight, i32 has-start, i32 padding, i64 start
+     * to `output` in one crossing. */
+    es_node_list_properties(node: number, output: number): void;
     es_node_checked(node: number): number;
-    es_node_code_flag(node: number, field: number): number;
+    /** Writes u32 info/language/literal (data, length) view pairs plus i32
+     * fenced and i32 closed to `output` in one crossing. */
+    es_node_code_properties(node: number, output: number): void;
     es_node_formula_mode(node: number): number;
     es_node_table_column_count(node: number): number;
     es_node_table_alignment(node: number, index: number): number;
     es_node_table_row_header(node: number): number;
-    es_node_directive_mode(node: number): number;
-    es_node_directive_label_count(node: number): number;
+    /** Writes i32 mode, i32 label count (-1 without a label), and u32
+     * name/attributes (data, length) view pairs to `output` in one
+     * crossing. */
+    es_node_directive_properties(node: number, output: number): void;
     es_string(object: number, field: number, dataOutput: number, lengthOutput: number): void;
 }
 
@@ -56,9 +67,11 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     if (wasmURL.protocol === "file:") {
         const nodeFileSystem = "node:fs/promises";
         const fileSystem = (await import(nodeFileSystem)) as {
-            readFile(url: URL): Promise<Uint8Array>;
+            readFile(url: URL): Promise<Uint8Array<ArrayBuffer>>;
         };
-        bytes = Uint8Array.from(await fileSystem.readFile(wasmURL)).buffer;
+        // readFile returns an exact-size Uint8Array, itself a valid
+        // BufferSource; wrapping it again would copy the whole binary.
+        bytes = await fileSystem.readFile(wasmURL);
     } else {
         const response = await fetch(wasmURL);
         if (!response.ok) throw new Error(`failed to load Markdown Core WASM: ${response.status}`);
@@ -102,9 +115,10 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
         }
     };
     const env = {
-        // Growth support: nothing to refresh — every DataView / Uint8Array
-        // over wasm memory is created at its use site, never cached across
-        // calls, so a replaced buffer is picked up automatically.
+        // Growth support: nothing to refresh — every Uint8Array over wasm
+        // memory is created at its use site, and the decoder's cached
+        // DataView revalidates against `memory.buffer` identity on every
+        // access, so a replaced buffer is picked up automatically.
         emscripten_notify_memory_growth: (): void => {}
     };
     const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
