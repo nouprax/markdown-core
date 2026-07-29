@@ -488,9 +488,10 @@ kotlin {
         // against the same JNI bridge; the shared JNI declarations, the
         // CSession wrapper, and the host-library extraction helper live once
         // here, leaving only an expect/actual loader per target.
-        val jvmSharedMain by creating {
-            dependsOn(commonMain.get())
-        }
+        val jvmSharedMain =
+            create("jvmSharedMain") {
+                dependsOn(commonMain.get())
+            }
         jvmMain.get().dependsOn(jvmSharedMain)
         getByName("androidMain").dependsOn(jvmSharedMain)
         commonTest {
