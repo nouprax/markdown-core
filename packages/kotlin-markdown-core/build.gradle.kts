@@ -3,18 +3,27 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.provider.Provider
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.CacheableTask
 import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.CompileClasspath
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.jvm.tasks.Jar
+import org.gradle.jvm.toolchain.JavaCompiler
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
@@ -25,7 +34,7 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
 import java.util.zip.ZipFile
-import javax.tools.ToolProvider
+import javax.inject.Inject
 
 @CacheableTask
 abstract class GenerateCanonicalAstFixtures : DefaultTask() {
@@ -311,6 +320,21 @@ private object JavaAbi {
 
 @CacheableTask
 abstract class VerifyJavaImplementationHidden : DefaultTask() {
+    @get:Nested
+    abstract val javaCompiler: Property<JavaCompiler>
+
+    // JavaCompiler's documented nested metadata does not expose the concrete
+    // vendor and full runtime build as stable inputs. Both can still change
+    // javac's output, so record them explicitly in this cacheable task.
+    @get:Input
+    abstract val javaCompilerVendor: Property<String>
+
+    @get:Input
+    abstract val javaCompilerRuntimeVersion: Property<String>
+
+    @get:Input
+    abstract val javaRelease: Property<Int>
+
     @get:Classpath
     abstract val libraryClasses: ConfigurableFileCollection
 
@@ -322,30 +346,24 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val abiSnapshotFile: RegularFileProperty
 
-    @get:Classpath
-    abstract val runtimeClasspath: ConfigurableFileCollection
+    @get:CompileClasspath
+    abstract val compileClasspath: ConfigurableFileCollection
 
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
     @TaskAction
     fun verify() {
-        val compiler =
-            requireNotNull(ToolProvider.getSystemJavaCompiler()) {
-                "$path requires a JDK, not a JRE"
-            }
         val outputRoot = outputDirectory.get().asFile
         check(!outputRoot.exists() || outputRoot.deleteRecursively()) {
             "could not clear ${outputRoot.absolutePath}"
         }
         val sourceDirectory = outputRoot.resolve("source").apply { mkdirs() }
         val classesDirectory = outputRoot.resolve("classes").apply { mkdirs() }
-        val classpath =
-            (
-                libraryClasses.files +
-                    runtimeClasspath.files
-                        .filter(File::exists)
-            ).distinct().sortedBy(File::getAbsolutePath).joinToString(File.pathSeparator)
+        val classpath = (libraryClasses + compileClasspath).filter(File::exists).asPath
 
         val actualSurface = JavaAbi.surface(libraryClasses.files)
         val expectedSurface =
@@ -378,20 +396,23 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
             sourceFile.writeText(source)
             val output = ByteArrayOutputStream()
             val result =
-                compiler.run(
-                    null,
-                    output,
-                    output,
-                    "--release",
-                    "17",
-                    "-proc:none",
-                    "-classpath",
-                    classpath,
-                    "-d",
-                    classesDirectory.absolutePath,
-                    sourceFile.absolutePath,
-                )
-            return result to output.toString(Charsets.UTF_8)
+                execOperations.exec {
+                    executable(javaCompiler.get().executablePath.asFile)
+                    args(
+                        "--release",
+                        javaRelease.get().toString(),
+                        "-proc:none",
+                        "-classpath",
+                        classpath,
+                        "-d",
+                        classesDirectory.absolutePath,
+                        sourceFile.absolutePath,
+                    )
+                    standardOutput = output
+                    errorOutput = output
+                    isIgnoreExitValue = true
+                }
+            return result.exitValue to output.toString(Charsets.UTF_8)
         }
 
         val (positiveResult, positiveOutput) =
@@ -904,6 +925,12 @@ tasks.named<ProcessResources>("jvmProcessResources") {
 val jvmTarget = kotlin.targets.getByName("jvm") as KotlinJvmTarget
 val jvmMainCompilation = jvmTarget.compilations.getByName("main")
 val jvmTestCompilation = jvmTarget.compilations.getByName("test")
+val androidMainCompilation =
+    kotlin.targets
+        .getByName("android")
+        .compilations
+        .getByName("main")
+val jvmLibraryJar = tasks.named<Jar>("jvmJar").flatMap { it.archiveFile }
 tasks.register<Sync>("stageJvmTestArtifact") {
     dependsOn("jvmTestClasses", "jvmProcessResources")
     into(layout.buildDirectory.dir("ci-test-artifact/jvm"))
@@ -1033,17 +1060,33 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
 // Module-internal top-level declarations live in package-private multifile
 // parts, while their synthetic forwarders share the documented
 // FootnoteQueriesKt owner. Regenerate deliberately with -PwriteJvmAbi.
+val javaToolchains = extensions.getByType<JavaToolchainService>()
+val javaProbeCompiler =
+    javaToolchains.compilerFor {
+        languageVersion.set(JavaLanguageVersion.of(libs.versions.jdk.get()))
+    }
+
+fun VerifyJavaImplementationHidden.useJavaCompiler(
+    compiler: Provider<JavaCompiler>,
+    release: Provider<String>,
+) {
+    javaCompiler.set(compiler)
+    javaCompilerVendor.set(compiler.map { it.metadata.vendor })
+    javaCompilerRuntimeVersion.set(compiler.map { it.metadata.javaRuntimeVersion })
+    javaRelease.set(release.map { it.toInt() })
+}
+
 val verifyJvmAbi =
     tasks.register("verifyJvmAbi") {
         group = "verification"
         description = "Compares the JVM jar's public ABI against the checked-in snapshot."
-        dependsOn("jvmJar")
-        val jarFile =
-            layout.buildDirectory
-                .file("libs/kotlin-markdown-core-jvm-$version.jar")
         val snapshotFile = layout.projectDirectory.file("jvm-abi.txt").asFile
         val officialApiFile = layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api").asFile
         val write = providers.gradleProperty("writeJvmAbi").isPresent
+        // Capture the provider itself in the task action. Referencing a script
+        // property from doLast would retain the Gradle script object and make
+        // this otherwise-lazy provider incompatible with configuration cache.
+        val jarFile = jvmLibraryJar
         inputs.file(jarFile)
         inputs.file(officialApiFile)
 
@@ -1082,14 +1125,11 @@ val verifyJvmImplementationHidden =
     tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
         group = "verification"
         description = "Proves ordinary Java source cannot use Kotlin/JVM implementation types or members."
-        dependsOn("jvmJar")
-        libraryClasses.from(
-            layout.buildDirectory
-                .file("libs/kotlin-markdown-core-jvm-$version.jar"),
-        )
+        useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
+        libraryClasses.from(jvmLibraryJar)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
         abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
-        runtimeClasspath.from(jvmMainCompilation.runtimeDependencyFiles)
+        compileClasspath.from(jvmMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/jvm-implementation-hidden"))
     }
 
@@ -1097,11 +1137,11 @@ val verifyAndroidImplementationHidden =
     tasks.register<VerifyJavaImplementationHidden>("verifyAndroidImplementationHidden") {
         group = "verification"
         description = "Proves ordinary Java source cannot use Kotlin/Android implementation types or members."
-        dependsOn("compileAndroidMain")
-        libraryClasses.from(layout.buildDirectory.dir("classes/kotlin/android/main"))
+        useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
+        libraryClasses.from(androidMainCompilation.output.classesDirs)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
         abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
-        runtimeClasspath.from(jvmMainCompilation.runtimeDependencyFiles)
+        compileClasspath.from(androidMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/android-implementation-hidden"))
     }
 
