@@ -500,6 +500,9 @@ const mainPullRequest = ruleset.rules.find((rule) => rule.type === "pull_request
 if (mainPullRequest?.parameters?.required_reviewers?.length) {
     throw new Error("owner reviewers must not share the main CI ruleset");
 }
+if (mainPullRequest?.parameters?.required_review_thread_resolution !== true) {
+    throw new Error("all pull-request review conversations must be resolved before merge");
+}
 if (
     ownerReviewRuleset.target !== "branch" ||
     ownerReviewRuleset.enforcement !== "active" ||

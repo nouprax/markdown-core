@@ -1053,7 +1053,7 @@ jq -n \
         require_last_push_approval: false,
         dismiss_stale_reviews_on_push: false,
         required_approving_review_count: 0,
-        required_review_thread_resolution: false
+        required_review_thread_resolution: true
       }},
       {type: "required_status_checks", parameters: {
         do_not_enforce_on_create: true,
