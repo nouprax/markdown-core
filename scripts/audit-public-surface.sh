@@ -19,11 +19,12 @@ temp_dir=$(mktemp -d)
 trap 'rm -rf "$temp_dir"' EXIT
 
 node - packages/markdown-core/include/markdown_core.h \
-    packages/markdown-core/core/exports/markdown_core.map "$temp_dir" <<'NODE'
+    packages/markdown-core/core/exports/markdown_core.map \
+    packages/markdown-core/core/exports/markdown_core.exports "$temp_dir" <<'NODE'
 import fs from "node:fs";
 import path from "node:path";
 
-const [, , headerPath, mapPath, outputDirectory] = process.argv;
+const [, , headerPath, mapPath, exportsPath, outputDirectory] = process.argv;
 const header = fs.readFileSync(headerPath, "utf8");
 const map = fs.readFileSync(mapPath, "utf8");
 const declared = [
@@ -32,10 +33,20 @@ const declared = [
 const exported = [...map.matchAll(/^\s+(markdown_core_[a-z0-9_]+);$/gm)]
     .map((match) => match[1])
     .sort();
+const darwinExported = fs
+    .readFileSync(exportsPath, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => line.replace(/^_/, ""))
+    .sort();
 fs.writeFileSync(path.join(outputDirectory, "declared.txt"), `${declared.join("\n")}\n`);
 fs.writeFileSync(path.join(outputDirectory, "exported.txt"), `${exported.join("\n")}\n`);
+fs.writeFileSync(path.join(outputDirectory, "darwin-exported.txt"), `${darwinExported.join("\n")}\n`);
 if (declared.join("\n") !== exported.join("\n")) {
-    throw new Error("C header declarations and export allowlist differ");
+    throw new Error("C header declarations and the .map export allowlist differ");
+}
+if (declared.join("\n") !== darwinExported.join("\n")) {
+    throw new Error("C header declarations and the Darwin .exports allowlist differ");
 }
 for (const symbol of declared) {
     if (/_(set|insert|append|prepend|replace|unlink|new|render)_/.test(symbol)) {

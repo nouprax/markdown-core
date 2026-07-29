@@ -127,7 +127,8 @@ correctness 下的 `robustness` cases 断言结果、错误与生命周期；ben
 workloads 负责 warmup/repeat、计时、吞吐量、relative scaling 与性能基线。两者可以
 复用确定性 input generator，但不得复用测试注册、断言或执行入口。
 
-C 侧 CTest label taxonomy(每个测试恰有一个 label):
+C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 是
+唯一的次级调度 label):
 
 | Label | 覆盖 |
 | --- | --- |
@@ -140,6 +141,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个 label):
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
+| `complexity` | `pathological_complexity_*` 附加的次级调度 label:sanitizer presets 用它排除 wall-clock 复杂度 gate,这些 case 的主 label 仍是 `pathological` |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
 | `packaging` | corpus/workspace 政策 guard(`packaging_corpus_guard`) |
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |

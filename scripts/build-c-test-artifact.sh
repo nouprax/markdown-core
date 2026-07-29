@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 preset=${1:-}
 shared=${2:-}
 output=${3:-}
@@ -47,9 +48,6 @@ kind=ctest-tree
 preset=$preset
 build_dir=$build_dir
 configuration=$configuration
-source_sha=${GITHUB_SHA:-$(git -C "$root" rev-parse HEAD)}
+source_sha=$(artifact_source_sha "$root")
 EOF
-(
-    cd "$output"
-    sha256sum c-test-tree.tar.gz manifest.txt >SHA256SUMS
-)
+artifact_sha256_write "$output" c-test-tree.tar.gz manifest.txt

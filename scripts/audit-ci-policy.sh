@@ -25,6 +25,20 @@ else
     }
 fi
 
+# Extract the body of one top-level YAML key (a job under `jobs:` or a
+# trigger under `on:`): starts at the named 4-space key and ends at the next
+# 4-space key, whatever it is. Policy assertions must slice structurally so
+# that reordering neighbouring jobs cannot silently change what they inspect
+# (implementation layout is not CI contract; see test-architecture.md §8).
+job_body() {
+    awk -v key="$1" '
+        BEGIN { target = "    " key ":" }
+        $0 == target { collecting = 1; print; next }
+        collecting && /^    [A-Za-z0-9_-]+:$/ { exit }
+        collecting { print }
+    ' "$2"
+}
+
 # Supply-chain pinning: every workflow action must reference an immutable
 # commit SHA (a movable major tag lets a tag replacement change the code CI
 # and release jobs execute without a reviewed diff). Repository-local
@@ -157,19 +171,20 @@ grep -Fq 'node-benchmark' scripts/run-es-test-artifact.sh
 grep -Fq 'benchmark' scripts/run-c-test-artifact.sh
 grep -Fq -- "-destination 'generic/platform=iOS Simulator'" scripts/build-swift-test-artifact.sh
 grep -Fq 'prepare-swift-ios-simulator.sh' scripts/run-swift-test-artifact.sh
-if grep -Eq 'name=iPhone|OS=latest' scripts/build-swift-test-artifact.sh scripts/run-swift-test-artifact.sh; then
-    echo "Swift CI hard-codes a simulator model or moving runtime alias" >&2
+if grep -Eq 'name=iPhone|OS=latest' scripts/build-swift-test-artifact.sh scripts/run-swift-test-artifact.sh \
+    scripts/run-swift-ios-tests.sh package.json; then
+    echo "Swift CI or the pnpm entry points hard-code a simulator model or moving runtime alias" >&2
     exit 1
 fi
 search -- '--skip-build' packages/es-markdown-core/scripts/run-tests.mjs
-search 'sha256sum --check SHA256SUMS' scripts/run-kotlin-android-test-artifact.sh
+search 'artifact_verify ' scripts/run-kotlin-android-test-artifact.sh
 if search 'gradle\.sh|cmake --build|swift build|xcodebuild build-for-testing|build\.mjs|\bemcc\b' \
     scripts/run-*-test-artifact.sh; then
     echo "test artifact consumer contains a compiler/build invocation" >&2
     exit 1
 fi
 
-android_test_job=$(sed -n '/^    kotlin-android-test:$/,/^    es-test-build:$/p' "$ci")
+android_test_job=$(job_body kotlin-android-test "$ci")
 for forbidden in \
     'setup-java' \
     'setup-node' \
@@ -183,7 +198,7 @@ for forbidden in \
         exit 1
     fi
 done
-if [ "$(grep -c '^                      suite:' <<<"$android_test_job")" -ne 4 ]; then
+if [ "$(grep -c -E '^[[:space:]]*suite:' <<<"$android_test_job")" -ne 4 ]; then
     echo "Android correctness/conformance and 4K/16K must be four independent consumers" >&2
     exit 1
 fi
@@ -195,7 +210,7 @@ for consumer in \
     c-test \
     c-test-windows \
     c-sanitizer-test; do
-    consumer_job=$(sed -n "/^    ${consumer}:$/,/^    [a-z].*:$/p" "$ci")
+    consumer_job=$(job_body "$consumer" "$ci")
     if ! grep -Fq '        needs: build-tests-ready' <<<"$consumer_job"; then
         echo "test consumer bypasses the global build-test barrier: $consumer" >&2
         exit 1
@@ -209,7 +224,7 @@ for producer in \
     kotlin-product-build \
     swift-product-build \
     swift-deployment-contract; do
-    producer_job=$(sed -n "/^    ${producer}:$/,/^    [a-z].*:$/p" "$ci")
+    producer_job=$(job_body "$producer" "$ci")
     if ! grep -Fq '        needs: health-checks-ready' <<<"$producer_job"; then
         echo "build producer bypasses the global health-check barrier: $producer" >&2
         exit 1
@@ -226,7 +241,7 @@ for contract in \
     c-test-build \
     c-test-build-windows \
     c-sanitizer-test-build; do
-    contract_job=$(sed -n "/^    ${contract}:$/,/^    [a-z].*:$/p" "$ci")
+    contract_job=$(job_body "$contract" "$ci")
     if ! grep -Fq '        needs: builds-ready' <<<"$contract_job"; then
         echo "build test bypasses the global build barrier: $contract" >&2
         exit 1
@@ -251,13 +266,13 @@ if search '^        name:.*matrix\.(os|suite|compiler|shared|sanitizer|platform|
     exit 1
 fi
 
-tests_ready_job=$(sed -n '/^    tests-ready:$/,/^    required-gates:$/p' "$ci")
+tests_ready_job=$(job_body tests-ready "$ci")
 grep -Fq '        if: ${{ always() }}' <<<"$tests_ready_job"
 if grep -Fq 'benchmarks-ready' <<<"$tests_ready_job"; then
     echo "Tests - Ready must not depend on the parallel benchmark barrier" >&2
     exit 1
 fi
-required_gate_job=$(sed -n '/^    required-gates:/,$p' "$ci")
+required_gate_job=$(job_body required-gates "$ci")
 grep -Fq '            - tests-ready' <<<"$required_gate_job"
 grep -Fq '            - benchmarks-ready' <<<"$required_gate_job"
 grep -Fq 'BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}' <<<"$required_gate_job"
@@ -301,15 +316,15 @@ for release_name in \
     'Publish Release - GitHub'; do
     grep -Fq "        name: $release_name" "$release"
 done
-release_ready_job=$(sed -n '/^    release-artifacts-ready:$/,/^    maven-stage:$/p' "$release")
+release_ready_job=$(job_body release-artifacts-ready "$release")
 grep -Fq "if: \${{ github.event_name == 'push' && always() }}" <<<"$release_ready_job"
 for dependency in c-artifacts swift-source npm-package maven-assemble; do
     grep -Fq "$dependency" <<<"$release_ready_job"
 done
-maven_stage_job=$(sed -n '/^    maven-stage:$/,/^    npm-publish:$/p' "$release")
+maven_stage_job=$(job_body maven-stage "$release")
 grep -Fq '        needs: release-artifacts-ready' <<<"$maven_stage_job"
 grep -Fq 'central-portal.sh upload build/markdown-core-maven-central.zip' <<<"$maven_stage_job"
-if search 'central-portal\.sh upload' <(sed -n '/^    maven-assemble:$/,/^    release-artifacts-ready:$/p' "$release"); then
+if search 'central-portal\.sh upload' <(job_body maven-assemble "$release"); then
     echo "Maven assembly phase may not publish externally" >&2
     exit 1
 fi
@@ -376,7 +391,7 @@ for workflow in "$ci" "$codeql"; do
 done
 search '^    workflow_call:$' "$ci"
 
-ci_push_trigger=$(sed -n '/^    push:$/,/^    merge_group:$/p' "$ci")
+ci_push_trigger=$(job_body push "$ci")
 if ! grep -Fqx '        branches:' <<<"$ci_push_trigger" ||
     ! grep -Fqx '            - main' <<<"$ci_push_trigger"; then
     echo "blocking CI push trigger must cover only the default branch" >&2
@@ -416,13 +431,13 @@ for benchmark_name in \
 done
 grep -Fq '        name: Report - PR Metrics / Comment' "$comment"
 
-linux_benchmark_job=$(sed -n '/^    benchmark-c:$/,/^    benchmark-kotlin:$/p' "$ci")
+linux_benchmark_job=$(job_body benchmark-c "$ci")
 if grep -Eq 'setup-java|setup-android|setup-emsdk|benchmark:kotlin|benchmark:es' <<<"$linux_benchmark_job"; then
     echo "C benchmark runner contains an unrelated platform workload" >&2
     exit 1
 fi
 for benchmark_job in benchmark-c benchmark-kotlin benchmark-es benchmark-swift; do
-    benchmark_job_body=$(sed -n "/^    ${benchmark_job}:$/,/^    [a-z].*:$/p" "$ci")
+    benchmark_job_body=$(job_body "$benchmark_job" "$ci")
     grep -Fq '        needs: build-tests-ready' <<<"$benchmark_job_body"
     case "$benchmark_job" in
         benchmark-c) forbidden='run-kotlin|run-es|run-swift' ;;
@@ -441,7 +456,7 @@ if [ "$(grep -Fc 'SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.s
 fi
 
 if search 'pr-metrics|binary.size|collect-pr-metrics|upload.*metrics' <(
-    sed -n '/^    required-gates:/,$p' "$ci"
+    job_body required-gates "$ci"
 ); then
     echo "non-blocking metrics leaked into the required gate" >&2
     exit 1

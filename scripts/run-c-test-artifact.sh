@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 artifact_dir=${1:-}
 test_preset=${2:-}
 configuration=${3:-}
@@ -15,15 +16,8 @@ case "$test_preset" in
         ;;
 esac
 
-(
-    cd "$artifact_dir"
-    sha256sum --check SHA256SUMS
-)
-grep -Fxq 'kind=ctest-tree' "$artifact_dir/manifest.txt"
-if [ -n "${GITHUB_SHA:-}" ]; then
-    grep -Fxq "source_sha=$GITHUB_SHA" "$artifact_dir/manifest.txt"
-fi
-tar -xzf "$artifact_dir/c-test-tree.tar.gz" -C "$root"
+artifact_verify "$artifact_dir" ctest-tree
+artifact_extract "$artifact_dir" c-test-tree.tar.gz "$root"
 
 command=(ctest --preset "$test_preset" --output-on-failure)
 if [ "$test_preset" = benchmark ]; then

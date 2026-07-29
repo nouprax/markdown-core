@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 target=${1:-}
 output=${2:-"$root/build/ci-artifacts/kotlin-$target"}
 project_build="$root/packages/kotlin-markdown-core/build"
@@ -47,13 +48,6 @@ cat >"$output/manifest.txt" <<EOF
 schema=1
 kind=kotlin-host-test-products
 target=$target
-source_sha=${GITHUB_SHA:-$(git -C "$root" rev-parse HEAD)}
+source_sha=$(artifact_source_sha "$root")
 EOF
-(
-    cd "$output"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum kotlin-test-products.tar.gz manifest.txt >SHA256SUMS
-    else
-        shasum -a 256 kotlin-test-products.tar.gz manifest.txt >SHA256SUMS
-    fi
-)
+artifact_sha256_write "$output" kotlin-test-products.tar.gz manifest.txt

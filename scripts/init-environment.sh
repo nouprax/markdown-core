@@ -200,7 +200,9 @@ check_core() {
     require_command unzip || true
     if command -v cmake >/dev/null 2>&1; then
         actual=$(cmake --version | sed -n '1s/.* //p')
-        version_at_least "$actual" 3.20 || fail "CMake 3.20 or later is required; found $actual"
+        # The floor matches cmakeMinimumRequired in CMakePresets.json: every
+        # documented entry point configures through `cmake --preset`.
+        version_at_least "$actual" 3.21 || fail "CMake 3.21 or later is required; found $actual"
     fi
     [ "$failures" -ne "$before" ] || ok "C/C++ build tools"
     return 0

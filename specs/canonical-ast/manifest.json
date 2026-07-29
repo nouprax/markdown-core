@@ -141,9 +141,7 @@
                     "children.populated",
                     "escaping.newline"
                 ],
-                "orders": [
-                    "document.source-order"
-                ]
+                "orders": ["document.source-order"]
             }
         },
         {
@@ -210,11 +208,7 @@
                     "escaping.empty-string",
                     "escaping.newline"
                 ],
-                "orders": [
-                    "document.source-order",
-                    "table.header-rows-cells",
-                    "inline.source-order"
-                ]
+                "orders": ["document.source-order", "table.header-rows-cells", "inline.source-order"]
             }
         },
         {
@@ -235,13 +229,7 @@
                 "directives": true
             },
             "coverage": {
-                "kinds": [
-                    "Document",
-                    "Paragraph",
-                    "Text",
-                    "Formula",
-                    "FormulaBlock"
-                ],
+                "kinds": ["Document", "Paragraph", "Text", "Formula", "FormulaBlock"],
                 "states": [
                     "placement.embedded",
                     "placement.standalone",
@@ -249,10 +237,7 @@
                     "children.empty",
                     "children.populated"
                 ],
-                "orders": [
-                    "document.source-order",
-                    "inline.source-order"
-                ]
+                "orders": ["document.source-order", "inline.source-order"]
             }
         },
         {
@@ -304,10 +289,7 @@
                     "escaping.empty-string",
                     "escaping.json"
                 ],
-                "orders": [
-                    "document.source-order",
-                    "inline.source-order"
-                ]
+                "orders": ["document.source-order", "inline.source-order"]
             }
         },
         {
@@ -328,20 +310,9 @@
                 "directives": true
             },
             "coverage": {
-                "kinds": [
-                    "Document",
-                    "ThematicBreak",
-                    "Paragraph",
-                    "Text"
-                ],
-                "states": [
-                    "scope.positive",
-                    "children.empty",
-                    "children.populated"
-                ],
-                "orders": [
-                    "document.source-order"
-                ]
+                "kinds": ["Document", "ThematicBreak", "Paragraph", "Text"],
+                "states": ["scope.positive", "children.empty", "children.populated"],
+                "orders": ["document.source-order"]
             }
         },
         {
@@ -386,11 +357,7 @@
                     "children.populated",
                     "escaping.json"
                 ],
-                "orders": [
-                    "document.source-order",
-                    "table.header-rows-cells",
-                    "directive.label-before-content"
-                ]
+                "orders": ["document.source-order", "table.header-rows-cells", "directive.label-before-content"]
             }
         },
         {
@@ -411,23 +378,9 @@
                 "directives": true
             },
             "coverage": {
-                "kinds": [
-                    "Document",
-                    "Paragraph",
-                    "Text",
-                    "Code",
-                    "HTML",
-                    "Emphasis"
-                ],
-                "states": [
-                    "placement.embedded",
-                    "scope.positive",
-                    "children.empty",
-                    "children.populated"
-                ],
-                "orders": [
-                    "document.source-order"
-                ]
+                "kinds": ["Document", "Paragraph", "Text", "Code", "HTML", "Emphasis"],
+                "states": ["placement.embedded", "scope.positive", "children.empty", "children.populated"],
+                "orders": ["document.source-order"]
             }
         }
     ]
