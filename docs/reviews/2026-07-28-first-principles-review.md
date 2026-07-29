@@ -32,46 +32,29 @@ WP1 (all six behavioral findings) is fully landed; C suite is 96/96 with the new
 regression fixtures, and the frozen specs/canonical-ast oracle gained the
 multiline-spans case (platform conformance suites must re-run against it).
 
-### Session hand-off state (uncommitted working tree, 2026-07-28 evening)
+### Landed after hand-off (all validated on this machine before commit)
 
-- **WP3-swift: implemented, validated, UNCOMMITTED.** Agent report: all findings
-  I14-I23 done (I23 via paired comments only); test:swift-macos 18+1 pass,
-  conformance:swift-macos 6 pass (2 new tests), lint/format clean, benchmarks show
-  deep_nesting ~15-23% faster and session peak RSS ~-10%. Breaking Swift renames
-  recorded in CHANGELOG "Unreleased". Follow-up found: scripts/check-swift-source-archive.sh:74
-  still uses `document.children.first` and must be updated to `content` before CI.
-- **WP4-kotlin: implemented, validated, UNCOMMITTED.** Agent report: I05-I13 done
-  (I11 skipped by design, I58 belongs to scripts); jvmTest 31 pass, jvm/androidHost/macosArm64
-  conformance 7 pass each, testAndroidHostTest 27, macosArm64Test 27; POMs byte-identical;
-  jvm-abi.txt legitimately regenerated for the I06 additions.
-- **WP5-es: PARTIAL, agent stopped mid-validation.** Source edits are in the tree
-  (7 files under packages/es-markdown-core); the agent was re-running the build after
-  its X01 guard test wiped dist/. A fresh session must rebuild
-  (source .tools/emsdk/4.0.23/emsdk_env.sh; pnpm run test:es-node && conformance:es-node)
-  and verify I00-I04+X01 before committing; treat every edit as unreviewed.
-- **WP6-infra: PARTIAL, agent stopped mid-validation.** ~22 script/build files edited
-  (Makefile, CMakePresets.json, CMakeLists version floors, scripts/lib extraction,
-  audit-public-surface three-way check, check-generated-scanners.sh, etc.); the agent
-  was about to re-run audit:packages with the emsdk on PATH. A fresh session must run
-  the five pnpm audit:* gates plus cmake --preset default and bash -n over changed
-  scripts before committing; treat every edit as unreviewed.
-- specs/canonical-ast/manifest.json was reformatted by a prettier run mid-session;
-  verify `node scripts/check-canonical-ast-fixtures.mjs` still passes before commit.
+| Commit | Work package | Validation |
+| --- | --- | --- |
+| `e2bf558` | WP4-kotlin (I05-I10, I12, I13; I11 skipped by design) | jvmTest 31, conformance 7x3 suites, ktlint |
+| `380cf0e` | WP3-swift (I14-I23) + check-swift-source-archive.sh consumer line | test:swift-macos 18+1, conformance 6, full archive gate |
+| `030d5f6` | WP5-es (I00-I04, X01) | node suites 12+19, conformance, eslint, prettier |
+| `8b0bbd0` | style fixup: clang-format on the seam gate | format:c:check |
+| `3ebd4e7` | WP6-infra (I47-I57, I66, I72-I74, X02; I50 loosened structurally) | verify:core + verify:macos fully green |
 
-### Recommended dispatch for follow-up sessions
+Note: the ES scope-table fix (I02) shipped as a native es_scope_table subtree walk
+(the fix plan's preferred O(n) option); the Swift one-shot laziness (I21) shipped as
+a resolver-owned native session rather than the native accumulator alternative.
 
-1. Review + commit WP4 (kotlin) and WP3 (swift) as separate commits from the current
-   tree (their suites were green at hand-off; re-run before committing). Include the
-   one-line check-swift-source-archive.sh fix with WP3.
-2. Finish WP5 (es): rebuild, validate, commit.
-3. Finish WP6 (infra): validate audits, commit.
-4. WP2 (C perf/hygiene, below) is untouched except I62; largest wins are I25
-   (quadratic brackets), I78 (autolink email sourcepos), I60 (one-shot session
-   index cost). Each entry below is self-contained.
-5. Final gate for the whole branch: full multi-platform suites
-   (test:c-host, asan/ubsan via make asan-test ubsan-test, test:swift-macos,
-   test:kotlin-jvm, test:es-node, all conformance:* targets) so the new
-   multiline-spans oracle case is proven on every platform, then pnpm verify.
+### Remaining work
+
+1. WP2 (C perf/hygiene, below) is the only open package; I62 already landed in
+   `ddaaaee`. Largest wins: I25 (quadratic brackets under default options, measured
+   4x time for 2x input), I78 (autolink email sourcepos O(n^2)), I60 (one-shot parse
+   builds then discards session indexes). Each entry below is self-contained.
+2. Suggested final gate once WP2 lands: make asan-test ubsan-test, plus one full
+   multi-platform conformance pass (all platforms already ran green against the new
+   multiline-spans oracle case during this session).
 
 Priority key: P0-bug = observable wrong behavior vs spec/CommonMark; P1-perf = measured
 performance problem; P2-hygiene = dead code/duplication/build hygiene; P3-cosmetic.
