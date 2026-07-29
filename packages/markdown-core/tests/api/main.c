@@ -1115,6 +1115,10 @@ static void numeric_entities(test_batch_runner *runner) {
     test_md_paragraph_text(runner, "&#xD800;", UTF8_REPL, "Invalid numeric entity 0xD800");
     test_md_paragraph_text(runner, "&#xDFFF;", UTF8_REPL, "Invalid numeric entity 0xDFFF");
     test_md_paragraph_text(runner, "&#57344;", "\xEE\x80\x80", "Valid numeric entity 0xE000");
+    // Noncharacters are still valid UTF-8 scalar values: they must encode as
+    // their normal 3-byte sequences, never as raw 0xFF/0xFE bytes.
+    test_md_paragraph_text(runner, "&#xFFFE;", "\xEF\xBF\xBE", "Numeric entity 0xFFFE encodes as UTF-8");
+    test_md_paragraph_text(runner, "&#xFFFF;", "\xEF\xBF\xBF", "Numeric entity 0xFFFF encodes as UTF-8");
     test_md_paragraph_text(runner, "&#x10FFFF;", "\xF4\x8F\xBF\xBF", "Valid numeric entity 0x10FFFF");
     test_md_paragraph_text(runner, "&#x110000;", UTF8_REPL, "Invalid numeric entity 0x110000");
     test_md_paragraph_text(runner, "&#x80000000;", UTF8_REPL, "Invalid numeric entity 0x80000000");
