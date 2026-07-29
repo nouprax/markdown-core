@@ -597,10 +597,6 @@ markdown_core_node *markdown_core_node_parse_file(FILE *f, int options);
  * ### Options affecting parsing
  */
 
-/** Legacy option (no effect).
- */
-#define MARKDOWN_CORE_OPT_NORMALIZE (1 << 8)
-
 /** Validate UTF-8 in the input before parsing, replacing illegal
  * sequences with the replacement character U+FFFD.
  */
@@ -610,10 +606,6 @@ markdown_core_node *markdown_core_node_parse_file(FILE *f, int options);
  */
 #define MARKDOWN_CORE_OPT_SMART (1 << 10)
 
-/** Be liberal in interpreting inline HTML tags.
- */
-#define MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG (1 << 12)
-
 /** Strip HTML comment nodes from the parsed AST.
  */
 #define MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS (1 << 25)
@@ -621,11 +613,6 @@ markdown_core_node *markdown_core_node_parse_file(FILE *f, int options);
 /** Parse footnotes.
  */
 #define MARKDOWN_CORE_OPT_FOOTNOTES (1 << 13)
-
-/** Only parse strikethroughs if surrounded by exactly 2 tildes.
- * Gives some compatibility with redcarpet.
- */
-#define MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE (1 << 14)
 
 /** Enable dollar formula delimiters: $...$ and $$...$$.
  */

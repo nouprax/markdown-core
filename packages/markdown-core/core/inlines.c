@@ -1118,17 +1118,6 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         return node;
     }
 
-    if (options & MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG) {
-        matchlen = scan_liberal_html_tag(&subj->input, subj->pos);
-        if (matchlen > 0) {
-            contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
-            subj->pos += matchlen;
-            markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-            adjust_subj_node_newlines(subj, node, matchlen, 1, options);
-            return node;
-        }
-    }
-
     // if nothing matches, just return the opening <:
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("<"));
 }

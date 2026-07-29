@@ -41,8 +41,7 @@ static markdown_core_node *match(
     res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
     res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
 
-    if ((left_flanking || right_flanking) &&
-        (delims == 2 || (!(parser->options & MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE) && delims == 1))) {
+    if ((left_flanking || right_flanking) && (delims == 1 || delims == 2)) {
         markdown_core_inline_parser_push_delimiter(inline_parser, character, left_flanking, right_flanking, res);
     }
 

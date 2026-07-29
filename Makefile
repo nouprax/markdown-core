@@ -63,7 +63,7 @@ afl:
 	    -x packages/markdown-core/tests/core/fuzzing_dictionary \
 	    $(AFL_OPTIONS) \
 	    -t 100 \
-	    $(MARKDOWN_CORE) -e table -e strikethrough -e autolink $(MARKDOWN_CORE_OPTS)
+	    $(MARKDOWN_CORE) $(MARKDOWN_CORE_OPTS)
 
 libFuzzer:
 	@[ -n "$(LIB_FUZZER_PATH)" ] || { echo '$$LIB_FUZZER_PATH not set'; false; }

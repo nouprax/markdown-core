@@ -5,7 +5,6 @@
 #include "config.h"
 #include "markdown-core.h"
 #include "node.h"
-#include "markdown-core-extension-api.h"
 #include "extension.h"
 #include "parser.h"
 
@@ -20,77 +19,32 @@
 #endif
 #endif
 
-#if defined(__OpenBSD__)
-#include <sys/param.h>
-#if OpenBSD >= 201605
-#define USE_PLEDGE
-#include <unistd.h>
-#endif
-#endif
-
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include <io.h>
 #include <fcntl.h>
 #endif
 
+// The CLI is a diagnostic dump tool: it always parses with the canonical
+// default options and all bundled extensions, exactly like the platform
+// bindings' default ParseOptions, and prints the canonical AST dump.
 void print_usage(void) {
     printf("Usage:   markdown-core [FILE*]\n");
+    printf("Parses Markdown from FILE arguments (or stdin) with the canonical\n");
+    printf("default options and prints the canonical AST dump.\n");
     printf("Options:\n");
-    printf("  --smart           Use smart punctuation\n");
-    printf("  --validate-utf8   Replace UTF-8 invalid sequences with U+FFFD\n");
-    printf("  --strip-html-comments Strip HTML comment nodes from the parsed AST\n");
-    printf("  --extension, -e EXTENSION_NAME  Specify an extension name to use\n");
-    printf("  --list-extensions               List available extensions and quit\n");
-    printf("  --strikethrough-double-tilde    Only parse strikethrough (if enabled)\n");
-    printf("                                  with two tildes\n");
-    printf(
-        "  --dollar-formula-delimiters     Enable formula $...$ and $$...$$\n"
-        "                                  delimiters when formula is enabled.\n"
-    );
-    printf(
-        "  --latex-formula-delimiters         Enable LaTeX formula \\\\(...\\\\) and\n"
-        "                                  \\\\[...\\\\] delimiters when formula is enabled.\n"
-    );
-    printf("  --directive                    Enable directive syntax.\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
 }
 
-static bool parser_has_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_llist *tmp;
-
-    for (tmp = parser->extensions; tmp; tmp = tmp->next) {
-        markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
-        if (strcmp(ext->name, name) == 0) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 static bool attach_extension(markdown_core_parser *parser, const char *name) {
-    markdown_core_extension *extension;
+    markdown_core_extension *extension = markdown_core_extension_find(name);
 
-    if (parser_has_extension(parser, name)) {
-        return true;
-    }
-
-    extension = markdown_core_extension_find(name);
     if (!extension) {
         fprintf(stderr, "Unknown extension %s\n", name);
         return false;
     }
 
     return markdown_core_parser_attach_extension(parser, extension) != 0;
-}
-
-static bool attach_option_extensions(markdown_core_parser *parser, int options) {
-    if ((options & MARKDOWN_CORE_OPT_DIRECTIVE) && !attach_extension(parser, "directive")) {
-        return false;
-    }
-
-    return true;
 }
 
 static bool print_document(markdown_core_node *document) {
@@ -116,22 +70,6 @@ static bool print_document(markdown_core_node *document) {
     return true;
 }
 
-static void print_extensions(void) {
-    markdown_core_llist *extensions;
-    markdown_core_llist *tmp;
-
-    printf("Available extensions:\nfootnotes\n");
-
-    markdown_core_mem *mem = markdown_core_mem_default();
-    extensions = markdown_core_extension_list(mem);
-    for (tmp = extensions; tmp; tmp = tmp->next) {
-        markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
-        printf("%s\n", ext->name);
-    }
-
-    markdown_core_llist_free(mem, extensions);
-}
-
 int main(int argc, char *argv[]) {
     int i, numfps = 0;
     int *files;
@@ -151,13 +89,6 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-#ifdef USE_PLEDGE
-    if (pledge("stdio rpath", NULL) != 0) {
-        perror("pledge");
-        return 1;
-    }
-#endif
-
 #if defined(_WIN32) && !defined(__CYGWIN__)
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
@@ -167,41 +98,11 @@ int main(int argc, char *argv[]) {
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--version") == 0) {
-            printf("markdown-core %s", MARKDOWN_CORE_VERSION_STRING);
-            printf(
-                " - CommonMark with GitHub Flavored Markdown converter\n(C) 2014-2016 John "
-                "MacFarlane\n"
-            );
+            printf("markdown-core %s\n", MARKDOWN_CORE_VERSION_STRING);
             goto success;
-        } else if (strcmp(argv[i], "--list-extensions") == 0) {
-            print_extensions();
-            goto success;
-        } else if (strcmp(argv[i], "--dollar-formula-delimiters") == 0) {
-            options |= MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-        } else if (strcmp(argv[i], "--latex-formula-delimiters") == 0) {
-            options |= MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
-        } else if (strcmp(argv[i], "--directive") == 0) {
-            options |= MARKDOWN_CORE_OPT_DIRECTIVE;
-        } else if (strcmp(argv[i], "--strikethrough-double-tilde") == 0) {
-            options |= MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE;
-        } else if (strcmp(argv[i], "--smart") == 0) {
-            options |= MARKDOWN_CORE_OPT_SMART;
-        } else if (strcmp(argv[i], "--strip-html-comments") == 0) {
-            options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
-        } else if (strcmp(argv[i], "--validate-utf8") == 0) {
-            options |= MARKDOWN_CORE_OPT_VALIDATE_UTF8;
-        } else if (strcmp(argv[i], "--liberal-html-tag") == 0) {
-            options |= MARKDOWN_CORE_OPT_LIBERAL_HTML_TAG;
         } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
             print_usage();
             goto success;
-        } else if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
-            i += 1; // Simpler to handle extensions in a second pass, as we can directly register
-                    // them with the parser.
-
-            if (i < argc && strcmp(argv[i], "footnotes") == 0) {
-                options |= MARKDOWN_CORE_OPT_FOOTNOTES;
-            }
         } else if (*argv[i] == '-') {
             print_usage();
             goto failure;
@@ -212,31 +113,10 @@ int main(int argc, char *argv[]) {
 
     parser = markdown_core_parser_new(options);
 
-    if (!attach_option_extensions(parser, options)) {
-        goto failure;
-    }
-
     if (!attach_extension(parser, "table") || !attach_extension(parser, "strikethrough") ||
         !attach_extension(parser, "autolink") || !attach_extension(parser, "tasklist") ||
         !attach_extension(parser, "formula") || !attach_extension(parser, "directive")) {
         goto failure;
-    }
-
-    for (i = 1; i < argc; i++) {
-        if ((strcmp(argv[i], "-e") == 0) || (strcmp(argv[i], "--extension") == 0)) {
-            i += 1;
-            if (i < argc) {
-                if (strcmp(argv[i], "footnotes") == 0) {
-                    continue;
-                }
-                if (!attach_extension(parser, argv[i])) {
-                    goto failure;
-                }
-            } else {
-                fprintf(stderr, "No argument provided for %s\n", argv[i - 1]);
-                goto failure;
-            }
-        }
     }
 
     for (i = 0; i < numfps; i++) {
