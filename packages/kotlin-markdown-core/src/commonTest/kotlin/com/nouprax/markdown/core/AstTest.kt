@@ -93,6 +93,29 @@ class AstTest {
     }
 
     @Test
+    fun subtreeDumpsRebaseScopesToTheSubtreeOrigin() {
+        val document = Document.parse("Lead\n\n# Heading\n")
+        // The document-rooted subtree form is the plain dump.
+        assertEquals(document.dump(), MarkupDumper.dump(document, document))
+        assertEquals(document.dump(), document.dump(document))
+        // A subtree dump prints scopes with the subtree as origin: the
+        // root's start line becomes line 1 and columns are unchanged.
+        val heading = document.content[1]
+        val subtree = MarkupDumper.dump(document, heading)
+        assertTrue(subtree.startsWith("Heading scope=1:1..1:9 level=1"), subtree)
+        assertEquals(subtree, document.dump(heading))
+    }
+
+    @Test
+    fun subtreeDumpsPrintPositionFreeMarkersUnchanged() {
+        val document = Document.parse("Lead\n\nhard  \nbreak\n")
+        val paragraph = document.content[1]
+        val subtree = document.dump(paragraph)
+        assertTrue(subtree.startsWith("Paragraph scope=1:1..2:"), subtree)
+        assertTrue("LineBreak scope=0:0..0:0" in subtree, subtree)
+    }
+
+    @Test
     fun allManifestCasesMatchTheSharedCanonicalAstSpec() {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {

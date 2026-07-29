@@ -122,8 +122,17 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     ) {
         lines += "            $name ="
         lines += "                buildString {"
-        for (chunk in value.chunked(30)) {
-            lines += "                    append(${kotlinLiteral(chunk)})"
+        // Chunks split on code-point boundaries, never inside a surrogate
+        // pair: a lone surrogate cannot survive the UTF-8 encoding of the
+        // generated source file.
+        var start = 0
+        while (start < value.length) {
+            var end = minOf(start + 30, value.length)
+            if (end < value.length && value[end - 1].isHighSurrogate() && value[end].isLowSurrogate()) {
+                end += 1
+            }
+            lines += "                    append(${kotlinLiteral(value.substring(start, end))})"
+            start = end
         }
         lines += "                },"
     }
@@ -475,6 +484,15 @@ kotlin {
         commonMain.dependencies {
             api(libs.kotlin.stdlib)
         }
+        // Both the desktop JVM and Android targets compile to JVM bytecode
+        // against the same JNI bridge; the shared JNI declarations, the
+        // CSession wrapper, and the host-library extraction helper live once
+        // here, leaving only an expect/actual loader per target.
+        val jvmSharedMain by creating {
+            dependsOn(commonMain.get())
+        }
+        jvmMain.get().dependsOn(jvmSharedMain)
+        getByName("androidMain").dependsOn(jvmSharedMain)
         commonTest {
             kotlin.srcDir(layout.buildDirectory.dir("generated/canonicalAstCommonTest/kotlin"))
             dependencies {
@@ -609,39 +627,12 @@ val javadocJar =
         from(layout.projectDirectory.file("README.md"))
     }
 
+extra["markdownCorePomName"] = "Kotlin Markdown Core"
+extra["markdownCorePomDescription"] = "Immutable Kotlin Multiplatform AST bindings for Markdown Core."
+apply(from = "maven-pom-conventions.gradle.kts")
+
 publishing {
-    repositories {
-        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
-            maven {
-                name = "releaseStaging"
-                url = uri(repositoryDirectory)
-            }
-        }
-    }
     publications.withType<MavenPublication>().configureEach {
-        pom {
-            name.set("Kotlin Markdown Core")
-            description.set("Immutable Kotlin Multiplatform AST bindings for Markdown Core.")
-            url.set("https://github.com/nouprax/markdown-core")
-            licenses {
-                license {
-                    name.set("BSD-2-Clause")
-                    url.set("https://github.com/nouprax/markdown-core/blob/main/COPYING")
-                }
-            }
-            scm {
-                connection.set("scm:git:https://github.com/nouprax/markdown-core.git")
-                developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
-                url.set("https://github.com/nouprax/markdown-core")
-            }
-            developers {
-                developer {
-                    id.set("nouprax")
-                    name.set("Nouprax")
-                    url.set("https://github.com/nouprax")
-                }
-            }
-        }
         artifact(javadocJar)
     }
 }

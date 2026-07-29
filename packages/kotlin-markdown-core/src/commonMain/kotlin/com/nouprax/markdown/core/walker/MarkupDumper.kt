@@ -4,16 +4,30 @@ package com.nouprax.markdown.core
 public object MarkupDumper {
     /** Returns the canonical diagnostic dump for [document] and its
      * descendants, resolving absolute scopes through the snapshot. */
-    public fun dump(document: Document): String {
+    public fun dump(document: Document): String = dump(document, document)
+
+    /**
+     * Returns the canonical diagnostic dump for the subtree rooted at
+     * [node]. Scopes print with the subtree as origin: the root's start
+     * line becomes line 1, later lines shift by the same amount, and
+     * columns are line-local and unchanged. Position-free markers
+     * (`0:0..0:0`) print unchanged.
+     */
+    public fun dump(
+        document: Document,
+        node: Markup,
+    ): String {
+        val origin = document.scope(node).start.line
+        val offset = if (origin > 0) origin - 1 else 0
         val visitor = DumpVisitor()
         val remainingChildren = mutableListOf<Int>()
         val lines = mutableListOf<String>()
 
-        MarkupWalker.walk(document) { event, node, scope ->
+        MarkupWalker.walk(document, node) { event, current, scope ->
             when (event) {
                 WalkEvent.ENTERING -> {
-                    val record = node.accept(visitor)
-                    val line = record.line(scope)
+                    val record = current.accept(visitor)
+                    val line = record.line(scope, offset)
                     if (remainingChildren.isEmpty()) {
                         lines += line
                     } else {
@@ -43,9 +57,12 @@ private data class DumpRecord(
     val fields: kotlin.collections.List<String>,
     val children: Int,
 ) {
-    fun line(scope: Scope): String {
+    fun line(
+        scope: Scope,
+        offset: Int,
+    ): String {
         val fieldText = if (fields.isEmpty()) "" else " ${fields.joinToString(" ")}"
-        return "$kind ${scopeText(scope)}$fieldText children=$children"
+        return "$kind ${scopeText(scope, offset)}$fieldText children=$children"
     }
 }
 
@@ -211,8 +228,14 @@ private fun directiveFields(
         "label=${labelCount ?: "null"}",
     )
 
-private fun scopeText(value: Scope): String =
-    "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
+private fun scopeText(
+    value: Scope,
+    offset: Int,
+): String {
+    val start = if (value.start.line > 0) value.start.line - offset else value.start.line
+    val end = if (value.end.line > 0) value.end.line - offset else value.end.line
+    return "scope=$start:${value.start.column}..$end:${value.end.column}"
+}
 
 private fun optionalString(value: String?): String = value?.let(::jsonString) ?: "null"
 

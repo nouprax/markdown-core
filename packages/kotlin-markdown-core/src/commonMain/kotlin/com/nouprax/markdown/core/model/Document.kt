@@ -56,6 +56,10 @@ public class Document internal constructor(
     /** Returns the canonical diagnostic dump for this document. */
     public fun dump(): String = MarkupDumper.dump(this)
 
+    /** Returns the canonical diagnostic dump for the subtree rooted at
+     * [node], with the subtree as scope origin. */
+    public fun dump(node: Markup): String = MarkupDumper.dump(this, node)
+
     public companion object {
         /** Parses [source] in one shot into a self-contained snapshot;
          * statically callable from Java as `Document.parse(...)`. */

@@ -1,4 +1,5 @@
   field com/nouprax/markdown/core/Document.Companion Lcom/nouprax/markdown/core/Document$Companion;
+  field com/nouprax/markdown/core/HostNativeLibrary.INSTANCE Lcom/nouprax/markdown/core/HostNativeLibrary;
   field com/nouprax/markdown/core/JvmNative.INSTANCE Lcom/nouprax/markdown/core/JvmNative;
   field com/nouprax/markdown/core/ListFlavor.BULLET Lcom/nouprax/markdown/core/ListFlavor;
   field com/nouprax/markdown/core/ListFlavor.ORDERED Lcom/nouprax/markdown/core/ListFlavor;
@@ -54,7 +55,8 @@
   method com/nouprax/markdown/core/BlockQuote.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/BlockQuote.hashCode ()I
   method com/nouprax/markdown/core/BlockQuote.revisionBits ()J
-  method com/nouprax/markdown/core/CBridge_jvmKt.cParse ([BLcom/nouprax/markdown/core/ParseOptions;)[B
+  method com/nouprax/markdown/core/CBridge_jvmKt.ensureNativeLoaded ()V
+  method com/nouprax/markdown/core/CBridge_jvmSharedKt.cParse ([BLcom/nouprax/markdown/core/ParseOptions;)[B
   method com/nouprax/markdown/core/CSession.<init> (Lcom/nouprax/markdown/core/ParseOptions;)V
   method com/nouprax/markdown/core/CSession.commit ()[B
   method com/nouprax/markdown/core/CSession.edit (JJ[B)[B
@@ -125,6 +127,7 @@
   method com/nouprax/markdown/core/Document$Companion.parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
   method com/nouprax/markdown/core/Document.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Document.dump ()Ljava/lang/String;
+  method com/nouprax/markdown/core/Document.dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
   method com/nouprax/markdown/core/Document.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Document.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Document.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -206,6 +209,11 @@
   method com/nouprax/markdown/core/Heading.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Heading.hashCode ()I
   method com/nouprax/markdown/core/Heading.revisionBits ()J
+  method com/nouprax/markdown/core/HostNativeLibrary.extractAndLoad (Ljava/io/InputStream;)V
+  method com/nouprax/markdown/core/HostNativeLibrary.getFileName ()Ljava/lang/String;
+  method com/nouprax/markdown/core/HostNativeLibrary.getHostName ()Ljava/lang/String;
+  method com/nouprax/markdown/core/HostNativeLibrary.getPlatform ()Ljava/lang/String;
+  method com/nouprax/markdown/core/HostNativeLibrary.getResourcePath ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Image.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Image.getContent ()Ljava/util/List;
@@ -272,6 +280,7 @@
   method com/nouprax/markdown/core/Markup.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Markup.revisionBits ()J
   method com/nouprax/markdown/core/MarkupDumper.dump (Lcom/nouprax/markdown/core/Document;)Ljava/lang/String;
+  method com/nouprax/markdown/core/MarkupDumper.dump (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
   method com/nouprax/markdown/core/MarkupID$Companion.fromBits (JJ)Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/MarkupID.component1-s-VKNKU ()J
   method com/nouprax/markdown/core/MarkupID.component2-s-VKNKU ()J
@@ -517,6 +526,7 @@
   method com/nouprax/markdown/core/WireReader.ulong-s-VKNKU ()J
 class com/nouprax/markdown/core/BlockQuote extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/CBridge_jvmKt extends java/lang/Object implements 
+class com/nouprax/markdown/core/CBridge_jvmSharedKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/CSession extends java/lang/Object implements 
 class com/nouprax/markdown/core/Code extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/CodeBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
@@ -536,6 +546,7 @@ class com/nouprax/markdown/core/FormulaBlock extends java/lang/Object implements
 class com/nouprax/markdown/core/HTML extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/HTMLBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Heading extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/HostNativeLibrary extends java/lang/Object implements 
 class com/nouprax/markdown/core/Image extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/ImmutableListKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/JvmNative extends java/lang/Object implements 

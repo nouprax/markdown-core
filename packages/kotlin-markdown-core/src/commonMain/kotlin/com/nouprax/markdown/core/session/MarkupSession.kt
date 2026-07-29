@@ -68,11 +68,19 @@ public class MarkupSession
         /** [revision] as a bit-preserving signed value for Java callers. */
         public fun revisionBits(): Long = revision.toLong()
 
-        /** The byte length of the stored text, including uncommitted edits. */
+        /**
+         * The byte length of the stored text, including uncommitted edits.
+         * The native length is an unsigned 64-bit count; a text past
+         * [Int.MAX_VALUE] bytes fails here instead of truncating silently.
+         */
         public val length: Int
             get() {
                 requireOpen()
-                return native.length().toInt()
+                val bytes = native.length()
+                check(bytes in 0..Int.MAX_VALUE.toLong()) {
+                    "the stored text is $bytes bytes, which exceeds the Int.MAX_VALUE byte limit of `length`"
+                }
+                return bytes.toInt()
             }
 
         /**

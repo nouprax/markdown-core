@@ -18,8 +18,6 @@ if(MARKDOWN_CORE_KOTLIN_JNI)
     if(APPLE)
         target_link_options(markdown_core_kotlin_jni PRIVATE
                             "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/markdown_core_kotlin.exports")
-    elseif(WIN32)
-        target_sources(markdown_core_kotlin_jni PRIVATE markdown_core_kotlin.def)
     else()
         target_link_options(markdown_core_kotlin_jni PRIVATE
                             "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/markdown_core_kotlin.map")

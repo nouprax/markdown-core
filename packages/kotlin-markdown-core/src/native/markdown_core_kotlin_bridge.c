@@ -60,28 +60,43 @@ static void put_bytes(bridge_buffer *buffer, const uint8_t *bytes, size_t length
 
 static void put_u8(bridge_buffer *buffer, uint8_t value) { put_bytes(buffer, &value, 1); }
 
-static void put_i32(bridge_buffer *buffer, int32_t value) {
-    uint32_t bits = (uint32_t)value;
+/* Multi-byte scalars assemble little-endian in a stack buffer and append in
+ * one reserve/memcpy; the wire bytes are identical to per-byte appends. */
+static void encode_u32(uint8_t *bytes, uint32_t value) {
     size_t index;
     for (index = 0; index < 4; ++index) {
-        put_u8(buffer, (uint8_t)(bits >> (index * 8)));
+        bytes[index] = (uint8_t)(value >> (index * 8));
     }
 }
 
-static void put_u64(bridge_buffer *buffer, uint64_t value) {
+static void encode_u64(uint8_t *bytes, uint64_t value) {
     size_t index;
     for (index = 0; index < 8; ++index) {
-        put_u8(buffer, (uint8_t)(value >> (index * 8)));
+        bytes[index] = (uint8_t)(value >> (index * 8));
     }
+}
+
+static void put_i32(bridge_buffer *buffer, int32_t value) {
+    uint8_t bytes[4];
+    encode_u32(bytes, (uint32_t)value);
+    put_bytes(buffer, bytes, sizeof(bytes));
+}
+
+static void put_u64(bridge_buffer *buffer, uint64_t value) {
+    uint8_t bytes[8];
+    encode_u64(bytes, value);
+    put_bytes(buffer, bytes, sizeof(bytes));
 }
 
 static void put_i64(bridge_buffer *buffer, int64_t value) { put_u64(buffer, (uint64_t)value); }
 
 static void put_scope(bridge_buffer *buffer, markdown_core_scope scope) {
-    put_i32(buffer, scope.start.line);
-    put_i32(buffer, scope.start.column);
-    put_i32(buffer, scope.end.line);
-    put_i32(buffer, scope.end.column);
+    uint8_t bytes[16];
+    encode_u32(bytes, (uint32_t)scope.start.line);
+    encode_u32(bytes + 4, (uint32_t)scope.start.column);
+    encode_u32(bytes + 8, (uint32_t)scope.end.line);
+    encode_u32(bytes + 12, (uint32_t)scope.end.column);
+    put_bytes(buffer, bytes, sizeof(bytes));
 }
 
 static void put_string(bridge_buffer *buffer, markdown_core_string_view value, bool present) {
@@ -464,9 +479,15 @@ static void encode_scope_table(bridge_buffer *buffer, const markdown_core_sessio
     while (stack.count != 0 && !buffer->failed) {
         const markdown_core_node *node = stack.items[--stack.count];
         const markdown_core_node *child;
-        put_u64(buffer, markdown_core_node_get_id(node));
-        put_u64(buffer, markdown_core_node_get_revision(node));
-        put_scope(buffer, markdown_core_node_scope(node));
+        markdown_core_scope scope = markdown_core_node_scope(node);
+        uint8_t entry[32];
+        encode_u64(entry, markdown_core_node_get_id(node));
+        encode_u64(entry + 8, markdown_core_node_get_revision(node));
+        encode_u32(entry + 16, (uint32_t)scope.start.line);
+        encode_u32(entry + 20, (uint32_t)scope.start.column);
+        encode_u32(entry + 24, (uint32_t)scope.end.line);
+        encode_u32(entry + 28, (uint32_t)scope.end.column);
+        put_bytes(buffer, entry, sizeof(entry));
         ++count;
         for (child = markdown_core_node_get_first_child(node); child != NULL;
              child = markdown_core_node_get_next_sibling(child)) {
