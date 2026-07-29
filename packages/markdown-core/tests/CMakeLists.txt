@@ -108,7 +108,7 @@ add_library(markdown-core-test-support STATIC support/test_support.c support/tes
 target_include_directories(
     markdown-core-test-support
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
-           "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+           "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
            "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
 target_link_libraries(markdown-core-test-support PUBLIC ${MARKDOWN_CORE_TEST_LIBRARIES})
 
@@ -127,7 +127,7 @@ markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 if(MARKDOWN_CORE_STATIC)
     add_executable(fallback_runner runners/fallback_runner.c)
     target_include_directories(
-        fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
+        fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()

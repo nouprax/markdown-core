@@ -1,6 +1,6 @@
 add_executable(api_test cplusplus.cpp harness.c harness.h main.c)
 include_directories(
-    ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}
+    ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_INCLUDE_DIR} ${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}
     ${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
 # This suite validates parser internals retained for implementation coverage;
 # it is deliberately not a consumer of the public shared-library ABI.
