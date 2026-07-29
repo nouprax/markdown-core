@@ -1,6 +1,11 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// The product targets below (MarkdownCoreC and MarkdownCore) are duplicated
+// verbatim in packages/swift-markdown-core/Package.release.swift, which ships
+// as the release archive's manifest — SwiftPM manifests cannot share target
+// definitions, so edit both files together. The archive gate
+// (scripts/check-swift-source-archive.sh) builds the release copy.
 let package = Package(
     name: "swift-markdown-core",
     platforms: [

@@ -1,6 +1,7 @@
 package com.nouprax.markdown.core
 
 import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmSynthetic
 
 /**
  * The single mutable owner of one Markdown text and its living AST.
@@ -23,7 +24,8 @@ public class MarkupSession
     constructor(
         public val options: ParseOptions = ParseOptions(),
     ) : AutoCloseable {
-        internal val native: CSession = CSession(options)
+        @get:JvmSynthetic
+        internal val native: CSessionHandle = openCSession(options)
 
         /**
          * Per-session random salt; nodes from different sessions never compare
@@ -31,9 +33,9 @@ public class MarkupSession
          */
         public val lineage: ULong = native.lineage()
 
+        @get:JvmSynthetic
         internal val mirror: HashMap<ULong, Markup> = HashMap()
         private val rootId: ULong = native.rootId()
-        private var resolver: ScopeResolver
         private var closed = false
         private var failed = false
 
@@ -45,10 +47,8 @@ public class MarkupSession
             private set
 
         init {
-            val resolver = ScopeResolver.live(native)
-            this.resolver = resolver
             // The revision-0 root is always an empty document.
-            val root = Document(MarkupID(lineage, rootId), 0UL, emptyList(), resolver)
+            val root = Document.live(MarkupID(lineage, rootId), 0UL, emptyList(), native)
             mirror[rootId] = root
             document = root
         }
@@ -68,11 +68,19 @@ public class MarkupSession
         /** [revision] as a bit-preserving signed value for Java callers. */
         public fun revisionBits(): Long = revision.toLong()
 
-        /** The byte length of the stored text, including uncommitted edits. */
+        /**
+         * The byte length of the stored text, including uncommitted edits.
+         * The native length is an unsigned 64-bit count; a text past
+         * [Int.MAX_VALUE] bytes fails here instead of truncating silently.
+         */
         public val length: Int
             get() {
                 requireOpen()
-                return native.length().toInt()
+                val bytes = native.length()
+                check(bytes in 0..Int.MAX_VALUE.toLong()) {
+                    "the stored text is $bytes bytes, which exceeds the Int.MAX_VALUE byte limit of `length`"
+                }
+                return bytes.toInt()
             }
 
         /**
@@ -106,7 +114,7 @@ public class MarkupSession
             end: Long,
             replacement: String,
         ) {
-            WireDecoder.decodeAck(native.edit(start, end, replacement.encodeToByteArray()))
+            decodeWireAck(native.edit(start, end, replacement.encodeToByteArray()))
         }
 
         /**
@@ -123,16 +131,16 @@ public class MarkupSession
             // positions as its own — a racing reader either materialized from
             // the still-unchanged tree or takes the documented
             // superseded-snapshot failure.
-            val previous = resolver
-            previous.detach()
+            val previous = document
+            previous.detachResolver()
             val delta =
                 try {
-                    WireDecoder.decodeCommit(native.commit(), lineage, mirror)
+                    decodeWireCommit(native.commit(), lineage, mirror)
                 } catch (failure: ParseException) {
                     // The native commit failed transactionally: the tree is
                     // unchanged at the previous revision, the previous snapshot
                     // becomes current again, and the commit may be retried.
-                    previous.reattach(native)
+                    previous.reattachResolver(native)
                     throw failure
                 } catch (failure: Throwable) {
                     // The native tree may have advanced while the payload or the
@@ -141,11 +149,9 @@ public class MarkupSession
                     failed = true
                     throw failure
                 }
-            val resolver = ScopeResolver.live(native)
-            this.resolver = resolver
             val root = mirror[rootId]
             check(root is Document) { "session committed without a document root" }
-            val adopted = Document(root.id, root.revision, root.content, resolver)
+            val adopted = Document.live(root.id, root.revision, root.content, native)
             mirror[rootId] = adopted
             document = adopted
             return Commit(adopted, delta)
@@ -167,10 +173,11 @@ public class MarkupSession
                 return
             }
             closed = true
-            resolver.detach()
+            document.detachResolver()
             native.free()
         }
 
+        @JvmSynthetic
         internal fun requireOpen() {
             check(!closed) { "the session is closed" }
             check(!failed) { "the session failed irrecoverably during a commit" }

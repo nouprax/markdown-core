@@ -31,19 +31,17 @@ else
     note "C, SwiftPM plugin, Gradle task, and ES package lifecycle consume the shared spec"
 fi
 
-# 2. No runtime network dependency in build/test/bench plumbing.  The only
-# allowed network use is the explicit `update-spec` maintenance target.
+# 2. No runtime network dependency in build/test/bench plumbing.
 if grep -n 'git clone' Makefile package.json CMakePresets.json \
     packages/markdown-core/tests/CMakeLists.txt 2>/dev/null; then
     fail "runtime git clone found in build/test plumbing"
 else
     note "no runtime clone in build/test plumbing"
 fi
-if grep -n -E 'curl|wget' Makefile | grep -v 'update-spec' | grep -v "^[0-9]*:update-spec" \
-    | grep -v 'raw.githubusercontent.com/jgm/CommonMark' >/dev/null; then
-    fail "network fetch outside the update-spec maintenance target"
+if grep -n -E 'curl|wget' Makefile; then
+    fail "network fetch found in the Makefile"
 else
-    note "network fetch limited to explicit maintenance"
+    note "no network fetch in build/test plumbing"
 fi
 
 # 3. Vendored corpora must be manifested, licensed, and hash-verified.
@@ -141,8 +139,17 @@ for workload in $("$runner_dir/bench_runner" --list); do
 done
 note "runner discovery matches CTest registration"
 
-# 5. Swift suites must be real (not build-only) when a toolchain is present;
-# CI additionally executes them on the Swift platform job.
+# 5. Swift suites must be real (not build-only).  The static source assertion
+# runs on every host, including the required-CI runner that has no Swift
+# toolchain; toolchain-backed discovery is additionally checked here when
+# `swift` is available and, against the built test products, by
+# scripts/build-swift-test-artifact.sh in the Swift Build Test producer.
+if grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreTests \
+    && grep -R -q '@Test' packages/swift-markdown-core/Tests/MarkdownCoreConformanceTests; then
+    note "Swift test targets declare Swift Testing tests"
+else
+    fail "Swift test targets declare no Swift Testing tests"
+fi
 if command -v swift >/dev/null 2>&1; then
     if [ "$(CLANG_MODULE_CACHE_PATH="$BUILD_DIR/swift-module-cache" \
         swift test --disable-sandbox list 2>/dev/null | wc -l)" -lt 1 ]; then

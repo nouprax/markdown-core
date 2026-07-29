@@ -6,6 +6,9 @@ import {
     MarkupWalker,
     type Commit,
     type Delta,
+    type Directive,
+    type DirectiveBlock,
+    type DirectiveLabel,
     type FootnoteInfo,
     type Heading,
     type Markup,
@@ -46,6 +49,7 @@ const visitor: MarkupVisitor<string> = {
     visitTableRow: (node) => (node.isHeader ? "header" : "row"),
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
+    visitDirectiveLabel: (node) => node.kind,
     visitFootnoteDefinition: (node) => node.label,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
@@ -68,6 +72,15 @@ new MarkupWalker().walk(document, (_event, node, scope) => {
     visit(node, visitor);
 });
 new MarkupWalker().walk(document, document.content[0], (_event, node) => visit(node, visitor));
+// The scope-free structural overload dispatches the visitor per node.
+new MarkupWalker().walk(document, visitor);
+const statefulVisitor: MarkupVisitor<void> & { kind: string } = {
+    ...visitor,
+    kind: "visitor-state"
+};
+new MarkupWalker().walk(document, statefulVisitor);
+const callableVisitor: MarkupVisitor<void> & (() => void) = Object.assign(() => {}, visitor);
+new MarkupWalker().walk(document, callableVisitor);
 // @ts-expect-error recursively readonly content cannot be replaced
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced
@@ -114,6 +127,17 @@ const cell: TableCell = row.cells[0]!;
 void rowMarkup;
 void cellMarkup;
 void cell;
+
+declare const directive: Directive;
+declare const directiveBlock: DirectiveBlock;
+const inlineLabel: DirectiveLabel | null = directive.label;
+const blockLabel: DirectiveLabel | null = directiveBlock.label;
+const labelMarkup: Markup | null = inlineLabel;
+const labelContent: readonly Markup[] | undefined = blockLabel?.content;
+void labelMarkup;
+void labelContent;
+// @ts-expect-error directive labels are immutable typed child properties
+directive.label = null;
 
 // @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
 const incompleteVisitor: MarkupVisitor<string> = {

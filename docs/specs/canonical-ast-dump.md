@@ -1,6 +1,7 @@
 # Canonical AST file-tree dump
 
-Status: frozen for Phase 5 on 2026-07-11.
+Status: frozen for Phase 5 on 2026-07-11; amended on 2026-07-29 for the
+public `DirectiveLabel` kind.
 
 The dump is a deterministic public diagnostic representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
@@ -47,14 +48,15 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
-`children` counts direct typed descendants. `TableRow` and `TableCell` are
-`Markup` kinds, produce MarkupVisitor/MarkupWalker callbacks, and own their descendants
-through `cells` and `content` respectively.
+`children` counts direct typed descendants. `TableRow`, `TableCell`, and
+`DirectiveLabel` are `Markup` kinds, produce MarkupVisitor/MarkupWalker
+callbacks, and own their descendants through `cells` or `content`.
 
 The dump deliberately carries no property or array-index edge labels. Parent
-kind, sibling order, `children`, and behavior-bearing fields such as
-`isHeader` and directive `label` preserve the complete public tree semantics
-without coupling the generic tree formatter to schema-specific edge names.
+kind, child kind, sibling order, `children`, and behavior-bearing fields such
+as `isHeader` preserve the complete public tree semantics without coupling
+the generic tree formatter to schema-specific edge names. Directive-label
+presence is topology: a `DirectiveLabel` child is either present or absent.
 
 ## Scalar encoding
 
@@ -74,8 +76,10 @@ without coupling the generic tree formatter to schema-specific edge names.
 The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations.
 
-Directive `label` is a scalar presence field in the dump: `label=null` for no
-label, otherwise `label=<count>`, including `label=0` for explicit `[]`.
+Directive parents have no `label=` scalar field. No `DirectiveLabel` child
+means the label is absent; a `DirectiveLabel` line with `children=0` means an
+explicit empty `[]`. A label node's scope covers the complete bracketed span,
+including both delimiters.
 
 ## Field order by record kind
 
@@ -83,7 +87,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `SoftBreak`, `LineBreak` | none |
+| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `SoftBreak`, `LineBreak`, `DirectiveLabel` | none |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |
@@ -92,7 +96,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `FormulaBlock` | `mode`, `literal` |
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
-| `DirectiveBlock` | `mode`, `name`, `attributes`, `label` |
+| `DirectiveBlock` | `mode`, `name`, `attributes` |
 | `FootnoteDefinition` | `id` |
 | `Text` | `literal` |
 | `Code` | `mode`, `literal` |
@@ -101,7 +105,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
-| `Directive` | `mode`, `name`, `attributes`, `label` |
+| `Directive` | `mode`, `name`, `attributes` |
 | `FootnoteReference` | `id` |
 
 Example:
@@ -109,8 +113,9 @@ Example:
 ```text
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 mode=embedded name="badge" attributes=null label=1 children=1
-        └── Text scope=1:8..1:9 literal="ok" children=0
+    └── Directive scope=1:1..1:10 mode=embedded name="badge" attributes=null children=1
+        └── DirectiveLabel scope=1:7..1:10 children=1
+            └── Text scope=1:8..1:9 literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the

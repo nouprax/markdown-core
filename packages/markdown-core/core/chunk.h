@@ -12,8 +12,8 @@
 
 typedef struct markdown_core_chunk {
     unsigned char *data;
-    bufsize_t len;
-    bufsize_t alloc; // also implies a NULL-terminated string
+    markdown_core_bufsize len;
+    markdown_core_bufsize alloc; // also implies a NULL-terminated string
 } markdown_core_chunk;
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
@@ -52,9 +52,10 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_trim(markdown_core_chunk *c
     markdown_core_chunk_rtrim(c);
 }
 
-static MARKDOWN_CORE_INLINE bufsize_t markdown_core_chunk_strchr(markdown_core_chunk *ch, int c, bufsize_t offset) {
+static MARKDOWN_CORE_INLINE markdown_core_bufsize
+markdown_core_chunk_strchr(markdown_core_chunk *ch, int c, markdown_core_bufsize offset) {
     const unsigned char *p = (unsigned char *)memchr(ch->data + offset, c, ch->len - offset);
-    return p ? (bufsize_t)(p - ch->data) : ch->len;
+    return p ? (markdown_core_bufsize)(p - ch->data) : ch->len;
 }
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_core_mem *mem, markdown_core_chunk *c) {
@@ -80,15 +81,18 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
 
 /* Returns 0 when the copy could not be allocated; the chunk then keeps its
  * previous value. */
-static MARKDOWN_CORE_INLINE int
-markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c, const char *str) {
+static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(
+    markdown_core_mem *mem,
+    markdown_core_chunk *c,
+    const char *str
+) {
     unsigned char *old = c->alloc ? c->data : NULL;
     if (str == NULL) {
         c->len = 0;
         c->data = NULL;
         c->alloc = 0;
     } else {
-        bufsize_t len = (bufsize_t)strlen(str);
+        markdown_core_bufsize len = (markdown_core_bufsize)strlen(str);
         unsigned char *copy = (unsigned char *)mem->calloc(mem, (size_t)len + 1, 1);
         if (!copy) {
             return 0;
@@ -105,13 +109,13 @@ markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c, con
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(const char *data) {
-    bufsize_t len = data ? (bufsize_t)strlen(data) : 0;
+    markdown_core_bufsize len = data ? (markdown_core_bufsize)strlen(data) : 0;
     markdown_core_chunk c = {(unsigned char *)data, len, 0};
     return c;
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos, bufsize_t len) {
+markdown_core_chunk_dup(const markdown_core_chunk *ch, markdown_core_bufsize pos, markdown_core_bufsize len) {
     markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
     return c;
 }

@@ -2,20 +2,13 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 artifact_dir=${1:-}
 suite=${2:-}
 consumer=packages/swift-markdown-core/Tests/Consumer
 
-test -d "$artifact_dir"
-(
-    cd "$artifact_dir"
-    shasum -a 256 --check SHA256SUMS
-)
-grep -Fxq 'kind=swift-test-products' "$artifact_dir/manifest.txt"
-if [ -n "${GITHUB_SHA:-}" ]; then
-    grep -Fxq "source_sha=$GITHUB_SHA" "$artifact_dir/manifest.txt"
-fi
-tar -xzf "$artifact_dir/swift-test-products.tar.gz" -C "$root"
+artifact_verify "$artifact_dir" swift-test-products
+artifact_extract "$artifact_dir" swift-test-products.tar.gz "$root"
 cd "$root"
 
 run_ios_suite() {

@@ -1,32 +1,57 @@
 import type { Markup } from "../model/markup.js";
 
-/** One child value swap inside a relinked parent: `previous` is the child's
- * value in the parent's previous snapshot, `next` its value now. */
-export interface ChildSwap {
-    readonly previous: Markup;
-    readonly next: Markup;
-}
+/** Previous child value → current child value for one bubbled parent. */
+type ChildReplacements = ReadonlyMap<Markup, Markup>;
 
-function swapped<T extends Markup>(children: readonly T[], swaps: readonly ChildSwap[]): readonly T[] {
+function replaced<T extends Markup>(children: readonly T[], replacements: ChildReplacements): readonly T[] {
     let result: T[] | null = null;
-    for (const swap of swaps) {
-        const index = children.indexOf(swap.previous as T);
-        if (index >= 0) {
+    let index = 0;
+    for (const child of children) {
+        const replacement = replacements.get(child);
+        if (replacement !== undefined) {
             result ??= children.slice();
-            result[index] = swap.next as T;
+            result[index] = replacement as T;
         }
+        index += 1;
     }
     return result ?? children;
+}
+
+function replacementFor<T extends Markup>(value: T, replacements: ChildReplacements): T {
+    const replacement = replacements.get(value);
+    if (replacement === undefined) return value;
+    return replacement as T;
+}
+
+function tableHeader(previous: Extract<Markup, { readonly kind: "table" }>, replacements: ChildReplacements) {
+    const header = replacementFor(previous.header, replacements);
+    if (header.kind !== "tableRow") {
+        throw new Error("table relink replaced the header with a non-row node");
+    }
+    return header;
+}
+
+function directiveLabel(
+    previous: Extract<Markup, { readonly kind: "directive" | "directiveBlock" }>,
+    replacements: ChildReplacements
+) {
+    if (previous.label === null) return null;
+    const label = replacementFor(previous.label, replacements);
+    if (label.kind !== "directiveLabel") {
+        throw new Error("directive relink replaced the label with a non-label node");
+    }
+    return label;
 }
 
 /**
  * Rebuilds a `bubbled` node from its previous snapshot value: the delta
  * contract guarantees its fields and direct child id list are unchanged, so
- * the new value is the previous one at the new revision with the swapped
- * child values in place. No native traversal happens here — this is the
- * "relink bubbled" step of the documented O(delta) mirror update.
+ * the new value is the previous one at the new revision with the replaced
+ * child values in place. Every child field gets one replacement-lookup pass
+ * and at most one linear copy; lookup is O(1) expected even when one parent
+ * has many changed children.
  */
-export function relink(previous: Markup, revision: number, swaps: readonly ChildSwap[]): Markup {
+export function relink(previous: Markup, revision: number, replacements: ChildReplacements): Markup {
     switch (previous.kind) {
         case "document":
         case "blockQuote":
@@ -40,35 +65,31 @@ export function relink(previous: Markup, revision: number, swaps: readonly Child
         case "link":
         case "image":
         case "tableCell":
-            return { ...previous, revision, content: swapped(previous.content, swaps) };
+        case "directiveLabel":
+            return { ...previous, revision, content: replaced(previous.content, replacements) };
         case "list":
-            return { ...previous, revision, items: swapped(previous.items, swaps) };
-        case "table": {
-            const header = swaps.find((swap) => swap.previous === previous.header)?.next;
-            if (header !== undefined && header.kind !== "tableRow") {
-                throw new Error("table relink replaced the header with a non-row node");
-            }
+            return { ...previous, revision, items: replaced(previous.items, replacements) };
+        case "table":
             return {
                 ...previous,
                 revision,
-                header: header ?? previous.header,
-                rows: swapped(previous.rows, swaps)
+                header: tableHeader(previous, replacements),
+                rows: replaced(previous.rows, replacements)
             };
-        }
         case "tableRow":
-            return { ...previous, revision, cells: swapped(previous.cells, swaps) };
+            return { ...previous, revision, cells: replaced(previous.cells, replacements) };
         case "directiveBlock":
             return {
                 ...previous,
                 revision,
-                label: previous.label === null ? null : swapped(previous.label, swaps),
-                content: swapped(previous.content, swaps)
+                label: directiveLabel(previous, replacements),
+                content: replaced(previous.content, replacements)
             };
         case "directive":
             return {
                 ...previous,
                 revision,
-                label: previous.label === null ? null : swapped(previous.label, swaps)
+                label: directiveLabel(previous, replacements)
             };
         case "thematicBreak":
         case "codeBlock":

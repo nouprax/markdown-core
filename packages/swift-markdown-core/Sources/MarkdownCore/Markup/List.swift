@@ -6,20 +6,20 @@ public enum ListFlavor: String, Sendable {
     case ordered
 }
 
-/// A bullet or ordered list of `ListItem` children.
+/// A bullet or ordered list of `ListItem` values.
 public struct List: Markup {
     /// The node's session-scoped identity; see `MarkupID`.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// The node's direct children in source order.
-    public let children: [any Markup]
     /// Whether the list is bulleted or ordered.
     public let flavor: ListFlavor
     /// An ordered list's starting number; nil for bullet lists.
     public let start: Int64?
     /// Whether the list renders tight (no paragraph spacing between items).
-    public let isTight: Bool
+    public let tight: Bool
+    /// The list's items in source order.
+    public let items: [ListItem]
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -32,13 +32,19 @@ extension List {
         var start = markdown_core_optional_i64()
         var tight = false
         markdown_core_node_list_properties(node, &flavor, &start, &tight)
+        let items = builder.children(node).map { child -> ListItem in
+            guard let item = child as? ListItem else {
+                preconditionFailure("list contains a non-item node")
+            }
+            return item
+        }
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
-            isTight: tight
+            tight: tight,
+            items: items
         )
     }
 }
@@ -49,10 +55,10 @@ public struct ListItem: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// The node's direct children in source order.
-    public let children: [any Markup]
     /// A task-list item's checkbox state; nil for plain items.
-    public let isChecked: Bool?
+    public let checked: Bool?
+    /// The item's block content in source order.
+    public let content: [any Markup]
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -66,8 +72,8 @@ extension ListItem {
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
-            isChecked: checked.has_value ? checked.value : nil
+            checked: checked.has_value ? checked.value : nil,
+            content: builder.children(node)
         )
     }
 }

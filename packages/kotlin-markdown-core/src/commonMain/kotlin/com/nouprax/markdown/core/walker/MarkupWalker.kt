@@ -5,6 +5,17 @@ public enum class WalkEvent {
     EXITING,
 }
 
+private sealed interface WalkFrame
+
+private class EnterFrame(
+    val node: Markup,
+) : WalkFrame
+
+private class ExitFrame(
+    val node: Markup,
+    val scope: Scope,
+) : WalkFrame
+
 public object MarkupWalker {
     /**
      * Walks the document depth-first, dispatching each node to [visitor] in
@@ -49,36 +60,25 @@ public object MarkupWalker {
         // whatever its depth. Children are pushed reversed so pops preserve
         // the recursive ENTERING/EXITING order exactly.
         val stack = ArrayDeque<WalkFrame>()
-        stack.addLast(WalkFrame.Enter(from))
+        stack.addLast(EnterFrame(from))
         while (stack.isNotEmpty()) {
             when (val frame = stack.removeLast()) {
-                is WalkFrame.Exit -> {
+                is ExitFrame -> {
                     visit(WalkEvent.EXITING, frame.node, frame.scope)
                 }
 
-                is WalkFrame.Enter -> {
+                is EnterFrame -> {
                     val node = frame.node
                     val scope = document.scope(node)
                     visit(WalkEvent.ENTERING, node, scope)
-                    stack.addLast(WalkFrame.Exit(node, scope))
+                    stack.addLast(ExitFrame(node, scope))
                     val children = node.childValues()
                     for (index in children.indices.reversed()) {
-                        stack.addLast(WalkFrame.Enter(children[index]))
+                        stack.addLast(EnterFrame(children[index]))
                     }
                 }
             }
         }
-    }
-
-    private sealed interface WalkFrame {
-        class Enter(
-            val node: Markup,
-        ) : WalkFrame
-
-        class Exit(
-            val node: Markup,
-            val scope: Scope,
-        ) : WalkFrame
     }
 
     private fun Markup.childValues(): kotlin.collections.List<Markup> =
@@ -99,12 +99,23 @@ public object MarkupWalker {
                 content
             }
 
+            is ThematicBreak -> {
+                emptyList()
+            }
+
             is List -> {
                 items
             }
 
             is ListItem -> {
                 content
+            }
+
+            is CodeBlock,
+            is HTMLBlock,
+            is FormulaBlock,
+            -> {
+                emptyList()
             }
 
             is Table -> {
@@ -123,11 +134,28 @@ public object MarkupWalker {
             }
 
             is DirectiveBlock -> {
-                label.orEmpty() + content
+                buildList {
+                    label?.let(::add)
+                    addAll(content)
+                }
+            }
+
+            is DirectiveLabel -> {
+                content
             }
 
             is FootnoteDefinition -> {
                 content
+            }
+
+            is Text,
+            is SoftBreak,
+            is LineBreak,
+            is Code,
+            is HTML,
+            is Formula,
+            -> {
+                emptyList()
             }
 
             is Emphasis -> {
@@ -151,21 +179,10 @@ public object MarkupWalker {
             }
 
             is Directive -> {
-                label.orEmpty()
+                listOfNotNull(label)
             }
 
-            is ThematicBreak,
-            is CodeBlock,
-            is HTMLBlock,
-            is FormulaBlock,
-            is Text,
-            is SoftBreak,
-            is LineBreak,
-            is Code,
-            is HTML,
-            is Formula,
-            is FootnoteReference,
-            -> {
+            is FootnoteReference -> {
                 emptyList()
             }
         }

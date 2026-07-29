@@ -4,6 +4,59 @@ All notable release changes are recorded here. Markdown Core follows Semantic
 Versioning for source packages and public API behavior; the C binary ABI is not
 promised to remain compatible between releases.
 
+## Unreleased
+
+- Breaking (C, Swift, Kotlin, and ECMAScript): directive labels are now
+  first-class `DirectiveLabel` markup in the canonical AST. A present label is
+  the directive's first real child, owns its complete inline content, and has a
+  scope spanning the source brackets; a missing label has no such child, while
+  explicit `[]` is a zero-child `DirectiveLabel`. Typed binding properties are
+  now `label: DirectiveLabel?`, and canonical dumps emit the label node instead
+  of a parent `label=` scalar. The public kind inventory follows canonical AST
+  order directly, including `DirectiveBlock`, `DirectiveLabel`, then
+  `FootnoteDefinition`.
+- Breaking (Swift): realign the Swift AST surface with the frozen
+  canonical-ast contract, which forbids per-platform renames.
+  - Every container's `children` collection is now `content` (`Document`,
+    `BlockQuote`, `Paragraph`, `Heading`, `ListItem`, `DirectiveBlock`,
+    `FootnoteDefinition`, `Emphasis`, `Strong`, `Strikethrough`, `Link`,
+    `Image`), and `List` exposes the contract's typed `items: [ListItem]`.
+  - Boolean fields return to their frozen names: `isTight` → `tight`,
+    `isChecked` → `checked`, `isFenced` → `fenced`, `isClosed` → `closed`
+    (`isHeader` is contract-defined and unchanged).
+  - `DirectiveBlock` gains its separate block `content` collection.
+  - `Code` and `CodeBlock` gain the contract's `mode: PlacementMode` field
+    (`embedded`/`standalone` respectively).
+  - Leaf kinds no longer carry an always-empty public `children` property
+    (`Text`, `Code`, `CodeBlock`, `HTML`, `HTMLBlock`, `Formula`,
+    `FormulaBlock`, `ThematicBreak`, `SoftBreak`, `LineBreak`,
+    `FootnoteReference`); traverse structure through `MarkupWalker`.
+- C, Swift, Kotlin, and ECMAScript: materializing every node scope is now a
+  linear whole-document batch operation, including deeply nested documents.
+  The C facade returns one owned canonical-preorder table that every binding
+  consumes without per-node native calls. Each binding's `MarkupWalker` also
+  has a scope-free typed-visitor traversal that remains usable on an
+  unmaterialized retained snapshot.
+- C, Swift, Kotlin, and ECMAScript: incremental mirrors now consume one
+  caller-owned C delta table whose `(id, parent, change)` rows are ordered
+  children before parents. A hash-indexed Kahn pass with expected O(delta)
+  cost replaces binding-local ancestor walks and comparison sorts, while the
+  table validates revision, session lineage, disjoint verdicts, and the
+  complete touched parent chain. ECMAScript also indexes all replacements for
+  a bubbled parent once, then performs one replacement-lookup pass and at most
+  one linear copy per child field, eliminating the former
+  O(changes × parent width) relink path.
+- Kotlin/JVM: native-bridge, scope-resolver, and wire-decoder implementation
+  types are no longer importable or constructible from Java; dedicated ABI
+  and Java-compiler gates keep the documented API as the only public surface.
+- Kotlin/Android: publish the exact private-JNI consumer rule in the main AAR
+  and verify it with a minified release application whose own configuration
+  intentionally contains no generic native-method keep. Mapping and DEX
+  inspection pin the `JvmNative` binary name and all 13 JNI method names when
+  used, plus prove that an unused library is still removed.
+- Tooling: update the development-only `brace-expansion` lockfile resolution
+  to patched release 5.0.8.
+
 ## 2.0.0 - 2026-07-20
 
 - Add incremental parsing sessions on every platform: `MarkupSession` in

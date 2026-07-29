@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -5,8 +6,7 @@
 
 #include "session_internal.h"
 
-#include "directive.h"
-
+#include <extension.h>
 #include <node.h>
 #include <inlines.h>
 #include <parser.h>
@@ -40,8 +40,9 @@
 //                      take their document-order span, and the labels whose
 //                      winning payload changed name the dependent units —
 //                      found through the session's per-unit lookup records —
-//                      that must re-refine. Units that cannot be rebuilt
-//                      per-unit (extension-owned) fall the commit back
+//                      that must re-refine. Core and extension owners expose
+//                      the same complete inline-ownership-domain contract;
+//                      an owner without that semantic capability falls back
 //                      before anything is touched.
 //   4. Inline phase  — runs on the staged region plus the rebuilt dependent
 //                      units, with an unlimited expansion budget; the
@@ -53,9 +54,10 @@
 //                      through the standard adoption machine (a stack dummy
 //                      document fronts the graveyard), so block- and
 //                      inline-level id stability behave exactly like the
-//                      full path. Rebuilt units adopt pairwise against the
-//                      nodes they replace; ancestors of a changed rebuilt
-//                      unit bubble a revision bump.
+//                      full path. Rebuilt inline domains use the same adopter
+//                      behind bounded dummy roots while their semantic owners
+//                      stay stable; ancestors of a changed domain bubble a
+//                      revision bump.
 //   6. Transactional splice — every fallible step runs before the committed
 //                      tree changes hands or is undone with pointer surgery
 //                      only; after the footnote refresh succeeds, the
@@ -69,10 +71,6 @@
 #ifndef MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR
 #define MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR 100000
 #endif
-
-// Shared with session.c; sessions and documents share the error type but not
-// a translation unit private to either.
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
 
 // --- line geometry -----------------------------------------------------------
 
@@ -658,7 +656,7 @@ static bool reconcile_prepare(
     for (i = 0; i < old_defs->count + new_defs->count; i++) {
         const markdown_core_map_entry *seed =
             i < old_defs->count ? &old_defs->items[i]->entry : &new_defs->items[i - old_defs->count]->entry;
-        bufsize_t label_len = (bufsize_t)strlen((const char *)seed->label);
+        markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((const char *)seed->label);
         void *existing = NULL;
         label_plan *plan = &state->plans[state->plan_count];
         markdown_core_map_entry *cursor;
@@ -779,7 +777,7 @@ static void reconcile_apply(
             plan->prefix_head ? plan->prefix_head : (plan->staged_head ? plan->staged_head : plan->suffix_head);
         markdown_core_map_entry *label_owner = head ? head : NULL;
         const unsigned char *label;
-        bufsize_t label_len;
+        markdown_core_bufsize label_len;
 
         if (plan->prefix_tail) {
             plan->prefix_tail->bucket_next = plan->staged_head ? plan->staged_head : plan->suffix_head;
@@ -793,7 +791,7 @@ static void reconcile_apply(
 
         label = label_owner ? label_owner->label : NULL;
         if (head) {
-            label_len = (bufsize_t)strlen((const char *)label);
+            label_len = (markdown_core_bufsize)strlen((const char *)label);
             markdown_core_key_index_insert(&map->index, label, label_len, head, 1, NULL);
         } else {
             // With no surviving entry the index slot (still keyed by the
@@ -852,8 +850,6 @@ static void reconcile_apply(
 
 // --- subtree walks ------------------------------------------------------------
 
-static bool is_wrapper_node(const markdown_core_node *node) { return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL; }
-
 /* `stop` bounds the walk once the chain has been spliced into a longer
  * sibling list (the first suffix node, or NULL for an isolated chain). */
 static void ids_put_chain(markdown_core_session *session, markdown_core_node *chain, const markdown_core_node *stop) {
@@ -861,9 +857,7 @@ static void ids_put_chain(markdown_core_session *session, markdown_core_node *ch
     for (top = chain; top && top != stop; top = top->next) {
         markdown_core_node *node = top;
         for (;;) {
-            if (!is_wrapper_node(node)) {
-                markdown_core_session_ids_put(session, node->id, node);
-            }
+            markdown_core_session_ids_put(session, node->id, node);
             if (node->first_child) {
                 node = node->first_child;
                 continue;
@@ -886,7 +880,7 @@ static void ids_remove_stale_chain(markdown_core_session *session, markdown_core
     for (top = chain; top; top = top->next) {
         markdown_core_node *node = top;
         for (;;) {
-            if (!is_wrapper_node(node) && markdown_core_session_node_by_id(session, node->id) == node) {
+            if (markdown_core_session_node_by_id(session, node->id) == node) {
                 markdown_core_session_ids_remove(session, node->id);
             }
             if (node->first_child) {
@@ -925,9 +919,7 @@ static void lookups_remove_chain(markdown_core_session *session, markdown_core_n
     for (top = chain; top; top = top->next) {
         markdown_core_node *node = top;
         for (;;) {
-            if (!is_wrapper_node(node)) {
-                markdown_core_lookup_table_remove(session->mem, &session->lookups, node->id);
-            }
+            markdown_core_lookup_table_remove(session->mem, &session->lookups, node->id);
             if (node->first_child) {
                 node = node->first_child;
                 continue;
@@ -945,13 +937,18 @@ static void lookups_remove_chain(markdown_core_session *session, markdown_core_n
 
 // --- dependent units ----------------------------------------------------------
 
-// One unit outside the stale region whose lookup answers changed: the
-// committed node it replaces, the freshly refined rebuild, and the adoption
-// verdict that drives ancestor revision bubbling.
+// One stable semantic owner outside the stale region whose lookup answers
+// changed. `unit` never leaves the committed tree: the transaction adopts and
+// swaps its complete child list plus backing buffer against the staged shell.
+// The same swap rolls back.
 typedef struct {
-    markdown_core_node *unit;   // committed node, owned by the tree until the splice
-    markdown_core_node *staged; // rebuilt unit, owned here until the splice
+    markdown_core_node *unit;
+    markdown_core_node *staged;
+    uint64_t previous_revision;
+    uint64_t next_revision;
+    markdown_core_footnote_site_list staged_refs;
     bool changed;
+    bool installed;
 } dependent_unit;
 
 // A committed ancestor collected for a revision bubble. The revision stamp
@@ -963,11 +960,8 @@ typedef struct {
     uint64_t previous_rev;
 } bubble_ancestor;
 
-/* Rebuilds the block shell of a committed unit for a fresh inline parse:
- * same raw kind, a copy of the block's string content, and absolute
- * positions (the parse writes absolute inline positions exactly like the
- * one-shot path; sealing relativizes them again). Only paragraphs and
- * headings qualify as rebuildable — anything else falls the commit back. */
+/* Builds the core Paragraph/Heading form of an inline ownership domain.
+ * Extension owners use their descriptor callback below. */
 static markdown_core_node *clone_unit_shell(markdown_core_session *session, markdown_core_node *unit) {
     markdown_core_scope scope = markdown_core_node_scope(unit);
     markdown_core_node *clone = markdown_core_node_new_with_mem((markdown_core_node_type)unit->type, session->mem);
@@ -994,18 +988,61 @@ static markdown_core_node *clone_unit_shell(markdown_core_session *session, mark
     return clone;
 }
 
-static int candidate_id_compare(const void *a, const void *b) {
-    markdown_core_node_id x = *(const markdown_core_node_id *)a;
-    markdown_core_node_id y = *(const markdown_core_node_id *)b;
-    return x < y ? -1 : (x > y ? 1 : 0);
+static bool prepare_dependent_unit(markdown_core_session *session, dependent_unit *dependent, bool *invalid) {
+    markdown_core_node *unit = dependent->unit;
+    markdown_core_node *staged;
+
+    *invalid = false;
+    if (!unit->extension && (unit->type == MARKDOWN_CORE_NODE_PARAGRAPH || unit->type == MARKDOWN_CORE_NODE_HEADING) &&
+        markdown_core_node_owns_inlines(unit)) {
+        staged = clone_unit_shell(session, unit);
+        if (!staged) {
+            return false;
+        }
+    } else if (unit->extension && unit->extension->prepare_inline_domain) {
+        staged = unit->extension->prepare_inline_domain(unit->extension, unit);
+        if (!staged) {
+            return false;
+        }
+    } else {
+        *invalid = true;
+        return false;
+    }
+
+    if (staged->type != unit->type || staged->extension != unit->extension ||
+        staged->content.mem != unit->content.mem || staged->parent || staged->prev || staged->next) {
+        *invalid = true;
+        markdown_core_node_free(staged);
+        return false;
+    }
+    staged->id = unit->id;
+    dependent->staged = staged;
+    dependent->previous_revision = unit->last_changed_rev;
+    return true;
+}
+
+static bool dependent_domain_shape_is_valid(const dependent_unit *dependent) {
+    const markdown_core_node *child;
+
+    for (child = dependent->unit->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
+            return false;
+        }
+    }
+    for (child = dependent->staged->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /* Collects the units that depend on a label whose winner changed by walking
  * the changed labels' postings — O(affected units), not O(units with
  * lookups) — skipping units the staged reparse rebuilds anyway. Returns
- * false with *fallback set when a dependent cannot be rebuilt per-unit (an
- * extension-owned unit, or a record that no longer matches the tree), and
- * false with *fallback clear on allocation loss. */
+ * false with *fallback set when a record no longer matches the tree or no
+ * complete inline-ownership-domain implementation exists, and false with
+ * *fallback clear on allocation loss. */
 static bool collect_dependents(
     markdown_core_session *session,
     const markdown_core_key_index *dirty,
@@ -1063,7 +1100,7 @@ static bool collect_dependents(
         }
     }
     if (candidate_count > 1) {
-        qsort(candidates, candidate_count, sizeof(*candidates), candidate_id_compare);
+        qsort(candidates, candidate_count, sizeof(*candidates), id_compare);
     }
     for (c = 0; c < candidate_count; c++) {
         markdown_core_node *unit;
@@ -1084,8 +1121,10 @@ static bool collect_dependents(
         if (id_set_holds(stale_ids, stale_count, top->id)) {
             continue; // the staged reparse rebuilds this unit anyway
         }
-        if ((unit->type != MARKDOWN_CORE_NODE_PARAGRAPH && unit->type != MARKDOWN_CORE_NODE_HEADING) ||
-            unit->extension || !markdown_core_node_owns_inlines(unit)) {
+        if ((!unit->extension &&
+             ((unit->type != MARKDOWN_CORE_NODE_PARAGRAPH && unit->type != MARKDOWN_CORE_NODE_HEADING) ||
+              !markdown_core_node_owns_inlines(unit))) ||
+            (unit->extension && !unit->extension->prepare_inline_domain)) {
             goto fall_back;
         }
         if (count == capacity) {
@@ -1103,9 +1142,8 @@ static bool collect_dependents(
             dependents = grown;
             capacity = grown_capacity;
         }
+        memset(&dependents[count], 0, sizeof(dependents[count]));
         dependents[count].unit = unit;
-        dependents[count].staged = NULL;
-        dependents[count].changed = false;
         count++;
     }
     if (candidates) {
@@ -1132,9 +1170,10 @@ fall_back:
 // footnote index from site lists merged in document order rather than from a
 // whole-tree walk: the graveyard's sites leave (the staged region's freshly
 // collected sites take their place), a rebuilt unit's sites are replaced by
-// its clone's, and every other site survives with its anchor classifying it
-// against the restart line. The merge runs before adoption, while falling
-// back is still free, and costs O(previous sites + staged material).
+// its rebuilt ownership domain's, and every other site survives with its
+// anchor classifying it against the restart line. Collection happens before
+// install, adoption fixes ids, and the transactional merge runs after the
+// reversible splice at O(previous sites + staged material).
 
 static bool site_run_append(
     markdown_core_mem *mem,
@@ -1180,13 +1219,95 @@ static size_t clone_key_find(const clone_key *keys, size_t count, const markdown
     return SIZE_MAX;
 }
 
-/* Merges one document-ordered site list into `out`. Emission follows the old
- * list's own order: the staged run enters at the first graveyard site or
- * ahead of the first surviving suffix site (at the end when neither exists),
- * and a clone's run enters at its unit's first site — after the staged run
- * when that site is the first suffix one, since the staged region precedes
- * every surviving suffix child. Returns FALLBACK when an anchor no longer
- * parents to the document (the lists no longer describe the tree), FAILED on
+/* One dependent owner's current reference run inside the persistent list.
+ * `start` is also the exact insertion point when `count` is zero: stable
+ * semantic owners make that position derivable from document tree order. */
+typedef struct {
+    size_t start;
+    size_t count;
+    markdown_core_node *anchor;
+} unit_run;
+
+/* Canonical preorder for two live semantic owners. The comparison walks only
+ * their ancestor spines plus the one sibling run at the divergence; it never
+ * inspects rebuilt inline descendants. */
+static int owner_tree_order_compare(const markdown_core_node *left, const markdown_core_node *right) {
+    const markdown_core_node *a = left;
+    const markdown_core_node *b = right;
+    const markdown_core_node *child;
+    size_t a_depth = 0;
+    size_t b_depth = 0;
+
+    if (a == b) {
+        return 0;
+    }
+    for (child = a; child->parent; child = child->parent) {
+        a_depth++;
+    }
+    for (child = b; child->parent; child = child->parent) {
+        b_depth++;
+    }
+    while (a_depth > b_depth) {
+        a = a->parent;
+        a_depth--;
+        if (a == b) {
+            return 1; // right is an ancestor and enters first
+        }
+    }
+    while (b_depth > a_depth) {
+        b = b->parent;
+        b_depth--;
+        if (a == b) {
+            return -1; // left is an ancestor and enters first
+        }
+    }
+    while (a->parent != b->parent) {
+        a = a->parent;
+        b = b->parent;
+    }
+    assert(a->parent);
+    for (child = a->parent->first_child; child; child = child->next) {
+        if (child == a) {
+            return -1;
+        }
+        if (child == b) {
+            return 1;
+        }
+    }
+    assert(0 && "semantic owners do not share one live tree");
+    return 0;
+}
+
+typedef struct {
+    size_t index;
+    size_t start;
+    const markdown_core_node *owner;
+    bool before_staged;
+} clone_insert;
+
+static int clone_insert_compare(const void *a, const void *b) {
+    const clone_insert *left = (const clone_insert *)a;
+    const clone_insert *right = (const clone_insert *)b;
+    if (left->start != right->start) {
+        return left->start < right->start ? -1 : 1;
+    }
+    if (left->before_staged != right->before_staged) {
+        return left->before_staged ? -1 : 1;
+    }
+    {
+        int order = owner_tree_order_compare(left->owner, right->owner);
+        if (order != 0) {
+            return order;
+        }
+    }
+    return left->index < right->index ? -1 : left->index > right->index;
+}
+
+/* Merges one document-ordered site list into `out`. The staged run enters at
+ * the graveyard/suffix boundary. A dependent run replaces its old run in
+ * place; when it gained its first site, stable-owner tree order supplies the
+ * exact insertion point. Returns FALLBACK when an untouched anchor no longer
+ * parents to the document (the persistent list is stale), FAILED on
  * allocation loss. */
 static markdown_core_incremental_result merge_site_list(
     markdown_core_session *session,
@@ -1198,17 +1319,27 @@ static markdown_core_incremental_result merge_site_list(
     const clone_key *clone_keys,
     markdown_core_footnote_site_list *clone_runs,
     bool *clone_emitted,
+    const clone_insert *clone_inserts,
+    size_t clone_insert_count,
     size_t clone_count,
     markdown_core_footnote_site_list *out
 ) {
     markdown_core_mem *mem = session->mem;
     markdown_core_node *doc = session->view.root;
     bool staged_emitted = false;
+    size_t insert = 0;
     size_t i;
 
     for (i = 0; i < old_sites->count; i++) {
         const markdown_core_footnote_site *site = &old_sites->items[i];
         size_t found;
+        while (insert < clone_insert_count && clone_inserts[insert].start == i && clone_inserts[insert].before_staged) {
+            size_t index = clone_inserts[insert++].index;
+            if (!site_run_append(mem, out, &clone_runs[index])) {
+                return MARKDOWN_CORE_INCREMENTAL_FAILED;
+            }
+            clone_emitted[index] = true;
+        }
         if (id_set_holds(stale_ids, stale_count, site->anchor->id)) {
             // Graveyard: the staged run takes this run's place. A rebuilt
             // unit is never anchored here (collect_dependents skips the
@@ -1219,21 +1350,25 @@ static markdown_core_incremental_result merge_site_list(
                 }
                 staged_emitted = true;
             }
-            continue;
-        }
-        found = site->unit && clone_count ? clone_key_find(clone_keys, clone_count, site->unit) : SIZE_MAX;
-        // A top-level rebuilt unit was already swapped out of the tree (the
-        // merge runs post-adoption), so its sites anchor at an unlinked
-        // node; the clone match below replaces them, and their stored line
-        // still orders the staged emission correctly.
-        if (found == SIZE_MAX && site->anchor->parent != doc) {
-            return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-        }
-        if (!staged_emitted && site->anchor->start_line + 1 >= restart_line) {
+        } else if (!staged_emitted && site->anchor->start_line + 1 >= restart_line) {
             if (!site_run_append(mem, out, staged_run)) {
                 return MARKDOWN_CORE_INCREMENTAL_FAILED;
             }
             staged_emitted = true;
+        }
+        while (insert < clone_insert_count && clone_inserts[insert].start == i) {
+            size_t index = clone_inserts[insert++].index;
+            if (!site_run_append(mem, out, &clone_runs[index])) {
+                return MARKDOWN_CORE_INCREMENTAL_FAILED;
+            }
+            clone_emitted[index] = true;
+        }
+        if (id_set_holds(stale_ids, stale_count, site->anchor->id)) {
+            continue;
+        }
+        found = site->unit && clone_count ? clone_key_find(clone_keys, clone_count, site->unit) : SIZE_MAX;
+        if (found == SIZE_MAX && site->anchor->parent != doc) {
+            return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
         }
         if (found != SIZE_MAX) {
             if (!clone_emitted[found]) {
@@ -1248,8 +1383,25 @@ static markdown_core_incremental_result merge_site_list(
             return MARKDOWN_CORE_INCREMENTAL_FAILED;
         }
     }
-    if (!staged_emitted && !site_run_append(mem, out, staged_run)) {
-        return MARKDOWN_CORE_INCREMENTAL_FAILED;
+    while (insert < clone_insert_count && clone_inserts[insert].before_staged) {
+        size_t index = clone_inserts[insert++].index;
+        if (!site_run_append(mem, out, &clone_runs[index])) {
+            return MARKDOWN_CORE_INCREMENTAL_FAILED;
+        }
+        clone_emitted[index] = true;
+    }
+    if (!staged_emitted) {
+        if (!site_run_append(mem, out, staged_run)) {
+            return MARKDOWN_CORE_INCREMENTAL_FAILED;
+        }
+        staged_emitted = true;
+    }
+    while (insert < clone_insert_count) {
+        size_t index = clone_inserts[insert++].index;
+        if (!site_run_append(mem, out, &clone_runs[index])) {
+            return MARKDOWN_CORE_INCREMENTAL_FAILED;
+        }
+        clone_emitted[index] = true;
     }
     return MARKDOWN_CORE_INCREMENTAL_COMMITTED;
 }
@@ -1267,6 +1419,25 @@ static size_t site_lower_bound(const markdown_core_footnote_site_list *list, int
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
         if (site_anchor_line(&list->items[mid]) < line) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+static size_t site_unit_lower_bound(
+    const markdown_core_footnote_site_list *list,
+    size_t lo,
+    size_t hi,
+    const markdown_core_node *unit
+) {
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        const markdown_core_node *mid_unit = list->items[mid].unit;
+        assert(mid_unit);
+        if (owner_tree_order_compare(mid_unit, unit) < 0) {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -1331,16 +1502,6 @@ static void patch_ref_run(
     }
 }
 
-/* One rebuilt unit's current reference run inside the persistent list, and
- * the anchor its surviving sites carry (the old unit itself for a top-level
- * rebuild — the clone took its place in the tree — or the surviving
- * container for a nested one). */
-typedef struct {
-    size_t start;
-    size_t count;
-    markdown_core_node *anchor;
-} unit_run;
-
 /* Refreshes the session's footnote index for one incremental commit. Runs
  * post-adoption (ids final), before the point of no return. A commit whose
  * stale ranges and rebuilt units carry the same label sequences as their
@@ -1350,8 +1511,9 @@ typedef struct {
  * other commit merges the site lists in document order and rebuilds the
  * derived structures from label slots (*out_built set, caller swaps at the
  * point of no return), diffing per node id to bump exactly the answers
- * that changed. A clone that gains sites where its unit had none, or holds
- * a definition, falls back to the full path as before. */
+ * that changed. Dependent runs were collected before install while their
+ * staged domains were isolated; their node pointers now name the installed
+ * children under the stable owner. */
 static markdown_core_incremental_result footnote_refresh(
     markdown_core_session *session,
     markdown_core_footnote_site_list *staged_defs,
@@ -1374,6 +1536,7 @@ static markdown_core_incremental_result footnote_refresh(
     markdown_core_footnote_site_list ref_sites = {NULL, 0, 0};
     markdown_core_footnote_site_list *clone_runs = NULL;
     clone_key *clone_keys = NULL;
+    clone_insert *clone_inserts = NULL;
     bool *clone_emitted = NULL;
     unit_run *runs = NULL;
     markdown_core_incremental_result result = MARKDOWN_CORE_INCREMENTAL_FAILED;
@@ -1382,69 +1545,53 @@ static markdown_core_incremental_result footnote_refresh(
     size_t r0 = site_lower_bound(&fn->refs, restart_line);
     size_t r1 = site_lower_bound(&fn->refs, boundary_line);
     size_t churn = 0;
+    size_t clone_insert_count = 0;
     bool fast;
     size_t i;
 
     if (dependent_count) {
         clone_runs = (markdown_core_footnote_site_list *)mem->calloc(mem, dependent_count, sizeof(*clone_runs));
         clone_keys = (clone_key *)mem->calloc(mem, dependent_count, sizeof(*clone_keys));
+        clone_inserts = (clone_insert *)mem->calloc(mem, dependent_count, sizeof(*clone_inserts));
         clone_emitted = (bool *)mem->calloc(mem, dependent_count, sizeof(*clone_emitted));
         runs = (unit_run *)mem->calloc(mem, dependent_count, sizeof(*runs));
-        if (!clone_runs || !clone_keys || !clone_emitted || !runs) {
+        if (!clone_runs || !clone_keys || !clone_inserts || !clone_emitted || !runs) {
             goto done;
         }
         for (i = 0; i < dependent_count; i++) {
-            markdown_core_node *top = dependents[i].staged;
-            markdown_core_footnote_site_list clone_defs = {NULL, 0, 0};
-            markdown_core_footnote_site_list no_defs = {NULL, 0, 0};
-            bool collected;
+            markdown_core_node *top = dependents[i].unit;
+            bool before_staged;
+            size_t hi;
+            size_t lo;
             size_t at;
             while (top->parent && top->parent != doc) {
                 top = top->parent;
             }
-            // A top-level unit anchors its clone's sites at the clone (the
-            // splice put it where the unit was); a nested one at its
-            // surviving container. The unit's surviving sites carry the old
-            // unit / the same container respectively.
-            runs[i].anchor = top == dependents[i].staged ? dependents[i].unit : top;
-            collected = markdown_core_footnote_collect_sites(
-                mem,
-                dependents[i].staged,
-                top == dependents[i].staged ? dependents[i].staged : top,
-                &clone_defs,
-                &clone_runs[i]
-            );
-            if (clone_defs.count) {
-                // A rebuilt leaf can never hold a definition; one appearing
-                // means the lists no longer describe the tree.
-                markdown_core_footnote_site_list_release(mem, &clone_defs);
-                result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-                goto done;
-            }
-            markdown_core_footnote_site_list_release(mem, &clone_defs);
-            if (!collected || !markdown_core_session_footnote_label_sites(session, &no_defs, &clone_runs[i])) {
-                goto done;
-            }
-            at = site_lower_bound(&fn->refs, runs[i].anchor->start_line + 1);
-            while (at < fn->refs.count && fn->refs.items[at].anchor == runs[i].anchor &&
-                   fn->refs.items[at].unit != dependents[i].unit) {
-                at++;
-            }
+            runs[i].anchor = top;
+            clone_runs[i] = dependents[i].staged_refs;
+            before_staged = runs[i].anchor->start_line + 1 < restart_line;
+            lo = before_staged ? 0 : r1;
+            hi = before_staged ? r0 : fn->refs.count;
+            at = site_unit_lower_bound(&fn->refs, lo, hi, dependents[i].unit);
             runs[i].start = at;
-            while (at < fn->refs.count && fn->refs.items[at].unit == dependents[i].unit) {
+            while (at < hi && fn->refs.items[at].unit == dependents[i].unit) {
                 at++;
             }
             runs[i].count = at - runs[i].start;
             if (runs[i].count == 0 && clone_runs[i].count) {
-                // Sites gained where the unit had none have no position (the
-                // link/footnote-reference kind flip).
-                result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-                goto done;
+                clone_inserts[clone_insert_count].index = i;
+                clone_inserts[clone_insert_count].start = runs[i].start;
+                clone_inserts[clone_insert_count].owner = dependents[i].unit;
+                clone_inserts[clone_insert_count].before_staged = before_staged;
+                clone_insert_count++;
             }
             clone_keys[i].unit = dependents[i].unit;
             clone_keys[i].index = i;
         }
         qsort(clone_keys, dependent_count, sizeof(*clone_keys), clone_key_compare);
+        if (clone_insert_count > 1) {
+            qsort(clone_inserts, clone_insert_count, sizeof(*clone_inserts), clone_insert_compare);
+        }
     }
 
     // --- fast path: sequence-preserving commit ---
@@ -1569,6 +1716,8 @@ static markdown_core_incremental_result footnote_refresh(
         NULL,
         NULL,
         NULL,
+        NULL,
+        0,
         0,
         &def_sites
     );
@@ -1583,6 +1732,8 @@ static markdown_core_incremental_result footnote_refresh(
             clone_keys,
             clone_runs,
             clone_emitted,
+            clone_inserts,
+            clone_insert_count,
             dependent_count,
             &ref_sites
         );
@@ -1603,13 +1754,15 @@ done:
     markdown_core_footnote_site_list_release(mem, &def_sites);
     markdown_core_footnote_site_list_release(mem, &ref_sites);
     if (clone_runs) {
-        for (i = 0; i < dependent_count; i++) {
-            markdown_core_footnote_site_list_release(mem, &clone_runs[i]);
-        }
+        // Entries alias dependent_unit::staged_refs; the pipeline owns their
+        // storage until its shared release.
         mem->free(mem, clone_runs);
     }
     if (clone_keys) {
         mem->free(mem, clone_keys);
+    }
+    if (clone_inserts) {
+        mem->free(mem, clone_inserts);
     }
     if (clone_emitted) {
         mem->free(mem, clone_emitted);
@@ -1620,84 +1773,312 @@ done:
     return result;
 }
 
-/* Swaps `staged` into `unit`'s place in the committed tree. Pure pointer
- * surgery, and its own inverse: swapping the arguments undoes it. */
-static void splice_replace(markdown_core_node *unit, markdown_core_node *staged) {
-    staged->parent = unit->parent;
-    staged->prev = unit->prev;
-    staged->next = unit->next;
-    if (unit->prev) {
-        unit->prev->next = staged;
-    } else if (unit->parent) {
-        unit->parent->first_child = staged;
+#ifndef NDEBUG
+static void assert_child_run(markdown_core_node *first, markdown_core_node *last) {
+    markdown_core_node *child;
+    markdown_core_node *previous;
+    markdown_core_node *slow;
+    markdown_core_node *fast;
+    markdown_core_node *parent;
+    markdown_core_node *before;
+    markdown_core_node *after;
+
+    assert(first);
+    assert(last);
+    child = first;
+    previous = first->prev;
+    slow = first;
+    fast = first;
+    parent = first->parent;
+    before = first->prev;
+    after = last->next;
+    assert(previous == NULL || previous->next == first);
+    for (;;) {
+        assert(child);
+        assert(child != before);
+        assert(child != after);
+        assert(child->parent == parent);
+        assert(child->prev == previous);
+        if (child == last) {
+            break;
+        }
+        assert(child->next);
+        assert(child->next->prev == child);
+        previous = child;
+        child = child->next;
+
+        slow = slow && slow != last ? slow->next : NULL;
+        fast = fast && fast != last ? fast->next : NULL;
+        fast = fast && fast != last ? fast->next : NULL;
+        assert(!slow || !fast || slow != fast);
     }
-    if (unit->next) {
-        unit->next->prev = staged;
-    } else if (unit->parent) {
-        unit->parent->last_child = staged;
+    assert(last->next == NULL || last->next->prev == last);
+}
+#else
+#define assert_child_run(first, last) ((void)0)
+#endif
+
+/* Detaches the nonempty contiguous child run [`first`, `last`] while keeping
+ * the run isolated and its parent pointers intact. `insert_child_chain` with
+ * the captured neighbors is its inverse. */
+static void detach_child_chain(markdown_core_node *parent, markdown_core_node *first, markdown_core_node *last) {
+    markdown_core_node *previous;
+    markdown_core_node *next;
+
+    assert(parent);
+    assert(first);
+    assert(last);
+    assert_child_run(first, last);
+    previous = first->prev;
+    next = last->next;
+    assert(first->parent == parent);
+    assert(last->parent == parent);
+    assert(previous ? previous->next == first : parent->first_child == first);
+    assert(next ? next->prev == last : parent->last_child == last);
+
+    if (previous) {
+        previous->next = next;
+    } else {
+        parent->first_child = next;
     }
-    unit->parent = NULL;
-    unit->prev = NULL;
-    unit->next = NULL;
+    if (next) {
+        next->prev = previous;
+    } else {
+        parent->last_child = previous;
+    }
+    first->prev = NULL;
+    last->next = NULL;
+    assert_child_run(first, last);
 }
 
-// --- the pipeline --------------------------------------------------------------
+/* Inserts the isolated nonempty run [`first`, `last`] between `previous` and
+ * `next`, assigning every child to `parent`. A detached run deliberately
+ * keeps its old parent stamps until this operation or `free_child_chain`. */
+static void insert_child_chain(
+    markdown_core_node *parent,
+    markdown_core_node *previous,
+    markdown_core_node *next,
+    markdown_core_node *first,
+    markdown_core_node *last
+) {
+    markdown_core_node *child;
 
-markdown_core_incremental_result markdown_core_session_commit_incremental(
+    assert(parent);
+    assert(first);
+    assert(last);
+    assert_child_run(first, last);
+    assert(first->prev == NULL);
+    assert(last->next == NULL);
+    assert(previous == NULL || previous->parent == parent);
+    assert(next == NULL || next->parent == parent);
+    assert(previous ? previous->next == next : parent->first_child == next);
+    assert(next ? next->prev == previous : parent->last_child == previous);
+
+    first->prev = previous;
+    last->next = next;
+    if (previous) {
+        previous->next = first;
+    } else {
+        parent->first_child = first;
+    }
+    if (next) {
+        next->prev = last;
+    } else {
+        parent->last_child = last;
+    }
+
+    for (child = first;; child = child->next) {
+        child->parent = parent;
+        if (child == last) {
+            break;
+        }
+    }
+    assert_child_run(first, last);
+}
+
+/* Appends one isolated child to a temporary staging parent. */
+static void park_child(markdown_core_node *parent, markdown_core_node *child) {
+    assert(parent);
+    assert(child);
+    assert(child->parent == NULL);
+    assert(child->prev == NULL);
+    assert(child->next == NULL);
+
+    insert_child_chain(parent, parent->last_child, NULL, child, child);
+}
+
+/* Exchanges a stable owner's complete inline ownership domain with the
+ * staged shell's complete child list. The child span and its sole backing
+ * buffer move together, so borrowed Text chunks never need rebasing. This is
+ * deliberately self-inverse: commit and rollback call the same operation. */
+static void swap_dependent_domain(dependent_unit *dependent) {
+    markdown_core_node *unit = dependent->unit;
+    markdown_core_node *staged = dependent->staged;
+    markdown_core_node *live_first = unit->first_child;
+    markdown_core_node *live_last = unit->last_child;
+    markdown_core_node *staged_first = staged->first_child;
+    markdown_core_node *staged_last = staged->last_child;
+    markdown_core_strbuf content;
+
+    assert(unit);
+    assert(staged);
+    assert(unit->content.mem == staged->content.mem);
+    assert((live_first == NULL) == (live_last == NULL));
+    assert((staged_first == NULL) == (staged_last == NULL));
+
+    if (live_first) {
+        detach_child_chain(unit, live_first, live_last);
+    }
+    if (staged_first) {
+        detach_child_chain(staged, staged_first, staged_last);
+    }
+
+    content = unit->content;
+    unit->content = staged->content;
+    staged->content = content;
+
+    if (staged_first) {
+        insert_child_chain(unit, NULL, NULL, staged_first, staged_last);
+    }
+    if (live_first) {
+        insert_child_chain(staged, NULL, NULL, live_first, live_last);
+    }
+
+    dependent->installed = !dependent->installed;
+}
+
+typedef struct {
+    ptrdiff_t restart_pos;
+    ptrdiff_t boundary_pos;
+    markdown_core_node *restart_node;
+    markdown_core_node *boundary_node;
+    size_t restart_byte;
+    int restart_line;
+    int boundary_line;
+    int fed_lines;
+    int total_lines;
+    int last_line_length;
+    int staged_tail_length;
+} incremental_restart_plan;
+
+typedef struct {
+    markdown_core_node *first_stale;
+    markdown_core_node *last_stale;
+    markdown_core_node *prefix_tail;
+    markdown_core_node *suffix_head;
+    markdown_core_node *staged_first;
+    markdown_core_node *staged_last;
+    size_t staged_clean;
+    size_t prefix_clean;
+    size_t boundary_idx;
+    size_t suffix_clean;
+    size_t clean_count;
+    int delta_lines;
+    bool graveyard_detached;
+    bool staged_installed;
+    bool dependents_installed;
+    bool revisions_stamped;
+} incremental_splice_state;
+
+/* Stack-owned incremental transaction. The parser temporarily borrows `map`
+ * and `own_map` must be restored before its lease ends. `root` owns staged
+ * children until install; `holder` owns dependent clones while they are
+ * parked; a detached graveyard keeps committed parent stamps. After
+ * `reconcile.applied`, abort quarantines the map via `refmap_stale`.
+ * `footnotes_built` denotes an index owned here until its immediate PONR
+ * transfer. False phase returns use `result` to distinguish failure from
+ * fallback, and no allocation or failure is allowed after refresh succeeds. */
+typedef struct {
+    markdown_core_session *session;
+    markdown_core_mem *mem;
+    markdown_core_map *map;
+    const unsigned char *bytes;
+    size_t length;
+    markdown_core_node *doc;
+    markdown_core_edit_summary pending;
+    size_t budget;
+    uint64_t new_rev;
+    markdown_core_delta *changes;
+    markdown_core_error **error;
+    markdown_core_incremental_result result;
+
+    markdown_core_parser *parser;
+    markdown_core_map *own_map;
+    markdown_core_map_entry *previous_head;
+    uint64_t order_floor;
+    markdown_core_node *root;
+    offset_list line_offsets;
+    reference_list new_defs;
+    reference_list old_defs;
+    uint64_t *stale_ids;
+    size_t stale_count;
+    markdown_core_footnote_index footnotes;
+    markdown_core_footnote_site_list staged_defs;
+    markdown_core_footnote_site_list staged_refs;
+    bool footnotes_built;
+    markdown_core_lookup_recording recording;
+    markdown_core_unit_lookups *bundles;
+    size_t bundle_count;
+    reconcile_state reconcile;
+    bool defs_equal;
+    dependent_unit *dependents;
+    size_t dependent_count;
+    markdown_core_node *holder;
+    size_t sealed_nodes;
+    bubble_ancestor *bubble_nodes;
+    size_t bubble_count;
+    size_t bubble_capacity;
+    uint64_t previous_doc_rev;
+    int *sentinel_lines;
+    size_t sentinel_count;
+
+    incremental_restart_plan plan;
+    incremental_splice_state splice;
+} incremental_pipeline;
+
+static void incremental_pipeline_init(
+    incremental_pipeline *pipeline,
     markdown_core_session *session,
     uint64_t new_rev,
     markdown_core_delta *changes,
     markdown_core_error **error
 ) {
-    markdown_core_mem *mem = session->mem;
-    markdown_core_map *map = session->refmap;
-    const unsigned char *bytes = markdown_core_text_bytes(&session->text);
-    size_t length = markdown_core_text_length(&session->text);
-    markdown_core_node *doc = session->view.root;
-    const markdown_core_edit_summary pending = session->pending;
-    size_t old_lo = pending.new_lo;
-    size_t budget = length > MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR ? length : MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR;
+    memset(pipeline, 0, sizeof(*pipeline));
+    pipeline->session = session;
+    pipeline->mem = session->mem;
+    pipeline->map = session->refmap;
+    pipeline->bytes = markdown_core_text_bytes(&session->text);
+    pipeline->length = markdown_core_text_length(&session->text);
+    pipeline->doc = session->view.root;
+    pipeline->pending = session->pending;
+    pipeline->budget = pipeline->length > MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR
+                           ? pipeline->length
+                           : MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR;
+    pipeline->new_rev = new_rev;
+    pipeline->changes = changes;
+    pipeline->error = error;
+    pipeline->result = MARKDOWN_CORE_INCREMENTAL_FAILED;
+    pipeline->previous_head = pipeline->map->refs;
+    pipeline->order_floor = pipeline->map->next_order + 1;
+    pipeline->defs_equal = true;
+    pipeline->plan.restart_pos = -1;
+    pipeline->plan.boundary_pos = -1;
+    pipeline->plan.boundary_line = INT_MAX;
+    markdown_core_lookup_recording_init(&pipeline->recording, pipeline->mem);
+}
 
-    markdown_core_incremental_result result = MARKDOWN_CORE_INCREMENTAL_FAILED;
-    markdown_core_parser *parser = NULL;
-    markdown_core_map *own_map = NULL; // the staged parser's unused fresh map
-    markdown_core_map_entry *previous_head = map->refs;
-    uint64_t order_floor = map->next_order + 1; // entries this parse harvests sit at or above this
-    markdown_core_node *root = NULL;            // refined staged tree, once detached
-    offset_list line_offsets = {NULL, 0, 0};
-    reference_list new_defs = {NULL, 0, 0};
-    reference_list old_defs = {NULL, 0, 0};
-    uint64_t *stale_ids = NULL;
-    size_t stale_count = 0;
-    markdown_core_footnote_index footnotes;
-    markdown_core_footnote_site_list staged_defs = {NULL, 0, 0};
-    markdown_core_footnote_site_list staged_refs = {NULL, 0, 0};
-    bool footnotes_built = false;
-    markdown_core_lookup_recording recording;
-    markdown_core_unit_lookups *bundles = NULL;
-    size_t bundle_count = 0;
-    reconcile_state reconcile;
-    bool defs_equal = true;
-    dependent_unit *dependents = NULL;
-    size_t dependent_count = 0;
-    markdown_core_node *holder = NULL; // staging parent for dependent rebuilds
-    size_t sealed_nodes = 0;           // filled by the seal walks, sizes the id reserve
-    bubble_ancestor *bubble_nodes = NULL;
-    size_t bubble_count = 0;
-    size_t bubble_capacity = 0;
-    uint64_t previous_doc_rev = 0;
-    int *sentinel_lines = NULL; // vanished clean definition paragraphs staged by this commit
-    size_t sentinel_count = 0;
+static bool incremental_use_fallback(incremental_pipeline *pipeline) {
+    pipeline->result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+    return false;
+}
 
-    markdown_core_lookup_recording_init(&recording, mem);
-    memset(&reconcile, 0, sizeof(reconcile));
-    memset(&footnotes, 0, sizeof(footnotes));
+static bool incremental_plan_restart(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    const unsigned char *bytes = pipeline->bytes;
+    size_t length = pipeline->length;
+    markdown_core_session *session = pipeline->session;
 
-    // --- 1. restart plan ---
-    ptrdiff_t restart_pos = restart_position(&session->clean, old_lo);
-    markdown_core_node *restart_node;
-    size_t restart_byte;
-    int restart_line;
+    plan->restart_pos = restart_position(&session->clean, pipeline->pending.new_lo);
 
     // An edit can place a '\n' exactly at the chosen boundary while the
     // untouched prefix ends with a lone '\r': the two fuse into one CRLF
@@ -1706,10 +2087,10 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // always restores the invariant: the earlier entry's surrounding bytes
     // lie strictly inside the untouched prefix, where old line starts
     // survive verbatim.
-    if (restart_pos >= 0) {
-        size_t byte = session->clean.items[restart_pos].start_byte;
+    if (plan->restart_pos >= 0) {
+        size_t byte = session->clean.items[plan->restart_pos].start_byte;
         if (byte > 0 && byte < length && bytes[byte - 1] == '\r' && bytes[byte] == '\n') {
-            restart_pos--;
+            plan->restart_pos--;
         }
     }
 
@@ -1720,52 +2101,44 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // quality, so they take the same check. Only the chosen entry's line can
     // be damaged — every earlier entry's line lies wholly inside the
     // untouched prefix — so one entry back always restores validity.
-    if (restart_pos >= 0) {
-        const markdown_core_clean_child *entry = &session->clean.items[restart_pos];
+    if (plan->restart_pos >= 0) {
+        const markdown_core_clean_child *entry = &session->clean.items[plan->restart_pos];
         if ((!entry->node || (entry->node->flags & MARKDOWN_CORE_NODE__CLEAN_START_SEALING)) &&
             !line_seals(bytes, length, entry->start_byte)) {
-            restart_pos--;
+            plan->restart_pos--;
         }
     }
-    restart_node = restart_pos >= 0 ? entry_node_at(&session->clean.items[restart_pos], doc) : doc->first_child;
-    restart_byte = restart_pos >= 0 ? session->clean.items[restart_pos].start_byte : 0;
-    restart_line = restart_pos >= 0 ? session->clean.items[restart_pos].start_line : 1;
-
-    ptrdiff_t boundary_pos = -1;
-    int fed_lines = 0;
-    int total_lines;
-    int last_line_length;
-    int staged_tail_length;
+    plan->restart_node = plan->restart_pos >= 0 ? entry_node_at(&session->clean.items[plan->restart_pos], pipeline->doc)
+                                                : pipeline->doc->first_child;
+    plan->restart_byte = plan->restart_pos >= 0 ? session->clean.items[plan->restart_pos].start_byte : 0;
+    plan->restart_line = plan->restart_pos >= 0 ? session->clean.items[plan->restart_pos].start_line : 1;
 
     // A restart at or beyond the end of the text feeds nothing, so the
     // parser's line scalars would not describe the surviving prefix (whose
     // final line length is a validated-bytes measure only a parse can give).
     // Rare — the entire tail was deleted at a clean boundary — and bounded:
     // fall back to the full reparse.
-    if (restart_byte >= length) {
-        return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+    if (plan->restart_byte >= length) {
+        return incremental_use_fallback(pipeline);
     }
 
-    // Routing: a restart at the document head with no clean boundary at or
-    // beyond the damage reparses everything and no reflow can cut the
-    // suffix. The full path runs the same parse with wholesale table and
-    // index rebuilds instead of per-node splice maintenance (measured up to
-    // 31% cheaper on whole-document shapes), and falling back here is free —
-    // nothing has been staged yet.
-    if (restart_byte == 0 &&
-        (session->clean.count == 0 || session->clean.items[session->clean.count - 1].start_byte <
-                                          (size_t)((ptrdiff_t)session->pending.new_hi - session->pending.delta))) {
-        return MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-    }
+    return true;
+}
 
-    // --- 2. staged reparse with reflow probing ---
-    parser = markdown_core_session_acquire_parser(session, error);
-    if (!parser) {
-        goto failed;
+static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    markdown_core_session *session = pipeline->session;
+    markdown_core_parser *parser;
+    size_t feed_pos;
+
+    pipeline->parser = markdown_core_session_acquire_parser(session, pipeline->error);
+    if (!pipeline->parser) {
+        return false;
     }
-    own_map = parser->refmap;
-    parser->refmap = map;
-    parser->line_number = restart_line - 1;
+    parser = pipeline->parser;
+    pipeline->own_map = parser->refmap;
+    parser->refmap = pipeline->map;
+    parser->line_number = plan->restart_line - 1;
 
     // finalize() dates a block closed in the middle of a line to the end of
     // the line before it, so the staged parser must know the previous line's
@@ -1773,224 +2146,209 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
     // prefix (its bytes end at restart_byte, at or before the first edited
     // byte), so the current text still holds exactly what a one-shot parse
     // would have measured.
-    if (restart_byte > 0) {
-        size_t prev_end = restart_byte;
+    if (plan->restart_byte > 0) {
+        size_t prev_end = plan->restart_byte;
         size_t prev_start;
-        if (bytes[prev_end - 1] == '\n') {
+        if (pipeline->bytes[prev_end - 1] == '\n') {
             prev_end--;
         }
-        if (prev_end > 0 && bytes[prev_end - 1] == '\r') {
+        if (prev_end > 0 && pipeline->bytes[prev_end - 1] == '\r') {
             prev_end--;
         }
         prev_start = prev_end;
-        while (prev_start > 0 && bytes[prev_start - 1] != '\n' && bytes[prev_start - 1] != '\r') {
+        while (prev_start > 0 && pipeline->bytes[prev_start - 1] != '\n' && pipeline->bytes[prev_start - 1] != '\r') {
             prev_start--;
         }
         parser->last_line_length = (int)(prev_end - prev_start);
     }
 
-    {
-        size_t feed_pos = restart_byte;
-        while (feed_pos < length) {
-            size_t next = line_end(bytes, length, feed_pos);
-            if (!offset_push(mem, &line_offsets, feed_pos)) {
-                goto failed;
-            }
-            markdown_core_parser_feed(parser, (const char *)bytes + feed_pos, next - feed_pos);
-            fed_lines++;
-            if (parser->oom || map->oom) {
-                goto failed;
-            }
-            feed_pos = next;
-            if (feed_pos >= pending.new_hi && feed_pos < length && (ptrdiff_t)feed_pos >= pending.delta &&
-                (parser_is_clean(parser) || (parser_open_defs_only(parser) && line_seals(bytes, length, feed_pos)))) {
-                size_t old_byte = (size_t)((ptrdiff_t)feed_pos - pending.delta);
-                boundary_pos = boundary_position(&session->clean, old_byte, restart_pos);
-                if (boundary_pos >= 0) {
-                    break;
-                }
+    feed_pos = plan->restart_byte;
+    while (feed_pos < pipeline->length) {
+        size_t next = line_end(pipeline->bytes, pipeline->length, feed_pos);
+        if (!offset_push(pipeline->mem, &pipeline->line_offsets, feed_pos)) {
+            return false;
+        }
+        markdown_core_parser_feed(parser, (const char *)pipeline->bytes + feed_pos, next - feed_pos);
+        plan->fed_lines++;
+        if (parser->oom || pipeline->map->oom) {
+            return false;
+        }
+        feed_pos = next;
+        if (feed_pos >= pipeline->pending.new_hi && feed_pos < pipeline->length &&
+            (ptrdiff_t)feed_pos >= pipeline->pending.delta &&
+            (parser_is_clean(parser) ||
+             (parser_open_defs_only(parser) && line_seals(pipeline->bytes, pipeline->length, feed_pos)))) {
+            size_t old_byte = (size_t)((ptrdiff_t)feed_pos - pipeline->pending.delta);
+            plan->boundary_pos = boundary_position(&session->clean, old_byte, plan->restart_pos);
+            if (plan->boundary_pos >= 0) {
+                break;
             }
         }
     }
 
     markdown_core_parser_finalize_blocks(parser);
-    if (parser->oom || map->oom) {
-        goto failed;
+    if (parser->oom || pipeline->map->oom) {
+        return false;
     }
-    total_lines = parser->line_number;
-    last_line_length = parser->last_line_length;
+    plan->total_lines = parser->line_number;
+    plan->last_line_length = parser->last_line_length;
     // On reflow the last fed line is the one just before the boundary; its
     // terminator-stripped length re-dates transplanted ends below.
-    staged_tail_length = parser->last_line_length;
+    plan->staged_tail_length = parser->last_line_length;
+    plan->boundary_line = plan->boundary_pos >= 0 ? session->clean.items[plan->boundary_pos].start_line : INT_MAX;
+    return true;
+}
 
-    // --- 3. definition reconciliation ---
-    int boundary_line = boundary_pos >= 0 ? session->clean.items[boundary_pos].start_line : INT_MAX;
-    {
-        markdown_core_node *sibling;
-        markdown_core_node *stop = boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
-        size_t filled = 0;
-        for (sibling = restart_node; sibling && sibling != stop; sibling = sibling->next) {
-            stale_count++;
-        }
-        if (stale_count) {
-            stale_ids = (uint64_t *)mem->calloc(mem, stale_count, sizeof(*stale_ids));
-            if (!stale_ids) {
-                goto failed;
-            }
-            for (sibling = restart_node; sibling && sibling != stop; sibling = sibling->next) {
-                stale_ids[filled++] = sibling->id;
-            }
-            qsort(stale_ids, stale_count, sizeof(*stale_ids), id_compare);
-        }
-        if (!collect_new_definitions(mem, map, previous_head, &new_defs) ||
-            !collect_stale_definitions(mem, session, restart_line, boundary_line, &old_defs)) {
-            goto failed;
-        }
-        // Sentinel lines for the staged region: vanished clean definition
-        // paragraphs of this parse, one per line, taken from the staged
-        // list before any map surgery. `new_defs` is document-ordered, so
-        // deduping neighbors suffices.
-        if (!doc->first_child || restart_node == doc->first_child) {
-            size_t i;
-            size_t upper = 0;
-            for (i = 0; i < new_defs.count; i++) {
-                const markdown_core_map_entry *entry = &new_defs.items[i]->entry;
-                if (entry->owner == 0 && entry->from_vanished_clean) {
-                    upper++;
-                }
-            }
-            if (upper) {
-                sentinel_lines = (int *)mem->calloc(mem, upper, sizeof(*sentinel_lines));
-                if (!sentinel_lines) {
-                    goto failed;
-                }
-                for (i = 0; i < new_defs.count; i++) {
-                    const markdown_core_map_entry *entry = &new_defs.items[i]->entry;
-                    if (entry->owner == 0 && entry->from_vanished_clean &&
-                        (sentinel_count == 0 || sentinel_lines[sentinel_count - 1] != entry->start_line)) {
-                        sentinel_lines[sentinel_count++] = entry->start_line;
-                    }
-                }
-            }
-        }
+static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    markdown_core_session *session = pipeline->session;
+    markdown_core_node *sibling;
+    markdown_core_node *stop =
+        plan->boundary_pos >= 0 ? entry_node_at(&session->clean.items[plan->boundary_pos], pipeline->doc) : NULL;
+    size_t filled = 0;
 
-        defs_equal = definition_sequences_equal(&old_defs, &new_defs);
-        if (!defs_equal) {
-            bool fallback = false;
-            size_t i;
-            if (!reconcile_prepare(
-                    session,
-                    map,
-                    order_floor,
-                    restart_line,
-                    boundary_line,
-                    &old_defs,
-                    &new_defs,
-                    &reconcile,
-                    &fallback
-                ) ||
-                !collect_dependents(
-                    session,
-                    &reconcile.dirty,
-                    stale_ids,
-                    stale_count,
-                    &dependents,
-                    &dependent_count,
-                    &fallback
-                )) {
-                if (fallback) {
-                    result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-                }
-                goto failed;
+    for (sibling = plan->restart_node; sibling && sibling != stop; sibling = sibling->next) {
+        pipeline->stale_count++;
+    }
+    if (pipeline->stale_count) {
+        pipeline->stale_ids =
+            (uint64_t *)pipeline->mem->calloc(pipeline->mem, pipeline->stale_count, sizeof(*pipeline->stale_ids));
+        if (!pipeline->stale_ids) {
+            return false;
+        }
+        for (sibling = plan->restart_node; sibling && sibling != stop; sibling = sibling->next) {
+            pipeline->stale_ids[filled++] = sibling->id;
+        }
+        qsort(pipeline->stale_ids, pipeline->stale_count, sizeof(*pipeline->stale_ids), id_compare);
+    }
+    if (!collect_new_definitions(pipeline->mem, pipeline->map, pipeline->previous_head, &pipeline->new_defs) ||
+        !collect_stale_definitions(
+            pipeline->mem,
+            session,
+            plan->restart_line,
+            plan->boundary_line,
+            &pipeline->old_defs
+        )) {
+        return false;
+    }
+
+    // Sentinel lines for the staged region: vanished clean definition
+    // paragraphs of this parse, one per line, taken from the staged list
+    // before any map surgery. `new_defs` is document-ordered, so deduping
+    // neighbors suffices.
+    if (!pipeline->doc->first_child || plan->restart_node == pipeline->doc->first_child) {
+        size_t i;
+        size_t upper = 0;
+        for (i = 0; i < pipeline->new_defs.count; i++) {
+            const markdown_core_map_entry *entry = &pipeline->new_defs.items[i]->entry;
+            if (entry->owner == 0 && entry->from_vanished_clean) {
+                upper++;
             }
-            // Routing: when the changed labels' dependents approach the
-            // whole document, the full path's wholesale rebuilds beat
-            // per-unit splice maintenance (measured 31% on the
-            // every-unit-affected shape). Only the small staged region's
-            // parse is discarded by falling back here.
-            if (dependent_count >= 64) {
-                // Count one child past the threshold: stopping exactly at
-                // it would make the comparison true for every larger
-                // document too.
-                size_t children = 0;
-                markdown_core_node *child;
-                for (child = doc->first_child; child && children <= dependent_count * 2; child = child->next) {
-                    children++;
-                }
-                if (dependent_count * 2 >= children) {
-                    result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-                    goto failed;
-                }
+        }
+        if (upper) {
+            pipeline->sentinel_lines =
+                (int *)pipeline->mem->calloc(pipeline->mem, upper, sizeof(*pipeline->sentinel_lines));
+            if (!pipeline->sentinel_lines) {
+                return false;
             }
-            if (dependent_count) {
-                holder = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, mem);
-                if (!holder) {
-                    goto failed;
-                }
-                for (i = 0; i < dependent_count; i++) {
-                    markdown_core_node *clone = clone_unit_shell(session, dependents[i].unit);
-                    if (!clone) {
-                        goto failed;
-                    }
-                    clone->parent = holder;
-                    clone->prev = holder->last_child;
-                    if (holder->last_child) {
-                        holder->last_child->next = clone;
-                    } else {
-                        holder->first_child = clone;
-                    }
-                    holder->last_child = clone;
-                    dependents[i].staged = clone;
+            for (i = 0; i < pipeline->new_defs.count; i++) {
+                const markdown_core_map_entry *entry = &pipeline->new_defs.items[i]->entry;
+                if (entry->owner == 0 && entry->from_vanished_clean &&
+                    (pipeline->sentinel_count == 0 ||
+                     pipeline->sentinel_lines[pipeline->sentinel_count - 1] != entry->start_line)) {
+                    pipeline->sentinel_lines[pipeline->sentinel_count++] = entry->start_line;
                 }
             }
-            // The last allocation-bearing step is behind; reconcile the map
-            // in place so the inline phase resolves the final winners.
-            reconcile_apply(session, map, &new_defs, &reconcile);
         }
     }
 
-    // --- inline seam: reuse the restart unit's inert inline prefix ---
-    // When the first staged unit reparses the restart paragraph and both
-    // contents share a line-aligned prefix free of inline special
-    // characters, that prefix's inline nodes (one Text and one break per
-    // line) survive as-is: inline parsing starts at the seam
-    // (S_parse_node_inlines), adoption skips the reserved old children
-    // (adopt_push), and the splice transplants them into the staged leaf.
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    // Columns are raw line-local values that sealing never adjusts, so the
-    // transplant is only sound when the two leaves share the same column
-    // environment (start column and internal offset) and neither is a
-    // position-free synthesized block (start_line 0).
-    if (restart_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH && !restart_node->extension &&
-        restart_node->first_child && (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root &&
-        parser->root->first_child && parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-        !parser->root->first_child->extension && parser->root->first_child->start_line != 0 &&
+    pipeline->defs_equal = definition_sequences_equal(&pipeline->old_defs, &pipeline->new_defs);
+    if (!pipeline->defs_equal) {
+        bool fallback = false;
+        size_t i;
+        if (!reconcile_prepare(
+                session,
+                pipeline->map,
+                pipeline->order_floor,
+                plan->restart_line,
+                plan->boundary_line,
+                &pipeline->old_defs,
+                &pipeline->new_defs,
+                &pipeline->reconcile,
+                &fallback
+            ) ||
+            !collect_dependents(
+                session,
+                &pipeline->reconcile.dirty,
+                pipeline->stale_ids,
+                pipeline->stale_count,
+                &pipeline->dependents,
+                &pipeline->dependent_count,
+                &fallback
+            )) {
+            if (fallback) {
+                pipeline->result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+            }
+            return false;
+        }
+        if (pipeline->dependent_count) {
+            pipeline->holder = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_DOCUMENT, pipeline->mem);
+            if (!pipeline->holder) {
+                return false;
+            }
+            for (i = 0; i < pipeline->dependent_count; i++) {
+                bool invalid;
+                if (!prepare_dependent_unit(session, &pipeline->dependents[i], &invalid)) {
+                    if (invalid && pipeline->error && !*pipeline->error) {
+                        markdown_core_ast_set_error(
+                            pipeline->error,
+                            MARKDOWN_CORE_ERROR_INTERNAL,
+                            "an extension returned an invalid inline ownership domain"
+                        );
+                    }
+                    return false;
+                }
+                park_child(pipeline->holder, pipeline->dependents[i].staged);
+            }
+        }
+        // The last allocation-bearing definition step is behind; reconcile
+        // the map in place so the inline phase resolves the final winners.
+        reconcile_apply(session, pipeline->map, &pipeline->new_defs, &pipeline->reconcile);
+    }
+
+    // A sentinel boundary's suffix starts at the first real child whose start
+    // reaches it; real children between restart and boundary stay stale.
+    plan->boundary_node =
+        plan->boundary_pos >= 0 ? entry_node_at(&session->clean.items[plan->boundary_pos], pipeline->doc) : NULL;
+    return true;
+}
+
+static void incremental_arm_inline_seam(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    markdown_core_parser *parser = pipeline->parser;
+    markdown_core_node *restart_node = plan->restart_node;
+
+    // A sentinel restart that resolves to the boundary node is never
+    // replaced, so its reserved prefix children could not be transplanted.
+    if (restart_node && restart_node != plan->boundary_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !restart_node->extension && restart_node->first_child &&
+        (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root && parser->root->first_child &&
+        parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH && !parser->root->first_child->extension &&
+        parser->root->first_child->start_line != 0 &&
         parser->root->first_child->start_column == restart_node->start_column &&
         parser->root->first_child->internal_offset == restart_node->internal_offset &&
         markdown_core_node_owns_inlines(parser->root->first_child)) {
         markdown_core_node *staged_leaf = parser->root->first_child;
-        bufsize_t seam;
-        // The scan must see every attached extension's special characters
-        // (directive ':', strikethrough '~', ...); outside process_inlines
-        // they are not yet folded into the parser's table.
+        markdown_core_bufsize seam;
+        // The scan must see every attached extension's special characters;
+        // outside process_inlines they are not yet folded into the table.
         markdown_core_parser_manage_extensions_special_characters(parser, true);
         seam = markdown_core_inline_seam_prefix(
             parser,
             (const unsigned char *)restart_node->content.ptr,
-            (bufsize_t)restart_node->content.size,
+            (markdown_core_bufsize)restart_node->content.size,
             (const unsigned char *)staged_leaf->content.ptr,
-            (bufsize_t)staged_leaf->content.size,
+            (markdown_core_bufsize)staged_leaf->content.size,
             parser->options
         );
         markdown_core_parser_manage_extensions_special_characters(parser, false);
@@ -1998,778 +2356,848 @@ markdown_core_incremental_result markdown_core_session_commit_incremental(
             staged_leaf->user_data = (void *)(uintptr_t)((size_t)seam + 1);
         }
     }
+}
 
-    // --- 4. inline phase over the staged region and the dependent units ---
+static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
+    markdown_core_session *session = pipeline->session;
+    markdown_core_map *map = pipeline->map;
+    markdown_core_parser *parser = pipeline->parser;
+    size_t phase_expansion;
+    bool parse_lost;
+    bool domain_replaced = false;
+    bool internal_error;
+    size_t i;
+
+    incremental_arm_inline_seam(pipeline);
+
     // Unlimited budget: the estimate check below proves a one-shot parse
     // stays within its own budget, so no lookup can be denied in either.
     map->ref_size = 0;
     map->max_ref_size = (size_t)-1;
     if (session->record_lookups) {
         map->lookup_sink = markdown_core_lookup_recording_sink;
-        map->lookup_context = &recording;
+        map->lookup_context = &pipeline->recording;
     }
-    root = markdown_core_parser_refine_blocks(parser);
-    if (root && dependent_count) {
-        size_t i;
+    pipeline->root = markdown_core_parser_refine_blocks(parser);
+    if (pipeline->root && pipeline->dependent_count) {
         markdown_core_parser_manage_extensions_special_characters(parser, true);
-        for (i = 0; i < dependent_count; i++) {
-            // A promoted replacement frees the parsed shell, but a shell that
-            // performed lookups always keeps bracket-derived children and is
-            // never promoted, so recorded unit pointers stay alive.
-            dependents[i].staged = markdown_core_parser_refine_unit(parser, map, dependents[i].staged);
+        for (i = 0; i < pipeline->dependent_count; i++) {
+            markdown_core_node *staged = pipeline->dependents[i].staged;
+            markdown_core_node *refined = markdown_core_parser_refine_unit(parser, map, staged);
+            pipeline->dependents[i].staged = refined;
+            if (refined != staged) {
+                // A complete ownership-domain rebuild keeps its semantic
+                // shell stable. A core postprocessor that promotes the shell
+                // names a genuinely different semantic operation, so retry
+                // through the full-tree path instead of transplanting a
+                // partial representation.
+                domain_replaced = true;
+                break;
+            }
+            if (!dependent_domain_shape_is_valid(&pipeline->dependents[i])) {
+                parser->internal_error = true;
+                break;
+            }
         }
         markdown_core_parser_manage_extensions_special_characters(parser, false);
     }
     map->lookup_sink = NULL;
     map->lookup_context = NULL;
     map->lookup_unit = NULL;
-    {
-        size_t phase_expansion = map->ref_size;
-        bool parse_lost = parser->oom || map->oom || recording.lost;
-        map->max_ref_size = budget;
-        parser->refmap = own_map;
-        own_map = NULL;
-        markdown_core_session_release_parser(session, parser);
-        parser = NULL;
-        if (!root || parse_lost) {
-            goto failed;
-        }
-        // The budget shrinks with the text, so the estimate may already sit
-        // above it; both cases mean a one-shot parse could deny lookups this
-        // phase resolved, and only a full reparse settles that.
-        if (session->expansion_estimate > budget || phase_expansion > budget - session->expansion_estimate) {
-            result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
-            goto failed;
-        }
-        session->expansion_estimate += phase_expansion; // an upper bound stays one if a later step fails
+
+    phase_expansion = map->ref_size;
+    internal_error = parser->internal_error;
+    parse_lost = parser->oom || internal_error || map->oom || pipeline->recording.lost;
+    map->max_ref_size = pipeline->budget;
+    parser->refmap = pipeline->own_map;
+    pipeline->own_map = NULL;
+    markdown_core_session_release_parser(session, parser);
+    pipeline->parser = NULL;
+    if (internal_error && pipeline->error && !*pipeline->error) {
+        markdown_core_ast_set_error(
+            pipeline->error,
+            MARKDOWN_CORE_ERROR_INTERNAL,
+            "inline ownership-domain refinement violated an extension invariant"
+        );
     }
+    if (!pipeline->root || parse_lost) {
+        return false;
+    }
+    if (domain_replaced) {
+        return incremental_use_fallback(pipeline);
+    }
+    // The budget shrinks with the text, so the estimate may already sit above
+    // it; both cases mean a one-shot parse could deny lookups this phase
+    // resolved, and only a full reparse settles that.
+    if (session->expansion_estimate > pipeline->budget ||
+        phase_expansion > pipeline->budget - session->expansion_estimate) {
+        return incremental_use_fallback(pipeline);
+    }
+    session->expansion_estimate += phase_expansion; // a failed later step keeps the safe upper bound
 
     // The seal walks double as the node count for the id reservation below:
     // the parse root's count includes the root holder itself, and the
-    // dependents' counts sum to exactly the holder's child chain.
-    sealed_nodes = markdown_core_session_seal_positions(root) - 1;
-    {
-        // Rebuilt units seal like parse roots (absolute start kept, children
-        // relativized), then take the replaced unit's stored start: the
-        // position did not change, so the parent-relative value is already
-        // right — and stays right when a reflow later line-shifts a suffix
-        // ancestor.
-        size_t i;
-        for (i = 0; i < dependent_count; i++) {
-            sealed_nodes += markdown_core_session_seal_positions(dependents[i].staged);
-            dependents[i].staged->start_line = dependents[i].unit->start_line;
-        }
+    // dependents contribute only their replacement descendants: their staged
+    // semantic shells remain temporary and never receive session identity.
+    pipeline->sealed_nodes = markdown_core_session_seal_positions(pipeline->root) - 1;
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        pipeline->sealed_nodes += markdown_core_session_seal_positions(pipeline->dependents[i].staged) - 1;
     }
 
-    // Footnote sites of the staged region, collected and interned while
-    // falling back is still free. Classification against the persistent
-    // lists waits until adoption has fixed node ids: a sequence-preserving
-    // commit then patches the index in place, anything else merges and
-    // rebuilds.
-    if (session->options.footnotes) {
-        if (!markdown_core_footnote_collect_sites(mem, root, NULL, &staged_defs, &staged_refs) ||
-            !markdown_core_session_footnote_label_sites(session, &staged_defs, &staged_refs)) {
-            goto failed;
+    // Collect and intern staged footnote sites while failure is still free.
+    // Classification waits until adoption has fixed node ids.
+    if (session->options.footnotes &&
+        (!markdown_core_footnote_collect_sites(
+             pipeline->mem,
+             pipeline->root,
+             NULL,
+             &pipeline->staged_defs,
+             &pipeline->staged_refs
+         ) ||
+         !markdown_core_session_footnote_label_sites(session, &pipeline->staged_defs, &pipeline->staged_refs))) {
+        return false;
+    }
+    return true;
+}
+
+static void incremental_restore_graveyard(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+    if (splice->graveyard_detached) {
+        insert_child_chain(
+            pipeline->doc,
+            splice->prefix_tail,
+            splice->suffix_head,
+            splice->first_stale,
+            splice->last_stale
+        );
+        splice->graveyard_detached = false;
+    }
+}
+
+static bool incremental_collect_dependent_footnotes(incremental_pipeline *pipeline) {
+    size_t i;
+
+    if (!pipeline->session->options.footnotes) {
+        return true;
+    }
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        dependent_unit *dependent = &pipeline->dependents[i];
+        markdown_core_footnote_site_list definitions = {NULL, 0, 0};
+        markdown_core_node *anchor = dependent->unit;
+        size_t r;
+        bool collected;
+
+        while (anchor->parent && anchor->parent != pipeline->doc) {
+            anchor = anchor->parent;
+        }
+        if (anchor->parent != pipeline->doc) {
+            if (pipeline->error && !*pipeline->error) {
+                markdown_core_ast_set_error(
+                    pipeline->error,
+                    MARKDOWN_CORE_ERROR_INTERNAL,
+                    "inline ownership-domain owner is detached from its document"
+                );
+            }
+            return false;
+        }
+        collected = markdown_core_footnote_collect_sites(
+            pipeline->mem,
+            dependent->staged,
+            anchor,
+            &definitions,
+            &dependent->staged_refs
+        );
+        if (!collected) {
+            markdown_core_footnote_site_list_release(pipeline->mem, &definitions);
+            return false;
+        }
+        if (definitions.count) {
+            markdown_core_footnote_site_list_release(pipeline->mem, &definitions);
+            if (pipeline->error && !*pipeline->error) {
+                markdown_core_ast_set_error(
+                    pipeline->error,
+                    MARKDOWN_CORE_ERROR_INTERNAL,
+                    "an inline ownership domain produced a block footnote definition"
+                );
+            }
+            return false;
+        }
+        markdown_core_footnote_site_list_release(pipeline->mem, &definitions);
+        for (r = 0; r < dependent->staged_refs.count; r++) {
+            dependent->staged_refs.items[r].unit = dependent->unit;
+        }
+        {
+            markdown_core_footnote_site_list no_definitions = {NULL, 0, 0};
+            if (!markdown_core_session_footnote_label_sites(
+                    pipeline->session,
+                    &no_definitions,
+                    &dependent->staged_refs
+                )) {
+                return false;
+            }
         }
     }
+    return true;
+}
 
-    // --- 5/6. adoption and the transactional splice ---
+static bool incremental_adopt(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    incremental_splice_state *splice = &pipeline->splice;
+    markdown_core_session *session = pipeline->session;
+    markdown_core_node *sibling;
+    bool staged_ok;
+    size_t i;
+
+    splice->first_stale = plan->restart_node == plan->boundary_node ? NULL : plan->restart_node;
+    splice->suffix_head = plan->boundary_node;
+    splice->prefix_clean = plan->restart_pos >= 0 ? (size_t)plan->restart_pos : 0;
+    splice->boundary_idx = plan->boundary_pos >= 0 ? (size_t)plan->boundary_pos : session->clean.count;
+    splice->suffix_clean = session->clean.count - splice->boundary_idx;
+
+    for (sibling = pipeline->root->first_child; sibling; sibling = sibling->next) {
+        if (sibling->flags & MARKDOWN_CORE_NODE__CLEAN_START) {
+            splice->staged_clean++;
+        }
+    }
+    splice->clean_count = splice->prefix_clean + pipeline->sentinel_count + splice->staged_clean + splice->suffix_clean;
+
+    if (!markdown_core_session_ids_reserve(session, pipeline->sealed_nodes)) {
+        return false;
+    }
+    // The clean index updates in place after the point of no return, so any
+    // growth it needs happens here, while failing is still free.
+    if (splice->clean_count > session->clean.capacity) {
+        markdown_core_clean_child *grown = (markdown_core_clean_child *)pipeline->mem->realloc(
+            pipeline->mem,
+            session->clean.items,
+            splice->clean_count * sizeof(*session->clean.items)
+        );
+        if (!grown) {
+            return false;
+        }
+        session->clean.items = grown;
+        session->clean.capacity = splice->clean_count;
+    }
+
+    // Detach the graveyard. Its nodes deliberately keep `doc` parent stamps;
+    // the saved gap is the exact inverse until the point of no return.
+    if (splice->first_stale) {
+        splice->last_stale = splice->suffix_head ? splice->suffix_head->prev : pipeline->doc->last_child;
+        splice->prefix_tail = splice->first_stale->prev;
+        detach_child_chain(pipeline->doc, splice->first_stale, splice->last_stale);
+        splice->graveyard_detached = true;
+    } else {
+        splice->prefix_tail = splice->suffix_head ? splice->suffix_head->prev : pipeline->doc->last_child;
+    }
+
+    // A stack dummy document fronts the graveyard so the standard adoption
+    // machine classifies the real document through the staged root.
     {
-        // A sentinel boundary's suffix starts at the first real child whose
-        // start reaches it; real children between restart and boundary stay
-        // in the stale walk.
-        markdown_core_node *boundary_node =
-            boundary_pos >= 0 ? entry_node_at(&session->clean.items[boundary_pos], doc) : NULL;
-        markdown_core_node *first_stale = restart_node == boundary_node ? NULL : restart_node;
-        markdown_core_node *last_stale = NULL;
-        markdown_core_node *prefix_tail = NULL;
-        markdown_core_node *suffix_head = boundary_node;
-        markdown_core_node *staged_first = NULL;
-        markdown_core_node *staged_last = NULL;
-        size_t staged_nodes = sealed_nodes;
-        size_t staged_clean = 0;
-        size_t prefix_clean = restart_pos >= 0 ? (size_t)restart_pos : 0;
-        size_t boundary_idx = boundary_pos >= 0 ? (size_t)boundary_pos : session->clean.count;
-        size_t suffix_clean = session->clean.count - boundary_idx;
-        size_t clean_count = 0;
-        int delta_lines = 0;
-        markdown_core_node *sibling;
-
-        for (sibling = root->first_child; sibling; sibling = sibling->next) {
-            if (sibling->flags & MARKDOWN_CORE_NODE__CLEAN_START) {
-                staged_clean++;
-            }
-        }
-
-        clean_count = prefix_clean + sentinel_count + staged_clean + suffix_clean;
-
-        if (!markdown_core_session_ids_reserve(session, staged_nodes)) {
-            goto failed;
-        }
-        // The clean index updates in place after the point of no return
-        // (prefix untouched, stale run replaced, suffix slid or biased),
-        // so any growth it needs happens here, while failing is still free.
-        if (clean_count > session->clean.capacity) {
-            markdown_core_clean_child *grown =
-                (markdown_core_clean_child *)
-                    mem->realloc(mem, session->clean.items, clean_count * sizeof(*session->clean.items));
-            if (!grown) {
-                goto failed;
-            }
-            session->clean.items = grown;
-            session->clean.capacity = clean_count;
-        }
-
-        // Detach the graveyard (reversible pointer surgery).
-        if (first_stale) {
-            last_stale = suffix_head ? suffix_head->prev : doc->last_child;
-            prefix_tail = first_stale->prev;
-            if (prefix_tail) {
-                prefix_tail->next = suffix_head;
-            } else {
-                doc->first_child = suffix_head;
-            }
-            if (suffix_head) {
-                suffix_head->prev = prefix_tail;
-            } else {
-                doc->last_child = prefix_tail;
-            }
-            first_stale->prev = NULL;
-            last_stale->next = NULL;
-        } else {
-            prefix_tail = suffix_head ? suffix_head->prev : doc->last_child;
-        }
-
-        // Adoption: a stack dummy document fronts the graveyard so the
-        // standard machine classifies the real document node through the
-        // staged root (same id, same changed/bubbled semantics). Rebuilt
-        // units adopt pairwise; a kind change (formula promotion) never
-        // adopts and reports removed + added instead. The recording bundle,
-        // its table reservation, and the ancestor-bubble reservation are the
-        // last allocation-bearing steps before the splice.
-        {
-            bool staged_ok;
-            size_t i;
-            {
-                markdown_core_node dummy;
-                memset(&dummy, 0, sizeof(dummy));
-                dummy.type = (uint16_t)MARKDOWN_CORE_NODE_DOCUMENT;
-                dummy.id = doc->id;
-                dummy.last_changed_rev = doc->last_changed_rev;
-                dummy.first_child = first_stale;
-                dummy.last_child = last_stale;
-                staged_ok = markdown_core_session_adopt(session, &dummy, root, new_rev, changes);
-            }
-            for (i = 0; i < dependent_count && staged_ok; i++) {
-                dependent_unit *dep = &dependents[i];
-                if (dep->unit->type == dep->staged->type) {
-                    staged_ok = markdown_core_session_adopt(session, dep->unit, dep->staged, new_rev, changes);
-                    dep->changed = dep->staged->last_changed_rev == new_rev;
-                } else {
-                    staged_ok = markdown_core_session_record_removed(session, dep->unit, changes) &&
-                                markdown_core_session_adopt(session, NULL, dep->staged, new_rev, changes);
-                    dep->changed = true;
-                }
-            }
-            if (staged_ok) {
-                staged_ok = markdown_core_lookup_recording_bundle(&recording, &bundles, &bundle_count) &&
-                            markdown_core_lookup_table_reserve(mem, &session->lookups, bundle_count) &&
-                            markdown_core_lookup_postings_reserve(mem, &session->lookups, bundles, bundle_count);
-            }
-            for (i = 0; i < dependent_count && staged_ok; i++) {
-                markdown_core_node *ancestor;
-                if (!dependents[i].changed) {
-                    continue;
-                }
-                for (ancestor = dependents[i].unit->parent; ancestor && staged_ok; ancestor = ancestor->parent) {
-                    size_t k;
-                    bool collected = false;
-                    if (ancestor == doc && root->last_changed_rev == new_rev) {
-                        break; // the dummy verdict already bumps the document
-                    }
-                    for (k = 0; k < bubble_count && !collected; k++) {
-                        collected = bubble_nodes[k].node == ancestor;
-                    }
-                    if (collected) {
-                        break; // and with it every ancestor above
-                    }
-                    if (bubble_count == bubble_capacity) {
-                        size_t grown_capacity = bubble_capacity ? bubble_capacity * 2 : 8;
-                        bubble_ancestor *grown =
-                            (bubble_ancestor *)mem->realloc(mem, bubble_nodes, grown_capacity * sizeof(*grown));
-                        if (!grown) {
-                            staged_ok = false;
-                            break;
-                        }
-                        bubble_nodes = grown;
-                        bubble_capacity = grown_capacity;
-                    }
-                    bubble_nodes[bubble_count].node = ancestor;
-                    bubble_nodes[bubble_count].previous_rev = ancestor->last_changed_rev;
-                    bubble_count++;
-                }
-            }
-            if (staged_ok && changes && bubble_count) {
-                staged_ok = markdown_core_id_array_reserve(&changes->bubbled, bubble_count);
-            }
-            if (!staged_ok) {
-                // Undo the detach; nothing else has changed.
-                if (first_stale) {
-                    first_stale->prev = prefix_tail;
-                    last_stale->next = suffix_head;
-                    if (prefix_tail) {
-                        prefix_tail->next = first_stale;
-                    } else {
-                        doc->first_child = first_stale;
-                    }
-                    if (suffix_head) {
-                        suffix_head->prev = last_stale;
-                    } else {
-                        doc->last_child = last_stale;
-                    }
-                }
-                goto failed;
-            }
-        }
-
-        // Splice the staged children in.
-        staged_first = root->first_child;
-        staged_last = root->last_child;
-        root->first_child = NULL;
-        root->last_child = NULL;
-        if (staged_first) {
-            for (sibling = staged_first; sibling; sibling = sibling->next) {
-                sibling->parent = doc;
-            }
-            staged_first->prev = prefix_tail;
-            staged_last->next = suffix_head;
-            if (prefix_tail) {
-                prefix_tail->next = staged_first;
-            } else {
-                doc->first_child = staged_first;
-            }
-            if (suffix_head) {
-                suffix_head->prev = staged_last;
-            } else {
-                doc->last_child = staged_last;
-            }
-        }
-
-        // Rebuilt units swap into place (pure pointer surgery). The suffix
-        // and prefix cursors follow a replaced boundary node so the line
-        // bookkeeping below walks the live chain.
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                dependent_unit *dep = &dependents[i];
-                markdown_core_node *staged = dep->staged;
-                if (holder->first_child == staged) {
-                    holder->first_child = staged->next;
-                }
-                if (holder->last_child == staged) {
-                    holder->last_child = staged->prev;
-                }
-                if (staged->prev) {
-                    staged->prev->next = staged->next;
-                }
-                if (staged->next) {
-                    staged->next->prev = staged->prev;
-                }
-                staged->parent = NULL;
-                staged->prev = NULL;
-                staged->next = NULL;
-                splice_replace(dep->unit, staged);
-                if (dep->unit == suffix_head) {
-                    suffix_head = staged;
-                }
-                if (dep->unit == prefix_tail) {
-                    prefix_tail = staged;
-                }
-            }
-        }
-
-        // Footnote refresh from the merged site lists: the last fallible
-        // step, O(sites) rather than a tree walk. The two-phase diff mutates
-        // nothing on failure, so undoing the splices restores the previous
-        // revision exactly.
-        // Stamp the document and the bubbling ancestors before the footnote
-        // diff runs: its ancestor climb must see every node this commit
-        // already classifies as bumped, or it re-records them (a `changed`
-        // document would also land in `bubbled`, breaking the disjointness
-        // contract). The delta ids are still recorded after the point of
-        // no return; on a failed diff the stamps roll back below.
-        {
-            size_t i;
-            previous_doc_rev = doc->last_changed_rev;
-            doc->last_changed_rev = root->last_changed_rev;
-            for (i = 0; i < bubble_count; i++) {
-                bubble_nodes[i].node->last_changed_rev = new_rev;
-            }
-        }
-
-        if (session->options.footnotes) {
-            markdown_core_incremental_result refreshed = footnote_refresh(
-                session,
-                &staged_defs,
-                &staged_refs,
-                stale_ids,
-                stale_count,
-                restart_line,
-                boundary_line,
-                dependents,
-                dependent_count,
-                new_rev,
-                changes,
-                &footnotes,
-                &footnotes_built
+        markdown_core_node dummy;
+        memset(&dummy, 0, sizeof(dummy));
+        dummy.type = (uint16_t)MARKDOWN_CORE_NODE_DOCUMENT;
+        dummy.id = pipeline->doc->id;
+        dummy.last_changed_rev = pipeline->doc->last_changed_rev;
+        dummy.first_child = splice->first_stale;
+        dummy.last_child = splice->last_stale;
+        staged_ok = markdown_core_session_adopt(session, &dummy, pipeline->root, pipeline->new_rev, pipeline->changes);
+    }
+    for (i = 0; i < pipeline->dependent_count && staged_ok; i++) {
+        dependent_unit *dep = &pipeline->dependents[i];
+        staged_ok = markdown_core_session_adopt_inline_domain(
+            session,
+            dep->unit,
+            dep->staged,
+            pipeline->new_rev,
+            pipeline->changes,
+            &dep->next_revision
+        );
+        dep->changed = dep->next_revision == pipeline->new_rev;
+    }
+    if (staged_ok) {
+        staged_ok = incremental_collect_dependent_footnotes(pipeline);
+    }
+    if (staged_ok) {
+        staged_ok =
+            markdown_core_lookup_recording_bundle(&pipeline->recording, &pipeline->bundles, &pipeline->bundle_count) &&
+            markdown_core_lookup_table_reserve(pipeline->mem, &session->lookups, pipeline->bundle_count) &&
+            markdown_core_lookup_postings_reserve(
+                pipeline->mem,
+                &session->lookups,
+                pipeline->bundles,
+                pipeline->bundle_count
             );
-            if (refreshed != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
-                result = refreshed;
-                {
-                    size_t i;
-                    doc->last_changed_rev = previous_doc_rev;
-                    for (i = 0; i < bubble_count; i++) {
-                        bubble_nodes[i].node->last_changed_rev = bubble_nodes[i].previous_rev;
-                    }
+    }
+    for (i = 0; i < pipeline->dependent_count && staged_ok; i++) {
+        markdown_core_node *ancestor;
+        if (!pipeline->dependents[i].changed) {
+            continue;
+        }
+        for (ancestor = pipeline->dependents[i].unit->parent; ancestor && staged_ok; ancestor = ancestor->parent) {
+            size_t k;
+            bool collected = false;
+            if (ancestor == pipeline->doc && pipeline->root->last_changed_rev == pipeline->new_rev) {
+                break; // the dummy verdict already bumps the document
+            }
+            for (k = 0; k < pipeline->bubble_count && !collected; k++) {
+                collected = pipeline->bubble_nodes[k].node == ancestor;
+            }
+            if (collected) {
+                break; // and with it every ancestor above
+            }
+            if (pipeline->bubble_count == pipeline->bubble_capacity) {
+                size_t grown_capacity = pipeline->bubble_capacity ? pipeline->bubble_capacity * 2 : 8;
+                bubble_ancestor *grown =
+                    (bubble_ancestor *)
+                        pipeline->mem->realloc(pipeline->mem, pipeline->bubble_nodes, grown_capacity * sizeof(*grown));
+                if (!grown) {
+                    staged_ok = false;
+                    break;
                 }
-                // Swap the committed units back in and re-park the rebuilt
-                // ones under the holder so the shared cleanup frees them.
-                {
-                    size_t i;
-                    for (i = 0; i < dependent_count; i++) {
-                        dependent_unit *dep = &dependents[i];
-                        markdown_core_node *staged = dep->staged;
-                        splice_replace(staged, dep->unit);
-                        if (staged == suffix_head) {
-                            suffix_head = dep->unit;
-                        }
-                        if (staged == prefix_tail) {
-                            prefix_tail = dep->unit;
-                        }
-                        staged->parent = holder;
-                        staged->prev = holder->last_child;
-                        if (holder->last_child) {
-                            holder->last_child->next = staged;
-                        } else {
-                            holder->first_child = staged;
-                        }
-                        holder->last_child = staged;
-                    }
+                pipeline->bubble_nodes = grown;
+                pipeline->bubble_capacity = grown_capacity;
+            }
+            pipeline->bubble_nodes[pipeline->bubble_count].node = ancestor;
+            pipeline->bubble_nodes[pipeline->bubble_count].previous_rev = ancestor->last_changed_rev;
+            pipeline->bubble_count++;
+        }
+    }
+    if (staged_ok && pipeline->changes && pipeline->bubble_count) {
+        staged_ok = markdown_core_id_array_reserve(&pipeline->changes->bubbled, pipeline->bubble_count);
+    }
+    if (!staged_ok) {
+        incremental_restore_graveyard(pipeline);
+        return false;
+    }
+    return true;
+}
+
+static void incremental_install_staged(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+    size_t i;
+
+    splice->staged_first = pipeline->root->first_child;
+    splice->staged_last = pipeline->root->last_child;
+    if (splice->staged_first) {
+        detach_child_chain(pipeline->root, splice->staged_first, splice->staged_last);
+        insert_child_chain(
+            pipeline->doc,
+            splice->prefix_tail,
+            splice->suffix_head,
+            splice->staged_first,
+            splice->staged_last
+        );
+        splice->staged_installed = true;
+    }
+
+    // Semantic owners stay in place; only their complete inline ownership
+    // domains move. The staged shells remain parked under `holder` and now
+    // own the graveyard domains, ready for either rollback or final release.
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        swap_dependent_domain(&pipeline->dependents[i]);
+    }
+    splice->dependents_installed = pipeline->dependent_count != 0;
+}
+
+static void incremental_stamp_revisions(incremental_pipeline *pipeline) {
+    size_t i;
+
+    pipeline->previous_doc_rev = pipeline->doc->last_changed_rev;
+    pipeline->doc->last_changed_rev = pipeline->root->last_changed_rev;
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        pipeline->dependents[i].unit->last_changed_rev = pipeline->dependents[i].next_revision;
+    }
+    for (i = 0; i < pipeline->bubble_count; i++) {
+        pipeline->bubble_nodes[i].node->last_changed_rev = pipeline->new_rev;
+    }
+    pipeline->splice.revisions_stamped = true;
+}
+
+static void incremental_rollback_splice(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+    size_t i;
+
+    if (splice->revisions_stamped) {
+        pipeline->doc->last_changed_rev = pipeline->previous_doc_rev;
+        for (i = 0; i < pipeline->dependent_count; i++) {
+            pipeline->dependents[i].unit->last_changed_rev = pipeline->dependents[i].previous_revision;
+        }
+        for (i = 0; i < pipeline->bubble_count; i++) {
+            pipeline->bubble_nodes[i].node->last_changed_rev = pipeline->bubble_nodes[i].previous_rev;
+        }
+        splice->revisions_stamped = false;
+    }
+
+    // The ownership-domain exchange is self-inverse. Staged semantic shells
+    // remain parked throughout, so cleanup ownership never changes.
+    if (splice->dependents_installed) {
+        for (i = 0; i < pipeline->dependent_count; i++) {
+            swap_dependent_domain(&pipeline->dependents[i]);
+        }
+        splice->dependents_installed = false;
+    }
+
+    if (splice->staged_installed) {
+        detach_child_chain(pipeline->doc, splice->staged_first, splice->staged_last);
+        free_child_chain(splice->staged_first);
+        splice->staged_installed = false;
+    }
+    incremental_restore_graveyard(pipeline);
+
+    // A fallback re-records against the full path and a failure reports no
+    // partial adoption/footnote delta.
+    if (pipeline->changes) {
+        pipeline->changes->added.count = 0;
+        pipeline->changes->removed.count = 0;
+        pipeline->changes->changed.count = 0;
+        pipeline->changes->bubbled.count = 0;
+    }
+}
+
+static bool incremental_install_and_refresh(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    markdown_core_incremental_result refreshed;
+
+    incremental_install_staged(pipeline);
+
+    // Stamp before the footnote diff: its ancestor climb must see every node
+    // this commit already classified, or changed/bubbled would overlap.
+    incremental_stamp_revisions(pipeline);
+
+    if (!pipeline->session->options.footnotes) {
+        return true;
+    }
+    refreshed = footnote_refresh(
+        pipeline->session,
+        &pipeline->staged_defs,
+        &pipeline->staged_refs,
+        pipeline->stale_ids,
+        pipeline->stale_count,
+        plan->restart_line,
+        plan->boundary_line,
+        pipeline->dependents,
+        pipeline->dependent_count,
+        pipeline->new_rev,
+        pipeline->changes,
+        &pipeline->footnotes,
+        &pipeline->footnotes_built
+    );
+    if (refreshed != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
+        pipeline->result = refreshed;
+        incremental_rollback_splice(pipeline);
+        return false;
+    }
+    return true;
+}
+
+static void incremental_finalize_geometry(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    incremental_splice_state *splice = &pipeline->splice;
+    markdown_core_node *sibling;
+
+    if (plan->boundary_pos >= 0) {
+        splice->delta_lines =
+            (plan->restart_line + plan->fed_lines) - pipeline->session->clean.items[plan->boundary_pos].start_line;
+        plan->total_lines = pipeline->session->total_lines + splice->delta_lines;
+        plan->last_line_length = pipeline->session->last_line_length;
+        if (splice->delta_lines != 0) {
+            for (sibling = splice->suffix_head; sibling; sibling = sibling->next) {
+                // Position-free roots keep their raw zeros (see the seal).
+                if (sibling->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+                    sibling->start_line += splice->delta_lines;
                 }
-                // Splice the staged children back out ...
-                if (staged_first) {
-                    if (prefix_tail) {
-                        prefix_tail->next = suffix_head;
-                    } else {
-                        doc->first_child = suffix_head;
-                    }
-                    if (suffix_head) {
-                        suffix_head->prev = prefix_tail;
-                    } else {
-                        doc->last_child = prefix_tail;
-                    }
-                    staged_first->prev = NULL;
-                    staged_last->next = NULL;
-                    free_child_chain(staged_first);
-                }
-                // ... and the graveyard back in.
-                if (first_stale) {
-                    first_stale->prev = prefix_tail;
-                    last_stale->next = suffix_head;
-                    if (prefix_tail) {
-                        prefix_tail->next = first_stale;
-                    } else {
-                        doc->first_child = first_stale;
-                    }
-                    if (suffix_head) {
-                        suffix_head->prev = last_stale;
-                    } else {
-                        doc->last_child = last_stale;
-                    }
-                }
-                // The refresh runs post-adoption, so the delta already
-                // holds this attempt's ids; a fallback re-records against
-                // the full path and a failure reports nothing.
-                if (changes) {
-                    changes->added.count = 0;
-                    changes->removed.count = 0;
-                    changes->changed.count = 0;
-                    changes->bubbled.count = 0;
-                }
-                goto failed;
             }
         }
 
-        // --- point of no return: nothing below can fail ---
-
-        // The document's revision (the staged root carried the adoption
-        // verdict under the document's id) and the bubbling ancestors'
-        // revisions were already stamped before the footnote diff.
-        if (boundary_pos >= 0) {
-            delta_lines = (restart_line + fed_lines) - session->clean.items[boundary_pos].start_line;
-            total_lines = session->total_lines + delta_lines;
-            last_line_length = session->last_line_length;
-            if (delta_lines != 0) {
-                for (sibling = suffix_head; sibling; sibling = sibling->next) {
-                    // Position-free roots keep their raw zeros (see the seal).
-                    if (sibling->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-                        sibling->start_line += delta_lines;
+        // Re-date transplanted blocks that closed inside the line before the
+        // boundary. They sit on the chain of sealed block children sharing
+        // their parent's start line, so a pruned walk reaches them all.
+        {
+            markdown_core_node *node = splice->suffix_head;
+            while (node) {
+                markdown_core_node *step = NULL;
+                markdown_core_node *probe;
+                if (node->end_line == -1 && (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) &&
+                    MARKDOWN_CORE_NODE_BLOCK_P(node)) {
+                    node->end_column = plan->staged_tail_length;
+                }
+                for (probe = node->first_child; probe; probe = probe->next) {
+                    if ((probe->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && probe->start_line == 0 &&
+                        MARKDOWN_CORE_NODE_BLOCK_P(probe)) {
+                        step = probe;
+                        break;
                     }
                 }
-            }
-            // A transplanted block that closed inside its own first line dated
-            // its end to the line before the boundary (see finalize): a staged
-            // line whose length may just have changed. Every such block sits
-            // on the boundary line, i.e. on the chain of sealed block children
-            // that share their parent's start line, so a pruned walk from the
-            // first suffix child re-dates them all.
-            {
-                markdown_core_node *node = suffix_head;
-                while (node) {
-                    markdown_core_node *step = NULL;
-                    markdown_core_node *probe;
-                    if (node->end_line == -1 && (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) &&
-                        MARKDOWN_CORE_NODE_BLOCK_P(node)) {
-                        node->end_column = staged_tail_length;
-                    }
-                    for (probe = node->first_child; probe; probe = probe->next) {
+                while (!step && node != splice->suffix_head) {
+                    for (probe = node->next; probe; probe = probe->next) {
                         if ((probe->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && probe->start_line == 0 &&
                             MARKDOWN_CORE_NODE_BLOCK_P(probe)) {
                             step = probe;
                             break;
                         }
                     }
-                    while (!step && node != suffix_head) {
-                        for (probe = node->next; probe; probe = probe->next) {
-                            if ((probe->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && probe->start_line == 0 &&
-                                MARKDOWN_CORE_NODE_BLOCK_P(probe)) {
-                                step = probe;
-                                break;
-                            }
-                        }
-                        node = node->parent;
-                    }
-                    node = step;
+                    node = node->parent;
                 }
+                node = step;
             }
         }
-        doc->end_line = total_lines - 1;
-        doc->end_column = last_line_length;
-
-        // At-rest entries beyond the boundary follow the same line shift as
-        // the suffix children and clean entries below. The reconciled path
-        // shifts by index position (the array briefly mixes old suffix
-        // coordinates with current staged ones); the equal path still holds
-        // old lines everywhere, so the boundary line bounds the range.
-        if (boundary_pos >= 0 && delta_lines != 0) {
-            size_t start = reconcile.applied ? reconcile.splice_lo + new_defs.count
-                                             : def_lower_bound(session->def_index, session->def_count, boundary_line);
-            size_t at;
-            for (at = start; at < session->def_count; at++) {
-                session->def_index[at]->start_line += delta_lines;
-            }
-        }
-
-        // Definitions. Equal sequences: the old entries stay (their orders
-        // are document order), take over the staged anchors and geometry,
-        // and the staged duplicates leave. Reconciled sequences: the staged
-        // entries are the truth and their pointer-stamped anchors resolve to
-        // ids. Staged lines are already absolute in current coordinates.
-        {
-            size_t i;
-            uint64_t head_owner = prefix_tail ? prefix_tail->id : 0;
-            if (defs_equal) {
-                for (i = 0; i < old_defs.count; i++) {
-                    uint64_t anchor = new_defs.items[i]->entry.owner;
-                    old_defs.items[i]->entry.owner =
-                        anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
-                    old_defs.items[i]->entry.start_line = new_defs.items[i]->entry.start_line;
-                    old_defs.items[i]->entry.from_vanished_clean = new_defs.items[i]->entry.from_vanished_clean;
-                }
-                markdown_core_map_remove_until(map, previous_head);
-            } else {
-                for (i = 0; i < new_defs.count; i++) {
-                    uint64_t anchor = new_defs.items[i]->entry.owner;
-                    new_defs.items[i]->entry.owner =
-                        anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
-                }
-            }
-        }
-
-        // Inline seam transplant: the reserved prefix children move from the
-        // replaced leaf into its staged successor ahead of the reparsed
-        // suffix, keeping their ids, revisions, sealed positions, and delta
-        // silence; the stale walks below then never see them.
-        if (staged_first && staged_first->user_data && first_stale && first_stale == restart_node) {
-            bufsize_t seam = (bufsize_t)((uintptr_t)staged_first->user_data - 1);
-            size_t reserved = 0;
-            bufsize_t b;
-            for (b = 0; b < seam; b++) {
-                if (staged_first->content.ptr[b] == '\n') {
-                    reserved += 2;
-                }
-            }
-            if (reserved) {
-                markdown_core_node *head = first_stale->first_child;
-                markdown_core_node *tail = head;
-                markdown_core_node *walk;
-                size_t k;
-                for (k = 1; k < reserved; k++) {
-                    tail = tail->next;
-                }
-                first_stale->first_child = tail->next;
-                if (tail->next) {
-                    tail->next->prev = NULL;
-                } else {
-                    first_stale->last_child = NULL;
-                }
-                tail->next = NULL;
-                for (walk = head; walk; walk = walk->next) {
-                    walk->parent = staged_first;
-                    // Text literals that borrow the parent block's content
-                    // buffer must move to the staged leaf's identical prefix
-                    // bytes — the old buffer dies with the old leaf. Only
-                    // chunks provably inside that buffer rebase: unallocated
-                    // chunks can also point at immortal static tokens
-                    // (handle_period's ".", handle_hyphen's "-"), which must
-                    // stay exactly where they are.
-                    if (walk->type == MARKDOWN_CORE_NODE_TEXT && walk->as.literal.alloc == 0 && walk->as.literal.data) {
-                        uintptr_t data = (uintptr_t)walk->as.literal.data;
-                        uintptr_t lo = (uintptr_t)first_stale->content.ptr;
-                        uintptr_t hi = lo + first_stale->content.size;
-                        if (data >= lo && data + walk->as.literal.len <= hi) {
-                            walk->as.literal.data = staged_first->content.ptr + (data - lo);
-                        }
-                    }
-                }
-                if (staged_first->first_child) {
-                    tail->next = staged_first->first_child;
-                    staged_first->first_child->prev = tail;
-                } else {
-                    staged_first->last_child = tail;
-                }
-                staged_first->first_child = head;
-                head->prev = NULL;
-            }
-            staged_first->user_data = NULL;
-        }
-
-        // Id table: repoint adopted ids at their staged nodes, then drop
-        // whatever still points into the graveyard or a replaced unit.
-        ids_put_chain(session, staged_first, suffix_head);
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                ids_put_chain(session, dependents[i].staged, dependents[i].staged->next);
-            }
-        }
-        ids_remove_stale_chain(session, first_stale);
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                ids_remove_stale_chain(session, dependents[i].unit);
-            }
-        }
-
-        // Lookup records: every id of the graveyard and of the replaced
-        // units leaves (adopted ids included), then the fresh bundles
-        // re-install the records of everything this commit parsed.
-        lookups_remove_chain(session, first_stale);
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                lookups_remove_chain(session, dependents[i].unit);
-            }
-            for (i = 0; i < bundle_count; i++) {
-                markdown_core_lookup_table_put(mem, &session->lookups, bundles[i].unit->id, bundles[i].record);
-                bundles[i].record.labels = NULL; // moved into the table
-                bundles[i].record.positions = NULL;
-                bundles[i].record.count = 0;
-            }
-        }
-
-        // Ancestors of a changed rebuilt unit were stamped before the
-        // footnote diff; only their delta ids are recorded here. The
-        // document never appears: its verdict rode the staged root.
-        if (changes) {
-            size_t i;
-            for (i = 0; i < bubble_count; i++) {
-                markdown_core_id_array_push(&changes->bubbled, bubble_nodes[i].node->id);
-            }
-        }
-
-        // Footnote index swap.
-        if (footnotes_built) {
-            markdown_core_footnote_index_release(mem, &session->footnotes);
-            session->footnotes = footnotes;
-        }
-
-        // Clean-child index, updated in place: the prefix is untouched, the
-        // suffix run slides and takes the edit deltas (skipped outright when
-        // nothing moved — the steady cost of an interior same-length edit is
-        // then just the stale run), and the staged entries land in the
-        // middle. The suffix moves before the middle is written because a
-        // growing middle overlaps the suffix's old slots.
-        {
-            markdown_core_clean_child *items = session->clean.items;
-            ptrdiff_t index_shift = (ptrdiff_t)(prefix_clean + sentinel_count + staged_clean) - (ptrdiff_t)boundary_idx;
-            size_t filled;
-            size_t i;
-            if (suffix_clean && (index_shift != 0 || pending.delta != 0 || delta_lines != 0)) {
-                if (index_shift <= 0) {
-                    for (i = 0; i < suffix_clean; i++) {
-                        markdown_core_clean_child entry = items[boundary_idx + i];
-                        entry.start_byte = (size_t)((ptrdiff_t)entry.start_byte + pending.delta);
-                        entry.start_line += delta_lines;
-                        items[(size_t)((ptrdiff_t)(boundary_idx + i) + index_shift)] = entry;
-                    }
-                } else {
-                    for (i = suffix_clean; i-- > 0;) {
-                        markdown_core_clean_child entry = items[boundary_idx + i];
-                        entry.start_byte = (size_t)((ptrdiff_t)entry.start_byte + pending.delta);
-                        entry.start_line += delta_lines;
-                        items[(size_t)((ptrdiff_t)(boundary_idx + i) + index_shift)] = entry;
-                    }
-                }
-            }
-            filled = prefix_clean;
-            // Sentinels precede every staged child: vanished definition
-            // paragraphs only exist ahead of the first real child.
-            for (i = 0; i < sentinel_count; i++) {
-                items[filled].start_byte = line_offsets.items[sentinel_lines[i] - restart_line];
-                items[filled].start_line = sentinel_lines[i];
-                items[filled].node = NULL;
-                filled++;
-            }
-            for (sibling = staged_first; sibling && sibling != suffix_head; sibling = sibling->next) {
-                if (sibling->flags & MARKDOWN_CORE_NODE__CLEAN_START) {
-                    int abs_line = sibling->start_line + 1;
-                    items[filled].start_byte = line_offsets.items[abs_line - restart_line];
-                    items[filled].start_line = abs_line;
-                    items[filled].node = sibling;
-                    filled++;
-                }
-            }
-            session->clean.count = clean_count;
-        }
-
-        // A replaced top-level unit leaves its pointer in the clean index;
-        // repoint it before the old node goes away. The index is ascending
-        // in (final, post-slide) start lines, and a top-level unit's sealed
-        // start is document-relative, so a binary probe lands exactly.
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                dependent_unit *dep = &dependents[i];
-                int start_line;
-                size_t lo = 0;
-                size_t hi = session->clean.count;
-                if (dep->staged->parent != doc) {
-                    continue;
-                }
-                start_line = dep->staged->start_line + 1;
-                while (lo < hi) {
-                    size_t mid = lo + (hi - lo) / 2;
-                    if (session->clean.items[mid].start_line < start_line) {
-                        lo = mid + 1;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                if (lo < session->clean.count && session->clean.items[lo].node == dep->unit) {
-                    session->clean.items[lo].node = dep->staged;
-                }
-            }
-        }
-
-        session->total_lines = total_lines;
-        session->last_line_length = last_line_length;
-        session->revision = new_rev;
-        session->restarted_commits++;
-        if (boundary_pos >= 0) {
-            session->reflowed_commits++;
-        }
-        session->pending.dirty = false;
-        session->pending.new_lo = 0;
-        session->pending.new_hi = 0;
-        session->pending.delta = 0;
-
-        free_child_chain(first_stale);
-        {
-            size_t i;
-            for (i = 0; i < dependent_count; i++) {
-                free_child_chain(dependents[i].unit);
-            }
-        }
-        markdown_core_node_free(root);
-        root = NULL;
     }
+    pipeline->doc->end_line = plan->total_lines - 1;
+    pipeline->doc->end_column = plan->last_line_length;
 
-    result = MARKDOWN_CORE_INCREMENTAL_COMMITTED;
-    goto done;
+    // At-rest definitions beyond the boundary follow the suffix line shift.
+    if (plan->boundary_pos >= 0 && splice->delta_lines != 0) {
+        size_t start =
+            pipeline->reconcile.applied
+                ? pipeline->reconcile.splice_lo + pipeline->new_defs.count
+                : def_lower_bound(pipeline->session->def_index, pipeline->session->def_count, plan->boundary_line);
+        size_t at;
+        for (at = start; at < pipeline->session->def_count; at++) {
+            pipeline->session->def_index[at]->start_line += splice->delta_lines;
+        }
+    }
+}
 
-failed:
-    if (reconcile.applied) {
-        // The map was reconciled in place and the commit could not finish:
-        // its entries (including staged ones with pointer-stamped anchors)
-        // no longer describe the committed tree. The tree itself was
-        // restored, so the session stays valid at its previous revision, and
-        // the flag routes the next commit through the full path, which
-        // rebuilds the map wholesale without ever reading it.
-        session->refmap_stale = true;
+static void incremental_finalize_definitions(incremental_pipeline *pipeline) {
+    size_t i;
+    uint64_t head_owner = pipeline->splice.prefix_tail ? pipeline->splice.prefix_tail->id : 0;
+
+    // Equal sequences keep the old entries and take over the staged anchors
+    // and geometry. Reconciled sequences keep staged entries and turn their
+    // pointer-stamped anchors into adopted ids.
+    if (pipeline->defs_equal) {
+        for (i = 0; i < pipeline->old_defs.count; i++) {
+            uint64_t anchor = pipeline->new_defs.items[i]->entry.owner;
+            pipeline->old_defs.items[i]->entry.owner =
+                anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+            pipeline->old_defs.items[i]->entry.start_line = pipeline->new_defs.items[i]->entry.start_line;
+            pipeline->old_defs.items[i]->entry.from_vanished_clean =
+                pipeline->new_defs.items[i]->entry.from_vanished_clean;
+        }
+        markdown_core_map_remove_until(pipeline->map, pipeline->previous_head);
     } else {
-        // Pointer-stamped duplicates never survive a failed or abandoned
-        // pipeline: later commits must find only id-anchored entries at
-        // rest.
-        markdown_core_map_remove_until(map, previous_head);
+        for (i = 0; i < pipeline->new_defs.count; i++) {
+            uint64_t anchor = pipeline->new_defs.items[i]->entry.owner;
+            pipeline->new_defs.items[i]->entry.owner =
+                anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+        }
     }
-    if (parser) {
-        parser->refmap = own_map;
-        markdown_core_session_release_parser(session, parser);
+}
+
+static void incremental_transplant_inline_seam(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+
+    // Reserved prefix children move from the replaced leaf into its staged
+    // successor ahead of the reparsed suffix.
+    if (splice->staged_first && splice->staged_first->user_data && splice->first_stale &&
+        splice->first_stale == pipeline->plan.restart_node) {
+        markdown_core_bufsize seam = (markdown_core_bufsize)((uintptr_t)splice->staged_first->user_data - 1);
+        size_t reserved = 0;
+        markdown_core_bufsize b;
+        for (b = 0; b < seam; b++) {
+            if (splice->staged_first->content.ptr[b] == '\n') {
+                reserved += 2;
+            }
+        }
+        if (reserved) {
+            markdown_core_node *head = splice->first_stale->first_child;
+            markdown_core_node *tail = head;
+            markdown_core_node *walk;
+            size_t k;
+            for (k = 1; k < reserved; k++) {
+                tail = tail->next;
+            }
+            splice->first_stale->first_child = tail->next;
+            if (tail->next) {
+                tail->next->prev = NULL;
+            } else {
+                splice->first_stale->last_child = NULL;
+            }
+            tail->next = NULL;
+            for (walk = head; walk; walk = walk->next) {
+                walk->parent = splice->staged_first;
+                // Rebase borrowed text chunks only when they point inside the
+                // old parent buffer; static-token chunks stay untouched.
+                if (walk->type == MARKDOWN_CORE_NODE_TEXT && walk->as.literal.alloc == 0 && walk->as.literal.data) {
+                    uintptr_t data = (uintptr_t)walk->as.literal.data;
+                    uintptr_t lo = (uintptr_t)splice->first_stale->content.ptr;
+                    uintptr_t hi = lo + splice->first_stale->content.size;
+                    if (data >= lo && data + walk->as.literal.len <= hi) {
+                        walk->as.literal.data = splice->staged_first->content.ptr + (data - lo);
+                    }
+                }
+            }
+            if (splice->staged_first->first_child) {
+                tail->next = splice->staged_first->first_child;
+                splice->staged_first->first_child->prev = tail;
+            } else {
+                splice->staged_first->last_child = tail;
+            }
+            splice->staged_first->first_child = head;
+            head->prev = NULL;
+        }
+        splice->staged_first->user_data = NULL;
+    } else if (splice->staged_first && splice->staged_first->user_data) {
+        // A committed node must never retain the seam integer as user_data.
+        splice->staged_first->user_data = NULL;
     }
-    if (root) {
-        markdown_core_node_free(root);
+}
+
+static void incremental_finalize_identity_indexes(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+    markdown_core_session *session = pipeline->session;
+    size_t i;
+
+    // Repoint adopted ids for the staged document region and each newly live
+    // ownership domain, then drop entries still targeting either graveyard.
+    ids_put_chain(session, splice->staged_first, splice->suffix_head);
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        dependent_unit *dependent = &pipeline->dependents[i];
+        ids_put_chain(session, dependent->unit->first_child, NULL);
     }
-    if (result == MARKDOWN_CORE_INCREMENTAL_FAILED && error && !*error) {
+    ids_remove_stale_chain(session, splice->first_stale);
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        ids_remove_stale_chain(session, pipeline->dependents[i].staged->first_child);
+    }
+
+    // Replace stale lookup records with the recording bundles from this
+    // commit, transferring each record's ownership into the table.
+    lookups_remove_chain(session, splice->first_stale);
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        markdown_core_lookup_table_remove(pipeline->mem, &session->lookups, pipeline->dependents[i].unit->id);
+    }
+    for (i = 0; i < pipeline->bundle_count; i++) {
+        markdown_core_lookup_table_put(
+            pipeline->mem,
+            &session->lookups,
+            pipeline->bundles[i].unit->id,
+            pipeline->bundles[i].record
+        );
+        pipeline->bundles[i].record.labels = NULL;
+        pipeline->bundles[i].record.positions = NULL;
+        pipeline->bundles[i].record.count = 0;
+    }
+
+    // Revision stamps were installed before footnote diff; append only their
+    // pre-reserved delta ids here, preserving the established order.
+    if (pipeline->changes) {
+        for (i = 0; i < pipeline->bubble_count; i++) {
+            bool pushed;
+            assert(pipeline->changes->bubbled.count < pipeline->changes->bubbled.capacity);
+            pushed = markdown_core_id_array_push(&pipeline->changes->bubbled, pipeline->bubble_nodes[i].node->id);
+            assert(pushed);
+            (void)pushed;
+        }
+    }
+
+    if (pipeline->footnotes_built) {
+        markdown_core_footnote_index_release(pipeline->mem, &session->footnotes);
+        session->footnotes = pipeline->footnotes;
+        memset(&pipeline->footnotes, 0, sizeof(pipeline->footnotes));
+        pipeline->footnotes_built = false;
+    }
+}
+
+static void incremental_finalize_clean_index(incremental_pipeline *pipeline) {
+    incremental_restart_plan *plan = &pipeline->plan;
+    incremental_splice_state *splice = &pipeline->splice;
+    markdown_core_clean_child *items = pipeline->session->clean.items;
+    ptrdiff_t index_shift = (ptrdiff_t)(splice->prefix_clean + pipeline->sentinel_count + splice->staged_clean) -
+                            (ptrdiff_t)splice->boundary_idx;
+    size_t filled;
+    size_t i;
+    markdown_core_node *sibling;
+
+    // Move the suffix before writing the middle because a growing staged run
+    // overlaps the suffix's old slots.
+    if (splice->suffix_clean && (index_shift != 0 || pipeline->pending.delta != 0 || splice->delta_lines != 0)) {
+        if (index_shift <= 0) {
+            for (i = 0; i < splice->suffix_clean; i++) {
+                markdown_core_clean_child entry = items[splice->boundary_idx + i];
+                entry.start_byte = (size_t)((ptrdiff_t)entry.start_byte + pipeline->pending.delta);
+                entry.start_line += splice->delta_lines;
+                items[(size_t)((ptrdiff_t)(splice->boundary_idx + i) + index_shift)] = entry;
+            }
+        } else {
+            for (i = splice->suffix_clean; i-- > 0;) {
+                markdown_core_clean_child entry = items[splice->boundary_idx + i];
+                entry.start_byte = (size_t)((ptrdiff_t)entry.start_byte + pipeline->pending.delta);
+                entry.start_line += splice->delta_lines;
+                items[(size_t)((ptrdiff_t)(splice->boundary_idx + i) + index_shift)] = entry;
+            }
+        }
+    }
+
+    filled = splice->prefix_clean;
+    for (i = 0; i < pipeline->sentinel_count; i++) {
+        items[filled].start_byte = pipeline->line_offsets.items[pipeline->sentinel_lines[i] - plan->restart_line];
+        items[filled].start_line = pipeline->sentinel_lines[i];
+        items[filled].node = NULL;
+        filled++;
+    }
+    for (sibling = splice->staged_first; sibling && sibling != splice->suffix_head; sibling = sibling->next) {
+        if (sibling->flags & MARKDOWN_CORE_NODE__CLEAN_START) {
+            int abs_line = sibling->start_line + 1;
+            items[filled].start_byte = pipeline->line_offsets.items[abs_line - plan->restart_line];
+            items[filled].start_line = abs_line;
+            items[filled].node = sibling;
+            filled++;
+        }
+    }
+    pipeline->session->clean.count = splice->clean_count;
+}
+
+static void incremental_finalize_commit(incremental_pipeline *pipeline) {
+    incremental_splice_state *splice = &pipeline->splice;
+    markdown_core_session *session = pipeline->session;
+    size_t i;
+
+    assert(splice->graveyard_detached == (splice->first_stale != NULL));
+    assert(splice->staged_installed == (splice->staged_first != NULL));
+    assert(splice->dependents_installed == (pipeline->dependent_count != 0));
+    assert(splice->revisions_stamped);
+
+    // Point of no return: every remaining operation uses pre-reserved storage
+    // and must stay infallible.
+    incremental_finalize_geometry(pipeline);
+    incremental_finalize_definitions(pipeline);
+    incremental_transplant_inline_seam(pipeline);
+    incremental_finalize_identity_indexes(pipeline);
+    incremental_finalize_clean_index(pipeline);
+
+    session->total_lines = pipeline->plan.total_lines;
+    session->last_line_length = pipeline->plan.last_line_length;
+    session->revision = pipeline->new_rev;
+    session->restarted_commits++;
+    if (pipeline->plan.boundary_pos >= 0) {
+        session->reflowed_commits++;
+    }
+    session->pending.dirty = false;
+    session->pending.new_lo = 0;
+    session->pending.new_hi = 0;
+    session->pending.delta = 0;
+
+    free_child_chain(splice->first_stale);
+    splice->graveyard_detached = false;
+    for (i = 0; i < pipeline->dependent_count; i++) {
+        pipeline->dependents[i].installed = false;
+    }
+    splice->dependents_installed = false;
+    splice->staged_installed = false;
+    splice->revisions_stamped = false;
+    markdown_core_node_free(pipeline->root);
+    pipeline->root = NULL;
+}
+
+static void incremental_abort(incremental_pipeline *pipeline) {
+    if (pipeline->splice.graveyard_detached || pipeline->splice.staged_installed ||
+        pipeline->splice.dependents_installed || pipeline->splice.revisions_stamped) {
+        incremental_rollback_splice(pipeline);
+    }
+    assert(!pipeline->splice.graveyard_detached);
+    assert(!pipeline->splice.staged_installed);
+    assert(!pipeline->splice.dependents_installed);
+    assert(!pipeline->splice.revisions_stamped);
+
+    if (pipeline->reconcile.applied) {
+        // The map was reconciled in place and cannot be reconstructed from
+        // the released stale entries. Keep the committed tree valid and force
+        // the next commit through the wholesale full-path rebuild.
+        pipeline->session->refmap_stale = true;
+    } else {
+        // Pointer-stamped staged definitions never survive an abandoned
+        // pipeline.
+        markdown_core_map_remove_until(pipeline->map, pipeline->previous_head);
+    }
+    if (pipeline->parser) {
+        pipeline->parser->refmap = pipeline->own_map;
+        markdown_core_session_release_parser(pipeline->session, pipeline->parser);
+        pipeline->parser = NULL;
+        pipeline->own_map = NULL;
+    }
+    if (pipeline->root) {
+        markdown_core_node_free(pipeline->root);
+        pipeline->root = NULL;
+    }
+    if (pipeline->result == MARKDOWN_CORE_INCREMENTAL_FAILED && pipeline->error && !*pipeline->error) {
         markdown_core_ast_set_error(
-            error,
+            pipeline->error,
             MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
             "could not commit the session incrementally"
         );
     }
+}
 
-done:
-    map->lookup_sink = NULL;
-    map->lookup_context = NULL;
-    map->lookup_unit = NULL;
-    markdown_core_footnote_site_list_release(mem, &staged_defs);
-    markdown_core_footnote_site_list_release(mem, &staged_refs);
-    markdown_core_lookup_recording_release(&recording);
-    markdown_core_unit_lookups_free(mem, bundles, bundle_count);
-    reconcile_release(mem, &reconcile);
-    if (holder) {
-        markdown_core_node_free(holder); // any rebuilt unit not spliced in goes with it
+static void incremental_pipeline_release(incremental_pipeline *pipeline) {
+    assert(!pipeline->parser);
+    assert(!pipeline->own_map);
+    assert(!pipeline->root);
+    assert(!pipeline->footnotes_built);
+    assert(!pipeline->splice.graveyard_detached);
+    assert(!pipeline->splice.staged_installed);
+    assert(!pipeline->splice.dependents_installed);
+    assert(!pipeline->splice.revisions_stamped);
+
+    pipeline->map->lookup_sink = NULL;
+    pipeline->map->lookup_context = NULL;
+    pipeline->map->lookup_unit = NULL;
+    markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_defs);
+    markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_refs);
+    markdown_core_lookup_recording_release(&pipeline->recording);
+    markdown_core_unit_lookups_free(pipeline->mem, pipeline->bundles, pipeline->bundle_count);
+    reconcile_release(pipeline->mem, &pipeline->reconcile);
+    if (pipeline->dependents) {
+        size_t i;
+        for (i = 0; i < pipeline->dependent_count; i++) {
+            assert(!pipeline->dependents[i].installed);
+            markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->dependents[i].staged_refs);
+        }
     }
-    if (dependents) {
-        mem->free(mem, dependents);
+    if (pipeline->holder) {
+        markdown_core_node_free(pipeline->holder);
     }
-    if (bubble_nodes) {
-        mem->free(mem, bubble_nodes);
+    if (pipeline->dependents) {
+        pipeline->mem->free(pipeline->mem, pipeline->dependents);
     }
-    if (sentinel_lines) {
-        mem->free(mem, sentinel_lines);
+    if (pipeline->bubble_nodes) {
+        pipeline->mem->free(pipeline->mem, pipeline->bubble_nodes);
     }
-    if (line_offsets.items) {
-        mem->free(mem, line_offsets.items);
+    if (pipeline->sentinel_lines) {
+        pipeline->mem->free(pipeline->mem, pipeline->sentinel_lines);
     }
-    if (new_defs.items) {
-        mem->free(mem, new_defs.items);
+    if (pipeline->line_offsets.items) {
+        pipeline->mem->free(pipeline->mem, pipeline->line_offsets.items);
     }
-    if (old_defs.items) {
-        mem->free(mem, old_defs.items);
+    if (pipeline->new_defs.items) {
+        pipeline->mem->free(pipeline->mem, pipeline->new_defs.items);
     }
-    if (stale_ids) {
-        mem->free(mem, stale_ids);
+    if (pipeline->old_defs.items) {
+        pipeline->mem->free(pipeline->mem, pipeline->old_defs.items);
     }
-    return result;
+    if (pipeline->stale_ids) {
+        pipeline->mem->free(pipeline->mem, pipeline->stale_ids);
+    }
+}
+
+// --- the pipeline --------------------------------------------------------------
+
+markdown_core_incremental_result markdown_core_session_commit_incremental(
+    markdown_core_session *session,
+    uint64_t new_rev,
+    markdown_core_delta *changes,
+    markdown_core_error **error
+) {
+    incremental_pipeline pipeline;
+
+    incremental_pipeline_init(&pipeline, session, new_rev, changes, error);
+    if (!incremental_plan_restart(&pipeline) || !incremental_reparse_blocks(&pipeline) ||
+        !incremental_prepare_definitions(&pipeline) || !incremental_refine_and_preflight(&pipeline) ||
+        !incremental_adopt(&pipeline) || !incremental_install_and_refresh(&pipeline)) {
+        incremental_abort(&pipeline);
+    } else {
+        incremental_finalize_commit(&pipeline);
+        pipeline.result = MARKDOWN_CORE_INCREMENTAL_COMMITTED;
+    }
+    incremental_pipeline_release(&pipeline);
+    return pipeline.result;
 }

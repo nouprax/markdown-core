@@ -29,8 +29,6 @@ typedef struct dump_buffer {
     size_t size;
     size_t capacity;
     bool failed;
-    bool *more;
-    size_t more_capacity;
 } dump_buffer;
 
 static void clear_error(markdown_core_error **error) {
@@ -101,8 +99,9 @@ markdown_core_document *markdown_core_document_parse(
     if (!session) {
         return NULL;
     }
-    // A one-shot parse never commits again, so per-unit lookup records would
-    // be pure overhead.
+    // A one-shot parse never commits again, so session indexes and per-unit
+    // lookup records would be pure overhead.
+    session->one_shot = true;
     session->record_lookups = false;
     if (length && (!markdown_core_session_edit(session, 0, 0, source, length, error) ||
                    !markdown_core_session_commit(session, NULL, error))) {
@@ -167,124 +166,104 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DOCUMENT) {
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
         return MARKDOWN_CORE_KIND_DOCUMENT;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_BLOCK_QUOTE) {
+    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
         return MARKDOWN_CORE_KIND_BLOCK_QUOTE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH) {
+    case MARKDOWN_CORE_NODE_PARAGRAPH:
         return MARKDOWN_CORE_KIND_PARAGRAPH;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HEADING) {
+    case MARKDOWN_CORE_NODE_HEADING:
         return MARKDOWN_CORE_KIND_HEADING;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
+    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    case MARKDOWN_CORE_NODE_LIST:
         return MARKDOWN_CORE_KIND_LIST;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_KIND_LIST_ITEM;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
         return MARKDOWN_CORE_KIND_CODE_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return MARKDOWN_CORE_KIND_HTML_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
-        return MARKDOWN_CORE_KIND_TEXT;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
-        return MARKDOWN_CORE_KIND_SOFT_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LINE_BREAK) {
-        return MARKDOWN_CORE_KIND_LINE_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_CODE) {
-        return MARKDOWN_CORE_KIND_CODE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HTML) {
-        return MARKDOWN_CORE_KIND_HTML;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_EMPHASIS) {
-        return MARKDOWN_CORE_KIND_EMPHASIS;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_STRONG) {
-        return MARKDOWN_CORE_KIND_STRONG;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LINK) {
-        return MARKDOWN_CORE_KIND_LINK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
-        return MARKDOWN_CORE_KIND_IMAGE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
-        return MARKDOWN_CORE_KIND_TABLE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        return MARKDOWN_CORE_KIND_TABLE_ROW;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
-        return MARKDOWN_CORE_KIND_TABLE_CELL;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
-        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
-        return MARKDOWN_CORE_KIND_FORMULA;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    case MARKDOWN_CORE_NODE_FORMULA_BLOCK:
         return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return MARKDOWN_CORE_KIND_DIRECTIVE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    case MARKDOWN_CORE_NODE_TABLE:
+        return MARKDOWN_CORE_KIND_TABLE;
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
+        return MARKDOWN_CORE_KIND_TABLE_ROW;
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
+        return MARKDOWN_CORE_KIND_TABLE_CELL;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
+        return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
+    case MARKDOWN_CORE_NODE_TEXT:
+        return MARKDOWN_CORE_KIND_TEXT;
+    case MARKDOWN_CORE_NODE_SOFT_BREAK:
+        return MARKDOWN_CORE_KIND_SOFT_BREAK;
+    case MARKDOWN_CORE_NODE_LINE_BREAK:
+        return MARKDOWN_CORE_KIND_LINE_BREAK;
+    case MARKDOWN_CORE_NODE_CODE:
+        return MARKDOWN_CORE_KIND_CODE;
+    case MARKDOWN_CORE_NODE_HTML:
+        return MARKDOWN_CORE_KIND_HTML;
+    case MARKDOWN_CORE_NODE_FORMULA:
+        return MARKDOWN_CORE_KIND_FORMULA;
+    case MARKDOWN_CORE_NODE_EMPHASIS:
+        return MARKDOWN_CORE_KIND_EMPHASIS;
+    case MARKDOWN_CORE_NODE_STRONG:
+        return MARKDOWN_CORE_KIND_STRONG;
+    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
+        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
+    case MARKDOWN_CORE_NODE_LINK:
+        return MARKDOWN_CORE_KIND_LINK;
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return MARKDOWN_CORE_KIND_IMAGE;
+    case MARKDOWN_CORE_NODE_DIRECTIVE:
+        return MARKDOWN_CORE_KIND_DIRECTIVE;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
+    default:
+        return MARKDOWN_CORE_KIND_NONE;
     }
-    return MARKDOWN_CORE_KIND_NONE;
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {"None",
-                                        "Document",
-                                        "BlockQuote",
-                                        "Paragraph",
-                                        "Heading",
-                                        "ThematicBreak",
-                                        "List",
-                                        "ListItem",
-                                        "CodeBlock",
-                                        "HTMLBlock",
-                                        "FormulaBlock",
-                                        "Table",
-                                        "DirectiveBlock",
-                                        "FootnoteDefinition",
-                                        "Text",
-                                        "SoftBreak",
-                                        "LineBreak",
-                                        "Code",
-                                        "HTML",
-                                        "Formula",
-                                        "Emphasis",
-                                        "Strong",
-                                        "Strikethrough",
-                                        "Link",
-                                        "Image",
-                                        "Directive",
-                                        "FootnoteReference",
-                                        "TableRow",
-                                        "TableCell"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_TABLE_CELL) {
+    static const char *const names[] = {
+        "None",
+        "Document",
+        "BlockQuote",
+        "Paragraph",
+        "Heading",
+        "ThematicBreak",
+        "List",
+        "ListItem",
+        "CodeBlock",
+        "HTMLBlock",
+        "FormulaBlock",
+        "Table",
+        "TableRow",
+        "TableCell",
+        "DirectiveBlock",
+        "DirectiveLabel",
+        "FootnoteDefinition",
+        "Text",
+        "SoftBreak",
+        "LineBreak",
+        "Code",
+        "HTML",
+        "Formula",
+        "Emphasis",
+        "Strong",
+        "Strikethrough",
+        "Link",
+        "Image",
+        "Directive",
+        "FootnoteReference"
+    };
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
         return "None";
     }
     return names[kind];
@@ -320,8 +299,23 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-static bool is_label(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+static markdown_core_scope scope_with_parent_start(const markdown_core_node *node, int32_t parent_resolved_start_line) {
+    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    int start_line, end_line;
+    if (!node) {
+        return scope;
+    }
+    start_line = node->start_line;
+    end_line = node->end_line;
+    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
+        start_line += parent_resolved_start_line;
+        end_line += start_line;
+    }
+    scope.start.line = start_line;
+    scope.start.column = node->start_column;
+    scope.end.line = end_line;
+    scope.end.column = node->end_column;
+    return scope;
 }
 
 markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) { return node ? node->id : 0; }
@@ -329,44 +323,15 @@ markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) 
 uint64_t markdown_core_node_get_revision(const markdown_core_node *node) { return node ? node->last_changed_rev : 0; }
 
 const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node) {
-    const markdown_core_node *parent;
-    if (!node) {
-        return NULL;
-    }
-    parent = node->parent;
-    // Canonical traversal hides directive-label wrappers, so a label child's
-    // parent is its owning directive.
-    if (is_label(parent)) {
-        parent = parent->parent;
-    }
-    return parent;
+    return node ? node->parent : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    const markdown_core_node *child;
-    if (!node) {
-        return NULL;
-    }
-    child = node->first_child;
-    if (is_label(child)) {
-        return child->first_child ? child->first_child : child->next;
-    }
-    return child;
+    return node ? node->first_child : NULL;
 }
 
 const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) {
-    const markdown_core_node *next;
-    if (!node) {
-        return NULL;
-    }
-    next = node->next;
-    if (next && is_label(next)) {
-        return next->first_child ? next->first_child : next->next;
-    }
-    if (!next && is_label(node->parent)) {
-        return node->parent->next;
-    }
-    return next;
+    return node ? node->next : NULL;
 }
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
@@ -378,6 +343,235 @@ size_t markdown_core_node_child_count(const markdown_core_node *node) {
     }
     return count;
 }
+
+#define CANONICAL_WALK_INLINE_DEPTH 64
+#define SCOPE_TABLE_INITIAL_CAPACITY 64
+
+typedef struct canonical_walk_frame {
+    int32_t resolved_start_line;
+    const markdown_core_node *next_sibling;
+} canonical_walk_frame;
+
+typedef struct canonical_walk {
+    const markdown_core_node *root;
+    const markdown_core_node *next;
+    canonical_walk_frame *frames;
+    canonical_walk_frame inline_frames[CANONICAL_WALK_INLINE_DEPTH];
+    size_t depth;
+    size_t capacity;
+    bool failed;
+} canonical_walk;
+
+/**
+ * One streaming canonical-preorder traversal serves every AST consumer.
+ * A frame per active depth carries both the resolved parent line needed by
+ * descendants and the pending canonical sibling needed after ascent. That
+ * same sibling state also renders dump connectors, so the dump owns no
+ * second traversal stack.
+ */
+static void canonical_walk_init(canonical_walk *walk, const markdown_core_node *root) {
+    memset(walk, 0, sizeof(*walk));
+    walk->frames = walk->inline_frames;
+    walk->capacity = CANONICAL_WALK_INLINE_DEPTH;
+    walk->root = root;
+    walk->next = root;
+}
+
+static bool canonical_walk_resize(canonical_walk *walk, size_t capacity) {
+    canonical_walk_frame *resized;
+
+    if (capacity <= walk->capacity) {
+        return true;
+    }
+    if (capacity > SIZE_MAX / sizeof(*walk->frames)) {
+        walk->failed = true;
+        return false;
+    }
+    if (walk->frames == walk->inline_frames) {
+        resized = (canonical_walk_frame *)malloc(capacity * sizeof(*resized));
+        if (resized) {
+            memcpy(resized, walk->inline_frames, walk->depth * sizeof(*resized));
+        }
+    } else {
+        resized = (canonical_walk_frame *)realloc(walk->frames, capacity * sizeof(*resized));
+    }
+    if (!resized) {
+        walk->failed = true;
+        return false;
+    }
+    walk->frames = resized;
+    walk->capacity = capacity;
+    return true;
+}
+
+static bool canonical_walk_reserve_current_depth(canonical_walk *walk) {
+    size_t needed;
+    size_t capacity;
+
+    if (walk->depth == SIZE_MAX) {
+        walk->failed = true;
+        return false;
+    }
+    needed = walk->depth + 1;
+    if (needed <= walk->capacity) {
+        return true;
+    }
+    capacity = walk->capacity;
+    while (capacity < needed) {
+        if (capacity > SIZE_MAX / 2) {
+            capacity = needed;
+            break;
+        }
+        capacity *= 2;
+    }
+    return canonical_walk_resize(walk, capacity);
+}
+
+static void canonical_walk_dispose(canonical_walk *walk) {
+    if (walk->frames != walk->inline_frames) {
+        free(walk->frames);
+    }
+}
+
+/**
+ * Emits one canonical-preorder node and resolves its scope from the
+ * canonical parent's already-resolved start line. This is the sole linear
+ * canonical traversal used by both public materialization and canonical
+ * dumps.
+ */
+static bool canonical_walk_next(
+    canonical_walk *walk,
+    const markdown_core_node **node,
+    markdown_core_scope *scope,
+    size_t *depth,
+    bool *has_next
+) {
+    const markdown_core_node *current = walk->next;
+    const markdown_core_node *child;
+    const markdown_core_node *sibling;
+    canonical_walk_frame *frame;
+    int32_t parent_start_line;
+
+    if (!current) {
+        return false;
+    }
+    if (!canonical_walk_reserve_current_depth(walk)) {
+        return false;
+    }
+    parent_start_line = walk->depth ? walk->frames[walk->depth - 1].resolved_start_line : 0;
+    *scope = scope_with_parent_start(current, parent_start_line);
+    sibling = current == walk->root ? NULL : markdown_core_node_get_next_sibling(current);
+    frame = &walk->frames[walk->depth];
+    frame->resolved_start_line = scope->start.line;
+    frame->next_sibling = sibling;
+    *node = current;
+    if (depth) {
+        *depth = walk->depth;
+    }
+    if (has_next) {
+        *has_next = sibling != NULL;
+    }
+    child = markdown_core_node_get_first_child(current);
+    if (child) {
+        walk->depth++;
+        walk->next = child;
+        return true;
+    }
+    while (!walk->frames[walk->depth].next_sibling) {
+        if (walk->depth == 0) {
+            walk->next = NULL;
+            return true;
+        }
+        walk->depth--;
+    }
+    walk->next = walk->frames[walk->depth].next_sibling;
+    return true;
+}
+
+static bool canonical_walk_branch_continues(const canonical_walk *walk, size_t depth) {
+    return walk->frames[depth].next_sibling != NULL;
+}
+
+static bool scope_table_append(
+    markdown_core_scope_entry **entries,
+    size_t *count,
+    size_t *capacity,
+    const markdown_core_node *node,
+    markdown_core_scope scope
+) {
+    const size_t maximum = SIZE_MAX / sizeof(**entries);
+    markdown_core_scope_entry *resized;
+    size_t new_capacity;
+
+    if (*count == *capacity) {
+        if (*capacity == maximum) {
+            return false;
+        }
+        new_capacity = *capacity ? *capacity * 2 : SCOPE_TABLE_INITIAL_CAPACITY;
+        if (new_capacity < *capacity || new_capacity > maximum) {
+            new_capacity = maximum;
+        }
+        resized = (markdown_core_scope_entry *)realloc(*entries, new_capacity * sizeof(**entries));
+        if (!resized) {
+            return false;
+        }
+        *entries = resized;
+        *capacity = new_capacity;
+    }
+    (*entries)[*count].id = markdown_core_node_get_id(node);
+    (*entries)[*count].revision = markdown_core_node_get_revision(node);
+    (*entries)[*count].scope = scope;
+    (*count)++;
+    return true;
+}
+
+bool markdown_core_document_scope_table(
+    const markdown_core_document *document,
+    markdown_core_scope_entry **output,
+    size_t *count,
+    markdown_core_error **error
+) {
+    canonical_walk walk;
+    markdown_core_scope_entry *entries;
+    const markdown_core_node *node;
+    markdown_core_scope scope;
+    size_t capacity = 0;
+    size_t index = 0;
+
+    clear_error(error);
+    if (output) {
+        *output = NULL;
+    }
+    if (count) {
+        *count = 0;
+    }
+    if (!document || !document->root || !output || !count) {
+        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document, output, and count must not be null");
+        return false;
+    }
+    canonical_walk_init(&walk, document->root);
+    entries = NULL;
+    while (canonical_walk_next(&walk, &node, &scope, NULL, NULL)) {
+        if (!scope_table_append(&entries, &index, &capacity, node, scope)) {
+            free(entries);
+            canonical_walk_dispose(&walk);
+            set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate scope table");
+            return false;
+        }
+    }
+    if (walk.failed) {
+        free(entries);
+        canonical_walk_dispose(&walk);
+        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate scope traversal");
+        return false;
+    }
+    canonical_walk_dispose(&walk);
+    *output = entries;
+    *count = index;
+    return true;
+}
+
+void markdown_core_scope_table_free(markdown_core_scope_entry *output) { free(output); }
 
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
     if (!node || node->type != MARKDOWN_CORE_NODE_HEADING || !level) {
@@ -541,25 +735,14 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
-static const markdown_core_node *directive_label_node(const markdown_core_node *node) {
-    if (!node || (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
-        return NULL;
-    }
-    return is_label(node->first_child) ? node->first_child : NULL;
-}
-
 bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string_view *name,
-    markdown_core_string_view *attributes,
-    bool *has_label,
-    size_t *label_count
+    markdown_core_string_view *attributes
 ) {
     const char *value;
-    const markdown_core_node *label;
-    const markdown_core_node *child;
-    if (!node || !mode || !name || !attributes || !has_label || !label_count ||
+    if (!node || !mode || !name || !attributes ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
     }
@@ -571,29 +754,11 @@ bool markdown_core_node_directive_properties(
     value = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
     attributes->data = (const uint8_t *)value;
     attributes->length = value ? strlen(value) : 0;
-    *has_label = markdown_core_directive_has_label((markdown_core_node *)node) != 0;
-    *label_count = 0;
-    label = directive_label_node(node);
-    child = label ? label->first_child : NULL;
-    while (child) {
-        (*label_count)++;
-        child = child->next;
-    }
     return true;
 }
 
-const markdown_core_node *markdown_core_node_directive_first_label_child(const markdown_core_node *node) {
-    const markdown_core_node *label = directive_label_node(node);
-    return label ? label->first_child : NULL;
-}
-
-const markdown_core_node *markdown_core_node_directive_first_content_child(const markdown_core_node *node) {
-    const markdown_core_node *label;
-    if (!node || node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return NULL;
-    }
-    label = directive_label_node(node);
-    return label ? label->next : node->first_child;
+const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node) {
+    return markdown_core_directive_label((markdown_core_node *)node);
 }
 
 static bool link_properties(
@@ -737,26 +902,6 @@ static void buffer_optional_string(dump_buffer *buffer, markdown_core_string_vie
     }
 }
 
-static bool ensure_more(dump_buffer *buffer, size_t depth) {
-    bool *more;
-    size_t capacity;
-    if (depth < buffer->more_capacity) {
-        return true;
-    }
-    capacity = buffer->more_capacity ? buffer->more_capacity : 16;
-    while (capacity <= depth) {
-        capacity *= 2;
-    }
-    more = (bool *)realloc(buffer->more, capacity * sizeof(*more));
-    if (!more) {
-        buffer->failed = true;
-        return false;
-    }
-    buffer->more = more;
-    buffer->more_capacity = capacity;
-    return true;
-}
-
 static const char *alignment_name(markdown_core_table_alignment alignment) {
     switch (alignment) {
     case MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT:
@@ -780,7 +925,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
-    bool x, y, has_label;
+    bool x, y;
     size_t count, i;
     int32_t level;
     switch (kind) {
@@ -864,19 +1009,13 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &mode, &a, &b, &has_label, &count);
+        markdown_core_node_directive_properties(node, &mode, &a, &b);
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " attributes=");
         buffer_optional_string(buffer, b);
-        buffer_cstr(buffer, " label=");
-        if (has_label) {
-            buffer_i64(buffer, (int64_t)count);
-        } else {
-            buffer_cstr(buffer, "null");
-        }
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
@@ -919,8 +1058,7 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
     markdown_core_string_view a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
     markdown_core_string_view b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
-    // Callers pair nodes by raw type, so the facade kinds already match;
-    // facade-invisible nodes (directive labels) have no fields.
+    // Callers pair nodes by raw type, so the facade kinds already match.
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level_a, level_b;
@@ -990,13 +1128,19 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
-        markdown_core_placement_mode mode_a, mode_b;
-        bool has_label_a, has_label_b;
-        size_t label_a, label_b;
-        markdown_core_node_directive_properties(a, &mode_a, &a1, &a2, &has_label_a, &label_a);
-        markdown_core_node_directive_properties(b, &mode_b, &b1, &b2, &has_label_b, &label_b);
-        return mode_a == mode_b && view_content_equal(a1, b1) && view_optional_equal(a2, b2) &&
-               has_label_a == has_label_b && (!has_label_a || label_a == label_b);
+        const char *name_a = markdown_core_extensions_get_directive_name((markdown_core_node *)a);
+        const char *name_b = markdown_core_extensions_get_directive_name((markdown_core_node *)b);
+        const char *attributes_a = markdown_core_extensions_get_directive_attributes((markdown_core_node *)a);
+        const char *attributes_b = markdown_core_extensions_get_directive_attributes((markdown_core_node *)b);
+        a1.data = (const uint8_t *)name_a;
+        a1.length = name_a ? strlen(name_a) : 0;
+        b1.data = (const uint8_t *)name_b;
+        b1.length = name_b ? strlen(name_b) : 0;
+        a2.data = (const uint8_t *)attributes_a;
+        a2.length = attributes_a ? strlen(attributes_a) : 0;
+        b2.data = (const uint8_t *)attributes_b;
+        b2.length = attributes_b ? strlen(attributes_b) : 0;
+        return view_content_equal(a1, b1) && view_optional_equal(a2, b2);
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
@@ -1016,96 +1160,30 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     }
 }
 
-// One preorder emission frame. `parent_start_line` is the absolute start
-// line of the node's canonical parent (0 for the root): resolving sealed
-// parent-relative lines with the parent's resolved value keeps the dump
-// linear instead of walking the parent chain per node. `has_next` records
-// whether a following sibling exists — it lands in `more[depth - 1]` when
-// the frame is emitted, exactly where the branch-prefix rendering reads it.
-typedef struct dump_frame {
+// Depth is input-controlled (nested block quotes nest one node per two input
+// bytes), so the canonical dump shares the one streaming scope walker: no
+// recursion, child reversal, count pre-pass, or per-node ancestor walk.
+static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
+    canonical_walk walk;
     const markdown_core_node *node;
-    int parent_start_line;
+    markdown_core_scope scope;
     size_t depth;
     bool has_next;
-} dump_frame;
 
-static bool dump_frames_reserve(dump_buffer *buffer, dump_frame **stack, size_t *capacity, size_t needed) {
-    dump_frame *grown;
-    size_t next_capacity;
-    if (needed <= *capacity) {
-        return true;
-    }
-    next_capacity = *capacity ? *capacity : 64;
-    while (next_capacity < needed) {
-        next_capacity *= 2;
-    }
-    grown = (dump_frame *)realloc(*stack, next_capacity * sizeof(*grown));
-    if (!grown) {
-        buffer->failed = true;
-        return false;
-    }
-    *stack = grown;
-    *capacity = next_capacity;
-    return true;
-}
-
-// Depth is input-controlled (nested block quotes nest one node per two input
-// bytes), so the canonical dump must not recurse: explicit frames keep the
-// public dump as depth-proof as the parser and the native iterator.
-static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
-    dump_frame *stack = NULL;
-    size_t count = 0;
-    size_t capacity = 0;
-    if (!dump_frames_reserve(buffer, &stack, &capacity, 1)) {
-        return;
-    }
-    stack[count].node = root;
-    stack[count].parent_start_line = 0;
-    stack[count].depth = 0;
-    stack[count].has_next = false;
-    count++;
-    while (count) {
-        dump_frame frame = stack[--count];
-        const markdown_core_node *node = frame.node;
+    canonical_walk_init(&walk, root);
+    while (canonical_walk_next(&walk, &node, &scope, &depth, &has_next)) {
         markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-        markdown_core_scope scope;
-        const markdown_core_node *child;
         size_t child_count = markdown_core_node_child_count(node);
-        size_t first_pushed;
         size_t i;
-        int start_line = node->start_line;
-        int end_line = node->end_line;
         if (kind == MARKDOWN_CORE_KIND_NONE) {
             buffer->failed = true;
             break;
         }
-        if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-            // The canonical traversal hides directive-label wrappers, so a
-            // hidden wrapper between this node and its canonical parent
-            // contributes its own delta.
-            start_line += frame.parent_start_line;
-            if (is_label(node->parent)) {
-                start_line += node->parent->start_line;
+        if (depth) {
+            for (i = 1; i < depth; i++) {
+                buffer_cstr(buffer, canonical_walk_branch_continues(&walk, i) ? "│   " : "    ");
             }
-            end_line += start_line;
-        }
-        scope.start.line = start_line;
-        scope.start.column = node->start_column;
-        scope.end.line = end_line;
-        scope.end.column = node->end_column;
-        if (frame.depth) {
-            // Ancestor slots below depth - 1 keep the values written when
-            // those ancestors were emitted; descendants only ever write
-            // deeper slots, and siblings rewrite a slot only after this
-            // subtree has fully emitted.
-            if (!ensure_more(buffer, frame.depth - 1)) {
-                break;
-            }
-            buffer->more[frame.depth - 1] = frame.has_next;
-            for (i = 0; i + 1 < frame.depth; i++) {
-                buffer_cstr(buffer, buffer->more[i] ? "│   " : "    ");
-            }
-            buffer_cstr(buffer, buffer->more[frame.depth - 1] ? "├── " : "└── ");
+            buffer_cstr(buffer, has_next ? "├── " : "└── ");
         }
         buffer_cstr(buffer, markdown_core_node_kind_name(kind));
         buffer_cstr(buffer, " scope=");
@@ -1120,34 +1198,14 @@ static void dump_tree(dump_buffer *buffer, const markdown_core_node *root) {
         buffer_cstr(buffer, " children=");
         buffer_i64(buffer, (int64_t)child_count);
         buffer_cstr(buffer, "\n");
-
-        // Append the children in source order, then reverse the appended
-        // range: the singly linked child list offers no reverse pass, and
-        // pops must emit the first child first.
-        first_pushed = count;
-        child = markdown_core_node_get_first_child(node);
-        while (child) {
-            const markdown_core_node *next = markdown_core_node_get_next_sibling(child);
-            if (!dump_frames_reserve(buffer, &stack, &capacity, count + 1)) {
-                break;
-            }
-            stack[count].node = child;
-            stack[count].parent_start_line = start_line;
-            stack[count].depth = frame.depth + 1;
-            stack[count].has_next = next != NULL;
-            count++;
-            child = next;
-        }
         if (buffer->failed) {
             break;
         }
-        for (i = 0; i < (count - first_pushed) / 2; i++) {
-            dump_frame swapped = stack[first_pushed + i];
-            stack[first_pushed + i] = stack[count - 1 - i];
-            stack[count - 1 - i] = swapped;
-        }
     }
-    free(stack);
+    if (walk.failed) {
+        buffer->failed = true;
+    }
+    canonical_walk_dispose(&walk);
 }
 
 bool markdown_core_document_dump(
@@ -1165,7 +1223,6 @@ bool markdown_core_document_dump(
     *output = NULL;
     *length = 0;
     dump_tree(&buffer, document->root);
-    free(buffer.more);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not produce canonical AST dump");

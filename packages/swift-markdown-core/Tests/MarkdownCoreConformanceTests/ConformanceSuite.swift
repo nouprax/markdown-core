@@ -20,10 +20,10 @@ import Testing
         let expected: Set<String> = [
             "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
-            "DirectiveBlock", "FootnoteDefinition", "Text", "SoftBreak", "LineBreak",
+            "TableRow", "TableCell", "DirectiveBlock", "DirectiveLabel",
+            "FootnoteDefinition", "Text", "SoftBreak", "LineBreak",
             "Code", "HTML", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
-            "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
         #expect(
@@ -36,21 +36,71 @@ import Testing
         let document = try Document.parse(
             "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
         )
-        let ordered = try #require(document.children[0] as? MarkdownCore.List)
+        let ordered = try #require(document.content[0] as? MarkdownCore.List)
         #expect(ordered.flavor == .ordered)
         #expect(ordered.start == 3)
-        let task = try #require(document.children[1] as? MarkdownCore.List)
-        #expect((task.children.first as? ListItem)?.isChecked == true)
-        let table = try #require(document.children[2] as? Table)
+        #expect(ordered.tight)
+        let task = try #require(document.content[1] as? MarkdownCore.List)
+        #expect(task.items.first?.checked == true)
+        let table = try #require(document.content[2] as? Table)
         #expect(table.alignments == [.center])
         #expect(table.header.isHeader)
         #expect(table.rows.allSatisfy { !$0.isHeader })
         #expect(table.header.cells.count == 1)
-        let paragraph = try #require(document.children[3] as? Paragraph)
-        let link = try #require(paragraph.children[0] as? Link)
-        let image = try #require(paragraph.children[2] as? Image)
+        let paragraph = try #require(document.content[3] as? Paragraph)
+        let link = try #require(paragraph.content[0] as? Link)
+        let image = try #require(paragraph.content[2] as? Image)
         #expect(link.destination == "/go" && link.title == nil)
         #expect(image.source == "/image" && image.title == "title")
+    }
+
+    @Test("code carries its placement mode and code blocks their fence state")
+    func codePlacementModes() throws {
+        let document = try Document.parse("`span`\n\n```swift\nbody\n```\n\n    indented\n")
+        let paragraph = try #require(document.content[0] as? Paragraph)
+        let code = try #require(paragraph.content[0] as? Code)
+        #expect(code.mode == .embedded)
+        let fencedBlock = try #require(document.content[1] as? CodeBlock)
+        #expect(fencedBlock.mode == .standalone)
+        #expect(fencedBlock.fenced && fencedBlock.closed)
+        let indentedBlock = try #require(document.content[2] as? CodeBlock)
+        #expect(indentedBlock.mode == .standalone)
+        #expect(!indentedBlock.fenced && indentedBlock.closed)
+    }
+
+    @Test("directives partition typed label and content; nil and empty labels stay distinct")
+    func directiveLabelPartition() throws {
+        let document = try Document.parse(
+            ":::note[*Title*]{kind=demo}\nBody\n:::\n\n:::bare\nBody\n:::\n\n"
+                + "Inline :badge[label] then :plain and :empty[].\n"
+        )
+        let labeled = try #require(document.content[0] as? DirectiveBlock)
+        #expect(labeled.mode == .standalone)
+        let labeledLabel = try #require(labeled.label)
+        #expect(labeledLabel.content.count == 1)
+        #expect(labeledLabel.content.first is Emphasis)
+        #expect(labeledLabel.id != labeled.id)
+        #expect(labeled.content.count == 1)
+        #expect(labeled.content.first is Paragraph)
+        let bare = try #require(document.content[1] as? DirectiveBlock)
+        #expect(bare.label == nil)
+        #expect(bare.content.count == 1)
+        let paragraph = try #require(document.content[2] as? Paragraph)
+        let inline = try #require(paragraph.content[1] as? Directive)
+        #expect(inline.mode == .embedded)
+        #expect(inline.label?.content.count == 1)
+        let unlabeled = try #require(paragraph.content[3] as? Directive)
+        #expect(unlabeled.label == nil)
+        let empty = try #require(paragraph.content[5] as? Directive)
+        #expect(empty.label != nil)
+        #expect(empty.label?.content.isEmpty == true)
+        #expect(
+            document.scope(of: try #require(empty.label))
+                == Scope(
+                    start: Position(line: 9, column: 44),
+                    end: Position(line: 9, column: 45)
+                )
+        )
     }
 
     @Test("all manifest cases match the shared canonical AST spec")

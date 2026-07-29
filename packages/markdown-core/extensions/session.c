@@ -20,8 +20,6 @@
 
 #include "session_internal.h"
 
-#include "directive.h"
-
 #include <iterator.h>
 #include <node.h>
 #include <parser.h>
@@ -39,19 +37,6 @@ static void clear_error(markdown_core_error **error) {
     }
 }
 
-// Mirrors set_error in ast.c; sessions and documents share the error type but
-// not a translation unit private to either.
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
-
-static uint64_t mix64(uint64_t x) {
-    x ^= x >> 30;
-    x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27;
-    x *= 0x94d049bb133111ebULL;
-    x ^= x >> 31;
-    return x;
-}
-
 // --- id table ---------------------------------------------------------------
 
 static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
@@ -65,7 +50,7 @@ static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *tab
 
 static void id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
     size_t mask = table->capacity - 1;
-    size_t slot = (size_t)mix64(id) & mask;
+    size_t slot = (size_t)markdown_core_mix64(id) & mask;
     while (table->slots[slot].id != 0) {
         if (table->slots[slot].id == id) {
             table->slots[slot].node = node;
@@ -129,7 +114,7 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
         return;
     }
     mask = table->capacity - 1;
-    slot = (size_t)mix64(id) & mask;
+    slot = (size_t)markdown_core_mix64(id) & mask;
     while (table->slots[slot].id != id) {
         if (table->slots[slot].id == 0) {
             return;
@@ -143,7 +128,7 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
     gap = slot;
     scan = (gap + 1) & mask;
     while (table->slots[scan].id != 0) {
-        size_t home = (size_t)mix64(table->slots[scan].id) & mask;
+        size_t home = (size_t)markdown_core_mix64(table->slots[scan].id) & mask;
         if (((scan - home) & mask) >= ((scan - gap) & mask)) {
             table->slots[gap] = table->slots[scan];
             gap = scan;
@@ -187,10 +172,6 @@ static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, mar
             continue;
         }
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        // Directive-label wrappers are facade-invisible and not addressable.
-        if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
-            continue;
-        }
         id_table_insert(out, node->id, node);
     }
     markdown_core_iter_free(iter);
@@ -250,8 +231,10 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
     return parser;
 }
 
-markdown_core_parser *
-markdown_core_session_acquire_parser(markdown_core_session *session, markdown_core_error **error) {
+markdown_core_parser *markdown_core_session_acquire_parser(
+    markdown_core_session *session,
+    markdown_core_error **error
+) {
     markdown_core_parser *parser = session->warm_parser;
     if (parser) {
         session->warm_parser = NULL;
@@ -264,9 +247,9 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
     if (!parser) {
         return;
     }
-    if (!parser->oom && !session->warm_parser) {
+    if (!parser->oom && !parser->internal_error && !session->warm_parser) {
         markdown_core_parser_renew(parser);
-        if (!parser->oom) {
+        if (!parser->oom && !parser->internal_error) {
             session->warm_parser = parser;
             return;
         }
@@ -330,8 +313,12 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
 // reference map, adopts ids from the previous tree, and replaces every piece
 // of session state at once. The staging never touches the committed state,
 // so any failure leaves the session valid at its previous revision.
-static bool
-commit_full(markdown_core_session *session, bool initial, markdown_core_delta *changes, markdown_core_error **error) {
+static bool commit_full(
+    markdown_core_session *session,
+    bool initial,
+    markdown_core_delta *changes,
+    markdown_core_error **error
+) {
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_map *map;
@@ -360,9 +347,14 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     last_line_length = parser->last_line_length;
     root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
+        bool internal_error = parser->internal_error;
         markdown_core_parser_free(parser); // frees the staged map with it
         markdown_core_lookup_recording_release(&recording);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not parse the session text");
+        markdown_core_ast_set_error(
+            error,
+            internal_error ? MARKDOWN_CORE_ERROR_INTERNAL : MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            internal_error ? "parser refinement invariant failed" : "could not parse the session text"
+        );
         return false;
     }
     map = parser->refmap;
@@ -438,8 +430,9 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     // the affected revisions without any dump-visible change.
     markdown_core_footnote_index footnotes;
     memset(&footnotes, 0, sizeof(footnotes));
-    if (!markdown_core_footnote_index_build(session, root, &footnotes) ||
-        !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes)) {
+    if (!session->one_shot && session->options.footnotes &&
+        (!markdown_core_footnote_index_build(session, root, &footnotes) ||
+         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes))) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
         markdown_core_lookup_table_release(session->mem, &lookups);
         markdown_core_map_free(map);
@@ -458,9 +451,9 @@ commit_full(markdown_core_session *session, bool initial, markdown_core_delta *c
     markdown_core_clean_index clean = {NULL, 0, 0};
     markdown_core_map_entry **def_index = NULL;
     size_t def_count = 0;
-    if (!id_table_build(session->mem, root, &ids) ||
-        !markdown_core_session_index_clean_children(session, root, map, &clean) ||
-        !markdown_core_session_index_definitions(session, map, &def_index, &def_count)) {
+    if (!session->one_shot && (!id_table_build(session->mem, root, &ids) ||
+                               !markdown_core_session_index_clean_children(session, root, map, &clean) ||
+                               !markdown_core_session_index_definitions(session, map, &def_index, &def_count))) {
         id_table_release(session->mem, &ids);
         if (clean.items) {
             session->mem->free(session->mem, clean.items);
@@ -526,6 +519,7 @@ static bool commit_internal(
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
             return false;
         }
+        changes->lineage = session->lineage;
         changes->before = session->revision;
         changes->after = initial ? 0 : session->revision + 1;
     }
@@ -649,12 +643,12 @@ markdown_core_session *markdown_core_session_open_with_mem(
     // fails.
     uint64_t entropy = (uint64_t)(uintptr_t)session;
     uint64_t host_entropy = 0;
-    entropy ^= mix64((uint64_t)time(NULL));
-    entropy ^= mix64((uint64_t)clock()) << 1;
+    entropy ^= markdown_core_mix64((uint64_t)time(NULL));
+    entropy ^= markdown_core_mix64((uint64_t)clock()) << 1;
     if (session_host_entropy(&host_entropy)) {
         entropy ^= host_entropy;
     }
-    session->lineage = mix64(entropy);
+    session->lineage = markdown_core_mix64(entropy);
 
     if (!commit_internal(session, true, NULL, error)) {
         markdown_core_session_free(session);
@@ -663,8 +657,10 @@ markdown_core_session *markdown_core_session_open_with_mem(
     return session;
 }
 
-markdown_core_session *
-markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error) {
+markdown_core_session *markdown_core_session_open(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+) {
     return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), true, error);
 }
 
@@ -790,8 +786,10 @@ size_t markdown_core_session_length(const markdown_core_session *session) {
     return session ? markdown_core_text_length(&session->text) : 0;
 }
 
-const markdown_core_node *
-markdown_core_session_node_by_id(const markdown_core_session *session, markdown_core_node_id id) {
+const markdown_core_node *markdown_core_session_node_by_id(
+    const markdown_core_session *session,
+    markdown_core_node_id id
+) {
     if (!session || id == 0) {
         return NULL;
     }
@@ -799,7 +797,7 @@ markdown_core_session_node_by_id(const markdown_core_session *session, markdown_
         return NULL;
     }
     size_t mask = session->ids.capacity - 1;
-    size_t slot = (size_t)mix64(id) & mask;
+    size_t slot = (size_t)markdown_core_mix64(id) & mask;
     while (session->ids.slots[slot].id != 0) {
         if (session->ids.slots[slot].id == id) {
             return session->ids.slots[slot].node;

@@ -16,7 +16,8 @@ extern "C" {
 #endif
 
 /* Every buffer carries a sticky `oom` poison bit: when growth fails (either
- * the allocator returned NULL or the 2 GiB size limit was hit), the bit is
+ * the allocator returned NULL or the INT32_MAX/2 (~1 GiB) content cap was
+ * hit -- chosen so the 1.5x growth policy stays within int32 sizes), the bit is
  * set, the previous contents stay valid and NUL-terminated, and every later
  * mutation becomes a no-op.  Consumers observe the loss at the boundaries --
  * markdown_core_strbuf_detach returns NULL for a poisoned buffer -- so
@@ -25,7 +26,7 @@ extern "C" {
 typedef struct {
     markdown_core_mem *mem;
     unsigned char *ptr;
-    bufsize_t asize, size;
+    markdown_core_bufsize asize, size;
     int oom;
 } markdown_core_strbuf;
 
@@ -40,31 +41,22 @@ extern const unsigned char markdown_core_strbuf__initbuf[1];
  * initialization.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, bufsize_t initial_size);
+void markdown_core_strbuf_init(markdown_core_mem *mem, markdown_core_strbuf *buf, markdown_core_bufsize initial_size);
 
 /**
  * Grow the buffer to hold at least `target_size` bytes.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size);
+void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize target_size);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_free(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_swap(markdown_core_strbuf *buf_a, markdown_core_strbuf *buf_b);
-
-MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf);
-
-MARKDOWN_CORE_EXPORT
-int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b);
+markdown_core_bufsize markdown_core_strbuf_len(const markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf);
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown_core_strbuf *buf) {
     return (char *)buf->ptr;
@@ -73,7 +65,7 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown
 #define markdown_core_strbuf_at(buf, n) ((buf)->ptr[n])
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
+void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_sets(markdown_core_strbuf *buf, const char *string);
@@ -82,7 +74,7 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
+void markdown_core_strbuf_put(markdown_core_strbuf *buf, const unsigned char *data, markdown_core_bufsize len);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_puts(markdown_core_strbuf *buf, const char *string);
@@ -91,16 +83,10 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_strchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
+void markdown_core_strbuf_drop(markdown_core_strbuf *buf, markdown_core_bufsize n);
 
 MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_strbuf_strrchr(const markdown_core_strbuf *buf, int c, bufsize_t pos);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len);
+void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, markdown_core_bufsize len);
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf);

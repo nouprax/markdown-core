@@ -2,6 +2,7 @@ import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
+import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
@@ -102,9 +103,10 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
     visitDirectiveBlock: (node: DirectiveBlock) =>
         record(
             "DirectiveBlock",
-            directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
-            (node.label?.length ?? 0) + node.content.length
+            directiveFields(node.mode, node.name, node.attributes),
+            (node.label === null ? 0 : 1) + node.content.length
         ),
+    visitDirectiveLabel: (node: DirectiveLabel) => record("DirectiveLabel", [], node.content.length),
     visitFootnoteDefinition: (node: FootnoteDefinition) =>
         record("FootnoteDefinition", [`id=${jsonString(node.label)}`], node.content.length),
     visitText: (node: Text) => record("Text", [`literal=${jsonString(node.literal)}`]),
@@ -129,11 +131,7 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
             node.content.length
         ),
     visitDirective: (node: Directive) =>
-        record(
-            "Directive",
-            directiveFields(node.mode, node.name, node.attributes, node.label?.length ?? null),
-            node.label?.length ?? 0
-        ),
+        record("Directive", directiveFields(node.mode, node.name, node.attributes), node.label === null ? 0 : 1),
     visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", [`id=${jsonString(node.label)}`])
 };
 
@@ -142,18 +140,8 @@ function record(kind: string, fields: readonly string[] = [], children = 0): Pen
     return { line: (scope) => `${kind} ${scope}${fieldText} children=${children}`, children };
 }
 
-function directiveFields(
-    mode: "embedded" | "standalone",
-    name: string,
-    attributes: string | null,
-    labelCount: number | null
-): readonly string[] {
-    return [
-        `mode=${mode}`,
-        `name=${jsonString(name)}`,
-        `attributes=${optionalString(attributes)}`,
-        `label=${labelCount ?? "null"}`
-    ];
+function directiveFields(mode: "embedded" | "standalone", name: string, attributes: string | null): readonly string[] {
+    return [`mode=${mode}`, `name=${jsonString(name)}`, `attributes=${optionalString(attributes)}`];
 }
 
 function rebased(value: Scope, offset: number): string {

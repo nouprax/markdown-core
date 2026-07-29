@@ -11,6 +11,24 @@ public struct MarkupWalker: Sendable {
     /// Creates a walker; walkers are stateless and reusable.
     public init() {}
 
+    /// Walks the document depth-first and dispatches each node to `visitor`
+    /// once in preorder. This overload is structural and never resolves
+    /// scopes, so it can traverse a retained snapshot even if that snapshot
+    /// was superseded before scope materialization.
+    public func walk<V: MarkupVisitor>(
+        _ document: Document,
+        visitor: inout V
+    ) where V.Result == Void {
+        var stack: [any Markup] = [document]
+        while let node = stack.popLast() {
+            _ = node.accept(&visitor)
+            var childrenVisitor = ChildrenVisitor()
+            for child in node.accept(&childrenVisitor).reversed() {
+                stack.append(child)
+            }
+        }
+    }
+
     /// Walks the document depth-first, supplying each event with the node's
     /// resolved absolute scope.
     public func walk(
@@ -62,19 +80,19 @@ public struct MarkupWalker: Sendable {
 }
 
 private struct ChildrenVisitor: MarkupVisitor {
-    mutating func visit(_ node: Document) -> [any Markup] { node.children }
+    mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: BlockQuote) -> [any Markup] { node.children }
+    mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Paragraph) -> [any Markup] { node.children }
+    mutating func visit(_ node: Paragraph) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Heading) -> [any Markup] { node.children }
+    mutating func visit(_ node: Heading) -> [any Markup] { node.content }
 
     mutating func visit(_: ThematicBreak) -> [any Markup] { [] }
 
-    mutating func visit(_ node: List) -> [any Markup] { node.children }
+    mutating func visit(_ node: List) -> [any Markup] { node.items }
 
-    mutating func visit(_ node: ListItem) -> [any Markup] { node.children }
+    mutating func visit(_ node: ListItem) -> [any Markup] { node.content }
 
     mutating func visit(_: CodeBlock) -> [any Markup] { [] }
 
@@ -84,9 +102,17 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Table) -> [any Markup] { [node.header] + node.rows }
 
-    mutating func visit(_ node: DirectiveBlock) -> [any Markup] { node.children }
+    mutating func visit(_ node: TableRow) -> [any Markup] { node.cells }
 
-    mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.children }
+    mutating func visit(_ node: TableCell) -> [any Markup] { node.content }
+
+    mutating func visit(_ node: DirectiveBlock) -> [any Markup] {
+        (node.label.map { [$0 as any Markup] } ?? []) + node.content
+    }
+
+    mutating func visit(_ node: DirectiveLabel) -> [any Markup] { node.content }
+
+    mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.content }
 
     mutating func visit(_: Text) -> [any Markup] { [] }
 
@@ -100,21 +126,19 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_: Formula) -> [any Markup] { [] }
 
-    mutating func visit(_ node: Emphasis) -> [any Markup] { node.children }
+    mutating func visit(_ node: Emphasis) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Strong) -> [any Markup] { node.children }
+    mutating func visit(_ node: Strong) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Strikethrough) -> [any Markup] { node.children }
+    mutating func visit(_ node: Strikethrough) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Link) -> [any Markup] { node.children }
+    mutating func visit(_ node: Link) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Image) -> [any Markup] { node.children }
+    mutating func visit(_ node: Image) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Directive) -> [any Markup] { node.children }
+    mutating func visit(_ node: Directive) -> [any Markup] {
+        node.label.map { [$0 as any Markup] } ?? []
+    }
 
     mutating func visit(_: FootnoteReference) -> [any Markup] { [] }
-
-    mutating func visit(_ node: TableRow) -> [any Markup] { node.cells }
-
-    mutating func visit(_ node: TableCell) -> [any Markup] { node.content }
 }

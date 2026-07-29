@@ -48,14 +48,19 @@ Nodes do not store absolute positions. Resolve them through the snapshot:
 
 ## Traverse and Inspect
 
-Use `MarkupWalker` for a read-only depth-first traversal; every event carries the
-resolved scope:
+Use `MarkupWalker` for a read-only depth-first traversal. The callback overload
+emits entering/exiting events with the resolved scope:
 
 ```js
 new MarkupWalker().walk(document, (event, node, scope) => {
   console.log(event, node.kind, scope.start.line);
 });
 ```
+
+The typed-visitor overload, `walker.walk(document, visitor)`, instead
+dispatches each node once in preorder without resolving scopes. That
+scope-free form remains valid for a retained session snapshot even if it was
+superseded before scope materialization.
 
 `document.dump()` and `MarkupDumper.dump(document, node)` emit the canonical
 diagnostic tree for the complete document or a focused subtree (subtree scopes

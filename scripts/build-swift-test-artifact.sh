@@ -2,12 +2,23 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 output=${1:-"$root/build/ci-artifacts/swift"}
 consumer=packages/swift-markdown-core/Tests/Consumer
 
 cd "$root"
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
     swift build --build-tests --disable-sandbox
+# The repository-wide topology audit runs on a Linux runner without a Swift
+# toolchain, so the producer itself must assert the built test products
+# discover a non-empty Swift Testing graph (mirroring the CTest inventory
+# assertion in build-c-test-artifact.sh).
+swift_test_list=$(CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
+    swift test --disable-sandbox list)
+if [ -z "$swift_test_list" ]; then
+    echo "Swift test artifact discovers no Swift Testing suites" >&2
+    exit 1
+fi
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
     swift build --build-tests --disable-sandbox --package-path "$consumer"
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
@@ -32,9 +43,6 @@ tar -czf "$output/swift-test-products.tar.gz" \
 cat >"$output/manifest.txt" <<EOF
 schema=1
 kind=swift-test-products
-source_sha=${GITHUB_SHA:-$(git -C "$root" rev-parse HEAD)}
+source_sha=$(artifact_source_sha "$root")
 EOF
-(
-    cd "$output"
-    shasum -a 256 swift-test-products.tar.gz manifest.txt >SHA256SUMS
-)
+artifact_sha256_write "$output" swift-test-products.tar.gz manifest.txt

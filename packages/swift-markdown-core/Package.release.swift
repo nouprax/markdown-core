@@ -1,6 +1,12 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
+// Product-only mirror of the repository root /Package.swift: the two target
+// definitions below must stay byte-identical to their root counterparts —
+// SwiftPM manifests cannot share target definitions, so edit both files
+// together. scripts/check-swift-source-archive.sh ships this file as the
+// release archive's Package.swift and builds it against an external
+// consumer, which is where any drift surfaces.
 let package = Package(
     name: "swift-markdown-core",
     platforms: [

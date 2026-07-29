@@ -22,10 +22,11 @@ Use :cite[Smith *et al.*]{id=smith class=paper data-kind=ref} here.
 Document scope=1:1..1:67 children=1
 └── Paragraph scope=1:1..1:67 children=3
     ├── Text scope=1:1..1:4 literal="Use " children=0
-    ├── Directive scope=1:5..1:61 mode=embedded name="cite" attributes="{\"id\":\"smith\",\"class\":\"paper\",\"data-kind\":\"ref\"}" label=2 children=2
-    │   ├── Text scope=1:11..1:16 literal="Smith " children=0
-    │   └── Emphasis scope=1:17..1:24 children=1
-    │       └── Text scope=1:18..1:23 literal="et al." children=0
+    ├── Directive scope=1:5..1:61 mode=embedded name="cite" attributes="{\"id\":\"smith\",\"class\":\"paper\",\"data-kind\":\"ref\"}" children=1
+    │   └── DirectiveLabel scope=1:10..1:25 children=2
+    │       ├── Text scope=1:11..1:16 literal="Smith " children=0
+    │       └── Emphasis scope=1:17..1:24 children=1
+    │           └── Text scope=1:18..1:23 literal="et al." children=0
     └── Text scope=1:62..1:67 literal=" here." children=0
 ````````````````````````````````
 
@@ -37,7 +38,7 @@ JSON representation.
 .
 Document scope=1:1..1:42 children=1
 └── Paragraph scope=1:1..1:42 children=1
-    └── Directive scope=1:1..1:42 mode=embedded name="video" attributes="{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\"}" label=null children=0
+    └── Directive scope=1:1..1:42 mode=embedded name="video" attributes="{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\"}" children=0
 ````````````````````````````````
 
 An explicit empty attributes object is valid and is distinct from no
@@ -48,7 +49,7 @@ attributes object in the AST/API.
 .
 Document scope=1:1..1:8 children=1
 └── Paragraph scope=1:1..1:8 children=1
-    └── Directive scope=1:1..1:8 mode=embedded name="empty" attributes="{}" label=null children=0
+    └── Directive scope=1:1..1:8 mode=embedded name="empty" attributes="{}" children=0
 ````````````````````````````````
 
 Attribute values are normalized to strings. Bare attributes become empty
@@ -59,8 +60,9 @@ strings, the last duplicate key wins, and quoted values may contain spaces.
 .
 Document scope=1:1..1:74 children=1
 └── Paragraph scope=1:1..1:74 children=1
-    └── Directive scope=1:1..1:74 mode=embedded name="data" attributes="{\"muted\":\"\",\"dup\":\"last\",\"unicode\":\"中文😀\",\"title\":\"My Video\"}" label=1 children=1
-        └── Text scope=1:7..1:11 literal="label" children=0
+    └── Directive scope=1:1..1:74 mode=embedded name="data" attributes="{\"muted\":\"\",\"dup\":\"last\",\"unicode\":\"中文😀\",\"title\":\"My Video\"}" children=1
+        └── DirectiveLabel scope=1:6..1:12 children=1
+            └── Text scope=1:7..1:11 literal="label" children=0
 ````````````````````````````````
 
 `id` and `class` are ordinary keys. Like every repeated key, their last value
@@ -71,8 +73,9 @@ wins while their first source position is retained.
 .
 Document scope=1:1..1:77 children=1
 └── Paragraph scope=1:1..1:77 children=1
-    └── Directive scope=1:1..1:77 mode=embedded name="ordinary" attributes="{\"id\":\"last\",\"class\":\"blue\",\"key\":\"value\"}" label=1 children=1
-        └── Text scope=1:11..1:15 literal="label" children=0
+    └── Directive scope=1:1..1:77 mode=embedded name="ordinary" attributes="{\"id\":\"last\",\"class\":\"blue\",\"key\":\"value\"}" children=1
+        └── DirectiveLabel scope=1:10..1:16 children=1
+            └── Text scope=1:11..1:15 literal="label" children=0
 ````````````````````````````````
 
 Malformed and unclosed attribute lists are not consumed as directive
@@ -110,11 +113,12 @@ Text directive labels can contain links.
 .
 Document scope=1:1..1:39 children=1
 └── Paragraph scope=1:1..1:39 children=1
-    └── Directive scope=1:1..1:39 mode=embedded name="note" attributes=null label=3 children=3
-        ├── Text scope=1:7..1:10 literal="See " children=0
-        ├── Link scope=1:11..1:37 destination="https://example.com" title=null children=1
-        │   └── Text scope=1:12..1:15 literal="docs" children=0
-        └── Text scope=1:38..1:38 literal="." children=0
+    └── Directive scope=1:1..1:39 mode=embedded name="note" attributes=null children=1
+        └── DirectiveLabel scope=1:6..1:39 children=3
+            ├── Text scope=1:7..1:10 literal="See " children=0
+            ├── Link scope=1:11..1:37 destination="https://example.com" title=null children=1
+            │   └── Text scope=1:12..1:15 literal="docs" children=0
+            └── Text scope=1:38..1:38 literal="." children=0
 ````````````````````````````````
 
 Text directive labels can contain bracketed text that is not a link.
@@ -124,8 +128,9 @@ Text directive labels can contain bracketed text that is not a link.
 .
 Document scope=1:1..1:24 children=1
 └── Paragraph scope=1:1..1:24 children=1
-    └── Directive scope=1:1..1:24 mode=embedded name="note" attributes=null label=1 children=1
-        └── Text scope=1:7..1:23 literal="See [plain] text." children=0
+    └── Directive scope=1:1..1:24 mode=embedded name="note" attributes=null children=1
+        └── DirectiveLabel scope=1:6..1:24 children=1
+            └── Text scope=1:7..1:23 literal="See [plain] text." children=0
 ````````````````````````````````
 
 Text directives can appear inside link text.
@@ -137,8 +142,9 @@ Document scope=1:1..1:27 children=1
 └── Paragraph scope=1:1..1:27 children=1
     └── Link scope=1:1..1:27 destination="/roadmap" title=null children=2
         ├── Text scope=1:2..1:4 literal="Go " children=0
-        └── Directive scope=1:5..1:16 mode=embedded name="badge" attributes=null label=1 children=1
-            └── Text scope=1:12..1:15 literal="beta" children=0
+        └── Directive scope=1:5..1:16 mode=embedded name="badge" attributes=null children=1
+            └── DirectiveLabel scope=1:11..1:16 children=1
+                └── Text scope=1:12..1:15 literal="beta" children=0
 ````````````````````````````````
 
 Text directives can appear inside table cells.
@@ -155,8 +161,9 @@ Document scope=1:1..3:16 children=1
     │       └── Text scope=1:3..1:8 literal="status" children=0
     └── TableRow scope=3:1..3:16 isHeader=false children=1
         └── TableCell scope=3:2..3:15 children=1
-            └── Directive scope=3:3..3:14 mode=embedded name="badge" attributes=null label=1 children=1
-                └── Text scope=3:10..3:13 literal="beta" children=0
+            └── Directive scope=3:3..3:14 mode=embedded name="badge" attributes=null children=1
+                └── DirectiveLabel scope=3:9..3:14 children=1
+                    └── Text scope=3:10..3:13 literal="beta" children=0
 ````````````````````````````````
 
 A text directive with only a name is not recognized when it is followed by a
@@ -177,7 +184,8 @@ An empty label disambiguates a text directive before a following colon.
 .
 Document scope=1:1..1:7 children=1
 └── Paragraph scope=1:1..1:7 children=2
-    ├── Directive scope=1:1..1:6 mode=embedded name="red" attributes=null label=0 children=0
+    ├── Directive scope=1:1..1:6 mode=embedded name="red" attributes=null children=1
+    │   └── DirectiveLabel scope=1:5..1:6 children=0
     └── Text scope=1:7..1:7 literal=":" children=0
 ````````````````````````````````
 
@@ -193,9 +201,11 @@ Document scope=1:1..3:5 children=1
 └── Paragraph scope=1:1..3:5 children=5
     ├── Text scope=1:1..1:5 literal=":a-[]" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    ├── Directive scope=2:1..2:5 mode=embedded name="-a" attributes=null label=0 children=0
+    ├── Directive scope=2:1..2:5 mode=embedded name="-a" attributes=null children=1
+    │   └── DirectiveLabel scope=2:4..2:5 children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    └── Directive scope=3:1..3:5 mode=embedded name="_a" attributes=null label=0 children=0
+    └── Directive scope=3:1..3:5 mode=embedded name="_a" attributes=null children=1
+        └── DirectiveLabel scope=3:4..3:5 children=0
 ````````````````````````````````
 
 Leaf directives use two colons on their own line. Repeated metadata keys use
@@ -205,10 +215,11 @@ their last value and are not projected onto HTML.
 ::youtube[Video of a *cat*]{vid=01ab2cd3efg class=embed class=featured}
 .
 Document scope=1:1..1:71 children=1
-└── DirectiveBlock scope=1:1..1:71 mode=standalone name="youtube" attributes="{\"vid\":\"01ab2cd3efg\",\"class\":\"featured\"}" label=2 children=2
-    ├── Text scope=1:11..1:21 literal="Video of a " children=0
-    └── Emphasis scope=1:22..1:26 children=1
-        └── Text scope=1:23..1:25 literal="cat" children=0
+└── DirectiveBlock scope=1:1..1:71 mode=standalone name="youtube" attributes="{\"vid\":\"01ab2cd3efg\",\"class\":\"featured\"}" children=1
+    └── DirectiveLabel scope=1:10..1:27 children=2
+        ├── Text scope=1:11..1:21 literal="Video of a " children=0
+        └── Emphasis scope=1:22..1:26 children=1
+            └── Text scope=1:23..1:25 literal="cat" children=0
 ````````````````````````````````
 
 Container directives use three or more colons on their own line. A closing
@@ -224,10 +235,10 @@ She is born.
 ::::
 .
 Document scope=1:1..7:4 children=1
-└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"blue\"}" label=null children=2
+└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"blue\"}" children=2
     ├── Paragraph scope=2:1..2:8 children=1
     │   └── Text scope=2:1..2:8 literal="He dies." children=0
-    └── DirectiveBlock scope=4:1..7:4 mode=standalone name="spoiler" attributes=null label=null children=1
+    └── DirectiveBlock scope=4:1..7:4 mode=standalone name="spoiler" attributes=null children=1
         └── Paragraph scope=5:1..7:4 children=1
             └── Text scope=5:1..5:12 literal="She is born." children=0
 ````````````````````````````````
@@ -241,7 +252,7 @@ These three are not enough to close
 So this line is also part of the container.
 .
 Document scope=1:1..4:43 children=1
-└── DirectiveBlock scope=1:1..4:43 mode=standalone name="spoiler" attributes=null label=null children=1
+└── DirectiveBlock scope=1:1..4:43 mode=standalone name="spoiler" attributes=null children=1
     └── Paragraph scope=2:1..4:43 children=5
         ├── Text scope=2:1..2:35 literal="These three are not enough to close" children=0
         ├── SoftBreak scope=0:0..0:0 children=0
@@ -258,6 +269,30 @@ An indented colon run inside a container is content, not a closing fence.
 :::
 .
 Document scope=1:1..3:3 children=1
-└── DirectiveBlock scope=1:1..3:3 mode=standalone name="spoiler" attributes=null label=null children=1
+└── DirectiveBlock scope=1:1..3:3 mode=standalone name="spoiler" attributes=null children=1
     └── CodeBlock scope=2:5..2:7 mode=standalone info=null language=null literal=":::\n" fenced=false closed=true children=0
+````````````````````````````````
+
+The directive trigger characters are ordinary punctuation for emphasis
+flanking: an underscore after `:` or `}` still opens emphasis exactly as
+reference CommonMark requires.
+
+```````````````````````````````` example
+foo:_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo:" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a}_b_
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=2
+    ├── Text scope=1:1..1:2 literal="a}" children=0
+    └── Emphasis scope=1:3..1:5 children=1
+        └── Text scope=1:4..1:4 literal="b" children=0
 ````````````````````````````````

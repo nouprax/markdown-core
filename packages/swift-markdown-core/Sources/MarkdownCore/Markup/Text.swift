@@ -6,8 +6,6 @@ public struct Text: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// Always empty: this node is a leaf.
-    public let children: [any Markup] = []
     /// The decoded text content.
     public let literal: String
 

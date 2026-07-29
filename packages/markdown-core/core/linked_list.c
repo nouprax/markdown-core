@@ -28,24 +28,12 @@ markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown
     return head;
 }
 
-void markdown_core_llist_free_full(
-    markdown_core_mem *mem,
-    markdown_core_llist *head,
-    markdown_core_free_func free_func
-) {
+void markdown_core_llist_free(markdown_core_mem *mem, markdown_core_llist *head) {
     markdown_core_llist *tmp, *prev;
 
     for (tmp = head; tmp;) {
-        if (free_func) {
-            free_func(mem, tmp->data);
-        }
-
         prev = tmp;
         tmp = tmp->next;
         mem->free(mem, prev);
     }
-}
-
-void markdown_core_llist_free(markdown_core_mem *mem, markdown_core_llist *head) {
-    markdown_core_llist_free_full(mem, head, NULL);
 }

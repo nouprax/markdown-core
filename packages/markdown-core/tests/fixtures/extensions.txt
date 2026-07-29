@@ -1089,6 +1089,19 @@ Document scope=1:1..2:9 children=1
             └── Text scope=2:7..2:9 literal="bar" children=0
 ````````````````````````````````
 
+A task marker is read from the marker span itself; bracket pairs inside the
+item text never change the checked state.
+
+```````````````````````````````` example
+- [ ] call me [x] later
+.
+Document scope=1:1..1:23 children=1
+└── List scope=1:1..1:23 flavor=bullet start=null tight=true children=1
+    └── ListItem scope=1:1..1:23 checked=false children=1
+        └── Paragraph scope=1:7..1:23 children=1
+            └── Text scope=1:7..1:23 literal="call me [x] later" children=0
+````````````````````````````````
+
 Show that a task list and a regular list get processed the same in
 the way that sublists are created. If something works in a list
 item, then it should work the same way with a task.  The only

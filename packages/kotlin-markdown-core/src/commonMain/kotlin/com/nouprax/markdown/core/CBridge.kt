@@ -1,3 +1,6 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
 internal expect fun cParse(
@@ -5,37 +8,37 @@ internal expect fun cParse(
     options: ParseOptions,
 ): ByteArray
 
+internal typealias CSessionHandle = Long
+
 /**
  * Raw handle to one native incremental session. Callers synchronize
  * externally, keep every call before [free], and call [free] exactly once;
  * [MarkupSession] is the only owner.
  */
-internal expect class CSession(
-    options: ParseOptions,
-) {
-    fun free()
+internal expect fun openCSession(options: ParseOptions): CSessionHandle
 
-    fun lineage(): ULong
+internal expect fun CSessionHandle.free()
 
-    fun revision(): ULong
+internal expect fun CSessionHandle.lineage(): ULong
 
-    fun length(): Long
+internal expect fun CSessionHandle.revision(): ULong
 
-    fun rootId(): ULong
+internal expect fun CSessionHandle.length(): Long
 
-    fun edit(
-        byteStart: Long,
-        byteEnd: Long,
-        replacement: ByteArray,
-    ): ByteArray
+internal expect fun CSessionHandle.rootId(): ULong
 
-    fun commit(): ByteArray
+internal expect fun CSessionHandle.edit(
+    byteStart: Long,
+    byteEnd: Long,
+    replacement: ByteArray,
+): ByteArray
 
-    fun scopes(): ByteArray
+internal expect fun CSessionHandle.commit(): ByteArray
 
-    fun footnoteInfo(id: ULong): ByteArray
+internal expect fun CSessionHandle.scopes(): ByteArray
 
-    fun footnotes(): ByteArray
+internal expect fun CSessionHandle.footnoteInfo(id: ULong): ByteArray
 
-    fun footnoteReferences(definition: ULong): ByteArray
-}
+internal expect fun CSessionHandle.footnotes(): ByteArray
+
+internal expect fun CSessionHandle.footnoteReferences(definition: ULong): ByteArray

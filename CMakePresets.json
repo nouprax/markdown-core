@@ -7,7 +7,8 @@
             "displayName": "Release",
             "binaryDir": "${sourceDir}/build/cmake",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
         },
         {
@@ -51,14 +52,16 @@
             "displayName": "Correctness suites (excludes conformance and benchmark)",
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|conformance)$" } },
+            "execution": { "noTestsAction": "error" }
         },
         {
             "name": "conformance",
             "displayName": "Public contract and schema conformance",
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
-            "filter": { "include": { "label": "^conformance$" } }
+            "filter": { "include": { "label": "^conformance$" } },
+            "execution": { "noTestsAction": "error" }
         },
         {
             "name": "benchmark",
@@ -66,28 +69,31 @@
             "configurePreset": "default",
             "output": { "outputOnFailure": true, "verbosity": "verbose" },
             "filter": { "include": { "label": "^benchmark$" } },
-            "execution": { "jobs": 1 }
+            "execution": { "jobs": 1, "noTestsAction": "error" }
         },
         {
             "name": "correctness-asan",
             "displayName": "Correctness suites under AddressSanitizer (excludes timing gates)",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "execution": { "noTestsAction": "error" }
         },
         {
             "name": "correctness-ubsan",
             "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
             "configurePreset": "ubsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "execution": { "noTestsAction": "error" }
         },
         {
             "name": "correctness-tsan",
             "displayName": "Correctness suites under ThreadSanitizer (excludes timing gates)",
             "configurePreset": "tsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } }
+            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "execution": { "noTestsAction": "error" }
         }
     ]
 }

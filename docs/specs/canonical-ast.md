@@ -6,7 +6,8 @@ references, query-based numbering — see the footnote semantics section and
 `sessions-and-deltas.md`); identity/equality contract added and scope moved
 off node values for v2 milestone M4 on 2026-07-17 (`MarkupSession` becomes a
 canonical entry point; the footnote label field is renamed `label` because
-`id` now names node identity).
+`id` now names node identity); directive labels promoted to the public
+`DirectiveLabel` kind on 2026-07-29, expanding the inventory to 29 kinds.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -33,11 +34,12 @@ or semantics.
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
   field below states otherwise.
-- `TableRow` and `TableCell` are scoped `Markup` kinds reached through typed
-  table properties. Being owned by `header`, `rows`, `cells`, and `content`
-  does not make them non-node structural records.
-- A directive label is not a synthetic `Markup`. It is the typed `label`
-  property of its directive and contains inline `Markup` values.
+- `TableRow`, `TableCell`, and `DirectiveLabel` are scoped `Markup` kinds
+  reached through typed properties. Being owned by `header`, `rows`, `cells`,
+  `label`, and `content` does not make them non-node structural records.
+- A directive label is a real canonical child, not a hidden parse unit or a
+  transparent wrapper. `Directive` and `DirectiveBlock` expose that same node
+  through their typed optional `label: DirectiveLabel?` property.
 - The AST contains parsing semantics only. Renderer state, security policy,
   layout, highlighting, generated HTML, and MS-private syntax are excluded.
 
@@ -54,8 +56,12 @@ rescanning, normalizing, expanding, rejecting, or otherwise reinterpreting
 particular coordinate combinations. Consumers that need to interpret a source
 position use the native parser contract from the same Markdown Core release.
 
-`TableRow` and `TableCell` resolve scopes like every other `Markup`, so
-typed table boundaries do not discard source information.
+`TableRow`, `TableCell`, and `DirectiveLabel` resolve scopes like every other
+`Markup`, so typed ownership boundaries do not discard source information.
+A `DirectiveLabel` scope covers the complete bracketed source span, from the
+opening `[` through the closing `]`. This includes both brackets for an
+explicit empty `[]`; its inline descendants retain their own scopes inside
+that span.
 
 ## Shared value types
 
@@ -134,7 +140,8 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is inline; content is block; null label and explicit empty label remain distinct |
+| `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is the optional first canonical child; content is block; null label and explicit empty label remain distinct |
+| `DirectiveLabel` | `content: [Markup]` | complete inline child list; scope covers the full `[...]`; an explicit `[]` is a present node with empty content |
 | `FootnoteDefinition` | `label: String`, `content: [Markup]` | label is written between `[^` and `]`; non-empty; block content; stays at its source position whether referenced or not |
 | `Text` | `literal: String` | leaf |
 | `SoftBreak` | none | leaf |
@@ -147,7 +154,7 @@ error rather than silently dropping a value.
 | `Strikethrough` | `content: [Markup]` | inline content |
 | `Link` | `destination: String?`, `title: String?`, `content: [Markup]` | absent and empty title remain distinct; inline content |
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
-| `Directive` | `mode`, `name: String`, `attributes: String?`, `label: [Markup]?` | attributes is normalized string-map JSON object text; mode is `embedded`; null label and explicit empty label remain distinct |
+| `Directive` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?` | attributes is normalized string-map JSON object text; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
 | `FootnoteReference` | `label: String` | label is written as in source; non-empty; leaf; never degrades to text when unresolved |
 
 Every row above also has the inherited identity fields `id: MarkupID` and
@@ -198,6 +205,28 @@ shape without a generic public `children` property. `isHeader` mirrors and
 validates the owning edge: the value in `Table.header` is true and values in
 `Table.rows` are false.
 
+### Typed directive-label ownership
+
+```text
+Directive(label: DirectiveLabel?)
+DirectiveBlock(label: DirectiveLabel?, content: readonly Markup[])
+DirectiveLabel(content: readonly Markup[])
+```
+
+`DirectiveLabel` is a public `Markup` kind placed immediately after
+`DirectiveBlock` in the one canonical inventory. The C tree and every platform
+AST expose one topology: when present, the label node is the directive's first
+direct child and owns its complete inline child list. A block directive's block
+`content` follows it; an inline directive has no other children. There is at
+most one label node.
+
+Absence and explicit emptiness are structural rather than scalar metadata:
+missing brackets mean `label == null` and no `DirectiveLabel` child, while
+`[]` means a present `DirectiveLabel` whose `content` is empty. Bindings
+project the real child edge into the typed optional property; they do not
+slice a label prefix, hide a storage node, or compensate with a transparent
+edge rule.
+
 ## ParseOptions
 
 `Document.parse(source, options = ParseOptions.default)` and
@@ -227,14 +256,13 @@ not exist. Raw HTML, URLs, and full code info strings are always retained.
 
 ## MarkupVisitor and MarkupWalker
 
-The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup` kind in
-the node inventory, including `TableRow` and `TableCell`. A directive label has
-no dispatch method because it is a typed collection edge, not synthetic
-`Markup`. The interface is exhaustive: every typed method is required, there is
-no `defaultVisit`, optional handler, catch-all adapter, or protocol-extension
-fallback. Adding a `Markup` kind must therefore produce compile errors in every
-visitor until the new case is handled. Visiting one node does not implicitly
-recurse.
+The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup`
+kind in the 29-kind node inventory, including `TableRow`, `TableCell`, and
+`DirectiveLabel`. The interface is exhaustive: every typed method is required,
+there is no `defaultVisit`, optional handler, catch-all adapter, or
+protocol-extension fallback. Adding a `Markup` kind must therefore produce
+compile errors in every visitor until the new case is handled. Visiting one
+node does not implicitly recurse.
 
 The standard read-only `MarkupWalker` walks a `Document` snapshot (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
@@ -247,10 +275,12 @@ structure:
 - `List` traverses `items` in order;
 - `Table` traverses `header`, then `rows`; each row traverses cells and each
   cell traverses inline content;
-- directives traverse `label` first when present, then block `content`;
+- directives traverse the `DirectiveLabel` node first when present; that node
+  traverses its inline `content`, and block `content` follows it;
 - `Link` and `Image` traverse their inline `content`.
 
-Rows and cells produce normal visitor callbacks before their descendants.
+Rows, cells, and directive labels produce normal visitor callbacks before
+their descendants.
 MarkupVisitor and MarkupWalker expose no replace, remove, setter, parent mutation, or
 native-handle callback.
 

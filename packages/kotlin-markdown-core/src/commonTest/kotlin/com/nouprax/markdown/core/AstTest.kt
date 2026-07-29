@@ -2,7 +2,9 @@ package com.nouprax.markdown.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AstTest {
@@ -30,7 +32,10 @@ class AstTest {
                 "HTMLBlock",
                 "FormulaBlock",
                 "Table",
+                "TableRow",
+                "TableCell",
                 "DirectiveBlock",
+                "DirectiveLabel",
                 "FootnoteDefinition",
                 "Text",
                 "SoftBreak",
@@ -45,8 +50,6 @@ class AstTest {
                 "Image",
                 "Directive",
                 "FootnoteReference",
-                "TableRow",
-                "TableCell",
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
@@ -93,6 +96,83 @@ class AstTest {
     }
 
     @Test
+    fun directiveLabelsAreTypedMarkupChildren() {
+        val source =
+            "Inline :badge[label] then :plain and :empty[].\n\n" +
+                ":::note[Title]\nBody\n:::\n\n" +
+                "::plain\n\n" +
+                "::empty[]\n"
+        val document = Document.parse(source)
+        val paragraph = document.content[0] as Paragraph
+        val directives = paragraph.content.filterIsInstance<Directive>()
+        val populated = directives[0].label
+        assertNotNull(populated)
+        assertEquals("label", (populated.content.single() as Text).literal)
+        assertNull(directives[1].label)
+        val emptyInlineLabel = directives[2].label
+        assertNotNull(emptyInlineLabel)
+        assertTrue(emptyInlineLabel.content.isEmpty())
+
+        val block = document.content[1] as DirectiveBlock
+        val blockLabel = block.label
+        assertNotNull(blockLabel)
+        assertEquals("Title", (blockLabel.content.single() as Text).literal)
+        assertTrue(block.content.single() is Paragraph)
+        assertNull((document.content[2] as DirectiveBlock).label)
+        val emptyBlockLabel = (document.content[3] as DirectiveBlock).label
+        assertNotNull(emptyBlockLabel)
+        assertTrue(emptyBlockLabel.content.isEmpty())
+
+        val visitor = RecordingVisitor()
+        MarkupWalker.walk(Document.parse(":badge[label]\n"), visitor)
+        assertEquals(
+            listOf("Document", "Paragraph", "Directive", "DirectiveLabel", "Text"),
+            visitor.visited,
+        )
+    }
+
+    @Test
+    fun directiveLabelRelinksAsOneStableMarkupChild() {
+        val source = ":::note[Title]\nBody\n:::\n"
+        MarkupSession().use { session ->
+            session.append(source)
+            val first = session.commit()
+            val firstBlock = first.document.content.single() as DirectiveBlock
+            val firstLabel = assertNotNull(firstBlock.label)
+
+            val bodyStart = source.indexOf("Body")
+            session.replace(bodyStart, bodyStart + "Body".length, "Changed")
+            val second = session.commit()
+            val secondBlock = second.document.content.single() as DirectiveBlock
+            assertSame(firstLabel, secondBlock.label)
+            assertSame(firstLabel, session.node(firstLabel.id))
+        }
+    }
+
+    @Test
+    fun subtreeDumpsRebaseScopesToTheSubtreeOrigin() {
+        val document = Document.parse("Lead\n\n# Heading\n")
+        // The document-rooted subtree form is the plain dump.
+        assertEquals(document.dump(), MarkupDumper.dump(document, document))
+        assertEquals(document.dump(), document.dump(document))
+        // A subtree dump prints scopes with the subtree as origin: the
+        // root's start line becomes line 1 and columns are unchanged.
+        val heading = document.content[1]
+        val subtree = MarkupDumper.dump(document, heading)
+        assertTrue(subtree.startsWith("Heading scope=1:1..1:9 level=1"), subtree)
+        assertEquals(subtree, document.dump(heading))
+    }
+
+    @Test
+    fun subtreeDumpsPrintPositionFreeMarkersUnchanged() {
+        val document = Document.parse("Lead\n\nhard  \nbreak\n")
+        val paragraph = document.content[1]
+        val subtree = document.dump(paragraph)
+        assertTrue(subtree.startsWith("Paragraph scope=1:1..2:"), subtree)
+        assertTrue("LineBreak scope=0:0..0:0" in subtree, subtree)
+    }
+
+    @Test
     fun allManifestCasesMatchTheSharedCanonicalAstSpec() {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
@@ -115,13 +195,14 @@ private fun flatten(root: Any): kotlin.collections.List<Any> =
             is Table -> flatten(root.header) + root.rows.flatMap(::flatten)
             is TableRow -> root.cells.flatMap(::flatten)
             is TableCell -> root.content.flatMap(::flatten)
-            is DirectiveBlock -> (root.label.orEmpty() + root.content).flatMap(::flatten)
+            is DirectiveBlock -> (listOfNotNull(root.label) + root.content).flatMap(::flatten)
+            is DirectiveLabel -> root.content.flatMap(::flatten)
             is FootnoteDefinition -> root.content.flatMap(::flatten)
             is Emphasis -> root.content.flatMap(::flatten)
             is Strong -> root.content.flatMap(::flatten)
             is Strikethrough -> root.content.flatMap(::flatten)
             is Link -> root.content.flatMap(::flatten)
             is Image -> root.content.flatMap(::flatten)
-            is Directive -> root.label.orEmpty().flatMap(::flatten)
+            is Directive -> listOfNotNull(root.label).flatMap(::flatten)
             else -> emptyList()
         }

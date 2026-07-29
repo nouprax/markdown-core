@@ -11,6 +11,6 @@
 
 markdown_core_extension *markdown_core_directive_extension(void);
 
-int markdown_core_directive_has_label(markdown_core_node *node);
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node);
 
 #endif

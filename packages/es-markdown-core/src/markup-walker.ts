@@ -1,5 +1,6 @@
 import type { Document } from "./model/document.js";
 import type { Markup } from "./model/markup.js";
+import { visit, type MarkupVisitor } from "./markup-visitor.js";
 import type { Scope } from "./values.js";
 
 export const WalkEvent = {
@@ -18,14 +19,30 @@ interface Frame {
 }
 
 export class MarkupWalker {
+    /**
+     * Walks the document depth-first, dispatching each node to `visitor` in
+     * preorder. Scope-free by construction: a structural visitor neither
+     * pays scope materialization nor depends on the snapshot's resolver
+     * state, so a retained snapshot traverses regardless of whether it ever
+     * resolved scopes.
+     */
+    walk(document: Document, visitor: MarkupVisitor<void>): void;
     /** Walks the document depth-first, supplying each event with the node's
      * resolved absolute scope. */
     walk(document: Document, callback: WalkCallback): void;
     /** Walks the subtree rooted at `from`; scopes stay document-absolute. */
     walk(document: Document, from: Markup, callback: WalkCallback): void;
-    walk(document: Document, fromOrCallback: Markup | WalkCallback, subtreeCallback?: WalkCallback): void {
-        const from = typeof fromOrCallback === "function" ? document : fromOrCallback;
-        const callback = typeof fromOrCallback === "function" ? fromOrCallback : subtreeCallback;
+    walk(
+        document: Document,
+        fromOrHandler: Markup | WalkCallback | MarkupVisitor<void>,
+        subtreeCallback?: WalkCallback
+    ): void {
+        if (isVisitor(fromOrHandler) && subtreeCallback === undefined) {
+            MarkupWalker.walkVisitor(document, fromOrHandler);
+            return;
+        }
+        const from = typeof fromOrHandler === "function" ? document : (fromOrHandler as Markup);
+        const callback = typeof fromOrHandler === "function" ? fromOrHandler : subtreeCallback;
         if (typeof callback !== "function") throw new TypeError("walk requires a callback");
         const stack: Frame[] = [{ event: WalkEvent.entering, node: from }];
         while (stack.length > 0) {
@@ -41,6 +58,31 @@ export class MarkupWalker {
             }
         }
     }
+
+    private static walkVisitor(document: Document, visitor: MarkupVisitor<void>): void {
+        const stack: Markup[] = [document];
+        while (stack.length > 0) {
+            const node = stack.pop()!;
+            visit(node, visitor);
+            const descendants = children(node);
+            for (let index = descendants.length - 1; index >= 0; index -= 1) {
+                stack.push(descendants[index]!);
+            }
+        }
+    }
+}
+
+/** `visitDocument` is required on every complete visitor and absent from
+ * every Markup value and plain callback. Visitors may carry arbitrary state
+ * and may themselves be callable objects, so visitor shape takes precedence
+ * whenever the overload domains overlap. */
+function isVisitor(value: Markup | WalkCallback | MarkupVisitor<void>): value is MarkupVisitor<void> {
+    return (
+        (typeof value === "object" || typeof value === "function") &&
+        value !== null &&
+        "visitDocument" in value &&
+        typeof value.visitDocument === "function"
+    );
 }
 
 function children(node: Markup): readonly Markup[] {
@@ -66,9 +108,11 @@ function children(node: Markup): readonly Markup[] {
         case "tableCell":
             return node.content;
         case "directiveBlock":
-            return [...(node.label ?? []), ...node.content];
+            return node.label === null ? node.content : [node.label, ...node.content];
+        case "directiveLabel":
+            return node.content;
         case "directive":
-            return node.label ?? [];
+            return node.label === null ? [] : [node.label];
         case "thematicBreak":
         case "codeBlock":
         case "htmlBlock":

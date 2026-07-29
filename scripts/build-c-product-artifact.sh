@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 variant=${1:?usage: build-c-product-artifact.sh VARIANT ON|OFF OUTPUT_DIRECTORY [CONFIGURATION]}
 shared=${2:?usage: build-c-product-artifact.sh VARIANT ON|OFF OUTPUT_DIRECTORY [CONFIGURATION]}
 output=${3:?usage: build-c-product-artifact.sh VARIANT ON|OFF OUTPUT_DIRECTORY [CONFIGURATION]}
@@ -24,13 +25,6 @@ kind=c-product-tree
 variant=$variant
 shared=$shared
 configuration=$configuration
-source_sha=${GITHUB_SHA:-$(git -C "$root" rev-parse HEAD)}
+source_sha=$(artifact_source_sha "$root")
 EOF
-(
-    cd "$output"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum c-product-tree.tar.gz manifest.txt >SHA256SUMS
-    else
-        shasum -a 256 c-product-tree.tar.gz manifest.txt >SHA256SUMS
-    fi
-)
+artifact_sha256_write "$output" c-product-tree.tar.gz manifest.txt

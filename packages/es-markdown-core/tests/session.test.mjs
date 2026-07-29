@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Document, MarkupSession, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { relink } from "../dist/session/relink.js";
+import { kindVisitor } from "./visitor.mjs";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
     const session = new MarkupSession();
@@ -133,6 +135,52 @@ test("sessions: a superseded snapshot that never materialized fails instead of g
         session.append("\nTwo\n");
         session.commit();
         assert.throws(() => first.document.scope(first.document.content[0]), /superseded snapshot/);
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: the scope-free visitor traverses an unmaterialized superseded snapshot", () => {
+    const session = new MarkupSession();
+    try {
+        session.append("First\n\nSecond\n");
+        const first = session.commit();
+        session.append("\nThird\n");
+        session.commit();
+
+        // The retained snapshot never resolved scopes while it was current.
+        // Its immutable tree is complete, so the structural visitor overload
+        // must traverse it — and must therefore never request scope
+        // materialization.
+        const visited = [];
+        const recording = Object.fromEntries(
+            Object.entries(kindVisitor).map(([method, kindOf]) => [method, (node) => void visited.push(kindOf(node))])
+        );
+        // MarkupVisitor is structural: callers may attach arbitrary state,
+        // including a field whose name overlaps Markup's `kind` discriminator.
+        recording.kind = "visitor-state";
+        new MarkupWalker().walk(first.document, recording);
+        assert.deepEqual(visited, ["document", "paragraph", "text", "paragraph", "text"]);
+
+        // Structural typing also permits callable visitors. Visitor shape
+        // takes precedence over the callback overload, so the function body
+        // must never run.
+        const callableVisited = [];
+        const callableVisitor = Object.assign(
+            () => assert.fail("callable visitor was misclassified as a scopeful callback"),
+            Object.fromEntries(
+                Object.entries(kindVisitor).map(([method, kindOf]) => [
+                    method,
+                    (node) => void callableVisited.push(kindOf(node))
+                ])
+            )
+        );
+        new MarkupWalker().walk(first.document, callableVisitor);
+        assert.deepEqual(callableVisited, ["document", "paragraph", "text", "paragraph", "text"]);
+
+        // The scopeful overload keeps the documented superseded-snapshot
+        // failure.
+        assert.throws(() => new MarkupWalker().walk(first.document, () => {}), /superseded snapshot/);
     } finally {
         session.close();
     }
@@ -324,9 +372,11 @@ test("sessions: invalid edit ranges are rejected", () => {
         // native length check; they must be rejected before the crossing.
         assert.throws(() => session.replace(2 ** 32, 2 ** 32, "x"), RangeError);
         assert.throws(() => session.replace(0, 2 ** 32 + 3, "x"), RangeError);
+        // scope stays null until an engine path emits scoped errors; the
+        // bridge plumbing is in place either way.
         assert.throws(
             () => session.replace(1, 9, "x"),
-            (error) => error.name === "ParseError" && error.code === "invalidArgument"
+            (error) => error.name === "ParseError" && error.code === "invalidArgument" && error.scope === null
         );
         // The session stays usable after a rejected edit.
         session.commit();
@@ -481,6 +531,140 @@ test("sessions: a narrow edit in a wide document relinks instead of re-decoding 
     } finally {
         session.close();
     }
+});
+
+test("sessions: many changed siblings keep parent relinking linear", () => {
+    // A single bubbled parent may receive many replacements. Relinking must
+    // index those replacements once, run one lookup pass, and copy the child
+    // array at most once; repeated indexOf searches would make this
+    // full-width update quadratic.
+    const width = 512;
+    const source = "a\n\n".repeat(width);
+    const session = new MarkupSession();
+    try {
+        session.append(source);
+        const first = session.commit();
+        for (let index = 0; index < width; index += 1) {
+            session.replace(index * 3, index * 3 + 1, "b");
+        }
+        const second = session.commit();
+
+        assert.ok(second.delta.bubbled.includes(second.document.id));
+        assert.equal(second.document.content.length, width);
+        for (let index = 0; index < width; index += 1) {
+            assert.equal(second.document.content[index].id, first.document.content[index].id);
+            assert.notEqual(second.document.content[index], first.document.content[index]);
+            assert.equal(second.document.content[index].content[0].literal, "b");
+        }
+        assert.equal(second.document.dump(), Document.parse("b\n\n".repeat(width)).dump());
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: a directive-label edit relinks the canonical label and preserves block content", () => {
+    const source = ":::note[before]\nBody\n:::\n";
+    const session = new MarkupSession();
+    try {
+        session.append(source);
+        const first = session.commit();
+        const firstDirective = first.document.content[0];
+        const firstLabel = firstDirective.label;
+        const firstBody = firstDirective.content[0];
+
+        session.replace(8, 14, "after");
+        const second = session.commit();
+        const secondDirective = second.document.content[0];
+        const secondLabel = secondDirective.label;
+
+        assert.equal(secondDirective.id, firstDirective.id);
+        assert.equal(secondLabel.id, firstLabel.id);
+        assert.notEqual(secondLabel, firstLabel);
+        assert.equal(secondLabel.content[0].literal, "after");
+        assert.equal(secondDirective.content[0], firstBody);
+        assert.equal(session.node(secondLabel.id), secondLabel);
+        assert.equal(second.document.dump(), Document.parse(":::note[after]\nBody\n:::\n").dump());
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: bubbled-parent relink has a linear child-read bound", () => {
+    // Count element reads instead of timing: the removed implementation
+    // called indexOf for every replacement and therefore performed Θ(n²)
+    // reads. One replacement-lookup pass plus at most one copy has a
+    // deterministic linear bound.
+    const width = 128;
+    const children = Array.from({ length: width }, (_, index) => ({
+        kind: "paragraph",
+        id: { lineage: 1n, rawValue: index + 2 },
+        revision: 1,
+        content: []
+    }));
+    let elementReads = 0;
+    const observedChildren = new Proxy(children, {
+        get(target, property, receiver) {
+            if (typeof property === "string" && /^(0|[1-9]\d*)$/.test(property)) elementReads += 1;
+            return Reflect.get(target, property, receiver);
+        }
+    });
+    const replacements = new Map(children.map((child) => [child, { ...child, revision: 2 }]));
+    const previous = {
+        kind: "document",
+        id: { lineage: 1n, rawValue: 1 },
+        revision: 1,
+        content: observedChildren
+    };
+
+    const updated = relink(previous, 2, replacements);
+
+    assert.equal(updated.content.length, width);
+    assert.ok(updated.content.every((child) => child.revision === 2));
+    assert.ok(elementReads <= width * 2, `expected at most ${width * 2} element reads, observed ${elementReads}`);
+});
+
+test("sessions: directive relinking replaces its canonical label child", () => {
+    const identity = (rawValue) => ({ lineage: 1n, rawValue });
+    const previousText = { kind: "text", id: identity(3), revision: 1, literal: "before" };
+    const previousLabel = {
+        kind: "directiveLabel",
+        id: identity(2),
+        revision: 1,
+        content: [previousText]
+    };
+    const currentText = { ...previousText, revision: 2, literal: "after" };
+    const currentLabel = {
+        ...previousLabel,
+        revision: 2,
+        content: [currentText]
+    };
+    const replacements = new Map([[previousLabel, currentLabel]]);
+    const directive = {
+        kind: "directive",
+        id: identity(1),
+        revision: 1,
+        mode: "embedded",
+        name: "badge",
+        attributes: null,
+        label: previousLabel
+    };
+    const directiveBlock = {
+        kind: "directiveBlock",
+        id: identity(4),
+        revision: 1,
+        mode: "standalone",
+        name: "note",
+        attributes: null,
+        label: previousLabel,
+        content: []
+    };
+
+    assert.equal(relink(directive, 2, replacements).label, currentLabel);
+    assert.equal(relink(directiveBlock, 2, replacements).label, currentLabel);
+    assert.throws(
+        () => relink(directive, 2, new Map([[previousLabel, currentText]])),
+        /replaced the label with a non-label/
+    );
 });
 
 test("sessions: an explicitly materialized snapshot stays usable across commits and close", () => {

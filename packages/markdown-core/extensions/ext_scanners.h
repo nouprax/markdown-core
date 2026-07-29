@@ -5,19 +5,22 @@
 extern "C" {
 #endif
 
-bufsize_t
-markdown_core_ext_scan_at(bufsize_t (*scanner)(const unsigned char *), unsigned char *ptr, int len, bufsize_t offset);
-bufsize_t markdown_core_scan_table_start(const unsigned char *p);
-bufsize_t markdown_core_scan_table_cell(const unsigned char *p);
-bufsize_t markdown_core_scan_table_cell_end(const unsigned char *p);
-bufsize_t markdown_core_scan_table_row_end(const unsigned char *p);
-bufsize_t markdown_core_scan_tasklist(const unsigned char *p);
-bufsize_t markdown_core_scan_formula_dollar_inline_open(const unsigned char *p);
-bufsize_t markdown_core_scan_formula_dollar_backtick_open(const unsigned char *p);
-bufsize_t markdown_core_scan_formula_dollar_display_open(const unsigned char *p);
-bufsize_t markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p);
-bufsize_t markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p);
-bufsize_t markdown_core_scan_directive_name(const unsigned char *p);
+markdown_core_bufsize markdown_core_ext_scan_at(
+    markdown_core_bufsize (*scanner)(const unsigned char *),
+    unsigned char *ptr,
+    int len,
+    markdown_core_bufsize offset
+);
+markdown_core_bufsize markdown_core_scan_table_start(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_table_cell(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_table_cell_end(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_table_row_end(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_tasklist(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_formula_dollar_inline_open(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_formula_dollar_display_open(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_formula_latex_backslash_inline_open(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_formula_latex_backslash_display_open(const unsigned char *p);
+markdown_core_bufsize markdown_core_scan_directive_name(const unsigned char *p);
 
 #define scan_table_start(c, l, n) markdown_core_ext_scan_at(&markdown_core_scan_table_start, c, l, n)
 #define scan_table_cell(c, l, n) markdown_core_ext_scan_at(&markdown_core_scan_table_cell, c, l, n)
@@ -26,8 +29,6 @@ bufsize_t markdown_core_scan_directive_name(const unsigned char *p);
 #define scan_tasklist(c, l, n) markdown_core_ext_scan_at(&markdown_core_scan_tasklist, c, l, n)
 #define scan_formula_dollar_inline_open(c, l, n)                                                                       \
     markdown_core_ext_scan_at(&markdown_core_scan_formula_dollar_inline_open, c, l, n)
-#define scan_formula_dollar_backtick_open(c, l, n)                                                                     \
-    markdown_core_ext_scan_at(&markdown_core_scan_formula_dollar_backtick_open, c, l, n)
 #define scan_formula_dollar_display_open(c, l, n)                                                                      \
     markdown_core_ext_scan_at(&markdown_core_scan_formula_dollar_display_open, c, l, n)
 #define scan_formula_latex_backslash_inline_open(c, l, n)                                                              \

@@ -1,11 +1,9 @@
 #include <markdown-core-extension-api.h>
-#include <inlines.h>
 #include <parser.h>
-#include <references.h>
+#include <assert.h>
 #include <string.h>
 
 #include "ext_scanners.h"
-#include "strikethrough.h"
 #include "table.h"
 #include "markdown-core-extensions.h"
 #include "extension.h"
@@ -130,9 +128,9 @@ static int set_cell_index(markdown_core_node *node, int i) {
     return 1;
 }
 
-static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned char *string, bufsize_t len) {
+static markdown_core_strbuf *unescape_pipes(markdown_core_mem *mem, unsigned char *string, markdown_core_bufsize len) {
     markdown_core_strbuf *res = (markdown_core_strbuf *)mem->calloc(mem, 1, sizeof(markdown_core_strbuf));
-    bufsize_t r, w;
+    markdown_core_bufsize r, w;
 
     if (!res) {
         return NULL;
@@ -183,9 +181,14 @@ static node_cell *append_row_cell(markdown_core_mem *mem, table_row *row, int *o
     return &row->cells[n_columns - 1];
 }
 
-static table_row *
-row_from_string(markdown_core_extension *self, markdown_core_parser *parser, unsigned char *string, int len) {
-    // Parses a single table row. It has the following form:
+static bool scan_row_from_string(
+    markdown_core_parser *parser,
+    unsigned char *string,
+    int len,
+    table_row *row,
+    bool materialize
+) {
+    // Scans a single table row. It has the following form:
     // `delim? table_cell (delim table_cell)* delim? newline`
     // Note that cells are allowed to be empty.
     //
@@ -196,19 +199,9 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
     // > recommended for clarity of reading, and if there’s otherwise parsing
     // > ambiguity.
 
-    table_row *row = NULL;
-    bufsize_t cell_matched = 1, pipe_matched = 1, offset;
+    markdown_core_bufsize cell_matched = 1, pipe_matched = 1, offset;
     int expect_more_cells = 1;
     int row_end_offset = 0;
-    int int_overflow_abort = 0;
-
-    row = (table_row *)parser->mem->calloc(parser->mem, 1, sizeof(table_row));
-    if (!row) {
-        parser->oom = true;
-        return NULL;
-    }
-    row->n_columns = 0;
-    row->cells = NULL;
 
     // Scan past the (optional) leading pipe.
     offset = scan_table_cell_end(string, len, 0);
@@ -223,32 +216,29 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
             // We are guaranteed to have a cell, since (1) either we found some
             // content and cell_matched, or (2) we found an empty cell followed by a
             // pipe.
-            markdown_core_strbuf *cell_buf = unescape_pipes(parser->mem, string + offset, cell_matched);
-            if (!cell_buf) {
-                parser->oom = true;
-                int_overflow_abort = 1;
-                break;
-            }
-            if (cell_buf->oom) {
-                parser->oom = true;
-                int_overflow_abort = 1;
-                markdown_core_strbuf_free(cell_buf);
-                parser->mem->free(parser->mem, cell_buf);
-                break;
-            }
-            markdown_core_strbuf_trim(cell_buf);
+            if (materialize) {
+                markdown_core_strbuf *cell_buf = unescape_pipes(parser->mem, string + offset, cell_matched);
+                if (!cell_buf) {
+                    parser->oom = true;
+                    return false;
+                }
+                if (cell_buf->oom) {
+                    parser->oom = true;
+                    markdown_core_strbuf_free(cell_buf);
+                    parser->mem->free(parser->mem, cell_buf);
+                    return false;
+                }
+                markdown_core_strbuf_trim(cell_buf);
 
-            {
                 int cell_oom = 0;
                 node_cell *cell = append_row_cell(parser->mem, row, &cell_oom);
                 if (cell_oom) {
                     parser->oom = true;
                 }
                 if (!cell) {
-                    int_overflow_abort = 1;
                     markdown_core_strbuf_free(cell_buf);
                     parser->mem->free(parser->mem, cell_buf);
-                    break;
+                    return false;
                 }
                 cell->buf = cell_buf;
                 cell->start_offset = offset;
@@ -259,6 +249,11 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
                     --cell->start_offset;
                     ++cell->internal_offset;
                 }
+            } else {
+                if (row->n_columns == UINT16_MAX) {
+                    return false;
+                }
+                row->n_columns++;
             }
         }
 
@@ -277,7 +272,11 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
             if (row_end_offset && offset != len) {
                 row->paragraph_offset = offset;
 
-                free_row_cells(parser->mem, row);
+                if (materialize) {
+                    free_row_cells(parser->mem, row);
+                } else {
+                    row->n_columns = 0;
+                }
 
                 // Scan past the (optional) leading pipe.
                 offset += scan_table_cell_end(string, len, offset);
@@ -289,7 +288,17 @@ row_from_string(markdown_core_extension *self, markdown_core_parser *parser, uns
         }
     }
 
-    if (offset != len || row->n_columns == 0 || int_overflow_abort) {
+    return offset == len && row->n_columns != 0;
+}
+
+static table_row *row_from_string(markdown_core_parser *parser, unsigned char *string, int len) {
+    table_row *row = (table_row *)parser->mem->calloc(parser->mem, 1, sizeof(table_row));
+    if (!row) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    if (!scan_row_from_string(parser, string, len, row, true)) {
         free_table_row(parser->mem, row);
         row = NULL;
     }
@@ -347,7 +356,6 @@ static markdown_core_node *try_opening_table_header(
 
     // Since scan_table_start was successful, we must have a delimiter row.
     delimiter_row = row_from_string(
-        self,
         parser,
         input + markdown_core_parser_get_first_nonspace(parser),
         len - markdown_core_parser_get_first_nonspace(parser)
@@ -363,7 +371,7 @@ static markdown_core_node *try_opening_table_header(
     // (potentially long) parent container as input, but this should be safe since
     // `row_from_string` bails out early if it does not find a row.
     parent_string = markdown_core_node_get_string_content(parent_container);
-    header_row = row_from_string(self, parser, (unsigned char *)parent_string, (int)strlen(parent_string));
+    header_row = row_from_string(parser, (unsigned char *)parent_string, (int)strlen(parent_string));
     if (!header_row || header_row->n_columns != delimiter_row->n_columns) {
         free_table_row(parser->mem, delimiter_row);
         free_table_row(parser->mem, header_row);
@@ -522,7 +530,6 @@ static markdown_core_node *try_opening_table_row(
     }
 
     row = row_from_string(
-        self,
         parser,
         input + markdown_core_parser_get_first_nonspace(parser),
         len - markdown_core_parser_get_first_nonspace(parser)
@@ -609,16 +616,14 @@ static int matches(
     int res = 0;
 
     if (markdown_core_node_get_type(parent_container) == MARKDOWN_CORE_NODE_TABLE) {
-        table_row *new_row = row_from_string(
-            self,
+        table_row row = {0};
+        res = scan_row_from_string(
             parser,
             input + markdown_core_parser_get_first_nonspace(parser),
-            len - markdown_core_parser_get_first_nonspace(parser)
+            len - markdown_core_parser_get_first_nonspace(parser),
+            &row,
+            false
         );
-        if (new_row && new_row->n_columns) {
-            res = 1;
-        }
-        free_table_row(parser->mem, new_row);
     }
 
     return res;
@@ -640,8 +645,11 @@ static const char *get_type_string(markdown_core_extension *self, markdown_core_
     return "<unknown>";
 }
 
-static int
-can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
+static int can_contain(
+    markdown_core_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
     if (node->type == MARKDOWN_CORE_NODE_TABLE) {
         return child_type == MARKDOWN_CORE_NODE_TABLE_ROW;
     } else if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
@@ -654,6 +662,36 @@ can_contain(markdown_core_extension *extension, markdown_core_node *node, markdo
 
 static int contains_inlines(markdown_core_extension *extension, markdown_core_node *node) {
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
+}
+
+static markdown_core_node *prepare_inline_domain(
+    markdown_core_extension *extension,
+    const markdown_core_node *committed_owner
+) {
+    markdown_core_node *clone;
+
+    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_TABLE_CELL ||
+        committed_owner->extension != extension) {
+        assert(0 && "table reparse requested for an unsupported owner");
+        return NULL;
+    }
+    clone = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TABLE_CELL, committed_owner->content.mem);
+    if (!clone) {
+        return NULL;
+    }
+    clone->extension = extension;
+    clone->as.cell_index = committed_owner->as.cell_index;
+    clone->start_line = clone->end_line = 1;
+    clone->start_column = committed_owner->start_column;
+    clone->end_column = committed_owner->end_column;
+    clone->internal_offset = committed_owner->internal_offset;
+    markdown_core_strbuf_put(&clone->content, committed_owner->content.ptr, committed_owner->content.size);
+    if (clone->content.oom) {
+        markdown_core_node_free(clone);
+        return NULL;
+    }
+
+    return clone;
 }
 
 static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
@@ -683,6 +721,7 @@ static const markdown_core_extension table_extension = {
     .get_type_string = get_type_string,
     .can_contain = can_contain,
     .contains_inlines = contains_inlines,
+    .prepare_inline_domain = prepare_inline_domain,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
 };

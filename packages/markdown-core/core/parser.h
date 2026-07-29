@@ -24,15 +24,15 @@ struct markdown_core_parser {
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
     int line_number;
     /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
-    bufsize_t offset;
+    markdown_core_bufsize offset;
     /* See the documentation for markdown_core_parser_get_column() in markdown_core.h */
-    bufsize_t column;
+    markdown_core_bufsize column;
     /* See the documentation for markdown_core_parser_get_first_nonspace() in markdown_core.h */
-    bufsize_t first_nonspace;
+    markdown_core_bufsize first_nonspace;
     /* See the documentation for markdown_core_parser_get_first_nonspace_column() in markdown_core.h
      */
-    bufsize_t first_nonspace_column;
-    bufsize_t thematic_break_kill_pos;
+    markdown_core_bufsize first_nonspace_column;
+    markdown_core_bufsize thematic_break_kill_pos;
     /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
@@ -53,7 +53,7 @@ struct markdown_core_parser {
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
     /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
-    bufsize_t last_line_length;
+    markdown_core_bufsize last_line_length;
     /* Accumulates partial feed chunks until a complete line is available;
      * curline holds the normalized line currently being parsed. */
     markdown_core_strbuf linebuf;
@@ -63,11 +63,14 @@ struct markdown_core_parser {
      * markdown_core_parser_finish reports the whole parse as failed (NULL)
      * instead of returning a silently truncated document. */
     bool oom;
+    /* Sticky engine-invariant failure. This is separate from allocation loss
+     * so facade callers can report MARKDOWN_CORE_ERROR_INTERNAL rather than
+     * misclassifying a broken refinement lifecycle as OOM. */
+    bool internal_error;
     bool last_buffer_ended_with_cr;
     size_t total_size;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
-    markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.
      * Parser-local so concurrent parsers with different extension sets never
@@ -81,6 +84,15 @@ struct markdown_core_parser {
  * capacity, an attached (empty) reference map, and the extension
  * attachments. Allocation failure poisons the parser like a failed reset. */
 void markdown_core_parser_renew(markdown_core_parser *parser);
+
+/** Applies the core list-item continuation rule to the current line.
+ * Extension-owned list items use this to stay in lockstep with plain list
+ * items. */
+bool markdown_core_parser_match_list_item_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container
+);
 
 #ifdef __cplusplus
 }

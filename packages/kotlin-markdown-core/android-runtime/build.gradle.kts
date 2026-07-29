@@ -81,40 +81,9 @@ components.withType<SoftwareComponent>().matching { it.name == "release" }.all {
         artifactId = "kotlin-markdown-core-android-runtime"
         artifact(sourcesJar)
         artifact(javadocJar)
-
-        pom {
-            name.set("Kotlin Markdown Core Android runtime")
-            description.set("Android JNI runtime used by the Kotlin Multiplatform Android publication.")
-            url.set("https://github.com/nouprax/markdown-core")
-            licenses {
-                license {
-                    name.set("BSD-2-Clause")
-                    url.set("https://github.com/nouprax/markdown-core/blob/main/COPYING")
-                }
-            }
-            scm {
-                connection.set("scm:git:https://github.com/nouprax/markdown-core.git")
-                developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
-                url.set("https://github.com/nouprax/markdown-core")
-            }
-            developers {
-                developer {
-                    id.set("nouprax")
-                    name.set("Nouprax")
-                    url.set("https://github.com/nouprax")
-                }
-            }
-        }
     }
 }
 
-publishing {
-    repositories {
-        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
-            maven {
-                name = "releaseStaging"
-                url = uri(repositoryDirectory)
-            }
-        }
-    }
-}
+extra["markdownCorePomName"] = "Kotlin Markdown Core Android runtime"
+extra["markdownCorePomDescription"] = "Android JNI runtime used by the Kotlin Multiplatform Android publication."
+apply(from = "../maven-pom-conventions.gradle.kts")

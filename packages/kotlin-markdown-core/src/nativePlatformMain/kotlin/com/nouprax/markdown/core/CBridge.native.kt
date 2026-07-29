@@ -26,6 +26,7 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.toCPointer
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.posix.size_tVar
@@ -43,7 +44,11 @@ private inline fun payload(
         if (!block(output.ptr, outputLength.ptr)) throw OutOfMemoryError(message)
         val pointer = requireNotNull(output.value)
         try {
-            pointer.readBytes(outputLength.value.toInt())
+            val length = outputLength.value
+            if (length > Int.MAX_VALUE.toULong()) {
+                throw OutOfMemoryError("native payload exceeds the Kotlin ByteArray limit")
+            }
+            pointer.readBytes(length.toInt())
         } finally {
             markdown_core_kotlin_free(pointer)
         }
@@ -75,76 +80,87 @@ internal actual fun cParse(
         }
     }
 
-internal actual class CSession actual constructor(
-    options: ParseOptions,
-) {
-    private val handle: CPointer<markdown_core_kotlin_session> =
-        markdown_core_kotlin_session_open(options.toNativeMask().toUInt())
-            ?: throw OutOfMemoryError("native session allocation failed")
+private fun CSessionHandle.nativeSession(): CPointer<markdown_core_kotlin_session> =
+    requireNotNull(toCPointer()) { "native session handle is null" }
 
-    actual fun free(): Unit = markdown_core_kotlin_session_free(handle)
+internal actual fun openCSession(options: ParseOptions): CSessionHandle =
+    markdown_core_kotlin_session_open(options.toNativeMask().toUInt())?.rawValue?.toLong()
+        ?: throw OutOfMemoryError("native session allocation failed")
 
-    actual fun lineage(): ULong = markdown_core_kotlin_session_lineage(handle)
+internal actual fun CSessionHandle.free(): Unit = markdown_core_kotlin_session_free(nativeSession())
 
-    actual fun revision(): ULong = markdown_core_kotlin_session_revision(handle)
+internal actual fun CSessionHandle.lineage(): ULong = markdown_core_kotlin_session_lineage(nativeSession())
 
-    actual fun length(): Long = markdown_core_kotlin_session_length(handle).toLong()
+internal actual fun CSessionHandle.revision(): ULong = markdown_core_kotlin_session_revision(nativeSession())
 
-    actual fun rootId(): ULong = markdown_core_kotlin_session_root(handle)
+internal actual fun CSessionHandle.length(): Long = markdown_core_kotlin_session_length(nativeSession()).toLong()
 
-    actual fun edit(
-        byteStart: Long,
-        byteEnd: Long,
-        replacement: ByteArray,
-    ): ByteArray =
-        payload("native session edit failed") { output, outputLength ->
-            if (replacement.isEmpty()) {
+internal actual fun CSessionHandle.rootId(): ULong = markdown_core_kotlin_session_root(nativeSession())
+
+internal actual fun CSessionHandle.edit(
+    byteStart: Long,
+    byteEnd: Long,
+    replacement: ByteArray,
+): ByteArray {
+    val handle = nativeSession()
+    return payload("native session edit failed") { output, outputLength ->
+        if (replacement.isEmpty()) {
+            markdown_core_kotlin_session_edit(
+                handle,
+                byteStart.toULong(),
+                byteEnd.toULong(),
+                null,
+                0u,
+                output,
+                outputLength,
+            )
+        } else {
+            replacement.usePinned { pinned ->
                 markdown_core_kotlin_session_edit(
                     handle,
                     byteStart.toULong(),
                     byteEnd.toULong(),
-                    null,
-                    0u,
+                    pinned.addressOf(0).reinterpret(),
+                    replacement.size.toULong(),
                     output,
                     outputLength,
                 )
-            } else {
-                replacement.usePinned { pinned ->
-                    markdown_core_kotlin_session_edit(
-                        handle,
-                        byteStart.toULong(),
-                        byteEnd.toULong(),
-                        pinned.addressOf(0).reinterpret(),
-                        replacement.size.toULong(),
-                        output,
-                        outputLength,
-                    )
-                }
             }
         }
+    }
+}
 
-    actual fun commit(): ByteArray =
-        payload("native session commit failed") { output, outputLength ->
-            markdown_core_kotlin_session_commit(handle, output, outputLength)
-        }
+internal actual fun CSessionHandle.commit(): ByteArray {
+    val handle = nativeSession()
+    return payload("native session commit failed") { output, outputLength ->
+        markdown_core_kotlin_session_commit(handle, output, outputLength)
+    }
+}
 
-    actual fun scopes(): ByteArray =
-        payload("native scope table copy failed") { output, outputLength ->
-            markdown_core_kotlin_session_scopes(handle, output, outputLength)
-        }
+internal actual fun CSessionHandle.scopes(): ByteArray {
+    val handle = nativeSession()
+    return payload("native scope table copy failed") { output, outputLength ->
+        markdown_core_kotlin_session_scopes(handle, output, outputLength)
+    }
+}
 
-    actual fun footnoteInfo(id: ULong): ByteArray =
-        payload("native footnote info copy failed") { output, outputLength ->
-            markdown_core_kotlin_session_footnote_info(handle, id, output, outputLength)
-        }
+internal actual fun CSessionHandle.footnoteInfo(id: ULong): ByteArray {
+    val handle = nativeSession()
+    return payload("native footnote info copy failed") { output, outputLength ->
+        markdown_core_kotlin_session_footnote_info(handle, id, output, outputLength)
+    }
+}
 
-    actual fun footnotes(): ByteArray =
-        payload("native footnote list copy failed") { output, outputLength ->
-            markdown_core_kotlin_session_footnotes(handle, output, outputLength)
-        }
+internal actual fun CSessionHandle.footnotes(): ByteArray {
+    val handle = nativeSession()
+    return payload("native footnote list copy failed") { output, outputLength ->
+        markdown_core_kotlin_session_footnotes(handle, output, outputLength)
+    }
+}
 
-    actual fun footnoteReferences(definition: ULong): ByteArray =
-        payload("native footnote reference copy failed") { output, outputLength ->
-            markdown_core_kotlin_session_footnote_references(handle, definition, output, outputLength)
-        }
+internal actual fun CSessionHandle.footnoteReferences(definition: ULong): ByteArray {
+    val handle = nativeSession()
+    return payload("native footnote reference copy failed") { output, outputLength ->
+        markdown_core_kotlin_session_footnote_references(handle, definition, output, outputLength)
+    }
 }

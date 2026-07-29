@@ -36,6 +36,7 @@ typedef struct pc_context {
 } pc_context;
 
 static const char *const PC_TABLE_ONLY[] = {"table", NULL};
+static const char *const PC_AUTOLINK_ONLY[] = {"autolink", NULL};
 static const char *const PC_DIRECTIVE_ONLY[] = {"directive", NULL};
 static const char *const PC_FORMULA[] = {"formula", "dollar-formula-delimiters", "latex-formula-delimiters", NULL};
 
@@ -578,6 +579,24 @@ static int case_reference_collisions(pc_context *context) {
     return 0;
 }
 
+/* One text node with 50000 email links.  Source-position bookkeeping must
+ * advance with the links instead of rescanning the whole prefix and suffix
+ * for every split; the sibling complexity case pins doubling behavior. */
+static int case_many_email_autolinks(pc_context *context) {
+    enum { EMAILS = 50000 };
+
+    if (pc_build(context, NULL, "a@b.c ", EMAILS, "tail") != 0) {
+        return -1;
+    }
+    if (pc_parse(context, PC_AUTOLINK_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_LINK, EMAILS, "Link") != 0) {
+        return -1;
+    }
+    return pc_expect_text_is_input(context);
+}
+
 /* Directive pathological cases -------------------------------------------- */
 
 static int pc_directive_literal_case(pc_context *context, const char *unit, size_t count) {
@@ -613,12 +632,11 @@ static const markdown_core_node *pc_first_directive(const pc_context *context) {
 static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *directive;
     const markdown_core_node *label;
+    const markdown_core_node *label_text;
     markdown_core_placement_mode mode;
     markdown_core_string_view name;
     markdown_core_string_view attributes;
     markdown_core_string_view literal;
-    bool has_label = false;
-    size_t label_count = 0;
     char *expected = NULL;
 
     if (pc_build(context, ":long[", "a", 1500, "]") != 0) {
@@ -632,18 +650,21 @@ static int case_directive_long_label(pc_context *context) {
     }
     directive = pc_first_directive(context);
     if (markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE ||
-        !markdown_core_node_directive_properties(directive, &mode, &name, &attributes, &has_label, &label_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0 || !has_label || label_count != 1 ||
-        mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED) {
+        !markdown_core_node_directive_properties(directive, &mode, &name, &attributes) || name.length != 4 ||
+        memcmp(name.data, "long", 4) != 0 || mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED) {
         fprintf(stderr, "directive name/label/mode properties are wrong\n");
         return -1;
     }
-    label = markdown_core_node_directive_first_label_child(directive);
+    label = markdown_core_node_directive_label(directive);
+    label_text = markdown_core_node_get_first_child(label);
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
     }
-    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_TEXT || !markdown_core_node_literal(label, &literal) ||
+    if (markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
+        markdown_core_node_get_parent(label) != directive || markdown_core_node_child_count(label) != 1 ||
+        markdown_core_node_get_kind(label_text) != MARKDOWN_CORE_KIND_TEXT ||
+        markdown_core_node_get_parent(label_text) != label || !markdown_core_node_literal(label_text, &literal) ||
         literal.length != 1500 || memcmp(literal.data, expected, 1500) != 0) {
         fprintf(stderr, "directive label text is wrong\n");
         free(expected);
@@ -658,8 +679,6 @@ static int case_directive_long_attributes(pc_context *context) {
     markdown_core_placement_mode mode;
     markdown_core_string_view name;
     markdown_core_string_view attributes;
-    bool has_label = false;
-    size_t label_count = 0;
     char *value;
     char *expected;
     size_t expected_length;
@@ -675,8 +694,8 @@ static int case_directive_long_attributes(pc_context *context) {
         return -1;
     }
     directive = pc_first_directive(context);
-    if (!markdown_core_node_directive_properties(directive, &mode, &name, &attributes, &has_label, &label_count) ||
-        name.length != 4 || memcmp(name.data, "long", 4) != 0) {
+    if (!markdown_core_node_directive_properties(directive, &mode, &name, &attributes) || name.length != 4 ||
+        memcmp(name.data, "long", 4) != 0) {
         fprintf(stderr, "directive name properties are wrong\n");
         return -1;
     }
@@ -1267,6 +1286,7 @@ static const pc_case_entry PC_CASES[] = {
     {"unclosed_comment", case_unclosed_comment},
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
+    {"many_email_autolinks", case_many_email_autolinks},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
     {"directive_colon_pairs", case_directive_colon_pairs},

@@ -92,7 +92,7 @@ static markdown_core_mem fb_sweep_mem = {fb_sweep_calloc, fb_sweep_realloc, fb_f
 static markdown_core_chunk fb_chunk(const char *text) {
     markdown_core_chunk chunk;
     chunk.data = (unsigned char *)text;
-    chunk.len = (bufsize_t)strlen(text);
+    chunk.len = (markdown_core_bufsize)strlen(text);
     chunk.alloc = 0;
     return chunk;
 }
@@ -120,7 +120,7 @@ static int fb_expect_url(markdown_core_map *map, const char *label, const char *
         fprintf(stderr, "%s: label '%s' did not resolve\n", context, label);
         return -1;
     }
-    if (ref->url.len != (bufsize_t)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
+    if (ref->url.len != (markdown_core_bufsize)strlen(url) || memcmp(ref->url.data, url, ref->url.len) != 0) {
         fprintf(
             stderr,
             "%s: label '%s' resolved to '%.*s', expected '%s'\n",
@@ -476,7 +476,7 @@ static int fb_check_key_index_remove(void) {
         if (!markdown_core_key_index_insert(
                 &index,
                 (const unsigned char *)keys[i],
-                (bufsize_t)strlen(keys[i]),
+                (markdown_core_bufsize)strlen(keys[i]),
                 (void *)(uintptr_t)(i + 1),
                 0,
                 NULL
@@ -492,7 +492,11 @@ static int fb_check_key_index_remove(void) {
     /* Remove every even key, then verify the odd ones still resolve through
      * the shifted probe runs. */
     for (i = 0; i < 10; i += 2) {
-        if (!markdown_core_key_index_remove(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]))) {
+        if (!markdown_core_key_index_remove(
+                &index,
+                (const unsigned char *)keys[i],
+                (markdown_core_bufsize)strlen(keys[i])
+            )) {
             fprintf(stderr, "key index remove %zu failed\n", i);
             goto done;
         }
@@ -502,8 +506,11 @@ static int fb_check_key_index_remove(void) {
         goto done;
     }
     for (i = 0; i < 10; i++) {
-        void *value =
-            markdown_core_key_index_lookup(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        void *value = markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[i],
+            (markdown_core_bufsize)strlen(keys[i])
+        );
         void *expected = (i % 2 == 0) ? NULL : (void *)(uintptr_t)(i + 1);
         if (value != expected) {
             fprintf(stderr, "lookup %zu after removal returned the wrong value\n", i);
@@ -514,13 +521,16 @@ static int fb_check_key_index_remove(void) {
     if (!markdown_core_key_index_insert(
             &index,
             (const unsigned char *)keys[0],
-            (bufsize_t)strlen(keys[0]),
+            (markdown_core_bufsize)strlen(keys[0]),
             (void *)(uintptr_t)99,
             0,
             NULL
         ) ||
-        markdown_core_key_index_lookup(&index, (const unsigned char *)keys[0], (bufsize_t)strlen(keys[0])) !=
-            (void *)(uintptr_t)99) {
+        markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[0],
+            (markdown_core_bufsize)strlen(keys[0])
+        ) != (void *)(uintptr_t)99) {
         fputs("re-insert after removal failed\n", stderr);
         goto done;
     }
@@ -628,7 +638,7 @@ static int case_key_index_probe_growth(void) {
         if (!markdown_core_key_index_insert(
                 &index,
                 (const unsigned char *)keys[i],
-                (bufsize_t)strlen(keys[i]),
+                (markdown_core_bufsize)strlen(keys[i]),
                 (void *)(uintptr_t)(i + 1),
                 0,
                 NULL
@@ -644,7 +654,7 @@ static int case_key_index_probe_growth(void) {
     if (!markdown_core_key_index_insert(
             &index,
             (const unsigned char *)keys[FB_CLUSTER],
-            (bufsize_t)strlen(keys[FB_CLUSTER]),
+            (markdown_core_bufsize)strlen(keys[FB_CLUSTER]),
             (void *)(uintptr_t)(FB_CLUSTER + 1),
             0,
             NULL
@@ -662,8 +672,11 @@ static int case_key_index_probe_growth(void) {
         goto done;
     }
     for (i = 0; i < FB_CLUSTER + 1; i++) {
-        void *value =
-            markdown_core_key_index_lookup(&index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        void *value = markdown_core_key_index_lookup(
+            &index,
+            (const unsigned char *)keys[i],
+            (markdown_core_bufsize)strlen(keys[i])
+        );
         if (value != (void *)(uintptr_t)(i + 1)) {
             fprintf(stderr, "lookup %zu returned the wrong value after growth\n", i);
             goto done;
@@ -900,15 +913,253 @@ static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) 
     return dump;
 }
 
+typedef struct {
+    markdown_core_node_id id;
+    size_t ordinal;
+    markdown_core_node_type type;
+} fb_tree_entry;
+
+typedef struct {
+    fb_tree_entry *items;
+    size_t count;
+} fb_tree_snapshot;
+
+typedef struct {
+    size_t ordinal;
+    markdown_core_node_type type;
+} fb_delta_mark;
+
+enum { FB_DELTA_ADDED, FB_DELTA_REMOVED, FB_DELTA_CHANGED, FB_DELTA_BUBBLED, FB_DELTA_ARRAY_COUNT };
+
+typedef struct {
+    uint64_t before;
+    uint64_t after;
+    fb_delta_mark *marks[FB_DELTA_ARRAY_COUNT];
+    size_t counts[FB_DELTA_ARRAY_COUNT];
+} fb_delta_snapshot;
+
+static void fb_tree_snapshot_release(fb_tree_snapshot *snapshot) {
+    free(snapshot->items);
+    memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static int fb_tree_snapshot_capture(const markdown_core_session *session, fb_tree_snapshot *snapshot) {
+    const markdown_core_node *root = session->view.root;
+    const markdown_core_node *node = root;
+    size_t count = 0;
+    size_t ordinal = 0;
+
+    while (node) {
+        count++;
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != root && !node->next) {
+            node = node->parent;
+        }
+        node = node == root ? NULL : node->next;
+    }
+    snapshot->items = (fb_tree_entry *)malloc(count * sizeof(*snapshot->items));
+    if (!snapshot->items) {
+        return -1;
+    }
+    snapshot->count = count;
+    node = root;
+    while (node) {
+        snapshot->items[ordinal].id = node->id;
+        snapshot->items[ordinal].ordinal = ordinal;
+        snapshot->items[ordinal].type = (markdown_core_node_type)node->type;
+        ordinal++;
+        if (node->first_child) {
+            node = node->first_child;
+            continue;
+        }
+        while (node != root && !node->next) {
+            node = node->parent;
+        }
+        node = node == root ? NULL : node->next;
+    }
+    return 0;
+}
+
+static const fb_tree_entry *fb_tree_snapshot_find(const fb_tree_snapshot *snapshot, markdown_core_node_id id) {
+    size_t i;
+    for (i = 0; i < snapshot->count; i++) {
+        if (snapshot->items[i].id == id) {
+            return &snapshot->items[i];
+        }
+    }
+    return NULL;
+}
+
+static size_t fb_delta_array(const markdown_core_delta *changes, size_t index, const markdown_core_node_id **ids) {
+    switch (index) {
+    case FB_DELTA_ADDED:
+        return markdown_core_delta_added(changes, ids);
+    case FB_DELTA_REMOVED:
+        return markdown_core_delta_removed(changes, ids);
+    case FB_DELTA_CHANGED:
+        return markdown_core_delta_changed(changes, ids);
+    default:
+        return markdown_core_delta_bubbled(changes, ids);
+    }
+}
+
+static int fb_delta_contains(const markdown_core_delta *changes, size_t index, markdown_core_node_id expected) {
+    const markdown_core_node_id *ids = NULL;
+    size_t count = fb_delta_array(changes, index, &ids);
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        if (ids[i] == expected) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void fb_delta_snapshot_release(fb_delta_snapshot *snapshot) {
+    size_t i;
+    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
+        free(snapshot->marks[i]);
+    }
+    memset(snapshot, 0, sizeof(*snapshot));
+}
+
+static int fb_delta_mark_compare(const void *lhs, const void *rhs) {
+    const fb_delta_mark *a = (const fb_delta_mark *)lhs;
+    const fb_delta_mark *b = (const fb_delta_mark *)rhs;
+    if (a->ordinal != b->ordinal) {
+        return a->ordinal < b->ordinal ? -1 : 1;
+    }
+    if (a->type != b->type) {
+        return a->type < b->type ? -1 : 1;
+    }
+    return 0;
+}
+
+static int fb_delta_snapshot_capture(
+    fb_delta_snapshot *snapshot,
+    const markdown_core_session *session,
+    const fb_tree_snapshot *before_tree,
+    const markdown_core_delta *changes
+) {
+    fb_tree_snapshot after_tree = {0};
+    size_t i;
+
+    if (fb_tree_snapshot_capture(session, &after_tree) != 0) {
+        return -1;
+    }
+    markdown_core_delta_revisions(changes, &snapshot->before, &snapshot->after);
+    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
+        const markdown_core_node_id *ids = NULL;
+        size_t count = fb_delta_array(changes, i, &ids);
+        const fb_tree_snapshot *tree = i == FB_DELTA_REMOVED ? before_tree : &after_tree;
+        size_t k;
+        if (count) {
+            snapshot->marks[i] = (fb_delta_mark *)malloc(count * sizeof(*snapshot->marks[i]));
+            if (!snapshot->marks[i]) {
+                fb_tree_snapshot_release(&after_tree);
+                fb_delta_snapshot_release(snapshot);
+                return -1;
+            }
+            for (k = 0; k < count; k++) {
+                const fb_tree_entry *entry = fb_tree_snapshot_find(tree, ids[k]);
+                if (!entry) {
+                    fb_tree_snapshot_release(&after_tree);
+                    fb_delta_snapshot_release(snapshot);
+                    return -1;
+                }
+                snapshot->marks[i][k].ordinal = entry->ordinal;
+                snapshot->marks[i][k].type = entry->type;
+            }
+            // Delta arrays are semantic sets. Raw ids are session-local, and
+            // an OOM retry may consume (but never reuse) ids or alter emission
+            // order, so compare their structural effects in canonical order.
+            qsort(snapshot->marks[i], count, sizeof(*snapshot->marks[i]), fb_delta_mark_compare);
+        }
+        snapshot->counts[i] = count;
+    }
+    fb_tree_snapshot_release(&after_tree);
+    return 0;
+}
+
+static int fb_delta_matches(
+    const markdown_core_delta *changes,
+    const markdown_core_session *session,
+    const fb_tree_snapshot *before_tree,
+    const fb_delta_snapshot *expected
+) {
+    fb_delta_snapshot actual = {0};
+    int matches = 1;
+    size_t i;
+
+    if (fb_delta_snapshot_capture(&actual, session, before_tree, changes) != 0) {
+        return 0;
+    }
+    matches = actual.before == expected->before && actual.after == expected->after;
+    if (!matches) {
+        fprintf(
+            stderr,
+            "delta revisions %llu..%llu != control %llu..%llu\n",
+            (unsigned long long)actual.before,
+            (unsigned long long)actual.after,
+            (unsigned long long)expected->before,
+            (unsigned long long)expected->after
+        );
+    }
+    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
+        size_t k;
+        if (actual.counts[i] != expected->counts[i]) {
+            fprintf(stderr, "delta array %zu count %zu != control %zu\n", i, actual.counts[i], expected->counts[i]);
+            matches = 0;
+            break;
+        }
+        for (k = 0; k < actual.counts[i]; k++) {
+            if (actual.marks[i][k].ordinal != expected->marks[i][k].ordinal ||
+                actual.marks[i][k].type != expected->marks[i][k].type) {
+                fprintf(
+                    stderr,
+                    "delta array %zu item %zu mark (%zu,%d) != control (%zu,%d)\n",
+                    i,
+                    k,
+                    actual.marks[i][k].ordinal,
+                    (int)actual.marks[i][k].type,
+                    expected->marks[i][k].ordinal,
+                    (int)expected->marks[i][k].type
+                );
+                matches = 0;
+                break;
+            }
+        }
+        if (!matches) {
+            break;
+        }
+    }
+    fb_delta_snapshot_release(&actual);
+    return matches;
+}
+
 /* One scripted run: a failed step is retried once (the injector fires at
  * most one failure per run). `stage_dumps[i]` receives the dump after stage
- * i's commit; failed commits are checked against the last committed dump. */
-static int fb_session_run(markdown_core_mem *mem, bool pooled, uint8_t **stage_dumps, size_t *stage_lengths) {
+ * i's commit; failed commits are checked against the last committed dump.
+ * When delta snapshots are requested, every failed commit must leave the
+ * output null and every successful fallback/retry must match the control. */
+static int fb_session_run(
+    markdown_core_mem *mem,
+    bool pooled,
+    uint8_t **stage_dumps,
+    size_t *stage_lengths,
+    fb_delta_snapshot *captured_deltas,
+    const fb_delta_snapshot *expected_deltas
+) {
     markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, pooled, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;
     size_t committed_length = 0;
+    bool delta_aware = captured_deltas || expected_deltas;
     int stage;
     int result = -1;
 
@@ -943,29 +1194,71 @@ static int fb_session_run(markdown_core_mem *mem, bool pooled, uint8_t **stage_d
         }
         {
             uint64_t revision_before = markdown_core_session_revision(session);
-            if (!markdown_core_session_commit(session, NULL, NULL)) {
+            fb_tree_snapshot before_tree = {0};
+            markdown_core_delta *changes = NULL;
+            if (delta_aware && fb_tree_snapshot_capture(session, &before_tree) != 0) {
+                fputs("could not capture pre-commit tree\n", stderr);
+                goto done;
+            }
+            if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
                 uint8_t *view = NULL;
                 size_t view_length = 0;
+                if (changes) {
+                    fputs("failed commit exposed a partial delta\n", stderr);
+                    markdown_core_delta_free(changes);
+                    fb_tree_snapshot_release(&before_tree);
+                    goto done;
+                }
                 if (markdown_core_session_revision(session) != revision_before) {
                     fputs("failed commit advanced the revision\n", stderr);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
                 view = fb_session_dump(session, &view_length);
                 if (!view || view_length != committed_length || memcmp(view, committed_dump, view_length) != 0) {
                     fputs("failed commit disturbed the committed view\n", stderr);
                     free(view);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
                 free(view);
-                if (!markdown_core_session_commit(session, NULL, NULL)) {
+                if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
+                    if (changes) {
+                        fputs("failed commit retry exposed a partial delta\n", stderr);
+                        markdown_core_delta_free(changes);
+                    }
                     fputs("commit retry failed\n", stderr);
+                    fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
             }
             if (markdown_core_session_revision(session) != revision_before + 1) {
                 fputs("commit did not advance the revision by one\n", stderr);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
                 goto done;
             }
+            if (delta_aware && !changes) {
+                fputs("successful commit did not return a delta\n", stderr);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            if (changes && expected_deltas &&
+                !fb_delta_matches(changes, session, &before_tree, &expected_deltas[stage])) {
+                fprintf(stderr, "stage %d delta diverged from control\n", stage + 1);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            if (changes && captured_deltas &&
+                fb_delta_snapshot_capture(&captured_deltas[stage], session, &before_tree, changes) != 0) {
+                fputs("could not capture control delta\n", stderr);
+                markdown_core_delta_free(changes);
+                fb_tree_snapshot_release(&before_tree);
+                goto done;
+            }
+            markdown_core_delta_free(changes);
+            fb_tree_snapshot_release(&before_tree);
         }
         free(committed_dump);
         committed_dump = fb_session_dump(session, &committed_length);
@@ -1001,23 +1294,39 @@ done:
     return result;
 }
 
-static int fb_session_sweep(bool pooled) {
+static int fb_session_sweep(bool pooled, bool delta_aware) {
     uint8_t *control_dumps[3] = {NULL, NULL, NULL};
     size_t control_lengths[3] = {0, 0, 0};
+    fb_delta_snapshot control_deltas[3] = {0};
     uint8_t *counted_dumps[3] = {NULL, NULL, NULL};
     size_t counted_lengths[3] = {0, 0, 0};
     unsigned long total;
     unsigned long k;
+    size_t i;
     int result = -1;
 
-    if (fb_session_run(markdown_core_mem_default(), pooled, control_dumps, control_lengths) != 0) {
+    if (fb_session_run(
+            markdown_core_mem_default(),
+            pooled,
+            control_dumps,
+            control_lengths,
+            delta_aware ? control_deltas : NULL,
+            NULL
+        ) != 0) {
         fputs("control session run failed\n", stderr);
         goto done;
     }
 
     fb_sweep_count = 0;
     fb_sweep_fail_at = 0;
-    if (fb_session_run(&fb_sweep_mem, pooled, counted_dumps, counted_lengths) != 0 ||
+    if (fb_session_run(
+            &fb_sweep_mem,
+            pooled,
+            counted_dumps,
+            counted_lengths,
+            NULL,
+            delta_aware ? control_deltas : NULL
+        ) != 0 ||
         counted_lengths[2] != control_lengths[2] ||
         memcmp(counted_dumps[2], control_dumps[2], control_lengths[2]) != 0) {
         fputs("counting session run diverged from control\n", stderr);
@@ -1036,7 +1345,14 @@ static int fb_session_sweep(bool pooled) {
         fb_sweep_count = 0;
         fb_sweep_fail_at = k;
         fb_sweep_fired = 0;
-        run = fb_session_run(&fb_sweep_mem, pooled, final_dumps, final_lengths);
+        run = fb_session_run(
+            &fb_sweep_mem,
+            pooled,
+            final_dumps,
+            final_lengths,
+            NULL,
+            delta_aware ? control_deltas : NULL
+        );
         if (run < 0) {
             fprintf(stderr, "allocation %lu / %lu: session script broke\n", k, total);
             free(final_dumps[0]);
@@ -1065,6 +1381,9 @@ done:
     free(counted_dumps[0]);
     free(counted_dumps[1]);
     free(counted_dumps[2]);
+    for (i = 0; i < 3; i++) {
+        fb_delta_snapshot_release(&control_deltas[i]);
+    }
     return result;
 }
 
@@ -1124,13 +1443,611 @@ done:
     return result;
 }
 
-static int case_session_oom_sweep(void) { return fb_session_sweep(false); }
+static int case_session_oom_sweep(void) { return fb_session_sweep(false, false); }
+
+static int case_session_oom_sweep_delta(void) { return fb_session_sweep(false, true); }
 
 /* The pooled sweep drives the same script through a session arena over the
  * injected allocator, so every base refill — slab, passthrough block, the
  * arena itself — fails in turn; transactionality and retry convergence must
  * hold exactly as they do against direct allocation. */
-static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true); }
+static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, false); }
+
+static const markdown_core_node *fb_child_of_type(const markdown_core_node *parent, markdown_core_node_type type) {
+    const markdown_core_node *child;
+
+    for (child = parent ? parent->first_child : NULL; child; child = child->next) {
+        if (child->type == type) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+static int fb_link_destination_is(const markdown_core_node *node, const char *expected) {
+    markdown_core_string_view destination;
+    markdown_core_string_view title;
+    size_t length = strlen(expected);
+
+    return node && markdown_core_node_link_properties(node, &destination, &title) && destination.length == length &&
+           memcmp(destination.data, expected, length) == 0;
+}
+
+static const markdown_core_lookup_record *fb_lookup_record_find(
+    const markdown_core_lookup_table *table,
+    markdown_core_node_id id
+) {
+    size_t slot;
+
+    for (slot = 0; slot < table->capacity; slot++) {
+        if (table->keys[slot] == id) {
+            return &table->records[slot];
+        }
+    }
+    return NULL;
+}
+
+/* Verifies both directions of one persistent lookup-index relation:
+ * posting(label)[position] == (unit, ordinal), and
+ * record(unit).positions[ordinal] == position. Expected units are a set:
+ * every one must occur exactly once, with no extra or duplicate entry. */
+static int fb_lookup_posting_matches(
+    const markdown_core_session *session,
+    const char *label,
+    const markdown_core_node_id *expected_units,
+    size_t expected_count
+) {
+    const markdown_core_lookup_table *table = &session->lookups;
+    const markdown_core_lookup_posting *posting =
+        markdown_core_lookup_postings_find(table, (const unsigned char *)label);
+    size_t position;
+    size_t unit_index;
+
+    if (!posting || !posting->label || (posting->count && !posting->items) ||
+        strcmp((const char *)posting->label, label) != 0 || posting->count != expected_count) {
+        return 0;
+    }
+    for (position = 0; position < posting->count; position++) {
+        const markdown_core_lookup_posting_entry *entry = &posting->items[position];
+        const markdown_core_lookup_record *record = fb_lookup_record_find(table, entry->unit);
+        size_t expected_matches = 0;
+
+        for (unit_index = 0; unit_index < expected_count; unit_index++) {
+            if (expected_units[unit_index] == entry->unit) {
+                expected_matches++;
+            }
+        }
+        if (expected_matches != 1 || !record || !record->labels || !record->positions ||
+            entry->ordinal >= record->count || !record->labels[entry->ordinal] ||
+            strcmp((const char *)record->labels[entry->ordinal], label) != 0 ||
+            record->positions[entry->ordinal] != position) {
+            return 0;
+        }
+    }
+    for (unit_index = 0; unit_index < expected_count; unit_index++) {
+        const markdown_core_lookup_record *record = fb_lookup_record_find(table, expected_units[unit_index]);
+        size_t posting_matches = 0;
+        size_t label_matches = 0;
+        size_t ordinal = 0;
+
+        for (position = 0; position < posting->count; position++) {
+            if (posting->items[position].unit == expected_units[unit_index]) {
+                posting_matches++;
+            }
+        }
+        if (!record || !record->labels || !record->positions) {
+            return 0;
+        }
+        for (size_t candidate = 0; candidate < record->count; candidate++) {
+            if (record->labels[candidate] && strcmp((const char *)record->labels[candidate], label) == 0) {
+                label_matches++;
+                ordinal = candidate;
+            }
+        }
+        if (posting_matches != 1 || label_matches != 1 || record->positions[ordinal] >= posting->count ||
+            posting->items[record->positions[ordinal]].unit != expected_units[unit_index] ||
+            posting->items[record->positions[ordinal]].ordinal != ordinal) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* A block directive label is an inline ownership domain of the semantic
+ * DirectiveBlock, not an excuse to rebuild the document. Retargeting a
+ * definition used only by that label must keep the owner and its block
+ * content live, rebuild the label in place, and finish through the same
+ * incremental commit inventory as core Paragraph/Heading owners. */
+static int case_block_directive_label_lookup_locality(void) {
+    static const char source[] = "[reference]: /a\n"
+                                 "\n"
+                                 ":::note[See [reference]]\n"
+                                 "Body untouched\n"
+                                 ":::\n"
+                                 "\n"
+                                 "Tail untouched\n";
+    static const char *const destinations[] = {"/b", "/a"};
+    const char *destination_at = strstr(source, "/a");
+    markdown_core_session *session = NULL;
+    markdown_core_delta *changes = NULL;
+    const markdown_core_node *root;
+    const markdown_core_node *directive;
+    const markdown_core_node *label;
+    const markdown_core_node *label_first;
+    const markdown_core_node *link;
+    const markdown_core_node *body;
+    const markdown_core_node *tail;
+    markdown_core_node_id root_id;
+    markdown_core_node_id directive_id;
+    markdown_core_node_id label_id;
+    markdown_core_node_id link_id;
+    markdown_core_node_id body_id;
+    markdown_core_node_id tail_id;
+    uint64_t directive_revision;
+    uint64_t label_revision;
+    uint64_t link_revision;
+    uint64_t body_revision;
+    uint64_t tail_revision;
+    uintptr_t directive_address;
+    uintptr_t label_address;
+    uintptr_t body_address;
+    size_t full_before;
+    size_t restarted_before;
+    size_t reflowed_before;
+    const markdown_core_node_id *ids = NULL;
+    size_t count;
+    size_t round;
+    int result = -1;
+
+    if (!destination_at) {
+        fputs("FAILED: block_directive_label_lookup_locality: source URL missing\n", stderr);
+        return -1;
+    }
+    session = markdown_core_session_open(NULL, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, sizeof(source) - 1, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fputs("FAILED: block_directive_label_lookup_locality: baseline commit failed\n", stderr);
+        goto done;
+    }
+
+    root = markdown_core_document_root(markdown_core_session_document(session));
+    directive = root ? root->first_child : NULL;
+    label = markdown_core_node_directive_label(directive);
+    label_first = markdown_core_node_get_first_child(label);
+    link = label_first ? label_first->next : NULL;
+    body = markdown_core_node_get_next_sibling(label);
+    tail = directive ? directive->next : NULL;
+    if (!root || !directive || markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK || !label ||
+        markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
+        markdown_core_node_get_parent(label) != directive || !label_first ||
+        label_first->type != MARKDOWN_CORE_NODE_TEXT || label_first->parent != label || !link ||
+        link->type != MARKDOWN_CORE_NODE_LINK || link->parent != label || link->next || !body ||
+        markdown_core_node_get_next_sibling(label) != body || body->type != MARKDOWN_CORE_NODE_PARAGRAPH ||
+        body->parent != directive || !tail || tail->type != MARKDOWN_CORE_NODE_PARAGRAPH || tail->next ||
+        !fb_link_destination_is(link, "/a")) {
+        fputs("FAILED: block_directive_label_lookup_locality: unexpected baseline tree\n", stderr);
+        goto done;
+    }
+
+    root_id = markdown_core_node_get_id(root);
+    directive_id = markdown_core_node_get_id(directive);
+    label_id = markdown_core_node_get_id(label);
+    link_id = markdown_core_node_get_id(link);
+    body_id = markdown_core_node_get_id(body);
+    tail_id = markdown_core_node_get_id(tail);
+    directive_revision = markdown_core_node_get_revision(directive);
+    label_revision = markdown_core_node_get_revision(label);
+    link_revision = markdown_core_node_get_revision(link);
+    body_revision = markdown_core_node_get_revision(body);
+    tail_revision = markdown_core_node_get_revision(tail);
+    directive_address = (uintptr_t)directive;
+    label_address = (uintptr_t)label;
+    body_address = (uintptr_t)body;
+    if (!fb_lookup_posting_matches(session, "reference", &label_id, 1)) {
+        fputs("FAILED: block_directive_label_lookup_locality: baseline label posting is incoherent\n", stderr);
+        goto done;
+    }
+
+    for (round = 0; round < sizeof(destinations) / sizeof(*destinations); round++) {
+        full_before = session->full_commits;
+        restarted_before = session->restarted_commits;
+        reflowed_before = session->reflowed_commits;
+        if (!markdown_core_session_edit(
+                session,
+                (size_t)(destination_at - source),
+                (size_t)(destination_at - source) + strlen(destinations[round]),
+                (const uint8_t *)destinations[round],
+                strlen(destinations[round]),
+                NULL
+            ) ||
+            !markdown_core_session_commit(session, &changes, NULL) || !changes) {
+            fprintf(stderr, "FAILED: block_directive_label_lookup_locality: retarget %zu commit failed\n", round + 1);
+            goto done;
+        }
+        /* The trailing paragraph is the explicit restart boundary contract:
+         * this edit must both avoid full fallback and reflow there. */
+        if (session->full_commits != full_before || session->restarted_commits != restarted_before + 1 ||
+            session->reflowed_commits != reflowed_before + 1) {
+            fprintf(
+                stderr,
+                "FAILED: block_directive_label_lookup_locality: retarget %zu expected "
+                "full/restarted/reflowed %zu/%zu/%zu, got %zu/%zu/%zu\n",
+                round + 1,
+                full_before,
+                restarted_before + 1,
+                reflowed_before + 1,
+                session->full_commits,
+                session->restarted_commits,
+                session->reflowed_commits
+            );
+            goto done;
+        }
+
+        directive = markdown_core_session_node_by_id(session, directive_id);
+        label = markdown_core_session_node_by_id(session, label_id);
+        link = markdown_core_session_node_by_id(session, link_id);
+        body = markdown_core_session_node_by_id(session, body_id);
+        tail = markdown_core_session_node_by_id(session, tail_id);
+        if (!directive) {
+            fputs("FAILED: block_directive_label_lookup_locality: semantic owner id disappeared\n", stderr);
+            goto done;
+        }
+        if ((uintptr_t)directive != directive_address) {
+            fputs("FAILED: block_directive_label_lookup_locality: semantic owner address changed\n", stderr);
+            goto done;
+        }
+        if (!label || (uintptr_t)label != label_address || markdown_core_node_directive_label(directive) != label ||
+            markdown_core_node_get_parent(label) != directive) {
+            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel identity diverged\n", stderr);
+            goto done;
+        }
+        if (markdown_core_node_get_revision(directive) <= directive_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: semantic owner revision did not bubble\n", stderr);
+            goto done;
+        }
+        if (markdown_core_node_get_revision(label) <= label_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel revision did not bubble\n", stderr);
+            goto done;
+        }
+        if (!link || link->parent != label || link->next || !fb_link_destination_is(link, destinations[round]) ||
+            markdown_core_node_get_revision(link) <= link_revision) {
+            fprintf(
+                stderr,
+                "FAILED: block_directive_label_lookup_locality: label Link identity diverged "
+                "(present=%d parent=%d next=%d destination=%d revision=%llu previous=%llu)\n",
+                link != NULL,
+                link && link->parent == label,
+                link && link->next != NULL,
+                link && fb_link_destination_is(link, destinations[round]),
+                (unsigned long long)markdown_core_node_get_revision(link),
+                (unsigned long long)link_revision
+            );
+            goto done;
+        }
+        if (!body || (uintptr_t)body != body_address || body->parent != directive ||
+            markdown_core_node_get_next_sibling(label) != body ||
+            markdown_core_node_get_revision(body) != body_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: block body identity diverged\n", stderr);
+            goto done;
+        }
+        if (!tail || markdown_core_node_get_revision(tail) != tail_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: clean tail identity diverged\n", stderr);
+            goto done;
+        }
+        if (!fb_lookup_posting_matches(session, "reference", &label_id, 1)) {
+            fputs("FAILED: block_directive_label_lookup_locality: rebuilt label posting is incoherent\n", stderr);
+            goto done;
+        }
+
+        count = markdown_core_delta_added(changes, &ids);
+        if (count != 0) {
+            fputs("FAILED: block_directive_label_lookup_locality: retarget added nodes\n", stderr);
+            goto done;
+        }
+        count = markdown_core_delta_removed(changes, &ids);
+        if (count != 0) {
+            fputs("FAILED: block_directive_label_lookup_locality: retarget removed nodes\n", stderr);
+            goto done;
+        }
+        count = markdown_core_delta_changed(changes, &ids);
+        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_CHANGED, link_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, label_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, directive_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, body_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, tail_id)) {
+            fputs("FAILED: block_directive_label_lookup_locality: changed delta is not the label Link\n", stderr);
+            goto done;
+        }
+        count = markdown_core_delta_bubbled(changes, &ids);
+        if (count != 3 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, label_id) ||
+            !fb_delta_contains(changes, FB_DELTA_BUBBLED, directive_id) ||
+            !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id) ||
+            fb_delta_contains(changes, FB_DELTA_BUBBLED, body_id) ||
+            fb_delta_contains(changes, FB_DELTA_BUBBLED, tail_id)) {
+            fputs(
+                "FAILED: block_directive_label_lookup_locality: ancestor bubble is not label, owner, document\n",
+                stderr
+            );
+            goto done;
+        }
+        directive_revision = markdown_core_node_get_revision(directive);
+        label_revision = markdown_core_node_get_revision(label);
+        link_revision = markdown_core_node_get_revision(link);
+        markdown_core_delta_free(changes);
+        changes = NULL;
+    }
+
+    result = 0;
+done:
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
+    return result;
+}
+
+static char *fb_reference_fanout_source(size_t dependent_count, size_t *length_out, size_t *url_offset_out) {
+    static const char prefix[] = "[x]: /aaaa\n\n";
+    static const char use[] = "uses [u][x] here\n\n";
+    static const char tail[] = "Tail untouched\n";
+    const size_t prefix_length = sizeof(prefix) - 1;
+    const size_t use_length = sizeof(use) - 1;
+    const size_t tail_length = sizeof(tail) - 1;
+    size_t length;
+    char *source;
+    char *at;
+    size_t i;
+
+    if (dependent_count > (SIZE_MAX - prefix_length - tail_length - 1) / use_length) {
+        return NULL;
+    }
+    length = prefix_length + dependent_count * use_length + tail_length;
+    source = (char *)malloc(length + 1);
+    if (!source) {
+        return NULL;
+    }
+    at = source;
+    memcpy(at, prefix, prefix_length);
+    at += prefix_length;
+    for (i = 0; i < dependent_count; i++) {
+        memcpy(at, use, use_length);
+        at += use_length;
+    }
+    memcpy(at, tail, tail_length);
+    at += tail_length;
+    *at = '\0';
+    *length_out = length;
+    *url_offset_out = (size_t)(strstr(source, "/aaaa") - source);
+    return source;
+}
+
+/* Cardinality is not a semantic or lifecycle distinction. The same
+ * definition-retarget operation must use the same incremental ownership
+ * mechanism below, at, and above the removed 64-dependent benchmark route.
+ * A second retarget also proves every rebuilt lookup posting was reinstalled. */
+static int fb_reference_fanout_scenario(size_t dependent_count) {
+    static const char *const destinations[] = {"/bbbb", "/aaaa"};
+    markdown_core_session *session = NULL;
+    markdown_core_delta *changes = NULL;
+    markdown_core_node_id *link_ids = NULL;
+    markdown_core_node_id *paragraph_ids = NULL;
+    uint64_t *link_revisions = NULL;
+    markdown_core_node_id root_id;
+    markdown_core_node_id tail_id;
+    uint64_t tail_revision;
+    char *source = NULL;
+    size_t source_length = 0;
+    size_t url_offset = 0;
+    const markdown_core_node *root;
+    const markdown_core_node *node;
+    size_t i;
+    size_t round;
+    int result = -1;
+
+    source = fb_reference_fanout_source(dependent_count, &source_length, &url_offset);
+    link_ids = (markdown_core_node_id *)malloc(dependent_count * sizeof(*link_ids));
+    paragraph_ids = (markdown_core_node_id *)malloc(dependent_count * sizeof(*paragraph_ids));
+    link_revisions = (uint64_t *)malloc(dependent_count * sizeof(*link_revisions));
+    session = markdown_core_session_open(NULL, NULL);
+    if (!source || !link_ids || !paragraph_ids || !link_revisions || !session ||
+        !markdown_core_session_edit(session, 0, 0, (const uint8_t *)source, source_length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fprintf(stderr, "FAILED: reference_fanout_uniform_routing: %zu: baseline commit failed\n", dependent_count);
+        goto done;
+    }
+
+    root = markdown_core_document_root(markdown_core_session_document(session));
+    root_id = markdown_core_node_get_id(root);
+    node = root ? root->first_child : NULL;
+    for (i = 0; i < dependent_count; i++) {
+        const markdown_core_node *link;
+        if (!node || node->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: dependent paragraph %zu missing\n",
+                dependent_count,
+                i
+            );
+            goto done;
+        }
+        link = fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK);
+        if (!link || !fb_link_destination_is(link, "/aaaa")) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: dependent Link %zu missing\n",
+                dependent_count,
+                i
+            );
+            goto done;
+        }
+        paragraph_ids[i] = markdown_core_node_get_id(node);
+        link_ids[i] = markdown_core_node_get_id(link);
+        link_revisions[i] = markdown_core_node_get_revision(link);
+        node = node->next;
+    }
+    if (!node || node->type != MARKDOWN_CORE_NODE_PARAGRAPH || node->next ||
+        fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK)) {
+        fprintf(stderr, "FAILED: reference_fanout_uniform_routing: %zu: tail shape diverged\n", dependent_count);
+        goto done;
+    }
+    tail_id = markdown_core_node_get_id(node);
+    tail_revision = markdown_core_node_get_revision(node);
+    if (!fb_lookup_posting_matches(session, "x", paragraph_ids, dependent_count)) {
+        fprintf(
+            stderr,
+            "FAILED: reference_fanout_uniform_routing: %zu: baseline posting is incoherent\n",
+            dependent_count
+        );
+        goto done;
+    }
+
+    for (round = 0; round < sizeof(destinations) / sizeof(*destinations); round++) {
+        const markdown_core_node_id *ids = NULL;
+        size_t full_before = session->full_commits;
+        size_t restarted_before = session->restarted_commits;
+        size_t reflowed_before = session->reflowed_commits;
+        size_t count;
+
+        if (!markdown_core_session_edit(
+                session,
+                url_offset,
+                url_offset + strlen(destinations[round]),
+                (const uint8_t *)destinations[round],
+                strlen(destinations[round]),
+                NULL
+            ) ||
+            !markdown_core_session_commit(session, &changes, NULL) || !changes) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu failed\n",
+                dependent_count,
+                round + 1
+            );
+            goto done;
+        }
+        if (session->full_commits != full_before || session->restarted_commits != restarted_before + 1 ||
+            session->reflowed_commits != reflowed_before + 1) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu expected "
+                "full/restarted/reflowed %zu/%zu/%zu, got %zu/%zu/%zu\n",
+                dependent_count,
+                round + 1,
+                full_before,
+                restarted_before + 1,
+                reflowed_before + 1,
+                session->full_commits,
+                session->restarted_commits,
+                session->reflowed_commits
+            );
+            goto done;
+        }
+        count = markdown_core_delta_added(changes, &ids);
+        if (count != 0) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu added nodes\n",
+                dependent_count,
+                round + 1
+            );
+            goto done;
+        }
+        count = markdown_core_delta_removed(changes, &ids);
+        if (count != 0) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu removed nodes\n",
+                dependent_count,
+                round + 1
+            );
+            goto done;
+        }
+        count = markdown_core_delta_changed(changes, &ids);
+        if (count != dependent_count) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu changed %zu nodes\n",
+                dependent_count,
+                round + 1,
+                count
+            );
+            goto done;
+        }
+        count = markdown_core_delta_bubbled(changes, &ids);
+        if (count != dependent_count + 1 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id)) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu bubbled %zu nodes\n",
+                dependent_count,
+                round + 1,
+                count
+            );
+            goto done;
+        }
+        for (i = 0; i < dependent_count; i++) {
+            const markdown_core_node *link = markdown_core_session_node_by_id(session, link_ids[i]);
+            const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_ids[i]);
+            if (!link || !paragraph || link->parent != paragraph ||
+                !fb_link_destination_is(link, destinations[round]) ||
+                markdown_core_node_get_revision(link) <= link_revisions[i] ||
+                !fb_delta_contains(changes, FB_DELTA_CHANGED, link_ids[i]) ||
+                !fb_delta_contains(changes, FB_DELTA_BUBBLED, paragraph_ids[i])) {
+                fprintf(
+                    stderr,
+                    "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu dependent %zu diverged\n",
+                    dependent_count,
+                    round + 1,
+                    i
+                );
+                goto done;
+            }
+            link_revisions[i] = markdown_core_node_get_revision(link);
+        }
+        if (!fb_lookup_posting_matches(session, "x", paragraph_ids, dependent_count)) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu posting is incoherent\n",
+                dependent_count,
+                round + 1
+            );
+            goto done;
+        }
+        node = markdown_core_session_node_by_id(session, tail_id);
+        if (!node || markdown_core_node_get_revision(node) != tail_revision ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, tail_id) ||
+            fb_delta_contains(changes, FB_DELTA_BUBBLED, tail_id)) {
+            fprintf(
+                stderr,
+                "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu disturbed tail\n",
+                dependent_count,
+                round + 1
+            );
+            goto done;
+        }
+        markdown_core_delta_free(changes);
+        changes = NULL;
+    }
+
+    result = 0;
+done:
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
+    free(source);
+    free(link_ids);
+    free(paragraph_ids);
+    free(link_revisions);
+    return result;
+}
+
+static int case_reference_fanout_uniform_routing(void) {
+    static const size_t dependent_counts[] = {1, 63, 64, 65, 129};
+    size_t i;
+
+    for (i = 0; i < sizeof(dependent_counts) / sizeof(*dependent_counts); i++) {
+        if (fb_reference_fanout_scenario(dependent_counts[i]) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
 
 /* One same-length in-place edit for a restart-locality scenario. */
 typedef struct {
@@ -1140,10 +2057,10 @@ typedef struct {
 } rl_edit;
 
 /* Opens a session over `initial`, applies each edit as its own commit, and
- * pins the whole inventory: exactly two full commits (the empty open and the
- * whole-text insert, which routes to the full path — a head restart with no
- * boundary beyond the damage), and every edit an incremental, reflowed
- * restart. */
+ * pins the uniform-routing inventory: only the empty-session bootstrap is a
+ * full commit. The whole-text insert is an incremental restart with no
+ * boundary; every later local edit is an incremental, reflowed restart. No
+ * input size or cardinality changes that mechanism. */
 static int rl_cluster_scenario(const char *name, const char *initial, const rl_edit *edits, size_t edit_count) {
     markdown_core_parse_options options;
     markdown_core_session *session;
@@ -1175,14 +2092,14 @@ static int rl_cluster_scenario(const char *name, const char *initial, const rl_e
             goto done;
         }
     }
-    if (session->full_commits != 2 || session->restarted_commits != edit_count ||
+    if (session->full_commits != 1 || session->restarted_commits != edit_count + 1 ||
         session->reflowed_commits != edit_count) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: %s: expected 2 full / %zu restarted / %zu reflowed, "
+            "FAILED: restart_locality_counters: %s: expected 1 full / %zu restarted / %zu reflowed, "
             "got %zu / %zu / %zu\n",
             name,
-            edit_count,
+            edit_count + 1,
             edit_count,
             session->full_commits,
             session->restarted_commits,
@@ -1196,10 +2113,10 @@ done:
     return result;
 }
 
-/* Head-of-document definition clusters must restart and reflow at sentinel
- * clean entries: retargeting the last definition of a leading cluster is an
- * incremental, reflowed commit, never a full reparse. The counters are the
- * session's restart-locality inventory. */
+/* Uniform incremental routing is shape-independent: the initial whole-text
+ * insert restarts without a boundary, while a later head-definition edit
+ * reflows at a sentinel clean entry. Neither operation routes by benchmark
+ * shape or cardinality; the only full commit is empty-session bootstrap. */
 static int case_restart_locality_counters(void) {
     static const char initial[] = "[a]: /a1\n"
                                   "[b]: /b1\n"
@@ -1223,12 +2140,18 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: initial commit failed\n");
         goto done;
     }
-    /* Opening a session commits the empty document through the full path,
-     * and the whole-text insert routes there too: a head restart with no
-     * clean boundary at or beyond the damage reparses everything, and the
-     * full path does that with wholesale rebuilds. */
-    if (session->full_commits != 2 || session->restarted_commits != 0) {
-        fprintf(stderr, "FAILED: restart_locality_counters: whole-text insert did not route to the full path\n");
+    /* Opening a session bootstraps the empty document through the full
+     * lifecycle. The whole-text insert then uses the shared incremental
+     * mechanism; with no committed suffix it has no reflow boundary. */
+    if (session->full_commits != 1 || session->restarted_commits != 1 || session->reflowed_commits != 0) {
+        fprintf(
+            stderr,
+            "FAILED: restart_locality_counters: whole-text insert expected 1 full / 1 restarted / "
+            "0 reflowed, got %zu / %zu / %zu\n",
+            session->full_commits,
+            session->restarted_commits,
+            session->reflowed_commits
+        );
         goto done;
     }
     /* Retarget the last head definition: [c]'s destination at bytes 24..27. */
@@ -1237,14 +2160,14 @@ static int case_restart_locality_counters(void) {
         fprintf(stderr, "FAILED: restart_locality_counters: retarget commit failed\n");
         goto done;
     }
-    if (session->full_commits != 2) {
+    if (session->full_commits != 1) {
         fprintf(stderr, "FAILED: restart_locality_counters: a head-cluster edit fell back to a full reparse\n");
         goto done;
     }
-    if (session->restarted_commits != 1 || session->reflowed_commits != 1) {
+    if (session->restarted_commits != 2 || session->reflowed_commits != 1) {
         fprintf(
             stderr,
-            "FAILED: restart_locality_counters: expected a reflowed restart (restarted %zu, reflowed %zu)\n",
+            "FAILED: restart_locality_counters: expected 2 restarted / 1 reflowed, got %zu / %zu\n",
             session->restarted_commits,
             session->reflowed_commits
         );
@@ -1316,7 +2239,10 @@ static const fb_case_entry FB_CASES[] = {
     {"oom_sweep", case_oom_sweep},
     {"seam_static_literal", case_seam_static_literal},
     {"session_oom_sweep", case_session_oom_sweep},
+    {"session_oom_sweep_delta", case_session_oom_sweep_delta},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
+    {"block_directive_label_lookup_locality", case_block_directive_label_lookup_locality},
+    {"reference_fanout_uniform_routing", case_reference_fanout_uniform_routing},
     {"restart_locality_counters", case_restart_locality_counters},
 };
 

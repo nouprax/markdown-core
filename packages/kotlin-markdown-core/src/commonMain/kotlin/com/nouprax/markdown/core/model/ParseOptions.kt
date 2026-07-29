@@ -1,6 +1,10 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
 import kotlin.jvm.JvmOverloads
+import kotlin.jvm.JvmSynthetic
 
 public data class ParseOptions
     @JvmOverloads
@@ -18,6 +22,7 @@ public data class ParseOptions
         public val directives: Boolean = true,
     )
 
+@JvmSynthetic
 internal fun ParseOptions.toNativeMask(): Int =
     listOf(
         smartPunctuation,

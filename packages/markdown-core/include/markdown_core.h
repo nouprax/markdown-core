@@ -6,6 +6,15 @@
 #include <stdint.h>
 
 /*
+ * Version discovery
+ * =================
+ *
+ * This installed facade intentionally exposes no compile-time version macro
+ * or runtime version function. Discover the installed package version through
+ * its markdown-core pkg-config or CMake package metadata.
+ */
+
+/*
  * Thread safety and ownership contract
  * ====================================
  *
@@ -26,8 +35,10 @@
  * until the session's next commit or free: edits only advance the stored
  * text and never touch the committed tree, so the borrowed view (and node
  * scopes resolved through it) stays valid across
- * markdown_core_session_edit. Deltas are caller-owned plain data: they
- * survive the session and are released with markdown_core_delta_free.
+ * markdown_core_session_edit. Deltas and ordered delta-entry tables are
+ * caller-owned plain data: they survive the session and are released with
+ * markdown_core_delta_free and markdown_core_delta_entries_free,
+ * respectively.
  *
  * A single document: after markdown_core_document_parse returns, the document
  * and its nodes are logically immutable through this API. Concurrent
@@ -40,8 +51,9 @@
  *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
  * the caller of that call and is not shared with any other thread; release it
- * with markdown_core_error_free (NULL is allowed). Dump buffers are owned by
- * the caller and released with markdown_core_dump_free (NULL is allowed).
+ * with markdown_core_error_free (NULL is allowed). Dump buffers and scope
+ * tables are owned by the caller and released with their matching free
+ * functions (NULL is allowed).
  *
  * No other process-global lifecycle exists: this contract is complete, and
  * bindings must not rely on undocumented conventions.
@@ -92,6 +104,28 @@ typedef struct markdown_core_scope {
     markdown_core_position end;
 } markdown_core_scope;
 
+/** One canonical-preorder row in a document scope table. */
+typedef struct markdown_core_scope_entry {
+    markdown_core_node_id id;
+    uint64_t revision;
+    markdown_core_scope scope;
+} markdown_core_scope_entry;
+
+typedef enum markdown_core_delta_change_kind {
+    MARKDOWN_CORE_DELTA_CHANGE_ADDED = 0,
+    MARKDOWN_CORE_DELTA_CHANGE_CHANGED = 1,
+    MARKDOWN_CORE_DELTA_CHANGE_BUBBLED = 2
+} markdown_core_delta_change_kind;
+
+/** One surviving delta node in children-before-parents materialization
+ * order. */
+typedef struct markdown_core_delta_entry {
+    markdown_core_node_id id;
+    markdown_core_node_id parent;
+    /** One of markdown_core_delta_change_kind, stored at a fixed ABI width. */
+    uint32_t change;
+} markdown_core_delta_entry;
+
 typedef struct markdown_core_parse_options {
     bool smart_punctuation;
     bool footnotes;
@@ -126,7 +160,10 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_HTML_BLOCK,
     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
     MARKDOWN_CORE_KIND_TABLE,
+    MARKDOWN_CORE_KIND_TABLE_ROW,
+    MARKDOWN_CORE_KIND_TABLE_CELL,
     MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
+    MARKDOWN_CORE_KIND_DIRECTIVE_LABEL,
     MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
     MARKDOWN_CORE_KIND_TEXT,
     MARKDOWN_CORE_KIND_SOFT_BREAK,
@@ -140,9 +177,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_LINK,
     MARKDOWN_CORE_KIND_IMAGE,
     MARKDOWN_CORE_KIND_DIRECTIVE,
-    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
-    MARKDOWN_CORE_KIND_TABLE_ROW,
-    MARKDOWN_CORE_KIND_TABLE_CELL
+    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -198,7 +233,7 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
 MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
-/** Canonical traversal hides directive-label wrapper nodes. */
+/** Canonical traversal follows the refined AST's direct semantic edges. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
@@ -210,8 +245,10 @@ MARKDOWN_CORE_API bool markdown_core_node_list_properties(
     markdown_core_optional_i64 *start,
     bool *tight
 );
-MARKDOWN_CORE_API bool
-markdown_core_node_list_item_checked(const markdown_core_node *node, markdown_core_optional_bool *checked);
+MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(
+    const markdown_core_node *node,
+    markdown_core_optional_bool *checked
+);
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
     markdown_core_string_view *info,
@@ -237,14 +274,9 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string_view *name,
-    markdown_core_string_view *attributes,
-    bool *has_label,
-    size_t *label_count
+    markdown_core_string_view *attributes
 );
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_label_child(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_node_directive_first_content_child(const markdown_core_node *node);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string_view *destination,
@@ -256,6 +288,23 @@ MARKDOWN_CORE_API bool markdown_core_node_image_properties(
     markdown_core_string_view *title
 );
 MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
+
+/**
+ * Allocates one immutable `(id, revision, absolute scope)` row for every
+ * canonical node in document preorder. One streaming traversal builds the
+ * complete table in O(n) time with O(depth) traversal state. The table
+ * remains valid independently of the document; free it with
+ * markdown_core_scope_table_free. On every failure, each non-null output is
+ * reset (`*output` to NULL and `*count` to zero), so callers may use one
+ * unconditional cleanup path.
+ */
+MARKDOWN_CORE_API bool markdown_core_document_scope_table(
+    const markdown_core_document *document,
+    markdown_core_scope_entry **output,
+    size_t *count,
+    markdown_core_error **error
+);
+MARKDOWN_CORE_API void markdown_core_scope_table_free(markdown_core_scope_entry *output);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(
@@ -288,8 +337,10 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /** Opens an empty session at revision 0. `options == NULL` selects the
  * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_session *
-markdown_core_session_open(const markdown_core_parse_options *options, markdown_core_error **error);
+MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+);
 MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
 
 /** Replaces bytes [byte_start, byte_end) of the stored text with
@@ -323,8 +374,10 @@ MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_se
  * identity even when ids collide numerically. */
 MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
 MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_session_node_by_id(const markdown_core_session *session, markdown_core_node_id id);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(
+    const markdown_core_session *session,
+    markdown_core_node_id id
+);
 
 /*
  * Footnote queries
@@ -390,8 +443,7 @@ MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
 MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_node *node);
 
-/** Canonical parent: NULL for the root; a directive-label child's parent is
- * its owning directive (label wrappers are never exposed). */
+/** Canonical parent, or NULL for the root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
 
 /** Delta accessors. The four arrays are disjoint: `added` and `removed`
@@ -399,8 +451,11 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const 
  * fields or direct child list changed, and `bubbled` lists ancestors whose
  * revision advanced only because a descendant changed. Ids of removed nodes
  * are retired and never reused. */
-MARKDOWN_CORE_API void
-markdown_core_delta_revisions(const markdown_core_delta *changes, uint64_t *before, uint64_t *after);
+MARKDOWN_CORE_API void markdown_core_delta_revisions(
+    const markdown_core_delta *changes,
+    uint64_t *before,
+    uint64_t *after
+);
 MARKDOWN_CORE_API size_t
 markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t
@@ -409,6 +464,26 @@ MARKDOWN_CORE_API size_t
 markdown_core_delta_changed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
 MARKDOWN_CORE_API size_t
 markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_core_node_id **ids);
+
+/**
+ * Allocates the `added ∪ changed ∪ bubbled` entries in deterministic
+ * children-before-parents order, so an immutable mirror can rebuild every
+ * row in one pass. `parent` is the row's canonical parent id, or 0 for the
+ * document root; every non-root parent is itself present later in the table.
+ * `session` must be the delta's originating session and must still be at its
+ * `after` revision. The table is independent of both inputs after return and
+ * is built in O(k) expected time and O(k) temporary space for k delta ids,
+ * without walking unaffected nodes. On every failure, each non-null output
+ * is reset (`*output` to NULL and `*count` to zero).
+ */
+MARKDOWN_CORE_API bool markdown_core_session_ordered_delta_entries(
+    const markdown_core_session *session,
+    const markdown_core_delta *changes,
+    markdown_core_delta_entry **output,
+    size_t *count,
+    markdown_core_error **error
+);
+MARKDOWN_CORE_API void markdown_core_delta_entries_free(markdown_core_delta_entry *output);
 MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus

@@ -100,7 +100,7 @@ public struct Document: Markup {
     /// The commit revision at which this document's content last changed.
     public let revision: UInt64
     /// The document's top-level blocks in source order.
-    public let children: [any Markup]
+    public let content: [any Markup]
     var resolver: ScopeResolver
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
@@ -111,13 +111,13 @@ public struct Document: Markup {
     /// Semantically identical to committing the same text through a
     /// `MarkupSession`.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        // A one-shot parse is literally a single-commit session. Scopes
-        // materialize eagerly because the session dies with this call and
-        // the snapshot must leave it self-contained.
+        // A one-shot parse is literally a single-commit session. Materialize
+        // its bulk scope table before the temporary session goes away so the
+        // returned value is immediately self-contained.
         let session = try MarkupSession(options: options)
         try session.append(source)
         let document = try session.commit().document
-        document.resolver.materialize()
+        document.materialize()
         return document
     }
 }
@@ -171,7 +171,10 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node, builder: self)
         case MARKDOWN_CORE_KIND_TABLE: Table(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, builder: self)
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, builder: self)
         case MARKDOWN_CORE_KIND_TEXT: Text(from: node, builder: self)
         case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node, builder: self)
@@ -186,8 +189,6 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, builder: self)
         case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node, builder: self)
-        case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, builder: self)
-        case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, builder: self)
         default: preconditionFailure("native parser returned an unknown node kind")
         }
     }
@@ -199,7 +200,7 @@ extension Document {
         self.init(
             id: id,
             revision: revision,
-            children: builder.children(node),
+            content: builder.children(node),
             resolver: ScopeResolver.unresolvable
         )
     }

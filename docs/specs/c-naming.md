@@ -14,9 +14,10 @@ export allowlists in sync. One rename came out of the review: the per-commit
 record `markdown_core_changeset` became **`markdown_core_delta`**
 (`markdown_core_delta_revisions/added/removed/changed/bubbled/free`;
 platform type `Delta`, file `extensions/delta.c`), decided with the platform
-naming set — `MarkupSession`, `Commit { document, changes: Delta }`,
-`MarkupID`, `FootnoteInfo`, and the footnote `label` field (`id` names node
-identity on platforms). The `get_` cluster decision below was not
+naming set — `MarkupSession`, `Commit { document, delta: Delta }` (the C
+facade's commit out-parameter keeps its earlier `changes` name, which
+predates the platform decision), `MarkupID`, `FootnoteInfo`, and the
+footnote `label` field (`id` names node identity on platforms). The `get_` cluster decision below was not
 re-litigated. The freeze completes when the remaining M4 bindings ship
 against these names.
 
@@ -65,4 +66,8 @@ re-litigate at the M4 freeze review unless the occupying names change.
 
 Historical migration documents keep the names that were current when they
 were written. Generated scanners (`scanners.c`, `ext_scanners.c`) are edited
-together with their `.re` sources; re2c is not run at build time.
+together with their `.re` sources; re2c is not run at build time. The GNU
+symbol-version node in `core/exports/markdown_core.map` intentionally keeps
+its inherited `MARKDOWN_CORE_1.0` name until the next C ABI break, because
+renaming it retags every exported symbol and would force consumers of shipped
+shared libraries to relink.

@@ -71,7 +71,7 @@ slowdown 实测为 4.442。
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
-    bufsize_t key_len;
+    markdown_core_bufsize key_len;
     void *value;
 } markdown_core_key_index_slot;
 ```
@@ -117,8 +117,11 @@ index API 以返回 0 报告初始化、插入或扩容失败。它不尝试吞�
 保留 `qsort` 是有意的故障隔离，不是普通输入的数据路径。`blocks.c` 中另一个按 footnote
 source index 排序的 `qsort` 只决定最终输出顺序，与 map lookup/duplicate normalization 无关。
 
-分配失败在全引擎内是单一契约：**任何 `calloc`/`realloc` 失败（包括 `strbuf` 扩容与其
-2 GiB 上限）都优雅降级，引擎不 abort、无未定义行为，且损失永远被上报**。机制分三层：
+分配失败在全引擎内是单一契约：**在调用方注入的 allocator 下，任何 `calloc`/`realloc`
+失败（包括 `strbuf` 扩容与其 INT32_MAX/2 ≈ 1 GiB 内容上限）都优雅降级，引擎不
+abort、无未定义行为，且损失永远被上报**。默认 allocator（`markdown_core_mem_default`）
+有意保持 fail-fast：其 `xcalloc`/`xrealloc` 在 OOM 时 abort，优雅降级契约由注入
+allocator 的 `oom_sweep` 回归把守。机制分三层：
 
 - `markdown_core_strbuf` 携带粘性 `oom` 位：扩容失败后旧内容保持有效、后续写入为
   no-op，`detach` 以 NULL 报告损失（合法空串仍返回 owned ""，NULL 无歧义）。
@@ -131,8 +134,7 @@ source index 排序的 `qsort` 只决定最终输出顺序，与 map lookup/dupl
   容量采样降级），此时输出与未注入时逐字节一致。
 
 公开 API 直接内建失败报告：`parser_new`/`map_new`/`iter_new` 返回 NULL；
-`markdown_core_node_consolidate_texts`、`markdown_core_node_own` 与各 setter 返回
-int；`markdown_core_node_own` 在复制失败时清空 chunk 而不是留下借用指针。
+`markdown_core_node_consolidate_texts` 与 `markdown_core_node_set_literal` 返回 int。
 
 该契约由 fallback_runner 的 `oom_sweep` 回归把守：对覆盖全部特性的语料，逐一令第
 k 次分配失败（k 扫过全部分配点），断言解析要么返回 NULL、要么产出与对照完全一致的

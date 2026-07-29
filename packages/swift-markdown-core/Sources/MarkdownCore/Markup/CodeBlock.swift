@@ -6,8 +6,9 @@ public struct CodeBlock: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// Always empty: this node is a leaf.
-    public let children: [any Markup] = []
+    /// Whether the construct is `embedded` in surrounding inline content or
+    /// stands alone as its own block; always `standalone` for code blocks.
+    public let mode: PlacementMode
     /// The full info string after the opening fence, if any.
     public let info: String?
     /// The first word of the info string — the conventional language tag.
@@ -15,10 +16,10 @@ public struct CodeBlock: Markup {
     /// The code block's literal text.
     public let literal: String
     /// Whether the block was fenced rather than indented.
-    public let isFenced: Bool
+    public let fenced: Bool
     /// Whether a fenced block's closing fence was present; streaming input
     /// parsed mid-block reports `false`.
-    public let isClosed: Bool
+    public let closed: Bool
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
@@ -40,14 +41,17 @@ extension CodeBlock {
             &fenced,
             &closed
         )
+        // The C facade fixes code blocks to standalone placement (the kind's
+        // only legal mode), so no native call is needed.
         self.init(
             id: id,
             revision: revision,
+            mode: .standalone,
             info: info.optionalString,
             language: language.optionalString,
             literal: literal.requiredString,
-            isFenced: fenced,
-            isClosed: closed
+            fenced: fenced,
+            closed: closed
         )
     }
 }

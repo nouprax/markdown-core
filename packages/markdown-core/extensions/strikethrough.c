@@ -1,6 +1,7 @@
 #include "strikethrough.h"
 #include <parser.h>
 #include "extension.h"
+#include "inline_util.h"
 
 static markdown_core_node *match(
     markdown_core_extension *self,
@@ -41,8 +42,7 @@ static markdown_core_node *match(
     res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
     res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
 
-    if ((left_flanking || right_flanking) &&
-        (delims == 2 || (!(parser->options & MARKDOWN_CORE_OPT_STRIKETHROUGH_DOUBLE_TILDE) && delims == 1))) {
+    if ((left_flanking || right_flanking) && (delims == 1 || delims == 2)) {
         markdown_core_inline_parser_push_delimiter(inline_parser, character, left_flanking, right_flanking, res);
     }
 
@@ -58,7 +58,6 @@ static delimiter *insert(
 ) {
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
-    delimiter *delim, *tmp_delim;
     delimiter *res = closer->next;
 
     strikethrough = opener->inl_text;
@@ -88,14 +87,7 @@ static delimiter *insert(
     markdown_core_node_free(closer->inl_text);
 
 done:
-    delim = closer;
-    while (delim != NULL && delim != opener) {
-        tmp_delim = delim->previous;
-        markdown_core_inline_parser_remove_delimiter(inline_parser, delim);
-        delim = tmp_delim;
-    }
-
-    markdown_core_inline_parser_remove_delimiter(inline_parser, opener);
+    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
 
     return res;
 }
@@ -104,8 +96,11 @@ static const char *get_type_string(markdown_core_extension *extension, markdown_
     return node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH ? "strikethrough" : "<unknown>";
 }
 
-static int
-can_contain(markdown_core_extension *extension, markdown_core_node *node, markdown_core_node_type child_type) {
+static int can_contain(
+    markdown_core_extension *extension,
+    markdown_core_node *node,
+    markdown_core_node_type child_type
+) {
     if (node->type != MARKDOWN_CORE_NODE_STRIKETHROUGH) {
         return false;
     }
@@ -123,7 +118,10 @@ static const markdown_core_extension strikethrough_extension = {
     .insert_inline_from_delim = insert,
     .special_inline_chars = strikethrough_special_chars,
     .special_inline_char_count = sizeof(strikethrough_special_chars),
-    .emphasis = true,
+    // '~' stays transparent to emphasis flanking (inherited gfm semantics:
+    // tilde runs pair through the same delimiter machinery as emphasis).
+    .flanking_skip_chars = strikethrough_special_chars,
+    .flanking_skip_char_count = sizeof(strikethrough_special_chars),
 };
 
 markdown_core_extension *markdown_core_strikethrough_extension(void) {

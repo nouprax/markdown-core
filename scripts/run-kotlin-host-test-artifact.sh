@@ -2,24 +2,14 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 artifact_dir=${1:-}
 platform=${2:-}
 suite=${3:-}
 
 case "$suite" in correctness | conformance | benchmark) ;; *) exit 2 ;; esac
-(
-    cd "$artifact_dir"
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum --check SHA256SUMS
-    else
-        shasum -a 256 --check SHA256SUMS
-    fi
-)
-grep -Fxq 'kind=kotlin-host-test-products' "$artifact_dir/manifest.txt"
-if [ -n "${GITHUB_SHA:-}" ]; then
-    grep -Fxq "source_sha=$GITHUB_SHA" "$artifact_dir/manifest.txt"
-fi
-tar -xzf "$artifact_dir/kotlin-test-products.tar.gz" -C "$root"
+artifact_verify "$artifact_dir" kotlin-host-test-products
+artifact_extract "$artifact_dir" kotlin-test-products.tar.gz "$root"
 project_build="$root/packages/kotlin-markdown-core/build"
 
 case "$platform" in

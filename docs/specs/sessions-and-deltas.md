@@ -72,6 +72,10 @@ Nodes from different sessions never compare equal.
   commits, and its trailing `Text` node keeps its id with a revision bump per
   content change. Earlier inline siblings that are byte-identical keep id and
   revision.
+- A present `DirectiveLabel` is an ordinary semantic node and adoption unit.
+  If edits leave it a label at the same place, it keeps its id under the same
+  rules as `TableCell` or `Paragraph`; adding or removing the brackets adds or
+  removes the node rather than mutating hidden parent metadata.
 - Everything else is best effort: reparsed regions adopt old ids where kind
   and position match, and report honest `added`/`removed` entries where they
   do not.
@@ -92,26 +96,35 @@ absolute positions in different snapshots.
 Nodes do not store absolute source positions. The public API is:
 
 - `document.scope(of: node)` — resolves the absolute `Scope` (start/end
-  line:column) of a node within that snapshot, O(depth).
+  line:column) of a node within that snapshot, O(1) after one O(n)
+  whole-snapshot materialization.
 - `MarkupWalker` supplies the resolved scope with every event; `MarkupDumper` prints
   absolute scopes for a `Document` root, byte-identical to the v1 dump
   grammar. Dumping a non-`Document` subtree prints scopes with the subtree as
   origin.
 
-One-shot `Document.parse` materializes scopes eagerly so `scope(of:)` behaves
-identically in both modes.
+One-shot `Document.parse` materializes scopes eagerly, so the returned value
+is immediately self-contained and `scope(of:)` behaves identically in every
+binding.
+
+The C facade exposes the same primitive as
+`markdown_core_document_scope_table`: it returns one caller-owned row per
+canonical node in preorder. Rows remain valid after the source document or
+session is freed and must be released with
+`markdown_core_scope_table_free`.
 
 Session snapshots resolve scopes lazily: deltas deliberately omit pure
 positional shifts (an edit that only moves later content commits an empty
 delta), so a snapshot cannot carry positions in its shared node values.
-Instead, the first scope use on a snapshot — `scope(of:)`, a `MarkupWalker` walk,
-or a dump — materializes every scope from the session's native tree in one
-walk and caches the table; the snapshot is self-contained from then on,
-including after the session advances or is freed. Queueing edits does not
-end a snapshot's currency (edits never touch the committed tree); the next
-successful commit does. Requesting a scope from a snapshot that was
-superseded before it ever materialized is a documented programmer error
-(platforms trap), as is passing a node of a different session or revision.
+Instead, the first scope use on a snapshot — `scope(of:)`, a scopeful
+`MarkupWalker` event walk, or a dump — obtains every scope from the session's
+native batch table in one O(n) operation and caches it; the snapshot is
+self-contained from then on, including after the session advances or is
+freed. Queueing edits does not end a snapshot's currency (edits never touch
+the committed tree); the next successful commit does. Requesting a scope
+from a snapshot that was superseded before it ever materialized is a
+documented programmer error (platforms trap), as is passing a node of a
+different session or revision.
 
 A caller that retains a snapshot across commits makes the contract explicit
 with `materialize()` on the snapshot: it performs the same one-time
@@ -155,19 +168,59 @@ request, a delta containing four id arrays:
 The four arrays are disjoint. Applying a delta to a mirror of the
 previous revision (materialize `added` and `changed`, relink `bubbled`, evict
 `removed`) yields exactly the new tree; this is the mechanism bindings use to
-build snapshots in O(delta) rather than O(document).
+build snapshots without decoding unchanged subtrees. Its cost is O(delta)
+plus the direct-child slots copied into rebuilt immutable containers; a
+contiguous platform array necessarily copies a wide parent even when only
+one child value changes.
 
 Deltas are plain caller-owned data and remain valid after the session
 advances or is freed.
+
+While the delta's originating session is still at its `after` revision, the
+C facade's `markdown_core_session_ordered_delta_entries` materializes
+`added ∪ changed ∪ bubbled` as one deterministic caller-owned
+`(id, parent, change)` table. Every non-root parent is another row later in
+the table, so bindings rebuild immutable values in one
+children-before-parents pass without defining their own depth or sorting
+rule. Construction is O(delta) expected time and O(delta) temporary space,
+does not walk unaffected nodes, and rejects a delta from another session
+lineage even when its revision matches. The rows remain valid after the
+session or delta is released and must be freed with
+`markdown_core_delta_entries_free`.
 
 ## Cost model
 
 - Per-commit work is proportional to the size of the touched leaf blocks plus
   the delta, independent of total document size. Streaming appends touch
   only the open frontier.
+- Platform mirror construction additionally copies the direct-child
+  collections of rebuilt or relinked containers. Each such collection is
+  subjected to one replacement-lookup pass and at most one contiguous copy
+  per commit, so reconstruction is O(delta + copied child slots), never
+  O(changes × parent width).
 - Inline content is reparsed per touched leaf block (inline syntax is
   non-local within a leaf). Streaming into one enormous paragraph is
   therefore linear per commit in that paragraph's size.
+- Reference-dependent inline reparsing operates on one complete ownership
+  domain: a stable semantic owner, its contiguous inline child span, and the
+  owner content buffer backing that span. Paragraph, Heading, and TableCell
+  domains contain all direct children. A block `DirectiveLabel` owns its raw
+  label source and likewise reparses its complete `content` list. An inline
+  `DirectiveLabel` is materialized during its surrounding Paragraph or
+  TableCell parse, just like Emphasis or Link, so it stays inside that
+  surrounding complete domain instead of copying and reparsing the same
+  bytes. The core records this distinction with generic raw-inline-source
+  lifecycle state; no adopter or lookup rule switches on directive kind or
+  parent shape. Replacement moves the complete owner child list and backing
+  together through the ordinary adopter. The committed and public trees
+  contain the same label node, so there is no prefix/count partition,
+  transparent edge, scope compensation, or directive-specific walker/delta
+  path. Empty, singleton, and large domains all use this one mechanism.
+- Directive-label deltas follow the ordinary topology rules. Absent ↔ present
+  adds or removes the `DirectiveLabel` and changes the directive's direct
+  child list; a change to the label's own child list reports the label
+  `changed`; a descendant-only field edit reports that descendant `changed`
+  and the label and directive ancestors `bubbled`.
 - Documents parsed mid-stream behave as if the input ended at the current
   text: unterminated constructs parse exactly as `Document.parse` would parse
   them (for example `CodeBlock.closed == false`).
@@ -279,8 +332,13 @@ dump grammar keeps its frozen `id=` key for that label.
 The C facade exposes the same model as
 `markdown_core_session_open/edit/commit/document/node_by_id/free`,
 `markdown_core_node_get_id/get_revision/get_parent`, and
-`markdown_core_delta_*` accessors; node handles borrowed from a session
-are valid until the next mutating call on that session.
+`markdown_core_delta_*` accessors. The shared materialization order is
+`markdown_core_session_ordered_delta_entries`, released with
+`markdown_core_delta_entries_free`; node handles borrowed from a session are
+valid until the next mutating call on that session.
 
-`ParseOptions` is unchanged from `canonical-ast.md`. MarkupVisitor and MarkupWalker
-contracts are unchanged; walker events additionally carry the resolved scope.
+`ParseOptions` and the exhaustive `MarkupVisitor` dispatch contract are
+unchanged from `canonical-ast.md`. `MarkupWalker` has two deliberate traversal
+modes: its typed-visitor overload walks structure in preorder without resolving
+scope, while its event overload emits entering/exiting events with the resolved
+scope.

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 output=${1:-"$root/build/ci-artifacts/swift-product"}
 
 cd "$root"
@@ -13,9 +14,6 @@ tar -czf "$output/swift-product-tree.tar.gz" .build
 cat >"$output/manifest.txt" <<EOF
 schema=1
 kind=swift-product-tree
-source_sha=${GITHUB_SHA:-$(git -C "$root" rev-parse HEAD)}
+source_sha=$(artifact_source_sha "$root")
 EOF
-(
-    cd "$output"
-    shasum -a 256 swift-product-tree.tar.gz manifest.txt >SHA256SUMS
-)
+artifact_sha256_write "$output" swift-product-tree.tar.gz manifest.txt

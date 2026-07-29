@@ -10,12 +10,13 @@ extern "C" {
 /** Size-classed slab arena behind the markdown_core_mem interface.
  *
  * A session allocates everything it owns — nodes, content buffers, tables,
- * the staged parsers — through its arena. Freed blocks go to per-class
- * freelists and are reused by later commits; memory returns to the base
- * allocator only at release, so a long-lived session holds its high-water
- * mark. Growing a block within its class capacity is a no-op, which absorbs
- * most content-buffer reallocations. Requests above the largest class pass
- * through to the base allocator and are tracked so release stays wholesale.
+ * the staged parsers — through its arena. Freed class-sized blocks go to
+ * per-class freelists and are reused by later commits; those slabs return to
+ * the base allocator only at release. Growing a block within its class
+ * capacity is a no-op, which absorbs most content-buffer reallocations.
+ * Requests above the largest class pass through to the base allocator and
+ * return there immediately when freed; survivors remain tracked so release
+ * can free them wholesale.
  *
  * The arena embeds its markdown_core_mem first and the allocator functions
  * recover it by casting back; there is no global state and no locking — an

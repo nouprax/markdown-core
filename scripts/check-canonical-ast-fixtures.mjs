@@ -19,6 +19,34 @@ const failures = [];
 const difference = (left, right) => [...left].filter((value) => !right.has(value)).sort();
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
+const parseDumpTree = (tree) => {
+    const roots = [];
+    const stack = [];
+    for (const line of tree.trimEnd().split("\n")) {
+        const branch = line.match(/^((?:│ {3}| {4})*)(?:├──|└──) (.*)$/);
+        const depth = branch === null ? 0 : branch[1].length / 4 + 1;
+        const payload = branch === null ? line : branch[2];
+        const match = payload.match(/^([A-Z][A-Za-z]+) .* children=(\d+)$/);
+        if (match === null) continue;
+        const node = { kind: match[1], declaredChildren: Number(match[2]), children: [] };
+        if (depth === 0) roots.push(node);
+        else stack[depth - 1]?.children.push(node);
+        stack.length = depth;
+        stack[depth] = node;
+    }
+    return roots;
+};
+const dumpNodes = (tree) => {
+    const nodes = [];
+    const stack = [...parseDumpTree(tree)];
+    while (stack.length > 0) {
+        const node = stack.pop();
+        nodes.push(node);
+        stack.push(...node.children);
+    }
+    return nodes;
+};
+const isDirective = (node) => node.kind === "Directive" || node.kind === "DirectiveBlock";
 
 const nodeTable = contract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
@@ -72,9 +100,12 @@ const stateValidators = {
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
     "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{\}" /m.test(tree),
     "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{.+\}" /m.test(tree),
-    "directive.label.null": (tree) => /^.*Directive(?:Block)? scope=.* label=null /m.test(tree),
-    "directive.label.empty": (tree) => /^.*Directive(?:Block)? scope=.* label=0 /m.test(tree),
-    "directive.label.populated": (tree) => /^.*Directive(?:Block)? scope=.* label=[1-9]\d* /m.test(tree),
+    "directive.label.null": (tree) =>
+        dumpNodes(tree).some((node) => isDirective(node) && node.children[0]?.kind !== "DirectiveLabel"),
+    "directive.label.empty": (tree) =>
+        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren === 0),
+    "directive.label.populated": (tree) =>
+        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren > 0),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
@@ -95,7 +126,10 @@ const orderValidators = {
             tree
         ),
     "directive.label-before-content": (tree) =>
-        /DirectiveBlock scope=.*label=[1-9]\d* children=[2-9]\d*\n[\s\S]*Text scope=[\s\S]*Paragraph scope=/.test(tree),
+        dumpNodes(tree).some(
+            (node) =>
+                node.kind === "DirectiveBlock" && node.children.length > 1 && node.children[0].kind === "DirectiveLabel"
+        ),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
 };
 
@@ -208,7 +242,8 @@ for (const testCase of manifest.cases ?? []) {
             Table: ["alignments"],
             TableRow: ["isHeader"],
             TableCell: [],
-            DirectiveBlock: ["mode", "name", "attributes", "label"],
+            DirectiveBlock: ["mode", "name", "attributes"],
+            DirectiveLabel: [],
             FootnoteDefinition: ["id"],
             Text: ["literal"],
             SoftBreak: [],
@@ -221,7 +256,7 @@ for (const testCase of manifest.cases ?? []) {
             Strikethrough: [],
             Link: ["destination", "title"],
             Image: ["source", "title"],
-            Directive: ["mode", "name", "attributes", "label"],
+            Directive: ["mode", "name", "attributes"],
             FootnoteReference: ["id"]
         };
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];

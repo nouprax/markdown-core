@@ -6,8 +6,9 @@ public struct Code: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
-    /// Always empty: this node is a leaf.
-    public let children: [any Markup] = []
+    /// Whether the construct is `embedded` in surrounding inline content or
+    /// stands alone as its own block; always `embedded` for code spans.
+    public let mode: PlacementMode
     /// The code span's literal text.
     public let literal: String
 
@@ -20,6 +21,8 @@ extension Code {
         let (id, revision) = builder.id(of: node)
         var literal = markdown_core_string_view()
         markdown_core_node_literal(node, &literal)
-        self.init(id: id, revision: revision, literal: literal.requiredString)
+        // The C facade fixes code spans to embedded placement (the kind's
+        // only legal mode), so no native call is needed.
+        self.init(id: id, revision: revision, mode: .embedded, literal: literal.requiredString)
     }
 }

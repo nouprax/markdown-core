@@ -10,6 +10,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const version = readFileSync(path.join(root, "VERSION"), "utf8").trim();
 const stableSemver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 assert.match(version, stableSemver, "VERSION must be a stable semantic version");
+const [major, minor, patch] = version.split(".").map(Number);
 
 const expectedTag = `v${version}`;
 const tagArgument = process.argv.find((argument) => argument.startsWith("--tag="));
@@ -36,6 +37,10 @@ assert.ok(text("CHANGELOG.md").includes(`## ${version} - `), "CHANGELOG must con
 
 const exactVersionFiles = [
     ["packages/markdown-core/core/include/markdown-core-version.h", `MARKDOWN_CORE_VERSION_STRING "${version}"`],
+    [
+        "packages/markdown-core/core/include/markdown-core-version.h",
+        `MARKDOWN_CORE_VERSION ((${major} << 16) | (${minor} << 8) | ${patch})`
+    ],
     ["README.md", `.package(url: "https://github.com/nouprax/markdown-core", from: "${version}")`],
     ["README.md", `implementation("com.nouprax:kotlin-markdown-core:${version}")`],
     ["packages/kotlin-markdown-core/README.md", `com.nouprax:kotlin-markdown-core:${version}`],

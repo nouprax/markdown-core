@@ -276,7 +276,7 @@ mirror. Per commit it decodes only `added ∪ changed` payloads, rebuilds
 new immutable `Document` sharing everything unchanged — O(delta·depth).
 Equality everywhere is `(lineage, id, revision)`.
 
-- Swift: structs stay `Sendable`; `Markup` gains `id`/`revision`; all 28
+- Swift: structs stay `Sendable`; `Markup` gains `id`/`revision`; all 29
   kinds become `Equatable/Hashable/Identifiable`; `MarkupSession` is a
   non-`Sendable` class with `append`/`replace`/`commit` and an
   `updates(feeding:)` async sequence.
@@ -292,7 +292,7 @@ Equality everywhere is `(lineage, id, revision)`.
 
 | Artifact | Change |
 | --- | --- |
-| `docs/specs/canonical-ast.md` | 28-kind inventory unchanged; every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote contract revised (source-order definitions, label-carrying references, query-based numbering/resolution — decision #5 as revised 2026-07-16). |
+| `docs/specs/canonical-ast.md` | The M4 identity work originally left the 28-kind inventory unchanged; the 2026-07-29 amendment promotes `DirectiveLabel` into the canonical inventory immediately after `DirectiveBlock`, bringing the total to 29. Every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote contract revised (source-order definitions, label-carrying references, query-based numbering/resolution — decision #5 as revised 2026-07-16). |
 | `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` stay byte-identical through M2; footnote-bearing goldens regenerate deliberately when the revised footnote contract lands (M3). |
 | `docs/specs/test-architecture.md` | Add equivalence, id-stability, and edit-storm suites to the frozen topology. |
 | `scripts/audit-public-surface.sh` | Add the new C symbols to the header+map sync; scope the Swift/Kotlin/ES mutation-ban greps to the model/walker directories (Session's `append`/`replace` would otherwise trip them); pin the Session surfaces exactly; ES frozen runtime export list gains `MarkupSession`. |
@@ -485,9 +485,11 @@ Equality everywhere is `(lineage, id, revision)`.
     (kind, id, revision, fields) and names its children by id — positions
     never travel with records. A commit payload is
     `removed ids | records for added ∪ changed ∪ bubbled`, with records
-    ordered children-before-parents (C-side depth sort; equal depths are
-    never ancestor-related), which is exactly the order the mirror rebuilds
-    in — one pass, one record shape for all three verdicts (the planned
+    ordered children-before-parents by the shared C ordered-delta table.
+    That table links the touched tree once and emits ready leaves in O(delta)
+    expected time; the former per-node ancestor walk and depth sort were
+    removed. This is exactly the order the mirror rebuilds in — one pass,
+    one record shape for all three verdicts (the planned
     bubbled-only `(id, childIds)` shape was dropped: bubbled nodes are
     containers with tiny fields, and one shape removes a decoder branch).
     Scopes travel as a separate `(id, revision, scope)` table payload that a
@@ -506,7 +508,7 @@ Equality everywhere is `(lineage, id, revision)`.
     materialized scope table: one decode pipeline for both modes. An empty
     source commits an empty delta, so the decoder synthesizes the revision-0
     empty root from the scope table.
-  - Platform surface: all 28 model classes gain `id: MarkupID`/`revision`
+  - Platform surface: all 29 model classes gain `id: MarkupID`/`revision`
     with O(1) equals/hashCode, drop stored scopes, and rename the footnote
     field to `label`; `Document.scope(node)`/`Document.dump()` mediate
     scopes and dumps; `Walker.walk(document, ...)` supplies the resolved
@@ -546,11 +548,11 @@ Equality everywhere is `(lineage, id, revision)`.
     scope materialization, free) sharing the session decode pipeline end
     to end.
   - Mirror-by-delta without records: a commit reads the four delta id
-    arrays straight from WASM memory, then rebuilds top-down from the
-    committed root — a node in `added ∪ changed ∪ bubbled` re-decodes and
-    recurses, everything else returns the previous snapshot's object from
-    the id → node mirror (children-before-parents ordering falls out of
-    the recursion; no depth sort). A pure-shift empty delta re-wraps the
+    arrays straight from WASM memory, then consumes the shared C
+    ordered-delta table. Nodes in `added ∪ changed ∪ bubbled` rebuild once
+    in children-before-parents order; unchanged children come from the
+    id → node mirror. The binding performs no recursive rebuild, ancestor
+    walk, or depth sort. A pure-shift empty delta re-wraps the
     root `Document` around a fresh resolver, exactly the Kotlin path, and
     the detach-before-native-commit / reattach-on-transactional-failure
     order from the Swift race fix (#22) is ported verbatim.
@@ -862,25 +864,23 @@ Equality everywhere is `(lineage, id, revision)`.
   otherwise), and the table rehash must copy the postings struct into
   the grown table before the swap or they leak away.
 
-  Whole-document routing and walk fusion delivered 2026-07-19 (second
-  degenerate-cost item).  Two routing triggers send commits whose
-  incremental machinery cannot win to the full path, whose wholesale
-  table and index rebuilds beat per-node splice maintenance: (a)
-  pre-parse and free — a head restart with no clean boundary at or
-  beyond the damage can never reflow, so the whole-text insert and
-  every whole-document reshape route before anything is staged; (b)
-  post-collection — when the changed labels' dependents reach half the
-  document's children (checked only past 64 dependents, with an
-  early-exit child count), the commit discards only the small staged
-  region and reruns full.  The seal walks now return their node count
-  and replace the separate chain_node_count pass that sized the id
-  reservation.  Numbers: one-enormous-paragraph 137.9->119.1 ms/commit
-  at 1 MiB (-14%), definition churn 23.6->16.2 ms at 256 KiB (-31%);
-  defspread stays flat; storm pays ~5% for the postings maintenance the
-  narrowing added (measured and accepted — 0.1 us/commit against the
-  removed O(units) scan).  White-box counter expectations updated: the
-  whole-text insert is now a full commit by design
-  (restart_locality_counters pins 2 full / N restarted / N reflowed).
+  Historical whole-document routing and walk fusion landed
+  2026-07-19.  That version sent a head restart without a clean suffix
+  boundary to the full path and added a second route once changed-label
+  dependents crossed a measured cardinality/share threshold.  It
+  produced useful diagnostic numbers (one-enormous-paragraph
+  137.9->119.1 ms/commit at 1 MiB; definition churn 23.6->16.2 ms at
+  256 KiB), but the routing policy was removed in the 2026-07-29
+  first-principles follow-up: benchmark shape, input size, and dependent
+  count are not semantic distinctions and therefore cannot select a
+  second commit algorithm.  Empty-session bootstrap remains a full
+  lifecycle operation; a subsequent whole-text insert and all ordinary
+  edits use the one incremental state machine.  The fanout gate covers
+  1/63/64/65/129 dependents, and `restart_locality_counters` pins
+  1 full bootstrap plus the whole-text and local incremental restarts.
+  The independent walk-fusion improvement remains: seal walks return
+  their node count and replace the separate `chain_node_count` pass
+  that sized the id reservation.
 
   Inline prefix reuse delivered 2026-07-19 (third degenerate-cost item,
   head-pair scope).  When the first staged unit reparses the restart
@@ -897,11 +897,11 @@ Equality everywhere is `(lineage, id, revision)`.
   A mid-document 1 MiB plain paragraph edit drops 119 -> 10.6 ms/commit
   (~11x; the rest is the block feed).  Two extensions were prototyped
   and REVERTED after `fuzz_script_smoke` scripts 372/444 caught child-
-  count divergence: routing-yield (single-paragraph documents currently
-  route to the full path before the seam can apply) and the tail-pair
-  seam for streaming appends — both remain follow-ups with those
-  scripts as repro anchors; the shipped head-pair scope is green across
-  every gate.
+  count divergence: routing-yield and the tail-pair seam for streaming
+  appends.  The later removal of shape-based full routing made the
+  routing-yield experiment obsolete; tail-pair reuse remains a separate
+  follow-up with those scripts as repro anchors.  The shipped head-pair
+  scope is green across every gate.
 
   Degenerate-shape asymptotics, measured 2026-07-19 when a pre-release
   review asked whether the degraded paths are really O(document):
@@ -916,9 +916,10 @@ Equality everywhere is `(lineage, id, revision)`.
   upkeep over the reparsed material.  The contract, README, CHANGELOG,
   and release notes were qualified accordingly.  The follow-up decision
   (2026-07-19) pulled the three remaining optimizations into the
-  release as blockers; they shipped as the postings narrowing, the
-  whole-document routing with walk fusion, and the inline seam —
-  delivery records above.
+  release as blockers; they shipped as postings narrowing,
+  whole-document walk fusion, and the inline seam.  The benchmark-driven
+  routing bundled with walk fusion at that time was later removed as
+  described above.
 
 ## Verification
 

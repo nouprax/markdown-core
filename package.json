@@ -26,7 +26,7 @@
         "clean:kotlin-android-emulator": "scripts/gradle.sh :packages:kotlin-markdown-core:cleanManagedDevices",
         "conformance:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset conformance",
         "conformance:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreConformanceTests\\.'",
-        "conformance:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreConformanceTests",
+        "conformance:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreConformanceTests",
         "conformance:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:jvmConformanceTest",
         "conformance:kotlin-android-host": "scripts/gradle.sh :packages:kotlin-markdown-core:androidHostConformanceTest",
         "conformance:kotlin-android-emulator": "scripts/run-kotlin-android-emulator-tests.sh conformance",
@@ -54,7 +54,7 @@
         "release:dry-run": "scripts/release-dry-run.sh",
         "test:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset correctness",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
-        "test:swift-ios-simulator": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache xcodebuild test -scheme swift-markdown-core-Package -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' -derivedDataPath build/xcode-tests -only-testing:MarkdownCoreTests",
+        "test:swift-ios-simulator": "scripts/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:jvmTest",
         "test:kotlin-android-host": "scripts/gradle.sh :packages:kotlin-markdown-core:testAndroidHostTest",
         "test:kotlin-android-emulator": "scripts/run-kotlin-android-emulator-tests.sh correctness",
@@ -62,7 +62,9 @@
         "test:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64Test",
         "test:es-node": "node packages/es-markdown-core/scripts/run-tests.mjs --target node",
         "test:es-browser": "node packages/es-markdown-core/scripts/run-tests.mjs --target browser",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run audit:packages"
+        "verify": "pnpm run verify:core && pnpm run verify:macos",
+        "verify:core": "pnpm run format:c:check && pnpm run format:cmake:check && pnpm run format:kotlin:check && pnpm run format:es:check && pnpm run lint:c && pnpm run lint:kotlin && pnpm run lint:es && pnpm run check:contracts && pnpm run check:gradle-model && node scripts/check-release-version.mjs --skip-swift && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:packages",
+        "verify:macos": "pnpm run format:swift:check && pnpm run lint:swift && pnpm run release:check-version && pnpm run audit:surface"
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",

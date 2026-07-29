@@ -24,6 +24,7 @@
             "TableRow",
             "TableCell",
             "DirectiveBlock",
+            "DirectiveLabel",
             "FootnoteDefinition",
             "Text",
             "SoftBreak",
@@ -172,6 +173,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Table",
                     "TableRow",
                     "TableCell"
@@ -269,6 +271,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Formula",
                     "FootnoteReference",
                     "LineBreak",
@@ -341,6 +344,7 @@
                     "Text",
                     "Strong",
                     "DirectiveBlock",
+                    "DirectiveLabel",
                     "Paragraph"
                 ],
                 "states": [
@@ -358,6 +362,29 @@
                     "escaping.json"
                 ],
                 "orders": ["document.source-order", "table.header-rows-cells", "directive.label-before-content"]
+            }
+        },
+        {
+            "name": "multiline-spans",
+            "input": "multiline-spans.md",
+            "expected": "multiline-spans.ast",
+            "parseOptions": {
+                "smartPunctuation": true,
+                "footnotes": true,
+                "stripHTMLComments": true,
+                "tables": true,
+                "strikethrough": true,
+                "autolinks": true,
+                "taskLists": true,
+                "formulas": true,
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
+            },
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text", "Code", "HTML", "Emphasis"],
+                "states": ["placement.embedded", "scope.positive", "children.empty", "children.populated"],
+                "orders": ["document.source-order"]
             }
         }
     ]

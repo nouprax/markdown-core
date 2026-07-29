@@ -56,13 +56,12 @@ set(MARKDOWN_CORE_ENGINE_SOURCES
 set(PROGRAM "markdown-core")
 set(PROGRAM_SOURCES main.c)
 
-include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
+# The checked-in headers under include/ (config.h, markdown-core-export.h,
+# markdown-core-version.h) are the single source of truth shared with the
+# SwiftPM, Gradle, and Emscripten builds; check-release-version.mjs pins the
+# version header to VERSION.
+include_directories(. include ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR})
-
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core-version.h.in
-               ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-version.h)
-
-include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
@@ -97,9 +96,6 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core" VERSION ${PROJECT_VERSION})
     endif(MSVC)
 
-    generate_export_header(${STATICLIBRARY} BASE_NAME MARKDOWN_CORE EXPORT_FILE_NAME
-                           ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-export.h)
-
 endif()
 
 if(MSVC)
@@ -114,32 +110,14 @@ if(NOT MSVC OR CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
     include(InstallRequiredSystemLibraries)
 endif()
 
-set(libdir lib${LIB_SUFFIX})
-
 install(TARGETS ${PROGRAM} RUNTIME DESTINATION bin)
 
 if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core.pc.in ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc @ONLY)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc DESTINATION ${libdir}/pkgconfig)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../include/markdown_core.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
-
-# Feature tests
-include(CheckIncludeFile)
-include(CheckCSourceCompiles)
-include(CheckCSourceRuns)
-include(CheckSymbolExists)
-check_include_file(stdbool.h HAVE_STDBOOL_H)
-check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
-check_c_source_compiles(
-    "
-  int f(void) __attribute__ (());
-  int main() { return 0; }
-"
-    HAVE___ATTRIBUTE__)
-
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 # Always compile with warnings
 if(MSVC)

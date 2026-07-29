@@ -138,3 +138,17 @@ x+y
 Document scope=1:1..3:3 children=1
 └── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
 ````````````````````````````````
+
+An unpaired dollar is ordinary punctuation for emphasis flanking: the
+underscore after it still opens emphasis exactly as reference CommonMark
+requires.
+
+```````````````````````````````` example
+foo$_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo$" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````

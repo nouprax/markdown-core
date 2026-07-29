@@ -44,6 +44,9 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 }
 
 bool markdown_core_node_owns_inlines(markdown_core_node *node) {
+    if (node->flags & MARKDOWN_CORE_NODE__OWNS_INLINE_SOURCE) {
+        return true;
+    }
     if (node->extension && node->extension->contains_inlines) {
         return node->extension->contains_inlines(node->extension, node) != 0;
     }
@@ -107,16 +110,12 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     return node;
 }
 
-markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, markdown_core_extension *extension) {
-    return markdown_core_node_new_with_mem_and_ext(type, markdown_core_mem_default(), extension);
-}
-
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
     return markdown_core_node_new_with_mem_and_ext(type, mem, NULL);
 }
 
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
-    return markdown_core_node_new_with_ext(type, NULL);
+    return markdown_core_node_new_with_mem(type, markdown_core_mem_default());
 }
 
 static void free_node_as(markdown_core_node *node) {
@@ -148,10 +147,6 @@ static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
     while (e != NULL) {
         markdown_core_strbuf_free(&e->content);
-
-        if (e->user_data && e->user_data_free_func) {
-            e->user_data_free_func(NODE_MEM(e), e->user_data);
-        }
 
         if (e->as.opaque && e->extension && e->extension->free_opaque) {
             e->extension->free_opaque(e->extension, NODE_MEM(e), e);
@@ -256,6 +251,10 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "link";
     case MARKDOWN_CORE_NODE_IMAGE:
         return "image";
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return "footnote_definition";
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        return "footnote_reference";
     }
 
     return "<unknown>";
@@ -299,30 +298,6 @@ markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     } else {
         return node->last_child;
     }
-}
-
-void *markdown_core_node_get_user_data(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    } else {
-        return node->user_data;
-    }
-}
-
-int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data = user_data;
-    return 1;
-}
-
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func) {
-    if (node == NULL) {
-        return 0;
-    }
-    node->user_data_free_func = free_func;
-    return 1;
 }
 
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
@@ -395,23 +370,6 @@ int markdown_core_node_get_heading_level(markdown_core_node *node) {
     return 0;
 }
 
-int markdown_core_node_set_heading_level(markdown_core_node *node, int level) {
-    if (node == NULL || level < 1 || level > 6) {
-        return 0;
-    }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_HEADING:
-        node->as.heading.level = level;
-        return 1;
-
-    default:
-        break;
-    }
-
-    return 0;
-}
-
 markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *node) {
     if (node == NULL) {
         return MARKDOWN_CORE_NO_LIST;
@@ -421,23 +379,6 @@ markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *nod
         return node->as.list.list_type;
     } else {
         return MARKDOWN_CORE_NO_LIST;
-    }
-}
-
-int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_list_type type) {
-    if (!(type == MARKDOWN_CORE_BULLET_LIST || type == MARKDOWN_CORE_ORDERED_LIST)) {
-        return 0;
-    }
-
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list.list_type = type;
-        return 1;
-    } else {
-        return 0;
     }
 }
 
@@ -453,23 +394,6 @@ markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *n
     }
 }
 
-int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_delim_type delim) {
-    if (!(delim == MARKDOWN_CORE_PERIOD_DELIM || delim == MARKDOWN_CORE_PAREN_DELIM)) {
-        return 0;
-    }
-
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list.delimiter = delim;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
 int markdown_core_node_get_list_start(markdown_core_node *node) {
     if (node == NULL) {
         return 0;
@@ -477,19 +401,6 @@ int markdown_core_node_get_list_start(markdown_core_node *node) {
 
     if (node->type == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list.start;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_set_list_start(markdown_core_node *node, int start) {
-    if (node == NULL || start < 0) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list.start = start;
-        return 1;
     } else {
         return 0;
     }
@@ -507,44 +418,6 @@ int markdown_core_node_get_list_tight(markdown_core_node *node) {
     }
 }
 
-int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
-        node->as.list.tight = tight == 1;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_get_list_item_index(markdown_core_node *node) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        return node->as.list.start;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx) {
-    if (node == NULL || idx < 0) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
-        node->as.list.start = idx;
-        return 1;
-    } else {
-        return 0;
-    }
-}
-
 const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -557,18 +430,6 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     }
 }
 
-int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
-    } else {
-        return 0;
-    }
-}
-
 int markdown_core_node_get_fence_closed(markdown_core_node *node) {
     if (node == NULL) {
         return 0;
@@ -576,37 +437,6 @@ int markdown_core_node_get_fence_closed(markdown_core_node *node) {
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         return node->as.code.fenced && node->as.code.fence_closed;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset, char *character) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        *length = node->as.code.fence_length;
-        *offset = node->as.code.fence_offset;
-        *character = node->as.code.fence_char;
-        return node->as.code.fenced;
-    } else {
-        return 0;
-    }
-}
-
-int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset, char character) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-        node->as.code.fenced = (int8_t)fenced;
-        node->as.code.fence_length = (uint8_t)length;
-        node->as.code.fence_offset = (uint8_t)offset;
-        node->as.code.fence_char = character;
-        return 1;
     } else {
         return 0;
     }
@@ -628,22 +458,6 @@ const char *markdown_core_node_get_url(markdown_core_node *node) {
     return NULL;
 }
 
-int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.url, url);
-    default:
-        break;
-    }
-
-    return 0;
-}
-
 const char *markdown_core_node_get_title(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -658,30 +472,6 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
     }
 
     return NULL;
-}
-
-int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
-    if (node == NULL) {
-        return 0;
-    }
-
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title, title);
-    default:
-        break;
-    }
-
-    return 0;
-}
-
-markdown_core_extension *markdown_core_node_get_extension(markdown_core_node *node) {
-    if (node == NULL) {
-        return NULL;
-    }
-
-    return node->extension;
 }
 
 int markdown_core_node_set_extension(markdown_core_node *node, markdown_core_extension *extension) {
@@ -825,30 +615,6 @@ int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *
         return 0;
     }
     markdown_core_node_unlink(oldnode);
-    return 1;
-}
-
-int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_node *child) {
-    if (!S_can_contain(node, child)) {
-        return 0;
-    }
-
-    S_node_unlink(child);
-
-    markdown_core_node *old_first_child = node->first_child;
-
-    child->next = old_first_child;
-    child->prev = NULL;
-    child->parent = node;
-    node->first_child = child;
-
-    if (old_first_child) {
-        old_first_child->prev = child;
-    } else {
-        // Also set last_child if node previously had no children.
-        node->last_child = child;
-    }
-
     return 1;
 }
 

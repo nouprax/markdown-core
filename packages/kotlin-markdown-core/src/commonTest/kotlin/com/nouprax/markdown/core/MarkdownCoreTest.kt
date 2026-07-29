@@ -49,7 +49,11 @@ class ErrorsTest {
     @Test
     fun corruptedNativePayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
-            WireDecoder.decodeDocument(byteArrayOf(0x4d, 0x4b, 0x43))
+            decodeWireDocument(
+                byteArrayOf(0x4d, 0x4b, 0x43),
+                scopeEntry = { _, _ -> Unit },
+                materialize = { _, _, _, _ -> error("truncated payload reached materialization") },
+            )
         }
     }
 }

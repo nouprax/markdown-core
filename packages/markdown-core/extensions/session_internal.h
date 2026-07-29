@@ -25,6 +25,16 @@
 #endif
 #endif
 
+/** SplitMix64 finalizer shared by the session's open-addressing tables. */
+static inline uint64_t markdown_core_mix64(uint64_t x) {
+    x ^= x >> 30;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31;
+    return x;
+}
+
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
 // session-unique node ids (0 marks an empty slot, ids start at 1). Id and
 // node share a slot so every probe costs one cache line, not two — the
@@ -48,6 +58,7 @@ typedef struct {
 } markdown_core_id_array;
 
 struct markdown_core_delta {
+    uint64_t lineage;
     uint64_t before;
     uint64_t after;
     markdown_core_id_array added;
@@ -253,6 +264,9 @@ struct markdown_core_session {
     // when a commit changes per-label winners. Maintained by both commit
     // paths; skipped entirely for the one-shot convenience parse.
     markdown_core_lookup_table lookups;
+    // The detached one-shot document keeps node ids but never commits or
+    // answers session-only queries, so its commit skips every session index.
+    bool one_shot;
     bool record_lookups;
     // The incremental pipeline reconciled definitions in place and then could
     // not finish: the map no longer matches the committed tree, so the next
@@ -328,6 +342,21 @@ bool markdown_core_session_adopt(
     markdown_core_delta *changes
 );
 
+/** Runs the canonical adoption machine over one owner's complete inline
+ * ownership domain while keeping the semantic owner stable. Every child of
+ * `old_owner` and `staged_owner` belongs to the corresponding domain. On
+ * success the staged owner and descendants carry their final ids/revisions,
+ * and `owner_revision` reports the stable owner's
+ * changed/bubbled/unchanged verdict. */
+bool markdown_core_session_adopt_inline_domain(
+    markdown_core_session *session,
+    markdown_core_node *old_owner,
+    markdown_core_node *staged_owner,
+    uint64_t new_rev,
+    markdown_core_delta *changes,
+    uint64_t *owner_revision
+);
+
 /** Records every facade-visible node of `root`'s subtree as removed in
  * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
 bool markdown_core_session_record_removed(
@@ -355,8 +384,11 @@ bool markdown_core_footnote_index_build(
  * slot; SIZE_MAX with *failed clear when the label normalizes to nothing
  * (it can never participate), SIZE_MAX with *failed set on allocation
  * loss. Idempotent — a failed commit leaves at worst unused slots. */
-size_t
-markdown_core_session_footnote_label(markdown_core_session *session, const markdown_core_chunk *label, bool *failed);
+size_t markdown_core_session_footnote_label(
+    markdown_core_session *session,
+    const markdown_core_chunk *label,
+    bool *failed
+);
 
 /** Stamps interned label slots on every site of both lists (used for
  * freshly collected sites, whose labels are not yet resolved). Returns
@@ -371,8 +403,10 @@ bool markdown_core_session_footnote_label_sites(
 void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core_footnote_labels *labels);
 
 /** Looks up a record by node id, NULL when absent. */
-markdown_core_footnote_record *
-markdown_core_footnote_table_find(const markdown_core_footnote_table *table, markdown_core_node_id id);
+markdown_core_footnote_record *markdown_core_footnote_table_find(
+    const markdown_core_footnote_table *table,
+    markdown_core_node_id id
+);
 
 /** Grows/compacts the record table so the next `extra` inserts cannot fail
  * (fallible; run before the point of no return). */
@@ -451,10 +485,11 @@ markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session
  * map. Defined in session.c. */
 void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
 
-/** Seals a freshly parsed tree: positions become parent-relative deltas and
- * every node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Returns the number
- * of nodes visited (the subtree size, wrappers included), so callers sizing
- * id reservations reuse the walk. Defined in session.c. */
+/** Seals a freshly refined tree: positions become parent-relative deltas and
+ * every positioned node gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Returns
+ * the number of canonical nodes visited, so callers sizing id reservations
+ * reuse the walk. Parser-only inline owners are eliminated before this call.
+ * Defined in session.c. */
 size_t markdown_core_session_seal_positions(markdown_core_node *root);
 
 /** Grows the id table so the next `extra` markdown_core_session_ids_put
@@ -462,8 +497,7 @@ size_t markdown_core_session_seal_positions(markdown_core_node *root);
 bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra);
 
 /** Points `id` at `node`, inserting or repointing. Never fails within a
- * reserved budget. Directive-label wrappers are not addressable and must not
- * be put. */
+ * reserved budget. */
 void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node);
 
 /** Drops `id` from the table (backward-shift deletion; missing ids are a
@@ -542,8 +576,10 @@ bool markdown_core_lookup_postings_reserve(
 );
 
 /** The posting for `label`, or NULL when no unit ever recorded it. */
-const markdown_core_lookup_posting *
-markdown_core_lookup_postings_find(const markdown_core_lookup_table *table, const unsigned char *label);
+const markdown_core_lookup_posting *markdown_core_lookup_postings_find(
+    const markdown_core_lookup_table *table,
+    const unsigned char *label
+);
 
 /** Installs `record` for `id`, replacing (and freeing) any previous record.
  * Never fails within a reserved budget; the table takes ownership. */

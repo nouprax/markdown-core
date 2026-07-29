@@ -14,7 +14,10 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: HTMLBlock) -> Result
     mutating func visit(_ node: FormulaBlock) -> Result
     mutating func visit(_ node: Table) -> Result
+    mutating func visit(_ node: TableRow) -> Result
+    mutating func visit(_ node: TableCell) -> Result
     mutating func visit(_ node: DirectiveBlock) -> Result
+    mutating func visit(_ node: DirectiveLabel) -> Result
     mutating func visit(_ node: FootnoteDefinition) -> Result
     mutating func visit(_ node: Text) -> Result
     mutating func visit(_ node: SoftBreak) -> Result
@@ -29,6 +32,4 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Image) -> Result
     mutating func visit(_ node: Directive) -> Result
     mutating func visit(_ node: FootnoteReference) -> Result
-    mutating func visit(_ node: TableRow) -> Result
-    mutating func visit(_ node: TableCell) -> Result
 }

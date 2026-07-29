@@ -2,19 +2,12 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+. "$root/scripts/lib/artifact.sh"
 artifact_dir=${1:-}
 suite=${2:-}
 
-test -d "$artifact_dir"
-(
-    cd "$artifact_dir"
-    sha256sum --check SHA256SUMS
-)
-grep -Fxq 'kind=es-test-dist' "$artifact_dir/manifest.txt"
-if [ -n "${GITHUB_SHA:-}" ]; then
-    grep -Fxq "source_sha=$GITHUB_SHA" "$artifact_dir/manifest.txt"
-fi
-tar -xzf "$artifact_dir/es-dist.tar.gz" -C "$root"
+artifact_verify "$artifact_dir" es-test-dist
+artifact_extract "$artifact_dir" es-dist.tar.gz "$root"
 
 case "$suite" in
     node-correctness)

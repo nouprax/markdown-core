@@ -26,3 +26,11 @@ same change.
 
 Scopes copy the native C parser's line and column values exactly, including
 zero-valued combinations. The goldens do not reinterpret or normalize them.
+
+Directive-label coverage is structural. `directive.label.null` means the
+directive has no `DirectiveLabel` child; `directive.label.empty` means it has
+a label child whose `children=0`; and `directive.label.populated` means that
+node owns one or more inline children. `directive.label-before-content`
+requires the label node (and its subtree) to precede a block directive's body.
+No state or order tag denotes a parent `label=` scalar or a flattened child
+prefix.

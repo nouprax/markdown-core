@@ -28,15 +28,18 @@ extern "C" {
 #define _isdigit(c) ((c) >= '0' && (c) <= '9')
 #endif
 
-#define HOUDINI_ESCAPED_SIZE(x) (((x) * 12) / 10)
 #define HOUDINI_UNESCAPED_SIZE(x) (x)
 
 MARKDOWN_CORE_EXPORT
-bufsize_t markdown_core_houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
+markdown_core_bufsize markdown_core_houdini_unescape_ent(
+    markdown_core_strbuf *ob,
+    const uint8_t *src,
+    markdown_core_bufsize size
+);
 MARKDOWN_CORE_EXPORT
-int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
+int markdown_core_houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size);
 MARKDOWN_CORE_EXPORT
-void markdown_core_houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size);
+void markdown_core_houdini_unescape_html_f(markdown_core_strbuf *ob, const uint8_t *src, markdown_core_bufsize size);
 #ifdef __cplusplus
 }
 #endif

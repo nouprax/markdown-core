@@ -56,13 +56,33 @@ Phase 5 contract:
 - native table alignment bytes map to the canonical alignment enum;
 - `TableRow` and `TableCell` remain traversable scoped `Markup` nodes exposed
   through typed table ownership edges;
-- directive-label wrapper nodes are hidden, with label presence, label count,
-  label children, and block content exposed separately;
+- a directive label remains a traversable canonical `DirectiveLabel` node
+  after refinement; it is the directive's optional first direct child and
+  owns the complete inline content of `[...]`;
 - code `language` is a borrowed slice of the first non-whitespace info token,
   and absent/empty info maps to `null`;
 - indented code is `fenced=false, closed=true`, while an unclosed fence remains
   visible as `closed=false`;
 - every native line and column integer, including `0:0`, is copied unchanged.
+
+Directive labels follow the same inline-ownership model as the rest of the
+native engine. The ownership domain is the stable raw-source owner, its
+complete child list, and its `content` buffer. Paragraph, Heading, and
+TableCell domains cover every direct child; a block `DirectiveLabel` receives
+its own raw source and does the same. An inline `DirectiveLabel` is already
+materialized by its surrounding inline owner, so the engine neither copies
+nor parses those bytes twice. Generic raw-inline-source lifecycle state
+records which node needs refinement; adoption never switches on directive
+kind or parent shape. A staged replacement exchanges the complete child list
+and backing together, so borrowed chunks never outlive or separate from their
+storage. Empty, singleton, and multi-node lists do not select different
+algorithms.
+
+The facade therefore does not define a “canonical edge delta.” Stored,
+facade, dump, visitor, walker, lookup, scope, id, and delta topology all contain
+the same `DirectiveLabel` node. Bindings merely project its real edge into a
+typed optional `label` property. There is no hidden wrapper, flattened label
+prefix/count, transparent edge, or compensating parent/sibling/scope rule.
 
 ## Dump completeness
 
@@ -71,8 +91,8 @@ field order, JSON string escaping, null/empty/default values, and one final LF.
 The reviewed `completeness.md/.ast` pair adds the previously important
 contrasts: loose versus tight lists, checked false versus null/true, absent code
 info, indented and unclosed fenced code, absent versus empty link titles,
-absent versus explicit-empty directive attributes and labels, and unaligned
-tables.
+absent versus explicit-empty directive attributes, structural absence versus
+an explicit-empty `DirectiveLabel`, and unaligned tables.
 
 The contract checker now verifies exact field-name order for every record kind
 and requires representative null/empty/default/true/false tokens across the

@@ -29,6 +29,8 @@ internal class KindVisitor : MarkupVisitor<String> {
 
     override fun visit(node: DirectiveBlock): String = name(node)
 
+    override fun visit(node: DirectiveLabel): String = name(node)
+
     override fun visit(node: FootnoteDefinition): String = name(node)
 
     override fun visit(node: Text): String = name(node)
@@ -88,6 +90,8 @@ internal class RecordingVisitor : MarkupVisitor<Unit> {
     override fun visit(node: TableCell): Unit = record(node)
 
     override fun visit(node: DirectiveBlock): Unit = record(node)
+
+    override fun visit(node: DirectiveLabel): Unit = record(node)
 
     override fun visit(node: FootnoteDefinition): Unit = record(node)
 
