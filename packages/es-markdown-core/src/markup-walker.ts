@@ -108,9 +108,11 @@ function children(node: Markup): readonly Markup[] {
         case "tableCell":
             return node.content;
         case "directiveBlock":
-            return [...(node.label ?? []), ...node.content];
+            return node.label === null ? node.content : [node.label, ...node.content];
+        case "directiveLabel":
+            return node.content;
         case "directive":
-            return node.label ?? [];
+            return node.label === null ? [] : [node.label];
         case "thematicBreak":
         case "codeBlock":
         case "htmlBlock":

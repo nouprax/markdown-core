@@ -166,124 +166,104 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
     if (!node) {
         return MARKDOWN_CORE_KIND_NONE;
     }
-    if (node->type == MARKDOWN_CORE_NODE_DOCUMENT) {
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
         return MARKDOWN_CORE_KIND_DOCUMENT;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_BLOCK_QUOTE) {
+    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
         return MARKDOWN_CORE_KIND_BLOCK_QUOTE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_PARAGRAPH) {
+    case MARKDOWN_CORE_NODE_PARAGRAPH:
         return MARKDOWN_CORE_KIND_PARAGRAPH;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HEADING) {
+    case MARKDOWN_CORE_NODE_HEADING:
         return MARKDOWN_CORE_KIND_HEADING;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_THEMATIC_BREAK) {
+    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
         return MARKDOWN_CORE_KIND_THEMATIC_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+    case MARKDOWN_CORE_NODE_LIST:
         return MARKDOWN_CORE_KIND_LIST;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
         return MARKDOWN_CORE_KIND_LIST_ITEM;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
         return MARKDOWN_CORE_KIND_CODE_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return MARKDOWN_CORE_KIND_HTML_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
-        return MARKDOWN_CORE_KIND_TEXT;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
-        return MARKDOWN_CORE_KIND_SOFT_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LINE_BREAK) {
-        return MARKDOWN_CORE_KIND_LINE_BREAK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_CODE) {
-        return MARKDOWN_CORE_KIND_CODE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_HTML) {
-        return MARKDOWN_CORE_KIND_HTML;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_EMPHASIS) {
-        return MARKDOWN_CORE_KIND_EMPHASIS;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_STRONG) {
-        return MARKDOWN_CORE_KIND_STRONG;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_LINK) {
-        return MARKDOWN_CORE_KIND_LINK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_IMAGE) {
-        return MARKDOWN_CORE_KIND_IMAGE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE) {
-        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
-        return MARKDOWN_CORE_KIND_TABLE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
-        return MARKDOWN_CORE_KIND_TABLE_ROW;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_TABLE_CELL) {
-        return MARKDOWN_CORE_KIND_TABLE_CELL;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_STRIKETHROUGH) {
-        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA) {
-        return MARKDOWN_CORE_KIND_FORMULA;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+    case MARKDOWN_CORE_NODE_FORMULA_BLOCK:
         return MARKDOWN_CORE_KIND_FORMULA_BLOCK;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return MARKDOWN_CORE_KIND_DIRECTIVE;
-    }
-    if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+    case MARKDOWN_CORE_NODE_TABLE:
+        return MARKDOWN_CORE_KIND_TABLE;
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
+        return MARKDOWN_CORE_KIND_TABLE_ROW;
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
+        return MARKDOWN_CORE_KIND_TABLE_CELL;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
+        return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
+    case MARKDOWN_CORE_NODE_TEXT:
+        return MARKDOWN_CORE_KIND_TEXT;
+    case MARKDOWN_CORE_NODE_SOFT_BREAK:
+        return MARKDOWN_CORE_KIND_SOFT_BREAK;
+    case MARKDOWN_CORE_NODE_LINE_BREAK:
+        return MARKDOWN_CORE_KIND_LINE_BREAK;
+    case MARKDOWN_CORE_NODE_CODE:
+        return MARKDOWN_CORE_KIND_CODE;
+    case MARKDOWN_CORE_NODE_HTML:
+        return MARKDOWN_CORE_KIND_HTML;
+    case MARKDOWN_CORE_NODE_FORMULA:
+        return MARKDOWN_CORE_KIND_FORMULA;
+    case MARKDOWN_CORE_NODE_EMPHASIS:
+        return MARKDOWN_CORE_KIND_EMPHASIS;
+    case MARKDOWN_CORE_NODE_STRONG:
+        return MARKDOWN_CORE_KIND_STRONG;
+    case MARKDOWN_CORE_NODE_STRIKETHROUGH:
+        return MARKDOWN_CORE_KIND_STRIKETHROUGH;
+    case MARKDOWN_CORE_NODE_LINK:
+        return MARKDOWN_CORE_KIND_LINK;
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return MARKDOWN_CORE_KIND_IMAGE;
+    case MARKDOWN_CORE_NODE_DIRECTIVE:
+        return MARKDOWN_CORE_KIND_DIRECTIVE;
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
+    default:
+        return MARKDOWN_CORE_KIND_NONE;
     }
-    return MARKDOWN_CORE_KIND_NONE;
 }
 
 const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
-    static const char *const names[] = {"None",
-                                        "Document",
-                                        "BlockQuote",
-                                        "Paragraph",
-                                        "Heading",
-                                        "ThematicBreak",
-                                        "List",
-                                        "ListItem",
-                                        "CodeBlock",
-                                        "HTMLBlock",
-                                        "FormulaBlock",
-                                        "Table",
-                                        "DirectiveBlock",
-                                        "FootnoteDefinition",
-                                        "Text",
-                                        "SoftBreak",
-                                        "LineBreak",
-                                        "Code",
-                                        "HTML",
-                                        "Formula",
-                                        "Emphasis",
-                                        "Strong",
-                                        "Strikethrough",
-                                        "Link",
-                                        "Image",
-                                        "Directive",
-                                        "FootnoteReference",
-                                        "TableRow",
-                                        "TableCell"};
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_TABLE_CELL) {
+    static const char *const names[] = {
+        "None",
+        "Document",
+        "BlockQuote",
+        "Paragraph",
+        "Heading",
+        "ThematicBreak",
+        "List",
+        "ListItem",
+        "CodeBlock",
+        "HTMLBlock",
+        "FormulaBlock",
+        "Table",
+        "TableRow",
+        "TableCell",
+        "DirectiveBlock",
+        "DirectiveLabel",
+        "FootnoteDefinition",
+        "Text",
+        "SoftBreak",
+        "LineBreak",
+        "Code",
+        "HTML",
+        "Formula",
+        "Emphasis",
+        "Strong",
+        "Strikethrough",
+        "Link",
+        "Image",
+        "Directive",
+        "FootnoteReference"
+    };
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
         return "None";
     }
     return names[kind];
@@ -759,12 +739,10 @@ bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string_view *name,
-    markdown_core_string_view *attributes,
-    bool *has_label,
-    size_t *label_count
+    markdown_core_string_view *attributes
 ) {
     const char *value;
-    if (!node || !mode || !name || !attributes || !has_label || !label_count ||
+    if (!node || !mode || !name || !attributes ||
         (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
         return false;
     }
@@ -776,27 +754,11 @@ bool markdown_core_node_directive_properties(
     value = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
     attributes->data = (const uint8_t *)value;
     attributes->length = value ? strlen(value) : 0;
-    *has_label = markdown_core_directive_has_label((markdown_core_node *)node) != 0;
-    *label_count = markdown_core_directive_label_count(node);
     return true;
 }
 
-const markdown_core_node *markdown_core_node_directive_first_label_child(const markdown_core_node *node) {
-    return markdown_core_directive_label_count(node) ? node->first_child : NULL;
-}
-
-const markdown_core_node *markdown_core_node_directive_first_content_child(const markdown_core_node *node) {
-    const markdown_core_node *content;
-    size_t label_count;
-    if (!node || node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
-        return NULL;
-    }
-    content = node->first_child;
-    label_count = markdown_core_directive_label_count(node);
-    while (label_count-- && content) {
-        content = content->next;
-    }
-    return content;
+const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node) {
+    return markdown_core_directive_label((markdown_core_node *)node);
 }
 
 static bool link_properties(
@@ -963,7 +925,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
-    bool x, y, has_label;
+    bool x, y;
     size_t count, i;
     int32_t level;
     switch (kind) {
@@ -1047,19 +1009,13 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &mode, &a, &b, &has_label, &count);
+        markdown_core_node_directive_properties(node, &mode, &a, &b);
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
         buffer_cstr(buffer, " attributes=");
         buffer_optional_string(buffer, b);
-        buffer_cstr(buffer, " label=");
-        if (has_label) {
-            buffer_i64(buffer, (int64_t)count);
-        } else {
-            buffer_cstr(buffer, "null");
-        }
         break;
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
@@ -1176,7 +1132,6 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         const char *name_b = markdown_core_extensions_get_directive_name((markdown_core_node *)b);
         const char *attributes_a = markdown_core_extensions_get_directive_attributes((markdown_core_node *)a);
         const char *attributes_b = markdown_core_extensions_get_directive_attributes((markdown_core_node *)b);
-        bool has_label_a, has_label_b;
         a1.data = (const uint8_t *)name_a;
         a1.length = name_a ? strlen(name_a) : 0;
         b1.data = (const uint8_t *)name_b;
@@ -1185,12 +1140,7 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         a2.length = attributes_a ? strlen(attributes_a) : 0;
         b2.data = (const uint8_t *)attributes_b;
         b2.length = attributes_b ? strlen(attributes_b) : 0;
-        has_label_a = markdown_core_directive_has_label((markdown_core_node *)a) != 0;
-        has_label_b = markdown_core_directive_has_label((markdown_core_node *)b) != 0;
-        /* Label count is derived from the direct child list, whose change is
-         * classified independently by adoption. Only absent versus present
-         * (including explicit empty) is an own field. */
-        return view_content_equal(a1, b1) && view_optional_equal(a2, b2) && has_label_a == has_label_b;
+        return view_content_equal(a1, b1) && view_optional_equal(a2, b2);
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:

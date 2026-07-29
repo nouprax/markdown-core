@@ -199,6 +199,7 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     case MARKDOWN_CORE_KIND_STRONG:
     case MARKDOWN_CORE_KIND_STRIKETHROUGH:
     case MARKDOWN_CORE_KIND_TABLE_CELL:
+    case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
         put_child_ids(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_HEADING: {
@@ -277,25 +278,11 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
         markdown_core_placement_mode mode;
-        bool has_label = false;
-        size_t label_count = 0;
-        const markdown_core_node *content;
-        size_t content_count = 0;
-        markdown_core_node_directive_properties(node, &mode, &first, &second, &has_label, &label_count);
+        markdown_core_node_directive_properties(node, &mode, &first, &second);
         put_i32(buffer, (int32_t)mode);
         put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);
-        if (has_label) {
-            put_id_list(buffer, markdown_core_node_directive_first_label_child(node), label_count);
-        } else {
-            put_i32(buffer, -1);
-        }
-        content = markdown_core_node_directive_first_content_child(node);
-        for (const markdown_core_node *cursor = content; cursor != NULL;
-             cursor = markdown_core_node_get_next_sibling(cursor)) {
-            ++content_count;
-        }
-        put_id_list(buffer, content, content_count);
+        put_child_ids(buffer, node);
         break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:

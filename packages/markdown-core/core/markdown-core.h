@@ -440,14 +440,12 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
 struct markdown_core_map;
 
 /** Session staging for one inline-owning unit: parses the unit's inline
- * content (including inline owners the parse itself creates, e.g. directive
- * labels) against `refmap` and runs the block-local postprocess pipeline for
- * the unit. The unit must sit under a parent that can absorb a replacement,
- * and the caller must have enabled the extensions' special inline characters
+ * content against `refmap` and runs the block-local postprocess pipeline.
+ * The caller must have enabled the extensions' special inline characters
  * (markdown_core_parser_manage_extensions_special_characters). Returns the
- * node the unit became (the unit itself when nothing replaced it);
- * allocation loss is reported through the parser's and the map's sticky
- * flags, exactly like a full refine.
+ * node the unit became (normally the unit itself); allocation loss is
+ * reported through the parser's and the map's sticky flags, exactly like a
+ * full refine.
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_refine_unit(

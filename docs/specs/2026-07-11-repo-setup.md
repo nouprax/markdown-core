@@ -484,6 +484,7 @@ Markdown Core 中的 AST 只包含解析语义，不包含 `markdown-renderer` �
 - `FormulaBlock`
 - `Table` / `TableRow` / `TableCell`
 - `DirectiveBlock`
+- `DirectiveLabel`
 - `FootnoteDefinition`
 - `Text`
 - `SoftBreak`
@@ -509,13 +510,14 @@ Markdown Core 中的 AST 只包含解析语义，不包含 `markdown-renderer` �
 - link/image destination 与 title
 - code block info/language、literal 和 fence closed state
 
-`TableRow` 和 `TableCell` 是带完整 `Scope` 的 `Markup`，分别通过
-`Table.header`/`Table.rows` 和 `TableRow.cells` 强类型边拥有；它们参与
-Visitor dispatch 和 Walker callback，但不要求 public generic `children`。
-Directive label 不引入 synthetic `DirectiveLabel` Markup；
-`Directive`/`DirectiveBlock` 通过 typed、optional `label` Markup collection
-保留它，并区分 label 缺失与显式空 label。标准 Walker 负责穿过这些 typed
-properties，consumer 不需要检查 node kind 来发现结构。
+`TableRow`、`TableCell` 和 `DirectiveLabel` 都是带完整 `Scope` 的
+`Markup`，通过强类型边拥有并参与 Visitor dispatch 与 Walker callback，
+但不要求 public generic `children`。`DirectiveLabel` 是 C 树中真实、常驻的
+canonical child，而不是 synthetic/hidden/transparent wrapper；其 scope 覆盖完整
+`[...]`，`content` 拥有完整 inline child-list。`Directive`/`DirectiveBlock`
+通过 typed、optional `label: DirectiveLabel?` 投影同一条真实边，并以“无子节点”
+和“存在但 content 为空的 label 节点”区分 label 缺失与显式 `[]`。标准 Walker
+按普通节点穿过这些 typed properties，consumer 不需要检查 node kind 来发现结构。
 
 Directive attributes 的 Markdown source grammar 使用 generic key-value attribute-list
 语义：支持 `{key=value}`、bare attributes 和 single/double quoted values；不支持
@@ -1544,7 +1546,7 @@ correctness corpus 复制给 bindings。C、Swift、Kotlin 和 ES 继续由各�
 Tasks：
 
 - [x] 建立根级 `specs/canonical-ast/`，迁移现有 canonical Markdown/`.ast` pairs、README 和 coverage manifest；删除 C package 私有副本，并禁止 Swift/Kotlin/ES 提交平台副本。
-- [x] 冻结 manifest discovery、parse options、排序、UTF-8/LF/final-newline 与 coverage schema，覆盖全部 28 种 Markup、所有 behavior-bearing fields、null states、scope、escaping 和 child order。
+- [x] 冻结 manifest discovery、parse options、排序、UTF-8/LF/final-newline 与 coverage schema，覆盖全部 29 种 Markup、所有 behavior-bearing fields、null states、scope、escaping 和 child order。
 - [x] 让 C conformance target 通过公开 C parse/document dump API 比较全部共享 cases；CommonMark、extensions、regression、pathological、fuzz 与 robustness correctness corpus 继续由 C package 独占。
 - [x] 让 Swift macOS/iOS Simulator conformance targets 通过公开 `Document.parse`、Visitor/Walker 与 `TreeDumper` 消费共享 spec，删除 package-local expected tree literals。
 - [x] 让 Kotlin JVM、Android host/emulator、macOS ARM64 与 Linux x64 conformance targets 消费同一共享 spec，删除 package-local expected tree literals。

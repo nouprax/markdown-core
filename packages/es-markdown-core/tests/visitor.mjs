@@ -13,6 +13,7 @@ export const kindVisitor = {
     visitTableRow: (node) => node.kind,
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
+    visitDirectiveLabel: (node) => node.kind,
     visitFootnoteDefinition: (node) => node.kind,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,

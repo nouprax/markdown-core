@@ -3,8 +3,9 @@
 ## Outcome
 
 Phase 5 freezes one language-neutral AST contract for the native C facade and
-the Swift, Kotlin, and ES bindings. The inventory contains 28 `Markup` kinds,
-including the scoped `TableRow` and `TableCell`. Every kind has a
+the Swift, Kotlin, and ES bindings. The inventory contains 29 `Markup` kinds,
+including the scoped `TableRow`, `TableCell`, and `DirectiveLabel`. The label
+kind was promoted by the 2026-07-29 contract amendment. Every kind has a
 fixed name, field order, nullability, ownership rule, traversal rule, and at
 least one reviewed Markdown case.
 
@@ -72,8 +73,9 @@ handle without changing the frozen public tree:
   dispatch, and a reference id is reached through its definition;
 - table alignment accessors return native alignment codes that the facade must
   map to canonical enum values;
-- table rows/cells are native and canonical `Markup` nodes owned through typed
-  table properties; directive labels remain typed collection edges;
+- table rows/cells and directive labels are native and canonical `Markup`
+  nodes owned through typed properties; directive parents expose their real
+  optional `DirectiveLabel` child rather than a flattened collection edge;
 - code block language is derived from the first token of the complete info
   string;
 - source-position integers must be copied exactly, including zero values.
@@ -91,7 +93,7 @@ pnpm run verify
 git diff --check
 ```
 
-The contract check reports coverage for 28 `Markup` kinds. The Kotlin fully
+The contract check reports coverage for 29 `Markup` kinds. The Kotlin fully
 qualified/import-alias compile target, formatting,
 lint, C tests, Swift build, Gradle model import, and package-content audits are
 part of the root verification chain.

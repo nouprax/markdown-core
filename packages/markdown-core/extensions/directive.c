@@ -36,13 +36,7 @@ typedef struct {
     int fence_length;
     int closed;
     int consume_line;
-    int has_label;
     int has_attributes;
-    /* A block label's raw source moves into node->content after refinement.
-     * These line-local columns recreate its transient parse unit when a
-     * changed reference definition re-resolves the ownership domain. */
-    int label_start_column;
-    int label_end_column;
 } node_directive;
 
 typedef struct {
@@ -290,33 +284,6 @@ static int append_attribute(
     }
     *tail = attr;
     return 1;
-}
-
-static directive_attribute *clone_attribute_list(markdown_core_mem *mem, const directive_attribute *source) {
-    directive_attribute *head = NULL;
-    directive_attribute *tail = NULL;
-
-    while (source) {
-        directive_attribute *copy = (directive_attribute *)mem->calloc(mem, 1, sizeof(*copy));
-        if (!copy || !replace_chunk_bytes(mem, &copy->name, source->name.data, source->name.len) ||
-            !replace_chunk_bytes(mem, &copy->value, source->value.data, source->value.len)) {
-            if (copy) {
-                free_attribute_list(mem, copy);
-            }
-            free_attribute_list(mem, head);
-            return NULL;
-        }
-        copy->index = source->index;
-        copy->active = source->active;
-        if (tail) {
-            tail->next = copy;
-        } else {
-            head = copy;
-        }
-        tail = copy;
-        source = source->next;
-    }
-    return head;
 }
 
 static int compare_attribute_ptrs(const void *left, const void *right) {
@@ -712,34 +679,12 @@ const char *markdown_core_extensions_get_directive_name(markdown_core_node *node
     return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &directive->name);
 }
 
-int markdown_core_directive_has_label(markdown_core_node *node) {
-    node_directive *directive = get_directive(node);
-    return directive ? directive->has_label : 0;
-}
-
-size_t markdown_core_directive_label_count(const markdown_core_node *node) {
-    const node_directive *directive;
-    const markdown_core_node *child;
-    size_t count;
-
-    if (!node || (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
-        return 0;
+markdown_core_node *markdown_core_directive_label(markdown_core_node *node) {
+    if (!is_directive_node(node) || !node->first_child ||
+        node->first_child->type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
+        return NULL;
     }
-    directive = (const node_directive *)node->as.opaque;
-    if (!directive || !directive->has_label) {
-        return 0;
-    }
-    /* Inline directives contain only label Markup. Block directives contain
-     * the complete inline label domain as a direct prefix followed by block
-     * content. The typed child boundary is authoritative after every
-     * postprocessor and after incremental ownership-domain replacement. */
-    count = 0;
-    for (child = node->first_child;
-         child && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || MARKDOWN_CORE_NODE_TYPE_INLINE_P(child->type));
-         child = child->next) {
-        count++;
-    }
-    return count;
+    return node->first_child;
 }
 
 static int directive_name_is_valid(markdown_core_mem *mem, const char *name) {
@@ -1022,6 +967,8 @@ static markdown_core_node *make_label_node(
     label_node->start_line = label_node->end_line = start_line;
     label_node->start_column = start_column;
     label_node->end_column = end_column;
+    label_node->internal_offset = 1;
+    label_node->flags |= MARKDOWN_CORE_NODE__OWNS_INLINE_SOURCE;
     return label_node;
 }
 
@@ -1075,7 +1022,6 @@ static int apply_parsed_directive(
     if (!set_chunk_bytes(mem, &directive->name, data + parsed->name_start, parsed->name_len)) {
         return 0;
     }
-    directive->has_label = parsed->has_label;
     directive->has_attributes = parsed->has_attributes;
 
     if (parsed->has_attributes) {
@@ -1085,14 +1031,11 @@ static int apply_parsed_directive(
     }
 
     if (parsed->has_label) {
-        int label_start_column = start_column + (int)parsed->label_start + 1;
-        int label_end_column = label_start_column + (int)parsed->label_len - 1;
-        if (parsed->label_len == 0) {
-            label_end_column = label_start_column - 1;
-        }
-        directive->label_start_column = label_start_column;
-        directive->label_end_column = label_end_column;
-
+        /* DirectiveLabel is a real source construct, so its scope includes
+         * both brackets. internal_offset=1 keeps inline parsing anchored at
+         * the first byte inside the opening bracket. */
+        int label_start_column = start_column + (int)parsed->label_start;
+        int label_end_column = label_start_column + (int)parsed->label_len + 1;
         if (!attach_label_node(
                 extension,
                 node,
@@ -1505,6 +1448,27 @@ static int set_attributes_from_wrapper(
     return 1;
 }
 
+static markdown_core_node *make_empty_label_node(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column
+) {
+    markdown_core_node *label =
+        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, mem, extension);
+    if (!label) {
+        return NULL;
+    }
+    label->start_line = start_line;
+    label->start_column = start_column;
+    label->end_line = end_line;
+    label->end_column = end_column;
+    label->internal_offset = 1;
+    return label;
+}
+
 static delimiter *insert_label_directive(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -1518,9 +1482,9 @@ static delimiter *insert_label_directive(
     markdown_core_chunk *closer_literal = &closer_node->as.literal;
     delimiter *res = closer->next;
     markdown_core_node *directive_node;
+    markdown_core_node *label_node;
     markdown_core_node *tmp;
     markdown_core_node *tmpnext;
-    node_directive *directive;
     markdown_core_bufsize name_len;
 
     if (opener->delim_char != closer->delim_char || opener_literal->len < 3 || opener_literal->data[0] != ':' ||
@@ -1544,9 +1508,6 @@ static delimiter *insert_label_directive(
         goto done;
     }
 
-    directive = get_directive(directive_node);
-    directive->has_label = 1;
-
     {
         int attr_oom = 0;
         if (closer_literal->len > 1 && closer_literal->data[1] == '{' &&
@@ -1559,20 +1520,37 @@ static delimiter *insert_label_directive(
         }
     }
 
-    /* The delimiter contents are already parsed inline Markup. Unlike a
-     * block label's raw bytes, they need no parse owner: store the canonical
-     * label edge directly and avoid creating a wrapper that would have to be
-     * removed after the surrounding inline unit is postprocessed. */
+    label_node = make_empty_label_node(
+        extension,
+        parser->mem,
+        opener_node->end_line,
+        opener_node->end_column,
+        closer_node->start_line,
+        closer_node->start_column
+    );
+    if (!label_node) {
+        markdown_core_node_free(directive_node);
+        goto done;
+    }
+
+    /* Inline parsing has already materialized the label's Markup. Preserve
+     * that exact child run under the canonical DirectiveLabel owner. */
     tmp = opener_node->next;
     while (tmp && tmp != closer_node) {
         tmpnext = tmp->next;
         markdown_core_node_unlink(tmp);
-        if (!markdown_core_node_append_child(directive_node, tmp)) {
+        if (!markdown_core_node_append_child(label_node, tmp)) {
             markdown_core_node_free(tmp);
+            markdown_core_node_free(label_node);
             markdown_core_node_free(directive_node);
             goto done;
         }
         tmp = tmpnext;
+    }
+    if (!markdown_core_node_append_child(directive_node, label_node)) {
+        markdown_core_node_free(label_node);
+        markdown_core_node_free(directive_node);
+        goto done;
     }
 
     if (markdown_core_node_insert_before(opener_node, directive_node)) {
@@ -1623,13 +1601,11 @@ static int can_contain(
     markdown_core_node_type child_type
 ) {
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE) {
-        return markdown_core_directive_has_label(node) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type) &&
-               child_type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+        return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
     }
 
     if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
         return child_type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ||
-               (markdown_core_directive_has_label(node) && MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type)) ||
                (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) && child_type != MARKDOWN_CORE_NODE_LIST_ITEM &&
                 child_type != MARKDOWN_CORE_NODE_DOCUMENT);
     }
@@ -1641,149 +1617,37 @@ static int can_contain(
     return 0;
 }
 
-static int contains_inlines(markdown_core_extension *extension, markdown_core_node *node) {
-    return node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-}
-
-/* A block label needs a node while its raw bytes are parsed and every
- * inline-unit postprocessor runs. After that lifecycle ends, the node has no
- * semantic identity: splice its final Markup children into the owning
- * DirectiveBlock, move its raw backing into the semantic owner, and release
- * the parse scaffold before positions are sealed or ids are adopted. */
-static int finalize_transient_inline_owner(
+static markdown_core_node *prepare_inline_domain(
     markdown_core_extension *extension,
-    markdown_core_node *unit,
-    markdown_core_node *owner
+    const markdown_core_node *committed_owner
 ) {
-    markdown_core_node *first;
-    markdown_core_node *last;
-    markdown_core_node *content;
-    markdown_core_node *child;
-    node_directive *directive;
-    markdown_core_strbuf owner_content;
-
-    (void)extension;
-    directive = get_directive(owner);
-    if (!unit || unit->type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL || unit->extension != extension || !owner ||
-        owner->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK || owner->extension != extension || unit->parent != owner ||
-        !directive || !directive->has_label || owner->first_child != unit || unit->prev || owner->content.size != 0 ||
-        owner->content.mem != unit->content.mem) {
-        assert(0 && "invalid directive-label refinement lifecycle");
-        return 0;
-    }
-
-    first = unit->first_child;
-    last = unit->last_child;
-    content = unit->next;
-    for (child = first; child; child = child->next) {
-        if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type) ||
-            child->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) {
-            assert(0 && "directive label produced a non-canonical child");
-            return 0;
-        }
-    }
-
-    /* Whole-buffer ownership moves with the whole label domain. This is a
-     * struct swap, so even an explicit empty label allocates nothing and
-     * every borrowed descendant keeps the same backing address. */
-    owner_content = owner->content;
-    owner->content = unit->content;
-    unit->content = owner_content;
-
-    for (child = first; child; child = child->next) {
-        child->parent = owner;
-    }
-    owner->first_child = first ? first : content;
-    if (first) {
-        first->prev = NULL;
-        last->next = content;
-        if (content) {
-            content->prev = last;
-        } else {
-            owner->last_child = last;
-        }
-    } else if (content) {
-        content->prev = NULL;
-    } else {
-        owner->last_child = NULL;
-    }
-
-    unit->parent = NULL;
-    unit->prev = NULL;
-    unit->next = NULL;
-    unit->first_child = NULL;
-    unit->last_child = NULL;
-    markdown_core_node_free(unit);
-    return 1;
-}
-
-static int prepare_inline_domain(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner,
-    markdown_core_inline_domain *out
-) {
-    const node_directive *source;
-    node_directive *staged;
-    markdown_core_node *clone;
+    markdown_core_node *root;
     markdown_core_mem *mem;
 
-    memset(out, 0, sizeof(*out));
-    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK ||
+    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ||
         committed_owner->extension != extension) {
         assert(0 && "directive reparse requested for an unsupported owner");
-        return 0;
+        return NULL;
     }
-    source = (const node_directive *)committed_owner->as.opaque;
     mem = committed_owner->content.mem;
-    if (!source || !source->has_label || !mem) {
-        assert(0 && "directive reparse owner has no label source");
-        return 0;
+    if (!mem) {
+        assert(0 && "directive label has no content allocator");
+        return NULL;
     }
 
-    clone = markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, mem, extension);
-    if (!clone) {
-        return 0;
+    root = make_label_node(
+        extension,
+        mem,
+        committed_owner->content.ptr,
+        committed_owner->content.size,
+        1,
+        committed_owner->start_column,
+        committed_owner->end_column
+    );
+    if (!root) {
+        return NULL;
     }
-    staged = get_directive(clone);
-    if (!staged || !replace_chunk_bytes(mem, &staged->name, source->name.data, source->name.len)) {
-        markdown_core_node_free(clone);
-        return 0;
-    }
-    if (source->attributes) {
-        staged->attributes = clone_attribute_list(mem, source->attributes);
-        if (!staged->attributes) {
-            markdown_core_node_free(clone);
-            return 0;
-        }
-    }
-    staged->fence_length = source->fence_length;
-    staged->closed = source->closed;
-    staged->consume_line = source->consume_line;
-    staged->has_label = source->has_label;
-    staged->has_attributes = source->has_attributes;
-    staged->label_start_column = source->label_start_column;
-    staged->label_end_column = source->label_end_column;
-
-    clone->start_line = clone->end_line = 1;
-    clone->start_column = committed_owner->start_column;
-    clone->end_column = committed_owner->end_column;
-    clone->internal_offset = committed_owner->internal_offset;
-    if (!attach_label_node(
-            extension,
-            clone,
-            committed_owner->content.ptr,
-            committed_owner->content.size,
-            1,
-            source->label_start_column,
-            source->label_end_column
-        )) {
-        markdown_core_node_free(clone);
-        return 0;
-    }
-
-    out->staged_owner = clone;
-    out->committed_child_count = markdown_core_directive_label_count(committed_owner);
-    return 1;
+    return root;
 }
 
 static int accepts_lines(markdown_core_extension *extension, markdown_core_node *node) {
@@ -1816,8 +1680,6 @@ static const markdown_core_extension directive_extension = {
     .try_opening_block = open_directive_block,
     .get_type_string = get_type_string,
     .can_contain = can_contain,
-    .contains_inlines = contains_inlines,
-    .finalize_transient_inline_owner = finalize_transient_inline_owner,
     .prepare_inline_domain = prepare_inline_domain,
     .accepts_lines = accepts_lines,
     .alloc_opaque = directive_opaque_alloc,

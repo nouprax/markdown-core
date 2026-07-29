@@ -99,12 +99,23 @@ public object MarkupWalker {
                 content
             }
 
+            is ThematicBreak -> {
+                emptyList()
+            }
+
             is List -> {
                 items
             }
 
             is ListItem -> {
                 content
+            }
+
+            is CodeBlock,
+            is HTMLBlock,
+            is FormulaBlock,
+            -> {
+                emptyList()
             }
 
             is Table -> {
@@ -123,11 +134,28 @@ public object MarkupWalker {
             }
 
             is DirectiveBlock -> {
-                label.orEmpty() + content
+                buildList {
+                    label?.let(::add)
+                    addAll(content)
+                }
+            }
+
+            is DirectiveLabel -> {
+                content
             }
 
             is FootnoteDefinition -> {
                 content
+            }
+
+            is Text,
+            is SoftBreak,
+            is LineBreak,
+            is Code,
+            is HTML,
+            is Formula,
+            -> {
+                emptyList()
             }
 
             is Emphasis -> {
@@ -151,21 +179,10 @@ public object MarkupWalker {
             }
 
             is Directive -> {
-                label.orEmpty()
+                listOfNotNull(label)
             }
 
-            is ThematicBreak,
-            is CodeBlock,
-            is HTMLBlock,
-            is FormulaBlock,
-            is Text,
-            is SoftBreak,
-            is LineBreak,
-            is Code,
-            is HTML,
-            is Formula,
-            is FootnoteReference,
-            -> {
+            is FootnoteReference -> {
                 emptyList()
             }
         }

@@ -343,20 +343,17 @@ bool markdown_core_session_adopt(
 );
 
 /** Runs the canonical adoption machine over one owner's complete inline
- * ownership domain while keeping the semantic owner stable. `old_count`
- * bounds the committed owner's domain (it may be a strict child prefix);
- * every child of `staged_owner` is the rebuilt domain. On success the
- * staged descendants carry their final ids/revisions, `staged_count`
- * reports their top-level count, and `owner_revision` reports the stable
- * owner's changed/bubbled/unchanged verdict. */
+ * ownership domain while keeping the semantic owner stable. Every child of
+ * `old_owner` and `staged_owner` belongs to the corresponding domain. On
+ * success the staged owner and descendants carry their final ids/revisions,
+ * and `owner_revision` reports the stable owner's
+ * changed/bubbled/unchanged verdict. */
 bool markdown_core_session_adopt_inline_domain(
     markdown_core_session *session,
     markdown_core_node *old_owner,
-    size_t old_count,
     markdown_core_node *staged_owner,
     uint64_t new_rev,
     markdown_core_delta *changes,
-    size_t *staged_count,
     uint64_t *owner_revision
 );
 

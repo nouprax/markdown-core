@@ -27,39 +27,40 @@ repository test contract and the root agent instructions.
 
 ### Directive label representation
 
-The canonical `label: [Markup]?` edge is also the refined C tree's direct
-edge. Inline directive labels attach their already-parsed children directly.
-A block directive temporarily needs an inline-owning node while its opening
-line's label bytes pass through inline parsing and every block-local
-postprocessor. That node is only a parse-time lifecycle carrier; it has no
-canonical identity and is eliminated before position sealing, id adoption,
-indexing, or public traversal.
+The 2026-07-29 first-principles resolution promotes `DirectiveLabel` to a
+public `Markup` kind, bringing the canonical inventory to 29 kinds and placing
+it immediately after `DirectiveBlock`. It is a real, persistent child in the
+refined C tree, facade, dumps, visitors, walkers, scope tables, session indexes,
+deltas, and all three platform ASTs. Bindings expose the same edge as the typed
+optional `Directive.label: DirectiveLabel?` /
+`DirectiveBlock.label: DirectiveLabel?`; they do not synthesize or hide a
+node.
 
-The shared mechanism is an **inline ownership domain**, not a transparent
-edge. Each domain consists of a stable semantic owner, one contiguous child
-span, and the `owner->content` buffer that backs any borrowed chunks in that
-span. A Paragraph or Heading owns all of its children, a TableCell owns all of
-its children, and a DirectiveBlock owns its label prefix. Refinement and
-incremental replacement move the child span and its backing together as one
-ownership transaction; they never transplant an arbitrary subspan away from
-the buffer it borrows. The DirectiveBlock remains the stable owner, and the
-ordinary adopter sees the same refined direct-child topology as every other
-consumer. Empty, singleton, and multi-node labels use this one mechanism:
-there is no cardinality routing.
+This node exists for a semantic ownership reason, not to preserve a parser
+implementation detail. The bracketed label is one optional, independently
+scoped inline container: its scope covers the complete `[...]`, and its
+`content` owns the complete inline child list. Like `TableRow` and
+`TableCell`, typed parent properties constrain where it may occur without
+removing it from the canonical node topology. A block directive's label is
+its first direct child and its block content follows; an inline directive has
+no other possible child.
 
-Consequently the canonical AST has no directive-label wrapper and no
-directive-specific edge delta. A “canonical edge delta” would preserve two
-topologies—storage edges plus a compensating semantic overlay—and would force
-parent/sibling traversal, scopes, ids, lookup ownership, and delta adoption to
-agree through parallel special rules. It also would not express the decisive
-memory invariant that the complete child span and its backing buffer must
-travel together. The discrepancy exists only during parsing, so the correct
-abstraction closes it at the lifecycle boundary instead of teaching the
-committed tree how to hide it.
+The shared mechanism remains an **inline ownership domain**. Each domain is a
+stable semantic owner, its complete contiguous child list, and the
+`owner->content` buffer backing borrowed chunks in that list. Paragraph,
+Heading, TableCell, and DirectiveLabel all use the same mechanism. Refinement
+and incremental replacement move the complete child list and backing as one
+ownership transaction, and the ordinary adopter handles the resulting node.
+Empty, singleton, and large labels never select different algorithms.
 
-A label descendant field edit therefore follows the ordinary delta contract
-(`changed` child, `bubbled` ancestors), while a label topology or presence
-change changes the directive's own direct-child list or fields.
+There is therefore no transparent wrapper, label prefix/count partition,
+special walker, or “canonical edge delta.” Stored and public topology are
+identical, so parent/sibling traversal, scopes, ids, lookup ownership, and
+delta adoption need no compensation. Missing brackets mean no label child;
+explicit `[]` means a present `DirectiveLabel` with empty `content`.
+Descendant edits and child-list edits follow the ordinary `changed` /
+`bubbled` contract, while adding or removing the label adds/removes the node
+and changes the directive's direct child list.
 
 ## Status summary
 
@@ -376,10 +377,17 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 ### I14 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift:20
 
 - Verdict: CONFIRMED; surface: platform-public-api
-- Finding: Directive and DirectiveBlock expose `labelCount: Int?` plus a merged `children` array instead of the frozen contract's typed `label: [Markup]?` (and, for DirectiveBlock, a separate `content: [Markup]`). docs/specs/canonical-ast.md says a directive label 'is the typed `label` property of its directive' and that platform APIs 'must not change names, nullability, ownership'; Kotlin (model/Directive.kt:9 `label: List<Markup>?`) and ES (model/directive.ts, model/directive-block.ts with both `label` and `content`; wire/node-decoder.ts:415-420 does the slice) implement it verbatim. Swift consumers must slice `children[..<labelCount!]` by hand, and DirectiveBlock loses the label/content distinction entirely. Same divergence in DirectiveBlock.swift:20 and DirectiveValues.swift:7.
-- Evidence: Swift Directive.swift:10,20 and DirectiveBlock.swift:10,20 expose `children: [any Markup]` + `labelCount: Int?` (populated via DirectiveValues.swift:7); no `label`/`content` properties exist. Contract: docs/specs/canonical-ast.md:39-40 'A directive label is not a synthetic Markup. It is the typed `label` property of its directive'; inventory rows 137/150 specify `label: [Markup]?` (+ `content: [Markup]` for DirectiveBlock); line 17-19 forbids name changes. Kotlin model/Directive.kt has `label: List<Markup>?`, DirectiveBlock.kt has both `label` and `content`; ES model/directive.ts + directive-block.ts declare both, and wire/node-decoder.ts directiveFields() slices children at the native label count exactly as the finding says. Swift MarkupDumper.swift:253-262 directiveFields already takes a count, so dump output ('label=<count>' per canonical-ast-dump.md:77-78) is unchanged by the fix. Parse/dump behavior is correct today — the defect is API-surface conformance only.
-- Fix plan: In Directive.swift/DirectiveBlock.swift store `label: [Markup]?` (nil vs [] preserved from the native has_label flag) and, on DirectiveBlock only, `content: [Markup]`; construct both by slicing builder.children(node) at DirectiveValues.labelCount (label = first labelCount children when has_label, content = remainder; inline Directive keeps only label per the inventory). Update MarkupWalker.ChildrenVisitor to return label-then-content explicitly, MarkupDumper.directiveFields to print label?.count, and the SessionSuites/ConformanceSuite call sites. Goldens (MarkdownCoreConformanceTests) are name-independent and guard the change.
-- Tests: MarkdownCoreConformanceTests (sharedCanonicalAST, sessionEquivalenceReplay) pin dump bytes; add a Swift unit asserting DirectiveBlock.label/content partition and nil-vs-empty label distinction mirroring the ES decoder semantics.
+- Historical finding at the reviewed baseline: Directive and DirectiveBlock expose `labelCount: Int?` plus a merged `children` array instead of the then-frozen contract's typed `label: [Markup]?` (and, for DirectiveBlock, a separate `content: [Markup]`). docs/specs/canonical-ast.md then said a directive label 'is the typed `label` property of its directive' and that platform APIs 'must not change names, nullability, ownership'; Kotlin (model/Directive.kt:9 `label: List<Markup>?`) and ES (model/directive.ts, model/directive-block.ts with both `label` and `content`; wire/node-decoder.ts:415-420 does the slice) implemented it verbatim. Swift consumers had to slice `children[..<labelCount!]` by hand, and DirectiveBlock lost the label/content distinction entirely. Same divergence existed in DirectiveBlock.swift:20 and DirectiveValues.swift:7.
+- Historical evidence: Swift Directive.swift:10,20 and DirectiveBlock.swift:10,20 exposed `children: [any Markup]` + `labelCount: Int?` (populated via DirectiveValues.swift:7); no `label`/`content` properties existed. The old contract specified `label: [Markup]?` (+ `content: [Markup]` for DirectiveBlock). Kotlin model/Directive.kt had `label: List<Markup>?`, DirectiveBlock.kt had both `label` and `content`; ES model/directive.ts + directive-block.ts declared both, and wire/node-decoder.ts directiveFields() sliced children at the native label count. The then-current Swift dump printed the old parent `label=<count>` scalar.
+- Superseded fix plan: store `label: [Markup]?` and construct it by slicing `builder.children(node)` at `DirectiveValues.labelCount`; update walker/dumper/session call sites and retain the old scalar dump. This was implemented for the 28-kind contract but is no longer the desired representation.
+- Historical tests: the conformance replay and a Swift label/content partition unit guarded that intermediate contract.
+- 2026-07-29 supersession: this entry records the old 28-kind contract and the
+  compatibility fix made against it. The current 29-kind contract promotes
+  `DirectiveLabel` as a canonical node; Swift, Kotlin, and ES expose
+  `label: DirectiveLabel?`, and the label node owns `content`. The C tree and
+  bindings no longer carry or slice `labelCount`, and the dump no longer
+  prints a parent `label=` scalar. The old prefix-slicing plan is historical,
+  not a current implementation option.
 
 ### I15 [FIXED `380cf0e`] [P0-bug] packages/swift-markdown-core/Sources/MarkdownCore/Markup/Paragraph.swift:10
 
@@ -584,10 +592,15 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 ### I03 [FIXED `030d5f6`] [P2-hygiene] packages/es-markdown-core/src/bridge.c:182
 
 - Verdict: CONFIRMED; surface: internal
-- Finding: Per-scalar bridge crossings re-fetch whole native property structs: decoding one list calls markdown_core_node_list_properties three times (es_node_list_flavor:182, es_node_list_tight:190, es_node_list_start_state:198); one code block calls markdown_core_node_code_block_properties five times (es_node_code_flag twice at 213 plus three es_string reads at 272-281); one directive calls markdown_core_node_directive_properties four times (mode:245, label_count:255, plus name/attributes strings at 288-291). Each JS-side scalar read also allocates a fresh DataView (node-decoder.ts dataView()). Constant-factor waste on the hot decode path, multiplied across every node of every commit.
-- Evidence: All cited redundancies verified in packages/es-markdown-core/src/bridge.c: es_node_list_flavor (182), es_node_list_tight (190), es_node_list_start_state (198) each call markdown_core_node_list_properties — 3 calls per list (decoder call sites node-decoder.ts:342,357,486); es_node_code_flag called twice (node-decoder.ts:237-238) plus three es_string code reads all re-fetch markdown_core_node_code_block_properties = 5 calls per code block; directive mode (422) + label_count (415) + name/attributes strings = 4 markdown_core_node_directive_properties calls. dataView() (node-decoder.ts:531-533) allocates a fresh DataView per scalar read. Measured to classify honestly: 8000-item list doc parses in ~26 ms, 8000 code blocks ~6 ms, 8000 paragraphs ~6 ms (two runs each, stable) — the redundancy is real but not a measured performance problem, so this is decode-path hygiene/constant-factor cleanup, not P1.
-- Fix plan: As suggested: add per-kind packed accessors in bridge.c (es_node_list_properties writing flavor/tight/start-flag/start into the 32-byte scratch in one crossing; likewise code-block flags and directive mode/label-count), have decodeValue read the scratch once per node, and reuse a single DataView per decode entry (created after any potential memory growth point, or re-created per node — note native.ts's comment that views are deliberately never cached across calls because of memory growth; a per-node view is still safe). Benchmark with scripts/benchmark.mjs before/after.
+- Historical finding: Per-scalar bridge crossings re-fetched whole native property structs: decoding one list called markdown_core_node_list_properties three times (es_node_list_flavor:182, es_node_list_tight:190, es_node_list_start_state:198); one code block called markdown_core_node_code_block_properties five times; one directive called markdown_core_node_directive_properties four times, including the now-removed `label_count`. Each JS-side scalar read also allocated a fresh DataView. This was constant-factor waste on the old decode path.
+- Historical evidence: the cited list, code-block, and directive accessors each re-fetched their full property record; the directive path included separate mode and `label_count` reads plus strings. The redundancy was real but not a measured performance problem, so the entry classified it as decode-path hygiene rather than P1.
+- Superseded fix plan: pack list/code/directive fields, including directive mode/label-count, into one crossing and reuse a per-node DataView. Packing still applies where multiple scalar fields remain, but a label count is no longer a directive property.
 - Tests: Canonical-AST fixture dumps (conformance.test.mjs, byte-equal oracle) plus node/session suites fully cover any repacking; run scripts/benchmark.mjs for the perf delta.
+- 2026-07-29 supersession: the general packed-crossing observation remains
+  historical evidence, but `label_count` is no longer part of directive
+  properties or an ES bridge crossing. Label presence and content arrive
+  through the ordinary `DirectiveLabel` child record; no binding reconstructs
+  a prefix boundary.
 
 ### I04 [FIXED `030d5f6`] [P3-cosmetic] packages/es-markdown-core/src/runtime/native.ts:61
 

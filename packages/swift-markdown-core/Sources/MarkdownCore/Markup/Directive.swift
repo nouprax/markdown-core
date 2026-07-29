@@ -14,9 +14,9 @@ public struct Directive: Markup {
     public let name: String
     /// The raw attribute text between the braces, if any.
     public let attributes: String?
-    /// The directive's inline label content; nil when the directive
-    /// declares no label — distinct from an explicit empty `[]`.
-    public let label: [any Markup]?
+    /// The directive's label; nil when the directive declares no label —
+    /// distinct from an explicit empty `[]`.
+    public let label: DirectiveLabel?
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }

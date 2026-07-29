@@ -360,16 +360,20 @@ private fun WireReader.record(
             readTable(id, revision, mirror)
         }
 
+        WireKind.TABLE_ROW -> {
+            readTableRow(id, revision, mirror)
+        }
+
+        WireKind.TABLE_CELL -> {
+            TableCell(id, revision, children(mirror))
+        }
+
         WireKind.DIRECTIVE_BLOCK -> {
-            DirectiveBlock(
-                id,
-                revision,
-                placement(),
-                requiredString(),
-                string(),
-                optionalChildren(mirror),
-                children(mirror),
-            )
+            readDirectiveBlock(id, revision, mirror)
+        }
+
+        WireKind.DIRECTIVE_LABEL -> {
+            DirectiveLabel(id, revision, children(mirror))
         }
 
         WireKind.FOOTNOTE_DEFINITION -> {
@@ -428,14 +432,6 @@ private fun WireReader.record(
             FootnoteReference(id, revision, requiredString())
         }
 
-        WireKind.TABLE_ROW -> {
-            readTableRow(id, revision, mirror)
-        }
-
-        WireKind.TABLE_CELL -> {
-            TableCell(id, revision, children(mirror))
-        }
-
         else -> {
             error("unsupported native node kind $kind")
         }
@@ -458,12 +454,6 @@ private fun WireReader.children(mirror: Map<ULong, Markup>): kotlin.collections.
     val count = int()
     require(count >= 0) { "invalid native child count" }
     return immutableList(count) { child(mirror) }
-}
-
-private fun WireReader.optionalChildren(mirror: Map<ULong, Markup>): kotlin.collections.List<Markup>? {
-    val count = int()
-    require(count >= -1) { "invalid native child count" }
-    return if (count == -1) null else immutableList(count) { child(mirror) }
 }
 
 private fun WireReader.readList(
@@ -499,10 +489,32 @@ private fun WireReader.readDirective(
     val mode = placement()
     val name = requiredString()
     val attributes = string()
-    val label = optionalChildren(mirror)
-    val content = children(mirror)
-    require(content.isEmpty()) { "inline directive contains block content" }
+    val directChildren = children(mirror)
+    require(directChildren.size <= 1 && directChildren.all { it is DirectiveLabel }) {
+        "inline directive contains a non-label child"
+    }
+    val label = directChildren.firstOrNull() as DirectiveLabel?
     return Directive(id, revision, mode, name, attributes, label)
+}
+
+private fun WireReader.readDirectiveBlock(
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): DirectiveBlock {
+    val mode = placement()
+    val name = requiredString()
+    val attributes = string()
+    val directChildren = children(mirror)
+    val label = directChildren.firstOrNull() as? DirectiveLabel
+    val contentStart = if (label == null) 0 else 1
+    for (index in contentStart..<directChildren.size) {
+        require(directChildren[index] !is DirectiveLabel) {
+            "block directive contains a misplaced label"
+        }
+    }
+    val content = immutableList(directChildren.size - contentStart) { directChildren[it + contentStart] }
+    return DirectiveBlock(id, revision, mode, name, attributes, label, content)
 }
 
 private fun WireReader.readTable(
@@ -578,21 +590,22 @@ private object WireKind {
     const val HTML_BLOCK = 9
     const val FORMULA_BLOCK = 10
     const val TABLE = 11
-    const val DIRECTIVE_BLOCK = 12
-    const val FOOTNOTE_DEFINITION = 13
-    const val TEXT = 14
-    const val SOFT_BREAK = 15
-    const val LINE_BREAK = 16
-    const val CODE = 17
-    const val HTML = 18
-    const val FORMULA = 19
-    const val EMPHASIS = 20
-    const val STRONG = 21
-    const val STRIKETHROUGH = 22
-    const val LINK = 23
-    const val IMAGE = 24
-    const val DIRECTIVE = 25
-    const val FOOTNOTE_REFERENCE = 26
-    const val TABLE_ROW = 27
-    const val TABLE_CELL = 28
+    const val TABLE_ROW = 12
+    const val TABLE_CELL = 13
+    const val DIRECTIVE_BLOCK = 14
+    const val DIRECTIVE_LABEL = 15
+    const val FOOTNOTE_DEFINITION = 16
+    const val TEXT = 17
+    const val SOFT_BREAK = 18
+    const val LINE_BREAK = 19
+    const val CODE = 20
+    const val HTML = 21
+    const val FORMULA = 22
+    const val EMPHASIS = 23
+    const val STRONG = 24
+    const val STRIKETHROUGH = 25
+    const val LINK = 26
+    const val IMAGE = 27
+    const val DIRECTIVE = 28
+    const val FOOTNOTE_REFERENCE = 29
 }

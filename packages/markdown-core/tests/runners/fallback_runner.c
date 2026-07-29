@@ -1572,20 +1572,24 @@ static int case_block_directive_label_lookup_locality(void) {
     markdown_core_delta *changes = NULL;
     const markdown_core_node *root;
     const markdown_core_node *directive;
+    const markdown_core_node *label;
     const markdown_core_node *label_first;
     const markdown_core_node *link;
     const markdown_core_node *body;
     const markdown_core_node *tail;
     markdown_core_node_id root_id;
     markdown_core_node_id directive_id;
+    markdown_core_node_id label_id;
     markdown_core_node_id link_id;
     markdown_core_node_id body_id;
     markdown_core_node_id tail_id;
     uint64_t directive_revision;
+    uint64_t label_revision;
     uint64_t link_revision;
     uint64_t body_revision;
     uint64_t tail_revision;
     uintptr_t directive_address;
+    uintptr_t label_address;
     uintptr_t body_address;
     size_t full_before;
     size_t restarted_before;
@@ -1608,32 +1612,39 @@ static int case_block_directive_label_lookup_locality(void) {
 
     root = markdown_core_document_root(markdown_core_session_document(session));
     directive = root ? root->first_child : NULL;
-    label_first = markdown_core_node_directive_first_label_child(directive);
+    label = markdown_core_node_directive_label(directive);
+    label_first = markdown_core_node_get_first_child(label);
     link = label_first ? label_first->next : NULL;
-    body = markdown_core_node_directive_first_content_child(directive);
+    body = markdown_core_node_get_next_sibling(label);
     tail = directive ? directive->next : NULL;
-    if (!root || !directive || markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK ||
-        !label_first || label_first->type != MARKDOWN_CORE_NODE_TEXT || !link ||
-        link->type != MARKDOWN_CORE_NODE_LINK || link->parent != directive || !body || link->next != body ||
-        body->type != MARKDOWN_CORE_NODE_PARAGRAPH || body->parent != directive || !tail ||
-        tail->type != MARKDOWN_CORE_NODE_PARAGRAPH || tail->next || !fb_link_destination_is(link, "/a")) {
+    if (!root || !directive || markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK || !label ||
+        markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
+        markdown_core_node_get_parent(label) != directive || !label_first ||
+        label_first->type != MARKDOWN_CORE_NODE_TEXT || label_first->parent != label || !link ||
+        link->type != MARKDOWN_CORE_NODE_LINK || link->parent != label || link->next || !body ||
+        markdown_core_node_get_next_sibling(label) != body || body->type != MARKDOWN_CORE_NODE_PARAGRAPH ||
+        body->parent != directive || !tail || tail->type != MARKDOWN_CORE_NODE_PARAGRAPH || tail->next ||
+        !fb_link_destination_is(link, "/a")) {
         fputs("FAILED: block_directive_label_lookup_locality: unexpected baseline tree\n", stderr);
         goto done;
     }
 
     root_id = markdown_core_node_get_id(root);
     directive_id = markdown_core_node_get_id(directive);
+    label_id = markdown_core_node_get_id(label);
     link_id = markdown_core_node_get_id(link);
     body_id = markdown_core_node_get_id(body);
     tail_id = markdown_core_node_get_id(tail);
     directive_revision = markdown_core_node_get_revision(directive);
+    label_revision = markdown_core_node_get_revision(label);
     link_revision = markdown_core_node_get_revision(link);
     body_revision = markdown_core_node_get_revision(body);
     tail_revision = markdown_core_node_get_revision(tail);
     directive_address = (uintptr_t)directive;
+    label_address = (uintptr_t)label;
     body_address = (uintptr_t)body;
-    if (!fb_lookup_posting_matches(session, "reference", &directive_id, 1)) {
-        fputs("FAILED: block_directive_label_lookup_locality: baseline owner posting is incoherent\n", stderr);
+    if (!fb_lookup_posting_matches(session, "reference", &label_id, 1)) {
+        fputs("FAILED: block_directive_label_lookup_locality: baseline label posting is incoherent\n", stderr);
         goto done;
     }
 
@@ -1673,6 +1684,7 @@ static int case_block_directive_label_lookup_locality(void) {
         }
 
         directive = markdown_core_session_node_by_id(session, directive_id);
+        label = markdown_core_session_node_by_id(session, label_id);
         link = markdown_core_session_node_by_id(session, link_id);
         body = markdown_core_session_node_by_id(session, body_id);
         tail = markdown_core_session_node_by_id(session, tail_id);
@@ -1684,18 +1696,36 @@ static int case_block_directive_label_lookup_locality(void) {
             fputs("FAILED: block_directive_label_lookup_locality: semantic owner address changed\n", stderr);
             goto done;
         }
+        if (!label || (uintptr_t)label != label_address || markdown_core_node_directive_label(directive) != label ||
+            markdown_core_node_get_parent(label) != directive) {
+            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel identity diverged\n", stderr);
+            goto done;
+        }
         if (markdown_core_node_get_revision(directive) <= directive_revision) {
             fputs("FAILED: block_directive_label_lookup_locality: semantic owner revision did not bubble\n", stderr);
             goto done;
         }
-        if (!link || link->parent != directive || link->next != body ||
-            !fb_link_destination_is(link, destinations[round]) ||
+        if (markdown_core_node_get_revision(label) <= label_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel revision did not bubble\n", stderr);
+            goto done;
+        }
+        if (!link || link->parent != label || link->next || !fb_link_destination_is(link, destinations[round]) ||
             markdown_core_node_get_revision(link) <= link_revision) {
-            fputs("FAILED: block_directive_label_lookup_locality: label Link identity diverged\n", stderr);
+            fprintf(
+                stderr,
+                "FAILED: block_directive_label_lookup_locality: label Link identity diverged "
+                "(present=%d parent=%d next=%d destination=%d revision=%llu previous=%llu)\n",
+                link != NULL,
+                link && link->parent == label,
+                link && link->next != NULL,
+                link && fb_link_destination_is(link, destinations[round]),
+                (unsigned long long)markdown_core_node_get_revision(link),
+                (unsigned long long)link_revision
+            );
             goto done;
         }
         if (!body || (uintptr_t)body != body_address || body->parent != directive ||
-            markdown_core_node_directive_first_content_child(directive) != body ||
+            markdown_core_node_get_next_sibling(label) != body ||
             markdown_core_node_get_revision(body) != body_revision) {
             fputs("FAILED: block_directive_label_lookup_locality: block body identity diverged\n", stderr);
             goto done;
@@ -1704,8 +1734,8 @@ static int case_block_directive_label_lookup_locality(void) {
             fputs("FAILED: block_directive_label_lookup_locality: clean tail identity diverged\n", stderr);
             goto done;
         }
-        if (!fb_lookup_posting_matches(session, "reference", &directive_id, 1)) {
-            fputs("FAILED: block_directive_label_lookup_locality: rebuilt owner posting is incoherent\n", stderr);
+        if (!fb_lookup_posting_matches(session, "reference", &label_id, 1)) {
+            fputs("FAILED: block_directive_label_lookup_locality: rebuilt label posting is incoherent\n", stderr);
             goto done;
         }
 
@@ -1721,6 +1751,7 @@ static int case_block_directive_label_lookup_locality(void) {
         }
         count = markdown_core_delta_changed(changes, &ids);
         if (count != 1 || !fb_delta_contains(changes, FB_DELTA_CHANGED, link_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, label_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, directive_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, body_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, tail_id)) {
@@ -1728,17 +1759,19 @@ static int case_block_directive_label_lookup_locality(void) {
             goto done;
         }
         count = markdown_core_delta_bubbled(changes, &ids);
-        if (count != 2 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, directive_id) ||
+        if (count != 3 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, label_id) ||
+            !fb_delta_contains(changes, FB_DELTA_BUBBLED, directive_id) ||
             !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id) ||
             fb_delta_contains(changes, FB_DELTA_BUBBLED, body_id) ||
             fb_delta_contains(changes, FB_DELTA_BUBBLED, tail_id)) {
             fputs(
-                "FAILED: block_directive_label_lookup_locality: ancestor bubble is not owner plus document\n",
+                "FAILED: block_directive_label_lookup_locality: ancestor bubble is not label, owner, document\n",
                 stderr
             );
             goto done;
         }
         directive_revision = markdown_core_node_get_revision(directive);
+        label_revision = markdown_core_node_get_revision(label);
         link_revision = markdown_core_node_get_revision(link);
         markdown_core_delta_free(changes);
         changes = NULL;

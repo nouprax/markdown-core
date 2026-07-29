@@ -64,9 +64,9 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_table_column_count(node: number): number;
     es_node_table_alignment(node: number, index: number): number;
     es_node_table_row_header(node: number): number;
-    /** Writes i32 mode, i32 label count (-1 without a label), and u32
-     * name/attributes (data, length) view pairs to `output` in one
-     * crossing. */
+    /** Writes i32 mode, one reserved u32, and u32 name/attributes
+     * (data, length) view pairs to `output` in one crossing. Label topology
+     * is carried exclusively by canonical child records. */
     es_node_directive_properties(node: number, output: number): void;
     es_string(object: number, field: number, dataOutput: number, lengthOutput: number): void;
 }

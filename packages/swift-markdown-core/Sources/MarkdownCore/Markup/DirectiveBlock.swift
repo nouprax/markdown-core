@@ -14,9 +14,9 @@ public struct DirectiveBlock: Markup {
     public let name: String
     /// The raw attribute text between the braces, if any.
     public let attributes: String?
-    /// The directive's inline label content; nil when the directive
-    /// declares no label — distinct from an explicit empty `[]`.
-    public let label: [any Markup]?
+    /// The directive's label; nil when the directive declares no label —
+    /// distinct from an explicit empty `[]`.
+    public let label: DirectiveLabel?
     /// The directive's block content in source order, label excluded.
     public let content: [any Markup]
 

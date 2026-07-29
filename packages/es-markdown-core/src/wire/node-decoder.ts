@@ -349,6 +349,8 @@ export class NodeDecoder {
                 return this.copyTableRow(node, id, revision, children);
             case "tableCell":
                 return this.copyTableCell(id, revision, children);
+            case "directiveLabel":
+                return { kind, id, revision, content: children };
         }
         return unreachable(kind);
     }
@@ -453,7 +455,7 @@ export class NodeDecoder {
         readonly mode: PlacementMode;
         readonly name: string;
         readonly attributes: string | null;
-        readonly label: readonly Markup[] | null;
+        readonly label: Extract<Markup, { kind: "directiveLabel" }> | null;
         readonly content: readonly Markup[];
     } {
         // One packed crossing for every directive field; scratch layout
@@ -461,20 +463,20 @@ export class NodeDecoder {
         this.requireLive();
         this.native.es_node_directive_properties(node, this.scratch);
         const view = this.dataView();
-        const labelCount = view.getInt32(this.scratch + 4, true);
-        if (labelCount < -1 || labelCount > children.length) {
-            throw new Error(`native parser returned an invalid directive label count ${labelCount}`);
-        }
         const name = this.scratchString(view, 8);
         if (name === null) throw new Error("native parser returned a missing string");
-        const label = labelCount < 0 ? null : children.slice(0, labelCount);
-        const contentOffset = labelCount < 0 ? 0 : labelCount;
+        const firstChild = children[0];
+        const label = firstChild?.kind === "directiveLabel" ? firstChild : null;
+        const content = label === null ? children : children.slice(1);
+        if (content.some((child) => child.kind === "directiveLabel")) {
+            throw new Error("native parser returned a misplaced directive label");
+        }
         return {
             mode: this.placement(view.getInt32(this.scratch, true)),
             name,
             attributes: this.scratchString(view, 16),
             label,
-            content: children.slice(contentOffset)
+            content
         };
     }
 

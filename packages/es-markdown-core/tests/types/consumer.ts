@@ -6,6 +6,9 @@ import {
     MarkupWalker,
     type Commit,
     type Delta,
+    type Directive,
+    type DirectiveBlock,
+    type DirectiveLabel,
     type FootnoteInfo,
     type Heading,
     type Markup,
@@ -46,6 +49,7 @@ const visitor: MarkupVisitor<string> = {
     visitTableRow: (node) => (node.isHeader ? "header" : "row"),
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
+    visitDirectiveLabel: (node) => node.kind,
     visitFootnoteDefinition: (node) => node.label,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
@@ -123,6 +127,17 @@ const cell: TableCell = row.cells[0]!;
 void rowMarkup;
 void cellMarkup;
 void cell;
+
+declare const directive: Directive;
+declare const directiveBlock: DirectiveBlock;
+const inlineLabel: DirectiveLabel | null = directive.label;
+const blockLabel: DirectiveLabel | null = directiveBlock.label;
+const labelMarkup: Markup | null = inlineLabel;
+const labelContent: readonly Markup[] | undefined = blockLabel?.content;
+void labelMarkup;
+void labelContent;
+// @ts-expect-error directive labels are immutable typed child properties
+directive.label = null;
 
 // @ts-expect-error MarkupVisitor is exhaustive and requires one method per Markup kind
 const incompleteVisitor: MarkupVisitor<string> = {

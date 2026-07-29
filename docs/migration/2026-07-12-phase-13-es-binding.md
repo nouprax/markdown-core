@@ -51,10 +51,10 @@ calls `markdown_core_document_dump`, never serializes JSON across the boundary,
 and never reconstructs a tree from dump text.
 
 One decoder instance owns a single scratch allocation for the complete copy,
-validates raw kinds, enums, booleans, counts, string views, table structure, and
-directive label boundaries, and requires row/cell Markup nodes to occur on
-their legal typed ownership edges. Public model modules do not import the WASM
-runtime.
+validates raw kinds, enums, booleans, counts, string views, table structure,
+and the optional `DirectiveLabel` child shape, and requires row/cell/label
+Markup nodes to occur on their legal typed ownership edges. Public model
+modules do not import the WASM runtime.
 
 `ParseOptions` preserves the eleven frozen defaults and uses a private bitmask
 only at the WASM ABI. `Visitor<Result>` requires every type-specific dispatch

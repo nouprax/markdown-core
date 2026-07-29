@@ -15,6 +15,15 @@ enum es_string_field {
     ES_STRING_ERROR_MESSAGE
 };
 
+typedef struct {
+    int32_t mode;
+    uint32_t reserved;
+    uint32_t name_data;
+    uint32_t name_length;
+    uint32_t attributes_data;
+    uint32_t attributes_length;
+} es_directive_properties_layout;
+
 #define ES_LAYOUT_ASSERT(name, condition) typedef char name[(condition) ? 1 : -1]
 ES_LAYOUT_ASSERT(es_scope_entry_size_is_32, sizeof(markdown_core_scope_entry) == 32);
 ES_LAYOUT_ASSERT(es_scope_entry_id_starts_at_0, offsetof(markdown_core_scope_entry, id) == 0);
@@ -30,6 +39,13 @@ ES_LAYOUT_ASSERT(es_delta_entry_size_is_24, sizeof(markdown_core_delta_entry) ==
 ES_LAYOUT_ASSERT(es_delta_entry_id_starts_at_0, offsetof(markdown_core_delta_entry, id) == 0);
 ES_LAYOUT_ASSERT(es_delta_entry_parent_starts_at_8, offsetof(markdown_core_delta_entry, parent) == 8);
 ES_LAYOUT_ASSERT(es_delta_entry_change_starts_at_16, offsetof(markdown_core_delta_entry, change) == 16);
+ES_LAYOUT_ASSERT(es_directive_properties_size_is_24, sizeof(es_directive_properties_layout) == 24);
+ES_LAYOUT_ASSERT(es_directive_properties_mode_starts_at_0, offsetof(es_directive_properties_layout, mode) == 0);
+ES_LAYOUT_ASSERT(es_directive_properties_name_starts_at_8, offsetof(es_directive_properties_layout, name_data) == 8);
+ES_LAYOUT_ASSERT(
+    es_directive_properties_attributes_starts_at_16,
+    offsetof(es_directive_properties_layout, attributes_data) == 16
+);
 #undef ES_LAYOUT_ASSERT
 
 static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
@@ -287,22 +303,21 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
     return value;
 }
 
-// Layout (24 bytes): i32 mode, i32 label count (-1 without a label),
-// u32 name data/length, u32 attributes data/length.
+// Layout (24 bytes): i32 mode, reserved u32, then the name and attributes
+// string views. Label presence and content come from the canonical child
+// topology, exactly like every other typed child relation.
 void es_node_directive_properties(const markdown_core_node *node, void *out) {
     markdown_core_placement_mode mode;
     markdown_core_string_view name, attributes;
-    bool has_label;
-    size_t label_count;
-    int32_t *fields = (int32_t *)out;
-    uint32_t *views = (uint32_t *)out;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
-    fields[0] = (int32_t)mode;
-    fields[1] = has_label ? (int32_t)label_count : -1;
-    views[2] = (uint32_t)(uintptr_t)name.data;
-    views[3] = (uint32_t)name.length;
-    views[4] = (uint32_t)(uintptr_t)attributes.data;
-    views[5] = (uint32_t)attributes.length;
+    es_directive_properties_layout *properties = (es_directive_properties_layout *)out;
+
+    markdown_core_node_directive_properties(node, &mode, &name, &attributes);
+    properties->mode = (int32_t)mode;
+    properties->reserved = 0;
+    properties->name_data = (uint32_t)(uintptr_t)name.data;
+    properties->name_length = (uint32_t)name.length;
+    properties->attributes_data = (uint32_t)(uintptr_t)attributes.data;
+    properties->attributes_length = (uint32_t)attributes.length;
 }
 
 void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {

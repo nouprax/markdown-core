@@ -562,6 +562,33 @@ test("sessions: many changed siblings keep parent relinking linear", () => {
     }
 });
 
+test("sessions: a directive-label edit relinks the canonical label and preserves block content", () => {
+    const source = ":::note[before]\nBody\n:::\n";
+    const session = new MarkupSession();
+    try {
+        session.append(source);
+        const first = session.commit();
+        const firstDirective = first.document.content[0];
+        const firstLabel = firstDirective.label;
+        const firstBody = firstDirective.content[0];
+
+        session.replace(8, 14, "after");
+        const second = session.commit();
+        const secondDirective = second.document.content[0];
+        const secondLabel = secondDirective.label;
+
+        assert.equal(secondDirective.id, firstDirective.id);
+        assert.equal(secondLabel.id, firstLabel.id);
+        assert.notEqual(secondLabel, firstLabel);
+        assert.equal(secondLabel.content[0].literal, "after");
+        assert.equal(secondDirective.content[0], firstBody);
+        assert.equal(session.node(secondLabel.id), secondLabel);
+        assert.equal(second.document.dump(), Document.parse(":::note[after]\nBody\n:::\n").dump());
+    } finally {
+        session.close();
+    }
+});
+
 test("sessions: bubbled-parent relink has a linear child-read bound", () => {
     // Count element reads instead of timing: the removed implementation
     // called indexOf for every replacement and therefore performed Θ(n²)
@@ -594,6 +621,50 @@ test("sessions: bubbled-parent relink has a linear child-read bound", () => {
     assert.equal(updated.content.length, width);
     assert.ok(updated.content.every((child) => child.revision === 2));
     assert.ok(elementReads <= width * 2, `expected at most ${width * 2} element reads, observed ${elementReads}`);
+});
+
+test("sessions: directive relinking replaces its canonical label child", () => {
+    const identity = (rawValue) => ({ lineage: 1n, rawValue });
+    const previousText = { kind: "text", id: identity(3), revision: 1, literal: "before" };
+    const previousLabel = {
+        kind: "directiveLabel",
+        id: identity(2),
+        revision: 1,
+        content: [previousText]
+    };
+    const currentText = { ...previousText, revision: 2, literal: "after" };
+    const currentLabel = {
+        ...previousLabel,
+        revision: 2,
+        content: [currentText]
+    };
+    const replacements = new Map([[previousLabel, currentLabel]]);
+    const directive = {
+        kind: "directive",
+        id: identity(1),
+        revision: 1,
+        mode: "embedded",
+        name: "badge",
+        attributes: null,
+        label: previousLabel
+    };
+    const directiveBlock = {
+        kind: "directiveBlock",
+        id: identity(4),
+        revision: 1,
+        mode: "standalone",
+        name: "note",
+        attributes: null,
+        label: previousLabel,
+        content: []
+    };
+
+    assert.equal(relink(directive, 2, replacements).label, currentLabel);
+    assert.equal(relink(directiveBlock, 2, replacements).label, currentLabel);
+    assert.throws(
+        () => relink(directive, 2, new Map([[previousLabel, currentText]])),
+        /replaced the label with a non-label/
+    );
 });
 
 test("sessions: an explicitly materialized snapshot stays usable across commits and close", () => {

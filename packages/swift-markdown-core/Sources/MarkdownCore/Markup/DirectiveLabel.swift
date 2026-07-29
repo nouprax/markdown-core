@@ -1,0 +1,24 @@
+import MarkdownCoreC
+
+/// The inline label owned by a `Directive` or `DirectiveBlock`.
+///
+/// A missing label is represented by a nil directive property. An explicit
+/// empty `[]` is a `DirectiveLabel` whose `content` is empty.
+public struct DirectiveLabel: Markup {
+    /// The node's session-scoped identity; see `MarkupID`.
+    public let id: MarkupID
+    /// The commit revision at which this node's content last changed.
+    public let revision: UInt64
+    /// The label's inline content.
+    public let content: [any Markup]
+
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
+    public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
+}
+
+extension DirectiveLabel {
+    init(from node: OpaquePointer, builder: MarkupBuilder) {
+        let (id, revision) = builder.id(of: node)
+        self.init(id: id, revision: revision, content: builder.children(node))
+    }
+}

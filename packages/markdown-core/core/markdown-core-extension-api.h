@@ -184,60 +184,27 @@ typedef int (*markdown_core_contains_inlines_func)(markdown_core_extension *exte
 typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
 /**
- * Eliminates an extension-owned inline parse unit after every extension's
- * block-local postprocess hook and core HTML-comment stripping have finished.
+ * Builds a detached shell for an extension-owned inline owner whose complete
+ * child list can be reparsed when a reference-definition answer changes.
+ * Before refinement the shell owns a copy of the owner's raw inline source;
+ * after refinement its complete child list is the replacement domain.
  *
- * Installing this hook is a descriptor-wide contract: every node owned by
- * the extension for which `contains_inlines` is true is a transient direct
- * child of its semantic owner. Neither the unit nor that parent may be
- * replaced, retyped, or reparented during postprocessing. The hook validates
- * and then performs one allocation-free, infallible ownership-domain splice;
- * it returns nonzero on success and zero without modifying either node when
- * an internal invariant is broken.
+ * The returned shell must have the same semantic node type, extension
+ * descriptor, and allocator as `committed_owner`; refinement must not replace
+ * it. NULL reports allocation failure. An ownership domain is always the
+ * complete child list of one real semantic owner, never an optimization
+ * subrange or a prefix selected by syntax-specific policy.
  */
-typedef int (*markdown_core_finalize_transient_inline_owner_func)(
+typedef markdown_core_node *(*markdown_core_prepare_inline_domain_func)(
     markdown_core_extension *extension,
-    markdown_core_node *unit,
-    markdown_core_node *semantic_owner
-);
-
-/**
- * Describes one complete inline ownership domain that can be reparsed when a
- * reference-definition answer changes. `staged_owner` is a detached semantic
- * shell backed by the same allocator as the committed owner. Before
- * refinement it owns the raw inline source directly or through a transient
- * inline owner; after refinement its complete child list is the replacement
- * domain. `committed_child_count` is the length of the corresponding prefix
- * in the committed owner's direct child list.
- *
- * A domain is the smallest whole whose descendants may borrow from one
- * owner->content buffer. No child outside the prefix may borrow that buffer,
- * and every refined top-level child of the staged shell must be inline
- * Markup. The domain is never an arbitrary optimization subrange.
- */
-typedef struct {
-    markdown_core_node *staged_owner;
-    size_t committed_child_count;
-} markdown_core_inline_domain;
-
-/**
- * Builds the detached shell for an extension-owned inline ownership domain.
- * The callback returns nonzero on success. Allocation failure returns zero
- * and leaves `out` empty. The staged owner must have the same semantic node
- * type, extension descriptor, and allocator as `committed_owner`; refinement
- * must not replace it.
- */
-typedef int (*markdown_core_prepare_inline_domain_func)(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner,
-    markdown_core_inline_domain *out
+    const markdown_core_node *committed_owner
 );
 
 /** Block-local postprocess hook. After inline parsing, footnote processing,
  * and per-block text consolidation, the parser calls this once for every
- * block (and every inline-owning node, such as a table cell or transient
- * directive-label parse unit) in document order. All effects must stay inside that
- * node's subtree so the pipeline can later rerun for single blocks.
+ * block (and every inline-owning node, such as a table cell or directive
+ * label) in document order. All effects must stay inside that node's subtree
+ * so the pipeline can later rerun for single blocks.
  *
  * Returns the node now occupying the block's position in the tree: the
  * block itself, or its replacement when the extension replaced or retyped

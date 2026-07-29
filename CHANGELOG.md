@@ -6,9 +6,17 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Breaking (C, Swift, Kotlin, and ECMAScript): directive labels are now
+  first-class `DirectiveLabel` markup in the canonical AST. A present label is
+  the directive's first real child, owns its complete inline content, and has a
+  scope spanning the source brackets; a missing label has no such child, while
+  explicit `[]` is a zero-child `DirectiveLabel`. Typed binding properties are
+  now `label: DirectiveLabel?`, and canonical dumps emit the label node instead
+  of a parent `label=` scalar. The public kind inventory follows canonical AST
+  order directly, including `DirectiveBlock`, `DirectiveLabel`, then
+  `FootnoteDefinition`.
 - Breaking (Swift): realign the Swift AST surface with the frozen
-  canonical-ast contract, which forbids per-platform renames. Canonical dump
-  output is unchanged.
+  canonical-ast contract, which forbids per-platform renames.
   - Every container's `children` collection is now `content` (`Document`,
     `BlockQuote`, `Paragraph`, `Heading`, `ListItem`, `DirectiveBlock`,
     `FootnoteDefinition`, `Emphasis`, `Strong`, `Strikethrough`, `Link`,
@@ -16,10 +24,7 @@ promised to remain compatible between releases.
   - Boolean fields return to their frozen names: `isTight` → `tight`,
     `isChecked` → `checked`, `isFenced` → `fenced`, `isClosed` → `closed`
     (`isHeader` is contract-defined and unchanged).
-  - `Directive` and `DirectiveBlock` replace `labelCount: Int?` plus a merged
-    `children` array with the contract's typed `label: [Markup]?` (nil when
-    no label was written, distinct from an explicit empty `[]`);
-    `DirectiveBlock` gains its separate block `content` collection.
+  - `DirectiveBlock` gains its separate block `content` collection.
   - `Code` and `CodeBlock` gain the contract's `mode: PlacementMode` field
     (`embedded`/`standalone` respectively).
   - Leaf kinds no longer carry an always-empty public `children` property

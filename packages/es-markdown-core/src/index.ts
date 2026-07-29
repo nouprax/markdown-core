@@ -3,6 +3,7 @@ export type { BlockQuote } from "./model/block-quote.js";
 export type { CodeBlock } from "./model/code-block.js";
 export type { Code } from "./model/code.js";
 export type { DirectiveBlock } from "./model/directive-block.js";
+export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";
 export type { Emphasis } from "./model/emphasis.js";
 export type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";

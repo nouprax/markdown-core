@@ -668,8 +668,7 @@ void markdown_core_parser_manage_extensions_special_characters(markdown_core_par
 
 /* The node a lookup observed during `node`'s inline parse is attributed to
  * the outermost inline-owning node of the parent chain (the unit the
- * per-block postprocess pipeline visits). A transient owner is attributed to
- * the semantic owner that will survive its finalization. */
+ * per-block postprocess pipeline visits). */
 static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
     markdown_core_node *unit = node;
     markdown_core_node *up;
@@ -677,14 +676,6 @@ static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
         if (contains_inlines(up)) {
             unit = up;
         }
-    }
-    if (unit->extension && unit->extension->finalize_transient_inline_owner) {
-        /* The descriptor contract makes every extension-owned inline unit a
-         * transient direct child. A missing parent is an invalid parse tree;
-         * returning NULL poisons session lookup recording until refinement
-         * reports the structural failure itself. */
-        assert(unit->parent);
-        unit = unit->parent;
     }
     return unit;
 }
@@ -1801,12 +1792,8 @@ finished:
 
 /* Runs the block-local postprocess pipeline for one unit: text
  * consolidation, extension block postprocess hooks in attachment order,
- * HTML-comment stripping, then elimination of an extension-owned transient
- * inline owner. The finalizer runs last so every cross-extension transform
- * sees the complete parse unit, and before position sealing so the returned
- * tree stores only semantic parent edges. The caller precomputes its
- * traversal successor because the unit may be replaced, removed, or
- * flattened. Returns the surviving node/owner. */
+ * and HTML-comment stripping. The caller precomputes its traversal successor
+ * because a postprocessor may replace the unit. Returns the surviving node. */
 static markdown_core_node *S_postprocess_unit(
     markdown_core_parser *parser,
     markdown_core_node *unit,
@@ -1814,21 +1801,6 @@ static markdown_core_node *S_postprocess_unit(
 ) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
-    markdown_core_node *transient_unit = NULL;
-    markdown_core_node *semantic_owner = NULL;
-    markdown_core_extension *transient_extension = NULL;
-    markdown_core_finalize_transient_inline_owner_func transient_finalizer = NULL;
-
-    if (owns_inlines && unit->extension && unit->extension->finalize_transient_inline_owner) {
-        transient_unit = unit;
-        semantic_owner = unit->parent;
-        transient_extension = unit->extension;
-        transient_finalizer = unit->extension->finalize_transient_inline_owner;
-        if (!semantic_owner) {
-            parser->internal_error = true;
-            return unit;
-        }
-    }
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
@@ -1853,19 +1825,6 @@ static markdown_core_node *S_postprocess_unit(
         if (!S_strip_block_html_comments(unit, owns_inlines)) {
             parser->oom = true;
         }
-    }
-    if (transient_finalizer) {
-        /* A transient parse unit is one lifecycle object, not a replaceable
-         * semantic node. Finalization is the only operation allowed to
-         * eliminate it, and it always folds into the parent captured before
-         * cross-extension postprocessing began. */
-        if (unit != transient_unit || transient_unit->parent != semantic_owner ||
-            transient_unit->extension != transient_extension ||
-            !transient_finalizer(transient_extension, transient_unit, semantic_owner)) {
-            parser->internal_error = true;
-            return unit;
-        }
-        unit = semantic_owner;
     }
     return unit;
 }

@@ -44,6 +44,9 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 }
 
 bool markdown_core_node_owns_inlines(markdown_core_node *node) {
+    if (node->flags & MARKDOWN_CORE_NODE__OWNS_INLINE_SOURCE) {
+        return true;
+    }
     if (node->extension && node->extension->contains_inlines) {
         return node->extension->contains_inlines(node->extension, node) != 0;
     }

@@ -72,6 +72,10 @@ Nodes from different sessions never compare equal.
   commits, and its trailing `Text` node keeps its id with a revision bump per
   content change. Earlier inline siblings that are byte-identical keep id and
   revision.
+- A present `DirectiveLabel` is an ordinary semantic node and adoption unit.
+  If edits leave it a label at the same place, it keeps its id under the same
+  rules as `TableCell` or `Paragraph`; adding or removing the brackets adds or
+  removes the node rather than mutating hidden parent metadata.
 - Everything else is best effort: reparsed regions adopt old ids where kind
   and position match, and report honest `added`/`removed` entries where they
   do not.
@@ -200,11 +204,23 @@ session or delta is released and must be freed with
 - Reference-dependent inline reparsing operates on one complete ownership
   domain: a stable semantic owner, its contiguous inline child span, and the
   owner content buffer backing that span. Paragraph, Heading, and TableCell
-  domains contain all direct children; a DirectiveBlock domain is its direct
-  inline label prefix. Replacement moves the complete span and backing
-  together through the ordinary adopter. The committed tree has no
-  directive-label wrapper, and empty, singleton, or large domains never
-  select a different algorithm.
+  domains contain all direct children. A block `DirectiveLabel` owns its raw
+  label source and likewise reparses its complete `content` list. An inline
+  `DirectiveLabel` is materialized during its surrounding Paragraph or
+  TableCell parse, just like Emphasis or Link, so it stays inside that
+  surrounding complete domain instead of copying and reparsing the same
+  bytes. The core records this distinction with generic raw-inline-source
+  lifecycle state; no adopter or lookup rule switches on directive kind or
+  parent shape. Replacement moves the complete owner child list and backing
+  together through the ordinary adopter. The committed and public trees
+  contain the same label node, so there is no prefix/count partition,
+  transparent edge, scope compensation, or directive-specific walker/delta
+  path. Empty, singleton, and large domains all use this one mechanism.
+- Directive-label deltas follow the ordinary topology rules. Absent ↔ present
+  adds or removes the `DirectiveLabel` and changes the directive's direct
+  child list; a change to the label's own child list reports the label
+  `changed`; a descendant-only field edit reports that descendant `changed`
+  and the label and directive ancestors `bubbled`.
 - Documents parsed mid-stream behave as if the input ended at the current
   text: unterminated constructs parse exactly as `Document.parse` would parse
   them (for example `CodeBlock.closed == false`).

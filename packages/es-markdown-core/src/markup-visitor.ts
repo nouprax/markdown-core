@@ -2,6 +2,7 @@ import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
 import type { DirectiveBlock } from "./model/directive-block.js";
+import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
 import type { Emphasis } from "./model/emphasis.js";
@@ -39,6 +40,7 @@ export interface MarkupVisitor<Result> {
     visitTableRow(this: void, node: TableRow): Result;
     visitTableCell(this: void, node: TableCell): Result;
     visitDirectiveBlock(this: void, node: DirectiveBlock): Result;
+    visitDirectiveLabel(this: void, node: DirectiveLabel): Result;
     visitFootnoteDefinition(this: void, node: FootnoteDefinition): Result;
     visitText(this: void, node: Text): Result;
     visitSoftBreak(this: void, node: SoftBreak): Result;
@@ -85,6 +87,8 @@ export function visit<Result>(node: Markup, visitor: MarkupVisitor<Result>): Res
             return visitor.visitTableCell(node);
         case "directiveBlock":
             return visitor.visitDirectiveBlock(node);
+        case "directiveLabel":
+            return visitor.visitDirectiveLabel(node);
         case "footnoteDefinition":
             return visitor.visitFootnoteDefinition(node);
         case "text":

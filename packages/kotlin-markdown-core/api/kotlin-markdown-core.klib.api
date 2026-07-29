@@ -70,6 +70,7 @@ abstract interface <#A: kotlin/Any?> com.nouprax.markdown.core/MarkupVisitor { /
     abstract fun visit(com.nouprax.markdown.core/CodeBlock): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.CodeBlock){}[0]
     abstract fun visit(com.nouprax.markdown.core/Directive): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Directive){}[0]
     abstract fun visit(com.nouprax.markdown.core/DirectiveBlock): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.DirectiveBlock){}[0]
+    abstract fun visit(com.nouprax.markdown.core/DirectiveLabel): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.DirectiveLabel){}[0]
     abstract fun visit(com.nouprax.markdown.core/Document): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Document){}[0]
     abstract fun visit(com.nouprax.markdown.core/Emphasis): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Emphasis){}[0]
     abstract fun visit(com.nouprax.markdown.core/FootnoteDefinition): #A // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.FootnoteDefinition){}[0]
@@ -189,7 +190,7 @@ final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Mark
     final val id // com.nouprax.markdown.core/Directive.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Directive.id.<get-id>|<get-id>(){}[0]
     final val label // com.nouprax.markdown.core/Directive.label|{}label[0]
-        final fun <get-label>(): kotlin.collections/List<com.nouprax.markdown.core/Markup>? // com.nouprax.markdown.core/Directive.label.<get-label>|<get-label>(){}[0]
+        final fun <get-label>(): com.nouprax.markdown.core/DirectiveLabel? // com.nouprax.markdown.core/Directive.label.<get-label>|<get-label>(){}[0]
     final val mode // com.nouprax.markdown.core/Directive.mode|{}mode[0]
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/Directive.mode.<get-mode>|<get-mode>(){}[0]
     final val name // com.nouprax.markdown.core/Directive.name|{}name[0]
@@ -210,7 +211,7 @@ final class com.nouprax.markdown.core/DirectiveBlock : com.nouprax.markdown.core
     final val id // com.nouprax.markdown.core/DirectiveBlock.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/DirectiveBlock.id.<get-id>|<get-id>(){}[0]
     final val label // com.nouprax.markdown.core/DirectiveBlock.label|{}label[0]
-        final fun <get-label>(): kotlin.collections/List<com.nouprax.markdown.core/Markup>? // com.nouprax.markdown.core/DirectiveBlock.label.<get-label>|<get-label>(){}[0]
+        final fun <get-label>(): com.nouprax.markdown.core/DirectiveLabel? // com.nouprax.markdown.core/DirectiveBlock.label.<get-label>|<get-label>(){}[0]
     final val mode // com.nouprax.markdown.core/DirectiveBlock.mode|{}mode[0]
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/DirectiveBlock.mode.<get-mode>|<get-mode>(){}[0]
     final val name // com.nouprax.markdown.core/DirectiveBlock.name|{}name[0]
@@ -221,6 +222,19 @@ final class com.nouprax.markdown.core/DirectiveBlock : com.nouprax.markdown.core
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/DirectiveBlock.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DirectiveBlock.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/DirectiveBlock.hashCode|hashCode(){}[0]
+}
+
+final class com.nouprax.markdown.core/DirectiveLabel : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/DirectiveLabel|null[0]
+    final val content // com.nouprax.markdown.core/DirectiveLabel.content|{}content[0]
+        final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/DirectiveLabel.content.<get-content>|<get-content>(){}[0]
+    final val id // com.nouprax.markdown.core/DirectiveLabel.id|{}id[0]
+        final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/DirectiveLabel.id.<get-id>|<get-id>(){}[0]
+    final val revision // com.nouprax.markdown.core/DirectiveLabel.revision|{}revision[0]
+        final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/DirectiveLabel.revision.<get-revision>|<get-revision>(){}[0]
+
+    final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/DirectiveLabel.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DirectiveLabel.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/DirectiveLabel.hashCode|hashCode(){}[0]
 }
 
 final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Document|null[0]

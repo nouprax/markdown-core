@@ -24,6 +24,7 @@
             "TableRow",
             "TableCell",
             "DirectiveBlock",
+            "DirectiveLabel",
             "FootnoteDefinition",
             "Text",
             "SoftBreak",
@@ -172,6 +173,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Table",
                     "TableRow",
                     "TableCell"
@@ -269,6 +271,7 @@
                     "Link",
                     "Image",
                     "Directive",
+                    "DirectiveLabel",
                     "Formula",
                     "FootnoteReference",
                     "LineBreak",
@@ -341,6 +344,7 @@
                     "Text",
                     "Strong",
                     "DirectiveBlock",
+                    "DirectiveLabel",
                     "Paragraph"
                 ],
                 "states": [

@@ -144,12 +144,28 @@ private struct DumpVisitor: MarkupVisitor {
         )
     }
 
+    mutating func visit(_ node: TableRow) -> DumpRecord {
+        record(
+            "TableRow",
+            fields: ["isHeader=\(boolean(node.isHeader))"],
+            children: node.cells.count
+        )
+    }
+
+    mutating func visit(_ node: TableCell) -> DumpRecord {
+        record("TableCell", children: node.content.count)
+    }
+
     mutating func visit(_ node: DirectiveBlock) -> DumpRecord {
         record(
             "DirectiveBlock",
-            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
-            children: (node.label?.count ?? 0) + node.content.count
+            fields: directiveFields(node.mode, node.name, node.attributes),
+            children: (node.label == nil ? 0 : 1) + node.content.count
         )
+    }
+
+    mutating func visit(_ node: DirectiveLabel) -> DumpRecord {
+        record("DirectiveLabel", children: node.content.count)
     }
 
     mutating func visit(_ node: FootnoteDefinition) -> DumpRecord {
@@ -220,25 +236,13 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Directive) -> DumpRecord {
         record(
             "Directive",
-            fields: directiveFields(node.mode, node.name, node.attributes, node.label?.count),
-            children: node.label?.count ?? 0
+            fields: directiveFields(node.mode, node.name, node.attributes),
+            children: node.label == nil ? 0 : 1
         )
     }
 
     mutating func visit(_ node: FootnoteReference) -> DumpRecord {
         record("FootnoteReference", fields: ["id=\(jsonString(node.label))"])
-    }
-
-    mutating func visit(_ node: TableRow) -> DumpRecord {
-        record(
-            "TableRow",
-            fields: ["isHeader=\(boolean(node.isHeader))"],
-            children: node.cells.count
-        )
-    }
-
-    mutating func visit(_ node: TableCell) -> DumpRecord {
-        record("TableCell", children: node.content.count)
     }
 
     private func record(
@@ -256,14 +260,12 @@ private struct DumpVisitor: MarkupVisitor {
     private func directiveFields(
         _ mode: PlacementMode,
         _ name: String,
-        _ attributes: String?,
-        _ labelCount: Int?
+        _ attributes: String?
     ) -> [String] {
         [
             "mode=\(mode.rawValue)",
             "name=\(jsonString(name))",
             "attributes=\(optionalString(attributes))",
-            "label=\(labelCount.map(String.init) ?? "null")",
         ]
     }
 }

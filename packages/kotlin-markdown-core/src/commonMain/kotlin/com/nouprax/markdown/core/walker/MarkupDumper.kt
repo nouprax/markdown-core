@@ -142,9 +142,11 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
     override fun visit(node: DirectiveBlock): DumpRecord =
         record(
             "DirectiveBlock",
-            fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
-            children = node.label.orEmpty().size + node.content.size,
+            fields = directiveFields(node.mode, node.name, node.attributes),
+            children = (if (node.label == null) 0 else 1) + node.content.size,
         )
+
+    override fun visit(node: DirectiveLabel): DumpRecord = record("DirectiveLabel", children = node.content.size)
 
     override fun visit(node: FootnoteDefinition): DumpRecord =
         record(
@@ -204,8 +206,8 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
     override fun visit(node: Directive): DumpRecord =
         record(
             "Directive",
-            fields = directiveFields(node.mode, node.name, node.attributes, node.label?.size),
-            children = node.label.orEmpty().size,
+            fields = directiveFields(node.mode, node.name, node.attributes),
+            children = if (node.label == null) 0 else 1,
         )
 
     override fun visit(node: FootnoteReference): DumpRecord =
@@ -222,13 +224,11 @@ private fun directiveFields(
     mode: PlacementMode,
     name: String,
     attributes: String?,
-    labelCount: Int?,
 ): kotlin.collections.List<String> =
     listOf(
         "mode=${mode.token()}",
         "name=${jsonString(name)}",
         "attributes=${optionalString(attributes)}",
-        "label=${labelCount ?: "null"}",
     )
 
 private fun scopeText(

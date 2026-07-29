@@ -939,13 +939,11 @@ static void lookups_remove_chain(markdown_core_session *session, markdown_core_n
 
 // One stable semantic owner outside the stale region whose lookup answers
 // changed. `unit` never leaves the committed tree: the transaction adopts and
-// swaps its complete inline ownership domain (child prefix plus backing
-// buffer) against the staged shell. The same swap rolls back.
+// swaps its complete child list plus backing buffer against the staged shell.
+// The same swap rolls back.
 typedef struct {
     markdown_core_node *unit;
     markdown_core_node *staged;
-    size_t live_count;
-    size_t staged_count;
     uint64_t previous_revision;
     uint64_t next_revision;
     markdown_core_footnote_site_list staged_refs;
@@ -992,21 +990,18 @@ static markdown_core_node *clone_unit_shell(markdown_core_session *session, mark
 
 static bool prepare_dependent_unit(markdown_core_session *session, dependent_unit *dependent, bool *invalid) {
     markdown_core_node *unit = dependent->unit;
-    markdown_core_inline_domain domain = {NULL, 0};
-    const markdown_core_node *child;
+    markdown_core_node *staged;
 
     *invalid = false;
     if (!unit->extension && (unit->type == MARKDOWN_CORE_NODE_PARAGRAPH || unit->type == MARKDOWN_CORE_NODE_HEADING) &&
         markdown_core_node_owns_inlines(unit)) {
-        domain.staged_owner = clone_unit_shell(session, unit);
-        if (!domain.staged_owner) {
+        staged = clone_unit_shell(session, unit);
+        if (!staged) {
             return false;
         }
-        for (child = unit->first_child; child; child = child->next) {
-            domain.committed_child_count++;
-        }
     } else if (unit->extension && unit->extension->prepare_inline_domain) {
-        if (!unit->extension->prepare_inline_domain(unit->extension, unit, &domain)) {
+        staged = unit->extension->prepare_inline_domain(unit->extension, unit);
+        if (!staged) {
             return false;
         }
     } else {
@@ -1014,35 +1009,25 @@ static bool prepare_dependent_unit(markdown_core_session *session, dependent_uni
         return false;
     }
 
-    if (!domain.staged_owner || domain.staged_owner->type != unit->type ||
-        domain.staged_owner->extension != unit->extension || domain.staged_owner->content.mem != unit->content.mem ||
-        domain.staged_owner->parent || domain.staged_owner->prev || domain.staged_owner->next) {
+    if (staged->type != unit->type || staged->extension != unit->extension ||
+        staged->content.mem != unit->content.mem || staged->parent || staged->prev || staged->next) {
         *invalid = true;
-        if (domain.staged_owner) {
-            markdown_core_node_free(domain.staged_owner);
-        }
+        markdown_core_node_free(staged);
         return false;
     }
-    domain.staged_owner->id = unit->id;
-    dependent->staged = domain.staged_owner;
-    dependent->live_count = domain.committed_child_count;
+    staged->id = unit->id;
+    dependent->staged = staged;
     dependent->previous_revision = unit->last_changed_rev;
     return true;
 }
 
 static bool dependent_domain_shape_is_valid(const dependent_unit *dependent) {
-    const markdown_core_node *child = dependent->unit->first_child;
-    size_t i;
+    const markdown_core_node *child;
 
-    for (i = 0; i < dependent->live_count; i++) {
-        if (!child || !MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
+    for (child = dependent->unit->first_child; child; child = child->next) {
+        if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
             return false;
         }
-        child = child->next;
-    }
-    // The domain is complete, not a selected prefix of a larger inline run.
-    if (child && MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
-        return false;
     }
     for (child = dependent->staged->first_child; child; child = child->next) {
         if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)child->type)) {
@@ -1922,19 +1907,6 @@ static void park_child(markdown_core_node *parent, markdown_core_node *child) {
     insert_child_chain(parent, parent->last_child, NULL, child, child);
 }
 
-static markdown_core_node *child_run_last(markdown_core_node *first, size_t count) {
-    markdown_core_node *last = first;
-    size_t i;
-
-    if (count == 0) {
-        return NULL;
-    }
-    for (i = 1; i < count && last; i++) {
-        last = last->next;
-    }
-    return last;
-}
-
 /* Exchanges a stable owner's complete inline ownership domain with the
  * staged shell's complete child list. The child span and its sole backing
  * buffer move together, so borrowed Text chunks never need rebasing. This is
@@ -1942,21 +1914,17 @@ static markdown_core_node *child_run_last(markdown_core_node *first, size_t coun
 static void swap_dependent_domain(dependent_unit *dependent) {
     markdown_core_node *unit = dependent->unit;
     markdown_core_node *staged = dependent->staged;
-    markdown_core_node *live_first = dependent->live_count ? unit->first_child : NULL;
-    markdown_core_node *live_last = child_run_last(live_first, dependent->live_count);
-    markdown_core_node *live_after = live_last ? live_last->next : unit->first_child;
-    markdown_core_node *staged_first = dependent->staged_count ? staged->first_child : NULL;
-    markdown_core_node *staged_last = child_run_last(staged_first, dependent->staged_count);
+    markdown_core_node *live_first = unit->first_child;
+    markdown_core_node *live_last = unit->last_child;
+    markdown_core_node *staged_first = staged->first_child;
+    markdown_core_node *staged_last = staged->last_child;
     markdown_core_strbuf content;
-    size_t count;
 
     assert(unit);
     assert(staged);
     assert(unit->content.mem == staged->content.mem);
-    assert(dependent->live_count == 0 || live_last);
-    assert((dependent->staged_count == 0) == (staged->first_child == NULL));
-    assert(dependent->staged_count == 0 || staged_last);
-    assert(!staged_last || staged_last == staged->last_child);
+    assert((live_first == NULL) == (live_last == NULL));
+    assert((staged_first == NULL) == (staged_last == NULL));
 
     if (live_first) {
         detach_child_chain(unit, live_first, live_last);
@@ -1970,15 +1938,12 @@ static void swap_dependent_domain(dependent_unit *dependent) {
     staged->content = content;
 
     if (staged_first) {
-        insert_child_chain(unit, NULL, live_after, staged_first, staged_last);
+        insert_child_chain(unit, NULL, NULL, staged_first, staged_last);
     }
     if (live_first) {
         insert_child_chain(staged, NULL, NULL, live_first, live_last);
     }
 
-    count = dependent->live_count;
-    dependent->live_count = dependent->staged_count;
-    dependent->staged_count = count;
     dependent->installed = !dependent->installed;
 }
 
@@ -2642,11 +2607,9 @@ static bool incremental_adopt(incremental_pipeline *pipeline) {
         staged_ok = markdown_core_session_adopt_inline_domain(
             session,
             dep->unit,
-            dep->live_count,
             dep->staged,
             pipeline->new_rev,
             pipeline->changes,
-            &dep->staged_count,
             &dep->next_revision
         );
         dep->changed = dep->next_revision == pipeline->new_rev;
@@ -2990,9 +2953,7 @@ static void incremental_finalize_identity_indexes(incremental_pipeline *pipeline
     ids_put_chain(session, splice->staged_first, splice->suffix_head);
     for (i = 0; i < pipeline->dependent_count; i++) {
         dependent_unit *dependent = &pipeline->dependents[i];
-        markdown_core_node *last = child_run_last(dependent->unit->first_child, dependent->live_count);
-        markdown_core_node *stop = last ? last->next : dependent->unit->first_child;
-        ids_put_chain(session, dependent->unit->first_child, stop);
+        ids_put_chain(session, dependent->unit->first_child, NULL);
     }
     ids_remove_stale_chain(session, splice->first_stale);
     for (i = 0; i < pipeline->dependent_count; i++) {

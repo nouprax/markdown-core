@@ -15,6 +15,11 @@ import Testing
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
+        let directive = try #require(
+            (Document.parse(":badge[label]\n").content.first as? Paragraph)?
+                .content.first as? Directive
+        )
+        #expect(directive.label?.accept(&visitor) == "DirectiveLabel")
         #expect(
             try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
                 .content.first is Paragraph
@@ -162,7 +167,10 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: HTMLBlock) -> String { kindName(node) }
     mutating func visit(_ node: FormulaBlock) -> String { kindName(node) }
     mutating func visit(_ node: Table) -> String { kindName(node) }
+    mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
+    mutating func visit(_ node: TableCell) -> String { "cell" }
     mutating func visit(_ node: DirectiveBlock) -> String { kindName(node) }
+    mutating func visit(_ node: DirectiveLabel) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteDefinition) -> String { kindName(node) }
     mutating func visit(_ node: Text) -> String { kindName(node) }
     mutating func visit(_ node: SoftBreak) -> String { kindName(node) }
@@ -177,8 +185,6 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteReference) -> String { kindName(node) }
-    mutating func visit(_ node: TableRow) -> String { node.isHeader ? "header" : "row" }
-    mutating func visit(_ node: TableCell) -> String { "cell" }
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

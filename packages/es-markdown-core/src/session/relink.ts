@@ -31,6 +31,18 @@ function tableHeader(previous: Extract<Markup, { readonly kind: "table" }>, repl
     return header;
 }
 
+function directiveLabel(
+    previous: Extract<Markup, { readonly kind: "directive" | "directiveBlock" }>,
+    replacements: ChildReplacements
+) {
+    if (previous.label === null) return null;
+    const label = replacementFor(previous.label, replacements);
+    if (label.kind !== "directiveLabel") {
+        throw new Error("directive relink replaced the label with a non-label node");
+    }
+    return label;
+}
+
 /**
  * Rebuilds a `bubbled` node from its previous snapshot value: the delta
  * contract guarantees its fields and direct child id list are unchanged, so
@@ -53,6 +65,7 @@ export function relink(previous: Markup, revision: number, replacements: ChildRe
         case "link":
         case "image":
         case "tableCell":
+        case "directiveLabel":
             return { ...previous, revision, content: replaced(previous.content, replacements) };
         case "list":
             return { ...previous, revision, items: replaced(previous.items, replacements) };
@@ -69,14 +82,14 @@ export function relink(previous: Markup, revision: number, replacements: ChildRe
             return {
                 ...previous,
                 revision,
-                label: previous.label === null ? null : replaced(previous.label, replacements),
+                label: directiveLabel(previous, replacements),
                 content: replaced(previous.content, replacements)
             };
         case "directive":
             return {
                 ...previous,
                 revision,
-                label: previous.label === null ? null : replaced(previous.label, replacements)
+                label: directiveLabel(previous, replacements)
             };
         case "thematicBreak":
         case "codeBlock":

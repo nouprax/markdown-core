@@ -226,6 +226,31 @@ import Testing
         #expect(session.node(for: paragraph.id)?.id == paragraph.id)
         #expect(byID[paragraph.id] == "paragraph")
     }
+
+    @Test("directive labels stay first-class and relink through incremental commits")
+    func directiveLabelRelinking() throws {
+        let source = ":::note[*Title*]\nBody\n:::\n"
+        let session = try MarkupSession()
+        try session.append(source)
+        let before = try session.commit()
+        let blockBefore = try #require(before.document.content.first as? DirectiveBlock)
+        let labelBefore = try #require(blockBefore.label)
+        let bodyBefore = try #require(blockBefore.content.first)
+
+        try session.replace(9..<14, with: "Other")
+        let after = try session.commit()
+        let blockAfter = try #require(after.document.content.first as? DirectiveBlock)
+        let labelAfter = try #require(blockAfter.label)
+        let emphasis = try #require(labelAfter.content.first as? Emphasis)
+        let text = try #require(emphasis.content.first as? Text)
+
+        #expect(text.literal == "Other")
+        #expect(blockAfter.id == blockBefore.id)
+        #expect(labelAfter.id == labelBefore.id)
+        #expect(blockAfter.content.first?.id == bodyBefore.id)
+        #expect(session.node(for: labelAfter.id) as? DirectiveLabel == labelAfter)
+        #expect((after.delta.changed + after.delta.bubbled).contains(labelAfter.id))
+    }
 }
 
 private struct CountingVisitor: MarkupVisitor {
@@ -244,7 +269,10 @@ private struct CountingVisitor: MarkupVisitor {
     mutating func visit(_ node: HTMLBlock) { record(node) }
     mutating func visit(_ node: FormulaBlock) { record(node) }
     mutating func visit(_ node: Table) { record(node) }
+    mutating func visit(_ node: TableRow) { record(node) }
+    mutating func visit(_ node: TableCell) { record(node) }
     mutating func visit(_ node: DirectiveBlock) { record(node) }
+    mutating func visit(_ node: DirectiveLabel) { record(node) }
     mutating func visit(_ node: FootnoteDefinition) { record(node) }
     mutating func visit(_ node: Text) { record(node) }
     mutating func visit(_ node: SoftBreak) { record(node) }
@@ -259,8 +287,6 @@ private struct CountingVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) { record(node) }
     mutating func visit(_ node: Directive) { record(node) }
     mutating func visit(_ node: FootnoteReference) { record(node) }
-    mutating func visit(_ node: TableRow) { record(node) }
-    mutating func visit(_ node: TableCell) { record(node) }
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

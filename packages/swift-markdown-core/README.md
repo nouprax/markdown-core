@@ -64,7 +64,10 @@ For typed dispatch, conform to `MarkupVisitor` and hand it to
 `node.accept(&visitor)`, or traverse the complete document without resolving
 scopes via `MarkupWalker().walk(document, visitor: &visitor)`. The scope-free
 form remains valid for retained snapshots that were superseded before scope
-materialization. `document.dump()` and
+materialization. Directive labels are first-class `DirectiveLabel` nodes:
+`Directive.label` and `DirectiveBlock.label` are optional typed edges, while an
+explicit empty `[]` is a non-nil label whose `content` is empty.
+`document.dump()` and
 `MarkupDumper.dump(document, of: node)` emit the canonical diagnostic tree for
 the complete document or a focused subtree (subtree scopes print with the
 subtree as origin) — intended for logs, snapshots, and debugging rather than

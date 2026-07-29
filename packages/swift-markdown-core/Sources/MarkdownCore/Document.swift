@@ -171,7 +171,10 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_HTML_BLOCK: HTMLBlock(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FORMULA_BLOCK: FormulaBlock(from: node, builder: self)
         case MARKDOWN_CORE_KIND_TABLE: Table(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, builder: self)
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK: DirectiveBlock(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL: DirectiveLabel(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION: FootnoteDefinition(from: node, builder: self)
         case MARKDOWN_CORE_KIND_TEXT: Text(from: node, builder: self)
         case MARKDOWN_CORE_KIND_SOFT_BREAK: SoftBreak(from: node, builder: self)
@@ -186,8 +189,6 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, builder: self)
         case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node, builder: self)
-        case MARKDOWN_CORE_KIND_TABLE_ROW: TableRow(from: node, builder: self)
-        case MARKDOWN_CORE_KIND_TABLE_CELL: TableCell(from: node, builder: self)
         default: preconditionFailure("native parser returned an unknown node kind")
         }
     }

@@ -65,7 +65,7 @@ on_enter/on_exit 是 renderer payload)。
    字节:除 spec.txt 删除 1 个 tagfilter 例子外全部一致。
 3. **语义抽查**:逐 kind 检查 dump(table alignments/header row、footnote
    id、formula mode standalone/embedded、directive attributes JSON 与
-   label=null/label=N、full info string(含 NUL→U+FFFD)、smart punct、
+   `DirectiveLabel` 节点的缺失/空/非空拓扑、full info string(含 NUL→U+FFFD)、smart punct、
    autolink 的空前导 Text 与 title=null/"" 区分、scope 坐标与原 XML sourcepos
    一致)。
 4. **异常扫描**:801 个启用例子的 expected block 全部以 `Document scope=`

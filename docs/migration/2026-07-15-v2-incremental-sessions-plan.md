@@ -276,7 +276,7 @@ mirror. Per commit it decodes only `added ∪ changed` payloads, rebuilds
 new immutable `Document` sharing everything unchanged — O(delta·depth).
 Equality everywhere is `(lineage, id, revision)`.
 
-- Swift: structs stay `Sendable`; `Markup` gains `id`/`revision`; all 28
+- Swift: structs stay `Sendable`; `Markup` gains `id`/`revision`; all 29
   kinds become `Equatable/Hashable/Identifiable`; `MarkupSession` is a
   non-`Sendable` class with `append`/`replace`/`commit` and an
   `updates(feeding:)` async sequence.
@@ -292,7 +292,7 @@ Equality everywhere is `(lineage, id, revision)`.
 
 | Artifact | Change |
 | --- | --- |
-| `docs/specs/canonical-ast.md` | 28-kind inventory unchanged; every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote contract revised (source-order definitions, label-carrying references, query-based numbering/resolution — decision #5 as revised 2026-07-16). |
+| `docs/specs/canonical-ast.md` | The M4 identity work originally left the 28-kind inventory unchanged; the 2026-07-29 amendment promotes `DirectiveLabel` into the canonical inventory immediately after `DirectiveBlock`, bringing the total to 29. Every kind gains `id`/`revision`; `scope` becomes query/walker-supplied; equality+identity section added; `MarkupSession` added as a canonical entry point; footnote contract revised (source-order definitions, label-carrying references, query-based numbering/resolution — decision #5 as revised 2026-07-16). |
 | `docs/specs/canonical-ast-dump.md` | Grammar unchanged; note that subtree dumps are subtree-origin. Full-document goldens in `specs/canonical-ast/` stay byte-identical through M2; footnote-bearing goldens regenerate deliberately when the revised footnote contract lands (M3). |
 | `docs/specs/test-architecture.md` | Add equivalence, id-stability, and edit-storm suites to the frozen topology. |
 | `scripts/audit-public-surface.sh` | Add the new C symbols to the header+map sync; scope the Swift/Kotlin/ES mutation-ban greps to the model/walker directories (Session's `append`/`replace` would otherwise trip them); pin the Session surfaces exactly; ES frozen runtime export list gains `MarkupSession`. |
@@ -508,7 +508,7 @@ Equality everywhere is `(lineage, id, revision)`.
     materialized scope table: one decode pipeline for both modes. An empty
     source commits an empty delta, so the decoder synthesizes the revision-0
     empty root from the scope table.
-  - Platform surface: all 28 model classes gain `id: MarkupID`/`revision`
+  - Platform surface: all 29 model classes gain `id: MarkupID`/`revision`
     with O(1) equals/hashCode, drop stored scopes, and rename the footnote
     field to `label`; `Document.scope(node)`/`Document.dump()` mediate
     scopes and dumps; `Walker.walk(document, ...)` supplies the resolved

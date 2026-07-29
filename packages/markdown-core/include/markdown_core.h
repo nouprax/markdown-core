@@ -160,7 +160,10 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_HTML_BLOCK,
     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
     MARKDOWN_CORE_KIND_TABLE,
+    MARKDOWN_CORE_KIND_TABLE_ROW,
+    MARKDOWN_CORE_KIND_TABLE_CELL,
     MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK,
+    MARKDOWN_CORE_KIND_DIRECTIVE_LABEL,
     MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION,
     MARKDOWN_CORE_KIND_TEXT,
     MARKDOWN_CORE_KIND_SOFT_BREAK,
@@ -174,9 +177,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_LINK,
     MARKDOWN_CORE_KIND_IMAGE,
     MARKDOWN_CORE_KIND_DIRECTIVE,
-    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
-    MARKDOWN_CORE_KIND_TABLE_ROW,
-    MARKDOWN_CORE_KIND_TABLE_CELL
+    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -273,16 +274,9 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string_view *name,
-    markdown_core_string_view *attributes,
-    bool *has_label,
-    size_t *label_count
+    markdown_core_string_view *attributes
 );
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_first_label_child(
-    const markdown_core_node *node
-);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_first_content_child(
-    const markdown_core_node *node
-);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string_view *destination,

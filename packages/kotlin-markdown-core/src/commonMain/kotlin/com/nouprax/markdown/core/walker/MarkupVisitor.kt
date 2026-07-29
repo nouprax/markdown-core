@@ -29,6 +29,8 @@ public interface MarkupVisitor<Result> {
 
     public fun visit(node: DirectiveBlock): Result
 
+    public fun visit(node: DirectiveLabel): Result
+
     public fun visit(node: FootnoteDefinition): Result
 
     public fun visit(node: Text): Result

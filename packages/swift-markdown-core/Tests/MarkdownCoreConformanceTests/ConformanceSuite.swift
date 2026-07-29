@@ -20,10 +20,10 @@ import Testing
         let expected: Set<String> = [
             "Document", "BlockQuote", "Paragraph", "Heading", "ThematicBreak", "List",
             "ListItem", "CodeBlock", "HTMLBlock", "FormulaBlock", "Table",
-            "DirectiveBlock", "FootnoteDefinition", "Text", "SoftBreak", "LineBreak",
+            "TableRow", "TableCell", "DirectiveBlock", "DirectiveLabel",
+            "FootnoteDefinition", "Text", "SoftBreak", "LineBreak",
             "Code", "HTML", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Link", "Image", "Directive", "FootnoteReference",
-            "TableRow", "TableCell",
         ]
         #expect(kinds == expected)
         #expect(
@@ -76,8 +76,10 @@ import Testing
         )
         let labeled = try #require(document.content[0] as? DirectiveBlock)
         #expect(labeled.mode == .standalone)
-        #expect(labeled.label?.count == 1)
-        #expect(labeled.label?.first is Emphasis)
+        let labeledLabel = try #require(labeled.label)
+        #expect(labeledLabel.content.count == 1)
+        #expect(labeledLabel.content.first is Emphasis)
+        #expect(labeledLabel.id != labeled.id)
         #expect(labeled.content.count == 1)
         #expect(labeled.content.first is Paragraph)
         let bare = try #require(document.content[1] as? DirectiveBlock)
@@ -86,12 +88,19 @@ import Testing
         let paragraph = try #require(document.content[2] as? Paragraph)
         let inline = try #require(paragraph.content[1] as? Directive)
         #expect(inline.mode == .embedded)
-        #expect(inline.label?.count == 1)
+        #expect(inline.label?.content.count == 1)
         let unlabeled = try #require(paragraph.content[3] as? Directive)
         #expect(unlabeled.label == nil)
         let empty = try #require(paragraph.content[5] as? Directive)
         #expect(empty.label != nil)
-        #expect(empty.label?.isEmpty == true)
+        #expect(empty.label?.content.isEmpty == true)
+        #expect(
+            document.scope(of: try #require(empty.label))
+                == Scope(
+                    start: Position(line: 9, column: 44),
+                    end: Position(line: 9, column: 45)
+                )
+        )
     }
 
     @Test("all manifest cases match the shared canonical AST spec")

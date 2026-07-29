@@ -664,23 +664,20 @@ static int contains_inlines(markdown_core_extension *extension, markdown_core_no
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
-static int prepare_inline_domain(
+static markdown_core_node *prepare_inline_domain(
     markdown_core_extension *extension,
-    const markdown_core_node *committed_owner,
-    markdown_core_inline_domain *out
+    const markdown_core_node *committed_owner
 ) {
     markdown_core_node *clone;
-    const markdown_core_node *child;
 
-    memset(out, 0, sizeof(*out));
     if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_TABLE_CELL ||
         committed_owner->extension != extension) {
         assert(0 && "table reparse requested for an unsupported owner");
-        return 0;
+        return NULL;
     }
     clone = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TABLE_CELL, committed_owner->content.mem);
     if (!clone) {
-        return 0;
+        return NULL;
     }
     clone->extension = extension;
     clone->as.cell_index = committed_owner->as.cell_index;
@@ -691,14 +688,10 @@ static int prepare_inline_domain(
     markdown_core_strbuf_put(&clone->content, committed_owner->content.ptr, committed_owner->content.size);
     if (clone->content.oom) {
         markdown_core_node_free(clone);
-        return 0;
+        return NULL;
     }
 
-    out->staged_owner = clone;
-    for (child = committed_owner->first_child; child; child = child->next) {
-        out->committed_child_count++;
-    }
-    return 1;
+    return clone;
 }
 
 static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {

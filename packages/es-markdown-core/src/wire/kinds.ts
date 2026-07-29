@@ -10,7 +10,10 @@ export type NativeKind =
     | "htmlBlock"
     | "formulaBlock"
     | "table"
+    | "tableRow"
+    | "tableCell"
     | "directiveBlock"
+    | "directiveLabel"
     | "footnoteDefinition"
     | "text"
     | "softBreak"
@@ -24,9 +27,7 @@ export type NativeKind =
     | "link"
     | "image"
     | "directive"
-    | "footnoteReference"
-    | "tableRow"
-    | "tableCell";
+    | "footnoteReference";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -41,7 +42,10 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "htmlBlock",
     "formulaBlock",
     "table",
+    "tableRow",
+    "tableCell",
     "directiveBlock",
+    "directiveLabel",
     "footnoteDefinition",
     "text",
     "softBreak",
@@ -55,7 +59,5 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "link",
     "image",
     "directive",
-    "footnoteReference",
-    "tableRow",
-    "tableCell"
+    "footnoteReference"
 ]);

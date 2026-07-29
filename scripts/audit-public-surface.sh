@@ -125,11 +125,20 @@ grep -q 'public struct TableRow: Markup' packages/swift-markdown-core/Sources/Ma
     && grep -q 'visit(_ node: TableRow)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
     && grep -q 'visit(_ node: TableCell)' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
     || fail "Swift table rows and cells are not first-class Markup visitor nodes"
+grep -q 'public struct DirectiveLabel: Markup' \
+    packages/swift-markdown-core/Sources/MarkdownCore/Markup/DirectiveLabel.swift \
+    && grep -q 'public let label: DirectiveLabel?' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift \
+    && grep -q 'public let label: DirectiveLabel?' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Markup/DirectiveBlock.swift \
+    && grep -q 'visit(_ node: DirectiveLabel)' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift \
+    || fail "Swift directive labels are not first-class typed Markup edges"
 if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq 28 \
-    || fail "Swift MarkupVisitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq 29 \
+    || fail "Swift MarkupVisitor is not exhaustive over all 29 Markup kinds"
 grep -q 'public func walk<V: MarkupVisitor>(' \
     packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupWalker.swift \
     && grep -q ') where V.Result == Void {' \
@@ -288,8 +297,8 @@ test "$(grep -c 'visitor.visit(this)' packages/kotlin-markdown-core/src/commonMa
 if grep -R -n 'defaultVisit' packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin MarkupVisitor exposes a catch-all fallback"
 fi
-test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupVisitor.kt)" -eq 28 \
-    || fail "Kotlin MarkupVisitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupVisitor.kt)" -eq 29 \
+    || fail "Kotlin MarkupVisitor is not exhaustive over all 29 Markup kinds"
 
 if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
     fail "ES exposes generic children"
@@ -358,8 +367,8 @@ grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/
 if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/src; then
     fail "ES MarkupVisitor exposes a catch-all or optional typed handlers"
 fi
-test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/markup-visitor.ts)" -eq 28 \
-    || fail "ES MarkupVisitor is not exhaustive over all 28 Markup kinds"
+test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/markup-visitor.ts)" -eq 29 \
+    || fail "ES MarkupVisitor is not exhaustive over all 29 Markup kinds"
 grep -q 'walk(document: Document, visitor: MarkupVisitor<void>): void;' \
     packages/es-markdown-core/src/markup-walker.ts \
     || fail "ES MarkupWalker lacks the scope-free typed visitor overload"

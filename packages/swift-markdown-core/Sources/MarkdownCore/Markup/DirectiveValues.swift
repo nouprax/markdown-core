@@ -4,37 +4,32 @@ struct DirectiveValues {
     let mode: PlacementMode
     let name: String
     let attributes: String?
-    let labelCount: Int?
 
     init(from node: OpaquePointer) {
         var nativeMode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
         var nativeName = markdown_core_string_view()
         var nativeAttributes = markdown_core_string_view()
-        var hasLabel = false
-        var nativeLabelCount = 0
         markdown_core_node_directive_properties(
             node,
             &nativeMode,
             &nativeName,
-            &nativeAttributes,
-            &hasLabel,
-            &nativeLabelCount
+            &nativeAttributes
         )
         mode = PlacementMode(from: nativeMode)
         name = nativeName.requiredString
         attributes = nativeAttributes.optionalString
-        labelCount = hasLabel ? nativeLabelCount : nil
     }
 
-    /// Splits a directive's native child list into the contract's typed
-    /// `label` prefix (nil when the directive declares no label — distinct
-    /// from an explicit empty `[]`) and the remaining block content.
-    func partition(_ children: [any Markup]) -> (label: [any Markup]?, content: [any Markup]) {
-        guard let labelCount else { return (nil, children) }
+    /// Binds the directive's optional first `DirectiveLabel` child to its
+    /// typed property and returns the remaining block content.
+    func partition(
+        _ children: [any Markup]
+    ) -> (label: DirectiveLabel?, content: [any Markup]) {
+        let label = children.first as? DirectiveLabel
         precondition(
-            labelCount >= 0 && labelCount <= children.count,
-            "native parser returned an invalid directive label count"
+            children.dropFirst(label == nil ? 0 : 1).allSatisfy { !($0 is DirectiveLabel) },
+            "directive-label node must be the directive's unique first child"
         )
-        return (Array(children.prefix(labelCount)), Array(children.dropFirst(labelCount)))
+        return (label, Array(children.dropFirst(label == nil ? 0 : 1)))
     }
 }

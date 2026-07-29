@@ -59,7 +59,7 @@
   method com/nouprax/markdown/core/Directive.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Directive.getAttributes ()Ljava/lang/String;
   method com/nouprax/markdown/core/Directive.getId ()Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/Directive.getLabel ()Ljava/util/List;
+  method com/nouprax/markdown/core/Directive.getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
   method com/nouprax/markdown/core/Directive.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/Directive.getName ()Ljava/lang/String;
   method com/nouprax/markdown/core/Directive.getRevision-s-VKNKU ()J
@@ -70,12 +70,19 @@
   method com/nouprax/markdown/core/DirectiveBlock.getAttributes ()Ljava/lang/String;
   method com/nouprax/markdown/core/DirectiveBlock.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/DirectiveBlock.getId ()Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/DirectiveBlock.getLabel ()Ljava/util/List;
+  method com/nouprax/markdown/core/DirectiveBlock.getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
   method com/nouprax/markdown/core/DirectiveBlock.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/DirectiveBlock.getName ()Ljava/lang/String;
   method com/nouprax/markdown/core/DirectiveBlock.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/DirectiveBlock.hashCode ()I
   method com/nouprax/markdown/core/DirectiveBlock.revisionBits ()J
+  method com/nouprax/markdown/core/DirectiveLabel.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/DirectiveLabel.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/DirectiveLabel.getContent ()Ljava/util/List;
+  method com/nouprax/markdown/core/DirectiveLabel.getId ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/DirectiveLabel.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/DirectiveLabel.hashCode ()I
+  method com/nouprax/markdown/core/DirectiveLabel.revisionBits ()J
   method com/nouprax/markdown/core/Document$Companion.parse (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
   method com/nouprax/markdown/core/Document$Companion.parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
   method com/nouprax/markdown/core/Document.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -244,6 +251,7 @@
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Directive;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/DirectiveBlock;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/DirectiveLabel;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Document;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Emphasis;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/FootnoteDefinition;)Ljava/lang/Object;
@@ -413,6 +421,7 @@ class com/nouprax/markdown/core/Commit extends java/lang/Object implements
 class com/nouprax/markdown/core/Delta extends java/lang/Object implements 
 class com/nouprax/markdown/core/Directive extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/DirectiveBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/DirectiveLabel extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Document extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Document$Companion extends java/lang/Object implements 
 class com/nouprax/markdown/core/Emphasis extends java/lang/Object implements com/nouprax/markdown/core/Markup

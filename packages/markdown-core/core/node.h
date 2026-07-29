@@ -59,10 +59,16 @@ enum markdown_core_node__internal_flags {
     // node's fields as final.
     MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
 
+    // The node currently owns raw inline source that the core refine pipeline
+    // must parse into its complete child list. This is parser lifecycle
+    // state, not canonical AST shape: a node materialized inside another
+    // owner's running inline parse intentionally lacks the bit.
+    MARKDOWN_CORE_NODE__OWNS_INLINE_SOURCE = (1 << 4),
+
     // Extension-owned flags are compile-time constants in the range
-    // (1 << 4)..(1 << 13); each owning extension defines its own bits (see
+    // (1 << 5)..(1 << 13); each owning extension defines its own bits (see
     // extensions/table.c). The engine holds no runtime flag registry.
-    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 4),
+    MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
 
     // Qualifies CLEAN_START: the child's first line arrived while a chain of
     // footnote definitions — and nothing else — was still open, and the
@@ -159,10 +165,8 @@ MARKDOWN_CORE_EXPORT bool markdown_core_node_can_contain_type(
     markdown_core_node_type child_type
 );
 
-/** True when `node` directly owns inline content (paragraph, heading, or an
- * extension node whose contains_inlines hook claims it, e.g. a table cell or
- * a transient directive-label parse unit). These nodes are the units of the
- * per-block postprocess pipeline. */
+/** True when `node` directly owns inline source and its parsed children.
+ * These nodes are the units of the per-block postprocess pipeline. */
 MARKDOWN_CORE_EXPORT bool markdown_core_node_owns_inlines(markdown_core_node *node);
 
 #ifdef __cplusplus

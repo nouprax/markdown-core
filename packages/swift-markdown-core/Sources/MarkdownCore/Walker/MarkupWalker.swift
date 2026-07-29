@@ -102,9 +102,15 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Table) -> [any Markup] { [node.header] + node.rows }
 
+    mutating func visit(_ node: TableRow) -> [any Markup] { node.cells }
+
+    mutating func visit(_ node: TableCell) -> [any Markup] { node.content }
+
     mutating func visit(_ node: DirectiveBlock) -> [any Markup] {
-        (node.label ?? []) + node.content
+        (node.label.map { [$0 as any Markup] } ?? []) + node.content
     }
+
+    mutating func visit(_ node: DirectiveLabel) -> [any Markup] { node.content }
 
     mutating func visit(_ node: FootnoteDefinition) -> [any Markup] { node.content }
 
@@ -130,11 +136,9 @@ private struct ChildrenVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Image) -> [any Markup] { node.content }
 
-    mutating func visit(_ node: Directive) -> [any Markup] { node.label ?? [] }
+    mutating func visit(_ node: Directive) -> [any Markup] {
+        node.label.map { [$0 as any Markup] } ?? []
+    }
 
     mutating func visit(_: FootnoteReference) -> [any Markup] { [] }
-
-    mutating func visit(_ node: TableRow) -> [any Markup] { node.cells }
-
-    mutating func visit(_ node: TableCell) -> [any Markup] { node.content }
 }

@@ -139,10 +139,10 @@ typedef struct adopt_stack {
     markdown_core_mem *mem;
 } adopt_stack;
 
-// Pushes a pair whose child domains are already bounded and computes its
-// prefix/suffix pairing plan. Descendant pushes pass complete child lists;
-// an inline-domain root can pass a strict prefix without detaching it from
-// the committed owner.
+// Pushes a pair whose child runs are already bounded and computes its
+// prefix/suffix pairing plan. Ordinary descendant pushes pass complete child
+// lists; the incremental inline seam may reserve an already-materialized
+// prefix before entering this machine.
 static bool adopt_push_bounded(
     adopt_ctx *ctx,
     adopt_stack *stack,
@@ -312,27 +312,6 @@ static void adopt_run(adopt_ctx *ctx, adopt_stack *stack) {
     }
 }
 
-// Runs the machine over a pair whose root child domains can be explicitly
-// bounded; only this initial frame is bounded.
-static void adopt_pair_bounded(
-    adopt_ctx *ctx,
-    markdown_core_node *old_root,
-    markdown_core_node *new_root,
-    markdown_core_node *old_first,
-    size_t old_count,
-    markdown_core_node *new_first,
-    size_t new_count
-) {
-    adopt_stack stack = {NULL, 0, 0, ctx->session->mem};
-
-    if (adopt_push_bounded(ctx, &stack, old_root, new_root, old_first, old_count, new_first, new_count)) {
-        adopt_run(ctx, &stack);
-    }
-    if (stack.frames) {
-        ctx->session->mem->free(ctx->session->mem, stack.frames);
-    }
-}
-
 static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
     adopt_stack stack = {NULL, 0, 0, ctx->session->mem};
 
@@ -347,35 +326,18 @@ static void adopt_pair(adopt_ctx *ctx, markdown_core_node *old_root, markdown_co
 bool markdown_core_session_adopt_inline_domain(
     markdown_core_session *session,
     markdown_core_node *old_owner,
-    size_t old_count,
     markdown_core_node *staged_owner,
     uint64_t new_rev,
     markdown_core_delta *changes,
-    size_t *staged_count,
     uint64_t *owner_revision
 ) {
     adopt_ctx ctx = {session, changes, new_rev, false};
-    markdown_core_node old_root;
-    markdown_core_node new_root;
-    size_t new_count = child_count_raw(staged_owner);
 
-    memset(&old_root, 0, sizeof(old_root));
-    memset(&new_root, 0, sizeof(new_root));
-    old_root.type = MARKDOWN_CORE_NODE_DOCUMENT;
-    old_root.id = old_owner->id;
-    old_root.last_changed_rev = old_owner->last_changed_rev;
-    old_root.first_child = old_owner->first_child;
-    old_root.last_child = child_run_last(old_root.first_child, old_count);
-    new_root.type = MARKDOWN_CORE_NODE_DOCUMENT;
-    new_root.first_child = staged_owner->first_child;
-    new_root.last_child = staged_owner->last_child;
-
-    adopt_pair_bounded(&ctx, &old_root, &new_root, old_root.first_child, old_count, new_root.first_child, new_count);
+    adopt_pair(&ctx, old_owner, staged_owner);
     if (ctx.failed) {
         return false;
     }
-    *staged_count = new_count;
-    *owner_revision = new_root.last_changed_rev;
+    *owner_revision = staged_owner->last_changed_rev;
     return true;
 }
 
