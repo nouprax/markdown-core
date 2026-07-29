@@ -17,7 +17,7 @@ fresh session can pick up any work package without this conversation.
 
 The branch contains the completed WP1-WP6 work packages plus the final C
 performance/hygiene, incremental-pipeline, source-embedding, and review-closure
-changes recorded below.
+changes and the Kotlin ABI closure recorded below.
 
 ### Fixed and committed (WP1 complete + earlier sweeps)
 
@@ -40,7 +40,7 @@ multiline-spans case (platform conformance suites must re-run against it).
 
 | Commit | Work package | Validation |
 | --- | --- | --- |
-| `e2bf558` | WP4-kotlin (I05-I10, I12, I13; I11 skipped by design) | jvmTest 31, conformance 7x3 suites, ktlint |
+| `e2bf558` | WP4-kotlin (I05-I10, I12, I13; I11 deferred to the ABI follow-up) | jvmTest 31, conformance 7x3 suites, ktlint |
 | `380cf0e` | WP3-swift (I14-I23) + check-swift-source-archive.sh consumer line | test:swift-macos 18+1, conformance 6, full archive gate |
 | `030d5f6` | WP5-es (I00-I04, X01) | node suites 12+19, conformance, eslint, prettier |
 | `8b0bbd0` | style fixup: clang-format on the seam gate | format:c:check |
@@ -50,7 +50,7 @@ Note: the ES scope-table fix (I02) shipped as a native es_scope_table subtree wa
 (the fix plan's preferred O(n) option); the Swift one-shot laziness (I21) shipped as
 a resolver-owned native session rather than the native accumulator alternative.
 
-### Completed in the final sweep
+### Completed in the final sweep and follow-up
 
 | Scope | Findings | Result |
 | --- | --- | --- |
@@ -59,27 +59,29 @@ a resolver-owned native session rather than the native accumulator alternative.
 | C hygiene | I30, I31, I64, I65, I75, I82, I84, I85, I86, I89 | Duplicates/dead hooks/includes removed, internal type renamed, generated scanners reproduced exactly |
 | Incremental safety refactor | I63 | Reversible child-chain helpers and explicit pipeline/splice state now separate restart planning, staged parsing, definition reconciliation, inline refinement, adoption, fallible refresh/rollback, and infallible commit |
 | Review closure | I58, I73 | Toolchain discovery is shared, the Gradle Tooling API version follows the wrapper, and the installed C facade documents metadata-only version discovery |
+| Kotlin ABI closure | I11 | Kotlin 2.4 ABI validation now snapshots the public JVM and combined linuxX64/macosArm64 KLIB surfaces; the bytecode-level JVM snapshot remains as a complementary JNI/internal-surface gate, and both checks run in aggregate tests and dual-host release staging |
 
 Validation recorded for the final source state: C correctness 102/102; C conformance 2/2;
 ASan 82/82; UBSan 82/82; C lint and C/CMake format checks; generated-scanner
 reproducibility; the new complexity/pathological/benchmark cases; Swift tests 18+1,
 conformance 6, and the source-archive external consumer; Kotlin JVM and Android-host
-tests plus conformance; ES Node tests 12+19 and conformance 17; repository and public
-surface audits.
+tests plus conformance, both JVM/KLIB ABI gates, and Native packaging; ES Node tests
+12+19 and conformance 17; repository, CI-policy, and public-surface audits.
 
 ### Closure disposition
 
 1. All P0 behavioral and P1 performance findings are fixed. I63's former
    ~1,000-line macro pipeline is phase-split behind explicit ownership and rollback
    state.
-2. I11 is the sole accepted implementation exception: the bespoke JVM ABI snapshot
-   stays because it deliberately freezes Java-visible internal bytecode that the
-   standard Kotlin ABI tools omit. The unguarded KLIB ABI is an accepted P2 risk,
-   documented on I11 with a concrete revisit trigger.
+2. I11 is fixed with complementary authorities: Kotlin's metadata-aware gate freezes
+   the public JVM and linuxX64/macosArm64 KLIB surfaces, while the bespoke JVM
+   snapshot continues to freeze Java-visible internal bytecode that the standard
+   Kotlin ABI dump intentionally omits.
 3. I72 is resolved by an ABI-preserving design decision: the inherited GNU symbol
    version stays frozen until the next C ABI break.
-4. Every recorded finding is therefore fixed or explicitly dispositioned, and all
-   prescribed final gates are green for this source state.
+4. Every recorded finding is therefore fixed or resolved by an explicit
+   ABI-preserving design decision, and all prescribed final gates are green for this
+   source state.
 
 Priority key: P0-bug = observable wrong behavior vs spec/CommonMark; P1-perf = measured
 performance problem; P2-hygiene = dead code/duplication/build hygiene; P3-cosmetic.
@@ -427,15 +429,15 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Fix plan: Delete the android-target-sdk version and the kotlinx-coroutines-core library entry from gradle/libs.versions.toml; regenerate dependency lockfiles if any lock the removed coordinates.
 - Tests: None needed; any build script breakage fails configuration immediately.
 
-### I11 [ACCEPTED-DESIGN] [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:669
+### I11 [FIXED final follow-up] [P2-hygiene] packages/kotlin-markdown-core/build.gradle.kts:397
 
 - Verdict: PARTIAL
 - Finding: verifyJvmAbi hand-rolls a ~120-line JVM classfile/constant-pool parser inside the build script to snapshot the Java-visible surface into jvm-abi.txt. This duplicates kotlinx binary-compatibility-validator / Kotlin's built-in abiValidation (available on the Kotlin 2.4 toolchain this repo already uses), which also covers klib ABI for the native targets — something the current gate misses entirely (macosArm64/linuxX64 ABI is unguarded).
 - Correction: The bespoke ~130-line classfile/constant-pool parser (build.gradle.kts:668-800) and the unguarded klib ABI for macosArm64/linuxX64 (targets at lines 465-469) are real, but the proposed straight swap is wrong: binary-compatibility-validator and kotlin.abiValidation filter internal declarations via Kotlin metadata, so their dumps would omit JvmNative and other internal-but-public bytecode that the current gate deliberately freezes (the comment at line 664-667 states Java-visible internal surface is the point, and jvm-abi.txt has 15 JvmNative entries). The standard tool can only complement, not replace, the JVM snapshot unless its non-public-markers filtering is configured and verified to keep those classes.
-- Evidence: Read verifyJvmAbi (lines 668-800): hand-rolled DataInputStream constant-pool walk. Kotlin 2.4.0 in libs.versions.toml, so kotlin.abiValidation with klib support is available. grep jvm-abi.txt: JvmNative appears 15 times — BCV's default internal filtering would drop it.
-- Resolution: Accepted design exception. The repository keeps the bytecode-level JVM snapshot because it freezes the real Java-visible surface, including Kotlin-internal JvmNative/WireDecoder members that the standard metadata-aware ABI tools omit. Adding a second KLIB-only ABI mechanism now would create two differently filtered authorities for one package, while replacing the current gate would silently weaken the published JVM contract.
-- Accepted risk and revisit trigger: macosArm64/linuxX64 KLIB ABI is not independently snapshotted. Revisit when one standard ABI tool can retain the package's Java-visible internal bytecode while also covering KLIB, or when a stable public Kotlin/Native ABI becomes a release promise; at that point check the KLIB dump into the repository and wire its check into kotlinTest.
-- Tests: kotlinTest continues to exercise the retained JVM ABI gate.
+- Evidence: Read verifyJvmAbi: hand-rolled DataInputStream constant-pool walk. Kotlin 2.4.0 in libs.versions.toml provides the built-in abiValidation DSL and KLIB support. The generated api/kotlin-markdown-core.klib.api header names `Targets: [linuxX64, macosArm64]`; api/jvm/kotlin-markdown-core.api omits JvmNative, while jvm-abi.txt retains its 15 Java-visible entries.
+- Resolution: Enabled Kotlin 2.4's metadata-aware ABI validation with locally unsupported targets preserved and checked in its JVM and combined KLIB reference dumps. `checkKotlinAbi` now runs from `kotlinTest` and, together with `verifyJvmAbi`, from every Maven publication-staging mode used by Linux and macOS CI/release jobs. The existing bytecode parser remains intentionally narrow and complementary: it protects Java/JNI-visible Kotlin-internal classes that the official public-Kotlin ABI dump omits.
+- Cross-host policy: `keepLocallyUnsupportedTargets` prevents one host from erasing the other target's reference data; running both ABI checks in Linux and macOS publication staging makes each CI host validate its own Native target rather than trusting unsupported-target inference.
+- Tests: updateKotlinAbi produced deterministic JVM and dual-target KLIB baselines; checkKotlinAbi, verifyJvmAbi, kotlinTest, format:kotlin:check, CI-policy/public-surface audits, and the complete core verification gate pass.
 
 ### I12 [FIXED `e2bf558`] [P1-perf] packages/kotlin-markdown-core/src/native/markdown_core_kotlin_bridge.c:71
 

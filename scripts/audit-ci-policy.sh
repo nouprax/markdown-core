@@ -120,6 +120,9 @@ if grep -Eq '\.testTarget|MarkdownCoreBenchmarks|Conformance|Plugins|Tools' \
 fi
 grep -Fq 'auditProductArchive' scripts/audit-maven-publications.mjs
 grep -Fq 'publishes a test framework dependency' scripts/audit-maven-publications.mjs
+grep -Fq ':packages:kotlin-markdown-core:checkKotlinAbi' scripts/stage-maven-publications.sh
+grep -Fq ':packages:kotlin-markdown-core:verifyJvmAbi' scripts/stage-maven-publications.sh
+grep -Fq '"${abi_tasks[@]}"' scripts/stage-maven-publications.sh
 if grep -Eq 'bundle-conformance|run-tests|run-conformance' scripts/build-es-product-artifact.sh; then
     echo "ES product build contains test-only work" >&2
     exit 1

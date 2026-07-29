@@ -133,6 +133,22 @@ test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/Markd
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
+grep -q 'abiValidation {' packages/kotlin-markdown-core/build.gradle.kts \
+    || fail "Kotlin metadata and KLIB ABI validation is disabled"
+grep -q 'keepLocallyUnsupportedTargets.set(true)' packages/kotlin-markdown-core/build.gradle.kts \
+    || fail "Kotlin ABI validation does not preserve unavailable Native targets"
+grep -q '"checkKotlinAbi"' packages/kotlin-markdown-core/build.gradle.kts \
+    || fail "Kotlin aggregate tests do not run the metadata and KLIB ABI gate"
+test -s packages/kotlin-markdown-core/api/jvm/kotlin-markdown-core.api \
+    || fail "Kotlin/JVM metadata ABI snapshot is missing"
+test -s packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
+    || fail "Kotlin KLIB ABI snapshot is missing"
+grep -Fq '// Targets: [linuxX64, macosArm64]' \
+    packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
+    || fail "Kotlin KLIB ABI snapshot does not cover both published Native targets"
+test -s packages/kotlin-markdown-core/jvm-abi.txt \
+    && grep -q 'JvmNative' packages/kotlin-markdown-core/jvm-abi.txt \
+    || fail "Java-visible Kotlin internal bytecode is not covered by the JVM ABI snapshot"
 # The model and walker stay mutation-free; the session directory is the one
 # deliberate exception (append/replace are its reviewed edit surface) and is
 # pinned exactly below instead.

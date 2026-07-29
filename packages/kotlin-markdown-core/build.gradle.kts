@@ -13,6 +13,7 @@ import org.gradle.jvm.tasks.Jar
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
@@ -395,6 +396,13 @@ val buildJvmNative =
 
 kotlin {
     explicitApi()
+    // Kotlin's metadata-aware gate covers the supported Kotlin/JVM and KLIB
+    // surfaces. Preserve reference dumps for targets unavailable on this host;
+    // the bytecode-level JVM gate below remains intentionally complementary.
+    @OptIn(ExperimentalAbiValidation::class)
+    abiValidation {
+        keepLocallyUnsupportedTargets.set(true)
+    }
     compilerOptions {
         languageVersion.set(KotlinVersion.KOTLIN_2_2)
         apiVersion.set(KotlinVersion.KOTLIN_2_2)
@@ -653,10 +661,10 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
     testedAbi.set(androidManagedDeviceTestAbi)
 }
 
-// Freezes the JVM artifact's Java-visible surface. Kotlin compiles internal
-// declarations to public bytecode, so the honest gate is a snapshot: every
-// public class and its public or protected non-synthetic members must match
-// jvm-abi.txt exactly. Regenerate deliberately with -PwriteJvmAbi.
+// Complements Kotlin's metadata-aware ABI dumps by freezing the JVM artifact's
+// actual Java-visible surface. Kotlin compiles internal declarations to public
+// bytecode, so every public class and its public or protected non-synthetic
+// members must also match jvm-abi.txt. Regenerate deliberately with -PwriteJvmAbi.
 val verifyJvmAbi =
     tasks.register("verifyJvmAbi") {
         group = "verification"
@@ -789,9 +797,16 @@ val verifyJvmAbi =
 
 tasks.register("kotlinTest") {
     group = "verification"
-    description = "Runs JVM, Android host, and the current host's Kotlin/Native correctness suites."
+    description = "Runs JVM, Android host, Native correctness, packaging, and ABI checks."
     dependsOn(
-        listOfNotNull("jvmTest", "testAndroidHostTest", hostNativeTest, "verifyKotlinNativePackaging", "verifyJvmAbi"),
+        listOfNotNull(
+            "jvmTest",
+            "testAndroidHostTest",
+            hostNativeTest,
+            "verifyKotlinNativePackaging",
+            "verifyJvmAbi",
+            "checkKotlinAbi",
+        ),
     )
 }
 

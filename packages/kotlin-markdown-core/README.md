@@ -121,3 +121,32 @@ scopes materialized while their snapshot was current stay usable after
 On JDK 26 and later, JVM applications should launch with
 `--enable-native-access=ALL-UNNAMED` so the package-private JNI loader can load
 the bundled native library without a restricted-native-access warning.
+
+## Maintaining ABI Baselines
+
+The package intentionally has two complementary ABI gates:
+
+- `api/jvm/kotlin-markdown-core.api` and
+  `api/kotlin-markdown-core.klib.api` freeze the public Kotlin/JVM and
+  Kotlin/Native APIs. The KLIB baseline covers both `linuxX64` and
+  `macosArm64`.
+- `jvm-abi.txt` additionally freezes Java-visible bytecode emitted for Kotlin
+  `internal` declarations such as the JNI bridge, which the metadata-aware
+  Kotlin dump omits.
+
+After an intentional public Kotlin API change, update the metadata and KLIB
+baselines from the repository root:
+
+```sh
+scripts/gradle.sh :packages:kotlin-markdown-core:updateKotlinAbi
+```
+
+After an intentional change to the JVM bytecode surface, update its separate
+baseline:
+
+```sh
+scripts/gradle.sh :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi
+```
+
+`kotlinTest` checks both baselines. Release staging also runs both checks on
+Linux and macOS so each host validates its native target directly.
