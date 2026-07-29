@@ -280,11 +280,6 @@ static int refcmp(const void *p1, const void *p2) {
     return 0;
 }
 
-static int refsearch(const void *label, const void *p2) {
-    markdown_core_map_entry *ref = *(markdown_core_map_entry **)p2;
-    return labelcmp((const unsigned char *)label, ref->label);
-}
-
 /* Drops the prepared lookup structures. Lossless: the live chain still holds
  * every entry, so the next lookup rebuilds. */
 static void unprepare_map(markdown_core_map *map) {
@@ -404,17 +399,24 @@ int markdown_core_map_ensure_index(markdown_core_map *map) {
     return index_map(map);
 }
 
-/* Leftmost entry of the label's run in the sorted array: the winner. */
+/* Leftmost entry of the label's run in the sorted array: the winner.
+ * A lower-bound binary search keeps duplicate-heavy fallback lookups at
+ * O(log n) instead of walking the run linearly. */
 static markdown_core_map_entry *sorted_winner(markdown_core_map *map, const unsigned char *label) {
-    markdown_core_map_entry **ref = (markdown_core_map_entry **)
-        bsearch(label, map->sorted, map->size, sizeof(markdown_core_map_entry *), refsearch);
-    if (!ref) {
+    size_t lo = 0;
+    size_t hi = map->size;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (labelcmp(map->sorted[mid]->label, label) < 0) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo == map->size || labelcmp(map->sorted[lo]->label, label) != 0) {
         return NULL;
     }
-    while (ref > map->sorted && labelcmp(ref[-1]->label, label) == 0) {
-        ref--;
-    }
-    return *ref;
+    return map->sorted[lo];
 }
 
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
