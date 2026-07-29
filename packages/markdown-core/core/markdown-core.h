@@ -469,9 +469,6 @@ markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t
  */
 #define MARKDOWN_CORE_OPT_DEFAULT 0
 
-/** Track multiline inline source positions while parsing. */
-#define MARKDOWN_CORE_OPT_SOURCEPOS (1 << 1)
-
 /**
  * ### Options affecting parsing
  */

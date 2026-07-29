@@ -352,12 +352,9 @@ static int count_newlines(subject *subj, bufsize_t from, bufsize_t len, int *sin
 
 // Adjust `node`'s `end_line`, `end_column`, and `subj`'s `line` and
 // `column_offset` according to the number of newlines in a just-matched span
-// of text in `subj`.
-static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, int matchlen, int extra, int options) {
-    if (!(options & MARKDOWN_CORE_OPT_SOURCEPOS)) {
-        return;
-    }
-
+// of text in `subj`.  Scope tracking is mandatory (canonical-ast.md), so this
+// always runs; it was a render-era option in cmark.
+static void adjust_subj_node_newlines(subject *subj, markdown_core_node *node, int matchlen, int extra) {
     int since_newline;
     int newlines = count_newlines(subj, subj->pos - matchlen - extra, matchlen, &since_newline);
     if (newlines) {
@@ -469,7 +466,7 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
         if (!node) {
             return NULL;
         }
-        adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len, options);
+        adjust_subj_node_newlines(subj, node, endpos - startpos, openticks.len);
         return node;
     }
 }
@@ -1114,7 +1111,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
-        adjust_subj_node_newlines(subj, node, matchlen, 1, options);
+        adjust_subj_node_newlines(subj, node, matchlen, 1);
         return node;
     }
 
