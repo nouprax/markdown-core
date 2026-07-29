@@ -17,9 +17,6 @@ public final class MarkupSession {
     let session: OpaquePointer
     var mirror: [UInt64: any Markup] = [:]
     private var resolver: ScopeResolver?
-    // False once `relinquishNativeSession()` transfers the native session
-    // to a one-shot snapshot's owning resolver; deinit then must not free.
-    private var ownsNativeSession = true
 
     /// The session's options, normalized and immutable for its lifetime.
     public let options: ParseOptions
@@ -70,20 +67,7 @@ public final class MarkupSession {
 
     deinit {
         resolver?.detach()
-        if ownsNativeSession {
-            markdown_core_session_free(session)
-        }
-    }
-
-    /// Transfers ownership of the native session to the caller (the
-    /// one-shot `Document.parse` path hands it to an owning
-    /// `ScopeResolver`). The session's own resolver is detached and the
-    /// session must not be used afterwards.
-    func relinquishNativeSession() -> OpaquePointer {
-        resolver?.detach()
-        resolver = nil
-        ownsNativeSession = false
-        return session
+        markdown_core_session_free(session)
     }
 
     /// The revision of the last committed snapshot; 0 before the first
@@ -161,19 +145,13 @@ public final class MarkupSession {
             preconditionFailure("session committed without a document root")
         }
         if delta.beforeRevision == 0 {
-            // First commit: every node is fresh, so a direct recursive build
-            // skips the by-id lookups and depth sort of the delta path. This
-            // is also what keeps the one-shot `Document.parse` sugar on the
-            // v1 performance budget.
+            // First commit: every node is fresh, so a direct full-tree build
+            // skips the by-id lookups and ordered-delta table of the
+            // incremental path. This is also what keeps the one-shot
+            // `Document.parse` sugar on the v1 performance budget.
             mirror[markdown_core_node_get_id(root)] = build(root)
         } else {
-            for id in delta.removed {
-                mirror.removeValue(forKey: id.rawValue)
-            }
-            let builder = MarkupBuilder(lineage: lineage) { [self] node in children(of: node) }
-            for rebuild in rebuilds(of: delta) {
-                mirror[rebuild.rawID] = builder.markup(from: rebuild.node)
-            }
+            rebuild(using: nativeChanges, removing: delta.removed)
         }
 
         return Commit(document: adopt(root: root), delta: delta)
@@ -232,49 +210,46 @@ public final class MarkupSession {
         return value
     }
 
-    private struct Rebuild {
-        let rawID: UInt64
-        let node: OpaquePointer
-        let depth: Int
-    }
-
-    private func rebuilds(of delta: Delta) -> [Rebuild] {
-        var rebuilds: [Rebuild] = []
-        rebuilds.reserveCapacity(
-            delta.added.count + delta.changed.count + delta.bubbled.count
-        )
-        // Memoized depths: the delta carries every ancestor of a change, so
-        // each parent link is walked once across the whole delta — O(delta),
-        // not O(depth) per entry.
-        var depths: [UInt64: Int] = [:]
-        func depth(of node: OpaquePointer) -> Int {
-            var chain: [UInt64] = []
-            var current: OpaquePointer? = node
-            var resolved = -1
-            while let pointer = current {
-                let rawID = markdown_core_node_get_id(pointer)
-                if let cached = depths[rawID] {
-                    resolved = cached
-                    break
-                }
-                chain.append(rawID)
-                current = markdown_core_node_get_parent(pointer)
-            }
-            for rawID in chain.reversed() {
-                resolved += 1
-                depths[rawID] = resolved
-            }
-            return resolved
+    private func rebuild(using nativeChanges: OpaquePointer, removing removed: [MarkupID]) {
+        var nativeEntries: UnsafeMutablePointer<markdown_core_delta_entry>?
+        var count = 0
+        var nativeError: OpaquePointer?
+        guard
+            markdown_core_session_ordered_delta_entries(
+                session,
+                nativeChanges,
+                &nativeEntries,
+                &count,
+                &nativeError
+            )
+        else {
+            // The native commit has already advanced, so this is not a
+            // transactionally recoverable `commit()` failure. Throwing here
+            // would expose a session whose native revision and immutable
+            // mirror disagree.
+            let failure = ParseError(from: nativeError)
+            markdown_core_error_free(nativeError)
+            preconditionFailure("delta materialization failed after commit: \(failure)")
         }
-        for id in [delta.added, delta.changed, delta.bubbled].joined() {
-            guard let node = markdown_core_session_node_by_id(session, id.rawValue) else {
+        defer { markdown_core_delta_entries_free(nativeEntries) }
+        guard count == 0 || nativeEntries != nil else {
+            preconditionFailure("ordered delta table omitted non-empty storage")
+        }
+
+        for id in removed {
+            mirror.removeValue(forKey: id.rawValue)
+        }
+        guard let nativeEntries else { return }
+        let builder = MarkupBuilder(lineage: lineage) { [self] node in children(of: node) }
+        // The facade guarantees children before parents, so each parent can
+        // assemble directly from the mirror in one pass without a Swift-side
+        // ancestor walk, depth memo, or sort.
+        for entry in UnsafeBufferPointer(start: nativeEntries, count: count) {
+            guard let node = markdown_core_session_node_by_id(session, entry.id) else {
                 preconditionFailure("delta names a node the session cannot resolve")
             }
-            rebuilds.append(Rebuild(rawID: id.rawValue, node: node, depth: depth(of: node)))
+            mirror[entry.id] = builder.markup(from: node)
         }
-        // Children before parents: a rebuilt parent assembles its child
-        // values from the mirror.
-        return rebuilds.sorted { $0.depth > $1.depth }
     }
 
     private func children(of node: OpaquePointer) -> [any Markup] {

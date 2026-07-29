@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Document, MarkupSession, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { relink } from "../dist/session/relink.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("sessions: streaming keeps frontier ids and bumps the trailing text revision", () => {
@@ -155,8 +156,27 @@ test("sessions: the scope-free visitor traverses an unmaterialized superseded sn
         const recording = Object.fromEntries(
             Object.entries(kindVisitor).map(([method, kindOf]) => [method, (node) => void visited.push(kindOf(node))])
         );
+        // MarkupVisitor is structural: callers may attach arbitrary state,
+        // including a field whose name overlaps Markup's `kind` discriminator.
+        recording.kind = "visitor-state";
         new MarkupWalker().walk(first.document, recording);
         assert.deepEqual(visited, ["document", "paragraph", "text", "paragraph", "text"]);
+
+        // Structural typing also permits callable visitors. Visitor shape
+        // takes precedence over the callback overload, so the function body
+        // must never run.
+        const callableVisited = [];
+        const callableVisitor = Object.assign(
+            () => assert.fail("callable visitor was misclassified as a scopeful callback"),
+            Object.fromEntries(
+                Object.entries(kindVisitor).map(([method, kindOf]) => [
+                    method,
+                    (node) => void callableVisited.push(kindOf(node))
+                ])
+            )
+        );
+        new MarkupWalker().walk(first.document, callableVisitor);
+        assert.deepEqual(callableVisited, ["document", "paragraph", "text", "paragraph", "text"]);
 
         // The scopeful overload keeps the documented superseded-snapshot
         // failure.
@@ -511,6 +531,69 @@ test("sessions: a narrow edit in a wide document relinks instead of re-decoding 
     } finally {
         session.close();
     }
+});
+
+test("sessions: many changed siblings keep parent relinking linear", () => {
+    // A single bubbled parent may receive many replacements. Relinking must
+    // index those replacements once, run one lookup pass, and copy the child
+    // array at most once; repeated indexOf searches would make this
+    // full-width update quadratic.
+    const width = 512;
+    const source = "a\n\n".repeat(width);
+    const session = new MarkupSession();
+    try {
+        session.append(source);
+        const first = session.commit();
+        for (let index = 0; index < width; index += 1) {
+            session.replace(index * 3, index * 3 + 1, "b");
+        }
+        const second = session.commit();
+
+        assert.ok(second.delta.bubbled.includes(second.document.id));
+        assert.equal(second.document.content.length, width);
+        for (let index = 0; index < width; index += 1) {
+            assert.equal(second.document.content[index].id, first.document.content[index].id);
+            assert.notEqual(second.document.content[index], first.document.content[index]);
+            assert.equal(second.document.content[index].content[0].literal, "b");
+        }
+        assert.equal(second.document.dump(), Document.parse("b\n\n".repeat(width)).dump());
+    } finally {
+        session.close();
+    }
+});
+
+test("sessions: bubbled-parent relink has a linear child-read bound", () => {
+    // Count element reads instead of timing: the removed implementation
+    // called indexOf for every replacement and therefore performed Θ(n²)
+    // reads. One replacement-lookup pass plus at most one copy has a
+    // deterministic linear bound.
+    const width = 128;
+    const children = Array.from({ length: width }, (_, index) => ({
+        kind: "paragraph",
+        id: { lineage: 1n, rawValue: index + 2 },
+        revision: 1,
+        content: []
+    }));
+    let elementReads = 0;
+    const observedChildren = new Proxy(children, {
+        get(target, property, receiver) {
+            if (typeof property === "string" && /^(0|[1-9]\d*)$/.test(property)) elementReads += 1;
+            return Reflect.get(target, property, receiver);
+        }
+    });
+    const replacements = new Map(children.map((child) => [child, { ...child, revision: 2 }]));
+    const previous = {
+        kind: "document",
+        id: { lineage: 1n, rawValue: 1 },
+        revision: 1,
+        content: observedChildren
+    };
+
+    const updated = relink(previous, 2, replacements);
+
+    assert.equal(updated.content.length, width);
+    assert.ok(updated.content.every((child) => child.revision === 2));
+    assert.ok(elementReads <= width * 2, `expected at most ${width * 2} element reads, observed ${elementReads}`);
 });
 
 test("sessions: an explicitly materialized snapshot stays usable across commits and close", () => {

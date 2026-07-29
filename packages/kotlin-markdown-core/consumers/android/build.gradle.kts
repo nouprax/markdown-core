@@ -12,6 +12,22 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["consumerApplication"] = "consumer.ConsumerApplication"
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            // Deliberately do not inherit AGP's default ProGuard file: its
+            // broad native-method rule would hide a missing consumer rule in
+            // the published Markdown Core AAR.
+            proguardFiles("proguard-rules.pro")
+        }
+        create("unused") {
+            isMinifyEnabled = true
+            proguardFiles("proguard-rules.pro")
+            manifestPlaceholders["consumerApplication"] = "consumer.UnusedConsumerApplication"
+            matchingFallbacks += "release"
+        }
     }
 }
 

@@ -58,6 +58,7 @@ typedef struct {
 } markdown_core_id_array;
 
 struct markdown_core_delta {
+    uint64_t lineage;
     uint64_t before;
     uint64_t after;
     markdown_core_id_array added;

@@ -19,9 +19,32 @@ const output = args.get("output");
 if (!platform || !logsDirectory || !output) {
     throw new Error("--platform, --logs, and --output are required");
 }
+if (!new Set(["linux", "macos"]).has(platform)) {
+    throw new Error(`unsupported platform: ${platform}`);
+}
 
 const allowedRuntimes = new Set(["c", "swift", "kotlin", "es"]);
-const allowedWorkloads = new Set(["representative_large", "large_document", "deep_nesting"]);
+const allowedWorkloads = new Set([
+    "representative_large",
+    "large_document",
+    "deep_nesting",
+    "deep_one_shot_parse",
+    "deep_first_commit",
+    "deep_scope_materialization"
+]);
+const allowedBoundaries = new Map([
+    ["c", new Set(["native_parse"])],
+    ["swift", new Set(["native_parse_and_value_copy", "native_session_scope_materialization"])],
+    [
+        "kotlin",
+        new Set([
+            "jni_parse_and_value_copy",
+            "jni_session_first_commit_and_delta_decode",
+            "jni_session_scope_materialization"
+        ])
+    ],
+    ["es", new Set(["wasm_parse_and_value_copy", "wasm_session_scope_materialization"])]
+]);
 
 async function filesBelow(root) {
     const files = [];
@@ -58,10 +81,30 @@ for (const logFile of logFiles.sort()) {
         }
         const runtime = fields.get("runtime");
         const workload = fields.get("workload");
+        const boundary = fields.get("boundary");
+        const workloadVersion = Number(fields.get("workload_version"));
+        const bytes = Number(fields.get("bytes"));
+        const warmup = Number(fields.get("warmup"));
+        const repeats = Number(fields.get("repeats"));
         const medianNs = Number(fields.get("median_ns"));
+        const depthText = fields.get("depth");
+        const commitsText = fields.get("commits");
+        const depth = depthText === undefined ? null : Number(depthText);
+        const commits = commitsText === undefined ? null : Number(commitsText);
         if (
             !allowedRuntimes.has(runtime) ||
             !allowedWorkloads.has(workload) ||
+            !allowedBoundaries.get(runtime)?.has(boundary) ||
+            !Number.isSafeInteger(workloadVersion) ||
+            workloadVersion <= 0 ||
+            !Number.isSafeInteger(bytes) ||
+            bytes <= 0 ||
+            !Number.isSafeInteger(warmup) ||
+            warmup < 0 ||
+            !Number.isSafeInteger(repeats) ||
+            repeats <= 0 ||
+            !(depth === null || (Number.isSafeInteger(depth) && depth > 0)) ||
+            !(commits === null || (Number.isSafeInteger(commits) && commits > 0)) ||
             !Number.isSafeInteger(medianNs) ||
             medianNs < 0
         ) {
@@ -72,6 +115,13 @@ for (const logFile of logFiles.sort()) {
         benchmarks.push({
             runtime,
             workload,
+            boundary,
+            workloadVersion,
+            bytes,
+            depth,
+            commits,
+            warmup,
+            repeats,
             medianNs,
             memoryKiB: Number.isSafeInteger(memoryKiB) && memoryKiB >= 0 ? memoryKiB : null
         });
@@ -117,15 +167,21 @@ for (const definition of sizeDefinitions) {
 }
 
 const uniqueBenchmarks = [
-    ...new Map(benchmarks.map((benchmark) => [`${benchmark.runtime}:${benchmark.workload}`, benchmark])).values()
-].sort((left, right) => `${left.runtime}:${left.workload}`.localeCompare(`${right.runtime}:${right.workload}`));
+    ...new Map(
+        benchmarks.map((benchmark) => [`${benchmark.runtime}:${benchmark.boundary}:${benchmark.workload}`, benchmark])
+    ).values()
+].sort((left, right) =>
+    `${left.runtime}:${left.boundary}:${left.workload}`.localeCompare(
+        `${right.runtime}:${right.boundary}:${right.workload}`
+    )
+);
 
 await mkdir(path.dirname(output), { recursive: true });
 await writeFile(
     output,
     `${JSON.stringify(
         {
-            schema: 1,
+            schema: 2,
             sourceSha: process.env.SOURCE_SHA ?? process.env.GITHUB_SHA ?? null,
             platform,
             benchmarks: uniqueBenchmarks,

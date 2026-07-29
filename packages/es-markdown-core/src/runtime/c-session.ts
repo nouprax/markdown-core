@@ -36,6 +36,12 @@ export interface RawDelta {
     readonly bubbled: readonly number[];
 }
 
+export interface RawDeltaEntry {
+    readonly rawValue: number;
+    readonly parent: number;
+    readonly change: 0 | 1 | 2;
+}
+
 export interface RawFootnoteInfo {
     readonly definition: number;
     readonly number: number;
@@ -128,12 +134,61 @@ export class CSession {
         };
     }
 
+    /** Resolves the current delta's complete touched set in the core's one
+     * authoritative children-before-parents order. */
+    orderedDeltaEntries(delta: number): readonly RawDeltaEntry[] {
+        const session = this.requirePointer();
+        const scratch = this.decoder.scratchPointer;
+        let view = this.decoder.dataView();
+        view.setUint32(scratch, 0, true);
+        view.setUint32(scratch + 4, 0, true);
+        view.setUint32(scratch + 8, 0, true);
+        if (!native.es_session_ordered_delta_entries(session, delta, scratch, scratch + 4, scratch + 8)) {
+            throw this.takeError(this.decoder.dataView().getUint32(scratch + 8, true));
+        }
+        view = this.decoder.dataView();
+        const data = view.getUint32(scratch, true);
+        const count = view.getUint32(scratch + 4, true);
+        if (!data) {
+            if (count !== 0) throw new Error("native session returned an invalid ordered delta table");
+            return [];
+        }
+        try {
+            const rowBytes = 24;
+            if (count * rowBytes > this.decoder.dataView().byteLength - data) {
+                throw new Error("native session returned an out-of-bounds ordered delta table");
+            }
+            const entries = new Array<RawDeltaEntry>(count);
+            for (let index = 0; index < count; index += 1) {
+                const row = data + index * rowBytes;
+                const change = view.getUint32(row + 16, true);
+                if (change !== 0 && change !== 1 && change !== 2) {
+                    throw new Error(`native session returned invalid delta change ${change}`);
+                }
+                entries[index] = {
+                    rawValue: this.decoder.toSafeNumber(view.getBigUint64(row, true), "node id"),
+                    parent: this.decoder.toSafeNumber(view.getBigUint64(row + 8, true), "parent node id"),
+                    change
+                };
+            }
+            return entries;
+        } finally {
+            native.es_delta_entries_free(data);
+        }
+    }
+
     deltaFree(delta: number): void {
         native.es_delta_free(delta);
     }
 
+    private documentPointer(): number {
+        const document = native.es_session_document(this.requirePointer());
+        if (!document) throw new Error("native session has no committed document");
+        return document;
+    }
+
     rootPointer(): number {
-        const root = native.es_document_root(native.es_session_document(this.requirePointer()));
+        const root = native.es_document_root(this.documentPointer());
         if (!root) throw new Error("native session has no committed document root");
         return root;
     }
@@ -142,11 +197,6 @@ export class CSession {
      * exists at the committed revision. */
     nodeById(rawValue: number): number {
         return native.es_session_node_by_id(this.requirePointer(), BigInt(rawValue));
-    }
-
-    /** The canonical parent of a committed-tree node; 0 for the root. */
-    nodeParent(pointer: number): number {
-        return native.es_node_parent(pointer);
     }
 
     rootIdentity(): { readonly rawValue: number; readonly revision: number } {
@@ -158,7 +208,7 @@ export class CSession {
     }
 
     scopeTable(): Map<number, ScopeEntry> {
-        return this.decoder.scopeTable(this.rootPointer());
+        return this.decoder.scopeTable(this.documentPointer());
     }
 
     lineage(): bigint {

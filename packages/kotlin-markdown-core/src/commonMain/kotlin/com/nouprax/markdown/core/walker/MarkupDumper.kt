@@ -1,3 +1,6 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */

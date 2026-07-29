@@ -258,7 +258,7 @@ static int workload_binding_baseline(const bench_options *options) {
     if (result == 0) {
         printf(
             "baseline runtime=c boundary=native_parse workload=representative_large"
-            " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
+            " workload_version=1 bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
             length,
             options->warmup,
             options->repeats,

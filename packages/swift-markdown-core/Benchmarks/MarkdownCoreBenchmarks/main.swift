@@ -13,21 +13,24 @@ let repeatCount = 10
 /// `workload=` and `warmup=` (for example `bytes=` and `commits=`); the
 /// printed line format is load-bearing — scripts/collect-pr-metrics.mjs
 /// parses the `runtime=`/`median_ns=` fields.
-func measureAndReport(
+func measurePreparedAndReport<Prepared>(
     boundary: String,
     workload: String,
     metrics: String,
-    body: (Int) throws -> Void
+    prepare: (Int) throws -> Prepared,
+    body: (Prepared, Int) throws -> Void
 ) rethrows {
     for round in 0..<warmupCount {
-        try body(round)
+        let prepared = try prepare(round)
+        try body(prepared, round)
     }
 
     let clock = ContinuousClock()
     var durations: [Duration] = []
     durations.reserveCapacity(repeatCount)
     for round in 0..<repeatCount {
-        durations.append(try clock.measure { try body(round) })
+        let prepared = try prepare(round)
+        durations.append(try clock.measure { try body(prepared, round) })
     }
     durations.sort()
     let median = durations[repeatCount / 2].components
@@ -41,8 +44,25 @@ func measureAndReport(
     #endif
     print(
         "benchmark runtime=swift boundary=\(boundary) workload=\(workload) "
-            + "\(metrics) warmup=\(warmupCount) repeats=\(repeatCount) "
+            + "workload_version=1 \(metrics) warmup=\(warmupCount) repeats=\(repeatCount) "
             + "median_ns=\(Int64(medianNanoseconds)) peak_rss_kib=\(peakRSSKiB)"
+    )
+}
+
+func measureAndReport(
+    boundary: String,
+    workload: String,
+    metrics: String,
+    body: (Int) throws -> Void
+) rethrows {
+    try measurePreparedAndReport(
+        boundary: boundary,
+        workload: workload,
+        metrics: metrics,
+        prepare: { $0 },
+        body: { _, round in
+            try body(round)
+        }
     )
 }
 
@@ -59,6 +79,30 @@ func benchmark(_ workload: String, source: String) throws {
 let unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n"
 try benchmark("large_document", source: String(repeating: unit, count: 2_000))
 try benchmark("deep_nesting", source: String(repeating: "> ", count: 128) + "leaf\n")
+
+struct ScopeBenchmarkSnapshot {
+    let session: MarkupSession
+    let document: Document
+}
+
+func benchmarkScopeMaterialization(_ workload: String, depth: Int) throws {
+    let source = String(repeating: "> ", count: depth) + "leaf\n"
+    try measurePreparedAndReport(
+        boundary: "native_session_scope_materialization",
+        workload: workload,
+        metrics: "bytes=\(source.utf8.count) depth=\(depth)"
+    ) { _ in
+        let session = try MarkupSession()
+        try session.append(source)
+        let document = try session.commit().document
+        return ScopeBenchmarkSnapshot(session: session, document: document)
+    } body: { snapshot, _ in
+        _ = snapshot.document.scope(of: snapshot.document)
+        withExtendedLifetime(snapshot.session) {}
+    }
+}
+
+try benchmarkScopeMaterialization("deep_scope_materialization", depth: 4_096)
 
 func benchmarkSession(_ workload: String, unit: String, units: Int) throws {
     try measureAndReport(

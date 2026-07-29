@@ -61,7 +61,10 @@ try MarkupWalker().walk(document) { event, node, scope in
 ```
 
 For typed dispatch, conform to `MarkupVisitor` and hand it to
-`node.accept(&visitor)`. `document.dump()` and
+`node.accept(&visitor)`, or traverse the complete document without resolving
+scopes via `MarkupWalker().walk(document, visitor: &visitor)`. The scope-free
+form remains valid for retained snapshots that were superseded before scope
+materialization. `document.dump()` and
 `MarkupDumper.dump(document, of: node)` emit the canonical diagnostic tree for
 the complete document or a focused subtree (subtree scopes print with the
 subtree as origin) — intended for logs, snapshots, and debugging rather than

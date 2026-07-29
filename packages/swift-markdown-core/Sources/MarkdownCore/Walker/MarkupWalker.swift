@@ -11,6 +11,24 @@ public struct MarkupWalker: Sendable {
     /// Creates a walker; walkers are stateless and reusable.
     public init() {}
 
+    /// Walks the document depth-first and dispatches each node to `visitor`
+    /// once in preorder. This overload is structural and never resolves
+    /// scopes, so it can traverse a retained snapshot even if that snapshot
+    /// was superseded before scope materialization.
+    public func walk<V: MarkupVisitor>(
+        _ document: Document,
+        visitor: inout V
+    ) where V.Result == Void {
+        var stack: [any Markup] = [document]
+        while let node = stack.popLast() {
+            _ = node.accept(&visitor)
+            var childrenVisitor = ChildrenVisitor()
+            for child in node.accept(&childrenVisitor).reversed() {
+                stack.append(child)
+            }
+        }
+    }
+
     /// Walks the document depth-first, supplying each event with the node's
     /// resolved absolute scope.
     public func walk(

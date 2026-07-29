@@ -1,31 +1,26 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
-private class ReadOnlyList<out Element> private constructor(
+import kotlin.jvm.JvmSynthetic
+
+private class ReadOnlyList<out Element>(
     private val snapshot: kotlin.collections.List<Element>,
 ) : AbstractList<Element>() {
-    companion object {
-        fun <Element, Result> mapped(
-            elements: kotlin.collections.List<Element>,
-            transform: (Element) -> Result,
-        ): ReadOnlyList<Result> = ReadOnlyList(elements.map(transform))
-
-        fun <Element> generated(
-            size: Int,
-            initializer: (Int) -> Element,
-        ): ReadOnlyList<Element> = ReadOnlyList(kotlin.collections.List(size, initializer))
-    }
-
     override val size: Int
         get() = snapshot.size
 
     override fun get(index: Int): Element = snapshot[index]
 }
 
+@JvmSynthetic
 internal fun <Element, Result> kotlin.collections.List<Element>.immutableMap(
     transform: (Element) -> Result,
-): kotlin.collections.List<Result> = ReadOnlyList.mapped(this, transform)
+): kotlin.collections.List<Result> = ReadOnlyList(map(transform))
 
+@JvmSynthetic
 internal fun <Element> immutableList(
     size: Int,
     initializer: (Int) -> Element,
-): kotlin.collections.List<Element> = ReadOnlyList.generated(size, initializer)
+): kotlin.collections.List<Element> = ReadOnlyList(kotlin.collections.List(size, initializer))

@@ -1,5 +1,11 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
+import kotlin.jvm.JvmSynthetic
+
+@JvmSynthetic
 internal actual fun ensureNativeLoaded() = AndroidNativeLoader.ensureLoaded()
 
 private object AndroidNativeLoader {
@@ -21,10 +27,10 @@ private object AndroidNativeLoader {
             System.load(explicit)
             return
         }
-        val resource = HostNativeLibrary.resourcePath
+        val resource = hostNativeLibraryResourcePath
         val stream = resource?.let { AndroidNativeLoader::class.java.getResourceAsStream(it) }
         if (stream == null) {
-            val fileName = HostNativeLibrary.fileName
+            val fileName = hostNativeLibraryFileName
             throw IllegalStateException(
                 "Markdown Core's Android artifact is running on a host JVM without its native " +
                     "library. Either set -Dmarkdown.core.hostNativeLibrary=/path/to/$fileName " +
@@ -32,6 +38,6 @@ private object AndroidNativeLoader {
                     "classpath at ${resource ?: "com/nouprax/markdown/core/native/<platform>/$fileName"}.",
             )
         }
-        HostNativeLibrary.extractAndLoad(stream)
+        extractAndLoadHostNativeLibrary(stream)
     }
 }

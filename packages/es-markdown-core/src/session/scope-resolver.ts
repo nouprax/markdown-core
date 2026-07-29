@@ -17,9 +17,9 @@ type ResolverState =
  * Session snapshots do not store positions on node values: deltas
  * deliberately omit pure positional shifts, so a snapshot resolves every
  * scope against the session's native tree the first time one is requested
- * (one walk, cached) and is self-contained from then on. The owning session
- * detaches the resolver before the tree changes; a resolver that was
- * detached before it ever materialized can no longer answer.
+ * (one native batch, cached) and is self-contained from then on. The owning
+ * session detaches the resolver before the tree changes; a resolver that
+ * was detached before it ever materialized can no longer answer.
  *
  * Each cached entry keeps the node's revision at this snapshot, so a stale
  * value — same id, superseded revision — is rejected instead of silently

@@ -111,15 +111,13 @@ public struct Document: Markup {
     /// Semantically identical to committing the same text through a
     /// `MarkupSession`.
     public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        // A one-shot parse is literally a single-commit session. The
-        // snapshot's resolver takes over the native session and scopes
-        // materialize lazily on first use, exactly as session snapshots
-        // do; the resolver frees the native session once the table is
-        // built, or with the snapshot when no scope is ever requested.
+        // A one-shot parse is literally a single-commit session. Materialize
+        // its bulk scope table before the temporary session goes away so the
+        // returned value is immediately self-contained.
         let session = try MarkupSession(options: options)
         try session.append(source)
-        var document = try session.commit().document
-        document.resolver = ScopeResolver(owning: session.relinquishNativeSession())
+        let document = try session.commit().document
+        document.materialize()
         return document
     }
 }

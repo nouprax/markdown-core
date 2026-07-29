@@ -485,9 +485,11 @@ Equality everywhere is `(lineage, id, revision)`.
     (kind, id, revision, fields) and names its children by id — positions
     never travel with records. A commit payload is
     `removed ids | records for added ∪ changed ∪ bubbled`, with records
-    ordered children-before-parents (C-side depth sort; equal depths are
-    never ancestor-related), which is exactly the order the mirror rebuilds
-    in — one pass, one record shape for all three verdicts (the planned
+    ordered children-before-parents by the shared C ordered-delta table.
+    That table links the touched tree once and emits ready leaves in O(delta)
+    expected time; the former per-node ancestor walk and depth sort were
+    removed. This is exactly the order the mirror rebuilds in — one pass,
+    one record shape for all three verdicts (the planned
     bubbled-only `(id, childIds)` shape was dropped: bubbled nodes are
     containers with tiny fields, and one shape removes a decoder branch).
     Scopes travel as a separate `(id, revision, scope)` table payload that a
@@ -546,11 +548,11 @@ Equality everywhere is `(lineage, id, revision)`.
     scope materialization, free) sharing the session decode pipeline end
     to end.
   - Mirror-by-delta without records: a commit reads the four delta id
-    arrays straight from WASM memory, then rebuilds top-down from the
-    committed root — a node in `added ∪ changed ∪ bubbled` re-decodes and
-    recurses, everything else returns the previous snapshot's object from
-    the id → node mirror (children-before-parents ordering falls out of
-    the recursion; no depth sort). A pure-shift empty delta re-wraps the
+    arrays straight from WASM memory, then consumes the shared C
+    ordered-delta table. Nodes in `added ∪ changed ∪ bubbled` rebuild once
+    in children-before-parents order; unchanged children come from the
+    id → node mirror. The binding performs no recursive rebuild, ancestor
+    walk, or depth sort. A pure-shift empty delta re-wraps the
     root `Document` around a fresh resolver, exactly the Kotlin path, and
     the detach-before-native-commit / reattach-on-transactional-failure
     order from the Swift race fix (#22) is ported verbatim.

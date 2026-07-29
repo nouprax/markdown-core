@@ -1,5 +1,11 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
+import kotlin.jvm.JvmSynthetic
+
+@JvmSynthetic
 internal actual fun ensureNativeLoaded() = DesktopNativeLoader.ensureLoaded()
 
 private object DesktopNativeLoader {
@@ -9,14 +15,14 @@ private object DesktopNativeLoader {
 
     private fun load() {
         val resource =
-            HostNativeLibrary.resourcePath
+            hostNativeLibraryResourcePath
                 ?: throw UnsupportedOperationException(
-                    "unsupported native platform: ${HostNativeLibrary.hostName}",
+                    "unsupported native platform: $hostNativeLibraryHostName",
                 )
         val stream =
             requireNotNull(DesktopNativeLoader::class.java.getResourceAsStream(resource)) {
-                "native library is missing for ${HostNativeLibrary.platform}"
+                "native library is missing for $hostNativeLibraryPlatform"
             }
-        HostNativeLibrary.extractAndLoad(stream)
+        extractAndLoadHostNativeLibrary(stream)
     }
 }

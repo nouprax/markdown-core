@@ -26,9 +26,31 @@ promised to remain compatible between releases.
     (`Text`, `Code`, `CodeBlock`, `HTML`, `HTMLBlock`, `Formula`,
     `FormulaBlock`, `ThematicBreak`, `SoftBreak`, `LineBreak`,
     `FootnoteReference`); traverse structure through `MarkupWalker`.
-- Swift: `Document.parse` no longer materializes the scope table eagerly;
-  one-shot snapshots own their native session and resolve scopes lazily on
-  first use, exactly as session snapshots do.
+- C, Swift, Kotlin, and ECMAScript: materializing every node scope is now a
+  linear whole-document batch operation, including deeply nested documents.
+  The C facade returns one owned canonical-preorder table that every binding
+  consumes without per-node native calls. Each binding's `MarkupWalker` also
+  has a scope-free typed-visitor traversal that remains usable on an
+  unmaterialized retained snapshot.
+- C, Swift, Kotlin, and ECMAScript: incremental mirrors now consume one
+  caller-owned C delta table whose `(id, parent, change)` rows are ordered
+  children before parents. A hash-indexed Kahn pass with expected O(delta)
+  cost replaces binding-local ancestor walks and comparison sorts, while the
+  table validates revision, session lineage, disjoint verdicts, and the
+  complete touched parent chain. ECMAScript also indexes all replacements for
+  a bubbled parent once, then performs one replacement-lookup pass and at most
+  one linear copy per child field, eliminating the former
+  O(changes × parent width) relink path.
+- Kotlin/JVM: native-bridge, scope-resolver, and wire-decoder implementation
+  types are no longer importable or constructible from Java; dedicated ABI
+  and Java-compiler gates keep the documented API as the only public surface.
+- Kotlin/Android: publish the exact private-JNI consumer rule in the main AAR
+  and verify it with a minified release application whose own configuration
+  intentionally contains no generic native-method keep. Mapping and DEX
+  inspection pin the `JvmNative` binary name and all 13 JNI method names when
+  used, plus prove that an unused library is still removed.
+- Tooling: update the development-only `brace-expansion` lockfile resolution
+  to patched release 5.0.8.
 
 ## 2.0.0 - 2026-07-20
 

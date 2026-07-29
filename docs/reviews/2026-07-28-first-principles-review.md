@@ -13,6 +13,18 @@ than treating the numeric range as continuous.
 Each entry below is self-contained (file refs, evidence, fix plan, test guidance) so a
 fresh session can pick up any work package without this conversation.
 
+## Refactoring discipline
+
+Benchmarks in this branch diagnose cost and enforce general complexity
+contracts; they do not choose implementation policy. A local benchmark win
+must never introduce a cardinality-, size-, or hot-shape branch such as a
+`count == 1` algorithm. One semantic operation gets one coherent algorithm
+and data model, and constant-factor work improves that shared mechanism.
+Separate paths require a documented semantic, ownership, or lifecycle
+invariant that makes them genuinely different operations, with independent
+correctness and complexity coverage. This rule is also part of the durable
+repository test contract and the root agent instructions.
+
 ## Status summary
 
 The branch contains the completed WP1-WP6 work packages plus the final C
@@ -46,9 +58,11 @@ multiline-spans case (platform conformance suites must re-run against it).
 | `8b0bbd0` | style fixup: clang-format on the seam gate | format:c:check |
 | `3ebd4e7` | WP6-infra (I47-I57, I66, I72-I74, X02; I50 loosened structurally) | verify:core + verify:macos fully green |
 
-Note: the ES scope-table fix (I02) shipped as a native es_scope_table subtree walk
-(the fix plan's preferred O(n) option); the Swift one-shot laziness (I21) shipped as
-a resolver-owned native session rather than the native accumulator alternative.
+Historical note: the first I02/I21 implementation used an ES-local native
+scope-table walk and let a Swift one-shot resolver own a native session. GitHub
+issue #68 subsequently replaced both compromises with the shared C
+whole-document batch table described below and restored eager, self-contained
+Swift one-shot documents.
 
 ### Completed in the final sweep and follow-up
 
@@ -59,24 +73,49 @@ a resolver-owned native session rather than the native accumulator alternative.
 | C hygiene | I30, I31, I64, I65, I75, I82, I84, I85, I86, I89 | Duplicates/dead hooks/includes removed, internal type renamed, generated scanners reproduced exactly |
 | Incremental safety refactor | I63 | Reversible child-chain helpers and explicit pipeline/splice state now separate restart planning, staged parsing, definition reconciliation, inline refinement, adoption, fallible refresh/rollback, and infallible commit |
 | Review closure | I58, I73 | Toolchain discovery is shared, the Gradle Tooling API version follows the wrapper, and the installed C facade documents metadata-only version discovery |
-| Kotlin ABI closure | I11 | Kotlin 2.4 ABI validation now snapshots the public JVM and combined linuxX64/macosArm64 KLIB surfaces; the bytecode-level JVM snapshot remains as a complementary JNI/internal-surface gate, and both checks run in aggregate tests and dual-host release staging |
+| Kotlin ABI closure | I11 | Kotlin 2.4 ABI validation snapshots the public JVM and combined linuxX64/macosArm64 KLIB surfaces; the complementary JVM bytecode gate admits exactly the documented Java class inventory and descriptors, while compiler probes reject implementation types and members |
 
-Validation recorded for the final source state: C correctness 102/102; C conformance 2/2;
-ASan 82/82; UBSan 82/82; C lint and C/CMake format checks; generated-scanner
-reproducibility; the new complexity/pathological/benchmark cases; Swift tests 18+1,
-conformance 6, and the source-archive external consumer; Kotlin JVM and Android-host
-tests plus conformance, both JVM/KLIB ABI gates, and Native packaging; ES Node tests
-12+19 and conformance 17; repository, CI-policy, and public-surface audits.
+### Post-review GitHub issue closure (2026-07-29)
+
+These are GitHub issue numbers, not finding identifiers from this ledger.
+
+| Issue | Result |
+| --- | --- |
+| #55 | Kotlin/JVM implementation types no longer form an accidental Java API. Private implementation classes and package-private multifile parts replace public internal types; the non-synthetic Java-source-visible bytecode inventory must equal the official Kotlin/JVM API, and ordinary `javac` probes must fail for implementation names and members. The Android publication carries the one exact `JvmNative` consumer rule required by name-based JNI lookup; a minified release consumer with no generic JNI keep verifies the published rule, mapping, final DEX class name, and all 13 native method names, while a second unused variant proves the rule does not pin an unreachable library. |
+| #62 | The development lockfile resolves `brace-expansion` to patched release 5.0.8; a frozen clean install and package audit verify the resolved graph rather than the pre-existing workspace contents. |
+| #68 | C now owns one caller-freed canonical-preorder `(id, revision, scope)` table for a document. One shared canonical iterator resolves scopes for both the table and canonical dumps with O(n) traversal work and O(depth) state; its frames carry the resolved parent line and pending sibling, so neither consumer performs a count pre-pass, ancestor walk, or second traversal. Dump formatting remains Θ(output bytes), which is necessarily Θ(n²) for a deep tree's indentation. C also owns the single `(id, parent, change)` materialization order for surviving delta nodes: a lineage- and revision-checked, children-before-parents Kahn pass replaces the three bindings' depth calculations and comparison sorts, preserves a self-contained parent relation for the WASM boundary, and rejects duplicate, missing, cyclic, or overflowing input atomically. Swift, Kotlin, and ECMAScript consume these tables instead of duplicating traversal or ordering rules; ECMAScript indexes a bubbled parent's replacements once, then performs one replacement-lookup pass and at most one linear copy per child field instead of searching the same wide array per change. Swift one-shot parsing is eager and self-contained again, while session snapshots retain their lazy first-use contract; all three bindings also expose scope-free structural traversal for an unmaterialized retained snapshot. |
+
+Validation recorded for the final source state: C correctness 104/104, conformance 2/2,
+benchmark 8/8, ASan/UBSan/TSan 82/82 each, and 22 complexity cases; C lint, C/CMake
+formatting, and generated-scanner reproducibility; Swift correctness 20/20, external
+consumer 1/1, conformance 6/6, five benchmark workloads, the product-only source
+archive consumer, and the iOS 18/26 plus macOS 15/26 deployment matrix; Kotlin JVM
+32/32, Android-host 27/27, macOS arm64 27/27, conformance 7/7 on each platform, both
+JVM/KLIB ABI gates, Java implementation-invisibility probes, Native packaging,
+published JVM/Android consumers, and Android used/unused shrinker consumers; ES Node
+core 12/12 plus session 21/21, conformance 17/17, browser ESM/WASM, packaging, type,
+consumer, and wide-sibling complexity gates; frozen pnpm install and a package audit
+with no known vulnerabilities; complete `verify:core` and `verify:macos` chains,
+including repository, CI-policy, test-topology, package-content, release-version, and
+public-surface audits.
 
 ### Closure disposition
 
 1. All P0 behavioral and P1 performance findings are fixed. I63's former
    ~1,000-line macro pipeline is phase-split behind explicit ownership and rollback
    state.
-2. I11 is fixed with complementary authorities: Kotlin's metadata-aware gate freezes
-   the public JVM and linuxX64/macosArm64 KLIB surfaces, while the bespoke JVM
-   snapshot continues to freeze Java-visible internal bytecode that the standard
-   Kotlin ABI dump intentionally omits.
+2. I11 and GitHub #55 are fixed with complementary authorities: Kotlin's
+   metadata-aware gate freezes the public JVM and linuxX64/macosArm64 KLIB
+   surfaces; the bytecode gate requires the ordinary Java-source-visible,
+   non-synthetic class set to equal that official API and freezes its
+   descriptors; positive and negative Java compiler probes prove the
+   documented facade remains callable while implementation classes and
+   synthetic members do not become source-callable. Android release shrinking
+   is a separate linkage authority: the main AAR publishes only the private
+   `JvmNative` keep boundary, and the external release consumer proves R8
+   preserves its binary class name and all 13 native method names without
+   relying on AGP's broad default JNI rule; an otherwise identical variant
+   with no library use proves the bridge remains shrinkable.
 3. I72 is resolved by an ABI-preserving design decision: the inherited GNU symbol
    version stays frozen until the next C ABI break.
 4. Every recorded finding is therefore fixed or resolved by an explicit
@@ -361,7 +400,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Finding: Document.parse eagerly materializes the entire scope table (`document.resolver.materialize()`): every one-shot parse pays an extra full native-tree walk plus an n-entry [UInt64: Entry] Dictionary even when the consumer never asks for a scope. The tradeoff is documented in-code (the session dies with the call, so the snapshot must be self-contained), but it inflates the native_parse_and_value_copy benchmark boundary for scope-free consumers, and an alternative exists: let the resolver own the native session pointer and free it on deinit, materializing lazily.
 - Evidence: Document.swift:113-122 confirmed: parse runs a single-commit session then document.resolver.materialize() eagerly, with the tradeoff documented in-code. ScopeResolver.materialize (ScopeResolver.swift:93-108) walks every native node calling markdown_core_node_scope — O(depth) per node. Measured (release, two consistent runs, median of 9): flat 152KB doc: parse 6.64/7.32 ms vs identical commit without materialization 4.91/4.98 ms — materialization is ~15% of the session+materialize path; blockquote depth 512: 57% share (~130 us); depth 2048: 93% share (materialize ~6.0 ms of 6.4 ms) — 4x depth costs ~46x, the same super-linear pathology the ES sibling finding (I02) measured, because the per-node native scope query recomputes the ancestor chain.
 - Fix plan: Do not switch to lazy materialization (the lifetime-extension alternative adds resident-memory and deinit-ordering complexity for at best the 15% flat-doc delta). Instead make materialization O(n): export a native accumulator-based subtree walk emitting (id, revision, scope) per node — the same facade fix ES finding I02's long-term plan needs — and have ScopeResolver.materialize consume it. This collapses both the Swift and ES super-linear paths with one native change. Verify with Benchmarks (large_document, deep_nesting) before/after.
-- Tests: MaterializationSuite, DepthSuite, and byte-exact conformance dumps pin scope correctness; MarkdownCoreBenchmarks deep_nesting quantifies. Add a deeper-nesting benchmark case (current depth 128 barely shows the quadratic term).
+- Tests: MaterializationSuite, DepthSuite, and byte-exact conformance dumps pin scope correctness. Keep the existing depth-128 `deep_nesting` workload comparable with historical PR metrics, and add a separately named depth-4,096 `deep_scope_materialization` workload that prepares a live session snapshot outside the clock and measures only its first scope request. PR metrics persist and compare the boundary, input shape, sampling parameters, and an explicit workload version, so a same-name workload change cannot become a false base/head regression.
 
 ### I22 [FIXED `380cf0e`] [P2-hygiene] packages/swift-markdown-core/Benchmarks/MarkdownCoreBenchmarks/main.swift:19
 
@@ -387,7 +426,20 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Finding: The `internal object JvmNative` (13 external fun declarations, lines 108-148) and the `actual class CSession` wrapper (lines 11-50) are byte-identical to jvmMain/CBridge.jvm.kt (verified with diff; only the loader object and its ensureLoaded() call differ). Additionally AndroidNativeLoader's host-JVM fallback (lines 66-105) re-implements DesktopNativeLoader's os/arch table and temp-dir extraction (~35 lines). Both targets compile to JVM bytecode, so JvmNative + CSession + the shared extraction helper belong in one intermediate source set (e.g. jvmSharedMain with dependsOn from jvmMain/androidMain), leaving only an expect/actual loader per target.
 - Evidence: diff of packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt vs androidMain/.../CBridge.android.kt shows the only differences are two import lines, the loader object called from ensureLoaded(), and the loader implementations themselves; CSession (both lines 11-50) and internal object JvmNative (13 external funs) are byte-identical. AndroidNativeLoader lines 66-105 repeat DesktopNativeLoader's os/arch table (macos-arm64/macos-x64/linux-x64/windows-x64) and temp-dir extraction. JNI constraint verified: 13 Java_com_nouprax_markdown_core_JvmNative_* symbols in each of markdown_core_kotlin.map/.exports/.def and 15 JvmNative references in jvm-abi.txt, so the class/package name must not move.
 - Fix plan: In packages/kotlin-markdown-core/build.gradle.kts create an intermediate source set (e.g. jvmSharedMain) with dependsOn from jvmMain and androidMain; move CSession, JvmNative, and a shared extract-library-from-classpath helper there keeping package com.nouprax.markdown.core and the exact class names; leave per-target loader objects (DesktopNativeLoader / AndroidNativeLoader) as the only target-specific code, with AndroidNativeLoader's host-JVM fallback delegating to the shared helper. Regenerate nothing: jvm-abi.txt and JNI symbol names are unchanged if names are preserved.
-- Tests: jvmTest, testAndroidHostTest, both Android managed-device suites, conformance runs, verifyJvmAbi and verifyKotlinNativePackaging all gate the refactor; no new test needed.
+- Resolution follow-up: The shared source set now reapplies Kotlin's default
+  hierarchy before adding its reviewed JVM/Android edges, preserving the
+  standard Native hierarchy without configuration warnings. Because JNI lookup
+  also happens after application shrinking, the main Android AAR publishes one
+  exact consumer rule for `JvmNative`; it does not expose the class and does not
+  keep any unrelated implementation code.
+- Tests: jvmTest, testAndroidHostTest, both Android managed-device suites,
+  conformance runs, verifyJvmAbi, and verifyKotlinNativePackaging gate the
+  refactor. The publication consumer additionally builds a minified release
+  application with no default JNI rule, byte-compares the AAR's packaged
+  consumer rule with its reviewed source, and inspects R8 mapping plus final DEX
+  class data for the exact bridge name and all 13 `native` methods. Its unused
+  variant proves the conditional name rule does not retain the bridge when the
+  library is unreachable.
 
 ### I06 [FIXED `e2bf558`] [P0-bug] packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt:7
 
@@ -433,9 +485,9 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 
 - Verdict: PARTIAL
 - Finding: verifyJvmAbi hand-rolls a ~120-line JVM classfile/constant-pool parser inside the build script to snapshot the Java-visible surface into jvm-abi.txt. This duplicates kotlinx binary-compatibility-validator / Kotlin's built-in abiValidation (available on the Kotlin 2.4 toolchain this repo already uses), which also covers klib ABI for the native targets — something the current gate misses entirely (macosArm64/linuxX64 ABI is unguarded).
-- Correction: The bespoke ~130-line classfile/constant-pool parser (build.gradle.kts:668-800) and the unguarded klib ABI for macosArm64/linuxX64 (targets at lines 465-469) are real, but the proposed straight swap is wrong: binary-compatibility-validator and kotlin.abiValidation filter internal declarations via Kotlin metadata, so their dumps would omit JvmNative and other internal-but-public bytecode that the current gate deliberately freezes (the comment at line 664-667 states Java-visible internal surface is the point, and jvm-abi.txt has 15 JvmNative entries). The standard tool can only complement, not replace, the JVM snapshot unless its non-public-markers filtering is configured and verified to keep those classes.
-- Evidence: Read verifyJvmAbi: hand-rolled DataInputStream constant-pool walk. Kotlin 2.4.0 in libs.versions.toml provides the built-in abiValidation DSL and KLIB support. The generated api/kotlin-markdown-core.klib.api header names `Targets: [linuxX64, macosArm64]`; api/jvm/kotlin-markdown-core.api omits JvmNative, while jvm-abi.txt retains its 15 Java-visible entries.
-- Resolution: Enabled Kotlin 2.4's metadata-aware ABI validation with locally unsupported targets preserved and checked in its JVM and combined KLIB reference dumps. `checkKotlinAbi` now runs from `kotlinTest` and, together with `verifyJvmAbi`, from every Maven publication-staging mode used by Linux and macOS CI/release jobs. The existing bytecode parser remains intentionally narrow and complementary: it protects Java/JNI-visible Kotlin-internal classes that the official public-Kotlin ABI dump omits.
+- Correction: The bespoke classfile/constant-pool parser and the unguarded klib ABI for macosArm64/linuxX64 were real, but a straight replacement with metadata-aware ABI validation would still miss the Java-source ABI. The final design therefore keeps one shared, narrow classfile reader for Java visibility while Kotlin's built-in validator owns the Kotlin/JVM and KLIB declarations. Unlike the earlier snapshot, the Java gate now rejects Kotlin-internal implementation classes instead of treating their accidental bytecode visibility as supported ABI.
+- Evidence: Kotlin 2.4.0 in libs.versions.toml provides the built-in abiValidation DSL and KLIB support. The generated api/kotlin-markdown-core.klib.api header names `Targets: [linuxX64, macosArm64]`; api/jvm/kotlin-markdown-core.api defines the documented JVM class inventory. The regenerated jvm-abi.txt has exactly that inventory and no `JvmNative`, wire-decoder, scope-resolver, or raw-session implementation types.
+- Resolution: Enabled Kotlin 2.4's metadata-aware ABI validation with locally unsupported targets preserved and checked in its JVM and combined KLIB reference dumps. `checkKotlinAbi` now runs from `kotlinTest` and, together with `verifyJvmAbi`, from every Maven publication-staging mode used by Linux and macOS CI/release jobs. The complementary bytecode gate exact-compares every non-synthetic JVM/Android class callable from ordinary Java source with the documented API, freezes the Java-callable descriptors, and compiles positive/negative Java probes so the documented `FootnoteQueriesKt` facade remains callable while implementation types and synthetic members cannot re-enter the supported surface. Android R8 linkage is pinned independently at the publication boundary: a precise consumer rule is packaged in the AAR, then a release consumer without AGP's generic JNI keep asserts the unchanged private bridge name and all 13 native entry names in the final DEX.
 - Cross-host policy: `keepLocallyUnsupportedTargets` prevents one host from erasing the other target's reference data; running both ABI checks in Linux and macOS publication staging makes each CI host validate its own Native target rather than trusting unsupported-target inference.
 - Tests: updateKotlinAbi produced deterministic JVM and dual-target KLIB baselines; checkKotlinAbi, verifyJvmAbi, kotlinTest, format:kotlin:check, CI-policy/public-surface audits, and the complete core verification gate pass.
 
@@ -473,6 +525,7 @@ conformance suites replay the shared manifest, so re-run them after WP1 lands).
 - Finding: docs/specs/sessions-and-deltas.md (Scope section) requires: 'Structural traversal never depends on materialization: the scope-free visitor overload of MarkupWalker walks any retained snapshot regardless of resolver state.' The ES MarkupWalker has no such overload — both walk() overloads unconditionally resolve `document.scope(frame.node)` for every node, so structurally walking a retained snapshot that was superseded before it materialized throws 'scope requested from a superseded snapshot...'. Kotlin implements the required overload (MarkupWalker.kt walk(document, visitor: MarkupVisitor<Unit>), covered by WalkerTraversalTest.scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot); ES (and, noted in passing, Swift) do not, breaking the 'identical API across platforms' need. The exported one-node visit() is not a substitute — it dispatches a single node, not a traversal.
 - Evidence: Spec quote verified verbatim at docs/specs/sessions-and-deltas.md:118-120 ('Structural traversal never depends on materialization: the scope-free visitor overload of MarkupWalker walks any retained snapshot regardless of resolver state'). ES packages/es-markdown-core/src/markup-walker.ts has only two walk() overloads, both calling document.scope(frame.node) at line 33. Kotlin MarkupWalker.kt:16-30 has the scope-free walk(document, MarkupVisitor<Unit>) overload, covered by WalkerTraversalTest.scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot (line 10). Runtime repro against dist/: retained an unmaterialized snapshot, committed a superseding edit, then walker.walk(snap1, cb) threw 'scope requested from a superseded snapshot that never resolved scopes while it was current' (thrown from src/session/scope-resolver.ts:71). Also verified the aside: Swift MarkupWalker.swift's public walks (lines 16, 24) all take (WalkEvent, Markup, Scope) closures — no scope-free visitor overload there either.
 - Fix plan: In packages/es-markdown-core/src/markup-walker.ts add a scope-free overload walk(document: Document, visitor: MarkupVisitor<void>): traverse with the existing children() helper and dispatch each node through visit() from src/markup-visitor.ts, never calling document.scope. Extend the runtime discrimination in the implementation signature (visitor is an object, existing params are function/Markup, so typeof-based dispatch extends cleanly). Port Kotlin's WalkerTraversalTest superseded-snapshot traversal test into tests/session.test.mjs (or a new walker test): retain an unmaterialized snapshot, supersede it with a commit, assert the visitor overload traverses while the scopeful overload still throws. Swift's identical gap should be tracked as its own follow-up (Sources/MarkdownCore/Walker/MarkupWalker.swift).
+- Final #68 integration: The same scope-free typed-visitor overload and superseded-snapshot regression now exist in Swift, closing the follow-up instead of leaving the cross-platform contract asymmetric.
 - Tests: Existing: tests/node.test.mjs walker api test, conformance.test.mjs flatten(). New: ES twin of Kotlin WalkerTraversalTest.scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot.
 
 ### I01 [FIXED `030d5f6`] [P2-hygiene] packages/es-markdown-core/src/bridge.c:306

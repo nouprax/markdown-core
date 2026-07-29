@@ -9,13 +9,14 @@ export interface Document extends MarkupBase<"document"> {
      * the snapshot's one-time materialization.
      *
      * A one-shot `Document.parse` result always answers. A session snapshot
-     * materializes its scopes on first use (of `scope`, a `MarkupWalker` walk, or
-     * `dump`) while it is the session's current snapshot and is
-     * self-contained afterwards — including after the session advances or is
-     * closed. Requesting a scope from a snapshot that was superseded before
-     * any of those ran is a programmer error, as is passing a node that does
-     * not belong to this snapshot: one whose id this snapshot does not
-     * contain, or a stale value whose revision this snapshot has superseded.
+     * materializes its scopes on first use (of `scope`, a scopeful
+     * `MarkupWalker` event walk, or `dump`) while it is the session's current
+     * snapshot and is self-contained afterwards — including after the
+     * session advances or is closed. Requesting a scope from a snapshot that
+     * was superseded before any of those ran is a programmer error, as is
+     * passing a node that does not belong to this snapshot: one whose id this
+     * snapshot does not contain, or a stale value whose revision this
+     * snapshot has superseded.
      * (An unchanged value shared across snapshots resolves against any of
      * them — equal nodes may sit at different absolute positions in
      * different snapshots.)
@@ -25,10 +26,10 @@ export interface Document extends MarkupBase<"document"> {
      * Resolves and caches every scope of this snapshot now, making the
      * retained value self-contained regardless of later commits or session
      * close — the explicit form of the materialization that `scope`, a
-     * walk, or `dump` would perform implicitly on first use. Call while the
-     * snapshot is current (before the owning session's next successful
-     * commit). Idempotent; a one-shot `Document.parse` result is always
-     * materialized.
+     * scopeful event walk, or `dump` would perform implicitly on first use.
+     * Call while the snapshot is current (before the owning session's next
+     * successful commit). Idempotent; a one-shot `Document.parse` result is
+     * always materialized.
      */
     readonly materialize: () => void;
     /** Returns the canonical diagnostic dump for this document. */

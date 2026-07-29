@@ -107,6 +107,27 @@ import Testing
         #expect(after.document.dump() == (try Document.parse("Alpha\n\nOmega\n").dump()))
     }
 
+    @Test("deep incremental rebuild consumes children before parents in one pass")
+    func deepIncrementalRebuildOrder() throws {
+        let depth = 512
+        let stableSource = "Stable\n\n"
+        let prefix = String(repeating: "> ", count: depth)
+        let beforeSource = stableSource + prefix + "alpha\n"
+        let afterSource = stableSource + prefix + "bravo\n"
+        let session = try MarkupSession()
+        try session.append(beforeSource)
+        let before = try session.commit()
+        let stable = try #require(before.document.content.first as? Paragraph)
+
+        let leafStart = stableSource.utf8.count + prefix.utf8.count
+        try session.replace(leafStart..<(leafStart + 5), with: "bravo")
+        let after = try session.commit()
+
+        #expect(after.delta.bubbled.count >= depth)
+        #expect(after.document.content.first?.id == stable.id)
+        #expect(after.document.dump() == (try Document.parse(afterSource).dump()))
+    }
+
     @Test("materialized scopes survive the session and later commits")
     func scopeMaterializationOutlivesCurrency() throws {
         var session: MarkupSession? = try MarkupSession()
@@ -123,6 +144,20 @@ import Testing
 
         session = nil
         #expect(first.document.scope(of: two).start.line == 3)
+    }
+
+    @Test("scope-free visitor traverses an unmaterialized superseded snapshot")
+    func scopeFreeVisitorOutlivesCurrency() throws {
+        let session = try MarkupSession()
+        try session.append("- one\n- two\n")
+        let retained = try session.commit().document
+
+        try session.append("\nTail\n")
+        _ = try session.commit()
+
+        var visitor = CountingVisitor()
+        MarkupWalker().walk(retained, visitor: &visitor)
+        #expect(visitor.count == 8)
     }
 
     @Test("footnote queries answer numbering, resolution, and back-references")
@@ -191,6 +226,41 @@ import Testing
         #expect(session.node(for: paragraph.id)?.id == paragraph.id)
         #expect(byID[paragraph.id] == "paragraph")
     }
+}
+
+private struct CountingVisitor: MarkupVisitor {
+    var count = 0
+
+    private mutating func record(_: some Markup) { count += 1 }
+
+    mutating func visit(_ node: Document) { record(node) }
+    mutating func visit(_ node: BlockQuote) { record(node) }
+    mutating func visit(_ node: Paragraph) { record(node) }
+    mutating func visit(_ node: Heading) { record(node) }
+    mutating func visit(_ node: ThematicBreak) { record(node) }
+    mutating func visit(_ node: MarkdownCore.List) { record(node) }
+    mutating func visit(_ node: ListItem) { record(node) }
+    mutating func visit(_ node: CodeBlock) { record(node) }
+    mutating func visit(_ node: HTMLBlock) { record(node) }
+    mutating func visit(_ node: FormulaBlock) { record(node) }
+    mutating func visit(_ node: Table) { record(node) }
+    mutating func visit(_ node: DirectiveBlock) { record(node) }
+    mutating func visit(_ node: FootnoteDefinition) { record(node) }
+    mutating func visit(_ node: Text) { record(node) }
+    mutating func visit(_ node: SoftBreak) { record(node) }
+    mutating func visit(_ node: LineBreak) { record(node) }
+    mutating func visit(_ node: Code) { record(node) }
+    mutating func visit(_ node: HTML) { record(node) }
+    mutating func visit(_ node: Formula) { record(node) }
+    mutating func visit(_ node: Emphasis) { record(node) }
+    mutating func visit(_ node: Strong) { record(node) }
+    mutating func visit(_ node: Strikethrough) { record(node) }
+    mutating func visit(_ node: Link) { record(node) }
+    mutating func visit(_ node: Image) { record(node) }
+    mutating func visit(_ node: Directive) { record(node) }
+    mutating func visit(_ node: FootnoteReference) { record(node) }
+    mutating func visit(_ node: TableRow) { record(node) }
+    mutating func visit(_ node: TableCell) { record(node) }
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

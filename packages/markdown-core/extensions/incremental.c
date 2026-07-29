@@ -71,10 +71,6 @@
 #define MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR 100000
 #endif
 
-// Shared with session.c; sessions and documents share the error type but not
-// a translation unit private to either.
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
-
 // --- line geometry -----------------------------------------------------------
 
 /* Returns the offset one past the line's terminator (\n, \r, or \r\n), or

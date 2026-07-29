@@ -1,10 +1,14 @@
 import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Classpath
 import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -17,8 +21,11 @@ import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
+import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
+import java.io.File
 import java.util.zip.ZipFile
+import javax.tools.ToolProvider
 
 @CacheableTask
 abstract class GenerateCanonicalAstFixtures : DefaultTask() {
@@ -175,6 +182,355 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             }
             append('"')
         }
+}
+
+private object JavaAbi {
+    fun surface(roots: Set<File>): kotlin.collections.List<String> {
+        val lines = mutableListOf<String>()
+        for (root in roots.sortedBy(File::getAbsolutePath)) {
+            if (root.isDirectory) {
+                for (classFile in root.walkTopDown().filter { it.isFile && it.extension == "class" }) {
+                    lines += classSurface(classFile.readBytes())
+                }
+            } else {
+                ZipFile(root).use { archive ->
+                    for (entry in archive.entries()) {
+                        if (entry.name.endsWith(".class") && entry.name.startsWith("com/nouprax/")) {
+                            lines += classSurface(archive.getInputStream(entry).use { it.readBytes() })
+                        }
+                    }
+                }
+            }
+        }
+        return lines
+            .filter {
+                it.startsWith("class com/nouprax/") ||
+                    it.startsWith("  field com/nouprax/") ||
+                    it.startsWith("  method com/nouprax/")
+            }.sorted()
+    }
+
+    fun classes(surface: kotlin.collections.List<String>): Set<String> =
+        surface
+            .asSequence()
+            .filter { it.startsWith("class ") }
+            .map { it.substringAfter("class ").substringBefore(' ') }
+            .toSortedSet()
+
+    fun officialClasses(apiFile: File): Set<String> =
+        apiFile
+            .readLines()
+            .asSequence()
+            .filter { it.startsWith("public ") && " class " in it }
+            .map { it.substringAfter(" class ").substringBefore(' ') }
+            .toSortedSet()
+
+    private fun classSurface(bytes: ByteArray): kotlin.collections.List<String> {
+        val input = DataInputStream(bytes.inputStream())
+        require(input.readInt() == -0x35014542) { "not a class file" }
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        val poolCount = input.readUnsignedShort()
+        val pool = arrayOfNulls<Any?>(poolCount)
+        val classRefs = IntArray(poolCount)
+        var slot = 1
+        while (slot < poolCount) {
+            when (val tag = input.readUnsignedByte()) {
+                1 -> {
+                    pool[slot] = input.readUTF()
+                }
+
+                7 -> {
+                    classRefs[slot] = input.readUnsignedShort()
+                }
+
+                8, 16, 19, 20 -> {
+                    input.skipBytes(2)
+                }
+
+                15 -> {
+                    input.skipBytes(3)
+                }
+
+                3, 4, 9, 10, 11, 12, 17, 18 -> {
+                    input.skipBytes(4)
+                }
+
+                5, 6 -> {
+                    input.skipBytes(8)
+                    slot += 1
+                }
+
+                else -> {
+                    error("unsupported constant pool tag $tag")
+                }
+            }
+            slot += 1
+        }
+
+        fun utf8At(index: Int): String = pool[index] as? String ?: error("constant pool index $index is not utf8")
+
+        val access = input.readUnsignedShort()
+        val thisClass = input.readUnsignedShort()
+        val className = utf8At(classRefs[thisClass])
+        val public = (access and 0x0001) != 0
+        val synthetic = (access and 0x1000) != 0
+        if (!public || synthetic) {
+            return emptyList()
+        }
+        val superName =
+            input.readUnsignedShort().let { index ->
+                if (index == 0) "-" else utf8At(classRefs[index])
+            }
+        val interfaces =
+            (0 until input.readUnsignedShort())
+                .map { utf8At(classRefs[input.readUnsignedShort()]) }
+                .sorted()
+        val members = mutableListOf<String>()
+        for (section in listOf("field", "method")) {
+            repeat(input.readUnsignedShort()) {
+                val memberAccess = input.readUnsignedShort()
+                val name = utf8At(input.readUnsignedShort())
+                val descriptor = utf8At(input.readUnsignedShort())
+                repeat(input.readUnsignedShort()) {
+                    input.skipBytes(2)
+                    input.skipBytes(input.readInt())
+                }
+                val visible = (memberAccess and 0x0005) != 0
+                val synthetic = (memberAccess and 0x1000) != 0
+                if (visible && !synthetic) {
+                    members += "  $section $className.$name $descriptor"
+                }
+            }
+        }
+        return listOf(
+            "class $className extends $superName implements ${interfaces.joinToString(",")}",
+        ) + members
+    }
+}
+
+@CacheableTask
+abstract class VerifyJavaImplementationHidden : DefaultTask() {
+    @get:Classpath
+    abstract val libraryClasses: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val officialApiFile: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val abiSnapshotFile: RegularFileProperty
+
+    @get:Classpath
+    abstract val runtimeClasspath: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun verify() {
+        val compiler =
+            requireNotNull(ToolProvider.getSystemJavaCompiler()) {
+                "$path requires a JDK, not a JRE"
+            }
+        val outputRoot = outputDirectory.get().asFile
+        check(!outputRoot.exists() || outputRoot.deleteRecursively()) {
+            "could not clear ${outputRoot.absolutePath}"
+        }
+        val sourceDirectory = outputRoot.resolve("source").apply { mkdirs() }
+        val classesDirectory = outputRoot.resolve("classes").apply { mkdirs() }
+        val classpath =
+            (
+                libraryClasses.files +
+                    runtimeClasspath.files
+                        .filter(File::exists)
+            ).distinct().sortedBy(File::getAbsolutePath).joinToString(File.pathSeparator)
+
+        val actualSurface = JavaAbi.surface(libraryClasses.files)
+        val expectedSurface =
+            abiSnapshotFile
+                .get()
+                .asFile
+                .readLines()
+                .sorted()
+        check(actualSurface == expectedSurface) {
+            val actualLines = actualSurface.toSet()
+            val expectedLines = expectedSurface.toSet()
+            val added = (actualLines - expectedLines).sorted().joinToString("\n")
+            val removed = (expectedLines - actualLines).sorted().joinToString("\n")
+            "$path Java ABI differs from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed"
+        }
+        val actualClasses = JavaAbi.classes(actualSurface)
+        val officialClasses = JavaAbi.officialClasses(officialApiFile.get().asFile)
+        check(actualClasses == officialClasses) {
+            val undocumented = (actualClasses - officialClasses).joinToString("\n")
+            val missing = (officialClasses - actualClasses).joinToString("\n")
+            "$path Java classes differ from the official API dump.\n" +
+                "Undocumented:\n$undocumented\nMissing:\n$missing"
+        }
+
+        fun compile(
+            name: String,
+            source: String,
+        ): Pair<Int, String> {
+            val sourceFile = sourceDirectory.resolve("$name.java")
+            sourceFile.writeText(source)
+            val output = ByteArrayOutputStream()
+            val result =
+                compiler.run(
+                    null,
+                    output,
+                    output,
+                    "--release",
+                    "17",
+                    "-proc:none",
+                    "-classpath",
+                    classpath,
+                    "-d",
+                    classesDirectory.absolutePath,
+                    sourceFile.absolutePath,
+                )
+            return result to output.toString(Charsets.UTF_8)
+        }
+
+        val (positiveResult, positiveOutput) =
+            compile(
+                "PublicApiProbe",
+                """
+                import com.nouprax.markdown.core.Document;
+                import com.nouprax.markdown.core.FootnoteQueriesKt;
+                import com.nouprax.markdown.core.MarkupSession;
+                import java.util.List;
+
+                final class PublicApiProbe {
+                    Document parse() {
+                        return Document.parse("visible");
+                    }
+
+                    List<?> footnotes(MarkupSession session) {
+                        return FootnoteQueriesKt.footnotes(session);
+                    }
+                }
+                """.trimIndent(),
+            )
+        check(positiveResult == 0) {
+            "Java public-API control failed to compile:\n$positiveOutput"
+        }
+
+        val hiddenTypes =
+            listOf(
+                "CBridgeKt",
+                "CBridge_androidKt",
+                "CBridge_jvmKt",
+                "CBridge_jvmSharedKt",
+                "CSession",
+                "DesktopNativeLoader",
+                "DocumentKt",
+                "FootnoteQueriesKt__CBridgeKt",
+                "FootnoteQueriesKt__CBridge_androidKt",
+                "FootnoteQueriesKt__CBridge_jvmKt",
+                "FootnoteQueriesKt__CBridge_jvmSharedKt",
+                "FootnoteQueriesKt__DocumentKt",
+                "FootnoteQueriesKt__FootnoteQueriesKt",
+                "FootnoteQueriesKt__ImmutableListKt",
+                "FootnoteQueriesKt__MarkupDumperKt",
+                "FootnoteQueriesKt__MarkupKt",
+                "FootnoteQueriesKt__ParseOptionsKt",
+                "FootnoteQueriesKt__Spin_androidKt",
+                "FootnoteQueriesKt__Spin_jvmKt",
+                "FootnoteQueriesKt__WireDecoderKt",
+                "HostNativeLibrary",
+                "ImmutableListKt",
+                "JvmNative",
+                "JvmSession",
+                "MarkupDumper${'$'}WhenMappings",
+                "MarkupDumperKt",
+                "MarkupKt",
+                "ParseOptionsKt",
+                "ScopeEntry",
+                "ScopeResolver",
+                "Spin_androidKt",
+                "Spin_jvmKt",
+                "WireDecoder",
+                "WireDecoderKt",
+                "WireDecoderKt${'$'}WhenMappings",
+                "WireKind",
+                "WireReader",
+            )
+        for (type in hiddenTypes) {
+            val (result, output) =
+                compile(
+                    "Hidden${type}Probe",
+                    """
+                    import com.nouprax.markdown.core.$type;
+
+                    final class Hidden${type}Probe {
+                        $type value;
+                    }
+                    """.trimIndent(),
+                )
+            check(result != 0) {
+                "Java source unexpectedly imported implementation type $type"
+            }
+            check(output.contains(type)) {
+                "Java rejected $type for an unrelated reason:\n$output"
+            }
+        }
+
+        val hiddenMembers =
+            listOf(
+                Triple(
+                    "DocumentResolverProbe",
+                    "getResolver",
+                    """
+                    import com.nouprax.markdown.core.Document;
+
+                    final class DocumentResolverProbe {
+                        Object resolver(Document document) {
+                            return document.getResolver${'$'}com_nouprax_kotlin_markdown_core();
+                        }
+                    }
+                    """.trimIndent(),
+                ),
+                Triple(
+                    "SessionNativeProbe",
+                    "getNative",
+                    """
+                    import com.nouprax.markdown.core.MarkupSession;
+
+                    final class SessionNativeProbe {
+                        Object nativeSession(MarkupSession session) {
+                            return session.getNative${'$'}com_nouprax_kotlin_markdown_core();
+                        }
+                    }
+                    """.trimIndent(),
+                ),
+                Triple(
+                    "BridgeFunctionProbe",
+                    "openCSession",
+                    """
+                    import com.nouprax.markdown.core.FootnoteQueriesKt;
+                    import com.nouprax.markdown.core.ParseOptions;
+
+                    final class BridgeFunctionProbe {
+                        Object open() {
+                            return FootnoteQueriesKt.openCSession(new ParseOptions());
+                        }
+                    }
+                    """.trimIndent(),
+                ),
+            )
+        for ((name, expectedSymbol, source) in hiddenMembers) {
+            val (result, output) = compile(name, source)
+            check(result != 0) {
+                "Java source unexpectedly called synthetic implementation member from $name"
+            }
+            check(output.contains(expectedSymbol)) {
+                "Java rejected $name for an unrelated reason:\n$output"
+            }
+        }
+    }
 }
 
 plugins {
@@ -406,9 +762,6 @@ kotlin {
     compilerOptions {
         languageVersion.set(KotlinVersion.KOTLIN_2_2)
         apiVersion.set(KotlinVersion.KOTLIN_2_2)
-        // CSession is an expect class (one native handle type per
-        // platform); the flag silences the expect/actual-classes Beta notice.
-        freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
     jvm {
@@ -477,6 +830,12 @@ kotlin {
             }
         }
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-rules.pro")
+            }
+        }
     }
 
     macosArm64 {
@@ -488,14 +847,20 @@ kotlin {
         testRuns.create("conformance")
     }
 
+    // A custom JVM/Android source set disables automatic application of the
+    // default Native hierarchy unless the template is reapplied explicitly.
+    // Keep the standard nativeMain/nativeTest graph, then add only the one
+    // reviewed JVM-bytecode edge below.
+    applyDefaultHierarchyTemplate()
+
     sourceSets {
         commonMain.dependencies {
             api(libs.kotlin.stdlib)
         }
         // Both the desktop JVM and Android targets compile to JVM bytecode
-        // against the same JNI bridge; the shared JNI declarations, the
-        // CSession wrapper, and the host-library extraction helper live once
-        // here, leaving only an expect/actual loader per target.
+        // against the same JNI bridge; raw-handle operations and the
+        // host-library extraction helper live once here, leaving only an
+        // expect/actual loader per target.
         val jvmSharedMain =
             create("jvmSharedMain") {
                 dependsOn(commonMain.get())
@@ -661,10 +1026,13 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
     testedAbi.set(androidManagedDeviceTestAbi)
 }
 
-// Complements Kotlin's metadata-aware ABI dumps by freezing the JVM artifact's
-// actual Java-visible surface. Kotlin compiles internal declarations to public
-// bytecode, so every public class and its public or protected non-synthetic
-// members must also match jvm-abi.txt. Regenerate deliberately with -PwriteJvmAbi.
+// Complements Kotlin's metadata-aware ABI dumps by freezing every ordinary
+// Java-source-visible class and each public/protected non-synthetic member in
+// the JVM artifact. javac deliberately hides ACC_SYNTHETIC classes/members;
+// explicit negative compile probes below pin that boundary as well.
+// Module-internal top-level declarations live in package-private multifile
+// parts, while their synthetic forwarders share the documented
+// FootnoteQueriesKt owner. Regenerate deliberately with -PwriteJvmAbi.
 val verifyJvmAbi =
     tasks.register("verifyJvmAbi") {
         group = "verification"
@@ -674,107 +1042,22 @@ val verifyJvmAbi =
             layout.buildDirectory
                 .file("libs/kotlin-markdown-core-jvm-$version.jar")
         val snapshotFile = layout.projectDirectory.file("jvm-abi.txt").asFile
+        val officialApiFile = layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api").asFile
         val write = providers.gradleProperty("writeJvmAbi").isPresent
         inputs.file(jarFile)
+        inputs.file(officialApiFile)
 
         doLast {
-            fun utf8At(
-                pool: Array<Any?>,
-                index: Int,
-            ): String = pool[index] as? String ?: error("constant pool index $index is not utf8")
-
-            fun classSurface(bytes: ByteArray): kotlin.collections.List<String> {
-                val input = DataInputStream(bytes.inputStream())
-                require(input.readInt() == -0x35014542) { "not a class file" }
-                input.readUnsignedShort()
-                input.readUnsignedShort()
-                val poolCount = input.readUnsignedShort()
-                val pool = arrayOfNulls<Any?>(poolCount)
-                val classRefs = IntArray(poolCount)
-                var slot = 1
-                while (slot < poolCount) {
-                    when (val tag = input.readUnsignedByte()) {
-                        1 -> {
-                            pool[slot] = input.readUTF()
-                        }
-
-                        7 -> {
-                            classRefs[slot] = input.readUnsignedShort()
-                        }
-
-                        8, 16, 19, 20 -> {
-                            input.skipBytes(2)
-                        }
-
-                        15 -> {
-                            input.skipBytes(3)
-                        }
-
-                        3, 4, 9, 10, 11, 12, 17, 18 -> {
-                            input.skipBytes(4)
-                        }
-
-                        5, 6 -> {
-                            input.skipBytes(8)
-                            slot += 1
-                        }
-
-                        else -> {
-                            error("unsupported constant pool tag $tag")
-                        }
-                    }
-                    slot += 1
-                }
-                val access = input.readUnsignedShort()
-                val thisClass = input.readUnsignedShort()
-                val className = utf8At(pool, classRefs[thisClass])
-                // Non-public and synthetic classes are invisible to Java.
-                if ((access and 0x0001) == 0 || (access and 0x1000) != 0) {
-                    return emptyList()
-                }
-                // The type hierarchy is ABI too: dropping an implemented
-                // interface breaks Java callers without touching members.
-                val superName =
-                    input.readUnsignedShort().let { index ->
-                        if (index == 0) "-" else utf8At(pool, classRefs[index])
-                    }
-                val interfaces =
-                    (0 until input.readUnsignedShort())
-                        .map { utf8At(pool, classRefs[input.readUnsignedShort()]) }
-                        .sorted()
-                val surface =
-                    mutableListOf(
-                        "class $className extends $superName implements ${interfaces.joinToString(",")}",
-                    )
-                for (section in listOf("field", "method")) {
-                    repeat(input.readUnsignedShort()) {
-                        val memberAccess = input.readUnsignedShort()
-                        val name = utf8At(pool, input.readUnsignedShort())
-                        val descriptor = utf8At(pool, input.readUnsignedShort())
-                        repeat(input.readUnsignedShort()) {
-                            input.skipBytes(2)
-                            input.skipBytes(input.readInt())
-                        }
-                        val visible = (memberAccess and 0x0005) != 0
-                        val synthetic = (memberAccess and 0x1000) != 0
-                        if (visible && !synthetic) {
-                            surface += "  $section $className.$name $descriptor"
-                        }
-                    }
-                }
-                return surface
+            val lines = JavaAbi.surface(setOf(jarFile.get().asFile))
+            val actualClasses = JavaAbi.classes(lines)
+            val officialClasses = JavaAbi.officialClasses(officialApiFile)
+            check(actualClasses == officialClasses) {
+                val undocumented = (actualClasses - officialClasses).joinToString("\n")
+                val missing = (officialClasses - actualClasses).joinToString("\n")
+                "JVM Java-callable classes differ from the official Kotlin API dump.\n" +
+                    "Undocumented:\n$undocumented\nMissing:\n$missing"
             }
-
-            val lines = mutableListOf<String>()
-            ZipFile(jarFile.get().asFile).use { archive ->
-                for (entry in archive.entries()) {
-                    if (!entry.name.endsWith(".class") || !entry.name.startsWith("com/nouprax/")) {
-                        continue
-                    }
-                    lines += classSurface(archive.getInputStream(entry).use { it.readBytes() })
-                }
-            }
-            val rendered = lines.sorted().joinToString("\n") + "\n"
+            val rendered = lines.joinToString("\n") + "\n"
             if (write) {
                 snapshotFile.writeText(rendered)
                 logger.lifecycle("Wrote JVM ABI snapshot: ${snapshotFile.absolutePath}")
@@ -795,6 +1078,33 @@ val verifyJvmAbi =
         }
     }
 
+val verifyJvmImplementationHidden =
+    tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
+        group = "verification"
+        description = "Proves ordinary Java source cannot use Kotlin/JVM implementation types or members."
+        dependsOn("jvmJar")
+        libraryClasses.from(
+            layout.buildDirectory
+                .file("libs/kotlin-markdown-core-jvm-$version.jar"),
+        )
+        officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
+        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
+        runtimeClasspath.from(jvmMainCompilation.runtimeDependencyFiles)
+        outputDirectory.set(layout.buildDirectory.dir("verification/jvm-implementation-hidden"))
+    }
+
+val verifyAndroidImplementationHidden =
+    tasks.register<VerifyJavaImplementationHidden>("verifyAndroidImplementationHidden") {
+        group = "verification"
+        description = "Proves ordinary Java source cannot use Kotlin/Android implementation types or members."
+        dependsOn("compileAndroidMain")
+        libraryClasses.from(layout.buildDirectory.dir("classes/kotlin/android/main"))
+        officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
+        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
+        runtimeClasspath.from(jvmMainCompilation.runtimeDependencyFiles)
+        outputDirectory.set(layout.buildDirectory.dir("verification/android-implementation-hidden"))
+    }
+
 tasks.register("kotlinTest") {
     group = "verification"
     description = "Runs JVM, Android host, Native correctness, packaging, and ABI checks."
@@ -805,6 +1115,8 @@ tasks.register("kotlinTest") {
             hostNativeTest,
             "verifyKotlinNativePackaging",
             "verifyJvmAbi",
+            verifyJvmImplementationHidden,
+            verifyAndroidImplementationHidden,
             "checkKotlinAbi",
         ),
     )

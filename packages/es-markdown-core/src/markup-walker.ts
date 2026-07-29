@@ -72,11 +72,17 @@ export class MarkupWalker {
     }
 }
 
-/** Every Markup value carries `kind`; a visitor never does, so the check
- * cleanly separates the visitor overload from a subtree walk missing its
- * callback. */
+/** `visitDocument` is required on every complete visitor and absent from
+ * every Markup value and plain callback. Visitors may carry arbitrary state
+ * and may themselves be callable objects, so visitor shape takes precedence
+ * whenever the overload domains overlap. */
 function isVisitor(value: Markup | WalkCallback | MarkupVisitor<void>): value is MarkupVisitor<void> {
-    return typeof value === "object" && value !== null && !("kind" in value);
+    return (
+        (typeof value === "object" || typeof value === "function") &&
+        value !== null &&
+        "visitDocument" in value &&
+        typeof value.visitDocument === "function"
+    );
 }
 
 function children(node: Markup): readonly Markup[] {

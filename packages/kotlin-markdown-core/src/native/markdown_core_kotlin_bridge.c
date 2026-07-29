@@ -332,67 +332,35 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     }
 }
 
-enum { VERDICT_ADDED = 0, VERDICT_CHANGED = 1, VERDICT_BUBBLED = 2 };
-
-typedef struct record_entry {
-    const markdown_core_node *node;
-    uint32_t depth;
-    uint8_t verdict;
-} record_entry;
-
-static uint32_t node_depth(const markdown_core_node *node) {
-    uint32_t depth = 0;
-    const markdown_core_node *parent = markdown_core_node_get_parent(node);
-    while (parent != NULL) {
-        ++depth;
-        parent = markdown_core_node_get_parent(parent);
+static bool wire_verdict(uint32_t change, uint8_t *verdict) {
+    switch (change) {
+    case MARKDOWN_CORE_DELTA_CHANGE_ADDED:
+        *verdict = 0;
+        return true;
+    case MARKDOWN_CORE_DELTA_CHANGE_CHANGED:
+        *verdict = 1;
+        return true;
+    case MARKDOWN_CORE_DELTA_CHANGE_BUBBLED:
+        *verdict = 2;
+        return true;
+    default:
+        return false;
     }
-    return depth;
 }
 
-/* Deeper entries first: a record's children are strictly deeper than the
- * record, so this order lets the decoder resolve child ids in one pass.
- * Equal-depth nodes are never ancestor-related; their order is free. */
-static int record_order(const void *left, const void *right) {
-    const record_entry *a = (const record_entry *)left;
-    const record_entry *b = (const record_entry *)right;
-    if (a->depth != b->depth) {
-        return a->depth > b->depth ? -1 : 1;
-    }
-    return 0;
-}
-
-static bool gather_records(record_entry *entries, size_t *cursor, const markdown_core_session *session,
-                           const markdown_core_delta *changes,
-                           size_t (*accessor)(const markdown_core_delta *, const markdown_core_node_id **),
-                           uint8_t verdict) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = accessor(changes, &ids);
-    size_t index;
-    for (index = 0; index < count; ++index) {
-        const markdown_core_node *node = markdown_core_session_node_by_id(session, ids[index]);
-        if (node == NULL) {
-            return false;
-        }
-        entries[*cursor].node = node;
-        entries[*cursor].depth = node_depth(node);
-        entries[*cursor].verdict = verdict;
-        ++*cursor;
-    }
-    return true;
-}
-
-static void encode_commit_body(bridge_buffer *buffer, const markdown_core_session *session,
-                               const markdown_core_delta *changes) {
+static void encode_commit_body(
+    bridge_buffer *buffer,
+    const markdown_core_session *session,
+    const markdown_core_delta *changes
+) {
     uint64_t before = 0;
     uint64_t after = 0;
     const markdown_core_node_id *removed = NULL;
     size_t removed_count;
-    const markdown_core_node_id *ids = NULL;
-    size_t total;
-    size_t cursor = 0;
+    markdown_core_delta_entry *entries = NULL;
+    size_t count = 0;
     size_t index;
-    record_entry *entries;
+    markdown_core_error *error = NULL;
 
     markdown_core_delta_revisions(changes, &before, &after);
     put_u64(buffer, before);
@@ -408,106 +376,55 @@ static void encode_commit_body(bridge_buffer *buffer, const markdown_core_sessio
         put_u64(buffer, removed[index]);
     }
 
-    total = markdown_core_delta_added(changes, &ids) + markdown_core_delta_changed(changes, &ids)
-            + markdown_core_delta_bubbled(changes, &ids);
-    if (total > INT32_MAX) {
+    if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, &error) || count > INT32_MAX) {
+        markdown_core_error_free(error);
+        markdown_core_delta_entries_free(entries);
         buffer->failed = true;
         return;
     }
-    put_i32(buffer, (int32_t)total);
-    if (total == 0) {
-        return;
-    }
-    entries = (record_entry *)malloc(total * sizeof(record_entry));
-    if (entries == NULL) {
-        buffer->failed = true;
-        return;
-    }
-    if (!gather_records(entries, &cursor, session, changes, markdown_core_delta_added, VERDICT_ADDED)
-        || !gather_records(entries, &cursor, session, changes, markdown_core_delta_changed, VERDICT_CHANGED)
-        || !gather_records(entries, &cursor, session, changes, markdown_core_delta_bubbled, VERDICT_BUBBLED)) {
-        free(entries);
-        buffer->failed = true;
-        return;
-    }
-    qsort(entries, total, sizeof(record_entry), record_order);
-    for (index = 0; index < total; ++index) {
-        put_u8(buffer, entries[index].verdict);
-        write_record(buffer, entries[index].node);
-    }
-    free(entries);
-}
-
-typedef struct node_stack {
-    const markdown_core_node **items;
-    size_t count;
-    size_t capacity;
-} node_stack;
-
-static bool stack_push(node_stack *stack, const markdown_core_node *node) {
-    if (stack->count == stack->capacity) {
-        size_t capacity = stack->capacity == 0 ? 64 : stack->capacity * 2;
-        const markdown_core_node **items =
-            (const markdown_core_node **)realloc((void *)stack->items, capacity * sizeof(*items));
-        if (items == NULL) {
-            return false;
+    put_i32(buffer, (int32_t)count);
+    for (index = 0; index < count && !buffer->failed; ++index) {
+        const markdown_core_node *node = markdown_core_session_node_by_id(session, entries[index].id);
+        uint8_t verdict;
+        if (!node || !wire_verdict(entries[index].change, &verdict)) {
+            buffer->failed = true;
+            break;
         }
-        stack->items = items;
-        stack->capacity = capacity;
+        put_u8(buffer, verdict);
+        write_record(buffer, node);
     }
-    stack->items[stack->count++] = node;
-    return true;
+    markdown_core_delta_entries_free(entries);
 }
 
 static void encode_scope_table(bridge_buffer *buffer, const markdown_core_session *session) {
     const markdown_core_document *view = markdown_core_session_document(session);
-    const markdown_core_node *root = view == NULL ? NULL : markdown_core_document_root(view);
-    node_stack stack = {0};
-    size_t count_offset;
-    uint64_t count = 0;
+    markdown_core_scope_entry *entries = NULL;
+    size_t count = 0;
+    size_t index;
 
-    if (root == NULL) {
+    if (!view || !markdown_core_document_scope_table(view, &entries, &count, NULL) || count > INT32_MAX) {
+        markdown_core_scope_table_free(entries);
         buffer->failed = true;
         return;
     }
-    count_offset = buffer->size;
-    put_i32(buffer, 0);
-    if (!stack_push(&stack, root)) {
+    put_i32(buffer, (int32_t)count);
+    if (count > (SIZE_MAX - buffer->size) / 32) {
+        markdown_core_scope_table_free(entries);
         buffer->failed = true;
         return;
     }
-    while (stack.count != 0 && !buffer->failed) {
-        const markdown_core_node *node = stack.items[--stack.count];
-        const markdown_core_node *child;
-        markdown_core_scope scope = markdown_core_node_scope(node);
-        uint8_t entry[32];
-        encode_u64(entry, markdown_core_node_get_id(node));
-        encode_u64(entry + 8, markdown_core_node_get_revision(node));
-        encode_u32(entry + 16, (uint32_t)scope.start.line);
-        encode_u32(entry + 20, (uint32_t)scope.start.column);
-        encode_u32(entry + 24, (uint32_t)scope.end.line);
-        encode_u32(entry + 28, (uint32_t)scope.end.column);
-        put_bytes(buffer, entry, sizeof(entry));
-        ++count;
-        for (child = markdown_core_node_get_first_child(node); child != NULL;
-             child = markdown_core_node_get_next_sibling(child)) {
-            if (!stack_push(&stack, child)) {
-                buffer->failed = true;
-                break;
-            }
-        }
+    reserve(buffer, count * 32);
+    for (index = 0; index < count && !buffer->failed; ++index) {
+        uint8_t *entry = buffer->data + buffer->size;
+        encode_u64(entry, entries[index].id);
+        encode_u64(entry + 8, entries[index].revision);
+        encode_u32(entry + 16, (uint32_t)entries[index].scope.start.line);
+        encode_u32(entry + 20, (uint32_t)entries[index].scope.start.column);
+        encode_u32(entry + 24, (uint32_t)entries[index].scope.end.line);
+        encode_u32(entry + 28, (uint32_t)entries[index].scope.end.column);
+        buffer->size += 32;
     }
-    free((void *)stack.items);
-    if (buffer->failed) {
-        return;
-    }
-    if (count > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    for (size_t index = 0; index < 4; ++index) {
-        buffer->data[count_offset + index] = (uint8_t)((uint32_t)count >> (index * 8));
-    }
+    markdown_core_scope_table_free(entries);
 }
 
 static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
@@ -542,8 +459,13 @@ static uint64_t session_root_id(const markdown_core_session *session) {
  * + free, encoded in one crossing. The commit's delta lists every node as
  * added, so the payload body is the same record stream a session commit
  * produces, followed by the eagerly materialized scope table. */
-bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t options_mask, uint8_t **output,
-                                size_t *output_length) {
+bool markdown_core_kotlin_parse(
+    const uint8_t *source,
+    size_t length,
+    uint32_t options_mask,
+    uint8_t **output,
+    size_t *output_length
+) {
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
     markdown_core_session *session;
@@ -564,8 +486,8 @@ bool markdown_core_kotlin_parse(const uint8_t *source, size_t length, uint32_t o
         put_error(&buffer, error);
         return finish(&buffer, output, output_length);
     }
-    if (!markdown_core_session_edit(session, 0, 0, source, length, &error)
-        || !markdown_core_session_commit(session, &changes, &error)) {
+    if (!markdown_core_session_edit(session, 0, 0, source, length, &error) ||
+        !markdown_core_session_commit(session, &changes, &error)) {
         put_error(&buffer, error);
         markdown_core_session_free(session);
         return finish(&buffer, output, output_length);
@@ -617,17 +539,24 @@ uint64_t markdown_core_kotlin_session_root(const markdown_core_kotlin_session *s
     return session_root_id(to_const_session(session));
 }
 
-bool markdown_core_kotlin_session_edit(markdown_core_kotlin_session *session, uint64_t byte_start,
-                                       uint64_t byte_end, const uint8_t *bytes, size_t length,
-                                       uint8_t **output, size_t *output_length) {
+bool markdown_core_kotlin_session_edit(
+    markdown_core_kotlin_session *session,
+    uint64_t byte_start,
+    uint64_t byte_end,
+    const uint8_t *bytes,
+    size_t length,
+    uint8_t **output,
+    size_t *output_length
+) {
     markdown_core_error *error = NULL;
     bridge_buffer buffer = {0};
 
     put_magic(&buffer);
     if (byte_start > SIZE_MAX || byte_end > SIZE_MAX) {
         put_argument_error(&buffer, "edit range exceeds the platform address space");
-    } else if (markdown_core_session_edit(to_session(session), (size_t)byte_start, (size_t)byte_end, bytes,
-                                          length, &error)) {
+    } else if (
+        markdown_core_session_edit(to_session(session), (size_t)byte_start, (size_t)byte_end, bytes, length, &error)
+    ) {
         put_u8(&buffer, 0);
     } else {
         put_error(&buffer, error);
@@ -635,8 +564,11 @@ bool markdown_core_kotlin_session_edit(markdown_core_kotlin_session *session, ui
     return finish(&buffer, output, output_length);
 }
 
-bool markdown_core_kotlin_session_commit(markdown_core_kotlin_session *session, uint8_t **output,
-                                         size_t *output_length) {
+bool markdown_core_kotlin_session_commit(
+    markdown_core_kotlin_session *session,
+    uint8_t **output,
+    size_t *output_length
+) {
     markdown_core_error *error = NULL;
     markdown_core_delta *changes = NULL;
     bridge_buffer buffer = {0};
@@ -652,8 +584,11 @@ bool markdown_core_kotlin_session_commit(markdown_core_kotlin_session *session, 
     return finish(&buffer, output, output_length);
 }
 
-bool markdown_core_kotlin_session_scopes(const markdown_core_kotlin_session *session, uint8_t **output,
-                                         size_t *output_length) {
+bool markdown_core_kotlin_session_scopes(
+    const markdown_core_kotlin_session *session,
+    uint8_t **output,
+    size_t *output_length
+) {
     bridge_buffer buffer = {0};
 
     put_magic(&buffer);
@@ -662,8 +597,12 @@ bool markdown_core_kotlin_session_scopes(const markdown_core_kotlin_session *ses
     return finish(&buffer, output, output_length);
 }
 
-bool markdown_core_kotlin_session_footnote_info(const markdown_core_kotlin_session *session, uint64_t id,
-                                                uint8_t **output, size_t *output_length) {
+bool markdown_core_kotlin_session_footnote_info(
+    const markdown_core_kotlin_session *session,
+    uint64_t id,
+    uint8_t **output,
+    size_t *output_length
+) {
     markdown_core_footnote_info info;
     bool found;
     bridge_buffer buffer = {0};
@@ -681,8 +620,7 @@ bool markdown_core_kotlin_session_footnote_info(const markdown_core_kotlin_sessi
     return finish(&buffer, output, output_length);
 }
 
-static bool encode_id_array(const markdown_core_node_id *ids, size_t count, uint8_t **output,
-                            size_t *output_length) {
+static bool encode_id_array(const markdown_core_node_id *ids, size_t count, uint8_t **output, size_t *output_length) {
     bridge_buffer buffer = {0};
     size_t index;
 
@@ -699,16 +637,22 @@ static bool encode_id_array(const markdown_core_node_id *ids, size_t count, uint
     return finish(&buffer, output, output_length);
 }
 
-bool markdown_core_kotlin_session_footnotes(const markdown_core_kotlin_session *session, uint8_t **output,
-                                            size_t *output_length) {
+bool markdown_core_kotlin_session_footnotes(
+    const markdown_core_kotlin_session *session,
+    uint8_t **output,
+    size_t *output_length
+) {
     const markdown_core_node_id *ids = NULL;
     size_t count = markdown_core_session_footnotes(to_const_session(session), &ids);
     return encode_id_array(ids, count, output, output_length);
 }
 
-bool markdown_core_kotlin_session_footnote_references(const markdown_core_kotlin_session *session,
-                                                      uint64_t definition, uint8_t **output,
-                                                      size_t *output_length) {
+bool markdown_core_kotlin_session_footnote_references(
+    const markdown_core_kotlin_session *session,
+    uint64_t definition,
+    uint8_t **output,
+    size_t *output_length
+) {
     const markdown_core_node_id *ids = NULL;
     size_t count = markdown_core_session_footnote_references(to_const_session(session), definition, &ids);
     return encode_id_array(ids, count, output, output_length);

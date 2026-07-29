@@ -22,12 +22,21 @@ export interface NativeExports extends WebAssembly.Exports {
     es_session_footnote_references(session: number, definition: bigint, dataOutput: number): number;
     es_delta_revision(delta: number, boundary: number): bigint;
     es_delta_ids(delta: number, verdict: number, dataOutput: number): number;
+    /** Writes a caller-owned array of 24-byte (id u64, parent u64,
+     * change i32, padding) rows in children-before-parents order. */
+    es_session_ordered_delta_entries(
+        session: number,
+        delta: number,
+        dataOutput: number,
+        countOutput: number,
+        errorOutput: number
+    ): number;
+    es_delta_entries_free(entries: number): void;
     es_delta_free(delta: number): void;
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;
     es_session_node_by_id(session: number, id: bigint): number;
-    es_node_parent(node: number): number;
     es_error_code(error: number): number;
     /** Writes the error's four absolute scope coordinates to `output`;
      * answers 0 when the error carries no scope. */
@@ -36,11 +45,13 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;
     es_node_next_sibling(node: number): number;
-    /** One O(n) walk over the subtree at `root`: writes a malloc'd array of
-     * 32-byte (id u64, revision u64, scope 4×i32) rows to `dataOutput`
-     * (release with `free`) and returns the row count; 0 with a null
-     * pointer reports allocation failure. */
-    es_scope_table(root: number, dataOutput: number): number;
+    /** One O(n) operation over `document`: writes a core-allocated,
+     * caller-owned array of 32-byte (id u64, revision u64, scope 4×i32)
+     * rows to `dataOutput` and returns the row count; release it with
+     * `es_scope_table_free`. A zero count with a null pointer reports
+     * allocation failure. */
+    es_scope_table(document: number, dataOutput: number): number;
+    es_scope_table_free(data: number): void;
     es_node_heading_level(node: number): number;
     /** Writes i32 flavor, i32 tight, i32 has-start, i32 padding, i64 start
      * to `output` in one crossing. */

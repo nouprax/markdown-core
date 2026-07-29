@@ -130,6 +130,11 @@ if grep -R -n 'defaultVisit' packages/swift-markdown-core/Sources/MarkdownCore; 
 fi
 test "$(grep -c 'mutating func visit' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupVisitor.swift)" -eq 28 \
     || fail "Swift MarkupVisitor is not exhaustive over all 28 Markup kinds"
+grep -q 'public func walk<V: MarkupVisitor>(' \
+    packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupWalker.swift \
+    && grep -q ') where V.Result == Void {' \
+        packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupWalker.swift \
+    || fail "Swift MarkupWalker lacks the scope-free typed visitor overload"
 
 grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
@@ -143,12 +148,84 @@ test -s packages/kotlin-markdown-core/api/jvm/kotlin-markdown-core.api \
     || fail "Kotlin/JVM metadata ABI snapshot is missing"
 test -s packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
     || fail "Kotlin KLIB ABI snapshot is missing"
+grep -q 'visitor: MarkupVisitor<Unit>' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupWalker.kt \
+    || fail "Kotlin MarkupWalker lacks the scope-free typed visitor overload"
 grep -Fq '// Targets: [linuxX64, macosArm64]' \
     packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
     || fail "Kotlin KLIB ABI snapshot does not cover both published Native targets"
 test -s packages/kotlin-markdown-core/jvm-abi.txt \
-    && grep -q 'JvmNative' packages/kotlin-markdown-core/jvm-abi.txt \
-    || fail "Java-visible Kotlin internal bytecode is not covered by the JVM ABI snapshot"
+    || fail "Java-source-visible Kotlin/JVM ABI snapshot is missing"
+if grep -q -E \
+    'CSession|HostNativeLibrary|JvmNative|JvmSession|ScopeEntry|ScopeResolver|WireDecoder|WireKind|WireReader' \
+    packages/kotlin-markdown-core/jvm-abi.txt; then
+    fail "Kotlin/JVM implementation types leaked into the Java ABI snapshot"
+fi
+grep -q 'officialClasses' packages/kotlin-markdown-core/build.gradle.kts \
+    && grep -q 'verifyJvmImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
+    && grep -q 'verifyAndroidImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
+    || fail "Kotlin/JVM ABI gates do not enforce the documented Java surface"
+grep -q 'consumerKeepRules.apply' packages/kotlin-markdown-core/build.gradle.kts \
+    && grep -q 'publish = true' packages/kotlin-markdown-core/build.gradle.kts \
+    && grep -Fq -- '-keepclasseswithmembernames,allowoptimization class com.nouprax.markdown.core.JvmNative {' \
+        packages/kotlin-markdown-core/consumer-rules.pro \
+    && test "$(grep -Fc 'native <methods>;' packages/kotlin-markdown-core/consumer-rules.pro)" -eq 1 \
+    || fail "Kotlin Android publication lacks the exact private-JNI consumer rule"
+if grep -Eq 'class[[:space:]]+\*[[:space:]]*\{' packages/kotlin-markdown-core/consumer-rules.pro; then
+    fail "Kotlin Android publication carries a broad class keep rule"
+fi
+grep -q 'assembleRelease' scripts/check-kotlin-consumers.sh \
+    && grep -q 'assembleUnused' scripts/check-kotlin-consumers.sh \
+    && grep -q 'verify-android-jni-shrinking.mjs' scripts/check-kotlin-consumers.sh \
+    || fail "Kotlin Android consumer does not verify release R8/JNI linkage"
+grep -q 'applyDefaultHierarchyTemplate()' packages/kotlin-markdown-core/build.gradle.kts \
+    || fail "Kotlin custom JVM/Android source set bypasses the default Native hierarchy"
+node - \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin.map \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin.exports \
+    packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c \
+    packages/kotlin-markdown-core/src/jvmSharedMain/kotlin/com/nouprax/markdown/core/CBridge.jvmShared.kt <<'NODE'
+import fs from "node:fs";
+
+const [, , mapPath, exportsPath, cPath, kotlinPath] = process.argv;
+const inventories = new Map([
+    [
+        "ELF export map",
+        [...fs.readFileSync(mapPath, "utf8").matchAll(
+            /^\s*Java_com_nouprax_markdown_core_JvmNative_([A-Za-z0-9]+);$/gmu,
+        )].map((match) => match[1]),
+    ],
+    [
+        "Darwin exports",
+        [...fs.readFileSync(exportsPath, "utf8").matchAll(
+            /^_Java_com_nouprax_markdown_core_JvmNative_([A-Za-z0-9]+)$/gmu,
+        )].map((match) => match[1]),
+    ],
+    [
+        "JNI definitions",
+        [...fs.readFileSync(cPath, "utf8").matchAll(
+            /\bJava_com_nouprax_markdown_core_JvmNative_([A-Za-z0-9]+)\s*\(/gu,
+        )].map((match) => match[1]),
+    ],
+    [
+        "Kotlin external declarations",
+        [...fs.readFileSync(kotlinPath, "utf8").matchAll(
+            /\bexternal fun ([A-Za-z][A-Za-z0-9]*)\s*\(/gu,
+        )].map((match) => match[1]),
+    ],
+]);
+let expected;
+for (const [label, names] of inventories) {
+    if (names.length !== 13 || new Set(names).size !== 13) {
+        throw new Error(`${label} must contain exactly 13 unique JNI methods`);
+    }
+    const sorted = names.toSorted();
+    expected ??= sorted;
+    if (sorted.join("\n") !== expected.join("\n")) {
+        throw new Error(`${label} differs from the reviewed JvmNative inventory`);
+    }
+}
+NODE
 # The model and walker stay mutation-free; the session directory is the one
 # deliberate exception (append/replace are its reviewed edit surface) and is
 # pinned exactly below instead.
@@ -242,8 +319,7 @@ constructor(options: ParseOptions = {})
 export class MarkupSession
 export class ScopeResolver
 export function adopt(value: DocumentValue, resolver: ScopeResolver): Document
-export function relink(previous: Markup, revision: number, swaps: readonly ChildSwap[]): Markup
-export interface ChildSwap
+export function relink(previous: Markup, revision: number, replacements: ChildReplacements): Markup
 export interface Commit
 export interface Delta
 export interface FootnoteInfo
@@ -284,6 +360,9 @@ if grep -R -E -n 'defaultVisit|visit[A-Z][A-Za-z]+\?' packages/es-markdown-core/
 fi
 test "$(grep -c '^    visit[A-Z].*(this:' packages/es-markdown-core/src/markup-visitor.ts)" -eq 28 \
     || fail "ES MarkupVisitor is not exhaustive over all 28 Markup kinds"
+grep -q 'walk(document: Document, visitor: MarkupVisitor<void>): void;' \
+    packages/es-markdown-core/src/markup-walker.ts \
+    || fail "ES MarkupWalker lacks the scope-free typed visitor overload"
 
 node - packages/es-markdown-core/package.json packages/es-markdown-core/src/index.ts <<'NODE'
 import fs from "node:fs";

@@ -37,6 +37,13 @@ host JVM, where the Android artifact needs a host build of
 Without either, the first parse fails with an `IllegalStateException` that
 names both remedies.
 
+The Android AAR publishes its own narrowly scoped R8 consumer rule for the
+private `JvmNative` linkage boundary. Applications can therefore enable
+release shrinking without adding Markdown Core keep rules; the bridge class
+and its 13 native method names remain stable while every other implementation
+class stays eligible for shrinking, optimization, and obfuscation. If no
+application path uses Markdown Core, R8 may remove the bridge as well.
+
 ## Parse Markdown
 
 ```kotlin
@@ -62,8 +69,8 @@ and read-only AST traversal, not rendering or mutation.
 
 ## Traverse and Inspect
 
-Use `MarkupWalker` for a depth-first traversal; every event carries the node's
-resolved absolute scope:
+Use `MarkupWalker` for a depth-first traversal. The callback overload emits
+entering/exiting events with the node's resolved absolute scope:
 
 ```kotlin
 import com.nouprax.markdown.core.WalkEvent
@@ -75,6 +82,11 @@ MarkupWalker.walk(document) { event, node, scope ->
     }
 }
 ```
+
+The typed-visitor overload, `MarkupWalker.walk(document, visitor)`, instead
+dispatches each node once in preorder without resolving scopes. That
+scope-free form remains valid for a retained session snapshot even if it was
+superseded before scope materialization.
 
 `Document` exposes `dump()`, which delegates to the public `MarkupDumper` and
 returns the canonical file-tree diagnostic for the snapshot:
@@ -130,9 +142,16 @@ The package intentionally has two complementary ABI gates:
   `api/kotlin-markdown-core.klib.api` freeze the public Kotlin/JVM and
   Kotlin/Native APIs. The KLIB baseline covers both `linuxX64` and
   `macosArm64`.
-- `jvm-abi.txt` additionally freezes Java-visible bytecode emitted for Kotlin
-  `internal` declarations such as the JNI bridge, which the metadata-aware
-  Kotlin dump omits.
+- `jvm-abi.txt` freezes the artifact's Java-source-callable bytecode, including
+  JVM descriptors and inheritance. Its class inventory must match the
+  documented JVM API dump exactly, while a Java compiler probe proves that
+  native-bridge, wire-decoder, and resolver implementation names and members
+  cannot be used from ordinary Java source.
+
+Module-internal top-level helpers share the documented `FootnoteQueriesKt`
+owner through Kotlin's multifile-class mechanism. Its generated backing parts
+are package-private on both JVM and Android; keep the matching `@JvmName` and
+`@JvmMultifileClass` file annotations together when moving those helpers.
 
 After an intentional public Kotlin API change, update the metadata and KLIB
 baselines from the repository root:
@@ -148,5 +167,6 @@ baseline:
 scripts/gradle.sh :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi
 ```
 
-`kotlinTest` checks both baselines. Release staging also runs both checks on
-Linux and macOS so each host validates its native target directly.
+`kotlinTest` checks both baselines and the JVM and Android Java-visibility
+gates. Release staging also runs the ABI checks on Linux and macOS so each
+host validates its native target directly.

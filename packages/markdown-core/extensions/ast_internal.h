@@ -8,4 +8,6 @@ struct markdown_core_document {
     markdown_core_node *root;
 };
 
+void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
+
 #endif

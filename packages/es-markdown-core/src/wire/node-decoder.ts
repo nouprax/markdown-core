@@ -99,13 +99,13 @@ export class NodeDecoder {
         }
     }
 
-    /** One O(n) native walk over the committed tree: every node's
+    /** One O(n) native batch over the committed tree: every node's
      * (revision, absolute scope) keyed by raw id — the snapshot's scope
      * table, decoded from a single packed row buffer. */
-    scopeTable(root: number): Map<number, ScopeEntry> {
+    scopeTable(document: number): Map<number, ScopeEntry> {
         this.requireLive();
         const rowBytes = 32;
-        const count = this.native.es_scope_table(root, this.scratch);
+        const count = this.native.es_scope_table(document, this.scratch);
         const data = this.dataView().getUint32(this.scratch, true);
         if (!Number.isSafeInteger(count) || count <= 0 || !data) {
             throw new ParseError("allocationFailed", "failed to allocate WASM memory");
@@ -128,7 +128,7 @@ export class NodeDecoder {
             }
             return table;
         } finally {
-            this.native.free(data);
+            this.native.es_scope_table_free(data);
         }
     }
 

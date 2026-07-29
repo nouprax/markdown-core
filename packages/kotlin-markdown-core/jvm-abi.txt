@@ -1,6 +1,4 @@
   field com/nouprax/markdown/core/Document.Companion Lcom/nouprax/markdown/core/Document$Companion;
-  field com/nouprax/markdown/core/HostNativeLibrary.INSTANCE Lcom/nouprax/markdown/core/HostNativeLibrary;
-  field com/nouprax/markdown/core/JvmNative.INSTANCE Lcom/nouprax/markdown/core/JvmNative;
   field com/nouprax/markdown/core/ListFlavor.BULLET Lcom/nouprax/markdown/core/ListFlavor;
   field com/nouprax/markdown/core/ListFlavor.ORDERED Lcom/nouprax/markdown/core/ListFlavor;
   field com/nouprax/markdown/core/MarkupDumper.INSTANCE Lcom/nouprax/markdown/core/MarkupDumper;
@@ -11,43 +9,12 @@
   field com/nouprax/markdown/core/ParseErrorCode.INVALID_ARGUMENT Lcom/nouprax/markdown/core/ParseErrorCode;
   field com/nouprax/markdown/core/PlacementMode.EMBEDDED Lcom/nouprax/markdown/core/PlacementMode;
   field com/nouprax/markdown/core/PlacementMode.STANDALONE Lcom/nouprax/markdown/core/PlacementMode;
-  field com/nouprax/markdown/core/ScopeResolver.Companion Lcom/nouprax/markdown/core/ScopeResolver$Companion;
   field com/nouprax/markdown/core/TableAlignment.CENTER Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/TableAlignment.LEFT Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/TableAlignment.NONE Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/TableAlignment.RIGHT Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/WalkEvent.ENTERING Lcom/nouprax/markdown/core/WalkEvent;
   field com/nouprax/markdown/core/WalkEvent.EXITING Lcom/nouprax/markdown/core/WalkEvent;
-  field com/nouprax/markdown/core/WireDecoder.INSTANCE Lcom/nouprax/markdown/core/WireDecoder;
-  field com/nouprax/markdown/core/WireKind.BLOCK_QUOTE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.CODE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.CODE_BLOCK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.Companion Lcom/nouprax/markdown/core/WireKind$Companion;
-  field com/nouprax/markdown/core/WireKind.DIRECTIVE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.DIRECTIVE_BLOCK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.DOCUMENT Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.EMPHASIS Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.FOOTNOTE_DEFINITION Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.FOOTNOTE_REFERENCE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.FORMULA Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.FORMULA_BLOCK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.HEADING Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.HTML Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.HTML_BLOCK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.IMAGE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.LINE_BREAK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.LINK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.LIST Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.LIST_ITEM Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.PARAGRAPH Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.SOFT_BREAK Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.STRIKETHROUGH Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.STRONG Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.TABLE Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.TABLE_CELL Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.TABLE_ROW Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.TEXT Lcom/nouprax/markdown/core/WireKind;
-  field com/nouprax/markdown/core/WireKind.THEMATIC_BREAK Lcom/nouprax/markdown/core/WireKind;
   method com/nouprax/markdown/core/BlockQuote.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/BlockQuote.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/BlockQuote.getContent ()Ljava/util/List;
@@ -55,20 +22,6 @@
   method com/nouprax/markdown/core/BlockQuote.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/BlockQuote.hashCode ()I
   method com/nouprax/markdown/core/BlockQuote.revisionBits ()J
-  method com/nouprax/markdown/core/CBridge_jvmKt.ensureNativeLoaded ()V
-  method com/nouprax/markdown/core/CBridge_jvmSharedKt.cParse ([BLcom/nouprax/markdown/core/ParseOptions;)[B
-  method com/nouprax/markdown/core/CSession.<init> (Lcom/nouprax/markdown/core/ParseOptions;)V
-  method com/nouprax/markdown/core/CSession.commit ()[B
-  method com/nouprax/markdown/core/CSession.edit (JJ[B)[B
-  method com/nouprax/markdown/core/CSession.footnoteInfo-VKZWuLQ (J)[B
-  method com/nouprax/markdown/core/CSession.footnoteReferences-VKZWuLQ (J)[B
-  method com/nouprax/markdown/core/CSession.footnotes ()[B
-  method com/nouprax/markdown/core/CSession.free ()V
-  method com/nouprax/markdown/core/CSession.length ()J
-  method com/nouprax/markdown/core/CSession.lineage-s-VKNKU ()J
-  method com/nouprax/markdown/core/CSession.revision-s-VKNKU ()J
-  method com/nouprax/markdown/core/CSession.rootId-s-VKNKU ()J
-  method com/nouprax/markdown/core/CSession.scopes ()[B
   method com/nouprax/markdown/core/Code.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Code.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Code.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -131,7 +84,6 @@
   method com/nouprax/markdown/core/Document.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Document.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Document.getId ()Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/Document.getResolver$com_nouprax_kotlin_markdown_core ()Lcom/nouprax/markdown/core/ScopeResolver;
   method com/nouprax/markdown/core/Document.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.hashCode ()I
   method com/nouprax/markdown/core/Document.materialize ()V
@@ -209,11 +161,6 @@
   method com/nouprax/markdown/core/Heading.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Heading.hashCode ()I
   method com/nouprax/markdown/core/Heading.revisionBits ()J
-  method com/nouprax/markdown/core/HostNativeLibrary.extractAndLoad (Ljava/io/InputStream;)V
-  method com/nouprax/markdown/core/HostNativeLibrary.getFileName ()Ljava/lang/String;
-  method com/nouprax/markdown/core/HostNativeLibrary.getHostName ()Ljava/lang/String;
-  method com/nouprax/markdown/core/HostNativeLibrary.getPlatform ()Ljava/lang/String;
-  method com/nouprax/markdown/core/HostNativeLibrary.getResourcePath ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Image.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Image.getContent ()Ljava/util/List;
@@ -223,21 +170,6 @@
   method com/nouprax/markdown/core/Image.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.hashCode ()I
   method com/nouprax/markdown/core/Image.revisionBits ()J
-  method com/nouprax/markdown/core/ImmutableListKt.immutableList (ILkotlin/jvm/functions/Function1;)Ljava/util/List;
-  method com/nouprax/markdown/core/ImmutableListKt.immutableMap (Ljava/util/List;Lkotlin/jvm/functions/Function1;)Ljava/util/List;
-  method com/nouprax/markdown/core/JvmNative.parse ([BI)[B
-  method com/nouprax/markdown/core/JvmNative.sessionCommit (J)[B
-  method com/nouprax/markdown/core/JvmNative.sessionEdit (JJJ[B)[B
-  method com/nouprax/markdown/core/JvmNative.sessionFootnoteInfo (JJ)[B
-  method com/nouprax/markdown/core/JvmNative.sessionFootnoteReferences (JJ)[B
-  method com/nouprax/markdown/core/JvmNative.sessionFootnotes (J)[B
-  method com/nouprax/markdown/core/JvmNative.sessionFree (J)V
-  method com/nouprax/markdown/core/JvmNative.sessionLength (J)J
-  method com/nouprax/markdown/core/JvmNative.sessionLineage (J)J
-  method com/nouprax/markdown/core/JvmNative.sessionOpen (I)J
-  method com/nouprax/markdown/core/JvmNative.sessionRevision (J)J
-  method com/nouprax/markdown/core/JvmNative.sessionRoot (J)J
-  method com/nouprax/markdown/core/JvmNative.sessionScopes (J)[B
   method com/nouprax/markdown/core/LineBreak.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/LineBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/LineBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -293,8 +225,6 @@
   method com/nouprax/markdown/core/MarkupID.lineageBits ()J
   method com/nouprax/markdown/core/MarkupID.rawValueBits ()J
   method com/nouprax/markdown/core/MarkupID.toString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/MarkupKt.markupEquals (Lcom/nouprax/markdown/core/Markup;Ljava/lang/Object;)Z
-  method com/nouprax/markdown/core/MarkupKt.markupHashCode (Lcom/nouprax/markdown/core/Markup;)I
   method com/nouprax/markdown/core/MarkupSession.<init> ()V
   method com/nouprax/markdown/core/MarkupSession.<init> (Lcom/nouprax/markdown/core/ParseOptions;)V
   method com/nouprax/markdown/core/MarkupSession.append (Ljava/lang/String;)V
@@ -303,14 +233,11 @@
   method com/nouprax/markdown/core/MarkupSession.getDocument ()Lcom/nouprax/markdown/core/Document;
   method com/nouprax/markdown/core/MarkupSession.getLength ()I
   method com/nouprax/markdown/core/MarkupSession.getLineage-s-VKNKU ()J
-  method com/nouprax/markdown/core/MarkupSession.getMirror$com_nouprax_kotlin_markdown_core ()Ljava/util/HashMap;
-  method com/nouprax/markdown/core/MarkupSession.getNative$com_nouprax_kotlin_markdown_core ()Lcom/nouprax/markdown/core/CSession;
   method com/nouprax/markdown/core/MarkupSession.getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/MarkupSession.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/MarkupSession.lineageBits ()J
   method com/nouprax/markdown/core/MarkupSession.node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
   method com/nouprax/markdown/core/MarkupSession.replace (IILjava/lang/String;)V
-  method com/nouprax/markdown/core/MarkupSession.requireOpen$com_nouprax_kotlin_markdown_core ()V
   method com/nouprax/markdown/core/MarkupSession.revisionBits ()J
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
@@ -340,11 +267,6 @@
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/TableRow;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Text;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/ThematicBreak;)Ljava/lang/Object;
-  method com/nouprax/markdown/core/MarkupWalker$WalkFrame$Enter.<init> (Lcom/nouprax/markdown/core/Markup;)V
-  method com/nouprax/markdown/core/MarkupWalker$WalkFrame$Enter.getNode ()Lcom/nouprax/markdown/core/Markup;
-  method com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit.<init> (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/Scope;)V
-  method com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit.getNode ()Lcom/nouprax/markdown/core/Markup;
-  method com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/MarkupWalker.walk (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/Markup;Lkotlin/jvm/functions/Function3;)V
   method com/nouprax/markdown/core/MarkupWalker.walk (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/MarkupVisitor;)V
   method com/nouprax/markdown/core/MarkupWalker.walk (Lcom/nouprax/markdown/core/Document;Lkotlin/jvm/functions/Function3;)V
@@ -400,7 +322,6 @@
   method com/nouprax/markdown/core/ParseOptions.getTaskLists ()Z
   method com/nouprax/markdown/core/ParseOptions.hashCode ()I
   method com/nouprax/markdown/core/ParseOptions.toString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/ParseOptionsKt.toNativeMask (Lcom/nouprax/markdown/core/ParseOptions;)I
   method com/nouprax/markdown/core/PlacementMode.getEntries ()Lkotlin/enums/EnumEntries;
   method com/nouprax/markdown/core/PlacementMode.valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/PlacementMode.values ()[Lcom/nouprax/markdown/core/PlacementMode;
@@ -413,8 +334,6 @@
   method com/nouprax/markdown/core/Position.getLine ()I
   method com/nouprax/markdown/core/Position.hashCode ()I
   method com/nouprax/markdown/core/Position.toString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/ReadOnlyList$Companion.generated (ILkotlin/jvm/functions/Function1;)Lcom/nouprax/markdown/core/ReadOnlyList;
-  method com/nouprax/markdown/core/ReadOnlyList$Companion.mapped (Ljava/util/List;Lkotlin/jvm/functions/Function1;)Lcom/nouprax/markdown/core/ReadOnlyList;
   method com/nouprax/markdown/core/Scope.<init> (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)V
   method com/nouprax/markdown/core/Scope.component1 ()Lcom/nouprax/markdown/core/Position;
   method com/nouprax/markdown/core/Scope.component2 ()Lcom/nouprax/markdown/core/Position;
@@ -424,24 +343,12 @@
   method com/nouprax/markdown/core/Scope.getStart ()Lcom/nouprax/markdown/core/Position;
   method com/nouprax/markdown/core/Scope.hashCode ()I
   method com/nouprax/markdown/core/Scope.toString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/ScopeEntry.getRevision-s-VKNKU ()J
-  method com/nouprax/markdown/core/ScopeEntry.getScope ()Lcom/nouprax/markdown/core/Scope;
-  method com/nouprax/markdown/core/ScopeResolver$Companion.getMaterializeProbe ()Lkotlin/jvm/functions/Function0;
-  method com/nouprax/markdown/core/ScopeResolver$Companion.getUnresolvable ()Lcom/nouprax/markdown/core/ScopeResolver;
-  method com/nouprax/markdown/core/ScopeResolver$Companion.live (Lcom/nouprax/markdown/core/CSession;)Lcom/nouprax/markdown/core/ScopeResolver;
-  method com/nouprax/markdown/core/ScopeResolver$Companion.materialized (Ljava/util/Map;)Lcom/nouprax/markdown/core/ScopeResolver;
-  method com/nouprax/markdown/core/ScopeResolver$Companion.setMaterializeProbe (Lkotlin/jvm/functions/Function0;)V
-  method com/nouprax/markdown/core/ScopeResolver.detach ()V
-  method com/nouprax/markdown/core/ScopeResolver.entry-VKZWuLQ (J)Lcom/nouprax/markdown/core/ScopeEntry;
-  method com/nouprax/markdown/core/ScopeResolver.materialize ()V
-  method com/nouprax/markdown/core/ScopeResolver.reattach (Lcom/nouprax/markdown/core/CSession;)V
   method com/nouprax/markdown/core/SoftBreak.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/SoftBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/SoftBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/SoftBreak.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/SoftBreak.hashCode ()I
   method com/nouprax/markdown/core/SoftBreak.revisionBits ()J
-  method com/nouprax/markdown/core/Spin_jvmKt.materializeWaitHint ()V
   method com/nouprax/markdown/core/Strikethrough.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Strikethrough.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Strikethrough.getContent ()Ljava/util/List;
@@ -499,35 +406,7 @@
   method com/nouprax/markdown/core/WalkEvent.getEntries ()Lkotlin/enums/EnumEntries;
   method com/nouprax/markdown/core/WalkEvent.valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/WalkEvent;
   method com/nouprax/markdown/core/WalkEvent.values ()[Lcom/nouprax/markdown/core/WalkEvent;
-  method com/nouprax/markdown/core/WireDecoder.decodeAck ([B)V
-  method com/nouprax/markdown/core/WireDecoder.decodeCommit-z13BHRw ([BJLjava/util/Map;)Lcom/nouprax/markdown/core/Delta;
-  method com/nouprax/markdown/core/WireDecoder.decodeDocument ([B)Lcom/nouprax/markdown/core/Document;
-  method com/nouprax/markdown/core/WireDecoder.decodeFootnoteInfo-2TYgG_w ([BJ)Lcom/nouprax/markdown/core/FootnoteInfo;
-  method com/nouprax/markdown/core/WireDecoder.decodeIds ([B)Ljava/util/List;
-  method com/nouprax/markdown/core/WireDecoder.decodeScopes ([B)Ljava/util/Map;
-  method com/nouprax/markdown/core/WireDecoderKt.scopeTable (Lcom/nouprax/markdown/core/WireReader;)Ljava/util/Map;
-  method com/nouprax/markdown/core/WireKind$Companion.from (I)Lcom/nouprax/markdown/core/WireKind;
-  method com/nouprax/markdown/core/WireKind.getEntries ()Lkotlin/enums/EnumEntries;
-  method com/nouprax/markdown/core/WireKind.getRawValue ()I
-  method com/nouprax/markdown/core/WireKind.valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/WireKind;
-  method com/nouprax/markdown/core/WireKind.values ()[Lcom/nouprax/markdown/core/WireKind;
-  method com/nouprax/markdown/core/WireMarkupDecoderKt.commitBody-z13BHRw (Lcom/nouprax/markdown/core/WireReader;JLjava/util/Map;)Lcom/nouprax/markdown/core/Delta;
-  method com/nouprax/markdown/core/WireReader.<init> ([B)V
-  method com/nouprax/markdown/core/WireReader.boolean ()Z
-  method com/nouprax/markdown/core/WireReader.byte ()B
-  method com/nouprax/markdown/core/WireReader.getFinished ()Z
-  method com/nouprax/markdown/core/WireReader.int ()I
-  method com/nouprax/markdown/core/WireReader.kind ()Lcom/nouprax/markdown/core/WireKind;
-  method com/nouprax/markdown/core/WireReader.long ()J
-  method com/nouprax/markdown/core/WireReader.nullableBoolean ()Ljava/lang/Boolean;
-  method com/nouprax/markdown/core/WireReader.requiredString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/WireReader.scope ()Lcom/nouprax/markdown/core/Scope;
-  method com/nouprax/markdown/core/WireReader.string ()Ljava/lang/String;
-  method com/nouprax/markdown/core/WireReader.ulong-s-VKNKU ()J
 class com/nouprax/markdown/core/BlockQuote extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/CBridge_jvmKt extends java/lang/Object implements 
-class com/nouprax/markdown/core/CBridge_jvmSharedKt extends java/lang/Object implements 
-class com/nouprax/markdown/core/CSession extends java/lang/Object implements 
 class com/nouprax/markdown/core/Code extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/CodeBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Commit extends java/lang/Object implements 
@@ -546,10 +425,7 @@ class com/nouprax/markdown/core/FormulaBlock extends java/lang/Object implements
 class com/nouprax/markdown/core/HTML extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/HTMLBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Heading extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/HostNativeLibrary extends java/lang/Object implements 
 class com/nouprax/markdown/core/Image extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/ImmutableListKt extends java/lang/Object implements 
-class com/nouprax/markdown/core/JvmNative extends java/lang/Object implements 
 class com/nouprax/markdown/core/LineBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Link extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/List extends java/lang/Object implements com/nouprax/markdown/core/Markup
@@ -558,29 +434,19 @@ class com/nouprax/markdown/core/ListItem extends java/lang/Object implements com
 class com/nouprax/markdown/core/Markup extends java/lang/Object implements 
 class com/nouprax/markdown/core/Markup$DefaultImpls extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupDumper extends java/lang/Object implements 
-class com/nouprax/markdown/core/MarkupDumperKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupID extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupID$Companion extends java/lang/Object implements 
-class com/nouprax/markdown/core/MarkupKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupSession extends java/lang/Object implements java/lang/AutoCloseable
 class com/nouprax/markdown/core/MarkupVisitor extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupWalker extends java/lang/Object implements 
-class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Enter extends java/lang/Object implements com/nouprax/markdown/core/MarkupWalker$WalkFrame
-class com/nouprax/markdown/core/MarkupWalker$WalkFrame$Exit extends java/lang/Object implements com/nouprax/markdown/core/MarkupWalker$WalkFrame
 class com/nouprax/markdown/core/Paragraph extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/ParseErrorCode extends java/lang/Enum implements 
 class com/nouprax/markdown/core/ParseException extends java/lang/RuntimeException implements 
 class com/nouprax/markdown/core/ParseOptions extends java/lang/Object implements 
-class com/nouprax/markdown/core/ParseOptionsKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/PlacementMode extends java/lang/Enum implements 
 class com/nouprax/markdown/core/Position extends java/lang/Object implements 
-class com/nouprax/markdown/core/ReadOnlyList$Companion extends java/lang/Object implements 
 class com/nouprax/markdown/core/Scope extends java/lang/Object implements 
-class com/nouprax/markdown/core/ScopeEntry extends java/lang/Object implements 
-class com/nouprax/markdown/core/ScopeResolver extends java/lang/Object implements 
-class com/nouprax/markdown/core/ScopeResolver$Companion extends java/lang/Object implements 
 class com/nouprax/markdown/core/SoftBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/Spin_jvmKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/Strikethrough extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Strong extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Table extends java/lang/Object implements com/nouprax/markdown/core/Markup
@@ -590,9 +456,3 @@ class com/nouprax/markdown/core/TableRow extends java/lang/Object implements com
 class com/nouprax/markdown/core/Text extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/ThematicBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/WalkEvent extends java/lang/Enum implements 
-class com/nouprax/markdown/core/WireDecoder extends java/lang/Object implements 
-class com/nouprax/markdown/core/WireDecoderKt extends java/lang/Object implements 
-class com/nouprax/markdown/core/WireKind extends java/lang/Enum implements 
-class com/nouprax/markdown/core/WireKind$Companion extends java/lang/Object implements 
-class com/nouprax/markdown/core/WireMarkupDecoderKt extends java/lang/Object implements 
-class com/nouprax/markdown/core/WireReader extends java/lang/Object implements 

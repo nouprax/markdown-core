@@ -1,3 +1,9 @@
+// Keep this documented Java owner and the module-internal top-level helper
+// files in one multifile class. Kotlin emits every backing part
+// package-private, so implementation file names never become Java types.
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
 /**
@@ -50,7 +56,7 @@ public fun MarkupSession.footnote(id: MarkupID): FootnoteInfo? {
         return null
     }
     requireOpen()
-    return WireDecoder.decodeFootnoteInfo(native.footnoteInfo(id.rawValue), lineage)
+    return decodeWireFootnoteInfo(native.footnoteInfo(id.rawValue), lineage)
 }
 
 /**
@@ -59,7 +65,7 @@ public fun MarkupSession.footnote(id: MarkupID): FootnoteInfo? {
  */
 public fun MarkupSession.footnotes(): kotlin.collections.List<FootnoteDefinition> {
     requireOpen()
-    return WireDecoder.decodeIds(native.footnotes()).immutableMap { raw ->
+    return decodeWireIds(native.footnotes()).immutableMap { raw ->
         val definition = node(MarkupID(lineage, raw))
         check(definition is FootnoteDefinition) { "footnote index names a non-definition node" }
         definition
@@ -76,7 +82,7 @@ public fun MarkupSession.references(definition: MarkupID): kotlin.collections.Li
         return emptyList()
     }
     requireOpen()
-    return WireDecoder.decodeIds(native.footnoteReferences(definition.rawValue)).immutableMap { raw ->
+    return decodeWireIds(native.footnoteReferences(definition.rawValue)).immutableMap { raw ->
         val reference = node(MarkupID(lineage, raw))
         check(reference is FootnoteReference) { "footnote index names a non-reference node" }
         reference

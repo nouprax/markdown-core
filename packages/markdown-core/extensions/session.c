@@ -39,10 +39,6 @@ static void clear_error(markdown_core_error **error) {
     }
 }
 
-// Mirrors set_error in ast.c; sessions and documents share the error type but
-// not a translation unit private to either.
-void markdown_core_ast_set_error(markdown_core_error **error, markdown_core_error_code code, const char *message);
-
 // --- id table ---------------------------------------------------------------
 
 static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
@@ -524,6 +520,7 @@ static bool commit_internal(
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
             return false;
         }
+        changes->lineage = session->lineage;
         changes->before = session->revision;
         changes->after = initial ? 0 : session->revision + 1;
     }

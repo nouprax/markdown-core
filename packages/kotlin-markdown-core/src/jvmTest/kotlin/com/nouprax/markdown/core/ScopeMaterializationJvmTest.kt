@@ -5,10 +5,31 @@ import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class ScopeMaterializationJvmTest {
+    @Test
+    fun failedMaterializationCanRetry() {
+        MarkupSession().use { session ->
+            session.append("retry\n")
+            val document = session.commit().document
+            scopeMaterializeProbe = {
+                throw IllegalStateException("injected materialization failure")
+            }
+            try {
+                assertFailsWith<IllegalStateException> {
+                    document.materialize()
+                }
+                scopeMaterializeProbe = null
+                assertEquals(1, document.scope(document.content.single()).start.line)
+            } finally {
+                scopeMaterializeProbe = null
+            }
+        }
+    }
+
     @Test
     fun commitWaitsForAnInFlightMaterialization() {
         // The deterministic interleaving from the atomic-materialization
@@ -23,7 +44,7 @@ class ScopeMaterializationJvmTest {
 
             val readerInside = CountDownLatch(1)
             val releaseReader = CountDownLatch(1)
-            ScopeResolver.materializeProbe = {
+            scopeMaterializeProbe = {
                 readerInside.countDown()
                 releaseReader.await()
             }
@@ -35,7 +56,7 @@ class ScopeMaterializationJvmTest {
                     }
                 assertTrue(readerInside.await(5, TimeUnit.SECONDS))
                 // Only the paused reader's materialization takes the probe.
-                ScopeResolver.materializeProbe = null
+                scopeMaterializeProbe = null
 
                 session.replace(0, 1, "A")
                 val committed = CountDownLatch(1)
@@ -59,7 +80,7 @@ class ScopeMaterializationJvmTest {
                 // answers at the retained snapshot's revision.
                 assertEquals(1, scope?.start?.line)
             } finally {
-                ScopeResolver.materializeProbe = null
+                scopeMaterializeProbe = null
                 releaseReader.countDown()
             }
         } finally {
@@ -77,7 +98,7 @@ class ScopeMaterializationJvmTest {
 
             val readerInside = CountDownLatch(1)
             val releaseReader = CountDownLatch(1)
-            ScopeResolver.materializeProbe = {
+            scopeMaterializeProbe = {
                 readerInside.countDown()
                 releaseReader.await()
             }
@@ -88,7 +109,7 @@ class ScopeMaterializationJvmTest {
                         scope = document.scope(document.content[0])
                     }
                 assertTrue(readerInside.await(5, TimeUnit.SECONDS))
-                ScopeResolver.materializeProbe = null
+                scopeMaterializeProbe = null
 
                 val freed = CountDownLatch(1)
                 val closer =
@@ -107,7 +128,7 @@ class ScopeMaterializationJvmTest {
                 assertTrue(freed.await(5, TimeUnit.SECONDS))
                 assertEquals(1, scope?.start?.line)
             } finally {
-                ScopeResolver.materializeProbe = null
+                scopeMaterializeProbe = null
                 releaseReader.countDown()
             }
         } finally {

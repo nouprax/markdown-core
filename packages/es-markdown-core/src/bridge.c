@@ -4,13 +4,6 @@
 
 #include "markdown_core.h"
 
-// Internal engine headers, compiled into the same WASM module: the scope
-// table export resolves sealed-relative positions with the canonical dump's
-// parent accumulator (extensions/ast.c dump_tree is the reference), which
-// needs the raw node fields the facade deliberately hides.
-#include <node.h>
-#include "directive.h"
-
 enum es_string_field {
     ES_STRING_LITERAL = 1,
     ES_STRING_FORMULA_LITERAL,
@@ -21,6 +14,23 @@ enum es_string_field {
     ES_STRING_FOOTNOTE_ID,
     ES_STRING_ERROR_MESSAGE
 };
+
+#define ES_LAYOUT_ASSERT(name, condition) typedef char name[(condition) ? 1 : -1]
+ES_LAYOUT_ASSERT(es_scope_entry_size_is_32, sizeof(markdown_core_scope_entry) == 32);
+ES_LAYOUT_ASSERT(es_scope_entry_id_starts_at_0, offsetof(markdown_core_scope_entry, id) == 0);
+ES_LAYOUT_ASSERT(es_scope_entry_revision_starts_at_8, offsetof(markdown_core_scope_entry, revision) == 8);
+ES_LAYOUT_ASSERT(es_scope_entry_scope_starts_at_16, offsetof(markdown_core_scope_entry, scope) == 16);
+ES_LAYOUT_ASSERT(es_scope_size_is_16, sizeof(markdown_core_scope) == 16);
+ES_LAYOUT_ASSERT(es_scope_start_starts_at_0, offsetof(markdown_core_scope, start) == 0);
+ES_LAYOUT_ASSERT(es_scope_end_starts_at_8, offsetof(markdown_core_scope, end) == 8);
+ES_LAYOUT_ASSERT(es_position_size_is_8, sizeof(markdown_core_position) == 8);
+ES_LAYOUT_ASSERT(es_position_line_starts_at_0, offsetof(markdown_core_position, line) == 0);
+ES_LAYOUT_ASSERT(es_position_column_starts_at_4, offsetof(markdown_core_position, column) == 4);
+ES_LAYOUT_ASSERT(es_delta_entry_size_is_24, sizeof(markdown_core_delta_entry) == 24);
+ES_LAYOUT_ASSERT(es_delta_entry_id_starts_at_0, offsetof(markdown_core_delta_entry, id) == 0);
+ES_LAYOUT_ASSERT(es_delta_entry_parent_starts_at_8, offsetof(markdown_core_delta_entry, parent) == 8);
+ES_LAYOUT_ASSERT(es_delta_entry_change_starts_at_16, offsetof(markdown_core_delta_entry, change) == 16);
+#undef ES_LAYOUT_ASSERT
 
 static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
     *data = (uintptr_t)view.data;
@@ -57,8 +67,7 @@ int32_t es_session_edit(
     return markdown_core_session_edit(session, byte_start, byte_end, bytes, length, error);
 }
 
-int32_t
-es_session_commit(markdown_core_session *session, markdown_core_delta **changes, markdown_core_error **error) {
+int32_t es_session_commit(markdown_core_session *session, markdown_core_delta **changes, markdown_core_error **error) {
     return markdown_core_session_commit(session, changes, error);
 }
 
@@ -126,6 +135,28 @@ size_t es_delta_ids(const markdown_core_delta *changes, int32_t verdict, uintptr
     return count;
 }
 
+int32_t es_session_ordered_delta_entries(
+    const markdown_core_session *session,
+    const markdown_core_delta *changes,
+    uintptr_t *data,
+    size_t *count,
+    uintptr_t *error_output
+) {
+    markdown_core_delta_entry *entries = NULL;
+    markdown_core_error *error = NULL;
+    bool succeeded;
+
+    if (!data || !count || !error_output) {
+        return 0;
+    }
+    succeeded = markdown_core_session_ordered_delta_entries(session, changes, &entries, count, &error);
+    *data = (uintptr_t)entries;
+    *error_output = (uintptr_t)error;
+    return succeeded ? 1 : 0;
+}
+
+void es_delta_entries_free(markdown_core_delta_entry *entries) { markdown_core_delta_entries_free(entries); }
+
 void es_delta_free(markdown_core_delta *changes) { markdown_core_delta_free(changes); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
@@ -140,13 +171,7 @@ const markdown_core_node *es_session_node_by_id(const markdown_core_session *ses
     return markdown_core_session_node_by_id(session, id);
 }
 
-const markdown_core_node *es_node_parent(const markdown_core_node *node) {
-    return markdown_core_node_get_parent(node);
-}
-
-int32_t es_error_code(const markdown_core_error *error) {
-    return (int32_t)markdown_core_error_get_code(error);
-}
+int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
 
 int32_t es_error_scope(const markdown_core_error *error, int32_t *coordinates) {
     markdown_core_scope scope;
@@ -162,9 +187,7 @@ int32_t es_error_scope(const markdown_core_error *error, int32_t *coordinates) {
 
 void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }
 
-int32_t es_node_kind(const markdown_core_node *node) {
-    return (int32_t)markdown_core_node_get_kind(node);
-}
+int32_t es_node_kind(const markdown_core_node *node) { return (int32_t)markdown_core_node_get_kind(node); }
 
 const markdown_core_node *es_node_first_child(const markdown_core_node *node) {
     return markdown_core_node_get_first_child(node);
@@ -174,108 +197,26 @@ const markdown_core_node *es_node_next_sibling(const markdown_core_node *node) {
     return markdown_core_node_get_next_sibling(node);
 }
 
-typedef struct {
-    uint64_t id;
-    uint64_t revision;
-    int32_t start_line;
-    int32_t start_column;
-    int32_t end_line;
-    int32_t end_column;
-} es_scope_row;
-
-typedef struct {
-    const markdown_core_node *node;
-    int32_t parent_start_line;
-} es_scope_frame;
-
-static bool es_is_label(const markdown_core_node *node) {
-    return node && node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-}
-
-static bool es_scope_reserve(void **items, size_t *capacity, size_t needed, size_t item_size) {
-    void *grown;
-    size_t next = *capacity ? *capacity : 64;
-    if (needed <= *capacity) {
-        return true;
-    }
-    while (next < needed) {
-        next *= 2;
-    }
-    grown = realloc(*items, next * item_size);
-    if (!grown) {
-        return false;
-    }
-    *items = grown;
-    *capacity = next;
-    return true;
-}
-
 /**
- * One pre-order walk over the canonical subtree at `root`, emitting every
- * node's (id, revision, absolute scope) row. Sealed-relative positions
- * resolve through a parent accumulator — the same arithmetic as the
- * canonical dump (extensions/ast.c dump_tree) — so building a snapshot's
- * whole scope table is O(n), not n times the O(depth) ancestor walk of
- * markdown_core_node_scope. Depth is input-controlled, hence the explicit
- * frame stack. Returns the row count and writes the malloc'd row array to
- * `data` (caller frees); a zero count with a null `data` reports failure.
+ * Returns the core's packed canonical-preorder scope table without another
+ * traversal or copy. The public row layout is 32 bytes on the wasm32 ABI.
  */
-size_t es_scope_table(const markdown_core_node *root, uintptr_t *data) {
-    es_scope_row *rows = NULL;
-    es_scope_frame *stack = NULL;
-    size_t count = 0, row_capacity = 0, depth = 0, stack_capacity = 0;
-    *data = 0;
-    if (!root || !es_scope_reserve((void **)&stack, &stack_capacity, 1, sizeof(*stack))) {
+size_t es_scope_table(const markdown_core_document *document, uintptr_t *data) {
+    markdown_core_scope_entry *rows = NULL;
+    size_t count = 0;
+
+    if (!data) {
         return 0;
     }
-    stack[depth].node = root;
-    stack[depth].parent_start_line = 0;
-    depth++;
-    while (depth) {
-        es_scope_frame frame = stack[--depth];
-        const markdown_core_node *node = frame.node;
-        const markdown_core_node *child;
-        int32_t start_line = node->start_line;
-        int32_t end_line = node->end_line;
-        es_scope_row *row;
-        if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-            // The canonical traversal hides directive-label wrappers, so a
-            // hidden wrapper between this node and its canonical parent
-            // contributes its own delta.
-            start_line += frame.parent_start_line;
-            if (es_is_label(node->parent)) {
-                start_line += node->parent->start_line;
-            }
-            end_line += start_line;
-        }
-        if (!es_scope_reserve((void **)&rows, &row_capacity, count + 1, sizeof(*rows))) {
-            free(rows);
-            free(stack);
-            return 0;
-        }
-        row = &rows[count++];
-        row->id = markdown_core_node_get_id(node);
-        row->revision = markdown_core_node_get_revision(node);
-        row->start_line = start_line;
-        row->start_column = node->start_column;
-        row->end_line = end_line;
-        row->end_column = node->end_column;
-        for (child = markdown_core_node_get_first_child(node); child;
-             child = markdown_core_node_get_next_sibling(child)) {
-            if (!es_scope_reserve((void **)&stack, &stack_capacity, depth + 1, sizeof(*stack))) {
-                free(rows);
-                free(stack);
-                return 0;
-            }
-            stack[depth].node = child;
-            stack[depth].parent_start_line = start_line;
-            depth++;
-        }
+    *data = 0;
+    if (!markdown_core_document_scope_table(document, &rows, &count, NULL)) {
+        return 0;
     }
-    free(stack);
     *data = (uintptr_t)rows;
     return count;
 }
+
+void es_scope_table_free(markdown_core_scope_entry *rows) { markdown_core_scope_table_free(rows); }
 
 int32_t es_node_heading_level(const markdown_core_node *node) {
     int32_t value = 0;
@@ -355,8 +296,7 @@ void es_node_directive_properties(const markdown_core_node *node, void *out) {
     size_t label_count;
     int32_t *fields = (int32_t *)out;
     uint32_t *views = (uint32_t *)out;
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label,
-                                            &label_count);
+    markdown_core_node_directive_properties(node, &mode, &name, &attributes, &has_label, &label_count);
     fields[0] = (int32_t)mode;
     fields[1] = has_label ? (int32_t)label_count : -1;
     views[2] = (uint32_t)(uintptr_t)name.data;

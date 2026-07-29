@@ -257,6 +257,14 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   单次完整 parse;benchmark:warmup 1 + repeats 5 取中位数)。complexity 以
   4 KiB → 128 MiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling
   相对比率；均不使用绝对 wall-clock 阈值。
+- Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
+  禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
+  “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
+  一套连贯的算法与数据模型；常数优化应改进这套共享算法或底层数据结构，而不是
+  复制策略。只有可文档化的语义、ownership 或 lifecycle invariant 确实定义了
+  不同操作时才允许独立路径，且必须分别有 correctness/complexity 覆盖。
+- 复杂度 gate 必须验证一般不变量和能击穿旧实现的 adversarial shape。一次更快的
+  benchmark 结果不能为违反上述单一算法约束的 special case 提供正当性。
 - 诊断输出确定性:不输出指针、环境路径、locale 或时间戳(benchmark 的时间数
   值除外,其格式固定)。
 - 各平台 helper 使用本平台原生实现(C:`packages/markdown-core/tests/support/`;Swift:test target 内

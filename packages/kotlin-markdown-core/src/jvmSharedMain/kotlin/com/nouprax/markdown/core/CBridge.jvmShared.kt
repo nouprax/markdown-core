@@ -1,12 +1,17 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
 
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.jvm.JvmSynthetic
 
 /** Loads the JNI bridge for this target before any [JvmNative] call. */
 internal expect fun ensureNativeLoaded()
 
+@JvmSynthetic
 internal actual fun cParse(
     source: ByteArray,
     options: ParseOptions,
@@ -15,48 +20,55 @@ internal actual fun cParse(
     return JvmNative.parse(source, options.toNativeMask())
 }
 
-internal actual class CSession actual constructor(
-    options: ParseOptions,
-) {
-    private val handle: Long
-
-    init {
-        ensureNativeLoaded()
-        handle = JvmNative.sessionOpen(options.toNativeMask())
-        if (handle == 0L) {
-            throw OutOfMemoryError("native session allocation failed")
-        }
+@JvmSynthetic
+internal actual fun openCSession(options: ParseOptions): CSessionHandle {
+    ensureNativeLoaded()
+    val handle = JvmNative.sessionOpen(options.toNativeMask())
+    if (handle == 0L) {
+        throw OutOfMemoryError("native session allocation failed")
     }
-
-    actual fun free(): Unit = JvmNative.sessionFree(handle)
-
-    actual fun lineage(): ULong = JvmNative.sessionLineage(handle).toULong()
-
-    actual fun revision(): ULong = JvmNative.sessionRevision(handle).toULong()
-
-    actual fun length(): Long = JvmNative.sessionLength(handle)
-
-    actual fun rootId(): ULong = JvmNative.sessionRoot(handle).toULong()
-
-    actual fun edit(
-        byteStart: Long,
-        byteEnd: Long,
-        replacement: ByteArray,
-    ): ByteArray = JvmNative.sessionEdit(handle, byteStart, byteEnd, replacement)
-
-    actual fun commit(): ByteArray = JvmNative.sessionCommit(handle)
-
-    actual fun scopes(): ByteArray = JvmNative.sessionScopes(handle)
-
-    actual fun footnoteInfo(id: ULong): ByteArray = JvmNative.sessionFootnoteInfo(handle, id.toLong())
-
-    actual fun footnotes(): ByteArray = JvmNative.sessionFootnotes(handle)
-
-    actual fun footnoteReferences(definition: ULong): ByteArray =
-        JvmNative.sessionFootnoteReferences(handle, definition.toLong())
+    return handle
 }
 
-internal object JvmNative {
+@JvmSynthetic
+internal actual fun CSessionHandle.free(): Unit = JvmNative.sessionFree(this)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.lineage(): ULong = JvmNative.sessionLineage(this).toULong()
+
+@JvmSynthetic
+internal actual fun CSessionHandle.revision(): ULong = JvmNative.sessionRevision(this).toULong()
+
+@JvmSynthetic
+internal actual fun CSessionHandle.length(): Long = JvmNative.sessionLength(this)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.rootId(): ULong = JvmNative.sessionRoot(this).toULong()
+
+@JvmSynthetic
+internal actual fun CSessionHandle.edit(
+    byteStart: Long,
+    byteEnd: Long,
+    replacement: ByteArray,
+): ByteArray = JvmNative.sessionEdit(this, byteStart, byteEnd, replacement)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.commit(): ByteArray = JvmNative.sessionCommit(this)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.scopes(): ByteArray = JvmNative.sessionScopes(this)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.footnoteInfo(id: ULong): ByteArray = JvmNative.sessionFootnoteInfo(this, id.toLong())
+
+@JvmSynthetic
+internal actual fun CSessionHandle.footnotes(): ByteArray = JvmNative.sessionFootnotes(this)
+
+@JvmSynthetic
+internal actual fun CSessionHandle.footnoteReferences(definition: ULong): ByteArray =
+    JvmNative.sessionFootnoteReferences(this, definition.toLong())
+
+private object JvmNative {
     external fun parse(
         source: ByteArray,
         optionsMask: Int,
@@ -103,19 +115,25 @@ internal object JvmNative {
  * platforms, its classpath resource layout, and the temp-directory
  * extraction both host loaders share.
  */
-internal object HostNativeLibrary {
-    val fileName: String = System.mapLibraryName("markdown_core_kotlin")
+internal val hostNativeLibraryFileName: String
+    @JvmSynthetic
+    get() = System.mapLibraryName("markdown_core_kotlin")
 
-    /** The lowercase `os/arch` pair, for unsupported-host failures. */
-    val hostName: String =
-        "${System.getProperty("os.name").lowercase()}/${System.getProperty("os.arch").lowercase()}"
+/** The lowercase `os/arch` pair, for unsupported-host failures. */
+internal val hostNativeLibraryHostName: String
+    @JvmSynthetic
+    get() =
+        "${System.getProperty("os.name").orEmpty().lowercase()}/" +
+            System.getProperty("os.arch").orEmpty().lowercase()
 
-    /** The resource-layout platform of this host, or null when the host is
-     * outside the supported desktop matrix. */
-    val platform: String? =
+/** The resource-layout platform of this host, or null when the host is
+ * outside the supported desktop matrix. */
+internal val hostNativeLibraryPlatform: String?
+    @JvmSynthetic
+    get() =
         run {
-            val os = System.getProperty("os.name").lowercase()
-            val architecture = System.getProperty("os.arch").lowercase()
+            val os = System.getProperty("os.name").orEmpty().lowercase()
+            val architecture = System.getProperty("os.arch").orEmpty().lowercase()
             when {
                 os.contains("mac") && architecture in setOf("aarch64", "arm64") -> "macos-arm64"
                 os.contains("mac") && architecture in setOf("x86_64", "amd64") -> "macos-x64"
@@ -124,27 +142,32 @@ internal object HostNativeLibrary {
             }
         }
 
-    /** The classpath location of this host's bundled library, or null on an
-     * unsupported host. */
-    val resourcePath: String? = platform?.let { "/com/nouprax/markdown/core/native/$it/$fileName" }
+/** The classpath location of this host's bundled library, or null on an
+ * unsupported host. */
+internal val hostNativeLibraryResourcePath: String?
+    @JvmSynthetic
+    get() =
+        hostNativeLibraryPlatform?.let {
+            "/com/nouprax/markdown/core/native/$it/$hostNativeLibraryFileName"
+        }
 
-    /** Extracts a bundled library to a self-deleting temp directory and
-     * loads it; [stream] is consumed and closed. */
-    fun extractAndLoad(stream: InputStream) {
-        val directory = Files.createTempDirectory("markdown-core-")
-        val library = directory.resolve(fileName)
+/** Extracts a bundled library to a self-deleting temp directory and
+ * loads it; [stream] is consumed and closed. */
+@JvmSynthetic
+internal fun extractAndLoadHostNativeLibrary(stream: InputStream) {
+    val directory = Files.createTempDirectory("markdown-core-")
+    val library = directory.resolve(hostNativeLibraryFileName)
 
-        // deleteOnExit removes entries in reverse registration order, so the
-        // directory must be registered before its child.
-        directory.toFile().deleteOnExit()
-        stream.use { Files.copy(it, library) }
-        library.toFile().deleteOnExit()
-        loadBundledLibrary(library)
-    }
+    // deleteOnExit removes entries in reverse registration order, so the
+    // directory must be registered before its child.
+    directory.toFile().deleteOnExit()
+    stream.use { Files.copy(it, library) }
+    library.toFile().deleteOnExit()
+    loadBundledLibrary(library)
+}
 
-    @Suppress("UnsafeDynamicallyLoadedCode")
-    private fun loadBundledLibrary(library: Path) {
-        // loadLibrary cannot address a native library extracted from a JAR.
-        System.load(library.toAbsolutePath().toString())
-    }
+@Suppress("UnsafeDynamicallyLoadedCode")
+private fun loadBundledLibrary(library: Path) {
+    // loadLibrary cannot address a native library extracted from a JAR.
+    System.load(library.toAbsolutePath().toString())
 }

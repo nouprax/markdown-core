@@ -6,9 +6,9 @@ import Synchronization
 /// Session snapshots do not store positions on node values: deltas
 /// deliberately omit pure positional shifts, so a snapshot resolves every
 /// scope against the session's native tree the first time one is requested
-/// (one walk, cached) and is self-contained from then on. The owning session
-/// detaches the resolver before the tree changes; a resolver that was
-/// detached before it ever materialized can no longer answer.
+/// (one native batch, cached) and is self-contained from then on. The owning
+/// session detaches the resolver before the tree changes; a resolver that
+/// was detached before it ever materialized can no longer answer.
 ///
 /// Each cached entry keeps the node's revision at this snapshot, so a stale
 /// value — same id, superseded revision — is rejected instead of silently
@@ -30,45 +30,18 @@ final class ScopeResolver: Sendable {
 
     private let state: Mutex<State>
 
-    // True when this resolver owns the native session outright (the
-    // one-shot `Document.parse` path): the session is freed as soon as the
-    // table materializes, or with the resolver when no scope was ever
-    // requested.
-    private let ownsSession: Bool
-
     /// Placeholder carried by mirror-internal `Document` values; every
     /// exposed snapshot swaps in a live or materialized resolver.
     static let unresolvable = ScopeResolver()
 
     private init() {
         state = Mutex(State(table: nil, session: nil))
-        ownsSession = false
     }
 
     /// A resolver borrowing a session that the `MarkupSession` still owns;
     /// the session detaches it before the native tree changes.
     init(session: OpaquePointer) {
         state = Mutex(State(table: nil, session: session))
-        ownsSession = false
-    }
-
-    /// A resolver owning a relinquished native session, so a one-shot
-    /// snapshot materializes lazily exactly as session snapshots do.
-    init(owning session: OpaquePointer) {
-        state = Mutex(State(table: nil, session: session))
-        ownsSession = true
-    }
-
-    deinit {
-        guard ownsSession else { return }
-        let unmaterialized = state.withLock { state -> OpaquePointer? in
-            let session = state.session
-            state.session = nil
-            return session
-        }
-        if let unmaterialized {
-            markdown_core_session_free(unmaterialized)
-        }
     }
 
     /// Called by the owning session before the native tree is replaced or
@@ -105,35 +78,41 @@ final class ScopeResolver: Sendable {
                         "scope requested from a superseded snapshot that never resolved scopes while it was current"
                     )
                 }
-                guard let view = markdown_core_session_document(session),
-                    let root = markdown_core_document_root(view)
-                else {
+                guard let view = markdown_core_session_document(session) else {
                     state.table = [:]
                     state.session = nil
-                    if ownsSession { markdown_core_session_free(session) }
                     return nil
                 }
-                state.table = Self.materialize(root: root)
+                state.table = Self.materialize(document: view)
                 state.session = nil
-                if ownsSession { markdown_core_session_free(session) }
             }
             return state.table?[rawID]
         }
     }
 
-    static func materialize(root: OpaquePointer) -> [UInt64: Entry] {
-        var result: [UInt64: Entry] = [:]
-        var stack: [OpaquePointer] = [root]
-        while let node = stack.popLast() {
-            result[markdown_core_node_get_id(node)] = Entry(
-                revision: markdown_core_node_get_revision(node),
-                scope: Scope(from: markdown_core_node_scope(node))
+    static func materialize(document: OpaquePointer) -> [UInt64: Entry] {
+        var nativeEntries: UnsafeMutablePointer<markdown_core_scope_entry>?
+        var count = 0
+        var nativeError: OpaquePointer?
+        guard
+            markdown_core_document_scope_table(
+                document,
+                &nativeEntries,
+                &count,
+                &nativeError
+            ), let nativeEntries
+        else {
+            let failure = ParseError(from: nativeError)
+            markdown_core_error_free(nativeError)
+            preconditionFailure("scope materialization failed: \(failure)")
+        }
+        defer { markdown_core_scope_table_free(nativeEntries) }
+        var result = [UInt64: Entry](minimumCapacity: count)
+        for nativeEntry in UnsafeBufferPointer(start: nativeEntries, count: count) {
+            result[nativeEntry.id] = Entry(
+                revision: nativeEntry.revision,
+                scope: Scope(from: nativeEntry.scope)
             )
-            var child = markdown_core_node_get_first_child(node)
-            while let current = child {
-                stack.append(current)
-                child = markdown_core_node_get_next_sibling(current)
-            }
         }
         return result
     }
@@ -143,11 +122,10 @@ extension Document {
     /// Resolves and caches every scope of this snapshot now, making the
     /// retained value self-contained regardless of later commits or session
     /// deinitialization — the explicit form of the materialization that
-    /// `scope(of:)`, a walk, or `dump()` would perform implicitly on first
-    /// use. Call while the snapshot is current (before the owning session's
-    /// next successful commit). Idempotent; a one-shot `Document.parse`
-    /// result owns its native session and therefore always answers,
-    /// materializing lazily on first use.
+    /// `scope(of:)`, a scopeful event walk, or `dump()` would perform
+    /// implicitly on first use. Call while the snapshot is current (before
+    /// the owning session's next successful commit). Idempotent; a one-shot
+    /// `Document.parse` result is already materialized.
     public func materialize() {
         resolver.materialize()
     }
@@ -155,17 +133,18 @@ extension Document {
     /// Resolves the absolute scope of `node` within this snapshot, O(1)
     /// after the snapshot's one-time materialization.
     ///
-    /// A one-shot `Document.parse` result always answers. A session snapshot
-    /// materializes its scopes on first use (of `scope(of:)`, a `MarkupWalker`
-    /// walk, or `dump()`) while it is the session's current snapshot and is
-    /// self-contained afterwards — including after the session advances or
-    /// is deinitialized. Requesting a scope from a snapshot that was
-    /// superseded before any of those ran is a programmer error and traps,
-    /// as is passing a node that does not belong to this snapshot: one whose
-    /// id this snapshot does not contain, or a stale value whose revision
-    /// this snapshot has superseded. (An unchanged value shared across
-    /// snapshots resolves against any of them — equal nodes may sit at
-    /// different absolute positions in different snapshots.)
+    /// A one-shot `Document.parse` result is eagerly self-contained. A
+    /// session snapshot materializes its scopes on first use (of
+    /// `scope(of:)`, a scopeful `MarkupWalker` event walk, or `dump()`) while
+    /// it is the session's current snapshot and is self-contained afterwards
+    /// — including after the session advances or is deinitialized.
+    /// Requesting a scope from a snapshot that was superseded before any of
+    /// those ran is a programmer error and traps, as is passing a node that
+    /// does not belong to this snapshot: one whose id this snapshot does not
+    /// contain, or a stale value whose revision this snapshot has
+    /// superseded. (An unchanged value shared across snapshots resolves
+    /// against any of them — equal nodes may sit at different absolute
+    /// positions in different snapshots.)
     public func scope(of node: some Markup) -> Scope {
         precondition(
             node.id.lineage == id.lineage,

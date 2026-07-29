@@ -4,7 +4,11 @@
  * per input byte. Attribute cases span 4 KiB to 128 MiB; delimiter-dense
  * cases use a smaller 4 KiB to 64 KiB span so the regression test does not
  * require millions of AST nodes. Both spans expose nonlinear growth without
- * relying on absolute wall-clock thresholds.
+ * relying on absolute wall-clock thresholds. Scope-table materialization
+ * separately walks committed deep trees through the public batch API,
+ * pinning the first-scope-use path to linear growth. Ordered delta
+ * materialization measures a deep touched path independently of parsing,
+ * rejecting per-node ancestor walks.
  *
  *   complexity_runner --list
  *   complexity_runner --case NAME
@@ -26,6 +30,12 @@ static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
  * 4.0x to catch that observed regression without treating memory hierarchy as
  * an algorithmic proof. Probe/collision tests enforce the hash-path bound. */
 static const double MAX_NORMALIZED_SLOWDOWN = 4.0;
+/* Scope depth grows 8x below, so a quadratic materializer normalizes to
+ * roughly 8x. The linear batch path measures about 2.0-2.5x after allocator
+ * and cache effects; an independent 4.0x ceiling separates that signal from
+ * parser thresholds that may evolve for unrelated workloads. */
+static const double MAX_SCOPE_NORMALIZED_SLOWDOWN = 4.0;
+static const double MAX_DELTA_ORDER_NORMALIZED_SLOWDOWN = 4.0;
 
 typedef char *(*cc_builder)(size_t size, size_t *length);
 
@@ -632,6 +642,233 @@ static int cc_run_footnote_renumber(const char *name) {
     return failed ? -1 : 0;
 }
 
+static const size_t CC_DEEP_DEPTHS[] = {2048, 16384};
+#define CC_DEEP_STEPS (sizeof(CC_DEEP_DEPTHS) / sizeof(CC_DEEP_DEPTHS[0]))
+
+static markdown_core_session *cc_scope_build(size_t depth) {
+    markdown_core_session *session = NULL;
+    size_t length;
+    size_t index;
+    char *text;
+    if (depth > (SIZE_MAX - 6) / 2) {
+        return NULL;
+    }
+    length = depth * 2 + 5;
+    text = (char *)malloc(length + 1);
+    if (!text) {
+        return NULL;
+    }
+    for (index = 0; index < depth; index++) {
+        text[index * 2] = '>';
+        text[index * 2 + 1] = ' ';
+    }
+    memcpy(text + depth * 2, "leaf\n", 5);
+    text[length] = '\0';
+    session = markdown_core_session_open(NULL, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        markdown_core_session_free(session);
+        session = NULL;
+    }
+    free(text);
+    return session;
+}
+
+static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
+    markdown_core_session *session = cc_scope_build(depth);
+    const markdown_core_document *document;
+    double samples[SCALING_REPEATS];
+    int repeat;
+    if (!session) {
+        return -1;
+    }
+    document = markdown_core_session_document(session);
+    if (!document) {
+        markdown_core_session_free(session);
+        return -1;
+    }
+    for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t iterations = 0;
+        do {
+            markdown_core_scope_entry *entries = NULL;
+            size_t count = 0;
+            size_t index;
+            uint64_t checksum = 0;
+            if (!markdown_core_document_scope_table(document, &entries, &count, NULL)) {
+                markdown_core_session_free(session);
+                return -1;
+            }
+            for (index = 0; index < count; index++) {
+                checksum += (uint64_t)entries[index].scope.start.line + (uint64_t)entries[index].scope.end.line;
+            }
+            markdown_core_scope_table_free(entries);
+            if (checksum == 0) {
+                markdown_core_session_free(session);
+                return -1;
+            }
+            iterations++;
+            elapsed = ts_monotonic_ns() - started;
+        } while (elapsed < MIN_SAMPLE_NS);
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+    }
+    markdown_core_session_free(session);
+    {
+        double a = samples[0], b = samples[1], c = samples[2];
+        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+        *seconds_per_materialization = a + b + c - high - low;
+    }
+    return 0;
+}
+
+static int cc_run_scope_materialization(const char *name) {
+    double timings[CC_DEEP_STEPS];
+    size_t step;
+    int failed = 0;
+    for (step = 0; step < CC_DEEP_STEPS; step++) {
+        if (cc_scope_measure(CC_DEEP_DEPTHS[step], &timings[step]) != 0) {
+            fprintf(stderr, "scope materialization failed for %s\n", name);
+            return -1;
+        }
+    }
+    {
+        double depth_growth = (double)CC_DEEP_DEPTHS[CC_DEEP_STEPS - 1] / (double)CC_DEEP_DEPTHS[0];
+        double normalized_slowdown = timings[CC_DEEP_STEPS - 1] / timings[0] / depth_growth;
+        if (normalized_slowdown > MAX_SCOPE_NORMALIZED_SLOWDOWN) {
+            failed = 1;
+        }
+        printf("%s ... %s (", name, failed ? "[FAILED non-linear scope scaling]" : "[PASSED]");
+        for (step = 0; step < CC_DEEP_STEPS; step++) {
+            printf("%sdepth %zu: %.9fs/materialization", step ? ", " : "", CC_DEEP_DEPTHS[step], timings[step]);
+        }
+        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
+    }
+    return failed ? -1 : 0;
+}
+
+static int cc_delta_order_build(
+    size_t depth,
+    markdown_core_session **session_output,
+    markdown_core_delta **changes_output
+) {
+    markdown_core_session *session = NULL;
+    markdown_core_delta *changes = NULL;
+    size_t length;
+    size_t index;
+    char *text;
+    const uint8_t replacement = 'b';
+
+    *session_output = NULL;
+    *changes_output = NULL;
+    if (depth > (SIZE_MAX - 3) / 2) {
+        return -1;
+    }
+    length = depth * 2 + 2;
+    text = (char *)malloc(length + 1);
+    if (!text) {
+        return -1;
+    }
+    for (index = 0; index < depth; ++index) {
+        text[index * 2] = '>';
+        text[index * 2 + 1] = ' ';
+    }
+    memcpy(text + depth * 2, "a\n", 2);
+    text[length] = '\0';
+
+    session = markdown_core_session_open(NULL, NULL);
+    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL) ||
+        !markdown_core_session_edit(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
+        !markdown_core_session_commit(session, &changes, NULL)) {
+        free(text);
+        markdown_core_delta_free(changes);
+        markdown_core_session_free(session);
+        return -1;
+    }
+    free(text);
+    *session_output = session;
+    *changes_output = changes;
+    return 0;
+}
+
+static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
+    markdown_core_session *session;
+    markdown_core_delta *changes;
+    double samples[SCALING_REPEATS];
+    int repeat;
+
+    if (cc_delta_order_build(depth, &session, &changes) != 0) {
+        return -1;
+    }
+    for (repeat = 0; repeat < SCALING_REPEATS; ++repeat) {
+        uint64_t started = ts_monotonic_ns();
+        uint64_t elapsed;
+        size_t iterations = 0;
+        do {
+            markdown_core_delta_entry *entries = NULL;
+            size_t count = 0;
+            size_t index;
+            uint64_t checksum = 0;
+            if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, NULL) ||
+                count < depth) {
+                markdown_core_delta_entries_free(entries);
+                markdown_core_delta_free(changes);
+                markdown_core_session_free(session);
+                return -1;
+            }
+            for (index = 0; index < count; ++index) {
+                checksum += entries[index].id + entries[index].parent + entries[index].change;
+            }
+            markdown_core_delta_entries_free(entries);
+            if (checksum == 0) {
+                markdown_core_delta_free(changes);
+                markdown_core_session_free(session);
+                return -1;
+            }
+            ++iterations;
+            elapsed = ts_monotonic_ns() - started;
+        } while (elapsed < MIN_SAMPLE_NS);
+        samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
+    }
+    markdown_core_delta_free(changes);
+    markdown_core_session_free(session);
+    {
+        double a = samples[0], b = samples[1], c = samples[2];
+        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
+        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
+        *seconds_per_ordering = a + b + c - high - low;
+    }
+    return 0;
+}
+
+static int cc_run_delta_ordering(const char *name) {
+    double timings[CC_DEEP_STEPS];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < CC_DEEP_STEPS; ++step) {
+        if (cc_delta_order_measure(CC_DEEP_DEPTHS[step], &timings[step]) != 0) {
+            fprintf(stderr, "delta ordering failed for %s\n", name);
+            return -1;
+        }
+    }
+    {
+        double depth_growth = (double)CC_DEEP_DEPTHS[CC_DEEP_STEPS - 1] / (double)CC_DEEP_DEPTHS[0];
+        double normalized_slowdown = timings[CC_DEEP_STEPS - 1] / timings[0] / depth_growth;
+        if (normalized_slowdown > MAX_DELTA_ORDER_NORMALIZED_SLOWDOWN) {
+            failed = 1;
+        }
+        printf("%s ... %s (", name, failed ? "[FAILED non-linear delta ordering]" : "[PASSED]");
+        for (step = 0; step < CC_DEEP_STEPS; ++step) {
+            printf("%sdepth %zu: %.9fs/ordering", step ? ", " : "", CC_DEEP_DEPTHS[step], timings[step]);
+        }
+        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
+    }
+    return failed ? -1 : 0;
+}
+
 static const char *const CC_SESSION_CASES[] = {
     "session_stream_flat",
     "session_edit_storm",
@@ -642,6 +879,8 @@ static const char *const CC_SESSION_CASES[] = {
     "session_footnote_defs",
     "session_quote_suffix",
     "session_def_spread",
+    "session_scope_materialization",
+    "session_delta_ordering",
 };
 
 static int cc_measure(const char *input, size_t length, const char *option, double *seconds) {
@@ -782,6 +1021,12 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "session_def_spread") == 0) {
         return cc_run_session(case_name, CC_SESSION_DEF_SPREAD) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_scope_materialization") == 0) {
+        return cc_run_scope_materialization(case_name) == 0 ? 0 : 1;
+    }
+    if (strcmp(case_name, "session_delta_ordering") == 0) {
+        return cc_run_delta_ordering(case_name) == 0 ? 0 : 1;
     }
     fprintf(stderr, "unknown case: %s\n", case_name);
     return 2;
