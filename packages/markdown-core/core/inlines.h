@@ -51,8 +51,10 @@ markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk
 /* The special-character tables live in the parser (parser-local, never
  * process-global); reset installs the core defaults. */
 void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser);
-void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis);
-void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis);
+void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_add_flanking_skip_character(markdown_core_parser *parser, unsigned char c);
+void markdown_core_inlines_remove_flanking_skip_character(markdown_core_parser *parser, unsigned char c);
 
 #ifdef __cplusplus
 }

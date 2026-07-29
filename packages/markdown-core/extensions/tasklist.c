@@ -99,8 +99,11 @@ static markdown_core_node *open_tasklist_item(
     markdown_core_node_set_extension(parent_container, self);
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
-    // Either an upper or lower case X means the task is completed.
-    parent_container->as.list.checked = (strstr((char *)input, "[x]") || strstr((char *)input, "[X]"));
+    // Either an upper or lower case X means the task is completed. Read the
+    // marker character scan_tasklist just matched at first_nonspace; the item
+    // text after it must not influence the checked state.
+    parent_container->as.list.checked =
+        (input[parser->first_nonspace + 1] == 'x' || input[parser->first_nonspace + 1] == 'X');
 
     return NULL;
 }

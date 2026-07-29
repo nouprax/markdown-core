@@ -728,6 +728,16 @@ static const unsigned char formula_special_chars[] = {
     FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
 };
 
+// Only the internal sentinel delimiters (bytes that cannot appear in user
+// text) stay transparent to emphasis flanking; '$' and '\\' are real
+// punctuation and must keep CommonMark flanking semantics.
+static const unsigned char formula_flanking_skip_chars[] = {
+    FORMULA_DELIM_DOLLAR_INLINE,
+    FORMULA_DELIM_DOLLAR_DISPLAY,
+    FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+    FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+};
+
 static const markdown_core_extension formula_extension = {
     .name = "formula",
     .match_inline = match,
@@ -742,7 +752,8 @@ static const markdown_core_extension formula_extension = {
     .insert_inline_from_delim = insert_formula,
     .special_inline_chars = formula_special_chars,
     .special_inline_char_count = sizeof(formula_special_chars),
-    .emphasis = true,
+    .flanking_skip_chars = formula_flanking_skip_chars,
+    .flanking_skip_char_count = sizeof(formula_flanking_skip_chars),
 };
 
 markdown_core_extension *markdown_core_formula_extension(void) {

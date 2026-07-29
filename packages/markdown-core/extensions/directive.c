@@ -1641,7 +1641,13 @@ static int accepts_lines(markdown_core_extension *extension, markdown_core_node 
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-static const unsigned char directive_special_chars[] = {':', ']', '}', DIRECTIVE_LABEL_DELIM};
+// '}' is consumed by the directive scanners, never by match(), so it is not a
+// trigger; keeping it registered only broke text runs and emphasis flanking.
+static const unsigned char directive_special_chars[] = {':', ']', DIRECTIVE_LABEL_DELIM};
+
+// Only the internal label sentinel stays transparent to emphasis flanking;
+// ':' is real punctuation and must keep CommonMark flanking semantics.
+static const unsigned char directive_flanking_skip_chars[] = {DIRECTIVE_LABEL_DELIM};
 
 static const markdown_core_extension directive_extension = {
     .name = "directive",
@@ -1657,7 +1663,8 @@ static const markdown_core_extension directive_extension = {
     .free_opaque = directive_opaque_free,
     .special_inline_chars = directive_special_chars,
     .special_inline_char_count = sizeof(directive_special_chars),
-    .emphasis = true,
+    .flanking_skip_chars = directive_flanking_skip_chars,
+    .flanking_skip_char_count = sizeof(directive_flanking_skip_chars),
 };
 
 markdown_core_extension *markdown_core_directive_extension(void) {

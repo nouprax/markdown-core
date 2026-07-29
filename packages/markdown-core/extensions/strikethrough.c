@@ -122,7 +122,10 @@ static const markdown_core_extension strikethrough_extension = {
     .insert_inline_from_delim = insert,
     .special_inline_chars = strikethrough_special_chars,
     .special_inline_char_count = sizeof(strikethrough_special_chars),
-    .emphasis = true,
+    // '~' stays transparent to emphasis flanking (inherited gfm semantics:
+    // tilde runs pair through the same delimiter machinery as emphasis).
+    .flanking_skip_chars = strikethrough_special_chars,
+    .flanking_skip_char_count = sizeof(strikethrough_special_chars),
 };
 
 markdown_core_extension *markdown_core_strikethrough_extension(void) {

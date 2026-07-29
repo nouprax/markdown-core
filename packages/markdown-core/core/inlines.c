@@ -1561,26 +1561,36 @@ void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser) {
     memcpy(parser->skip_chars, BASE_SKIP_CHARS, sizeof(parser->skip_chars));
 }
 
-void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
+void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c) {
     if (is_core_special_character(c)) {
         return;
     }
 
     parser->special_chars[c] = 1;
-    if (emphasis) {
-        parser->skip_chars[c] = 1;
-    }
 }
 
-void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c, bool emphasis) {
+void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c) {
     if (is_core_special_character(c)) {
         return;
     }
 
     parser->special_chars[c] = 0;
-    if (emphasis) {
-        parser->skip_chars[c] = 0;
+}
+
+void markdown_core_inlines_add_flanking_skip_character(markdown_core_parser *parser, unsigned char c) {
+    if (is_core_special_character(c)) {
+        return;
     }
+
+    parser->skip_chars[c] = 1;
+}
+
+void markdown_core_inlines_remove_flanking_skip_character(markdown_core_parser *parser, unsigned char c) {
+    if (is_core_special_character(c)) {
+        return;
+    }
+
+    parser->skip_chars[c] = 0;
 }
 
 static markdown_core_node *
@@ -1949,23 +1959,6 @@ markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk
         refmap->oom = 1;
     }
     return subj.pos;
-}
-
-static char *my_strndup(const char *s, size_t n) {
-    char *result;
-    size_t len = strlen(s);
-
-    if (n < len) {
-        len = n;
-    }
-
-    result = (char *)malloc(len + 1);
-    if (!result) {
-        return 0;
-    }
-
-    result[len] = '\0';
-    return (char *)memcpy(result, s, len);
 }
 
 void markdown_core_inline_parser_push_delimiter(

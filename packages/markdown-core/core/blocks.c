@@ -646,9 +646,17 @@ void markdown_core_parser_manage_extensions_special_characters(markdown_core_par
         for (size_t i = 0; i < ext->special_inline_char_count; i++) {
             unsigned char c = ext->special_inline_chars[i];
             if (add) {
-                markdown_core_inlines_add_special_character(parser, c, ext->emphasis);
+                markdown_core_inlines_add_special_character(parser, c);
             } else {
-                markdown_core_inlines_remove_special_character(parser, c, ext->emphasis);
+                markdown_core_inlines_remove_special_character(parser, c);
+            }
+        }
+        for (size_t i = 0; i < ext->flanking_skip_char_count; i++) {
+            unsigned char c = ext->flanking_skip_chars[i];
+            if (add) {
+                markdown_core_inlines_add_flanking_skip_character(parser, c);
+            } else {
+                markdown_core_inlines_remove_flanking_skip_character(parser, c);
             }
         }
     }

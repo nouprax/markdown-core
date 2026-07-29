@@ -261,3 +261,27 @@ Document scope=1:1..3:3 children=1
 └── DirectiveBlock scope=1:1..3:3 mode=standalone name="spoiler" attributes=null label=null children=1
     └── CodeBlock scope=2:5..2:7 mode=standalone info=null language=null literal=":::\n" fenced=false closed=true children=0
 ````````````````````````````````
+
+The directive trigger characters are ordinary punctuation for emphasis
+flanking: an underscore after `:` or `}` still opens emphasis exactly as
+reference CommonMark requires.
+
+```````````````````````````````` example
+foo:_bar_
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=2
+    ├── Text scope=1:1..1:4 literal="foo:" children=0
+    └── Emphasis scope=1:5..1:9 children=1
+        └── Text scope=1:6..1:8 literal="bar" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+a}_b_
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=2
+    ├── Text scope=1:1..1:2 literal="a}" children=0
+    └── Emphasis scope=1:3..1:5 children=1
+        └── Text scope=1:4..1:4 literal="b" children=0
+````````````````````````````````
