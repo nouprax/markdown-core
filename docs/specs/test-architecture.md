@@ -253,10 +253,12 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   程残留;CLI 测试通过管道等待退出)。
 - 串行/资源锁:benchmark 与 complexity 测试标记 `RUN_SERIAL`;benchmark preset
   以单 job 执行。
-- Performance 测量固定 warmup/repeat(complexity:短样本 median-of-3、长样本
-  单次完整 parse;benchmark:warmup 1 + repeats 5 取中位数)。complexity 以
-  4 KiB → 128 MiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling
-  相对比率；均不使用绝对 wall-clock 阈值。
+- Performance 测量固定 warmup/repeat(complexity parse-scaling:每个 endpoint
+  warmup 1,随后长样本单次完整 parse、短样本 3 个至少 25 ms 的 sample 取中位
+  数;benchmark:warmup 1 + repeats 5 取中位数)。complexity 的 parse-scaling
+  cases 分别以 scanner/map/reference 4 KiB → 128 MiB 与 delimiter-dense 4 KiB
+  → 64 KiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling 相对比
+  率；均不使用绝对 wall-clock gate。
 - Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
   禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
   “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
