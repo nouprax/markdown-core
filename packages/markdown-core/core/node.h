@@ -110,7 +110,6 @@ struct markdown_core_node {
     uint64_t last_changed_rev;
 
     void *user_data;
-    markdown_core_free_func user_data_free_func;
 
     int start_line;
     int start_column;

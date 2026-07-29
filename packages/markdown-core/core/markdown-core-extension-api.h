@@ -198,8 +198,6 @@ typedef markdown_core_node *(*markdown_core_postprocess_block_func)(
     markdown_core_node *block
 );
 
-typedef int (*markdown_core_ispunct_func)(char c);
-
 typedef void (*markdown_core_alloc_opaque_func)(
     markdown_core_extension *extension,
     markdown_core_mem *mem,
@@ -211,11 +209,6 @@ typedef void (*markdown_core_free_opaque_func)(
     markdown_core_mem *mem,
     markdown_core_node *node
 );
-
-/** See the documentation for 'markdown_core_extension'
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_set_backslash_ispunct_func(markdown_core_parser *parser, markdown_core_ispunct_func func);
 
 /** Return the index of the line currently being parsed, starting with 1.
  */
@@ -233,40 +226,6 @@ int markdown_core_parser_get_line_number(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_offset(markdown_core_parser *parser);
 
-/**
- * Return the offset in 'columns' in the line being processed.
- *
- * This value may differ from the value returned by
- * markdown_core_parser_get_offset() in that it accounts for tabs,
- * and as such should not be used as an index in the current line's
- * buffer.
- *
- * Example:
- *
- * markdown_core_parser_advance_offset() can be called to advance the
- * offset by a number of columns, instead of a number of bytes.
- *
- * In that case, if offset falls "in the middle" of a tab
- * character, 'column' and offset will differ.
- *
- * ```
- * foo                 \t bar
- * ^                   ^^
- * offset (0)          20
- * ```
- *
- * If markdown_core_parser_advance_offset is called here with 'columns'
- * set to 'true' and 'offset' set to 22, markdown_core_parser_get_offset()
- * will return 20, whereas markdown_core_parser_get_column() will return
- * 22.
- *
- * Additionally, as tabs expand to the next multiple of 4 column,
- * markdown_core_parser_has_partially_consumed_tab() will now return
- * 'true'.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_parser_get_column(markdown_core_parser *parser);
-
 /** Return the absolute index in bytes of the first nonspace
  * character coming after the offset as returned by
  * markdown_core_parser_get_offset() in the line currently being processed.
@@ -281,16 +240,6 @@ int markdown_core_parser_get_column(markdown_core_parser *parser);
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
-
-/** Return the absolute index of the first nonspace column coming after 'offset'
- * in the line currently being processed, counting tabs as multiple
- * columns as appropriate.
- *
- * See the documentation for markdown_core_parser_get_first_nonspace() and
- * markdown_core_parser_get_column() for more information.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_parser_get_first_nonspace_column(markdown_core_parser *parser);
 
 /** Return the difference between the values returned by
  * markdown_core_parser_get_first_nonspace_column() and
@@ -333,21 +282,6 @@ int markdown_core_parser_get_indent(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_is_blank(markdown_core_parser *parser);
 
-/** Return 'true' if the value returned by markdown_core_parser_get_offset()
- * is 'inside' an expanded tab.
- *
- * See the documentation for markdown_core_parser_get_column() for more
- * information.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser);
-
-/** Return the length in bytes of the previously processed line, excluding potential
- * newline (\n) and carriage return (\r) trailing characters.
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_parser_get_last_line_length(markdown_core_parser *parser);
-
 /** Add a child to 'parent' during the parsing process.
  *
  * If 'parent' isn't the kind of node that can accept this child,
@@ -369,9 +303,6 @@ markdown_core_node *markdown_core_parser_add_child(
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
-
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_feed_reentrant(markdown_core_parser *parser, const char *buffer, size_t len);
 
 /** Attach the syntax 'extension' to the 'parser', to provide extra syntax
  *  rules.
@@ -399,11 +330,6 @@ MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_string_content(markdown_
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
 
-/** Get the syntax extension responsible for the creation of 'node'.
- *  Return NULL if 'node' was created because it matched standard syntax rules.
- */
-MARKDOWN_CORE_EXPORT markdown_core_extension *markdown_core_node_get_extension(markdown_core_node *node);
-
 /** Set the syntax extension responsible for creating 'node'.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *node, markdown_core_extension *extension);
@@ -414,14 +340,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *no
  * The inline parsing process is described in detail at
  * <http://spec.commonmark.org/0.24/#phase-2-inline-structure>
  */
-
-/** Should return 'true' if the predicate matches 'c', 'false' otherwise
- */
-typedef int (*markdown_core_inline_predicate_func)(int c);
-
-/** Advance the current inline parsing offset */
-MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_advance_offset(markdown_core_inline_parser *parser);
 
 /** Get the current inline parsing offset */
 MARKDOWN_CORE_EXPORT
@@ -450,28 +368,9 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
 MARKDOWN_CORE_EXPORT
 void markdown_core_node_unput(markdown_core_node *node, int n);
 
-/** Get the character located at the current inline parsing offset
- */
-MARKDOWN_CORE_EXPORT
-unsigned char markdown_core_inline_parser_peek_char(markdown_core_inline_parser *parser);
-
-/** Get the character located 'pos' bytes in the current line.
- */
-MARKDOWN_CORE_EXPORT
-unsigned char markdown_core_inline_parser_peek_at(markdown_core_inline_parser *parser, int pos);
-
-/** Whether the inline parser has reached the end of the current line
- */
-MARKDOWN_CORE_EXPORT
-int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser);
-
 /** Get the characters located after the current inline parsing offset
  * while 'pred' matches. Free after usage.
  */
-MARKDOWN_CORE_EXPORT
-char *
-markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate_func pred);
-
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters
@@ -526,9 +425,6 @@ int markdown_core_inline_parser_scan_delimiters(
 
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add);
-
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_parser_get_extensions(markdown_core_parser *parser);
 
 #ifdef __cplusplus
 }

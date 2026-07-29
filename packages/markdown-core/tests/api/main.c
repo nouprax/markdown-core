@@ -31,7 +31,9 @@ static const markdown_core_node_type node_types[] = {
     MARKDOWN_CORE_NODE_EMPHASIS,
     MARKDOWN_CORE_NODE_STRONG,
     MARKDOWN_CORE_NODE_LINK,
-    MARKDOWN_CORE_NODE_IMAGE
+    MARKDOWN_CORE_NODE_IMAGE,
+    MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
+    MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE
 };
 static const char *const node_type_names[] = {
     "document",
@@ -51,7 +53,9 @@ static const char *const node_type_names[] = {
     "emphasis",
     "strong",
     "link",
-    "image"
+    "image",
+    "footnote_definition",
+    "footnote_reference"
 };
 static const int num_node_types = sizeof(node_types) / sizeof(*node_types);
 
@@ -245,53 +249,20 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_node *string = markdown_core_node_first_child(link);
     STR_EQ(runner, markdown_core_node_get_literal(string), "link", "get_literal string");
 
-    // Setters
-
-    OK(runner, markdown_core_node_set_heading_level(heading, 3), "set_heading_level");
-
-    OK(runner, markdown_core_node_set_list_type(bullet_list, MARKDOWN_CORE_ORDERED_LIST), "set_list_type ordered");
-    OK(runner, markdown_core_node_set_list_delim(bullet_list, MARKDOWN_CORE_PAREN_DELIM), "set_list_delim paren");
-    OK(runner, markdown_core_node_set_list_start(bullet_list, 3), "set_list_start");
-    OK(runner, markdown_core_node_set_list_tight(bullet_list, 0), "set_list_tight loose");
-
-    OK(runner, markdown_core_node_set_list_type(ordered_list, MARKDOWN_CORE_BULLET_LIST), "set_list_type bullet");
-    OK(runner, markdown_core_node_set_list_tight(ordered_list, 1), "set_list_tight tight");
+    // set_literal (the one mutation the engine itself depends on)
 
     OK(runner, markdown_core_node_set_literal(code, "CODE\n"), "set_literal indented code");
-
     OK(runner, markdown_core_node_set_literal(fenced, "FENCED\n"), "set_literal fenced code");
-    OK(runner, markdown_core_node_set_fence_info(fenced, "LANG"), "set_fence_info");
-
     OK(runner, markdown_core_node_set_literal(html, "<div>HTML</div>\n"), "set_literal html");
-
-    OK(runner, markdown_core_node_set_url(link, "URL"), "set_url");
-    OK(runner, markdown_core_node_set_title(link, "TITLE"), "set_title");
-
     OK(runner, markdown_core_node_set_literal(string, "prefix-LINK"), "set_literal string");
 
     // Set literal to suffix of itself (issue #139).
     const char *literal = markdown_core_node_get_literal(string);
     OK(runner, markdown_core_node_set_literal(string, literal + sizeof("prefix")), "set_literal suffix");
 
-    // Every setter must be observable through the AST accessors.
-    INT_EQ(runner, markdown_core_node_get_heading_level(heading), 3, "set_heading_level applied");
-    INT_EQ(runner, markdown_core_node_get_list_type(bullet_list), MARKDOWN_CORE_ORDERED_LIST, "set_list_type applied");
-    INT_EQ(runner, markdown_core_node_get_list_delim(bullet_list), MARKDOWN_CORE_PAREN_DELIM, "set_list_delim applied");
-    INT_EQ(runner, markdown_core_node_get_list_start(bullet_list), 3, "set_list_start applied");
-    INT_EQ(runner, markdown_core_node_get_list_tight(bullet_list), 0, "set_list_tight applied");
-    INT_EQ(
-        runner,
-        markdown_core_node_get_list_type(ordered_list),
-        MARKDOWN_CORE_BULLET_LIST,
-        "set_list_type bullet applied"
-    );
-    INT_EQ(runner, markdown_core_node_get_list_tight(ordered_list), 1, "set_list_tight tight applied");
     STR_EQ(runner, markdown_core_node_get_literal(code), "CODE\n", "set_literal code applied");
     STR_EQ(runner, markdown_core_node_get_literal(fenced), "FENCED\n", "set_literal fenced applied");
-    STR_EQ(runner, markdown_core_node_get_fence_info(fenced), "LANG", "set_fence_info applied");
     STR_EQ(runner, markdown_core_node_get_literal(html), "<div>HTML</div>\n", "set_literal html applied");
-    STR_EQ(runner, markdown_core_node_get_url(link), "URL", "set_url applied");
-    STR_EQ(runner, markdown_core_node_get_title(link), "TITLE", "set_title applied");
     STR_EQ(runner, markdown_core_node_get_literal(string), "LINK", "set_literal suffix applied");
 
     // Getter errors
@@ -308,19 +279,7 @@ static void accessors(test_batch_runner *runner) {
 
     // Setter errors
 
-    OK(runner, !markdown_core_node_set_heading_level(bullet_list, 3), "set_heading_level error");
-    OK(runner, !markdown_core_node_set_list_type(heading, MARKDOWN_CORE_ORDERED_LIST), "set_list_type error");
-    OK(runner, !markdown_core_node_set_list_start(code, 3), "set_list_start error");
-    OK(runner, !markdown_core_node_set_list_tight(fenced, 0), "set_list_tight error");
     OK(runner, !markdown_core_node_set_literal(ordered_list, "content\n"), "set_literal error");
-    OK(runner, !markdown_core_node_set_fence_info(paragraph, "lang"), "set_fence_info error");
-    OK(runner, !markdown_core_node_set_url(html, "url"), "set_url error");
-    OK(runner, !markdown_core_node_set_title(heading, "title"), "set_title error");
-
-    OK(runner, !markdown_core_node_set_heading_level(heading, 0), "set_heading_level too small");
-    OK(runner, !markdown_core_node_set_heading_level(heading, 7), "set_heading_level too large");
-    OK(runner, !markdown_core_node_set_list_type(bullet_list, MARKDOWN_CORE_NO_LIST), "set_list_type invalid");
-    OK(runner, !markdown_core_node_set_list_start(bullet_list, -1), "set_list_start negative");
 
     markdown_core_node_free(doc);
 }
@@ -810,14 +769,14 @@ static void create_tree(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "append1 consistent");
     OK(runner, markdown_core_node_parent(p) == doc, "node_parent");
 
-    markdown_core_node *emph = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
-    OK(runner, markdown_core_node_prepend_child(p, emph), "prepend1");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "prepend1 consistent");
-
     markdown_core_node *str1 = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_node_set_literal(str1, "Hello, ");
-    OK(runner, markdown_core_node_prepend_child(p, str1), "prepend2");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "prepend2 consistent");
+    OK(runner, markdown_core_node_append_child(p, str1), "append str1");
+    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "append str1 consistent");
+
+    markdown_core_node *emph = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
+    OK(runner, markdown_core_node_append_child(p, emph), "append emph");
+    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "append emph consistent");
 
     markdown_core_node *str3 = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     markdown_core_node_set_literal(str3, "!");
@@ -905,6 +864,7 @@ void hierarchy(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_PARAGRAPH,
         MARKDOWN_CORE_NODE_HEADING,
         MARKDOWN_CORE_NODE_THEMATIC_BREAK,
+        MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION,
         0
     };
     unsigned int all_inlines[] = {
@@ -917,6 +877,7 @@ void hierarchy(test_batch_runner *runner) {
         MARKDOWN_CORE_NODE_STRONG,
         MARKDOWN_CORE_NODE_LINK,
         MARKDOWN_CORE_NODE_IMAGE,
+        MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE,
         0
     };
 

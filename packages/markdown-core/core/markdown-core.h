@@ -90,10 +90,6 @@ struct markdown_core_mem {
 MARKDOWN_CORE_EXPORT
 markdown_core_mem *markdown_core_mem_default(void);
 
-/** Callback for freeing user data with a 'markdown_core_mem' context.
- */
-typedef void (*markdown_core_free_func)(markdown_core_mem *mem, void *user_data);
-
 /*
  * ## Basic data structures
  *
@@ -118,16 +114,6 @@ typedef struct _markdown_core_llist {
 MARKDOWN_CORE_EXPORT
 markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data);
 
-/** Free the list starting with 'head', calling 'free_func' with the
- *  data pointer of each of its elements
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_llist_free_full(
-    markdown_core_mem *mem,
-    markdown_core_llist *head,
-    markdown_core_free_func free_func
-);
-
 /** Free the list starting with 'head'
  */
 MARKDOWN_CORE_EXPORT
@@ -149,9 +135,6 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new(markdown_core_no
  */
 MARKDOWN_CORE_EXPORT markdown_core_node *
 markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem);
-
-MARKDOWN_CORE_EXPORT markdown_core_node *
-markdown_core_node_new_with_ext(markdown_core_node_type type, markdown_core_extension *extension);
 
 MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_node_type type,
@@ -263,43 +246,9 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
 
-/** Returns the current event type.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter);
-
-/** Returns the root node.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter);
-
-/** Resets the iterator so that the current node is 'current' and
- * the event type is 'event_type'.  The new current node must be a
- * descendant of the root node or the root node itself.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_iter_reset(
-    markdown_core_iter *iter,
-    markdown_core_node *current,
-    markdown_core_event_type event_type
-);
-
 /**
  * ## Accessors
  */
-
-/** Returns the user data of 'node'.
- */
-MARKDOWN_CORE_EXPORT void *markdown_core_node_get_user_data(markdown_core_node *node);
-
-/** Sets arbitrary user data for 'node'.  Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data);
-
-/** Set free function for user data */
-MARKDOWN_CORE_EXPORT
-int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func);
 
 /** Returns the type of 'node', or `MARKDOWN_CORE_NODE_NONE` on error.
  */
@@ -326,75 +275,31 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_literal(markdown_core_node *node
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_heading_level(markdown_core_node *node);
 
-/** Sets the heading level of 'node', returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_heading_level(markdown_core_node *node, int level);
-
 /** Returns the list type of 'node', or `MARKDOWN_CORE_NO_LIST` if 'node'
  * is not a list.
  */
 MARKDOWN_CORE_EXPORT markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *node);
-
-/** Sets the list type of 'node', returning 1 on success and 0 on error.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_list_type type);
 
 /** Returns the list delimiter type of 'node', or `MARKDOWN_CORE_NO_DELIM` if 'node'
  * is not a list.
  */
 MARKDOWN_CORE_EXPORT markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *node);
 
-/** Sets the list delimiter type of 'node', returning 1 on success and 0
- * on error.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_delim_type delim);
-
 /** Returns starting number of 'node', if it is an ordered list, otherwise 0.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_start(markdown_core_node *node);
-
-/** Sets starting number of 'node', if it is an ordered list. Returns 1
- * on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_start(markdown_core_node *node, int start);
 
 /** Returns 1 if 'node' is a tight list, 0 otherwise.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_tight(markdown_core_node *node);
 
-/** Sets the "tightness" of a list.  Returns 1 on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_tight(markdown_core_node *node, int tight);
-
-/** Returns the source-order item index of 'node'. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_get_list_item_index(markdown_core_node *node);
-
-/** Sets item index of 'node'. Returns 1 on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx);
-
 /** Returns the info string from a fenced code block.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_fence_info(markdown_core_node *node);
 
-/** Sets the info string in a fenced code block, returning 1 on
- * success and 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info);
-
 /** Returns 1 if a fenced code block has a closing fence, 0 otherwise.
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_get_fence_closed(markdown_core_node *node);
-
-/** Sets code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int
-markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset, char character);
-
-/** Returns code blocks fencing details
- */
-MARKDOWN_CORE_EXPORT int
-markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset, char *character);
 
 /** Returns the URL of a link or image 'node', or an empty string
     if no URL is set.  Returns NULL if called on a node that is
@@ -402,21 +307,11 @@ markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_url(markdown_core_node *node);
 
-/** Sets the URL of a link or image 'node'. Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_url(markdown_core_node *node, const char *url);
-
 /** Returns the title of a link or image 'node', or an empty
     string if no title is set.  Returns NULL if called on a node
     that is not a link or image.
  */
 MARKDOWN_CORE_EXPORT const char *markdown_core_node_get_title(markdown_core_node *node);
-
-/** Sets the title of a link or image 'node'. Returns 1 on success,
- * 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_set_title(markdown_core_node *node, const char *title);
 
 /** Returns the line on which 'node' begins.
  */
@@ -457,11 +352,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_insert_after(markdown_core_node *nod
  */
 MARKDOWN_CORE_EXPORT int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *newnode);
 
-/** Adds 'child' to the beginning of the children of 'node'.
- * Returns 1 on success, 0 on failure.
- */
-MARKDOWN_CORE_EXPORT int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_node *child);
-
 /** Adds 'child' to the end of the children of 'node'.
  * Returns 1 on success, 0 on failure.
  */
@@ -475,10 +365,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_consolidate_texts(markdown_core_node
 
 /** Ensures a node and all its children own their own chunk memory.
  */
-/** Converts borrowed string chunks into owned copies.  Returns 0 when a
- *  copy could not be allocated; the affected chunk is emptied rather than
- *  left borrowing the source buffer. */
-MARKDOWN_CORE_EXPORT int markdown_core_node_own(markdown_core_node *root);
 
 /**
  * ## Parsing
@@ -574,13 +460,6 @@ markdown_core_node *markdown_core_parser_refine_unit(
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t len, int options);
-
-/** Parse a CommonMark document in file 'f', returning a pointer to
- * a tree of nodes.  The memory allocated for the node tree should be
- * released using 'markdown_core_node_free' when it is no longer needed.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_node_parse_file(FILE *f, int options);
 
 /**
  * ## Options

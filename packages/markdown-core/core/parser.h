@@ -67,7 +67,6 @@ struct markdown_core_parser {
     size_t total_size;
     markdown_core_llist *extensions;
     markdown_core_llist *inline_extensions;
-    markdown_core_ispunct_func backslash_ispunct;
     /* Inline special-character tables for this parser: the core defaults plus
      * the special/emphasis-skip characters of the attached inline extensions.
      * Parser-local so concurrent parsers with different extension sets never

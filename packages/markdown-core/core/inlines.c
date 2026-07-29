@@ -932,7 +932,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
     bufsize_t start = subj->pos;
     advance(subj);
     unsigned char nextchar = peek_char(subj);
-    if ((parser->backslash_ispunct ? parser->backslash_ispunct : markdown_core_ispunct)(nextchar)) {
+    if (markdown_core_ispunct(nextchar)) {
         if (nextchar == '\\' && get_extension_for_special_char(parser, '\\') == NULL) {
             bufsize_t end = start;
             while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
@@ -1951,14 +1951,6 @@ markdown_core_parse_reference_inline(markdown_core_mem *mem, markdown_core_chunk
     return subj.pos;
 }
 
-unsigned char markdown_core_inline_parser_peek_char(markdown_core_inline_parser *parser) { return peek_char(parser); }
-
-unsigned char markdown_core_inline_parser_peek_at(markdown_core_inline_parser *parser, bufsize_t pos) {
-    return peek_at(parser, pos);
-}
-
-int markdown_core_inline_parser_is_eof(markdown_core_inline_parser *parser) { return is_eof(parser); }
-
 static char *my_strndup(const char *s, size_t n) {
     char *result;
     size_t len = strlen(s);
@@ -1974,20 +1966,6 @@ static char *my_strndup(const char *s, size_t n) {
 
     result[len] = '\0';
     return (char *)memcpy(result, s, len);
-}
-
-char *
-markdown_core_inline_parser_take_while(markdown_core_inline_parser *parser, markdown_core_inline_predicate_func pred) {
-    unsigned char c;
-    bufsize_t startpos = parser->pos;
-    bufsize_t len = 0;
-
-    while ((c = peek_char(parser)) && (*pred)(c)) {
-        advance(parser);
-        len++;
-    }
-
-    return my_strndup((const char *)parser->input.data + startpos, len);
 }
 
 void markdown_core_inline_parser_push_delimiter(
@@ -2061,8 +2039,6 @@ int markdown_core_inline_parser_scan_delimiters(
 
     return numdelims;
 }
-
-void markdown_core_inline_parser_advance_offset(markdown_core_inline_parser *parser) { advance(parser); }
 
 int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser) { return parser->pos; }
 

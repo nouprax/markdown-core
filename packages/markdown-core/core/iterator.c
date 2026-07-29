@@ -80,21 +80,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     return ev_type;
 }
 
-void markdown_core_iter_reset(
-    markdown_core_iter *iter,
-    markdown_core_node *current,
-    markdown_core_event_type event_type
-) {
-    iter->next.ev_type = event_type;
-    iter->next.node = current;
-    markdown_core_iter_next(iter);
-}
-
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
-
-markdown_core_event_type markdown_core_iter_get_event_type(markdown_core_iter *iter) { return iter->cur.ev_type; }
-
-markdown_core_node *markdown_core_iter_get_root(markdown_core_iter *iter) { return iter->root; }
 
 int markdown_core_node_consolidate_texts(markdown_core_node *root) {
     if (root == NULL) {
@@ -135,51 +121,5 @@ int markdown_core_node_consolidate_texts(markdown_core_node *root) {
 
     markdown_core_strbuf_free(&buf);
     markdown_core_iter_free(iter);
-    return ok;
-}
-
-int markdown_core_node_own(markdown_core_node *root) {
-    int ok = 1;
-    if (root == NULL) {
-        return 1;
-    }
-    /* Traverses via the parent/next pointers instead of an iterator so that
-     * taking ownership never needs to allocate; a chunk copy that cannot be
-     * allocated is emptied rather than left borrowing the source buffer. */
-    markdown_core_mem *mem = root->content.mem;
-    markdown_core_node *cur = root;
-
-    while (cur) {
-        switch (cur->type) {
-        case MARKDOWN_CORE_NODE_TEXT:
-        case MARKDOWN_CORE_NODE_HTML:
-        case MARKDOWN_CORE_NODE_CODE:
-        case MARKDOWN_CORE_NODE_HTML_BLOCK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.literal)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.literal, NULL);
-                ok = 0;
-            }
-            break;
-        case MARKDOWN_CORE_NODE_LINK:
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.url)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.link.url, NULL);
-                ok = 0;
-            }
-            if (!markdown_core_chunk_to_cstr(mem, &cur->as.link.title)) {
-                markdown_core_chunk_set_cstr(mem, &cur->as.link.title, NULL);
-                ok = 0;
-            }
-            break;
-        }
-
-        if (cur->first_child) {
-            cur = cur->first_child;
-        } else {
-            while (cur != root && cur->next == NULL) {
-                cur = cur->parent;
-            }
-            cur = (cur == root) ? NULL : cur->next;
-        }
-    }
     return ok;
 }
