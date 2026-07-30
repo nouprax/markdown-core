@@ -6,8 +6,10 @@
  * test does not require millions of AST nodes. Every parse-scaling endpoint
  * is warmed once before adaptive process-CPU sampling. Both spans expose
  * nonlinear growth without relying on absolute time thresholds. Scope-table
- * materialization separately walks committed deep trees through the public
- * batch API, pinning the first-scope-use path to linear growth. Ordered delta
+ * materialization separately walks doubling depths of one adversarial deep
+ * tree shape through the public batch API. Its gate uses the median adjacent
+ * growth rate, so a cache transition cannot masquerade as a complexity class
+ * while a sustained per-node ancestor walk still fails. Ordered delta
  * materialization measures a deep touched path independently of parsing,
  * rejecting per-node ancestor walks.
  *
@@ -31,11 +33,10 @@ static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
  * 4.0x to catch that observed regression without treating memory hierarchy as
  * an algorithmic proof. Probe/collision tests enforce the hash-path bound. */
 static const double MAX_NORMALIZED_SLOWDOWN = 4.0;
-/* Scope depth grows 8x below, so a quadratic materializer normalizes to
- * roughly 8x. The linear batch path measures about 2.0-2.5x after allocator
- * and cache effects; an independent 4.0x ceiling separates that signal from
- * parser thresholds that may evolve for unrelated workloads. */
-static const double MAX_SCOPE_NORMALIZED_SLOWDOWN = 4.0;
+/* Each scope step doubles depth: linear work normalizes to 1.0 and quadratic
+ * work to 2.0. Taking the median across six adjacent steps rejects sustained
+ * superlinear growth without making one allocator/cache boundary the oracle. */
+static const double MAX_SCOPE_MEDIAN_NORMALIZED_STEP = 1.75;
 static const double MAX_DELTA_ORDER_NORMALIZED_SLOWDOWN = 4.0;
 
 typedef char *(*cc_builder)(size_t size, size_t *length);
@@ -795,6 +796,25 @@ static int cc_run_footnote_renumber(const char *name) {
 
 static const size_t CC_DEEP_DEPTHS[] = {2048, 16384};
 #define CC_DEEP_STEPS (sizeof(CC_DEEP_DEPTHS) / sizeof(CC_DEEP_DEPTHS[0]))
+static const size_t CC_SCOPE_DEPTHS[] = {512, 1024, 2048, 4096, 8192, 16384, 32768};
+#define CC_SCOPE_STEPS (sizeof(CC_SCOPE_DEPTHS) / sizeof(CC_SCOPE_DEPTHS[0]))
+
+static double cc_median(double *values, size_t count) {
+    size_t index;
+    for (index = 1; index < count; index++) {
+        double value = values[index];
+        size_t slot = index;
+        while (slot && values[slot - 1] > value) {
+            values[slot] = values[slot - 1];
+            slot--;
+        }
+        values[slot] = value;
+    }
+    if (count % 2) {
+        return values[count / 2];
+    }
+    return (values[count / 2 - 1] + values[count / 2]) / 2.0;
+}
 
 static markdown_core_session *cc_scope_build(size_t depth) {
     markdown_core_session *session = NULL;
@@ -825,6 +845,22 @@ static markdown_core_session *cc_scope_build(size_t depth) {
     return session;
 }
 
+static int cc_scope_materialize(const markdown_core_document *document) {
+    markdown_core_scope_entry *entries = NULL;
+    size_t count = 0;
+    size_t index;
+    uint64_t checksum = 0;
+
+    if (!markdown_core_document_scope_table(document, &entries, &count, NULL)) {
+        return -1;
+    }
+    for (index = 0; index < count; index++) {
+        checksum += (uint64_t)entries[index].scope.start.line + (uint64_t)entries[index].scope.end.line;
+    }
+    markdown_core_scope_table_free(entries);
+    return checksum ? 0 : -1;
+}
+
 static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
     markdown_core_session *session = cc_scope_build(depth);
     const markdown_core_document *document;
@@ -838,24 +874,16 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         markdown_core_session_free(session);
         return -1;
     }
+    if (cc_scope_materialize(document) != 0) {
+        markdown_core_session_free(session);
+        return -1;
+    }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t iterations = 0;
         do {
-            markdown_core_scope_entry *entries = NULL;
-            size_t count = 0;
-            size_t index;
-            uint64_t checksum = 0;
-            if (!markdown_core_document_scope_table(document, &entries, &count, NULL)) {
-                markdown_core_session_free(session);
-                return -1;
-            }
-            for (index = 0; index < count; index++) {
-                checksum += (uint64_t)entries[index].scope.start.line + (uint64_t)entries[index].scope.end.line;
-            }
-            markdown_core_scope_table_free(entries);
-            if (checksum == 0) {
+            if (cc_scope_materialize(document) != 0) {
                 markdown_core_session_free(session);
                 return -1;
             }
@@ -865,37 +893,35 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_session_free(session);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds_per_materialization = a + b + c - high - low;
-    }
+    *seconds_per_materialization = cc_median(samples, SCALING_REPEATS);
     return 0;
 }
 
 static int cc_run_scope_materialization(const char *name) {
-    double timings[CC_DEEP_STEPS];
+    double timings[CC_SCOPE_STEPS];
+    double normalized_steps[CC_SCOPE_STEPS - 1];
+    double median_normalized_step;
     size_t step;
     int failed = 0;
-    for (step = 0; step < CC_DEEP_STEPS; step++) {
-        if (cc_scope_measure(CC_DEEP_DEPTHS[step], &timings[step]) != 0) {
+    for (step = 0; step < CC_SCOPE_STEPS; step++) {
+        if (cc_scope_measure(CC_SCOPE_DEPTHS[step], &timings[step]) != 0) {
             fprintf(stderr, "scope materialization failed for %s\n", name);
             return -1;
         }
     }
-    {
-        double depth_growth = (double)CC_DEEP_DEPTHS[CC_DEEP_STEPS - 1] / (double)CC_DEEP_DEPTHS[0];
-        double normalized_slowdown = timings[CC_DEEP_STEPS - 1] / timings[0] / depth_growth;
-        if (normalized_slowdown > MAX_SCOPE_NORMALIZED_SLOWDOWN) {
-            failed = 1;
-        }
-        printf("%s ... %s (", name, failed ? "[FAILED non-linear scope scaling]" : "[PASSED]");
-        for (step = 0; step < CC_DEEP_STEPS; step++) {
-            printf("%sdepth %zu: %.9fs/materialization", step ? ", " : "", CC_DEEP_DEPTHS[step], timings[step]);
-        }
-        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
+    for (step = 1; step < CC_SCOPE_STEPS; step++) {
+        double depth_growth = (double)CC_SCOPE_DEPTHS[step] / (double)CC_SCOPE_DEPTHS[step - 1];
+        normalized_steps[step - 1] = timings[step] / timings[step - 1] / depth_growth;
     }
+    median_normalized_step = cc_median(normalized_steps, CC_SCOPE_STEPS - 1);
+    if (median_normalized_step > MAX_SCOPE_MEDIAN_NORMALIZED_STEP) {
+        failed = 1;
+    }
+    printf("%s ... %s (", name, failed ? "[FAILED sustained non-linear scope scaling]" : "[PASSED]");
+    for (step = 0; step < CC_SCOPE_STEPS; step++) {
+        printf("%sdepth %zu: %.9fs/materialization", step ? ", " : "", CC_SCOPE_DEPTHS[step], timings[step]);
+    }
+    printf(", median normalized step: %.3fx)\n", median_normalized_step);
     return failed ? -1 : 0;
 }
 
@@ -985,12 +1011,7 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
     }
     markdown_core_delta_free(changes);
     markdown_core_session_free(session);
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds_per_ordering = a + b + c - high - low;
-    }
+    *seconds_per_ordering = cc_median(samples, SCALING_REPEATS);
     return 0;
 }
 
@@ -1080,12 +1101,7 @@ static int cc_measure(const char *input, size_t length, const char *option, cc_v
     }
     /* Median of three for short samples where cache and allocator noise
      * matters. */
-    {
-        double a = samples[0], b = samples[1], c = samples[2];
-        double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
-        double low = a < b ? (a < c ? a : c) : (b < c ? b : c);
-        *seconds = a + b + c - high - low;
-    }
+    *seconds = cc_median(samples, SCALING_REPEATS);
     return 0;
 }
 
