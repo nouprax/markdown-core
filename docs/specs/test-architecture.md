@@ -262,6 +262,11 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   scanner/map/reference 4 KiB → 128 MiB 与 delimiter-dense 4 KiB → 64 KiB
   endpoint 的每字节 CPU 成本断言渐近趋势；benchmark 使用 doubling 相对比率；
   均不使用易波动的绝对时间 gate。
+- Scope-table complexity 使用 512 → 32768 的 adversarial deep-chain doubling
+  序列：每个深度先 warmup，再取 3 个至少 25 ms CPU sample 的中位数；gate
+  比较六个相邻区间 normalized growth 的中位数。这样持续的 ancestor-walk
+  quadratic growth 会在多数尺度上失败，而单次 allocator/cache 层级切换不会被
+  错当成复杂度类别。
 - Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
   禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
   “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
