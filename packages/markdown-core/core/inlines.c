@@ -862,8 +862,8 @@ static void process_emphasis(markdown_core_parser *parser, subject *subj, markdo
 
     // now move forward, looking for closers, and handling each
     while (closer != NULL) {
-        markdown_core_extension *extension = get_extension_for_special_char(parser, closer->delim_char);
         if (closer->can_close) {
+            markdown_core_extension *extension = get_extension_for_special_char(parser, closer->delim_char);
             // Now look backwards for first matching opener:
             opener = closer->previous;
             opener_found = false;

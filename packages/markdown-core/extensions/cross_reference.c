@@ -1,6 +1,7 @@
 #include "cross_reference.h"
 
 #include <chunk.h>
+#include <iterator.h>
 #include <node.h>
 #include <parser.h>
 
@@ -20,6 +21,11 @@ typedef struct {
 
 static void opaque_alloc(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
 static void opaque_free(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
+static markdown_core_node *postprocess_block(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *block
+);
 static markdown_core_node *match(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -48,6 +54,7 @@ static const markdown_core_extension cross_link_extension = {
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .postprocess_block = postprocess_block,
     .special_inline_chars = cross_link_special_chars,
     .special_inline_char_count = sizeof(cross_link_special_chars),
     .flanking_skip_chars = cross_link_flanking_skip_chars,
@@ -61,6 +68,7 @@ static const markdown_core_extension embed_extension = {
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .postprocess_block = postprocess_block,
     .special_inline_chars = embed_special_chars,
     .special_inline_char_count = sizeof(embed_special_chars),
     .flanking_skip_chars = embed_flanking_skip_chars,
@@ -104,6 +112,40 @@ static void opaque_free(markdown_core_extension *extension, markdown_core_mem *m
     }
     markdown_core_chunk_free(mem, &reference->reference);
     mem->free(mem, reference);
+}
+
+static markdown_core_node *postprocess_block(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *block
+) {
+    markdown_core_iter *iter;
+    markdown_core_event_type event;
+
+    if (!markdown_core_node_owns_inlines(block)) {
+        return block;
+    }
+    iter = markdown_core_iter_new(block);
+    if (!iter) {
+        parser->oom = true;
+        return block;
+    }
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        node_cross_reference *reference;
+
+        if (event != MARKDOWN_CORE_EVENT_ENTER || node->extension != extension || !is_cross_reference_node(node)) {
+            continue;
+        }
+        reference = get_cross_reference(node);
+        if (reference && !reference->reference.alloc &&
+            !markdown_core_chunk_to_cstr(parser->mem, &reference->reference)) {
+            parser->oom = true;
+            break;
+        }
+    }
+    markdown_core_iter_free(iter);
+    return block;
 }
 
 static markdown_core_node *delimiter_text(
@@ -196,12 +238,12 @@ static delimiter *insert(
         goto done;
     }
 
+    /*
+     * Borrow during delimiter reduction. Nested matches that are subsequently
+     * swallowed by an outer opaque reference then allocate nothing; the
+     * block postprocess materializes only nodes that survive in the final AST.
+     */
     payload->reference = markdown_core_chunk_dup(chunk, body_start, body_end - body_start);
-    if (!markdown_core_chunk_to_cstr(parser->mem, &payload->reference)) {
-        parser->oom = true;
-        markdown_core_node_free(node);
-        goto done;
-    }
     node->start_line = opener_node->start_line;
     node->start_column = opener_node->start_column;
     node->end_line = closer_node->end_line;

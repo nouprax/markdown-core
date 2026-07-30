@@ -23,6 +23,7 @@
 #include "node.h"
 #include "references.h"
 
+#include "cross_reference.h"
 #include "session_internal.h"
 
 /* Injected allocator.  Only the targeted shapes fail: key-index slot tables
@@ -731,12 +732,15 @@ static const char FB_SWEEP_CORPUS[] =
     "\n"
     ":inline{a=1 b=2 a=3}\n"
     "\n"
+    "Cross [[folder/note#heading]] and embed ![[asset.png|preview]].\n"
+    "\n"
     "[^fn]: footnote *body*\n"
     "\n"
     "<!-- comment -->\n"
     "text after <span>html</span>\n";
 
-static const char *FB_SWEEP_EXTENSIONS[] = {"table", "strikethrough", "autolink", "tasklist", "formula", "directive"};
+static const char *FB_SWEEP_EXTENSIONS[] =
+    {"table", "strikethrough", "autolink", "tasklist", "formula", "directive", "cross_link", "embed"};
 
 static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
     int options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART |
@@ -785,6 +789,9 @@ static int fb_node_payload_equal(markdown_core_node *a, markdown_core_node *b) {
     }
     if (type == MARKDOWN_CORE_NODE_LINK || type == MARKDOWN_CORE_NODE_IMAGE) {
         return fb_chunk_equal(&a->as.link.url, &b->as.link.url) && fb_chunk_equal(&a->as.link.title, &b->as.link.title);
+    }
+    if (type == MARKDOWN_CORE_NODE_CROSS_LINK || type == MARKDOWN_CORE_NODE_EMBED) {
+        return fb_chunk_equal(markdown_core_cross_reference_value(a), markdown_core_cross_reference_value(b));
     }
     return 1;
 }

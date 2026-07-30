@@ -431,6 +431,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     nested_directive_label_closers
     many_email_autolinks
     unclosed_cross_references
+    balanced_nested_cross_links
     session_stream_flat
     session_edit_storm
     session_ref_retarget
