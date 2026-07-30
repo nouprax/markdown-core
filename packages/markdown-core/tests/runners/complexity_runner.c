@@ -4,8 +4,8 @@
  * per input byte. Scanner/map/reference cases span 4 KiB to 128 MiB;
  * delimiter-dense cases use a smaller 4 KiB to 64 KiB span so the regression
  * test does not require millions of AST nodes. Every parse-scaling endpoint
- * is warmed once before adaptive timed sampling. Both spans expose nonlinear
- * growth without relying on absolute wall-clock thresholds. Scope-table
+ * is warmed once before adaptive process-CPU sampling. Both spans expose
+ * nonlinear growth without relying on absolute time thresholds. Scope-table
  * materialization separately walks committed deep trees through the public
  * batch API, pinning the first-scope-use path to linear growth. Ordered delta
  * materialization measures a deep touched path independently of parsing,
@@ -24,7 +24,7 @@ static const size_t SCALING_SIZES[] = {4096, 134217728};
 static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
 #define SCALING_STEPS (sizeof(SCALING_SIZES) / sizeof(SCALING_SIZES[0]))
 #define SCALING_REPEATS 3
-#define MIN_SAMPLE_NS 25000000ULL
+#define MIN_SAMPLE_CPU_NS 25000000ULL
 /* A linear parser has constant asymptotic work per input byte, but millions of
  * parsed nodes cross allocator and cache regimes that a 4 KiB sample does not.
  * The inherited qsort path measured 4.442x across these endpoints; reject at
@@ -235,27 +235,141 @@ static char *cc_balanced_nested_cross_links(size_t size, size_t *length) {
     return input;
 }
 
+/*
+ * Every "$0" is opener-only: the following digit suppresses closing. Every
+ * "x$ " is closer-only: the following space suppresses opening. Phase two
+ * therefore reduces N properly nested formula ranges from the inside out.
+ * Eagerly copying each temporary survivor's growing body is Theta(N^2);
+ * survivor-only materialization copies only the final outer body.
+ */
+static char *cc_balanced_nested_dollar_formulas(size_t size, size_t *length) {
+    size_t count = size > 1 ? (size - 1) / 5 : 1;
+    char *input = (char *)malloc(count * 5 + 2);
+    char *cursor = input;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, "$0", 2);
+        cursor += 2;
+    }
+    *cursor++ = 'z';
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, "x$ ", 3);
+        cursor += 3;
+    }
+    *length = (size_t)(cursor - input);
+    input[*length] = '\0';
+    return input;
+}
+
+/*
+ * The LaTeX-compatible forms are intrinsically opener-only and closer-only,
+ * so repeating "\\(" + body + "\\)" creates the same nested reduction
+ * shape without the lexical scaffolding required by dollar delimiters.
+ */
+static char *cc_balanced_nested_backslash_formulas(size_t size, size_t *length) {
+    static const char opener[] = "\\\\(";
+    static const char closer[] = "\\\\)";
+    size_t count = size > 1 ? (size - 1) / 6 : 1;
+    char *input = (char *)malloc(count * 6 + 2);
+    char *cursor = input;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, opener, sizeof(opener) - 1);
+        cursor += sizeof(opener) - 1;
+    }
+    *cursor++ = 'z';
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, closer, sizeof(closer) - 1);
+        cursor += sizeof(closer) - 1;
+    }
+    *length = (size_t)(cursor - input);
+    input[*length] = '\0';
+    return input;
+}
+
+typedef int (*cc_validator)(const markdown_core_document *document, size_t length);
+
+static int cc_validate_nested_formula(
+    const markdown_core_document *document,
+    size_t literal_length,
+    int32_t end_column
+) {
+    size_t counts[TS_KIND_COUNT] = {0};
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+    const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
+    markdown_core_placement_mode mode;
+    markdown_core_string_view literal;
+    markdown_core_scope scope;
+
+    if (ts_ast_count_kinds(root, counts) != 0 || counts[MARKDOWN_CORE_KIND_FORMULA] != 1 ||
+        markdown_core_node_get_kind(formula) != MARKDOWN_CORE_KIND_FORMULA ||
+        !markdown_core_node_formula_properties(formula, &mode, &literal) || mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED ||
+        literal.length != literal_length) {
+        fputs("nested formula adversary did not produce one outer formula with the full body\n", stderr);
+        return -1;
+    }
+    scope = markdown_core_node_scope(formula);
+    if (scope.start.line != 1 || scope.start.column != 1 || scope.end.line != 1 || scope.end.column != end_column) {
+        fputs("nested formula adversary did not span the outermost delimiter pair\n", stderr);
+        return -1;
+    }
+    return 0;
+}
+
+static int cc_validate_nested_dollar_formula(const markdown_core_document *document, size_t length) {
+    return length >= 3 ? cc_validate_nested_formula(document, length - 3, (int32_t)length - 1) : -1;
+}
+
+static int cc_validate_nested_backslash_formula(const markdown_core_document *document, size_t length) {
+    size_t count = length > 1 ? (length - 1) / 6 : 0;
+    /* Materialization removes one escape byte from every nested closer that
+     * survives inside the outer formula body. */
+    return count ? cc_validate_nested_formula(document, length - count - 5, (int32_t)length) : -1;
+}
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
     const size_t *sizes;
     const char *option;
+    cc_validator validate;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value, SCALING_SIZES, "directive"},
-    {"valid_consecutive_backslashes", cc_backslashes, SCALING_SIZES, "directive"},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted, SCALING_SIZES, "directive"},
-    {"unclosed_backslash_value", cc_unclosed_backslashes, SCALING_SIZES, "directive"},
-    {"many_unique_attributes", cc_unique_attributes, SCALING_SIZES, "directive"},
-    {"many_duplicate_attributes", cc_duplicate_attributes, SCALING_SIZES, "directive"},
-    {"many_unique_references", cc_unique_references, SCALING_SIZES, "directive"},
-    {"many_duplicate_references", cc_duplicate_references, SCALING_SIZES, "directive"},
-    {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive"},
-    {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive"},
-    {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink"},
-    {"unclosed_cross_references", cc_unclosed_cross_references, DELIMITER_SCALING_SIZES, "cross-links-and-embeds"},
-    {"balanced_nested_cross_links", cc_balanced_nested_cross_links, DELIMITER_SCALING_SIZES, "cross-link"},
+    {"valid_long_quoted_value", cc_quoted_value, SCALING_SIZES, "directive", NULL},
+    {"valid_consecutive_backslashes", cc_backslashes, SCALING_SIZES, "directive", NULL},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, SCALING_SIZES, "directive", NULL},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, SCALING_SIZES, "directive", NULL},
+    {"many_unique_attributes", cc_unique_attributes, SCALING_SIZES, "directive", NULL},
+    {"many_duplicate_attributes", cc_duplicate_attributes, SCALING_SIZES, "directive", NULL},
+    {"many_unique_references", cc_unique_references, SCALING_SIZES, "directive", NULL},
+    {"many_duplicate_references", cc_duplicate_references, SCALING_SIZES, "directive", NULL},
+    {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive", NULL},
+    {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive", NULL},
+    {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink", NULL},
+    {"unclosed_cross_references",
+     cc_unclosed_cross_references,
+     DELIMITER_SCALING_SIZES,
+     "cross-links-and-embeds",
+     NULL},
+    {"balanced_nested_cross_links", cc_balanced_nested_cross_links, DELIMITER_SCALING_SIZES, "cross-link", NULL},
+    {"balanced_nested_dollar_formulas",
+     cc_balanced_nested_dollar_formulas,
+     DELIMITER_SCALING_SIZES,
+     "formula",
+     cc_validate_nested_dollar_formula},
+    {"balanced_nested_backslash_formulas",
+     cc_balanced_nested_backslash_formulas,
+     DELIMITER_SCALING_SIZES,
+     "formula",
+     cc_validate_nested_backslash_formula},
 };
 
 /* --- session commit-cost cases -------------------------------------------
@@ -492,12 +606,12 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
     return 0;
 }
 
-/* Session repeats take the minimum, not the median: contention on shared CI
- * runners only ever adds time, and it inflates the large session (the
- * cache- and bandwidth-heavy working set) far more than the small one,
- * which skews the ratio the flatness bound is about. The minimum estimates
- * the uncontended per-commit cost on both sides of that ratio. Five windows
- * give the minimum a real chance to see a quiet slice on a noisy machine. */
+/* Session repeats take the minimum, not the median: competing processes are
+ * excluded by the process CPU clock, but cache and memory-bandwidth pressure
+ * can still inflate the large working set more than the small one. The
+ * minimum estimates the uncontended per-commit cost on both sides of that
+ * ratio. Five windows give both endpoints a chance to observe a quiet cache
+ * and memory slice. */
 #define CC_SESSION_REPEATS 5
 
 static int cc_session_measure(size_t size, int mode, double *seconds_per_commit) {
@@ -511,7 +625,7 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
         return -1;
     }
     for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t commits = 0;
         double sample;
@@ -521,8 +635,8 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
                 return -1;
             }
             commits += CC_SESSION_OPS;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         sample = (double)elapsed / (1e9 * (double)commits);
         if (repeat == 0 || sample < floor_seconds) {
             floor_seconds = sample;
@@ -610,7 +724,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
         return -1;
     }
     for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t commits = 0;
         do {
@@ -638,8 +752,8 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
             }
             op_counter++;
             commits++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         {
             double sample = (double)elapsed / (1e9 * (double)commits);
             if (repeat == 0 || sample < floor_seconds) {
@@ -725,7 +839,7 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t iterations = 0;
         do {
@@ -746,8 +860,8 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
                 return -1;
             }
             iterations++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_session_free(session);
@@ -840,7 +954,7 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; ++repeat) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t iterations = 0;
         do {
@@ -865,8 +979,8 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
                 return -1;
             }
             ++iterations;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_delta_free(changes);
@@ -920,7 +1034,7 @@ static const char *const CC_SESSION_CASES[] = {
     "session_delta_ordering",
 };
 
-static int cc_measure(const char *input, size_t length, const char *option, double *seconds) {
+static int cc_measure(const char *input, size_t length, const char *option, cc_validator validate, double *seconds) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
@@ -935,13 +1049,17 @@ static int cc_measure(const char *input, size_t length, const char *option, doub
         if (!document) {
             return -1;
         }
+        if (validate && validate(document, length) != 0) {
+            markdown_core_document_free(document);
+            return -1;
+        }
         markdown_core_document_free(document);
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
         uint64_t started;
         uint64_t elapsed;
         size_t iterations = 0;
-        started = ts_monotonic_ns();
+        started = ts_process_cpu_ns();
         do {
             markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
             if (!document) {
@@ -949,18 +1067,19 @@ static int cc_measure(const char *input, size_t length, const char *option, doub
             }
             markdown_core_document_free(document);
             iterations++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
         /* Classify from the first post-warmup bucket. A single parse already
          * gives a long, stable sample for the large endpoint; later one-parse
-         * buckets are scheduler outliers handled by the median below. */
+         * buckets are cache/memory outliers handled by the median below. */
         if (repeat == 0 && iterations == 1) {
             *seconds = samples[repeat];
             return 0;
         }
     }
-    /* Median of three for short samples where scheduler noise matters. */
+    /* Median of three for short samples where cache and allocator noise
+     * matters. */
     {
         double a = samples[0], b = samples[1], c = samples[2];
         double high = a > b ? (a > c ? a : c) : (b > c ? b : c);
@@ -983,7 +1102,7 @@ static int cc_run(const cc_case_entry *entry) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, entry->option, &timings[step]) != 0) {
+        if (cc_measure(input, length, entry->option, entry->validate, &timings[step]) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;

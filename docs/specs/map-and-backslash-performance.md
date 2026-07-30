@@ -1,6 +1,6 @@
 # Map 与连续反斜杠性能设计
 
-状态：待 review  
+状态：已实现并由 adversarial invariant 覆盖
 日期：2026-07-14  
 范围：C parser core、directive attribute normalization、complexity gate
 
@@ -130,8 +130,8 @@ allocator 的 `oom_sweep` 回归把守。机制分三层：
   "分配失败会被误读成合法输入形态"的路径（list marker、table row、directive scan 等）
   都区分两种失败并只对分配失败置位。
 - `markdown_core_parser_finish` 在任一 `oom` 位置位时释放语法树并返回 NULL——截断文档
-  不会伪装成功。唯一允许"注入失败仍成功"的路径是无损回退（map 的 pointer-sort 回退、
-  容量采样降级），此时输出与未注入时逐字节一致。
+  不会伪装成功。唯一允许"注入失败仍成功"的路径是无损的 map/directive pointer-sort
+  回退，此时输出与未注入时逐字节一致。
 
 公开 API 直接内建失败报告：`parser_new`/`map_new`/`iter_new` 返回 NULL；
 `markdown_core_node_consolidate_texts` 与 `markdown_core_node_set_literal` 返回 int。
@@ -152,9 +152,10 @@ map 仍在每次 lookup 后执行原有 expansion limit accounting；hash index 
 footnote 的 lookup 使用相同规则；需要按 source index 输出时显式收集并排序，不能依赖 hash
 slot order。
 
-建索引的初始容量复用 directive 的采样策略（见下节）：定义总数超过 1024 时先采样，
-duplicate-heavy 的定义链表按采样 unique 数起步、依赖摊还扩容，不再按每个 source
-occurrence 预分配 slot。
+共享 index 不接受 occurrence count 或抽样结果作为容量提示。所有调用方从相同的最小
+capacity 开始，只在插入一个新的 distinct key 会越过 load-factor 或 probe-window 不变量时
+事务性翻倍。重复 occurrence 不增长 table，因此空间由实际 unique key 数决定，与 source
+中的 prefix/tail 排列无关。
 
 ## 2. Directive attribute 去重
 
@@ -174,16 +175,20 @@ iteration order，也不需要为输出重新排序。
 如果 index 初始化或插入失败，directive 回退到 pointer sort。fallback 仍显式把最后一个
 value 移到第一个 attribute，并关闭其余重复项，因此两条路径具有相同语义。
 
-### 初始容量采样
+### 唯一键驱动的容量
 
-unique-heavy 输入希望按总 attribute count 预分配，duplicate-heavy 输入则不应按数百万个
-source occurrences 浪费空间。count 大于 1024 时先采样最多 1024 个 key：
+attribute occurrence count 只描述 source 长度，不描述需要索引的 key 数。实现不再采样输入
+前缀，也没有 unique-ratio、count threshold 或 unique/duplicate 两条策略。每个 attribute
+都进入同一个 insert 操作：
 
-- 样本 unique ratio 大于 0.5：按总 count 初始化；
-- 否则：按样本 unique count 初始化，后续按需渐进扩容。
+- 已存在的 key 只返回 first attribute，不改变 capacity；
+- 新 key 在统一的 0.5 load-factor 下按需增长；
+- growth 先完整建立新 table，成功后才替换旧 table；
+- allocation/probe failure 统一进入保持相同语义的 pointer-sort fallback。
 
-采样只影响初始 capacity，不影响最终 key 集合或重复语义。采样 index 自身失败时按总 count
-初始化，保证它只是优化提示而不是 correctness 前提。
+因此 unique-heavy 输入承担几何增长的摊还 O(n) rehash work，duplicate-heavy 和任意 skewed
+排列的 table 空间保持 O(unique keys)。这是一个算法和一个数据模型，不依赖 benchmark
+观察到的“常见形状”。
 
 ## 3. 连续反斜杠批处理
 
@@ -204,16 +209,17 @@ backslash，并创建一个 Text node。parser finish 最终会合并相邻 Text
 
 ### 新路径
 
-当且仅当以下条件全部满足时启用批处理：
+当且仅当以下条件全部满足时执行 pair-run 解码：
 
 1. 当前字符为 `\\`；
 2. 下一个字符也是可 escape 的 `\\`；
 3. 没有 extension 注册并接管 `\\` special char；
-4. 连续 run 至少包含两对 backslash。
 
-实现一次扫描完整的 pair run，分配最终长度的一块 buffer，填入 `run_bytes / 2` 个 literal
-backslash，并创建一个 Text node。单 pair、奇数结尾、line ending、非 punctuation 和 allocation
-失败仍走原有逐项路径。
+实现一次扫描完整的 pair run，并创建一个 Text node。对 `2k` 个全为 backslash 的 source
+bytes，输出正好是 `k` 个 backslash；source run 的前 `k` 个 bytes 已经是该输出，所以
+literal 直接借用这段输入，scope 则覆盖完整的 `2k` bytes。单 pair 与多 pair 使用同一操作，
+没有 count threshold、转换 buffer、`memset` 或 payload allocation。奇数 run 的最后一个
+backslash 留给下一次普通 dispatch。
 
 ### 语义等价性
 
@@ -224,6 +230,7 @@ backslash；parser finish 将它们合并为长度 k 的 Text node。新路径�
 
 - decoded literal bytes 相同；
 - node scope 仍覆盖整个 consumed source run；
+- 单 pair 和多 pair 走同一 pair-run 算法；
 - 偶数 pair run 后的下一个字符仍由下一次 inline dispatch 处理；
 - 奇数 run 的最后一个 backslash 仍按其后字符决定 escape、hard break 或 literal；
 - extension hook 先于 core backslash handler，且注册 `\\` extension 时批处理明确禁用；
@@ -257,12 +264,14 @@ normalized slowdown = large_time / small_time / 32768
 最新本机 normalized slowdown 为 0.663–1.164。128 MiB unclosed-backslash 从约 2.49 秒降至
 0.189 秒，修复后为 0.979×。
 
-wall-clock threshold 为 4.0，而不是把 2.0 当作 n log n 的数学判别线。原因是 128 MiB
-解析会创建数百万个对象并跨越 4 KiB 样本没有覆盖的 allocator/cache regime；远端 macOS
-上 expected-linear unique-attribute hash path 曾测得 2.753–3.318。4.0 仍低于已测旧 sort
-路径的 4.442，并能拒绝旧 backslash 路径的 9.850。
+normalized threshold 为 4.0，而不是把 2.0 当作 n log n 的数学判别线。它最初由 wall-clock
+数据校准：128 MiB 解析会创建数百万个对象并跨越 4 KiB 样本没有覆盖的 allocator/cache
+regime；远端 macOS 上 expected-linear unique-attribute hash path 曾测得 2.753–3.318，
+旧 sort 路径为 4.442，旧 backslash 路径为 9.850。当前 complexity runner 对同一
+normalized bound 使用 process CPU time，排除 descheduling，但仍保留 allocator/cache
+计算成本。
 
-timing gate 负责捕获真实端到端退化，但不单独证明算法复杂度。结构性保证来自：
+CPU-timing gate 负责捕获真实计算量退化，但不单独证明算法复杂度。结构性保证来自：
 
 - 0.5 load factor；
 - 64-probe hard limit，以及探测耗尽后的单次事务性扩容重试；
@@ -270,6 +279,11 @@ timing gate 负责捕获真实端到端退化，但不单独证明算法复杂�
 - fallback_runner 的确定性回退回归：注入 allocator 强制 pointer-sort 路径并与 hash 路径
   逐项对拍（reference map 与 directive attributes 各一）、构造聚簇 key 验证探测耗尽触发
   扩容而非失败、双路径分配失败时 lookup 返回未命中且事后可恢复；
+- `key_index_skewed_cardinality` 与 `directive_skewed_cardinality`：分别将 unique-heavy
+  region 放在前缀/尾部，断言 slot capacity 只跟 distinct keys 相关，能够击穿旧的前 1024
+  项采样策略；
+- `backslash_run_borrowed_payload`：覆盖长度 2/3/4/5 的 odd/even 边界，并用 allocator
+  observer 断言长 pair run 不分配 transformed payload；
 - fallback_runner 的 `oom_sweep`：对全特性语料扫过每一个分配点注入失败，断言
   "NULL 或逐字节一致"，把优雅降级契约钉死为回归；
 - 50,000-entry legacy-hash collision 回归（针对继承的 32-bit hash 构造；在当前 64-bit
@@ -289,8 +303,8 @@ Reviewer 应重点确认：
 - reference 的 first-definition-wins 是否因 newest-first 链表遍历方向得到保留；
 - directive 是否确实保持 first-position/last-value-wins；
 - 任意输出是否错误依赖 hash slot order；
-- backslash fast path 是否只在没有 extension owner 时进入；
-- odd/even runs、单 pair、allocation failure 与 source scope 是否保持旧行为；
+- pair-run 解码是否只在没有 extension owner 时进入；
+- odd/even runs、单 pair、borrowed payload lifetime 与 source scope 是否保持旧行为；
 - performance gate 是否继续同时覆盖正常、重复、malformed 和 collision 输入。
 
 ## 6. 相关实现与测试
@@ -298,10 +312,9 @@ Reviewer 应重点确认：
 - `packages/markdown-core/core/map.c` / `map.h`：共享 index 与 inherited map adapter；
 - `packages/markdown-core/core/references.c`：reference entry ownership；
 - `packages/markdown-core/core/footnotes.c`、`blocks.c`：footnote lookup 与显式输出排序；
-- `packages/markdown-core/extensions/directive.c`：attribute normalization 与容量采样；
-- `packages/markdown-core/core/inlines.c`：连续 backslash pair fast path；
+- `packages/markdown-core/extensions/directive.c`：统一的 attribute normalization；
+- `packages/markdown-core/core/inlines.c`：allocation-free 连续 backslash pair-run 解码；
 - `packages/markdown-core/tests/runners/complexity_runner.c`：4 KiB → 128 MiB endpoint gate；
 - `packages/markdown-core/tests/runners/pathological_runner.c`：legacy-hash collision regression；
 - `packages/markdown-core/tests/runners/fallback_runner.c`：allocator 注入的 sorted-fallback
   对拍、构造聚簇的扩容重试与 OOM 降级回归。
-

@@ -107,6 +107,11 @@ char *ts_repeat(const char *unit, size_t count, size_t *length);
 /* Monotonic clock in nanoseconds for relative benchmark measurements. */
 uint64_t ts_monotonic_ns(void);
 
+/* Process user+kernel CPU time in nanoseconds for complexity measurements.
+ * Unlike the monotonic clock, this excludes time while the test process is
+ * descheduled by a shared runner. */
+uint64_t ts_process_cpu_ns(void);
+
 #ifdef __cplusplus
 }
 #endif

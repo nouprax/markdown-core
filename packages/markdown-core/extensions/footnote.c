@@ -255,7 +255,7 @@ size_t markdown_core_session_footnote_label(
 
     // A failed init leaves `mem` set with no slots; probe the slots so the
     // next call retries instead of walking a zero-capacity table.
-    if (labels->by_label.slots == NULL && !markdown_core_key_index_init(&labels->by_label, mem, 16)) {
+    if (labels->by_label.slots == NULL && !markdown_core_key_index_init(&labels->by_label, mem)) {
         mem->free(mem, normalized);
         *failed = true;
         return SIZE_MAX;

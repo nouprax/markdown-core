@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -72,6 +73,22 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
 
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
+
+#ifndef NDEBUG
+static void S_assert_same_node_domain(markdown_core_node *parent, markdown_core_node *child) {
+    markdown_core_node *ancestor;
+
+    assert(parent != NULL);
+    assert(child != NULL);
+    assert(parent != child);
+    assert(NODE_MEM(parent) == NODE_MEM(child));
+    assert(markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->type));
+
+    for (ancestor = parent; ancestor; ancestor = ancestor->parent) {
+        assert(ancestor != child);
+    }
+}
+#endif
 
 markdown_core_node *markdown_core_node_new_with_mem_and_ext(
     markdown_core_node_type type,
@@ -201,6 +218,22 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     node->type = (uint16_t)type;
 
     return 1;
+}
+
+void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type) {
+    assert(node != NULL);
+    assert(node->parent == NULL || NODE_MEM(node->parent) == NODE_MEM(node));
+    assert(
+        ((markdown_core_node_type)node->type & MARKDOWN_CORE_NODE_TYPE_MASK) == (type & MARKDOWN_CORE_NODE_TYPE_MASK)
+    );
+    assert(node->parent == NULL || markdown_core_node_can_contain_type(node->parent, type));
+
+    if (type == node->type) {
+        return;
+    }
+
+    free_node_as(node);
+    node->type = (uint16_t)type;
 }
 
 const char *markdown_core_node_get_type_string(markdown_core_node *node) {
@@ -577,6 +610,63 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
     return 1;
 }
 
+void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling) {
+    markdown_core_node *old_prev;
+    markdown_core_node *parent;
+
+    assert(node != NULL);
+    assert(sibling != NULL);
+    assert(node != sibling);
+    assert(node->parent != NULL);
+    assert(NODE_MEM(node->parent) == NODE_MEM(node));
+    assert(markdown_core_node_can_contain_type(node->parent, (markdown_core_node_type)node->type));
+#ifndef NDEBUG
+    S_assert_same_node_domain(node->parent, sibling);
+#endif
+
+    S_node_unlink(sibling);
+    old_prev = node->prev;
+    parent = node->parent;
+    if (old_prev) {
+        old_prev->next = sibling;
+    }
+    sibling->prev = old_prev;
+    sibling->next = node;
+    sibling->parent = parent;
+    node->prev = sibling;
+    if (parent && !old_prev) {
+        parent->first_child = sibling;
+    }
+}
+
+void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling) {
+    markdown_core_node *old_next;
+    markdown_core_node *parent;
+
+    assert(node != NULL);
+    assert(sibling != NULL);
+    assert(node != sibling);
+    assert(node->parent != NULL);
+    assert(NODE_MEM(node->parent) == NODE_MEM(node));
+    assert(markdown_core_node_can_contain_type(node->parent, (markdown_core_node_type)node->type));
+#ifndef NDEBUG
+    S_assert_same_node_domain(node->parent, sibling);
+#endif
+
+    S_node_unlink(sibling);
+    old_next = node->next;
+    parent = node->parent;
+    sibling->parent = parent;
+    sibling->prev = node;
+    sibling->next = old_next;
+    node->next = sibling;
+    if (old_next) {
+        old_next->prev = sibling;
+    } else {
+        parent->last_child = sibling;
+    }
+}
+
 int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node *sibling) {
     if (node == NULL || sibling == NULL) {
         return 0;
@@ -640,6 +730,26 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
     }
 
     return 1;
+}
+
+void markdown_core_node_append_child_unchecked(markdown_core_node *node, markdown_core_node *child) {
+    markdown_core_node *old_last_child;
+
+#ifndef NDEBUG
+    S_assert_same_node_domain(node, child);
+#endif
+
+    S_node_unlink(child);
+    old_last_child = node->last_child;
+    child->next = NULL;
+    child->prev = old_last_child;
+    child->parent = node;
+    node->last_child = child;
+    if (old_last_child) {
+        old_last_child->next = child;
+    } else {
+        node->first_child = child;
+    }
 }
 
 static void S_print_error(FILE *out, markdown_core_node *node, const char *elem) {

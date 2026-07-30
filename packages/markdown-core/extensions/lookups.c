@@ -199,7 +199,7 @@ static markdown_core_lookup_posting *posting_find_or_create(
     if (posting) {
         return posting;
     }
-    if (postings->by_label.capacity == 0 && !markdown_core_key_index_init(&postings->by_label, mem, 16)) {
+    if (postings->by_label.capacity == 0 && !markdown_core_key_index_init(&postings->by_label, mem)) {
         return NULL;
     }
     if (postings->count == postings->capacity) {

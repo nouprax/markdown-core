@@ -93,10 +93,10 @@ fi
 
 for preset in correctness-asan correctness-ubsan correctness-tsan; do
     if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
-        fail "$preset includes wall-clock complexity gates"
+        fail "$preset includes timing-based complexity gates"
     fi
 done
-note "sanitizer presets exclude wall-clock complexity gates"
+note "sanitizer presets exclude timing-based complexity gates"
 
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native
@@ -116,6 +116,10 @@ runner_dir="$BUILD_DIR/packages/markdown-core/tests"
 for case_name in $("$runner_dir/pathological_runner" --list); do
     echo "$tests_all" | grep -q "^pathological_${case_name}$" \
         || fail "pathological case '$case_name' is not registered in CTest"
+done
+for case_name in $("$runner_dir/delimiter_engine_runner" --list); do
+    echo "$tests_all" | grep -q "^pathological_delimiter_engine_${case_name}$" \
+        || fail "delimiter-engine case '$case_name' is not registered in CTest"
 done
 for case_name in $("$runner_dir/complexity_runner" --list); do
     echo "$tests_all" | grep -q "^pathological_complexity_${case_name}$" \

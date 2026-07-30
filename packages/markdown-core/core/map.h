@@ -80,7 +80,10 @@ struct markdown_core_map {
 typedef struct markdown_core_map markdown_core_map;
 
 unsigned char *markdown_core_map_normalize_label(markdown_core_mem *mem, markdown_core_chunk *ref, int *lost);
-int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size);
+/* Initializes an empty index at its minimum capacity. Capacity grows only
+ * when a new distinct key requires it; occurrence counts are deliberately
+ * not accepted as sizing hints because they do not bound unique cardinality. */
+int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem);
 void markdown_core_key_index_free(markdown_core_key_index *index);
 int markdown_core_key_index_insert(
     markdown_core_key_index *index,

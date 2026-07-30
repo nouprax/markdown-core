@@ -226,6 +226,21 @@ unique-attributes hash 路径在两次运行中分别为 3.318× 与 2.753×，�
 expected-linear 则由共享 hash 实现、64-probe 上界、collision fallback tests 与 code review
 保证，timing gate 只负责捕获实际端到端退化。
 
+后续 first-principles review 删除了上述 1024-key / 0.5-ratio 采样策略：共享 key index
+现在只有按实际 distinct key 几何增长的一套算法，并由 unique-prefix/duplicate-tail 及反向
+排列的 adversarial capacity tests 约束。连续 backslash 解码也不再区分单 pair 与多 pair；
+所有完整 pair run 都借用等值 source prefix，零 transformed-payload allocation。delimiter
+arena 同时提升到 parser 生命周期，在 unit 边界只重置拓扑并复用 lane/record capacity。
+
+2026-07-30，PR #74 的 macOS shared correctness job 暴露了复杂度 gate 的测量模型缺陷：
+scope materialization 的相同线性实现，在 hosted runner 被 deschedule 时得到 6.460×
+normalized slowdown；本机 default/shared 的重复测量则稳定在约 1.2–1.5×。修复不增加
+macOS 分支、不重试失败样本，也不放宽 4.0× 拒绝线；complexity runner 的所有 case 统一改用
+process user+kernel CPU time（POSIX `CLOCK_PROCESS_CPUTIME_ID`、Windows
+`GetProcessTimes`），只测量进程实际消耗的计算时间。benchmark runner 继续使用 monotonic
+wall-clock，因为其职责是观察用户可见端到端耗时。复杂度的主要证明仍是数据结构、操作上界与
+adversarial deterministic tests，CPU timing 只是跨平台的二级 regression gate。
+
 同一验证 PR 还暴露了 push/PR SHA 去重的两个问题：被取消的 push run 仍运行 `always()`
 汇总并留下失败的 `Required gates`；两次 macOS runner teardown 又长期停在无 active step
 的 `in_progress`，直接阻塞同 concurrency group 的 PR run。修复后只有

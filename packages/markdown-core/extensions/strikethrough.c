@@ -1,7 +1,10 @@
 #include "strikethrough.h"
+#include <assert.h>
+#include <limits.h>
 #include <parser.h>
 #include "extension.h"
-#include "inline_util.h"
+
+enum { STRIKETHROUGH_RULE = 0 };
 
 static markdown_core_node *match(
     markdown_core_extension *self,
@@ -10,86 +13,79 @@ static markdown_core_node *match(
     unsigned char character,
     markdown_core_inline_parser *inline_parser
 ) {
-    markdown_core_node *res = NULL;
+    markdown_core_bufsize source_start;
+    markdown_core_bufsize source_end;
     int left_flanking, right_flanking, punct_before, punct_after, delims;
-    char buffer[101];
 
     if (character != '~') {
         return NULL;
     }
 
+    source_start = markdown_core_inline_parser_get_offset(inline_parser);
     delims = markdown_core_inline_parser_scan_delimiters(
         inline_parser,
-        sizeof(buffer) - 1,
+        INT_MAX,
         '~',
         &left_flanking,
         &right_flanking,
         &punct_before,
         &punct_after
     );
-
-    memset(buffer, '~', delims);
-    buffer[delims] = 0;
-
-    res = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
-    if (!res) {
-        parser->oom = true;
+    if (delims <= 0) {
         return NULL;
     }
-    if (!markdown_core_node_set_literal(res, buffer)) {
-        parser->oom = true;
-    }
-    res->start_line = res->end_line = markdown_core_inline_parser_get_line(inline_parser);
-    res->start_column = markdown_core_inline_parser_get_column(inline_parser) - delims;
+    source_end = source_start + (markdown_core_bufsize)delims;
 
     if ((left_flanking || right_flanking) && (delims == 1 || delims == 2)) {
-        markdown_core_inline_parser_push_delimiter(inline_parser, character, left_flanking, right_flanking, res);
+        return markdown_core_inline_parser_consume_delimiter(
+            inline_parser,
+            STRIKETHROUGH_RULE,
+            left_flanking,
+            right_flanking,
+            source_end
+        );
     }
 
-    return res;
+    return markdown_core_inline_parser_consume_text(inline_parser, source_end);
 }
 
-static delimiter *insert(
+static markdown_core_delimiter_result insert(
     markdown_core_extension *self,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
 ) {
     markdown_core_node *strikethrough;
     markdown_core_node *tmp, *next;
-    delimiter *res = closer->next;
 
-    strikethrough = opener->inl_text;
+    if (match->kind != STRIKETHROUGH_RULE) {
+        assert(0 && "strikethrough reducer received an unsupported delimiter rule");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    strikethrough = match->opener_node;
 
-    if (opener->inl_text->as.literal.len != closer->inl_text->as.literal.len) {
-        goto done;
+    if (match->opener_length != match->closer_length) {
+        return MARKDOWN_CORE_DELIMITER_OK;
     }
 
-    if (!markdown_core_node_set_type(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH)) {
-        goto done;
-    }
-
+    markdown_core_node_set_type_unchecked(strikethrough, MARKDOWN_CORE_NODE_STRIKETHROUGH);
     markdown_core_node_set_extension(strikethrough, self);
 
-    tmp = markdown_core_node_next(opener->inl_text);
+    tmp = markdown_core_node_next(match->opener_node);
 
     while (tmp) {
-        if (tmp == closer->inl_text) {
+        if (tmp == match->closer_node) {
             break;
         }
         next = markdown_core_node_next(tmp);
-        markdown_core_node_append_child(strikethrough, tmp);
+        markdown_core_node_append_child_unchecked(strikethrough, tmp);
         tmp = next;
     }
 
-    strikethrough->end_column = closer->inl_text->start_column + closer->inl_text->as.literal.len - 1;
-    markdown_core_node_free(closer->inl_text);
-
-done:
-    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
-
-    return res;
+    strikethrough->end_line = match->closer_node->end_line;
+    strikethrough->end_column = match->closer_node->end_column;
+    markdown_core_node_free(match->closer_node);
+    return MARKDOWN_CORE_DELIMITER_OK;
 }
 
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) {
@@ -110,12 +106,23 @@ static int can_contain(
 
 static const unsigned char strikethrough_special_chars[] = {'~'};
 
+static const markdown_core_delimiter_rule strikethrough_delimiter_rules[] = {
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_COMMONMARK,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = 0,
+        .close_probe = NULL,
+    },
+};
+
 static const markdown_core_extension strikethrough_extension = {
     .name = "strikethrough",
     .get_type_string = get_type_string,
     .can_contain = can_contain,
     .match_inline = match,
     .insert_inline_from_delim = insert,
+    .delimiter_rules = strikethrough_delimiter_rules,
+    .delimiter_rule_count = sizeof(strikethrough_delimiter_rules) / sizeof(strikethrough_delimiter_rules[0]),
     .special_inline_chars = strikethrough_special_chars,
     .special_inline_char_count = sizeof(strikethrough_special_chars),
     // '~' stays transparent to emphasis flanking (inherited gfm semantics:

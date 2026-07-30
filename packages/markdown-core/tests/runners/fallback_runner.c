@@ -21,6 +21,7 @@
 #include "markdown-core-extensions.h"
 #include "map.h"
 #include "node.h"
+#include "parser.h"
 #include "references.h"
 
 #include "cross_reference.h"
@@ -34,9 +35,26 @@ static size_t fb_blocked_allocations;
 static int fb_block_slot_tables;
 static int fb_block_pointer_arrays;
 static int fb_block_all_callocs;
+static int fb_observe_allocations;
+static size_t fb_max_slot_capacity;
+static size_t fb_lane_allocations;
+static size_t fb_record_allocations;
+static size_t fb_backslash_payload_size;
+static size_t fb_backslash_payload_allocations;
 
 static void *fb_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
     (void)mem;
+    if (fb_observe_allocations) {
+        if (size == sizeof(markdown_core_key_index_slot) && nmemb > fb_max_slot_capacity) {
+            fb_max_slot_capacity = nmemb;
+        }
+        if (size == sizeof(markdown_core_delimiter_lane)) {
+            fb_lane_allocations++;
+        }
+        if (size == 1 && nmemb == fb_backslash_payload_size) {
+            fb_backslash_payload_allocations++;
+        }
+    }
     if (fb_block_all_callocs) {
         fb_blocked_allocations++;
         return NULL;
@@ -54,6 +72,10 @@ static void *fb_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
 
 static void *fb_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
     (void)mem;
+    if (fb_observe_allocations && size >= 16 * sizeof(markdown_core_delimiter_record) &&
+        size % sizeof(markdown_core_delimiter_record) == 0) {
+        fb_record_allocations++;
+    }
     return realloc(pointer, size);
 }
 
@@ -63,6 +85,14 @@ static void fb_free(markdown_core_mem *mem, void *pointer) {
 }
 
 static markdown_core_mem fb_failing_mem = {fb_calloc, fb_realloc, fb_free};
+
+static void fb_observer_reset(void) {
+    fb_max_slot_capacity = 0;
+    fb_lane_allocations = 0;
+    fb_record_allocations = 0;
+    fb_backslash_payload_size = 0;
+    fb_backslash_payload_allocations = 0;
+}
 
 /* Sweep allocator: counts allocations, or fails exactly the k-th one
  * (calloc and realloc share the counter). */
@@ -366,8 +396,8 @@ done:
 }
 
 /* Directive attribute normalization keeps first-position/last-value-wins
- * through both the hash index and the pointer-sort fallback, for the small
- * direct route and for the sampled-capacity route. */
+ * through both the hash index and the pointer-sort fallback, for small and
+ * large duplicate-heavy inputs. */
 static int case_directive_sorted_fallback(void) {
     enum { FB_ATTRIBUTE_COUNT = 2050, FB_UNIQUE_KEYS = 64 };
     char *input;
@@ -382,8 +412,8 @@ static int case_directive_sorted_fallback(void) {
         return -1;
     }
 
-    /* Above 1024 attributes the capacity estimate samples; the injected
-     * failure covers the sample-index failure route as well. */
+    /* The large case forces several transactional hash growths before the
+     * injected slot-table failure enters the sorted fallback. */
     input = (char *)malloc(FB_ATTRIBUTE_COUNT * 24 + 16);
     expected = (char *)malloc(FB_UNIQUE_KEYS * 24 + 16);
     if (!input || !expected) {
@@ -404,7 +434,7 @@ static int case_directive_sorted_fallback(void) {
     }
     expected_length += (size_t)snprintf(expected + expected_length, 8, "}");
 
-    result = fb_compare_directive_paths(input, expected, "sampled");
+    result = fb_compare_directive_paths(input, expected, "large");
     free(input);
     free(expected);
     return result;
@@ -468,7 +498,7 @@ static int fb_check_key_index_remove(void) {
     size_t i;
     int result = -1;
 
-    if (!markdown_core_key_index_init(&index, markdown_core_mem_default(), 8)) {
+    if (!markdown_core_key_index_init(&index, markdown_core_mem_default())) {
         fputs("key index initialization failed\n", stderr);
         return -1;
     }
@@ -585,9 +615,11 @@ static uint64_t fb_hash(const char *key) {
 }
 
 /* Probe exhaustion below the load-factor bound grows the table once instead
- * of failing: 64 keys homing on one slot of a 256-slot table exhaust the
+ * of failing: 64 keys homing on one slot of a 128-slot table exhaust the
  * probe limit for a 65th, and one doubling disperses the constructed cluster
- * because the keys split evenly across both candidate homes at 512. */
+ * because the keys split evenly across both candidate homes at 256. The
+ * normal insertion path grows from the shared minimum capacity to 128; the
+ * test does not inject a cardinality-specific initialization hint. */
 static int case_key_index_probe_growth(void) {
     enum { FB_WINDOW = 7, FB_HALF = 32, FB_CLUSTER = 2 * FB_HALF };
     char keys[FB_CLUSTER + 1][24];
@@ -602,13 +634,13 @@ static int case_key_index_probe_growth(void) {
         uint64_t hash;
         snprintf(name, sizeof(name), "p%lu", candidate++);
         hash = fb_hash(name);
-        if ((hash & 255) != FB_WINDOW) {
+        if ((hash & 127) != FB_WINDOW) {
             continue;
         }
-        if ((hash & 511) == FB_WINDOW && low < FB_HALF) {
+        if ((hash & 255) == FB_WINDOW && low < FB_HALF) {
             snprintf(keys[total++], sizeof(keys[0]), "%s", name);
             low++;
-        } else if ((hash & 511) == FB_WINDOW + 256 && high < FB_HALF) {
+        } else if ((hash & 255) == FB_WINDOW + 128 && high < FB_HALF) {
             snprintf(keys[total++], sizeof(keys[0]), "%s", name);
             high++;
         }
@@ -616,7 +648,7 @@ static int case_key_index_probe_growth(void) {
     while (total == FB_CLUSTER && candidate < 200000000UL) {
         char name[24];
         snprintf(name, sizeof(name), "p%lu", candidate++);
-        if ((fb_hash(name) & 255) == FB_WINDOW) {
+        if ((fb_hash(name) & 127) == FB_WINDOW) {
             snprintf(keys[total++], sizeof(keys[0]), "%s", name);
             break;
         }
@@ -626,12 +658,11 @@ static int case_key_index_probe_growth(void) {
         return -1;
     }
 
-    /* expected_size 128 selects the 256-slot table the cluster targets. */
-    if (!markdown_core_key_index_init(&index, markdown_core_mem_default(), 128)) {
+    if (!markdown_core_key_index_init(&index, markdown_core_mem_default())) {
         fputs("index initialization failed\n", stderr);
         return -1;
     }
-    if (index.capacity != 256) {
+    if (index.capacity != 16) {
         fprintf(stderr, "unexpected initial capacity %zu\n", index.capacity);
         goto done;
     }
@@ -648,7 +679,7 @@ static int case_key_index_probe_growth(void) {
             goto done;
         }
     }
-    if (index.capacity != 256 || index.size != FB_CLUSTER) {
+    if (index.capacity != 128 || index.size != FB_CLUSTER) {
         fputs("cluster did not fill the table as constructed; retune with core/map.c hash\n", stderr);
         goto done;
     }
@@ -663,10 +694,10 @@ static int case_key_index_probe_growth(void) {
         fputs("probe-exhausted insert failed instead of growing\n", stderr);
         goto done;
     }
-    if (index.capacity != 512 || index.size != FB_CLUSTER + 1) {
+    if (index.capacity != 256 || index.size != FB_CLUSTER + 1) {
         fprintf(
             stderr,
-            "expected one growth to capacity 512, found capacity %zu size %zu\n",
+            "expected one growth to capacity 256, found capacity %zu size %zu\n",
             index.capacity,
             index.size
         );
@@ -690,6 +721,276 @@ static int case_key_index_probe_growth(void) {
     result = 0;
 done:
     markdown_core_key_index_free(&index);
+    return result;
+}
+
+static markdown_core_map *fb_skewed_reference_map(int unique_at_head) {
+    enum { FB_SKEW_TOTAL = 16384, FB_SKEW_UNIQUE = 1024 };
+    markdown_core_map *map = markdown_core_reference_map_new(markdown_core_mem_default());
+    size_t phase;
+    size_t i;
+
+    if (!map) {
+        return NULL;
+    }
+    for (phase = 0; phase < 2; phase++) {
+        int add_unique = unique_at_head ? phase == 1 : phase == 0;
+        size_t count = add_unique ? FB_SKEW_UNIQUE : FB_SKEW_TOTAL - FB_SKEW_UNIQUE;
+        for (i = 0; i < count; i++) {
+            char label[32];
+            if (add_unique) {
+                snprintf(label, sizeof(label), "unique-%zu", i);
+            } else {
+                snprintf(label, sizeof(label), "duplicate");
+            }
+            fb_create_reference(map, label, "/u");
+        }
+    }
+    return map;
+}
+
+/* The index footprint follows the number of distinct keys regardless of
+ * whether a unique or duplicate-heavy region appears at the list head. This
+ * defeats the former first-1024 sampling heuristic with both prefix/tail
+ * orientations. */
+static int case_key_index_skewed_cardinality(void) {
+    enum { FB_MAX_UNIQUE_CAPACITY = 8192 };
+    markdown_core_map *unique_head = fb_skewed_reference_map(1);
+    markdown_core_map *duplicate_head = fb_skewed_reference_map(0);
+    int result = -1;
+
+    if (!unique_head || !duplicate_head || !markdown_core_map_ensure_index(unique_head) ||
+        !markdown_core_map_ensure_index(duplicate_head)) {
+        fputs("skewed reference index construction failed\n", stderr);
+        goto done;
+    }
+    if (unique_head->index.size != 1025 || duplicate_head->index.size != 1025) {
+        fprintf(
+            stderr,
+            "skewed maps lost unique keys: %zu / %zu\n",
+            unique_head->index.size,
+            duplicate_head->index.size
+        );
+        goto done;
+    }
+    if (unique_head->index.capacity > FB_MAX_UNIQUE_CAPACITY ||
+        duplicate_head->index.capacity > FB_MAX_UNIQUE_CAPACITY) {
+        fprintf(
+            stderr,
+            "index capacity followed occurrence order instead of unique keys: %zu / %zu\n",
+            unique_head->index.capacity,
+            duplicate_head->index.capacity
+        );
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_map_free(unique_head);
+    markdown_core_map_free(duplicate_head);
+    return result;
+}
+
+/* A unique prefix followed by a much longer duplicate tail used to size the
+ * directive index from the total occurrence count. Observe the actual slot
+ * allocation so the same space invariant is pinned for the second caller of
+ * the shared index. */
+static int case_directive_skewed_cardinality(void) {
+    enum { FB_ATTRIBUTE_COUNT = 8192, FB_UNIQUE_PREFIX = 1024, FB_MAX_UNIQUE_CAPACITY = 8192 };
+    char *input = (char *)malloc(FB_ATTRIBUTE_COUNT * 24 + 16);
+    char *attributes = NULL;
+    size_t written = 0;
+    size_t i;
+    int result = -1;
+
+    if (!input) {
+        return -1;
+    }
+    written += (size_t)snprintf(input + written, 8, ":x{");
+    for (i = 0; i < FB_ATTRIBUTE_COUNT; i++) {
+        size_t key = i < FB_UNIQUE_PREFIX ? i : 0;
+        written += (size_t)
+            snprintf(input + written, FB_ATTRIBUTE_COUNT * 24 + 16 - written, "%sk%zu=v%zu", i ? " " : "", key, i);
+    }
+    written += (size_t)snprintf(input + written, FB_ATTRIBUTE_COUNT * 24 + 16 - written, "}\n");
+
+    fb_observer_reset();
+    fb_observe_allocations = 1;
+    attributes = fb_parse_directive_attributes(input, &fb_failing_mem);
+    fb_observe_allocations = 0;
+    if (!attributes) {
+        fputs("skewed directive parse failed\n", stderr);
+        goto done;
+    }
+    if (fb_max_slot_capacity > FB_MAX_UNIQUE_CAPACITY) {
+        fprintf(
+            stderr,
+            "directive index capacity followed occurrences instead of unique keys: %zu\n",
+            fb_max_slot_capacity
+        );
+        goto done;
+    }
+    result = 0;
+done:
+    fb_observe_allocations = 0;
+    free(attributes);
+    free(input);
+    return result;
+}
+
+/* Every inline unit starts from an empty delimiter topology but retains the
+ * parser-owned lane and record storage. Hundreds of singleton-delimiter
+ * paragraphs across two documents must therefore allocate each scratch
+ * buffer exactly once, not once per paragraph or document. */
+static int case_delimiter_scratch_reuse(void) {
+    enum { FB_PARAGRAPHS = 256 };
+    char *input = (char *)malloc(FB_PARAGRAPHS * 4 + 1);
+    markdown_core_parser *parser = NULL;
+    markdown_core_node *first = NULL;
+    markdown_core_node *second = NULL;
+    size_t i;
+    int result = -1;
+
+    if (!input) {
+        return -1;
+    }
+    for (i = 0; i < FB_PARAGRAPHS; i++) {
+        memcpy(input + i * 4, "*x\n\n", 4);
+    }
+    input[FB_PARAGRAPHS * 4] = '\0';
+
+    parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DEFAULT, &fb_failing_mem);
+    if (!parser) {
+        goto done;
+    }
+    fb_observer_reset();
+    fb_observe_allocations = 1;
+    markdown_core_parser_feed(parser, input, FB_PARAGRAPHS * 4);
+    first = markdown_core_parser_finish(parser);
+    markdown_core_parser_feed(parser, input, FB_PARAGRAPHS * 4);
+    second = markdown_core_parser_finish(parser);
+    fb_observe_allocations = 0;
+
+    if (!first || !second) {
+        fputs("delimiter scratch reuse parse failed\n", stderr);
+        goto done;
+    }
+    if (fb_lane_allocations != 1 || fb_record_allocations != 1) {
+        fprintf(
+            stderr,
+            "delimiter scratch allocated %zu lane tables and %zu record arenas\n",
+            fb_lane_allocations,
+            fb_record_allocations
+        );
+        goto done;
+    }
+    if (parser->inline_delimiters.count || parser->inline_delimiters.tail || parser->inline_delimiters.capacity < 16 ||
+        parser->inline_delimiters.lane_capacity < 4) {
+        fputs("parser did not retain an empty reusable delimiter arena\n", stderr);
+        goto done;
+    }
+    result = 0;
+done:
+    fb_observe_allocations = 0;
+    markdown_core_node_free(first);
+    markdown_core_node_free(second);
+    if (parser) {
+        markdown_core_parser_free(parser);
+    }
+    free(input);
+    return result;
+}
+
+/* A complete backslash-pair run has an output already present in its source
+ * prefix. Pin the allocation-free payload invariant as well as exact output
+ * and scope, for a run long enough that the former bulk special case would
+ * allocate a distinctive 2049-byte buffer. */
+static int case_backslash_run_borrowed_payload(void) {
+    enum { FB_RUN_BYTES = 4096, FB_OUTPUT_BYTES = FB_RUN_BYTES / 2 };
+    char *input = (char *)malloc(FB_RUN_BYTES + 2);
+    markdown_core_parser *parser = NULL;
+    markdown_core_node *document = NULL;
+    markdown_core_node *paragraph;
+    markdown_core_node *text;
+    size_t i;
+    int result = -1;
+
+    if (!input) {
+        return -1;
+    }
+    memset(input, '\\', FB_RUN_BYTES);
+    input[FB_RUN_BYTES] = '\n';
+    input[FB_RUN_BYTES + 1] = '\0';
+
+    parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_DEFAULT, &fb_failing_mem);
+    if (!parser) {
+        goto done;
+    }
+    for (i = 2; i <= 5; i++) {
+        size_t expected_slashes = i / 2 + i % 2;
+        size_t j;
+        memset(input, '\\', i);
+        input[i] = 'a';
+        input[i + 1] = '\n';
+        input[i + 2] = '\0';
+        markdown_core_parser_feed(parser, input, i + 2);
+        document = markdown_core_parser_finish(parser);
+        paragraph = document ? document->first_child : NULL;
+        text = paragraph ? paragraph->first_child : NULL;
+        if (!text || text->type != MARKDOWN_CORE_NODE_TEXT || text->next ||
+            text->as.literal.len != (markdown_core_bufsize)(expected_slashes + 1) ||
+            text->end_column != (int32_t)(i + 1)) {
+            fprintf(stderr, "backslash run length %zu produced the wrong node or scope\n", i);
+            goto done;
+        }
+        for (j = 0; j < expected_slashes; j++) {
+            if (text->as.literal.data[j] != '\\') {
+                fprintf(stderr, "backslash run length %zu produced the wrong escape bytes\n", i);
+                goto done;
+            }
+        }
+        if (text->as.literal.data[expected_slashes] != 'a') {
+            fprintf(stderr, "backslash run length %zu lost its odd/even suffix\n", i);
+            goto done;
+        }
+        markdown_core_node_free(document);
+        document = NULL;
+    }
+
+    memset(input, '\\', FB_RUN_BYTES);
+    input[FB_RUN_BYTES] = '\n';
+    input[FB_RUN_BYTES + 1] = '\0';
+    fb_observer_reset();
+    fb_backslash_payload_size = FB_OUTPUT_BYTES + 1;
+    fb_observe_allocations = 1;
+    markdown_core_parser_feed(parser, input, FB_RUN_BYTES + 1);
+    document = markdown_core_parser_finish(parser);
+    fb_observe_allocations = 0;
+
+    paragraph = document ? document->first_child : NULL;
+    text = paragraph ? paragraph->first_child : NULL;
+    if (!text || text->type != MARKDOWN_CORE_NODE_TEXT || text->next || text->as.literal.len != FB_OUTPUT_BYTES ||
+        text->start_column != 1 || text->end_column != FB_RUN_BYTES) {
+        fputs("backslash run produced the wrong node, payload length, or scope\n", stderr);
+        goto done;
+    }
+    for (i = 0; i < FB_OUTPUT_BYTES; i++) {
+        if (text->as.literal.data[i] != '\\') {
+            fputs("backslash run produced the wrong literal bytes\n", stderr);
+            goto done;
+        }
+    }
+    if (fb_backslash_payload_allocations != 0) {
+        fprintf(stderr, "backslash run allocated %zu transformed payload buffers\n", fb_backslash_payload_allocations);
+        goto done;
+    }
+    result = 0;
+done:
+    fb_observe_allocations = 0;
+    markdown_core_node_free(document);
+    if (parser) {
+        markdown_core_parser_free(parser);
+    }
+    free(input);
     return result;
 }
 
@@ -2240,6 +2541,10 @@ static const fb_case_entry FB_CASES[] = {
     {"reference_map_v2", case_reference_map_v2},
     {"directive_sorted_fallback", case_directive_sorted_fallback},
     {"key_index_probe_growth", case_key_index_probe_growth},
+    {"key_index_skewed_cardinality", case_key_index_skewed_cardinality},
+    {"directive_skewed_cardinality", case_directive_skewed_cardinality},
+    {"delimiter_scratch_reuse", case_delimiter_scratch_reuse},
+    {"backslash_run_borrowed_payload", case_backslash_run_borrowed_payload},
     {"map_prepare_oom", case_map_prepare_oom},
     {"constructor_oom", case_constructor_oom},
     {"oom_sweep", case_oom_sweep},

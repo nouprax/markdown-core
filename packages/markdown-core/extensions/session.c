@@ -220,8 +220,14 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
                     (!options->cross_links || attach_extension_named(parser, "cross_link")) &&
                     (!options->embeds || attach_extension_named(parser, "embed"));
     if (!attached) {
+        bool allocation_failed = parser->oom;
         markdown_core_parser_free(parser);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");
+        markdown_core_ast_set_error(
+            error,
+            allocation_failed ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
+            allocation_failed ? "could not attach the required syntax extensions"
+                              : "required syntax extension is unavailable"
+        );
         return NULL;
     }
     return parser;
@@ -343,13 +349,15 @@ static bool commit_full(
     last_line_length = parser->last_line_length;
     root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
+        bool allocation_failed = parser->oom;
         bool internal_error = parser->internal_error;
         markdown_core_parser_free(parser); // frees the staged map with it
         markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(
             error,
-            internal_error ? MARKDOWN_CORE_ERROR_INTERNAL : MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-            internal_error ? "parser refinement invariant failed" : "could not parse the session text"
+            allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
+            allocation_failed || !internal_error ? "could not parse the session text"
+                                                 : "parser refinement invariant failed"
         );
         return false;
     }

@@ -30,6 +30,22 @@ Document scope=1:1..1:67 children=1
     └── Text scope=1:62..1:67 literal=" here." children=0
 ````````````````````````````````
 
+Inline attribute lists may span source lines. Their full source range belongs
+to the directive, and subsequent inline nodes resume at the physical line and
+column after the closing brace.
+
+```````````````````````````````` example
+:note[label]{title="one
+two"} tail
+.
+Document scope=1:1..2:10 children=1
+└── Paragraph scope=1:1..2:10 children=2
+    ├── Directive scope=1:1..2:5 mode=embedded name="note" attributes="{\"title\":\"one\\ntwo\"}" children=1
+    │   └── DirectiveLabel scope=1:6..1:12 children=1
+    │       └── Text scope=1:7..1:11 literal="label" children=0
+    └── Text scope=2:6..2:10 literal=" tail" children=0
+````````````````````````````````
+
 Numeric- and boolean-looking values remain strings in the normalized AST/API
 JSON representation.
 
