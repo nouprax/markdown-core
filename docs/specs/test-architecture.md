@@ -200,6 +200,7 @@ CI 必须分别调用 correctness 与 conformance 平台入口；确需按功能
 
 C 数据驱动 runner 自身提供第二级 discovery:`spec_runner --list/--example/--section`、
 `pathological_runner --list/--case`、`complexity_runner --list/--case`、
+`delimiter_engine_runner --list/--case`、
 `bench_runner --list/--workload`、`concurrency_runner --case`(三个固定 case:
 `first_parse`/`stress`/`lifecycle`,逐一注册为 CTest 测试)。CMake 中注册的
 case 清单由 `scripts/audit-test-topology.sh` 与 runner `--list` 输出强制一致。
@@ -267,6 +268,9 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   不同操作时才允许独立路径，且必须分别有 correctness/complexity 覆盖。
 - 复杂度 gate 必须验证一般不变量和能击穿旧实现的 adversarial shape。一次更快的
   benchmark 结果不能为违反上述单一算法约束的 special case 提供正当性。
+- Delimiter engine 的 test-only deterministic counters 直接断言 arena growth、
+  per-rule candidate visits、reduction、unlink 与 truncate work；wall-clock
+  delimiter-dense scaling 只是其平台级补充证据。
 - 诊断输出确定性:不输出指针、环境路径、locale 或时间戳(benchmark 的时间数
   值除外,其格式固定)。
 - 各平台 helper 使用本平台原生实现(C:`packages/markdown-core/tests/support/`;Swift:test target 内

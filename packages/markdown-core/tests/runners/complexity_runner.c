@@ -235,27 +235,141 @@ static char *cc_balanced_nested_cross_links(size_t size, size_t *length) {
     return input;
 }
 
+/*
+ * Every "$0" is opener-only: the following digit suppresses closing. Every
+ * "x$ " is closer-only: the following space suppresses opening. Phase two
+ * therefore reduces N properly nested formula ranges from the inside out.
+ * Eagerly copying each temporary survivor's growing body is Theta(N^2);
+ * survivor-only materialization copies only the final outer body.
+ */
+static char *cc_balanced_nested_dollar_formulas(size_t size, size_t *length) {
+    size_t count = size > 1 ? (size - 1) / 5 : 1;
+    char *input = (char *)malloc(count * 5 + 2);
+    char *cursor = input;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, "$0", 2);
+        cursor += 2;
+    }
+    *cursor++ = 'z';
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, "x$ ", 3);
+        cursor += 3;
+    }
+    *length = (size_t)(cursor - input);
+    input[*length] = '\0';
+    return input;
+}
+
+/*
+ * The LaTeX-compatible forms are intrinsically opener-only and closer-only,
+ * so repeating "\\(" + body + "\\)" creates the same nested reduction
+ * shape without the lexical scaffolding required by dollar delimiters.
+ */
+static char *cc_balanced_nested_backslash_formulas(size_t size, size_t *length) {
+    static const char opener[] = "\\\\(";
+    static const char closer[] = "\\\\)";
+    size_t count = size > 1 ? (size - 1) / 6 : 1;
+    char *input = (char *)malloc(count * 6 + 2);
+    char *cursor = input;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, opener, sizeof(opener) - 1);
+        cursor += sizeof(opener) - 1;
+    }
+    *cursor++ = 'z';
+    for (i = 0; i < count; i++) {
+        memcpy(cursor, closer, sizeof(closer) - 1);
+        cursor += sizeof(closer) - 1;
+    }
+    *length = (size_t)(cursor - input);
+    input[*length] = '\0';
+    return input;
+}
+
+typedef int (*cc_validator)(const markdown_core_document *document, size_t length);
+
+static int cc_validate_nested_formula(
+    const markdown_core_document *document,
+    size_t literal_length,
+    int32_t end_column
+) {
+    size_t counts[TS_KIND_COUNT] = {0};
+    const markdown_core_node *root = markdown_core_document_root(document);
+    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
+    const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
+    markdown_core_placement_mode mode;
+    markdown_core_string_view literal;
+    markdown_core_scope scope;
+
+    if (ts_ast_count_kinds(root, counts) != 0 || counts[MARKDOWN_CORE_KIND_FORMULA] != 1 ||
+        markdown_core_node_get_kind(formula) != MARKDOWN_CORE_KIND_FORMULA ||
+        !markdown_core_node_formula_properties(formula, &mode, &literal) || mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED ||
+        literal.length != literal_length) {
+        fputs("nested formula adversary did not produce one outer formula with the full body\n", stderr);
+        return -1;
+    }
+    scope = markdown_core_node_scope(formula);
+    if (scope.start.line != 1 || scope.start.column != 1 || scope.end.line != 1 || scope.end.column != end_column) {
+        fputs("nested formula adversary did not span the outermost delimiter pair\n", stderr);
+        return -1;
+    }
+    return 0;
+}
+
+static int cc_validate_nested_dollar_formula(const markdown_core_document *document, size_t length) {
+    return length >= 3 ? cc_validate_nested_formula(document, length - 3, (int32_t)length - 1) : -1;
+}
+
+static int cc_validate_nested_backslash_formula(const markdown_core_document *document, size_t length) {
+    size_t count = length > 1 ? (length - 1) / 6 : 0;
+    /* Materialization removes one escape byte from every nested closer that
+     * survives inside the outer formula body. */
+    return count ? cc_validate_nested_formula(document, length - count - 5, (int32_t)length) : -1;
+}
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
     const size_t *sizes;
     const char *option;
+    cc_validator validate;
 } cc_case_entry;
 
 static const cc_case_entry CC_CASES[] = {
-    {"valid_long_quoted_value", cc_quoted_value, SCALING_SIZES, "directive"},
-    {"valid_consecutive_backslashes", cc_backslashes, SCALING_SIZES, "directive"},
-    {"unclosed_long_quoted_value", cc_unclosed_quoted, SCALING_SIZES, "directive"},
-    {"unclosed_backslash_value", cc_unclosed_backslashes, SCALING_SIZES, "directive"},
-    {"many_unique_attributes", cc_unique_attributes, SCALING_SIZES, "directive"},
-    {"many_duplicate_attributes", cc_duplicate_attributes, SCALING_SIZES, "directive"},
-    {"many_unique_references", cc_unique_references, SCALING_SIZES, "directive"},
-    {"many_duplicate_references", cc_duplicate_references, SCALING_SIZES, "directive"},
-    {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive"},
-    {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive"},
-    {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink"},
-    {"unclosed_cross_references", cc_unclosed_cross_references, DELIMITER_SCALING_SIZES, "cross-links-and-embeds"},
-    {"balanced_nested_cross_links", cc_balanced_nested_cross_links, DELIMITER_SCALING_SIZES, "cross-link"},
+    {"valid_long_quoted_value", cc_quoted_value, SCALING_SIZES, "directive", NULL},
+    {"valid_consecutive_backslashes", cc_backslashes, SCALING_SIZES, "directive", NULL},
+    {"unclosed_long_quoted_value", cc_unclosed_quoted, SCALING_SIZES, "directive", NULL},
+    {"unclosed_backslash_value", cc_unclosed_backslashes, SCALING_SIZES, "directive", NULL},
+    {"many_unique_attributes", cc_unique_attributes, SCALING_SIZES, "directive", NULL},
+    {"many_duplicate_attributes", cc_duplicate_attributes, SCALING_SIZES, "directive", NULL},
+    {"many_unique_references", cc_unique_references, SCALING_SIZES, "directive", NULL},
+    {"many_duplicate_references", cc_duplicate_references, SCALING_SIZES, "directive", NULL},
+    {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive", NULL},
+    {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive", NULL},
+    {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink", NULL},
+    {"unclosed_cross_references",
+     cc_unclosed_cross_references,
+     DELIMITER_SCALING_SIZES,
+     "cross-links-and-embeds",
+     NULL},
+    {"balanced_nested_cross_links", cc_balanced_nested_cross_links, DELIMITER_SCALING_SIZES, "cross-link", NULL},
+    {"balanced_nested_dollar_formulas",
+     cc_balanced_nested_dollar_formulas,
+     DELIMITER_SCALING_SIZES,
+     "formula",
+     cc_validate_nested_dollar_formula},
+    {"balanced_nested_backslash_formulas",
+     cc_balanced_nested_backslash_formulas,
+     DELIMITER_SCALING_SIZES,
+     "formula",
+     cc_validate_nested_backslash_formula},
 };
 
 /* --- session commit-cost cases -------------------------------------------
@@ -920,7 +1034,7 @@ static const char *const CC_SESSION_CASES[] = {
     "session_delta_ordering",
 };
 
-static int cc_measure(const char *input, size_t length, const char *option, double *seconds) {
+static int cc_measure(const char *input, size_t length, const char *option, cc_validator validate, double *seconds) {
     double samples[SCALING_REPEATS];
     int repeat;
     markdown_core_parse_options options;
@@ -933,6 +1047,10 @@ static int cc_measure(const char *input, size_t length, const char *option, doub
     {
         markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
         if (!document) {
+            return -1;
+        }
+        if (validate && validate(document, length) != 0) {
+            markdown_core_document_free(document);
             return -1;
         }
         markdown_core_document_free(document);
@@ -983,7 +1101,7 @@ static int cc_run(const cc_case_entry *entry) {
             fprintf(stderr, "cannot build input for %s\n", entry->name);
             return -1;
         }
-        if (cc_measure(input, length, entry->option, &timings[step]) != 0) {
+        if (cc_measure(input, length, entry->option, entry->validate, &timings[step]) != 0) {
             fprintf(stderr, "conversion failed for %s\n", entry->name);
             free(input);
             return -1;

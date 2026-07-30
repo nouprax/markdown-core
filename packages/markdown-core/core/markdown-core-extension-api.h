@@ -77,22 +77,27 @@ struct markdown_core_chunk;
  *   This is the technique that would be used if inline code
  *   (with backticks) was implemented as an extension.
  * * Scan only the character(s) that its syntax rules require
- *   for opening and closing nodes, push a delimiter on the
- *   delimiter stack, and return a simple text node with its
- *   contents set to the character(s) consumed.
+ *   for opening and closing nodes, then atomically consume a
+ *   delimiter marker with markdown_core_inline_parser_consume_delimiter.
  *   This is the technique that would be used if emphasis
  *   inlines were implemented as an extension.
  *
- * When an extension has pushed delimiters on the stack,
+ * When an extension has consumed delimiter markers,
  * the descriptor's
  * 'insert_inline_from_delim' function
- * will get called in a latter phase,
+ * will get called in a later phase,
  * when the inline parser has matched opener and closer delimiters
  * created by the extension together.
  *
- * It is then the responsibility of the extension to modify
- * and populate the opener inline text node, and to remove
- * the necessary delimiters from the delimiter stack.
+ * The callback receives an immutable match snapshot and may only update the
+ * AST. Delimiter topology and range retirement remain exclusively owned by
+ * the engine.
+ *
+ * Reducers are transactional at the AST boundary: every operation that can
+ * fail, including allocation and semantic validation, must finish before the
+ * first AST mutation. A reducer that has mutated the AST must return
+ * MARKDOWN_CORE_DELIMITER_OK. The engine can always restore delimiter
+ * topology, but deliberately does not clone or roll back the AST.
  *
  * Finally, the extension should return NULL if its scan didn't
  * match its syntax rules.
@@ -100,18 +105,66 @@ struct markdown_core_chunk;
  */
 typedef struct subject markdown_core_inline_parser;
 
-/** Exposed raw for now */
+/*
+ * Source trigger bytes, delimiter rule identity, and extension ownership are
+ * deliberately separate namespaces. A rule is immutable descriptor data;
+ * the parser binds it to a dense parser-local lane when the extension is
+ * attached.
+ */
+typedef enum {
+    MARKDOWN_CORE_DELIMITER_PAIR_NEAREST = 0,
+    MARKDOWN_CORE_DELIMITER_PAIR_COMMONMARK = 1,
+} markdown_core_delimiter_pairing;
 
-typedef struct delimiter {
-    struct delimiter *previous;
-    struct delimiter *next;
-    markdown_core_node *inl_text;
-    markdown_core_bufsize position;
-    markdown_core_bufsize length;
-    unsigned char delim_char;
-    int can_open;
-    int can_close;
-} delimiter;
+typedef enum {
+    /* Consume the complete matched range, including both endpoints. */
+    MARKDOWN_CORE_DELIMITER_REDUCE_RANGE = 0,
+    /* Consume only the matched endpoints, preserving interior delimiters. */
+    MARKDOWN_CORE_DELIMITER_REDUCE_ENDPOINTS = 1,
+    /* Consume one or two marker bytes and keep nonempty endpoint runs live. */
+    MARKDOWN_CORE_DELIMITER_REDUCE_RUN = 2,
+} markdown_core_delimiter_reduction;
+
+typedef enum {
+    MARKDOWN_CORE_DELIMITER_OK = 0,
+    MARKDOWN_CORE_DELIMITER_OOM = 1,
+    MARKDOWN_CORE_DELIMITER_INVALID = 2,
+} markdown_core_delimiter_result;
+
+/*
+ * A shared-close probe is a pure lexical query over immutable source bytes.
+ * Zero means the rule cannot close at `offset`; a positive result is the
+ * exact byte length core must consume for the closing marker.
+ */
+typedef markdown_core_bufsize (*markdown_core_delimiter_close_probe_func)(
+    uint16_t kind,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize offset
+);
+
+typedef struct {
+    markdown_core_delimiter_pairing pairing;
+    markdown_core_delimiter_reduction reduction;
+    /* Must be nonzero exactly when close_probe is non-NULL. */
+    unsigned char close_trigger;
+    markdown_core_delimiter_close_probe_func close_probe;
+} markdown_core_delimiter_rule;
+
+typedef struct {
+    uint16_t kind;
+    markdown_core_node *opener_node;
+    markdown_core_node *closer_node;
+    markdown_core_bufsize opener_start;
+    markdown_core_bufsize opener_end;
+    markdown_core_bufsize closer_start;
+    markdown_core_bufsize closer_end;
+    markdown_core_bufsize opener_length;
+    markdown_core_bufsize closer_length;
+    markdown_core_bufsize opener_remaining;
+    markdown_core_bufsize closer_remaining;
+    markdown_core_bufsize use_length;
+} markdown_core_delimiter_match;
 
 /** This will search for the syntax extension named 'name' among the
  *  bundled syntax extensions (immutable compile-time descriptors; there is
@@ -152,12 +205,23 @@ typedef markdown_core_node *(*markdown_core_match_inline_func)(
     markdown_core_inline_parser *inline_parser
 );
 
-typedef delimiter *(*markdown_core_inline_from_delim_func)(
+typedef markdown_core_delimiter_result (*markdown_core_inline_from_delim_func)(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
+);
+
+/**
+ * Materializes an extension-owned inline node after delimiter reduction has
+ * discarded every opaque node hidden by an outer match. The callback must be
+ * idempotent and may only update `node`'s payload. Return nonzero on success
+ * (including when no work is required) and zero on allocation failure.
+ */
+typedef int (*markdown_core_materialize_inline_func)(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *node
 );
 
 /** Should return 'true' if 'input' can be contained in 'container',
@@ -362,11 +426,6 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *no
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser);
 
-/** Set the offset in bytes in the chunk being processed by the given inline parser.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_set_offset(markdown_core_inline_parser *parser, int offset);
-
 /** Gets the markdown_core_chunk being operated on by the given inline parser.
  * Use markdown_core_inline_parser_get_offset to get our current position in the chunk.
  */
@@ -385,37 +444,47 @@ int markdown_core_inline_parser_in_bracket(markdown_core_inline_parser *parser, 
 MARKDOWN_CORE_EXPORT
 void markdown_core_node_unput(markdown_core_node *node, int n);
 
-/** Get the characters located after the current inline parsing offset
- * while 'pred' matches. Free after usage.
- */
-/** Push a delimiter on the delimiter stack.
- * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
- * more information on the parameters
+typedef struct {
+    int start_line;
+    int start_column;
+    int end_line;
+    int end_column;
+} markdown_core_inline_source_span;
+
+/**
+ * Atomically consumes `[current_offset, end_offset)` and returns its precise
+ * source scope. Invalid or non-forward ranges poison the parse as an internal
+ * error and leave the cursor unchanged.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_push_delimiter(
+int markdown_core_inline_parser_consume_source(
     markdown_core_inline_parser *parser,
-    unsigned char c,
-    int can_open,
-    int can_close,
-    markdown_core_node *inl_text
+    markdown_core_bufsize end_offset,
+    markdown_core_inline_source_span *span
 );
 
-/** Remove 'delim' from the delimiter stack
+/**
+ * Creates a borrowed Text node for `[current_offset, end_offset)` and commits
+ * the cursor only after node allocation succeeds.
  */
 MARKDOWN_CORE_EXPORT
-void markdown_core_inline_parser_remove_delimiter(markdown_core_inline_parser *parser, delimiter *delim);
-
-MARKDOWN_CORE_EXPORT
-delimiter *markdown_core_inline_parser_get_last_delimiter(markdown_core_inline_parser *parser);
-
-/** Returns the nearest opener of `delim_char` not balanced by a later closer.
- * This phase-one lookup is O(1) and ignores delimiters of every other
- * character. */
-MARKDOWN_CORE_EXPORT
-delimiter *markdown_core_inline_parser_get_last_open_delimiter(
+markdown_core_node *markdown_core_inline_parser_consume_text(
     markdown_core_inline_parser *parser,
-    unsigned char delim_char
+    markdown_core_bufsize end_offset
+);
+
+/**
+ * Creates and publishes one delimiter marker as a single transaction. Rule
+ * identity comes from the currently executing extension attachment; source
+ * bounds, run length, scope, and ownership are derived by core.
+ */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_inline_parser_consume_delimiter(
+    markdown_core_inline_parser *parser,
+    uint16_t kind,
+    int can_open,
+    int can_close,
+    markdown_core_bufsize end_offset
 );
 
 MARKDOWN_CORE_EXPORT
@@ -435,8 +504,8 @@ int markdown_core_inline_parser_get_column(markdown_core_inline_parser *parser);
  *
  * Note that 'left_flanking' and 'right_flanking' can both be 'true'.
  *
- * Returns the number of delimiters encountered, in the limit
- * of 'max_delims', and advances the inline parsing offset.
+ * Returns the number of delimiters encountered, in the limit of
+ * 'max_delims'. This is a pure lookahead and does not advance the parser.
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_scan_delimiters(
@@ -449,6 +518,11 @@ int markdown_core_inline_parser_scan_delimiters(
     int *punct_after
 );
 
+/**
+ * Compatibility no-op. Attached inline grammar is now compiled into an
+ * always-active parser-local plan and no longer requires temporary bitmap
+ * mutation.
+ */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add);
 

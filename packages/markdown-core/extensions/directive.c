@@ -19,7 +19,9 @@
 #include "extension.h"
 #include "inline_util.h"
 
-#define DIRECTIVE_LABEL_DELIM 8
+enum {
+    DIRECTIVE_LABEL_RULE = 0,
+};
 
 typedef struct directive_attribute {
     markdown_core_chunk name;
@@ -836,20 +838,30 @@ static int parse_attr_value(
     return 1;
 }
 
-static int parse_attributes(
-    markdown_core_mem *mem,
+typedef int (*attribute_sink)(
+    void *context,
+    const unsigned char *name,
+    markdown_core_bufsize name_len,
+    const unsigned char *value,
+    markdown_core_bufsize value_len,
+    size_t index
+);
+
+/*
+ * One allocation-free grammar scanner serves both the phase-one closer probe
+ * and the phase-two payload builder. The former validates only; the latter
+ * supplies a sink and therefore parses each attribute exactly once into its
+ * final representation.
+ */
+static int scan_attribute_sequence(
     const unsigned char *data,
     markdown_core_bufsize len,
-    directive_attribute **result,
-    int *oom
+    attribute_sink sink,
+    void *context,
+    size_t *attribute_count
 ) {
-    directive_attribute *attrs = NULL;
-    directive_attribute *tail = NULL;
     markdown_core_bufsize pos = 0;
     size_t count = 0;
-    int ok = 1;
-
-    *result = NULL;
     while (pos < len) {
         markdown_core_bufsize start;
         markdown_core_bufsize name_len;
@@ -862,16 +874,14 @@ static int parse_attributes(
             break;
         }
         if (data[pos] == '#' || data[pos] == '.') {
-            ok = 0;
-            break;
+            return 0;
         }
         start = pos;
         while (pos < len && is_attr_name_char(data[pos])) {
             pos++;
         }
         if (pos == start) {
-            ok = 0;
-            break;
+            return 0;
         }
         name_len = pos - start;
         while (pos < len && ascii_is_space(data[pos])) {
@@ -880,27 +890,73 @@ static int parse_attributes(
         if (pos < len && data[pos] == '=') {
             pos++;
             if (!parse_attr_value(data, len, &pos, &value, &value_len)) {
-                ok = 0;
-                break;
+                return 0;
             }
         }
-        if (!append_attribute(mem, &attrs, &tail, data + start, name_len, value, value_len, count++, oom)) {
-            ok = 0;
-            break;
+        if (sink && !sink(context, data + start, name_len, value, value_len, count)) {
+            return 0;
         }
+        count++;
     }
+    if (attribute_count) {
+        *attribute_count = count;
+    }
+    return 1;
+}
 
-    if (ok && !normalize_duplicate_attributes(mem, attrs, count)) {
+typedef struct {
+    markdown_core_mem *mem;
+    directive_attribute *head;
+    directive_attribute *tail;
+    int *oom;
+} attribute_builder;
+
+static int build_attribute(
+    void *context,
+    const unsigned char *name,
+    markdown_core_bufsize name_len,
+    const unsigned char *value,
+    markdown_core_bufsize value_len,
+    size_t index
+) {
+    attribute_builder *builder = (attribute_builder *)context;
+    return append_attribute(
+        builder->mem,
+        &builder->head,
+        &builder->tail,
+        name,
+        name_len,
+        value,
+        value_len,
+        index,
+        builder->oom
+    );
+}
+
+static int parse_attributes(
+    markdown_core_mem *mem,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    directive_attribute **result,
+    int *oom
+) {
+    attribute_builder builder = {mem, NULL, NULL, oom};
+    size_t count = 0;
+    int ok;
+
+    *result = NULL;
+    ok = scan_attribute_sequence(data, len, build_attribute, &builder, &count);
+    if (ok && !normalize_duplicate_attributes(mem, builder.head, count)) {
         if (oom) {
             *oom = 1;
         }
         ok = 0;
     }
     if (ok) {
-        *result = attrs;
-        attrs = NULL;
+        *result = builder.head;
+        builder.head = NULL;
     }
-    free_attribute_list(mem, attrs);
+    free_attribute_list(mem, builder.head);
     return ok;
 }
 
@@ -1098,66 +1154,58 @@ static markdown_core_node *make_name_only_directive(
     markdown_core_bufsize end_offset
 ) {
     markdown_core_node *node;
-    int start_line = markdown_core_inline_parser_get_line(inline_parser);
-    int start_column = markdown_core_inline_parser_get_column(inline_parser);
-    markdown_core_bufsize offset = (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser);
+    markdown_core_inline_source_span span;
 
-    node = make_directive_node(
-        extension,
-        parser,
-        name,
-        name_len,
-        start_line,
-        start_column,
-        start_line,
-        start_column + (int)(end_offset - offset) - 1
-    );
-    if (node) {
-        markdown_core_inline_parser_set_offset(inline_parser, (int)end_offset);
+    node = make_directive_node(extension, parser, name, name_len, 0, 0, 0, 0);
+    if (!node) {
+        return NULL;
+    }
+    if (!markdown_core_inline_parser_consume_source(inline_parser, end_offset, &span)) {
+        markdown_core_node_free(node);
+        return NULL;
     }
 
+    node->start_line = span.start_line;
+    node->start_column = span.start_column;
+    node->end_line = span.end_line;
+    node->end_column = span.end_column;
     return node;
 }
 
 static markdown_core_node *match_directive_delimiter(
-    markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    unsigned char delim_char,
-    markdown_core_bufsize offset,
-    markdown_core_bufsize len,
-    int can_open,
-    int can_close
+    markdown_core_bufsize end_offset
 ) {
-    markdown_core_node *node = markdown_core_ext_make_delimiter_text(parser, inline_parser, offset, len);
-
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
-
-    markdown_core_inline_parser_push_delimiter(inline_parser, delim_char, can_open, can_close, node);
-    return node;
+    return markdown_core_inline_parser_consume_delimiter(inline_parser, DIRECTIVE_LABEL_RULE, 1, 0, end_offset);
 }
 
-static delimiter *find_directive_opener(markdown_core_inline_parser *inline_parser, unsigned char delim_char) {
-    return markdown_core_inline_parser_get_last_open_delimiter(inline_parser, delim_char);
-}
-
-static int scan_parsed_attributes(
-    markdown_core_mem *mem,
+static int scan_valid_attributes(
     const unsigned char *data,
     markdown_core_bufsize len,
     markdown_core_bufsize pos,
-    markdown_core_bufsize *end,
-    int *oom
+    markdown_core_bufsize *end
 ) {
     markdown_core_bufsize attr_start;
     markdown_core_bufsize attr_len;
-    directive_attribute *attributes = NULL;
-    int valid = scan_attributes_raw(data, len, pos, &attr_start, &attr_len, end) &&
-                parse_attributes(mem, data + attr_start, attr_len, &attributes, oom);
-    free_attribute_list(mem, attributes);
-    return valid;
+    return scan_attributes_raw(data, len, pos, &attr_start, &attr_len, end) &&
+           scan_attribute_sequence(data + attr_start, attr_len, NULL, NULL, NULL);
+}
+
+static markdown_core_bufsize probe_label_close(
+    uint16_t kind,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize offset
+) {
+    markdown_core_bufsize end;
+
+    if (kind != DIRECTIVE_LABEL_RULE || offset < 0 || offset >= len || data[offset] != ']') {
+        return 0;
+    }
+    if (offset + 1 < len && data[offset + 1] == '{' && scan_valid_attributes(data, len, offset + 1, &end)) {
+        return end - offset;
+    }
+    return 1;
 }
 
 static markdown_core_node *match_colon_directive(
@@ -1181,7 +1229,7 @@ static markdown_core_node *match_colon_directive(
 
     pos = name_start + name_len;
     if (pos < chunk->len && chunk->data[pos] == '[') {
-        return match_directive_delimiter(parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, pos - offset + 1, 1, 0);
+        return match_directive_delimiter(inline_parser, pos + 1);
     }
 
     if (pos < chunk->len && chunk->data[pos] == '{') {
@@ -1189,11 +1237,9 @@ static markdown_core_node *match_colon_directive(
         markdown_core_bufsize attr_len;
         markdown_core_bufsize end;
         markdown_core_node *node;
+        markdown_core_inline_source_span span;
         directive_attribute *attributes = NULL;
         node_directive *directive;
-        int line = markdown_core_inline_parser_get_line(inline_parser);
-        int column = markdown_core_inline_parser_get_column(inline_parser);
-
         int attr_oom = 0;
 
         if (!scan_attributes_raw(chunk->data, chunk->len, pos, &attr_start, &attr_len, &end) ||
@@ -1203,16 +1249,7 @@ static markdown_core_node *match_colon_directive(
             }
             return NULL;
         }
-        node = make_directive_node(
-            extension,
-            parser,
-            chunk->data + name_start,
-            name_len,
-            line,
-            column,
-            line,
-            column + (int)(end - offset) - 1
-        );
+        node = make_directive_node(extension, parser, chunk->data + name_start, name_len, 0, 0, 0, 0);
         if (!node) {
             free_attribute_list(parser->mem, attributes);
             return NULL;
@@ -1220,7 +1257,14 @@ static markdown_core_node *match_colon_directive(
         directive = get_directive(node);
         directive->attributes = attributes;
         directive->has_attributes = 1;
-        markdown_core_inline_parser_set_offset(inline_parser, (int)end);
+        if (!markdown_core_inline_parser_consume_source(inline_parser, end, &span)) {
+            markdown_core_node_free(node);
+            return NULL;
+        }
+        node->start_line = span.start_line;
+        node->start_column = span.start_column;
+        node->end_line = span.end_line;
+        node->end_column = span.end_column;
         return node;
     }
 
@@ -1231,34 +1275,6 @@ static markdown_core_node *match_colon_directive(
     return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
 }
 
-static markdown_core_node *match_label_closer(
-    markdown_core_parser *parser,
-    markdown_core_inline_parser *inline_parser,
-    markdown_core_chunk *chunk,
-    markdown_core_bufsize offset
-) {
-    delimiter *opener = find_directive_opener(inline_parser, DIRECTIVE_LABEL_DELIM);
-    markdown_core_bufsize end;
-    markdown_core_bufsize closer_len = 1;
-
-    if (!opener) {
-        return NULL;
-    }
-
-    {
-        int attr_oom = 0;
-        if (offset + 1 < chunk->len && chunk->data[offset + 1] == '{' &&
-            scan_parsed_attributes(parser->mem, chunk->data, chunk->len, offset + 1, &end, &attr_oom)) {
-            closer_len = end - offset;
-        }
-        if (attr_oom) {
-            parser->oom = true;
-        }
-    }
-
-    return match_directive_delimiter(parser, inline_parser, DIRECTIVE_LABEL_DELIM, offset, closer_len, 0, 1);
-}
-
 static markdown_core_node *match(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -1266,22 +1282,17 @@ static markdown_core_node *match(
     unsigned char character,
     markdown_core_inline_parser *inline_parser
 ) {
-    markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_bufsize offset = (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser);
-
-    if (!directive_enabled(parser)) {
+    if (!directive_enabled(parser) || character != ':') {
         return NULL;
     }
 
-    if (character == ':') {
-        return match_colon_directive(extension, parser, inline_parser, chunk, offset);
-    }
-
-    if (character == ']') {
-        return match_label_closer(parser, inline_parser, chunk, offset);
-    }
-
-    return NULL;
+    return match_colon_directive(
+        extension,
+        parser,
+        inline_parser,
+        markdown_core_inline_parser_get_chunk(inline_parser),
+        (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser)
+    );
 }
 
 static markdown_core_bufsize count_colons(
@@ -1469,28 +1480,41 @@ static markdown_core_node *make_empty_label_node(
     return label;
 }
 
-static delimiter *insert_label_directive(
+static markdown_core_delimiter_result insert_directive(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
 ) {
-    markdown_core_node *opener_node = opener->inl_text;
-    markdown_core_node *closer_node = closer->inl_text;
-    markdown_core_chunk *opener_literal = &opener_node->as.literal;
-    markdown_core_chunk *closer_literal = &closer_node->as.literal;
-    delimiter *res = closer->next;
+    markdown_core_node *opener_node;
+    markdown_core_node *closer_node;
+    markdown_core_chunk *opener_literal;
+    markdown_core_chunk *closer_literal;
     markdown_core_node *directive_node;
     markdown_core_node *label_node;
     markdown_core_node *tmp;
     markdown_core_node *tmpnext;
     markdown_core_bufsize name_len;
 
-    if (opener->delim_char != closer->delim_char || opener_literal->len < 3 || opener_literal->data[0] != ':' ||
+    if (match->kind != DIRECTIVE_LABEL_RULE) {
+        assert(0 && "directive reducer received an unsupported delimiter rule");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    opener_node = match->opener_node;
+    closer_node = match->closer_node;
+    if (!opener_node || !closer_node || opener_node->type != MARKDOWN_CORE_NODE_TEXT ||
+        closer_node->type != MARKDOWN_CORE_NODE_TEXT) {
+        assert(0 && "directive reducer received invalid delimiter endpoints");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    opener_literal = &opener_node->as.literal;
+    closer_literal = &closer_node->as.literal;
+
+    if (opener_literal->len < 3 || opener_literal->data[0] != ':' ||
         opener_literal->data[opener_literal->len - 1] != '[' || closer_literal->len < 1 ||
         closer_literal->data[0] != ']') {
-        goto done;
+        assert(0 && "directive reducer received malformed delimiter literals");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
     }
 
     name_len = opener_literal->len - 2;
@@ -1505,7 +1529,7 @@ static delimiter *insert_label_directive(
         closer_node->end_column
     );
     if (!directive_node) {
-        goto done;
+        return MARKDOWN_CORE_DELIMITER_OOM;
     }
 
     {
@@ -1513,10 +1537,12 @@ static delimiter *insert_label_directive(
         if (closer_literal->len > 1 && closer_literal->data[1] == '{' &&
             !set_attributes_from_wrapper(directive_node, closer_literal->data, closer_literal->len, 1, &attr_oom)) {
             if (attr_oom) {
-                parser->oom = true;
+                markdown_core_node_free(directive_node);
+                return MARKDOWN_CORE_DELIMITER_OOM;
             }
             markdown_core_node_free(directive_node);
-            goto done;
+            assert(0 && "directive close probe and reducer attribute grammars diverged");
+            return MARKDOWN_CORE_DELIMITER_INVALID;
         }
     }
 
@@ -1530,7 +1556,7 @@ static delimiter *insert_label_directive(
     );
     if (!label_node) {
         markdown_core_node_free(directive_node);
-        goto done;
+        return MARKDOWN_CORE_DELIMITER_OOM;
     }
 
     /* Inline parsing has already materialized the label's Markup. Preserve
@@ -1538,45 +1564,14 @@ static delimiter *insert_label_directive(
     tmp = opener_node->next;
     while (tmp && tmp != closer_node) {
         tmpnext = tmp->next;
-        markdown_core_node_unlink(tmp);
-        if (!markdown_core_node_append_child(label_node, tmp)) {
-            markdown_core_node_free(tmp);
-            markdown_core_node_free(label_node);
-            markdown_core_node_free(directive_node);
-            goto done;
-        }
+        markdown_core_node_append_child_unchecked(label_node, tmp);
         tmp = tmpnext;
     }
-    if (!markdown_core_node_append_child(directive_node, label_node)) {
-        markdown_core_node_free(label_node);
-        markdown_core_node_free(directive_node);
-        goto done;
-    }
-
-    if (markdown_core_node_insert_before(opener_node, directive_node)) {
-        markdown_core_node_free(opener_node);
-        markdown_core_node_free(closer_node);
-    } else {
-        markdown_core_node_free(directive_node);
-    }
-
-done:
-    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
-    return res;
-}
-
-static delimiter *insert_directive(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
-) {
-    if (opener->delim_char == DIRECTIVE_LABEL_DELIM) {
-        return insert_label_directive(extension, parser, inline_parser, opener, closer);
-    }
-
-    return closer->next;
+    markdown_core_node_append_child_unchecked(directive_node, label_node);
+    markdown_core_node_insert_before_unchecked(opener_node, directive_node);
+    markdown_core_node_free(opener_node);
+    markdown_core_node_free(closer_node);
+    return MARKDOWN_CORE_DELIMITER_OK;
 }
 
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) {
@@ -1664,18 +1659,25 @@ static int accepts_lines(markdown_core_extension *extension, markdown_core_node 
     return directive->fence_length == 2 || directive->consume_line;
 }
 
-// '}' is consumed by the directive scanners, never by match(), so it is not a
-// trigger; keeping it registered only broke text runs and emphasis flanking.
-static const unsigned char directive_special_chars[] = {':', ']', DIRECTIVE_LABEL_DELIM};
+static const markdown_core_delimiter_rule directive_delimiter_rules[] = {
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = ']',
+        .close_probe = probe_label_close,
+    },
+};
 
-// Only the internal label sentinel stays transparent to emphasis flanking;
-// ':' is real punctuation and must keep CommonMark flanking semantics.
-static const unsigned char directive_flanking_skip_chars[] = {DIRECTIVE_LABEL_DELIM};
+// The close trigger is dispatched by the delimiter engine; match() only scans
+// directive openers and standalone directives.
+static const unsigned char directive_special_chars[] = {':'};
 
 static const markdown_core_extension directive_extension = {
     .name = "directive",
     .match_inline = match,
     .insert_inline_from_delim = insert_directive,
+    .delimiter_rules = directive_delimiter_rules,
+    .delimiter_rule_count = sizeof(directive_delimiter_rules) / sizeof(directive_delimiter_rules[0]),
     .last_block_matches = directive_block_matches,
     .try_opening_block = open_directive_block,
     .get_type_string = get_type_string,
@@ -1686,8 +1688,6 @@ static const markdown_core_extension directive_extension = {
     .free_opaque = directive_opaque_free,
     .special_inline_chars = directive_special_chars,
     .special_inline_char_count = sizeof(directive_special_chars),
-    .flanking_skip_chars = directive_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(directive_flanking_skip_chars),
 };
 
 markdown_core_extension *markdown_core_directive_extension(void) {

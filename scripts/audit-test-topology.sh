@@ -117,6 +117,10 @@ for case_name in $("$runner_dir/pathological_runner" --list); do
     echo "$tests_all" | grep -q "^pathological_${case_name}$" \
         || fail "pathological case '$case_name' is not registered in CTest"
 done
+for case_name in $("$runner_dir/delimiter_engine_runner" --list); do
+    echo "$tests_all" | grep -q "^pathological_delimiter_engine_${case_name}$" \
+        || fail "delimiter-engine case '$case_name' is not registered in CTest"
+done
 for case_name in $("$runner_dir/complexity_runner" --list); do
     echo "$tests_all" | grep -q "^pathological_complexity_${case_name}$" \
         || fail "complexity case '$case_name' is not registered in CTest"

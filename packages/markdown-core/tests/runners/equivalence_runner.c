@@ -515,6 +515,22 @@ done:
     return result;
 }
 
+/* A multiline inline-directive suffix is scanned as one delimiter closer.
+ * Per-line and per-byte construction exercise every incomplete intermediate
+ * state, while the replay harness compares each commit with a one-shot parse.
+ * This specifically guards the physical cursor transition after the closing
+ * brace: the following Text must begin on the final source line. */
+static int case_directive_multiline_attributes(void) {
+    static const uint8_t input[] = ":note[label]{title=\"one\ntwo\"} tail\n";
+    markdown_core_parse_options options;
+
+    ts_ast_options_none(&options);
+    options.directives = true;
+    eq_replay_per_line("directive multiline attributes per-line", input, sizeof(input) - 1, &options);
+    eq_replay_per_byte("directive multiline attributes per-byte", input, sizeof(input) - 1, &options);
+    return failures ? -1 : 0;
+}
+
 /* --- scripted boundary edits ---------------------------------------------- */
 
 /* One edit-and-commit: the position is `offset` bytes past the first match
@@ -1009,8 +1025,15 @@ static int case_boundary_edits(void) {
 
 /* --- entry point ---------------------------------------------------------- */
 
-static const char *const EQ_CASES[] =
-    {"canonical", "spec", "random_edits", "link_ref_edits", "footnote_edits", "boundary_edits"};
+static const char *const EQ_CASES[] = {
+    "canonical",
+    "spec",
+    "random_edits",
+    "link_ref_edits",
+    "footnote_edits",
+    "directive_multiline_attributes",
+    "boundary_edits"
+};
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
@@ -1066,6 +1089,8 @@ int main(int argc, char **argv) {
         case_link_ref_edits();
     } else if (case_name && strcmp(case_name, "footnote_edits") == 0) {
         case_footnote_edits();
+    } else if (case_name && strcmp(case_name, "directive_multiline_attributes") == 0) {
+        case_directive_multiline_attributes();
     } else if (case_name && strcmp(case_name, "boundary_edits") == 0) {
         case_boundary_edits();
     } else {

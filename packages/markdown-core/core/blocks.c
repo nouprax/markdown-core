@@ -24,6 +24,7 @@
 #include "houdini.h"
 #include "buffer.h"
 #include "iterator.h"
+#include "delimiter.h"
 
 #define CODE_INDENT 4
 #define TAB_STOP 4
@@ -179,15 +180,35 @@ static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **
 }
 
 int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown_core_extension *extension) {
-    if (!S_llist_append_checked(parser->mem, &parser->extensions, extension)) {
+    markdown_core_llist *existing;
+    markdown_core_inline_attachment *attachment = NULL;
+    markdown_core_delimiter_result attachment_result;
+
+    if (!parser || !extension || !parser->inline_config || parser->total_size != 0) {
         return 0;
     }
-    if (extension->match_inline || extension->insert_inline_from_delim) {
-        if (!S_llist_append_checked(parser->mem, &parser->inline_extensions, extension)) {
+    for (existing = parser->extensions; existing; existing = existing->next) {
+        if (existing->data == extension) {
             return 0;
         }
     }
-
+    if (extension->match_inline || extension->delimiter_rule_count) {
+        attachment_result = markdown_core_inline_attachment_prepare(parser->inline_config, extension, &attachment);
+        if (attachment_result != MARKDOWN_CORE_DELIMITER_OK) {
+            if (attachment_result == MARKDOWN_CORE_DELIMITER_OOM) {
+                parser->oom = true;
+            }
+            return 0;
+        }
+    }
+    if (!S_llist_append_checked(parser->mem, &parser->extensions, extension)) {
+        markdown_core_inline_attachment_discard(parser->inline_config, attachment);
+        parser->oom = true;
+        return 0;
+    }
+    if (attachment) {
+        markdown_core_inline_attachment_commit(parser->inline_config, attachment);
+    }
     return 1;
 }
 
@@ -203,7 +224,7 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
 
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->extensions;
-    markdown_core_llist *saved_inline_exts = parser->inline_extensions;
+    markdown_core_inline_config *saved_inline_config = parser->inline_config;
     int saved_options = parser->options;
     markdown_core_mem *saved_mem = parser->mem;
 
@@ -222,7 +243,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     parser->current = document;
 
     parser->extensions = saved_exts;
-    parser->inline_extensions = saved_inline_exts;
+    parser->inline_config = saved_inline_config;
     parser->options = saved_options;
 
     /* A reset that could not rebuild its structures poisons the parser: feed
@@ -230,8 +251,6 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     if (!parser->root || !parser->refmap || parser->curline.oom) {
         parser->oom = true;
     }
-
-    markdown_core_inlines_reset_special_chars(parser);
 }
 
 /* Like markdown_core_parser_reset, but keeps the allocations one parse hands
@@ -242,7 +261,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
  * exactly like a failed reset. */
 void markdown_core_parser_renew(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->extensions;
-    markdown_core_llist *saved_inline_exts = parser->inline_extensions;
+    markdown_core_inline_config *saved_inline_config = parser->inline_config;
     int saved_options = parser->options;
     markdown_core_mem *saved_mem = parser->mem;
     markdown_core_map *saved_refmap = parser->refmap;
@@ -268,14 +287,12 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
     parser->current = document;
 
     parser->extensions = saved_exts;
-    parser->inline_extensions = saved_inline_exts;
+    parser->inline_config = saved_inline_config;
     parser->options = saved_options;
 
     if (!parser->root || !parser->refmap || parser->curline.oom || parser->linebuf.oom) {
         parser->oom = true;
     }
-
-    markdown_core_inlines_reset_special_chars(parser);
 }
 
 markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_core_mem *mem) {
@@ -285,6 +302,11 @@ markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_co
     }
     parser->mem = mem;
     parser->options = options;
+    parser->inline_config = markdown_core_inlines_new_config(mem);
+    if (!parser->inline_config) {
+        mem->free(mem, parser);
+        return NULL;
+    }
     markdown_core_parser_reset(parser);
     return parser;
 }
@@ -299,7 +321,7 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
     markdown_core_llist_free(parser->mem, parser->extensions);
-    markdown_core_llist_free(parser->mem, parser->inline_extensions);
+    markdown_core_inline_config_free(parser->inline_config);
     mem->free(mem, parser);
 }
 
@@ -643,27 +665,10 @@ static markdown_core_node *add_child(
 }
 
 void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
-    markdown_core_llist *tmp_ext;
-
-    for (tmp_ext = parser->inline_extensions; tmp_ext; tmp_ext = tmp_ext->next) {
-        markdown_core_extension *ext = (markdown_core_extension *)tmp_ext->data;
-        for (size_t i = 0; i < ext->special_inline_char_count; i++) {
-            unsigned char c = ext->special_inline_chars[i];
-            if (add) {
-                markdown_core_inlines_add_special_character(parser, c);
-            } else {
-                markdown_core_inlines_remove_special_character(parser, c);
-            }
-        }
-        for (size_t i = 0; i < ext->flanking_skip_char_count; i++) {
-            unsigned char c = ext->flanking_skip_chars[i];
-            if (add) {
-                markdown_core_inlines_add_flanking_skip_character(parser, c);
-            } else {
-                markdown_core_inlines_remove_flanking_skip_character(parser, c);
-            }
-        }
-    }
+    /*
+     * Compatibility no-op for callers built against the former mutable-table
+     * SPI. The compiled parser-local config is always active.
+     */
 }
 
 /* The node a lookup observed during `node`'s inline parse is attributed to
@@ -718,8 +723,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
         return;
     }
 
-    markdown_core_parser_manage_extensions_special_characters(parser, true);
-
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
@@ -728,8 +731,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
             }
         }
     }
-
-    markdown_core_parser_manage_extensions_special_characters(parser, false);
 
     markdown_core_iter_free(iter);
 }
@@ -1804,6 +1805,28 @@ static markdown_core_node *S_postprocess_unit(
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
+    }
+
+    if (owns_inlines) {
+        markdown_core_node *node = unit;
+        for (;;) {
+            if (node->extension && node->extension->materialize_inline &&
+                !node->extension->materialize_inline(node->extension, parser, node)) {
+                parser->oom = true;
+                break;
+            }
+            if (node->first_child) {
+                node = node->first_child;
+                continue;
+            }
+            while (node != unit && !node->next) {
+                node = node->parent;
+            }
+            if (node == unit) {
+                break;
+            }
+            node = node->next;
+        }
     }
 
     for (extensions = parser->extensions; extensions; extensions = extensions->next) {

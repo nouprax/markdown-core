@@ -252,7 +252,6 @@ static markdown_core_node *www_match(
     size_t max_rewind = markdown_core_inline_parser_get_offset(inline_parser);
     uint8_t *data = chunk->data + max_rewind;
     size_t size = chunk->len - max_rewind;
-    int start = markdown_core_inline_parser_get_column(inline_parser);
 
     size_t link_end;
 
@@ -280,8 +279,6 @@ static markdown_core_node *www_match(
         return NULL;
     }
 
-    markdown_core_inline_parser_set_offset(inline_parser, (int)(max_rewind + link_end));
-
     markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
     if (!node) {
         parser->oom = true;
@@ -295,6 +292,8 @@ static markdown_core_node *www_match(
     node->as.link.url = markdown_core_chunk_buf_detach(&buf);
     if (!node->as.link.url.data) {
         parser->oom = true;
+        markdown_core_node_free(node);
+        return NULL;
     }
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
@@ -307,11 +306,20 @@ static markdown_core_node *www_match(
         markdown_core_chunk_dup(chunk, (markdown_core_bufsize)max_rewind, (markdown_core_bufsize)link_end);
     markdown_core_node_append_child(node, text);
 
-    node->start_line = text->start_line = node->end_line = text->end_line =
-        markdown_core_inline_parser_get_line(inline_parser);
+    markdown_core_inline_source_span span;
+    if (!markdown_core_inline_parser_consume_source(
+            inline_parser,
+            (markdown_core_bufsize)(max_rewind + link_end),
+            &span
+        )) {
+        markdown_core_node_free(node);
+        return NULL;
+    }
 
-    node->start_column = text->start_column = start;
-    node->end_column = text->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
+    node->start_line = text->start_line = span.start_line;
+    node->start_column = text->start_column = span.start_column;
+    node->end_line = text->end_line = span.end_line;
+    node->end_column = text->end_column = span.end_column;
 
     return node;
 }
@@ -328,7 +336,6 @@ static markdown_core_node *url_match(
     int max_rewind = markdown_core_inline_parser_get_offset(inline_parser);
     uint8_t *data = chunk->data + max_rewind;
     size_t size = chunk->len - max_rewind;
-    int start_column;
 
     if (size < 4 || data[1] != '/' || data[2] != '/') {
         return 0;
@@ -337,7 +344,6 @@ static markdown_core_node *url_match(
     while (rewind < max_rewind && markdown_core_isalpha(data[-rewind - 1])) {
         rewind++;
     }
-    start_column = markdown_core_inline_parser_get_column(inline_parser) - rewind;
 
     if (!sd_autolink_issafe(data - rewind, size + rewind)) {
         return 0;
@@ -362,9 +368,6 @@ static markdown_core_node *url_match(
         return NULL;
     }
 
-    markdown_core_inline_parser_set_offset(inline_parser, (int)(max_rewind + link_end));
-    markdown_core_node_unput(parent, rewind);
-
     markdown_core_node *node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_LINK, parser->mem);
     if (!node) {
         parser->oom = true;
@@ -384,11 +387,21 @@ static markdown_core_node *url_match(
     text->as.literal = url;
     markdown_core_node_append_child(node, text);
 
-    node->start_line = text->start_line = node->end_line = text->end_line =
-        markdown_core_inline_parser_get_line(inline_parser);
+    markdown_core_inline_source_span span;
+    if (!markdown_core_inline_parser_consume_source(
+            inline_parser,
+            (markdown_core_bufsize)(max_rewind + link_end),
+            &span
+        )) {
+        markdown_core_node_free(node);
+        return NULL;
+    }
+    markdown_core_node_unput(parent, rewind);
 
-    node->start_column = text->start_column = start_column;
-    node->end_column = text->end_column = markdown_core_inline_parser_get_column(inline_parser) - 1;
+    node->start_line = text->start_line = span.start_line;
+    node->start_column = text->start_column = span.start_column - rewind;
+    node->end_line = text->end_line = span.end_line;
+    node->end_column = text->end_column = span.end_column;
 
     return node;
 }
@@ -418,6 +431,12 @@ static markdown_core_node *match(
     // note that we could end up re-consuming something already a
     // part of an inline, because we don't track when the last
     // inline was finished in inlines.c.
+}
+
+static int www_inline_seam_probe(const unsigned char *data, markdown_core_bufsize len, markdown_core_bufsize offset) {
+    static const char prefix[] = "www.";
+    return offset >= 0 && offset <= len - (markdown_core_bufsize)(sizeof(prefix) - 1) &&
+           memcmp(data + offset, prefix, sizeof(prefix) - 1) == 0;
 }
 
 static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewind, size_t max_rewind) {
@@ -698,6 +717,8 @@ static markdown_core_node *postprocess_block(
 }
 
 static const unsigned char autolink_special_chars[] = {':', 'w'};
+static const unsigned char autolink_inline_seam_barrier_chars[] = {'@'};
+static const unsigned char autolink_inline_seam_probe_chars[] = {'w'};
 
 static const markdown_core_extension autolink_extension = {
     .name = "autolink",
@@ -705,6 +726,11 @@ static const markdown_core_extension autolink_extension = {
     .postprocess_block = postprocess_block,
     .special_inline_chars = autolink_special_chars,
     .special_inline_char_count = sizeof(autolink_special_chars),
+    .inline_seam_barrier_chars = autolink_inline_seam_barrier_chars,
+    .inline_seam_barrier_char_count = sizeof(autolink_inline_seam_barrier_chars),
+    .inline_seam_probe_chars = autolink_inline_seam_probe_chars,
+    .inline_seam_probe_char_count = sizeof(autolink_inline_seam_probe_chars),
+    .inline_seam_probe = www_inline_seam_probe,
 };
 
 markdown_core_extension *markdown_core_autolink_extension(void) {

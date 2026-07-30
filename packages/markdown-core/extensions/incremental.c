@@ -2340,9 +2340,6 @@ static void incremental_arm_inline_seam(incremental_pipeline *pipeline) {
         markdown_core_node_owns_inlines(parser->root->first_child)) {
         markdown_core_node *staged_leaf = parser->root->first_child;
         markdown_core_bufsize seam;
-        // The scan must see every attached extension's special characters;
-        // outside process_inlines they are not yet folded into the table.
-        markdown_core_parser_manage_extensions_special_characters(parser, true);
         seam = markdown_core_inline_seam_prefix(
             parser,
             (const unsigned char *)restart_node->content.ptr,
@@ -2351,7 +2348,6 @@ static void incremental_arm_inline_seam(incremental_pipeline *pipeline) {
             (markdown_core_bufsize)staged_leaf->content.size,
             parser->options
         );
-        markdown_core_parser_manage_extensions_special_characters(parser, false);
         if (seam > 0) {
             staged_leaf->user_data = (void *)(uintptr_t)((size_t)seam + 1);
         }
@@ -2380,7 +2376,6 @@ static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
     }
     pipeline->root = markdown_core_parser_refine_blocks(parser);
     if (pipeline->root && pipeline->dependent_count) {
-        markdown_core_parser_manage_extensions_special_characters(parser, true);
         for (i = 0; i < pipeline->dependent_count; i++) {
             markdown_core_node *staged = pipeline->dependents[i].staged;
             markdown_core_node *refined = markdown_core_parser_refine_unit(parser, map, staged);
@@ -2399,7 +2394,6 @@ static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
                 break;
             }
         }
-        markdown_core_parser_manage_extensions_special_characters(parser, false);
     }
     map->lookup_sink = NULL;
     map->lookup_context = NULL;

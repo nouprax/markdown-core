@@ -15,6 +15,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"
     "${MARKDOWN_CORE_CORE_DIR}/blocks.c"
     "${MARKDOWN_CORE_CORE_DIR}/inlines.c"
+    "${MARKDOWN_CORE_CORE_DIR}/delimiter.c"
     "${MARKDOWN_CORE_CORE_DIR}/scanners.c"
     "${MARKDOWN_CORE_CORE_DIR}/utf8.c"
     "${MARKDOWN_CORE_CORE_DIR}/buffer.c"

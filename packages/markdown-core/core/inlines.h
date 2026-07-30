@@ -7,6 +7,10 @@ extern "C" {
 
 #include "references.h"
 
+struct markdown_core_inline_config;
+
+struct markdown_core_inline_config *markdown_core_inlines_new_config(markdown_core_mem *mem);
+
 markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_core_chunk *url, int *lost);
 markdown_core_chunk markdown_core_clean_title(markdown_core_mem *mem, markdown_core_chunk *title, int *lost);
 
@@ -50,14 +54,6 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     markdown_core_chunk *input,
     markdown_core_map *refmap
 );
-
-/* The special-character tables live in the parser (parser-local, never
- * process-global); reset installs the core defaults. */
-void markdown_core_inlines_reset_special_chars(markdown_core_parser *parser);
-void markdown_core_inlines_add_special_character(markdown_core_parser *parser, unsigned char c);
-void markdown_core_inlines_remove_special_character(markdown_core_parser *parser, unsigned char c);
-void markdown_core_inlines_add_flanking_skip_character(markdown_core_parser *parser, unsigned char c);
-void markdown_core_inlines_remove_flanking_skip_character(markdown_core_parser *parser, unsigned char c);
 
 #ifdef __cplusplus
 }

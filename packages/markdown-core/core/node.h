@@ -144,6 +144,17 @@ static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_c
 }
 MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
+/*
+ * Parser-internal mutation primitives. Callers must already have proved
+ * allocator, containment, and non-ancestry invariants from grammar state.
+ * They exist so a delimiter reduction does not repeat an O(depth) defensive
+ * ancestor walk for every node it creates or moves.
+ */
+void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
+void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);
+void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling);
+void markdown_core_node_append_child_unchecked(markdown_core_node *node, markdown_core_node *child);
+
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {
     return (node_type & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
 }

@@ -12,6 +12,7 @@ const core = [
     "iterator.c",
     "blocks.c",
     "inlines.c",
+    "delimiter.c",
     "scanners.c",
     "utf8.c",
     "buffer.c",

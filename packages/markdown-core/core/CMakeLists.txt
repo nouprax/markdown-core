@@ -19,6 +19,7 @@ set(HEADERS
     utf8.h
     scanners.h
     inlines.h
+    delimiter.h
     houdini.h
     markdown_core_ctype.h
     extension.h
@@ -29,6 +30,7 @@ set(LIBRARY_SOURCES
     iterator.c
     blocks.c
     inlines.c
+    delimiter.c
     scanners.c
     scanners.re
     utf8.c

@@ -13,10 +13,13 @@
 #include "extension.h"
 #include "inline_util.h"
 
-#define FORMULA_DELIM_DOLLAR_INLINE 1
-#define FORMULA_DELIM_DOLLAR_DISPLAY 2
-#define FORMULA_DELIM_LATEX_BACKSLASH_INLINE 3
-#define FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY 4
+enum {
+    FORMULA_DELIMITER_DOLLAR_INLINE = 0,
+    FORMULA_DELIMITER_DOLLAR_DISPLAY,
+    FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE,
+    FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY,
+    FORMULA_DELIMITER_COUNT,
+};
 
 #define FORMULA_BLOCK_DELIM_NONE 0
 #define FORMULA_BLOCK_DELIM_LATEX_BACKSLASH 1
@@ -25,6 +28,9 @@
 typedef struct {
     markdown_core_chunk literal;
     markdown_core_formula_mode mode;
+    /* A borrowed inline payload drops the escape before this close byte when
+     * it is materialized. Zero means a byte-for-byte copy. */
+    unsigned char escaped_close;
     int block_delim;
     int closed;
 } node_formula;
@@ -45,6 +51,81 @@ static node_formula *get_formula(markdown_core_node *node) {
     return (node_formula *)node->as.opaque;
 }
 
+static int clone_formula_literal(
+    markdown_core_mem *mem,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    unsigned char escaped_close,
+    markdown_core_chunk *result
+) {
+    markdown_core_bufsize input_offset;
+    markdown_core_bufsize output_offset = 0;
+    markdown_core_bufsize escaped_count = 0;
+    markdown_core_bufsize output_len;
+    unsigned char *copy;
+
+    if (escaped_close) {
+        for (input_offset = 0; input_offset + 1 < len; input_offset++) {
+            if (data[input_offset] == '\\' && data[input_offset + 1] == escaped_close) {
+                escaped_count++;
+                input_offset++;
+            }
+        }
+    }
+
+    output_len = len - escaped_count;
+    copy = (unsigned char *)mem->calloc(mem, (size_t)output_len + 1, 1);
+    if (!copy) {
+        return 0;
+    }
+
+    for (input_offset = 0; input_offset < len; input_offset++) {
+        if (escaped_close && data[input_offset] == '\\' && input_offset + 1 < len &&
+            data[input_offset + 1] == escaped_close) {
+            copy[output_offset++] = escaped_close;
+            input_offset++;
+        } else {
+            copy[output_offset++] = data[input_offset];
+        }
+    }
+    assert(output_offset == output_len);
+
+    result->data = copy;
+    result->len = output_len;
+    result->alloc = 1;
+    return 1;
+}
+
+static int materialize_formula_literal(markdown_core_node *node) {
+    node_formula *formula = get_formula(node);
+    markdown_core_chunk materialized = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_chunk previous;
+
+    if (!formula) {
+        return 0;
+    }
+    if (formula->literal.alloc && !formula->escaped_close) {
+        return 1;
+    }
+    if (!clone_formula_literal(
+            markdown_core_node_mem(node),
+            formula->literal.data,
+            formula->literal.len,
+            formula->escaped_close,
+            &materialized
+        )) {
+        return 0;
+    }
+
+    previous = formula->literal;
+    formula->literal = materialized;
+    formula->escaped_close = 0;
+    if (previous.alloc) {
+        markdown_core_node_mem(node)->free(markdown_core_node_mem(node), previous.data);
+    }
+    return 1;
+}
+
 static int is_standalone_formula_node(markdown_core_node *node) {
     node_formula *formula = get_formula(node);
 
@@ -56,12 +137,11 @@ static int is_standalone_formula_node(markdown_core_node *node) {
 }
 
 const char *markdown_core_extensions_get_formula_literal(markdown_core_node *node) {
-    node_formula *formula = get_formula(node);
-    if (!formula) {
+    if (!materialize_formula_literal(node)) {
         return NULL;
     }
 
-    return markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
+    return (const char *)get_formula(node)->literal.data;
 }
 
 int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const char *literal) {
@@ -70,7 +150,10 @@ int markdown_core_extensions_set_formula_literal(markdown_core_node *node, const
         return 0;
     }
 
-    markdown_core_chunk_set_cstr(markdown_core_node_mem(node), &formula->literal, literal);
+    if (!markdown_core_chunk_set_cstr(markdown_core_node_mem(node), &formula->literal, literal)) {
+        return 0;
+    }
+    formula->escaped_close = 0;
     return 1;
 }
 
@@ -121,15 +204,17 @@ static void formula_opaque_free(markdown_core_extension *extension, markdown_cor
 
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, markdown_core_bufsize len) {
     node_formula *formula = get_formula(node);
+    markdown_core_chunk literal = MARKDOWN_CORE_CHUNK_EMPTY;
     if (!formula) {
         return 0;
     }
 
+    if (!clone_formula_literal(markdown_core_node_mem(node), data, len, 0, &literal)) {
+        return 0;
+    }
     markdown_core_chunk_free(markdown_core_node_mem(node), &formula->literal);
-    formula->literal.data = (unsigned char *)data;
-    formula->literal.len = len;
-    formula->literal.alloc = 0;
-    markdown_core_chunk_to_cstr(markdown_core_node_mem(node), &formula->literal);
+    formula->literal = literal;
+    formula->escaped_close = 0;
     return 1;
 }
 
@@ -146,27 +231,33 @@ static int set_formula_literal_trimmed(markdown_core_node *node, const unsigned 
     return set_formula_literal_bytes(node, data, len);
 }
 
-static markdown_core_node *make_formula_node(
+static markdown_core_node *make_borrowed_formula_node(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
-    markdown_core_node_type node_type,
     markdown_core_formula_mode mode,
-    const unsigned char *literal,
-    markdown_core_bufsize literal_len
+    markdown_core_chunk *source,
+    markdown_core_bufsize literal_start,
+    markdown_core_bufsize literal_len,
+    unsigned char escaped_close
 ) {
-    markdown_core_node *node = markdown_core_node_new_with_mem_and_ext(node_type, parser->mem, extension);
+    markdown_core_node *node =
+        markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA, parser->mem, extension);
+    node_formula *formula;
+
     if (!node) {
         parser->oom = true;
         return NULL;
     }
-    if (!get_formula(node)) {
+    formula = get_formula(node);
+    if (!formula) {
         parser->oom = true;
         markdown_core_node_free(node);
         return NULL;
     }
 
-    get_formula(node)->mode = mode;
-    set_formula_literal_bytes(node, literal, literal_len);
+    formula->mode = mode;
+    formula->literal = markdown_core_chunk_dup(source, literal_start, literal_len);
+    formula->escaped_close = escaped_close;
     return node;
 }
 
@@ -279,29 +370,19 @@ static int formula_block_matches(
 }
 
 static markdown_core_node *match_formula_delimiter(
-    markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    unsigned char delim_char,
+    uint16_t kind,
     markdown_core_bufsize len,
     int can_open,
     int can_close
 ) {
-    markdown_core_node *node = markdown_core_ext_make_delimiter_text(
-        parser,
-        inline_parser,
-        (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser),
-        len
-    );
-
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
+    markdown_core_bufsize end_offset =
+        (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser) + len;
 
     if (can_open || can_close) {
-        markdown_core_inline_parser_push_delimiter(inline_parser, delim_char, can_open, can_close, node);
+        return markdown_core_inline_parser_consume_delimiter(inline_parser, kind, can_open, can_close, end_offset);
     }
-    return node;
+    return markdown_core_inline_parser_consume_text(inline_parser, end_offset);
 }
 
 static int dollar_inline_can_open(markdown_core_chunk *chunk, markdown_core_bufsize offset) {
@@ -354,14 +435,13 @@ static markdown_core_node *match(
 
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
-            return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
+            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_DOLLAR_DISPLAY, 2, 1, 1);
         }
 
         if (scan_formula_dollar_inline_open(chunk->data, len, offset)) {
             return match_formula_delimiter(
-                parser,
                 inline_parser,
-                FORMULA_DELIM_DOLLAR_INLINE,
+                FORMULA_DELIMITER_DOLLAR_INLINE,
                 1,
                 dollar_inline_can_open(chunk, (markdown_core_bufsize)offset),
                 dollar_inline_can_close(chunk, (markdown_core_bufsize)offset)
@@ -370,64 +450,36 @@ static markdown_core_node *match(
     } else if (character == '\\') {
         opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
         if (opener_len) {
-            return match_formula_delimiter(
-                parser,
-                inline_parser,
-                FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                opener_len,
-                1,
-                0
-            );
+            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY, opener_len, 1, 0);
         }
 
         opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
         if (opener_len) {
-            return match_formula_delimiter(
-                parser,
-                inline_parser,
-                FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                opener_len,
-                1,
-                0
-            );
+            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE, opener_len, 1, 0);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
         if (closer_len) {
-            return match_formula_delimiter(
-                parser,
-                inline_parser,
-                FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                closer_len,
-                0,
-                1
-            );
+            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY, closer_len, 0, 1);
         }
 
         closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
         if (closer_len) {
-            return match_formula_delimiter(
-                parser,
-                inline_parser,
-                FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                closer_len,
-                0,
-                1
-            );
+            return match_formula_delimiter(inline_parser, FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE, closer_len, 0, 1);
         }
     }
 
     return NULL;
 }
 
-static markdown_core_formula_mode mode_for_delim(unsigned char delim_char) {
-    return delim_char == FORMULA_DELIM_DOLLAR_DISPLAY || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY
+static markdown_core_formula_mode mode_for_kind(uint16_t kind) {
+    return kind == FORMULA_DELIMITER_DOLLAR_DISPLAY || kind == FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY
                ? MARKDOWN_CORE_FORMULA_MODE_STANDALONE
                : MARKDOWN_CORE_FORMULA_MODE_EMBEDDED;
 }
 
-static int is_backslash_delim(unsigned char delim_char) {
-    return delim_char == FORMULA_DELIM_LATEX_BACKSLASH_INLINE || delim_char == FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY;
+static int is_backslash_kind(uint16_t kind) {
+    return kind == FORMULA_DELIMITER_LATEX_BACKSLASH_INLINE || kind == FORMULA_DELIMITER_LATEX_BACKSLASH_DISPLAY;
 }
 
 static void free_nodes_through(markdown_core_node *first, markdown_core_node *last) {
@@ -443,106 +495,54 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
-static markdown_core_node *make_backslash_delimited_formula(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_formula_mode mode,
-    const unsigned char *data,
-    markdown_core_bufsize body_start,
-    markdown_core_bufsize body_end,
-    int slash_count,
-    unsigned char close_char
-) {
-    markdown_core_strbuf literal;
-    markdown_core_bufsize i = body_start;
-    markdown_core_node *node;
-
-    markdown_core_strbuf_init(parser->mem, &literal, 0);
-
-    while (i < body_end) {
-        if (slash_count > 1 && data[i] == '\\' && i + 1 < body_end && data[i + 1] == close_char) {
-            markdown_core_strbuf_putc(&literal, close_char);
-            i += 2;
-            continue;
-        }
-
-        markdown_core_strbuf_putc(&literal, data[i]);
-        i++;
-    }
-
-    node = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal.ptr, literal.size);
-    markdown_core_strbuf_free(&literal);
-    return node;
-}
-
-static delimiter *insert_formula(
+static markdown_core_delimiter_result insert_formula(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
 ) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_node *opener_node = opener->inl_text;
-    markdown_core_node *closer_node = closer->inl_text;
-    delimiter *res = closer->next;
-    markdown_core_node *formula = NULL;
-    markdown_core_bufsize body_start = opener->position;
-    markdown_core_bufsize body_end = closer->position - closer->length;
-    markdown_core_formula_mode mode = mode_for_delim((unsigned char)opener->delim_char);
-    const unsigned char *literal = chunk->data + body_start;
-    markdown_core_bufsize literal_len = body_end - body_start;
+    markdown_core_bufsize literal_start = match->opener_end;
+    markdown_core_bufsize literal_end = match->closer_start;
+    markdown_core_bufsize literal_len;
+    markdown_core_formula_mode mode;
+    unsigned char escaped_close = 0;
+    markdown_core_node *formula;
 
-    if (opener->delim_char != closer->delim_char) {
-        goto done;
+    if (match->kind >= FORMULA_DELIMITER_COUNT || literal_end < literal_start || literal_end > chunk->len) {
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    if (is_backslash_kind(match->kind) && match->opener_length != match->closer_length) {
+        return MARKDOWN_CORE_DELIMITER_OK;
     }
 
-    if (opener->length != closer->length && is_backslash_delim((unsigned char)opener->delim_char)) {
-        goto done;
-    }
-
-    if (opener->delim_char == FORMULA_DELIM_DOLLAR_INLINE && literal_len > 0 && literal[0] == '`') {
-        if (literal_len < 2 || literal[literal_len - 1] != '`') {
-            goto done;
+    literal_len = literal_end - literal_start;
+    if (match->kind == FORMULA_DELIMITER_DOLLAR_INLINE && literal_len > 0 && chunk->data[literal_start] == '`') {
+        if (literal_len < 2 || chunk->data[literal_end - 1] != '`') {
+            return MARKDOWN_CORE_DELIMITER_OK;
         }
-
-        literal++;
+        literal_start++;
         literal_len -= 2;
     }
 
-    if (is_backslash_delim((unsigned char)opener->delim_char)) {
-        formula = make_backslash_delimited_formula(
-            extension,
-            parser,
-            mode,
-            chunk->data,
-            body_start,
-            body_end,
-            2,
-            mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')'
-        );
-    } else {
-        formula = make_formula_node(extension, parser, MARKDOWN_CORE_NODE_FORMULA, mode, literal, literal_len);
+    mode = mode_for_kind(match->kind);
+    if (is_backslash_kind(match->kind)) {
+        escaped_close = mode == MARKDOWN_CORE_FORMULA_MODE_STANDALONE ? ']' : ')';
     }
 
+    formula = make_borrowed_formula_node(extension, parser, mode, chunk, literal_start, literal_len, escaped_close);
     if (!formula) {
-        goto done;
+        return MARKDOWN_CORE_DELIMITER_OOM;
     }
 
-    formula->start_line = opener_node->start_line;
-    formula->end_line = closer_node->end_line;
-    formula->start_column = opener_node->start_column;
-    formula->end_column = closer_node->end_column;
+    formula->start_line = match->opener_node->start_line;
+    formula->end_line = match->closer_node->end_line;
+    formula->start_column = match->opener_node->start_column;
+    formula->end_column = match->closer_node->end_column;
 
-    if (markdown_core_node_insert_before(opener_node, formula)) {
-        free_nodes_through(opener_node, closer_node);
-    } else {
-        markdown_core_node_free(formula);
-    }
-
-done:
-    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
-    return res;
+    markdown_core_node_insert_before_unchecked(match->opener_node, formula);
+    free_nodes_through(match->opener_node, match->closer_node);
+    return MARKDOWN_CORE_DELIMITER_OK;
 }
 
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) {
@@ -561,16 +561,26 @@ static int accepts_lines(markdown_core_extension *extension, markdown_core_node 
     return node && node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK;
 }
 
+static int materialize_inline(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *node
+) {
+    (void)parser;
+    if (!node || node->extension != extension || node->type != MARKDOWN_CORE_NODE_FORMULA) {
+        return 1;
+    }
+    return materialize_formula_literal(node);
+}
+
 static int info_is_formula(markdown_core_chunk *info) {
     return info->len == 7 && memcmp(info->data, "formula", 7) == 0;
 }
 
-static markdown_core_node *new_formula_block_from_literal(
+static markdown_core_node *new_formula_block_shell(
     markdown_core_extension *extension,
     markdown_core_mem *mem,
-    markdown_core_node *oldnode,
-    const unsigned char *literal,
-    markdown_core_bufsize literal_len
+    markdown_core_node *oldnode
 ) {
     markdown_core_node *formula =
         markdown_core_node_new_with_mem_and_ext(MARKDOWN_CORE_NODE_FORMULA_BLOCK, mem, extension);
@@ -587,28 +597,77 @@ static markdown_core_node *new_formula_block_from_literal(
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
-    set_formula_literal_trimmed(formula, literal, literal_len);
     return formula;
 }
 
-static markdown_core_node *replace_with_formula_block(
+static markdown_core_node *new_formula_block_from_literal(
     markdown_core_extension *extension,
     markdown_core_mem *mem,
     markdown_core_node *oldnode,
     const unsigned char *literal,
     markdown_core_bufsize literal_len
 ) {
-    markdown_core_node *formula = new_formula_block_from_literal(extension, mem, oldnode, literal, literal_len);
+    markdown_core_node *formula = new_formula_block_shell(extension, mem, oldnode);
     if (!formula) {
         return NULL;
     }
-
-    if (markdown_core_node_replace(oldnode, formula)) {
-        markdown_core_node_free(oldnode);
-        return formula;
+    if (!set_formula_literal_trimmed(formula, literal, literal_len)) {
+        markdown_core_node_free(formula);
+        return NULL;
     }
-    markdown_core_node_free(formula);
-    return NULL;
+    return formula;
+}
+
+static markdown_core_node *replace_with_formula_block(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *oldnode,
+    const unsigned char *literal,
+    markdown_core_bufsize literal_len
+) {
+    markdown_core_node *formula = new_formula_block_from_literal(extension, parser->mem, oldnode, literal, literal_len);
+    if (!formula) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    markdown_core_node_insert_before_unchecked(oldnode, formula);
+    markdown_core_node_free(oldnode);
+    return formula;
+}
+
+static markdown_core_node *promote_standalone_formula(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *paragraph,
+    markdown_core_node *inline_formula
+) {
+    node_formula *source = get_formula(inline_formula);
+    node_formula *destination;
+    markdown_core_node *formula_block;
+
+    if (!source || !materialize_formula_literal(inline_formula)) {
+        parser->oom = true;
+        return NULL;
+    }
+
+    formula_block = new_formula_block_shell(extension, parser->mem, paragraph);
+    if (!formula_block) {
+        parser->oom = true;
+        return NULL;
+    }
+    destination = get_formula(formula_block);
+
+    destination->literal = source->literal;
+    destination->escaped_close = source->escaped_close;
+    source->literal.data = NULL;
+    source->literal.len = 0;
+    source->literal.alloc = 0;
+    source->escaped_close = 0;
+
+    markdown_core_node_insert_before_unchecked(paragraph, formula_block);
+    markdown_core_node_free(paragraph);
+    return formula_block;
 }
 
 // Block-local promotion; the parser drives it once per block in document
@@ -621,8 +680,11 @@ static markdown_core_node *postprocess_block(
     if (block->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(block);
         if (formula && !formula->literal.data) {
-            set_formula_literal_trimmed(block, block->content.ptr, block->content.size);
-            markdown_core_strbuf_clear(&block->content);
+            if (set_formula_literal_trimmed(block, block->content.ptr, block->content.size)) {
+                markdown_core_strbuf_clear(&block->content);
+            } else {
+                parser->oom = true;
+            }
         }
         return block;
     }
@@ -630,13 +692,12 @@ static markdown_core_node *postprocess_block(
     if (block->type == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&block->as.code.info)) {
         markdown_core_node *formula = replace_with_formula_block(
             extension,
-            parser->mem,
+            parser,
             block,
             block->as.code.literal.data,
             block->as.code.literal.len
         );
         if (!formula) {
-            parser->oom = true;
             return block;
         }
         return formula;
@@ -644,39 +705,44 @@ static markdown_core_node *postprocess_block(
 
     if (block->type == MARKDOWN_CORE_NODE_PARAGRAPH && block->first_child && block->first_child == block->last_child &&
         block->first_child->type == MARKDOWN_CORE_NODE_FORMULA && is_standalone_formula_node(block->first_child)) {
-        node_formula *formula = get_formula(block->first_child);
-        if (formula) {
-            markdown_core_node *promoted =
-                replace_with_formula_block(extension, parser->mem, block, formula->literal.data, formula->literal.len);
-            if (!promoted) {
-                parser->oom = true;
-                return block;
-            }
-            return promoted;
+        markdown_core_node *promoted = promote_standalone_formula(extension, parser, block, block->first_child);
+        if (!promoted) {
+            return block;
         }
+        return promoted;
     }
 
     return block;
 }
 
-static const unsigned char formula_special_chars[] = {
-    '$',
-    '\\',
-    FORMULA_DELIM_DOLLAR_INLINE,
-    FORMULA_DELIM_DOLLAR_DISPLAY,
-    FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-    FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+static const markdown_core_delimiter_rule formula_delimiter_rules[] = {
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = 0,
+        .close_probe = NULL,
+    },
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = 0,
+        .close_probe = NULL,
+    },
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = 0,
+        .close_probe = NULL,
+    },
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = 0,
+        .close_probe = NULL,
+    },
 };
 
-// Only the internal sentinel delimiters (bytes that cannot appear in user
-// text) stay transparent to emphasis flanking; '$' and '\\' are real
-// punctuation and must keep CommonMark flanking semantics.
-static const unsigned char formula_flanking_skip_chars[] = {
-    FORMULA_DELIM_DOLLAR_INLINE,
-    FORMULA_DELIM_DOLLAR_DISPLAY,
-    FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-    FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-};
+static const unsigned char formula_special_chars[] = {'$', '\\'};
 
 static const markdown_core_extension formula_extension = {
     .name = "formula",
@@ -689,10 +755,11 @@ static const markdown_core_extension formula_extension = {
     .alloc_opaque = formula_opaque_alloc,
     .free_opaque = formula_opaque_free,
     .insert_inline_from_delim = insert_formula,
+    .materialize_inline = materialize_inline,
+    .delimiter_rules = formula_delimiter_rules,
+    .delimiter_rule_count = sizeof(formula_delimiter_rules) / sizeof(formula_delimiter_rules[0]),
     .special_inline_chars = formula_special_chars,
     .special_inline_char_count = sizeof(formula_special_chars),
-    .flanking_skip_chars = formula_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(formula_flanking_skip_chars),
 };
 
 markdown_core_extension *markdown_core_formula_extension(void) {

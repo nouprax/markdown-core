@@ -1,19 +1,13 @@
 #include "cross_reference.h"
 
+#include <assert.h>
 #include <chunk.h>
-#include <iterator.h>
 #include <node.h>
 #include <parser.h>
 
 #include "extension.h"
-#include "inline_util.h"
 
-/*
- * Internal delimiter bytes let the shared delimiter stack pair every opener
- * and closer in a single pass. They never match source bytes.
- */
-#define CROSS_LINK_DELIM 5
-#define EMBED_DELIM 6
+enum { CROSS_REFERENCE_RULE = 0 };
 
 typedef struct {
     markdown_core_chunk reference;
@@ -21,10 +15,16 @@ typedef struct {
 
 static void opaque_alloc(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
 static void opaque_free(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
-static markdown_core_node *postprocess_block(
+static int materialize_inline(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
-    markdown_core_node *block
+    markdown_core_node *node
+);
+static markdown_core_bufsize probe_cross_reference_close(
+    uint16_t kind,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize offset
 );
 static markdown_core_node *match(
     markdown_core_extension *extension,
@@ -33,46 +33,52 @@ static markdown_core_node *match(
     unsigned char character,
     markdown_core_inline_parser *inline_parser
 );
-static delimiter *insert(
+static markdown_core_delimiter_result insert(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
 );
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node);
 
-static const unsigned char cross_link_special_chars[] = {'[', ']', CROSS_LINK_DELIM};
-static const unsigned char embed_special_chars[] = {'!', ']', EMBED_DELIM};
-static const unsigned char cross_link_flanking_skip_chars[] = {CROSS_LINK_DELIM};
-static const unsigned char embed_flanking_skip_chars[] = {EMBED_DELIM};
+static const unsigned char cross_link_special_chars[] = {'['};
+static const unsigned char embed_special_chars[] = {'!'};
+
+static const markdown_core_delimiter_rule cross_reference_delimiter_rules[] = {
+    {
+        .pairing = MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        .reduction = MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        .close_trigger = ']',
+        .close_probe = probe_cross_reference_close,
+    },
+};
 
 static const markdown_core_extension cross_link_extension = {
     .name = "cross_link",
     .match_inline = match,
     .insert_inline_from_delim = insert,
+    .delimiter_rules = cross_reference_delimiter_rules,
+    .delimiter_rule_count = sizeof(cross_reference_delimiter_rules) / sizeof(cross_reference_delimiter_rules[0]),
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
-    .postprocess_block = postprocess_block,
+    .materialize_inline = materialize_inline,
     .special_inline_chars = cross_link_special_chars,
     .special_inline_char_count = sizeof(cross_link_special_chars),
-    .flanking_skip_chars = cross_link_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(cross_link_flanking_skip_chars),
 };
 
 static const markdown_core_extension embed_extension = {
     .name = "embed",
     .match_inline = match,
     .insert_inline_from_delim = insert,
+    .delimiter_rules = cross_reference_delimiter_rules,
+    .delimiter_rule_count = sizeof(cross_reference_delimiter_rules) / sizeof(cross_reference_delimiter_rules[0]),
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
-    .postprocess_block = postprocess_block,
+    .materialize_inline = materialize_inline,
     .special_inline_chars = embed_special_chars,
     .special_inline_char_count = sizeof(embed_special_chars),
-    .flanking_skip_chars = embed_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(embed_flanking_skip_chars),
 };
 
 static int is_cross_reference_node(const markdown_core_node *node) {
@@ -89,10 +95,6 @@ static node_cross_reference *get_cross_reference(markdown_core_node *node) {
 const markdown_core_chunk *markdown_core_cross_reference_value(markdown_core_node *node) {
     node_cross_reference *reference = get_cross_reference(node);
     return reference ? &reference->reference : NULL;
-}
-
-static unsigned char delimiter_for(const markdown_core_extension *extension) {
-    return extension == &cross_link_extension ? CROSS_LINK_DELIM : EMBED_DELIM;
 }
 
 static markdown_core_node_type node_type_for(const markdown_core_extension *extension) {
@@ -114,56 +116,28 @@ static void opaque_free(markdown_core_extension *extension, markdown_core_mem *m
     mem->free(mem, reference);
 }
 
-static markdown_core_node *postprocess_block(
+static int materialize_inline(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
-    markdown_core_node *block
+    markdown_core_node *node
 ) {
-    markdown_core_iter *iter;
-    markdown_core_event_type event;
-
-    if (!markdown_core_node_owns_inlines(block)) {
-        return block;
+    node_cross_reference *reference = get_cross_reference(node);
+    if (!reference || reference->reference.alloc) {
+        return 1;
     }
-    iter = markdown_core_iter_new(block);
-    if (!iter) {
-        parser->oom = true;
-        return block;
-    }
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        node_cross_reference *reference;
-
-        if (event != MARKDOWN_CORE_EVENT_ENTER || node->extension != extension || !is_cross_reference_node(node)) {
-            continue;
-        }
-        reference = get_cross_reference(node);
-        if (reference && !reference->reference.alloc &&
-            !markdown_core_chunk_to_cstr(parser->mem, &reference->reference)) {
-            parser->oom = true;
-            break;
-        }
-    }
-    markdown_core_iter_free(iter);
-    return block;
+    return markdown_core_chunk_to_cstr(parser->mem, &reference->reference) != NULL;
 }
 
-static markdown_core_node *delimiter_text(
-    markdown_core_extension *extension,
-    markdown_core_parser *parser,
-    markdown_core_inline_parser *inline_parser,
-    markdown_core_bufsize offset,
-    markdown_core_bufsize length,
-    int can_open,
-    int can_close
+static markdown_core_bufsize probe_cross_reference_close(
+    uint16_t kind,
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize offset
 ) {
-    markdown_core_node *node = markdown_core_ext_make_delimiter_text(parser, inline_parser, offset, length);
-    if (!node) {
-        parser->oom = true;
-        return NULL;
-    }
-    markdown_core_inline_parser_push_delimiter(inline_parser, delimiter_for(extension), can_open, can_close, node);
-    return node;
+    return kind == CROSS_REFERENCE_RULE && offset >= 0 && offset <= len - 2 && data[offset] == ']' &&
+                   data[offset + 1] == ']'
+               ? 2
+               : 0;
 }
 
 static markdown_core_node *match(
@@ -175,21 +149,14 @@ static markdown_core_node *match(
 ) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
     markdown_core_bufsize offset = (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser);
-    unsigned char delimiter = delimiter_for(extension);
 
     if (extension == &cross_link_extension && character == '[' && offset + 2 <= chunk->len &&
         chunk->data[offset + 1] == '[') {
-        return delimiter_text(extension, parser, inline_parser, offset, 2, 1, 0);
+        return markdown_core_inline_parser_consume_delimiter(inline_parser, CROSS_REFERENCE_RULE, 1, 0, offset + 2);
     }
     if (extension == &embed_extension && character == '!' && offset + 3 <= chunk->len &&
         chunk->data[offset + 1] == '[' && chunk->data[offset + 2] == '[') {
-        return delimiter_text(extension, parser, inline_parser, offset, 3, 1, 0);
-    }
-    if (character == ']' && offset + 2 <= chunk->len && chunk->data[offset + 1] == ']') {
-        if (!markdown_core_inline_parser_get_last_open_delimiter(inline_parser, delimiter)) {
-            return NULL;
-        }
-        return delimiter_text(extension, parser, inline_parser, offset, 2, 0, 1);
+        return markdown_core_inline_parser_consume_delimiter(inline_parser, CROSS_REFERENCE_RULE, 1, 0, offset + 3);
     }
     return NULL;
 }
@@ -206,42 +173,49 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
-static delimiter *insert(
+static markdown_core_delimiter_result insert(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
-    delimiter *opener,
-    delimiter *closer
+    const markdown_core_delimiter_match *match
 ) {
     markdown_core_chunk *chunk = markdown_core_inline_parser_get_chunk(inline_parser);
-    markdown_core_node *opener_node = opener->inl_text;
-    markdown_core_node *closer_node = closer->inl_text;
-    delimiter *next = closer->next;
-    markdown_core_bufsize body_start = opener->position;
-    markdown_core_bufsize body_end = closer->position - closer->length;
+    markdown_core_node *opener_node = match->opener_node;
+    markdown_core_node *closer_node = match->closer_node;
+    markdown_core_bufsize body_start = match->opener_end;
+    markdown_core_bufsize body_end = match->closer_start;
     markdown_core_node *node = NULL;
     node_cross_reference *payload;
+
+    if (match->kind != CROSS_REFERENCE_RULE) {
+        assert(0 && "cross-reference reducer received an unsupported delimiter rule");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    if (!opener_node || !closer_node || opener_node->type != MARKDOWN_CORE_NODE_TEXT ||
+        closer_node->type != MARKDOWN_CORE_NODE_TEXT) {
+        assert(0 && "cross-reference reducer received invalid delimiter endpoints");
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
 
     // Cross references are single-line, and an empty reference has no identity.
     // Invalid pairs remain their original literal AST.
     if (body_start >= body_end || opener_node->start_line != closer_node->end_line) {
-        goto done;
+        return MARKDOWN_CORE_DELIMITER_OK;
     }
 
     node = markdown_core_node_new_with_mem_and_ext(node_type_for(extension), parser->mem, extension);
     payload = get_cross_reference(node);
     if (!node || !payload) {
-        parser->oom = true;
         if (node) {
             markdown_core_node_free(node);
         }
-        goto done;
+        return MARKDOWN_CORE_DELIMITER_OOM;
     }
 
     /*
      * Borrow during delimiter reduction. Nested matches that are subsequently
      * swallowed by an outer opaque reference then allocate nothing; the
-     * block postprocess materializes only nodes that survive in the final AST.
+     * survivor materialization pass copies only nodes in the final AST.
      */
     payload->reference = markdown_core_chunk_dup(chunk, body_start, body_end - body_start);
     node->start_line = opener_node->start_line;
@@ -249,15 +223,9 @@ static delimiter *insert(
     node->end_line = closer_node->end_line;
     node->end_column = closer_node->end_column;
 
-    if (markdown_core_node_insert_before(opener_node, node)) {
-        free_nodes_through(opener_node, closer_node);
-    } else {
-        markdown_core_node_free(node);
-    }
-
-done:
-    markdown_core_ext_remove_delimiters(inline_parser, opener, closer);
-    return next;
+    markdown_core_node_insert_before_unchecked(opener_node, node);
+    free_nodes_through(opener_node, closer_node);
+    return MARKDOWN_CORE_DELIMITER_OK;
 }
 
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) {

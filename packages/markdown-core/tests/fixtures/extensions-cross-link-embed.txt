@@ -105,3 +105,39 @@ Document scope=1:1..3:23 children=1
     ├── SoftBreak scope=0:0..0:0 children=0
     └── Embed scope=3:1..3:23 reference="outer :note[label]" children=0
 ````````````````````````````````
+
+Raw ASCII control bytes are source text, not internal delimiter identities.
+The byte immediately after each opening `*` below is, in order, 0x01 through
+0x08. Each remains in one Text run and participates normally in emphasis
+flanking.
+
+```````````````````````````````` example formula strikethrough
+a* b* a* b* a* b* a* b* a* b* a* b* a* b* a* b*
+.
+Document scope=1:1..1:55 children=1
+└── Paragraph scope=1:1..1:55 children=16
+    ├── Text scope=1:1..1:1 literal="a" children=0
+    ├── Emphasis scope=1:2..1:6 children=1
+    │   └── Text scope=1:3..1:5 literal="\u0001 b" children=0
+    ├── Text scope=1:7..1:8 literal=" a" children=0
+    ├── Emphasis scope=1:9..1:13 children=1
+    │   └── Text scope=1:10..1:12 literal="\u0002 b" children=0
+    ├── Text scope=1:14..1:15 literal=" a" children=0
+    ├── Emphasis scope=1:16..1:20 children=1
+    │   └── Text scope=1:17..1:19 literal="\u0003 b" children=0
+    ├── Text scope=1:21..1:22 literal=" a" children=0
+    ├── Emphasis scope=1:23..1:27 children=1
+    │   └── Text scope=1:24..1:26 literal="\u0004 b" children=0
+    ├── Text scope=1:28..1:29 literal=" a" children=0
+    ├── Emphasis scope=1:30..1:34 children=1
+    │   └── Text scope=1:31..1:33 literal="\u0005 b" children=0
+    ├── Text scope=1:35..1:36 literal=" a" children=0
+    ├── Emphasis scope=1:37..1:41 children=1
+    │   └── Text scope=1:38..1:40 literal="\u0006 b" children=0
+    ├── Text scope=1:42..1:43 literal=" a" children=0
+    ├── Emphasis scope=1:44..1:48 children=1
+    │   └── Text scope=1:45..1:47 literal="\u0007 b" children=0
+    ├── Text scope=1:49..1:50 literal=" a" children=0
+    └── Emphasis scope=1:51..1:55 children=1
+        └── Text scope=1:52..1:54 literal="\b b" children=0
+````````````````````````````````

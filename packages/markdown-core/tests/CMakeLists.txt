@@ -122,14 +122,29 @@ markdown_core_add_runner(equivalence_runner runners/equivalence_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
+# Compile the delimiter engine a second time in a standalone test executable.
+# Its compile-time diagnostics never enter a production library or hot path.
+add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c")
+target_compile_definitions(delimiter_engine_runner PRIVATE MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
+                                                           MARKDOWN_CORE_STATIC_DEFINE)
+target_include_directories(
+    delimiter_engine_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+                                    "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+
 # fallback_runner drives core-private map symbols directly, so it links the
 # static engine instead of the shared facade and skips test-support.
 if(MARKDOWN_CORE_STATIC)
     add_executable(fallback_runner runners/fallback_runner.c)
+    add_executable(extension_order_runner runners/extension_order_runner.c)
     target_include_directories(
         fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+    target_include_directories(
+        extension_order_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+    target_link_libraries(extension_order_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -295,6 +310,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
 markdown_core_add_test(equivalence_footnote_edits equivalence 120 equivalence_runner --case footnote_edits)
+markdown_core_add_test(equivalence_directive_multiline_attributes equivalence 120 equivalence_runner --case
+                       directive_multiline_attributes)
 markdown_core_add_test(equivalence_boundary_edits equivalence 120 equivalence_runner --case boundary_edits)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
@@ -370,6 +387,9 @@ markdown_core_add_test(
     directive)
 markdown_core_add_test(extensions_cross_link_embed_option_gates extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-cross-link-embed-option-gates.txt")
+if(MARKDOWN_CORE_STATIC)
+    markdown_core_add_test(extensions_delimiter_attachment_permutations extensions 120 extension_order_runner)
+endif()
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list` and `complexity_runner --list`.
@@ -418,6 +438,22 @@ foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()
 
+set(MARKDOWN_CORE_DELIMITER_ENGINE_CASES
+    balanced_nearest_ranges
+    commonmark_modulo_one_floor
+    commonmark_modulo_two_floor
+    commonmark_modulo_zero_pairs
+    per_rule_isolation
+    mark_restore_and_reuse
+    residual_run_progress
+    geometric_arena_growth
+    arena_growth_oom_transaction
+    reducer_failure_is_terminal
+    invalid_push_is_transactional)
+foreach(case IN LISTS MARKDOWN_CORE_DELIMITER_ENGINE_CASES)
+    markdown_core_add_test(pathological_delimiter_engine_${case} pathological 30 delimiter_engine_runner --case ${case})
+endforeach()
+
 set(MARKDOWN_CORE_COMPLEXITY_CASES
     valid_long_quoted_value
     valid_consecutive_backslashes
@@ -432,6 +468,8 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     many_email_autolinks
     unclosed_cross_references
     balanced_nested_cross_links
+    balanced_nested_dollar_formulas
+    balanced_nested_backslash_formulas
     session_stream_flat
     session_edit_storm
     session_ref_retarget
