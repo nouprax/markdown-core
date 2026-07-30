@@ -49,7 +49,9 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
         &options->autolinks,
         &options->task_lists,
         &options->formulas,
-        &options->directives
+        &options->directives,
+        &options->cross_links,
+        &options->embeds
     };
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {
@@ -114,6 +116,8 @@ typedef enum option_gate {
     GATE_TASK_LISTS,
     GATE_FORMULAS,
     GATE_DIRECTIVES,
+    GATE_CROSS_LINKS,
+    GATE_EMBEDS,
     GATE_FOOTNOTES,
     GATE_STRIP_HTML_COMMENTS
 } option_gate;
@@ -143,6 +147,12 @@ static void check_option_gate(option_gate gate, const char *source, const char *
         break;
     case GATE_DIRECTIVES:
         options.directives = false;
+        break;
+    case GATE_CROSS_LINKS:
+        options.cross_links = false;
+        break;
+    case GATE_EMBEDS:
+        options.embeds = false;
         break;
     case GATE_FOOTNOTES:
         options.footnotes = false;
@@ -452,6 +462,7 @@ done:
 
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
+    static const uint8_t cross_reference_source[] = "[[folder/note#^block|display]] ![[folder/note#^block|display]]\n";
     markdown_core_parse_options options;
     markdown_core_document *document;
     markdown_core_error *error = NULL;
@@ -459,12 +470,14 @@ static void check_api(void) {
     const markdown_core_node *heading;
     markdown_core_scope scope;
     int32_t level = 0;
+    markdown_core_string_view reference_value = {0};
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
     check(
         options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-            options.strikethrough && options.autolinks && options.task_lists && options.formulas && options.directives,
+            options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
+            options.directives && options.cross_links && options.embeds,
         "parse option defaults are explicit and complete"
     );
 
@@ -487,6 +500,35 @@ static void check_api(void) {
         markdown_core_document_free(document);
     }
 
+    document =
+        markdown_core_document_parse(cross_reference_source, sizeof(cross_reference_source) - 1, &options, &error);
+    check(document != NULL && error == NULL, "cross-reference parse succeeds");
+    if (document) {
+        const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        const markdown_core_node *cross_link = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *embed = markdown_core_node_get_next_sibling(cross_link);
+        static const char expected_reference[] = "folder/note#^block|display";
+        check(
+            markdown_core_node_get_kind(cross_link) == MARKDOWN_CORE_KIND_CROSS_LINK,
+            "cross link has a distinct public kind"
+        );
+        check(
+            markdown_core_node_cross_link_reference(cross_link, &reference_value) &&
+                reference_value.length == sizeof(expected_reference) - 1 &&
+                memcmp(reference_value.data, expected_reference, sizeof(expected_reference) - 1) == 0,
+            "cross-link accessor preserves the source reference"
+        );
+        embed = markdown_core_node_get_next_sibling(embed);
+        check(markdown_core_node_get_kind(embed) == MARKDOWN_CORE_KIND_EMBED, "embed has a distinct public kind");
+        check(
+            markdown_core_node_embed_reference(embed, &reference_value) &&
+                reference_value.length == sizeof(expected_reference) - 1 &&
+                memcmp(reference_value.data, expected_reference, sizeof(expected_reference) - 1) == 0,
+            "embed accessor preserves the source reference"
+        );
+        markdown_core_document_free(document);
+    }
+
     document = markdown_core_document_parse(NULL, 1, NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
@@ -506,6 +548,8 @@ static void check_api(void) {
         "Formula"
     );
     check_option_gate(GATE_DIRECTIVES, ":badge[label]\n", "Directive scope=");
+    check_option_gate(GATE_CROSS_LINKS, "[[reference]]\n", "CrossLink scope=");
+    check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
     check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
     check_scope_table();

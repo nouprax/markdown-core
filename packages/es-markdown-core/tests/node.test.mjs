@@ -26,6 +26,17 @@ test("api: options gate extensions", () => {
     const directive = "Use :note[text].\n";
     assert.equal(Document.parse(directive).dump().includes("Directive"), true);
     assert.equal(Document.parse(directive, { directives: false }).dump().includes("Directive"), false);
+
+    const source = "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n";
+    const paragraph = Document.parse(source).content[0];
+    assert.equal(paragraph.content[1].kind, "crossLink");
+    assert.equal(paragraph.content[1].reference, "folder/note#^block|display");
+    assert.equal(paragraph.content[3].kind, "embed");
+    assert.equal(paragraph.content[3].reference, "folder/note#^block|display");
+    const linksDisabled = Document.parse(source, { crossLinks: false }).content[0];
+    assert.equal(linksDisabled.content[1].kind, "embed");
+    const embedsDisabled = Document.parse(source, { embeds: false }).content[0];
+    assert.equal(embedsDisabled.content[1].kind, "crossLink");
 });
 
 test("api: formulas gates every formula syntax", () => {
@@ -151,7 +162,9 @@ test("robustness: worker threads own isolated engine instances", async () => {
             autolinks: false,
             taskLists: false,
             formulas: false,
-            directives: false
+            directives: false,
+            crossLinks: false,
+            embeds: false
         },
         {
             strikethrough: false,

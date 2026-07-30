@@ -13,10 +13,34 @@ class ApiTest {
         assertTrue(defaults.smartPunctuation && defaults.footnotes && defaults.stripHTMLComments)
         assertTrue(defaults.tables && defaults.strikethrough && defaults.autolinks)
         assertTrue(defaults.taskLists && defaults.formulas && defaults.directives)
+        assertTrue(defaults.crossLinks && defaults.embeds)
 
         val markdown = "| a |\n| --- |\n| b |\n"
         assertIs<Table>(Document.parse(markdown).content.first())
         assertIs<Paragraph>(Document.parse(markdown, ParseOptions(tables = false)).content.first())
+    }
+
+    @Test
+    fun crossReferencesAreTypedSourceFaithfulAndIndependentlyGated() {
+        val source =
+            "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n"
+        val paragraph = assertIs<Paragraph>(Document.parse(source).content.first())
+        val crossLink = assertIs<CrossLink>(paragraph.content[1])
+        val embed = assertIs<Embed>(paragraph.content[3])
+        assertEquals("folder/note#^block|display", crossLink.reference)
+        assertEquals("folder/note#^block|display", embed.reference)
+
+        val linksDisabled =
+            assertIs<Paragraph>(
+                Document.parse(source, ParseOptions(crossLinks = false)).content.first(),
+            )
+        assertIs<Embed>(linksDisabled.content[1])
+
+        val embedsDisabled =
+            assertIs<Paragraph>(
+                Document.parse(source, ParseOptions(embeds = false)).content.first(),
+            )
+        assertIs<CrossLink>(embedsDisabled.content[1])
     }
 
     @Test

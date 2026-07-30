@@ -107,6 +107,8 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `Image` | `source`, `title` |
 | `Directive` | `mode`, `name`, `attributes` |
 | `FootnoteReference` | `id` |
+| `CrossLink` | `reference` |
+| `Embed` | `reference` |
 
 Example:
 

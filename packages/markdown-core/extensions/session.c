@@ -216,7 +216,9 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
                     (!options->autolinks || attach_extension_named(parser, "autolink")) &&
                     (!options->task_lists || attach_extension_named(parser, "tasklist")) &&
                     (!options->formulas || attach_extension_named(parser, "formula")) &&
-                    (!options->directives || attach_extension_named(parser, "directive"));
+                    (!options->directives || attach_extension_named(parser, "directive")) &&
+                    (!options->cross_links || attach_extension_named(parser, "cross_link")) &&
+                    (!options->embeds || attach_extension_named(parser, "embed"));
     if (!attached) {
         markdown_core_parser_free(parser);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "required syntax extension is unavailable");

@@ -124,6 +124,8 @@ function children(node: Markup): readonly Markup[] {
         case "html":
         case "formula":
         case "footnoteReference":
+        case "crossLink":
+        case "embed":
             return [];
     }
     return unreachable(node);

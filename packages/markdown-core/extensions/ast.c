@@ -7,6 +7,7 @@
 
 #include "ast_internal.h"
 #include "session_internal.h"
+#include "cross_reference.h"
 #include "directive.h"
 #include "formula.h"
 #include "markdown-core-extensions.h"
@@ -75,6 +76,8 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->task_lists = true;
     options->formulas = true;
     options->directives = true;
+    options->cross_links = true;
+    options->embeds = true;
 }
 
 markdown_core_document *markdown_core_document_parse(
@@ -223,6 +226,10 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
         return MARKDOWN_CORE_KIND_DIRECTIVE;
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
         return MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE;
+    case MARKDOWN_CORE_NODE_CROSS_LINK:
+        return MARKDOWN_CORE_KIND_CROSS_LINK;
+    case MARKDOWN_CORE_NODE_EMBED:
+        return MARKDOWN_CORE_KIND_EMBED;
     default:
         return MARKDOWN_CORE_KIND_NONE;
     }
@@ -259,9 +266,11 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Link",
         "Image",
         "Directive",
-        "FootnoteReference"
+        "FootnoteReference",
+        "CrossLink",
+        "Embed"
     };
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_EMBED) {
         return "None";
     }
     return names[kind];
@@ -800,6 +809,31 @@ bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_cor
     return true;
 }
 
+static bool cross_reference(
+    const markdown_core_node *node,
+    markdown_core_node_type type,
+    markdown_core_string_view *reference
+) {
+    const markdown_core_chunk *value;
+    if (!node || !reference || node->type != type) {
+        return false;
+    }
+    value = markdown_core_cross_reference_value((markdown_core_node *)node);
+    if (!value) {
+        return false;
+    }
+    view_chunk(reference, value);
+    return true;
+}
+
+bool markdown_core_node_cross_link_reference(const markdown_core_node *node, markdown_core_string_view *reference) {
+    return cross_reference(node, MARKDOWN_CORE_NODE_CROSS_LINK, reference);
+}
+
+bool markdown_core_node_embed_reference(const markdown_core_node *node, markdown_core_string_view *reference) {
+    return cross_reference(node, MARKDOWN_CORE_NODE_EMBED, reference);
+}
+
 static void buffer_reserve(dump_buffer *buffer, size_t additional) {
     size_t needed;
     size_t capacity;
@@ -1021,6 +1055,16 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " id=");
         buffer_json_string(buffer, a);
         break;
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+        markdown_core_node_cross_link_reference(node, &a);
+        buffer_cstr(buffer, " reference=");
+        buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_EMBED:
+        markdown_core_node_embed_reference(node, &a);
+        buffer_cstr(buffer, " reference=");
+        buffer_json_string(buffer, a);
+        break;
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &a, &b);
         buffer_cstr(buffer, " destination=");
@@ -1144,6 +1188,14 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
         markdown_core_node_footnote_id(a, &a1);
         markdown_core_node_footnote_id(b, &b1);
+        return view_content_equal(a1, b1);
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+        markdown_core_node_cross_link_reference(a, &a1);
+        markdown_core_node_cross_link_reference(b, &b1);
+        return view_content_equal(a1, b1);
+    case MARKDOWN_CORE_KIND_EMBED:
+        markdown_core_node_embed_reference(a, &a1);
+        markdown_core_node_embed_reference(b, &b1);
         return view_content_equal(a1, b1);
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(a, &a1, &a2);

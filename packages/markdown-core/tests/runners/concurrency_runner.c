@@ -204,6 +204,8 @@ static void options_for_variant(option_variant variant, markdown_core_parse_opti
         options->task_lists = false;
         options->formulas = false;
         options->directives = false;
+        options->cross_links = false;
+        options->embeds = false;
         break;
     case OPTIONS_SPLIT:
         options->strikethrough = false;

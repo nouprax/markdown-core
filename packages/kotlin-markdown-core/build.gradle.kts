@@ -83,6 +83,8 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
                 "taskLists",
                 "formulas",
                 "directives",
+                "crossLinks",
+                "embeds",
             )
         val lines =
             mutableListOf(

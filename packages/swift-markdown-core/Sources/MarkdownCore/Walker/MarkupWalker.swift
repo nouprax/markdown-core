@@ -141,4 +141,8 @@ private struct ChildrenVisitor: MarkupVisitor {
     }
 
     mutating func visit(_: FootnoteReference) -> [any Markup] { [] }
+
+    mutating func visit(_: CrossLink) -> [any Markup] { [] }
+
+    mutating func visit(_: Embed) -> [any Markup] { [] }
 }

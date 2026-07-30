@@ -23,6 +23,10 @@ public struct ParseOptions: Sendable, Hashable {
     public let formulas: Bool
     /// Parses inline and container directives.
     public let directives: Bool
+    /// Parses cross-links written as `[[reference]]`.
+    public let crossLinks: Bool
+    /// Parses embeds written as `![[reference]]`.
+    public let embeds: Bool
 
     /// Creates a fixed option set; every switch defaults to `true`.
     public init(
@@ -34,7 +38,9 @@ public struct ParseOptions: Sendable, Hashable {
         autolinks: Bool = true,
         taskLists: Bool = true,
         formulas: Bool = true,
-        directives: Bool = true
+        directives: Bool = true,
+        crossLinks: Bool = true,
+        embeds: Bool = true
     ) {
         self.smartPunctuation = smartPunctuation
         self.footnotes = footnotes
@@ -45,6 +51,8 @@ public struct ParseOptions: Sendable, Hashable {
         self.taskLists = taskLists
         self.formulas = formulas
         self.directives = directives
+        self.crossLinks = crossLinks
+        self.embeds = embeds
     }
 }
 
@@ -126,7 +134,9 @@ extension ParseOptions {
             autolinks: autolinks,
             task_lists: taskLists,
             formulas: formulas,
-            directives: directives
+            directives: directives,
+            cross_links: crossLinks,
+            embeds: embeds
         )
     }
 }
@@ -180,6 +190,8 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_IMAGE: Image(from: node, builder: self)
         case MARKDOWN_CORE_KIND_DIRECTIVE: Directive(from: node, builder: self)
         case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE: FootnoteReference(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_CROSS_LINK: CrossLink(from: node, builder: self)
+        case MARKDOWN_CORE_KIND_EMBED: Embed(from: node, builder: self)
         default: preconditionFailure("native parser returned an unknown node kind")
         }
     }

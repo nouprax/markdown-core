@@ -185,5 +185,13 @@ public object MarkupWalker {
             is FootnoteReference -> {
                 emptyList()
             }
+
+            is CrossLink -> {
+                emptyList()
+            }
+
+            is Embed -> {
+                emptyList()
+            }
         }
 }

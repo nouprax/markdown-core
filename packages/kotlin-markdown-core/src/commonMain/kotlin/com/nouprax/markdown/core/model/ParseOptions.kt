@@ -18,6 +18,8 @@ public data class ParseOptions
         public val taskLists: Boolean = true,
         public val formulas: Boolean = true,
         public val directives: Boolean = true,
+        public val crossLinks: Boolean = true,
+        public val embeds: Boolean = true,
     )
 
 @JvmSynthetic
@@ -32,4 +34,6 @@ internal fun ParseOptions.toNativeMask(): Int =
         taskLists,
         formulas,
         directives,
+        crossLinks,
+        embeds,
     ).foldIndexed(0) { index, mask, enabled -> if (enabled) mask or (1 shl index) else mask }

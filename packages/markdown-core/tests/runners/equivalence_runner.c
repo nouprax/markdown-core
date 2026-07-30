@@ -235,7 +235,9 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
         &options->autolinks,
         &options->task_lists,
         &options->formulas,
-        &options->directives
+        &options->directives,
+        &options->cross_links,
+        &options->embeds
     };
     size_t i;
     if (strlen(mask) != sizeof(fields) / sizeof(fields[0])) {

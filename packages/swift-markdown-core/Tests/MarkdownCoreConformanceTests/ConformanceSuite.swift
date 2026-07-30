@@ -207,6 +207,8 @@ private struct CanonicalParseOptions: Decodable {
     let taskLists: Bool
     let formulas: Bool
     let directives: Bool
+    let crossLinks: Bool
+    let embeds: Bool
 
     var value: ParseOptions {
         ParseOptions(
@@ -218,7 +220,9 @@ private struct CanonicalParseOptions: Decodable {
             autolinks: autolinks,
             taskLists: taskLists,
             formulas: formulas,
-            directives: directives
+            directives: directives,
+            crossLinks: crossLinks,
+            embeds: embeds
         )
     }
 }

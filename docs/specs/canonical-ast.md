@@ -156,6 +156,8 @@ error rather than silently dropping a value.
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | content is parsed alt-text inline content |
 | `Directive` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?` | attributes is normalized string-map JSON object text; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
 | `FootnoteReference` | `label: String` | label is written as in source; non-empty; leaf; never degrades to text when unresolved |
+| `CrossLink` | `reference: String` | source-faithful non-empty reference from `[[reference]]`; leaf |
+| `Embed` | `reference: String` | source-faithful non-empty reference from `![[reference]]`; leaf |
 
 Every row above also has the inherited identity fields `id: MarkupID` and
 `revision`; they are not repeated in the table. No row has a stored scope.
@@ -245,6 +247,8 @@ booleans:
 | `taskLists` | `true` |
 | `formulas` | `true` |
 | `directives` | `true` |
+| `crossLinks` | `true` |
+| `embeds` | `true` |
 
 Disabling an extension disables recognition of its syntax and produces the
 same fallback core AST on every platform. `formulas` controls every supported
@@ -256,7 +260,7 @@ not exist. Raw HTML, URLs, and full code info strings are always retained.
 ## MarkupVisitor and MarkupWalker
 
 The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup`
-kind in the 29-kind node inventory, including `TableRow`, `TableCell`, and
+kind in the 31-kind node inventory, including `TableRow`, `TableCell`, and
 `DirectiveLabel`. The interface is exhaustive: every typed method is required,
 there is no `defaultVisit`, optional handler, catch-all adapter, or
 protocol-extension fallback. Adding a `Markup` kind must therefore produce

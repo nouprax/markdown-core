@@ -9,6 +9,8 @@ import {
     type Directive,
     type DirectiveBlock,
     type DirectiveLabel,
+    type CrossLink,
+    type Embed,
     type FootnoteInfo,
     type Heading,
     type Markup,
@@ -63,7 +65,9 @@ const visitor: MarkupVisitor<string> = {
     visitLink: (node) => node.kind,
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
-    visitFootnoteReference: (node) => node.label
+    visitFootnoteReference: (node) => node.label,
+    visitCrossLink: (node) => node.reference,
+    visitEmbed: (node) => node.reference
 };
 visit(document, visitor);
 new MarkupWalker().walk(document, (_event, node, scope) => {
@@ -130,12 +134,18 @@ void cell;
 
 declare const directive: Directive;
 declare const directiveBlock: DirectiveBlock;
+declare const crossLink: CrossLink;
+declare const embed: Embed;
 const inlineLabel: DirectiveLabel | null = directive.label;
 const blockLabel: DirectiveLabel | null = directiveBlock.label;
 const labelMarkup: Markup | null = inlineLabel;
 const labelContent: readonly Markup[] | undefined = blockLabel?.content;
 void labelMarkup;
 void labelContent;
+const crossLinkReference: string = crossLink.reference;
+const embedReference: string = embed.reference;
+void crossLinkReference;
+void embedReference;
 // @ts-expect-error directive labels are immutable typed child properties
 directive.label = null;
 

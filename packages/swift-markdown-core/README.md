@@ -35,10 +35,11 @@ print(document.dump())
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives. The single `formulas` switch controls `$…$`, `$$…$$`, LaTeX
-delimiters, and `formula` fenced blocks. The result is an immutable `Sendable`
-value tree whose nodes carry a stable identity (`id`, a `MarkupID` of the
-owning session's `lineage` salt plus a raw value) and a change `revision`;
+directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+single `formulas` switch controls `$…$`, `$$…$$`, LaTeX delimiters, and
+`formula` fenced blocks. The result is an immutable `Sendable` value tree whose
+nodes carry a stable identity (`id`, a `MarkupID` of the owning session's
+`lineage` salt plus a raw value) and a change `revision`;
 equality is O(1) over that pair, and an unchanged node compares equal across
 consecutive snapshots — safe fast paths for render caches and reconciliation
 keys. The package exposes parsing, incremental sessions, and read-only AST

@@ -126,6 +126,8 @@ private struct CanonicalParseOptions: Codable {
     let taskLists: Bool
     let formulas: Bool
     let directives: Bool
+    let crossLinks: Bool
+    let embeds: Bool
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case smartPunctuation
@@ -137,6 +139,8 @@ private struct CanonicalParseOptions: Codable {
         case taskLists
         case formulas
         case directives
+        case crossLinks
+        case embeds
     }
 
     init(from decoder: Decoder) throws {
@@ -161,6 +165,8 @@ private struct CanonicalParseOptions: Codable {
         taskLists = try values.decode(Bool.self, forKey: .taskLists)
         formulas = try values.decode(Bool.self, forKey: .formulas)
         directives = try values.decode(Bool.self, forKey: .directives)
+        crossLinks = try values.decode(Bool.self, forKey: .crossLinks)
+        embeds = try values.decode(Bool.self, forKey: .embeds)
     }
 }
 

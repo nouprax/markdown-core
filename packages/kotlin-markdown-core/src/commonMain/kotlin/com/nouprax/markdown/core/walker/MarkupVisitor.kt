@@ -58,4 +58,8 @@ public interface MarkupVisitor<Result> {
     public fun visit(node: Directive): Result
 
     public fun visit(node: FootnoteReference): Result
+
+    public fun visit(node: CrossLink): Result
+
+    public fun visit(node: Embed): Result
 }

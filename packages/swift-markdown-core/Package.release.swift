@@ -32,6 +32,7 @@ let package = Package(
                 "extensions/footnote.c",
                 "extensions/delta.c", "extensions/table.c", "extensions/strikethrough.c",
                 "extensions/autolink.c", "extensions/formula.c", "extensions/directive.c",
+                "extensions/cross_reference.c",
                 "extensions/ext_scanners.c", "extensions/tasklist.c",
             ],
             publicHeadersPath: "include",

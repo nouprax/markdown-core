@@ -201,6 +201,40 @@ static char *cc_email_autolinks(size_t size, size_t *length) {
     return input;
 }
 
+static char *cc_unclosed_cross_references(size_t size, size_t *length) {
+    size_t count = size / 5 ? size / 5 : 1;
+    char *input = (char *)malloc(count * 5 + 1);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(input + i * 5, "[[![[", 5);
+    }
+    *length = count * 5;
+    input[*length] = '\0';
+    return input;
+}
+
+static char *cc_balanced_nested_cross_links(size_t size, size_t *length) {
+    size_t count = size > 1 ? (size - 1) / 4 : 1;
+    char *input = (char *)malloc(count * 4 + 2);
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    for (i = 0; i < count; i++) {
+        memcpy(input + i * 2, "[[", 2);
+    }
+    input[count * 2] = 'x';
+    for (i = 0; i < count; i++) {
+        memcpy(input + count * 2 + 1 + i * 2, "]]", 2);
+    }
+    *length = count * 4 + 1;
+    input[*length] = '\0';
+    return input;
+}
+
 typedef struct cc_case_entry {
     const char *name;
     cc_builder build;
@@ -220,6 +254,8 @@ static const cc_case_entry CC_CASES[] = {
     {"directive_closers_after_emphasis", cc_emphasis_then_closers, DELIMITER_SCALING_SIZES, "directive"},
     {"nested_directive_label_closers", cc_nested_directive_labels, DELIMITER_SCALING_SIZES, "directive"},
     {"many_email_autolinks", cc_email_autolinks, DELIMITER_SCALING_SIZES, "autolink"},
+    {"unclosed_cross_references", cc_unclosed_cross_references, DELIMITER_SCALING_SIZES, "cross-links-and-embeds"},
+    {"balanced_nested_cross_links", cc_balanced_nested_cross_links, DELIMITER_SCALING_SIZES, "cross-link"},
 };
 
 /* --- session commit-cost cases -------------------------------------------

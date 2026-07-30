@@ -58,6 +58,10 @@ internal class KindVisitor : MarkupVisitor<String> {
     override fun visit(node: Directive): String = name(node)
 
     override fun visit(node: FootnoteReference): String = name(node)
+
+    override fun visit(node: CrossLink): String = name(node)
+
+    override fun visit(node: Embed): String = name(node)
 }
 
 internal class RecordingVisitor : MarkupVisitor<Unit> {
@@ -120,6 +124,10 @@ internal class RecordingVisitor : MarkupVisitor<Unit> {
     override fun visit(node: Directive): Unit = record(node)
 
     override fun visit(node: FootnoteReference): Unit = record(node)
+
+    override fun visit(node: CrossLink): Unit = record(node)
+
+    override fun visit(node: Embed): Unit = record(node)
 
     private fun record(node: Markup) {
         visited += name(node)

@@ -6,7 +6,7 @@ import Testing
     @Test("parse options and visitor dispatch use the public Swift API")
     func publicAPI() throws {
         let options = ParseOptions()
-        #expect(options.tables && options.directives && options.formulas)
+        #expect(options.tables && options.directives && options.formulas && options.crossLinks && options.embeds)
         let document = try Document.parse("# Heading\n")
         var visitor = KindVisitor()
         #expect(document.content[0].accept(&visitor) == "heading:1")
@@ -24,6 +24,29 @@ import Testing
             try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
                 .content.first is Paragraph
         )
+    }
+
+    @Test("cross-link and embed syntax is typed, source-faithful, and independently gated")
+    func crossReferenceOptions() throws {
+        let source =
+            "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n"
+        let paragraph = try #require(Document.parse(source).content.first as? Paragraph)
+        let crossLink = try #require(paragraph.content[1] as? CrossLink)
+        let embed = try #require(paragraph.content[3] as? Embed)
+        #expect(crossLink.reference == "folder/note#^block|display")
+        #expect(embed.reference == "folder/note#^block|display")
+
+        let linksDisabled = try #require(
+            Document.parse(source, options: ParseOptions(crossLinks: false))
+                .content.first as? Paragraph
+        )
+        #expect(linksDisabled.content[1] is Embed)
+
+        let embedsDisabled = try #require(
+            Document.parse(source, options: ParseOptions(embeds: false))
+                .content.first as? Paragraph
+        )
+        #expect(embedsDisabled.content[1] is CrossLink)
     }
 
     @Test("the formulas switch controls every supported formula syntax")
@@ -161,7 +184,9 @@ private func makeConcurrencyCombos() throws -> [ConcurrencyCombo] {
             autolinks: false,
             taskLists: false,
             formulas: false,
-            directives: false
+            directives: false,
+            crossLinks: false,
+            embeds: false
         ),
         ParseOptions(
             strikethrough: false,
@@ -209,6 +234,8 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteReference) -> String { kindName(node) }
+    mutating func visit(_ node: CrossLink) -> String { kindName(node) }
+    mutating func visit(_ node: Embed) -> String { kindName(node) }
 }
 
 private func requireSendable<T: Sendable>(_: T.Type) {}

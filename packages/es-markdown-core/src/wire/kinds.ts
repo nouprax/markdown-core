@@ -27,7 +27,9 @@ export type NativeKind =
     | "link"
     | "image"
     | "directive"
-    | "footnoteReference";
+    | "footnoteReference"
+    | "crossLink"
+    | "embed";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -59,5 +61,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "link",
     "image",
     "directive",
-    "footnoteReference"
+    "footnoteReference",
+    "crossLink",
+    "embed"
 ]);

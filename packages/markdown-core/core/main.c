@@ -114,7 +114,8 @@ int main(int argc, char *argv[]) {
 
     if (!attach_extension(parser, "table") || !attach_extension(parser, "strikethrough") ||
         !attach_extension(parser, "autolink") || !attach_extension(parser, "tasklist") ||
-        !attach_extension(parser, "formula") || !attach_extension(parser, "directive")) {
+        !attach_extension(parser, "formula") || !attach_extension(parser, "directive") ||
+        !attach_extension(parser, "cross_link") || !attach_extension(parser, "embed")) {
         goto failure;
     }
 

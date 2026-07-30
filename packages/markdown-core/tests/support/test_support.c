@@ -322,6 +322,13 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
         options->formulas = true;
     } else if (strcmp(name, "directive") == 0 || strcmp(name, "directives") == 0) {
         options->directives = true;
+    } else if (strcmp(name, "cross-link") == 0 || strcmp(name, "cross-links") == 0) {
+        options->cross_links = true;
+    } else if (strcmp(name, "embed") == 0 || strcmp(name, "embeds") == 0) {
+        options->embeds = true;
+    } else if (strcmp(name, "cross-links-and-embeds") == 0) {
+        options->cross_links = true;
+        options->embeds = true;
     } else {
         return -1;
     }
