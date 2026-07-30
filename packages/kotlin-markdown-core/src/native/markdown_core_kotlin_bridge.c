@@ -423,9 +423,7 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->autolinks = (mask & (1u << 5)) != 0;
     options->task_lists = (mask & (1u << 6)) != 0;
     options->formulas = (mask & (1u << 7)) != 0;
-    options->dollar_formula_delimiters = (mask & (1u << 8)) != 0;
-    options->latex_formula_delimiters = (mask & (1u << 9)) != 0;
-    options->directives = (mask & (1u << 10)) != 0;
+    options->directives = (mask & (1u << 8)) != 0;
 }
 
 static markdown_core_session *to_session(markdown_core_kotlin_session *session) {

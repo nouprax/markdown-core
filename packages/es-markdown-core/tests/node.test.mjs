@@ -22,6 +22,42 @@ test("api: options gate extensions", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
     assert.equal(Document.parse(markdown).content[0].kind, "table");
     assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
+
+    const directive = "Use :note[text].\n";
+    assert.equal(Document.parse(directive).dump().includes("Directive"), true);
+    assert.equal(Document.parse(directive, { directives: false }).dump().includes("Directive"), false);
+});
+
+test("api: formulas gates every formula syntax", () => {
+    const markdown = [
+        "Inline $d$ and \\\\(l\\\\).",
+        "",
+        "$$",
+        "display-dollar",
+        "$$",
+        "",
+        "\\\\[",
+        "display-latex",
+        "\\\\]",
+        "",
+        "```formula",
+        "fenced",
+        "```",
+        ""
+    ].join("\n");
+    const enabled = Document.parse(markdown);
+    assert.deepEqual(
+        enabled.content.map((node) => node.kind),
+        ["paragraph", "formulaBlock", "formulaBlock", "formulaBlock"]
+    );
+    assert.deepEqual(
+        enabled.content[0].content.filter((node) => node.kind === "formula").map((node) => node.literal),
+        ["d", "l"]
+    );
+
+    const disabled = Document.parse(markdown, { formulas: false });
+    assert.equal(disabled.dump().includes("Formula"), false);
+    assert.equal(disabled.content.at(-1).kind, "codeBlock");
 });
 
 test("ast: typed fields are copied from direct WASM accessors", () => {
@@ -115,15 +151,11 @@ test("robustness: worker threads own isolated engine instances", async () => {
             autolinks: false,
             taskLists: false,
             formulas: false,
-            dollarFormulaDelimiters: false,
-            latexFormulaDelimiters: false,
             directives: false
         },
         {
             strikethrough: false,
-            formulas: false,
-            dollarFormulaDelimiters: false,
-            latexFormulaDelimiters: false
+            formulas: false
         }
     ];
     const jobs = sources.flatMap((source) => variants.map((options) => ({ source, options })));

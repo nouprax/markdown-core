@@ -64,9 +64,7 @@ markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **err
     options.autolinks = (flags & (1u << 5)) != 0;
     options.task_lists = (flags & (1u << 6)) != 0;
     options.formulas = (flags & (1u << 7)) != 0;
-    options.dollar_formula_delimiters = (flags & (1u << 8)) != 0;
-    options.latex_formula_delimiters = (flags & (1u << 9)) != 0;
-    options.directives = (flags & (1u << 10)) != 0;
+    options.directives = (flags & (1u << 8)) != 0;
     return markdown_core_session_open(&options, error);
 }
 

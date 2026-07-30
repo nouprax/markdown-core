@@ -9,9 +9,8 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 ## GitHub formula compatibility
 
 These examples define the GitHub Docs dollar formula-expression surface
-supported by the `formula` extension when `--dollar-formula-delimiters` is
-enabled. The HTML wrapper is markdown-core's stable representation; the wrapped
-delimiter/body text is the payload handed to LaTeX/KaTeX.
+recognized by the `formula` extension. The wrapped delimiter/body text is the
+payload handed to LaTeX/KaTeX.
 
 ```````````````````````````````` example
 Inline $x+y$ end.
@@ -107,24 +106,6 @@ $$
 .
 Document scope=1:1..3:2 children=1
 └── FormulaBlock scope=1:1..3:2 mode=standalone literal="x+y" children=0
-````````````````````````````````
-
-Backslash formula delimiters are not enabled by default.
-
-```````````````````````````````` example
-Inline \\(x+y\\) and \(a+b\).
-.
-Document scope=1:1..1:29 children=1
-└── Paragraph scope=1:1..1:29 children=1
-    └── Text scope=1:1..1:29 literal="Inline \\(x+y\\) and (a+b)." children=0
-````````````````````````````````
-
-```````````````````````````````` example
-Display \\[x+y\\] and \[a+b\].
-.
-Document scope=1:1..1:30 children=1
-└── Paragraph scope=1:1..1:30 children=1
-    └── Text scope=1:1..1:30 literal="Display \\[x+y\\] and [a+b]." children=0
 ````````````````````````````````
 
 GitHub's ```formula fenced-code form is a formula block; the fence delimiters and

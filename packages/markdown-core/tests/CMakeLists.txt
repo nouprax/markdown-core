@@ -38,8 +38,6 @@ set(MARKDOWN_CORE_CANONICAL_OPTION_NAMES
     autolinks
     taskLists
     formulas
-    dollarFormulaDelimiters
-    latexFormulaDelimiters
     directives)
 foreach(case_index RANGE 0 ${MARKDOWN_CORE_CANONICAL_CASE_LAST})
     string(
@@ -323,18 +321,9 @@ markdown_core_add_test(
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-github.txt"
     --option
-    formula
-    --option
-    dollar-formula-delimiters)
-markdown_core_add_test(
-    extensions_formula_option_gates
-    extensions
-    120
-    spec_runner
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-option-gates.txt"
-    --option
     formula)
+markdown_core_add_test(extensions_formula_option_gates extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-option-gates.txt")
 markdown_core_add_test(
     extensions_formula_latex
     extensions
@@ -343,11 +332,7 @@ markdown_core_add_test(
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-latex.txt"
     --option
-    formula
-    --option
-    dollar-formula-delimiters
-    --option
-    latex-formula-delimiters)
+    formula)
 markdown_core_add_test(
     extensions_formula_conflicts
     extensions
@@ -356,11 +341,7 @@ markdown_core_add_test(
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-formula-conflicts.txt"
     --option
-    formula
-    --option
-    dollar-formula-delimiters
-    --option
-    latex-formula-delimiters)
+    formula)
 markdown_core_add_test(
     extensions_directive
     extensions

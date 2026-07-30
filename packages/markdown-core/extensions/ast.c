@@ -74,8 +74,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->autolinks = true;
     options->task_lists = true;
     options->formulas = true;
-    options->dollar_formula_delimiters = true;
-    options->latex_formula_delimiters = true;
     options->directives = true;
 }
 

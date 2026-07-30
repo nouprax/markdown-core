@@ -56,7 +56,7 @@ and the optional `DirectiveLabel` child shape, and requires row/cell/label
 Markup nodes to occur on their legal typed ownership edges. Public model
 modules do not import the WASM runtime.
 
-`ParseOptions` preserves the eleven frozen defaults and uses a private bitmask
+`ParseOptions` preserves the nine frozen defaults and uses a private bitmask
 only at the WASM ABI. `Visitor<Result>` requires every type-specific dispatch
 method and has no default or optional handler; the exported exhaustive `visit`
 function performs type-safe dispatch without dynamic method-name construction. `Walker` performs

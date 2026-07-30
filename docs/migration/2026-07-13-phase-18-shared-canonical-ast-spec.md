@@ -42,7 +42,7 @@ serialization/transport format，也不得用于构造生产 AST。
 ## Implementation
 
 `specs/canonical-ast/manifest.json` 是唯一 discovery source。v1 schema 固定六个
-case 的 input、expected、11 个 parse options、manifest order、UTF-8、LF、final
+case 的 input、expected、9 个 parse options、manifest order、UTF-8、LF、final
 newline，以及 kind/state/order coverage tags。`check-canonical-ast-fixtures.mjs`
 从 AST contract 自动提取 29 kinds 和 48 个 behavior-bearing fields，并对缺失、
 未知、未清单文件、字段顺序和空 discovery fail closed。

@@ -135,8 +135,6 @@ typedef struct markdown_core_parse_options {
     bool autolinks;
     bool task_lists;
     bool formulas;
-    bool dollar_formula_delimiters;
-    bool latex_formula_delimiters;
     bool directives;
 } markdown_core_parse_options;
 

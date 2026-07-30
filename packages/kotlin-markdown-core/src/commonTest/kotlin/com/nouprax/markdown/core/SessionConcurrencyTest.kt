@@ -34,8 +34,6 @@ class SessionConcurrencyTest {
                         autolinks = false,
                         taskLists = false,
                         formulas = false,
-                        dollarFormulaDelimiters = false,
-                        latexFormulaDelimiters = false,
                         directives = false,
                     ),
                 )

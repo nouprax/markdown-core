@@ -550,8 +550,6 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
         &options.autolinks,
         &options.task_lists,
         &options.formulas,
-        &options.dollar_formula_delimiters,
-        &options.latex_formula_delimiters,
         &options.directives
     };
     uint16_t mask;

@@ -106,8 +106,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -158,8 +156,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -226,8 +222,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -255,8 +249,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -308,8 +300,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -331,8 +321,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {
@@ -377,8 +365,6 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "dollarFormulaDelimiters": true,
-                "latexFormulaDelimiters": true,
                 "directives": true
             },
             "coverage": {

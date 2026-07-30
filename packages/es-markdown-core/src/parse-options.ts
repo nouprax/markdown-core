@@ -7,7 +7,5 @@ export interface ParseOptions {
     readonly autolinks?: boolean;
     readonly taskLists?: boolean;
     readonly formulas?: boolean;
-    readonly dollarFormulaDelimiters?: boolean;
-    readonly latexFormulaDelimiters?: boolean;
     readonly directives?: boolean;
 }

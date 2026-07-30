@@ -191,12 +191,6 @@ static int native_options_from(const markdown_core_parse_options *options) {
     if (options->strip_html_comments) {
         native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     }
-    if (options->formulas && options->dollar_formula_delimiters) {
-        native_options |= MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-    }
-    if (options->formulas && options->latex_formula_delimiters) {
-        native_options |= MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
-    }
     if (options->directives) {
         native_options |= MARKDOWN_CORE_OPT_DIRECTIVE;
     }

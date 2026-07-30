@@ -49,8 +49,6 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
         &options->autolinks,
         &options->task_lists,
         &options->formulas,
-        &options->dollar_formula_delimiters,
-        &options->latex_formula_delimiters,
         &options->directives
     };
     size_t i;
@@ -466,8 +464,7 @@ static void check_api(void) {
     markdown_core_parse_options_init(&options);
     check(
         options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-            options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
-            options.dollar_formula_delimiters && options.latex_formula_delimiters && options.directives,
+            options.strikethrough && options.autolinks && options.task_lists && options.formulas && options.directives,
         "parse option defaults are explicit and complete"
     );
 
@@ -503,7 +500,11 @@ static void check_api(void) {
     check_option_gate(GATE_STRIKETHROUGH, "~~x~~\n", "Strikethrough scope=");
     check_option_gate(GATE_AUTOLINKS, "www.example.com\n", "Link scope=");
     check_option_gate(GATE_TASK_LISTS, "- [x] task\n", "checked=true");
-    check_option_gate(GATE_FORMULAS, "$x$\n", "Formula scope=");
+    check_option_gate(
+        GATE_FORMULAS,
+        "$x$\n\n$$\ny\n$$\n\n\\\\(z\\\\)\n\n\\\\[q\\\\]\n\n```formula\nw\n```\n",
+        "Formula"
+    );
     check_option_gate(GATE_DIRECTIVES, ":badge[label]\n", "Directive scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
     check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");

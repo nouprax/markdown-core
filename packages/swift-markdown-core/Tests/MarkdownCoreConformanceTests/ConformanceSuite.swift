@@ -206,8 +206,6 @@ private struct CanonicalParseOptions: Decodable {
     let autolinks: Bool
     let taskLists: Bool
     let formulas: Bool
-    let dollarFormulaDelimiters: Bool
-    let latexFormulaDelimiters: Bool
     let directives: Bool
 
     var value: ParseOptions {
@@ -220,8 +218,6 @@ private struct CanonicalParseOptions: Decodable {
             autolinks: autolinks,
             taskLists: taskLists,
             formulas: formulas,
-            dollarFormulaDelimiters: dollarFormulaDelimiters,
-            latexFormulaDelimiters: latexFormulaDelimiters,
             directives: directives
         )
     }

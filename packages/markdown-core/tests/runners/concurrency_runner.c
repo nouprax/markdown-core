@@ -203,15 +203,11 @@ static void options_for_variant(option_variant variant, markdown_core_parse_opti
         options->autolinks = false;
         options->task_lists = false;
         options->formulas = false;
-        options->dollar_formula_delimiters = false;
-        options->latex_formula_delimiters = false;
         options->directives = false;
         break;
     case OPTIONS_SPLIT:
         options->strikethrough = false;
         options->formulas = false;
-        options->dollar_formula_delimiters = false;
-        options->latex_formula_delimiters = false;
         break;
     default:
         break;

@@ -18,12 +18,9 @@ public struct ParseOptions: Sendable, Hashable {
     public let autolinks: Bool
     /// Parses `[ ]`/`[x]` task-list item markers.
     public let taskLists: Bool
-    /// Parses formula spans and blocks.
+    /// Parses formula spans and blocks, including dollar and LaTeX delimiters
+    /// and `formula` fenced blocks.
     public let formulas: Bool
-    /// Recognizes `$…$` and `$$…$$` formula delimiters.
-    public let dollarFormulaDelimiters: Bool
-    /// Recognizes `\(…\)` and `\[…\]` formula delimiters.
-    public let latexFormulaDelimiters: Bool
     /// Parses inline and container directives.
     public let directives: Bool
 
@@ -37,8 +34,6 @@ public struct ParseOptions: Sendable, Hashable {
         autolinks: Bool = true,
         taskLists: Bool = true,
         formulas: Bool = true,
-        dollarFormulaDelimiters: Bool = true,
-        latexFormulaDelimiters: Bool = true,
         directives: Bool = true
     ) {
         self.smartPunctuation = smartPunctuation
@@ -49,8 +44,6 @@ public struct ParseOptions: Sendable, Hashable {
         self.autolinks = autolinks
         self.taskLists = taskLists
         self.formulas = formulas
-        self.dollarFormulaDelimiters = dollarFormulaDelimiters
-        self.latexFormulaDelimiters = latexFormulaDelimiters
         self.directives = directives
     }
 }
@@ -133,8 +126,6 @@ extension ParseOptions {
             autolinks: autolinks,
             task_lists: taskLists,
             formulas: formulas,
-            dollar_formula_delimiters: dollarFormulaDelimiters,
-            latex_formula_delimiters: latexFormulaDelimiters,
             directives: directives
         )
     }
