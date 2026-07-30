@@ -591,7 +591,7 @@ cardinality special case。
 - duplicate attachment 与 attachment OOM 原子性；
 - literal-but-consumed nearest-pair cases；
 - nested opaque syntax只 materialize final survivors；
-- parser renew 后 grammar plan 与 transient arena state 正确重置/保留；
+- parser renew 后 grammar plan 与 parser-owned transient arena capacity 正确重置/保留；
 - allocator injection 覆盖 arena growth、reducer 与 finalizer。
 
 ### 13.2 Deterministic complexity counters
@@ -610,9 +610,10 @@ Adversarial tests 必须断言一般工作上界，而不只比较 wall clock：
 - CommonMark rule-of-three 的 modulo 0/1/2 classes 与 residual runs；
 - unrelated rules 交错，确保 opener search 不访问其他 rule；
 - nested mark/truncate 与 arena index reuse；
-- geometric growth、growth OOM、invalid push 和 reducer failure 的事务边界。
+- geometric growth、growth OOM、跨 unit lane growth/reuse、invalid push 和 reducer failure
+  的事务边界。
 
-独立 engine runner 当前固定 11 个 deterministic cases：
+独立 engine runner 当前固定 12 个 deterministic cases：
 
 ```text
 balanced_nearest_ranges
@@ -624,6 +625,7 @@ mark_restore_and_reuse
 residual_run_progress
 geometric_arena_growth
 arena_growth_oom_transaction
+unit_lane_growth_and_reuse
 reducer_failure_is_terminal
 invalid_push_is_transactional
 ```
@@ -640,7 +642,9 @@ scaling；它不能替代 deterministic operation invariant。
 - `core/delimiter.c` 与 `core/delimiter.h`：compiled attachment buckets、dense bindings、
   relocatable arena、per-rule lanes、marks、typed processing 与 diagnostics。
 - `core/inlines.c`：fixed core routing、统一 shared-close arbitration、transactional source
-  consumption，以及 phase-two 调度。
+  consumption，以及 phase-two 调度。inline unit 只 begin/reset parser-owned delimiter
+  scratch；lane/record capacity 跨 unit 和 parser renew 保留，拓扑、claim clock 与 marks
+  每个 unit 独立。
 - `core/markdown-core-extension-api.h`：immutable rule descriptors、pure close probes、
   typed reducers、source span/consume APIs。
 - `extensions/`：Strikethrough、Formula、Directive、CrossLink 与 Embed 全部使用同一

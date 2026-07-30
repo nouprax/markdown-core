@@ -262,6 +262,10 @@ if(MARKDOWN_CORE_STATIC)
         reference_map_v2
         directive_sorted_fallback
         key_index_probe_growth
+        key_index_skewed_cardinality
+        directive_skewed_cardinality
+        delimiter_scratch_reuse
+        backslash_run_borrowed_payload
         map_prepare_oom
         constructor_oom
         oom_sweep
@@ -448,6 +452,7 @@ set(MARKDOWN_CORE_DELIMITER_ENGINE_CASES
     residual_run_progress
     geometric_arena_growth
     arena_growth_oom_transaction
+    unit_lane_growth_and_reuse
     reducer_failure_is_terminal
     invalid_push_is_transactional)
 foreach(case IN LISTS MARKDOWN_CORE_DELIMITER_ENGINE_CASES)

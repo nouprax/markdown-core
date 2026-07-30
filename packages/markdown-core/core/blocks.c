@@ -225,6 +225,7 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
 static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->extensions;
     markdown_core_inline_config *saved_inline_config = parser->inline_config;
+    markdown_core_delimiter_engine saved_inline_delimiters = parser->inline_delimiters;
     int saved_options = parser->options;
     markdown_core_mem *saved_mem = parser->mem;
 
@@ -244,6 +245,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     parser->extensions = saved_exts;
     parser->inline_config = saved_inline_config;
+    parser->inline_delimiters = saved_inline_delimiters;
     parser->options = saved_options;
 
     /* A reset that could not rebuild its structures poisons the parser: feed
@@ -262,6 +264,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 void markdown_core_parser_renew(markdown_core_parser *parser) {
     markdown_core_llist *saved_exts = parser->extensions;
     markdown_core_inline_config *saved_inline_config = parser->inline_config;
+    markdown_core_delimiter_engine saved_inline_delimiters = parser->inline_delimiters;
     int saved_options = parser->options;
     markdown_core_mem *saved_mem = parser->mem;
     markdown_core_map *saved_refmap = parser->refmap;
@@ -288,6 +291,7 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
 
     parser->extensions = saved_exts;
     parser->inline_config = saved_inline_config;
+    parser->inline_delimiters = saved_inline_delimiters;
     parser->options = saved_options;
 
     if (!parser->root || !parser->refmap || parser->curline.oom || parser->linebuf.oom) {
@@ -307,6 +311,7 @@ markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_co
         mem->free(mem, parser);
         return NULL;
     }
+    markdown_core_delimiter_engine_init(&parser->inline_delimiters, mem, MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT);
     markdown_core_parser_reset(parser);
     return parser;
 }
@@ -322,6 +327,7 @@ void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&parser->linebuf);
     markdown_core_llist_free(parser->mem, parser->extensions);
     markdown_core_inline_config_free(parser->inline_config);
+    markdown_core_delimiter_engine_free(&parser->inline_delimiters);
     mem->free(mem, parser);
 }
 

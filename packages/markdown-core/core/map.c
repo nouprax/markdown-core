@@ -74,27 +74,14 @@ static int grow_key_index(markdown_core_key_index *index) {
     return 1;
 }
 
-int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem, size_t expected_size) {
-    size_t capacity = KEY_INDEX_MIN_CAPACITY;
+int markdown_core_key_index_init(markdown_core_key_index *index, markdown_core_mem *mem) {
     memset(index, 0, sizeof(*index));
     index->mem = mem;
-    if (expected_size > SIZE_MAX / 2) {
-        return 0;
-    }
-    while (capacity < expected_size * 2) {
-        if (capacity > SIZE_MAX / 2) {
-            return 0;
-        }
-        capacity *= 2;
-    }
-    if (capacity > SIZE_MAX / sizeof(*index->slots)) {
-        return 0;
-    }
-    index->slots = (markdown_core_key_index_slot *)mem->calloc(mem, capacity, sizeof(*index->slots));
+    index->slots = (markdown_core_key_index_slot *)mem->calloc(mem, KEY_INDEX_MIN_CAPACITY, sizeof(*index->slots));
     if (!index->slots) {
         return 0;
     }
-    index->capacity = capacity;
+    index->capacity = KEY_INDEX_MIN_CAPACITY;
     return 1;
 }
 
@@ -322,40 +309,6 @@ static int sort_map(markdown_core_map *map) {
     return 1;
 }
 
-/* Duplicate-heavy definition lists should not pre-size the table by every
- * source occurrence. Sample up to 1024 entries; a unique-heavy sample keeps
- * the flat total-count allocation, a duplicate-heavy one starts at the
- * sampled unique count and relies on amortized growth. */
-static size_t map_index_expected_size(markdown_core_map *map) {
-    const size_t sample_limit = 1024;
-    markdown_core_key_index sample;
-    markdown_core_map_entry *ref;
-    size_t sampled = 0;
-    size_t unique;
-    if (map->size <= sample_limit) {
-        return map->size;
-    }
-    if (!markdown_core_key_index_init(&sample, map->mem, sample_limit)) {
-        return map->size;
-    }
-    for (ref = map->refs; ref && sampled < sample_limit; ref = ref->next, sampled++) {
-        if (!markdown_core_key_index_insert(
-                &sample,
-                ref->label,
-                (markdown_core_bufsize)strlen((char *)ref->label),
-                ref,
-                0,
-                NULL
-            )) {
-            markdown_core_key_index_free(&sample);
-            return map->size;
-        }
-    }
-    unique = sample.size;
-    markdown_core_key_index_free(&sample);
-    return unique > sampled / 2 ? map->size : unique;
-}
-
 /* Splices `entry` into its label bucket in ascending document order and
  * keeps the index slot pointing at the bucket head (the winner). Returns 0
  * when the index could not take the label. */
@@ -387,7 +340,7 @@ static int bucket_attach(markdown_core_map *map, markdown_core_map_entry *entry)
  * fast path and the build stays O(entries) even when one label repeats. */
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
-    if (!markdown_core_key_index_init(&map->index, map->mem, map_index_expected_size(map))) {
+    if (!markdown_core_key_index_init(&map->index, map->mem)) {
         return 0;
     }
     for (ref = map->refs; ref; ref = ref->next) {

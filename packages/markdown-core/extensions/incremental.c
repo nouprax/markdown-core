@@ -591,8 +591,7 @@ static bool reconcile_prepare(
         return false;
     }
 
-    if (!markdown_core_key_index_init(&state->affected, mem, affected_upper) ||
-        !markdown_core_key_index_init(&state->dirty, mem, affected_upper)) {
+    if (!markdown_core_key_index_init(&state->affected, mem) || !markdown_core_key_index_init(&state->dirty, mem)) {
         markdown_core_key_index_free(&state->affected);
         return false;
     }

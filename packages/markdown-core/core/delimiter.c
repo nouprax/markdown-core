@@ -315,6 +315,27 @@ void markdown_core_delimiter_engine_init(
     engine->lane_count = lane_count;
 }
 
+markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
+    markdown_core_delimiter_engine *engine,
+    size_t lane_count
+) {
+    size_t retained_growth;
+    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count) {
+        return MARKDOWN_CORE_DELIMITER_INVALID;
+    }
+    /* A parser may attach rules between documents. Lanes that become active
+     * again must not retain a floor epoch from an earlier rule set,
+     * especially across process_epoch wrap. Newly allocated lanes are
+     * already zeroed by ensure_lanes. */
+    retained_growth = lane_count < engine->lane_capacity ? lane_count : engine->lane_capacity;
+    if (engine->lanes && retained_growth > engine->lane_count) {
+        memset(engine->lanes + engine->lane_count, 0, (retained_growth - engine->lane_count) * sizeof(*engine->lanes));
+    }
+    engine->lane_count = lane_count;
+    engine->last_claim_order = 0;
+    return MARKDOWN_CORE_DELIMITER_OK;
+}
+
 void markdown_core_delimiter_engine_free(markdown_core_delimiter_engine *engine) {
     if (engine->records) {
         engine->mem->free(engine->mem, engine->records);
@@ -326,15 +347,24 @@ void markdown_core_delimiter_engine_free(markdown_core_delimiter_engine *engine)
 }
 
 static int ensure_lanes(markdown_core_delimiter_engine *engine) {
-    if (engine->lanes) {
+    markdown_core_delimiter_lane *lanes;
+    if (engine->lane_count <= engine->lane_capacity) {
         return 1;
     }
     if (!engine->lane_count) {
         return 0;
     }
-    engine->lanes =
+    lanes =
         (markdown_core_delimiter_lane *)engine->mem->calloc(engine->mem, engine->lane_count, sizeof(*engine->lanes));
-    return engine->lanes != NULL;
+    if (!lanes) {
+        return 0;
+    }
+    if (engine->lanes) {
+        engine->mem->free(engine->mem, engine->lanes);
+    }
+    engine->lanes = lanes;
+    engine->lane_capacity = engine->lane_count;
+    return 1;
 }
 
 static int ensure_record_capacity(markdown_core_delimiter_engine *engine) {

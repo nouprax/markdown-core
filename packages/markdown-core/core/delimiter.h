@@ -113,6 +113,7 @@ typedef struct {
     size_t count;
     size_t capacity;
     size_t lane_count;
+    size_t lane_capacity;
     markdown_core_delimiter_id tail;
     uint64_t last_claim_order;
     uint32_t process_epoch;
@@ -149,6 +150,14 @@ markdown_core_inline_attachment *markdown_core_inline_config_find_attachment(
 void markdown_core_delimiter_engine_init(
     markdown_core_delimiter_engine *engine,
     markdown_core_mem *mem,
+    size_t lane_count
+);
+/* Starts an independent inline unit while retaining arena allocations.
+ * Returns INVALID unless the previous unit has been fully processed back to
+ * the empty mark. Lane storage grows lazily if the parser gained rules
+ * between documents. */
+markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
+    markdown_core_delimiter_engine *engine,
     size_t lane_count
 );
 void markdown_core_delimiter_engine_free(markdown_core_delimiter_engine *engine);

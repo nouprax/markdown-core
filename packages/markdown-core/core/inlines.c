@@ -66,7 +66,7 @@ typedef struct subject {
     int block_offset;
     int column_offset;
     markdown_core_map *refmap;
-    markdown_core_delimiter_engine delimiters;
+    markdown_core_delimiter_engine *delimiters;
     markdown_core_inline_attachment *active_attachment;
     inline_phase phase;
     uint64_t claim_clock;
@@ -327,11 +327,15 @@ static void subject_from_buf(
     e->block_offset = block_offset;
     e->column_offset = 0;
     e->refmap = refmap;
-    markdown_core_delimiter_engine_init(
-        &e->delimiters,
-        mem,
-        MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count
-    );
+    e->oom = 0;
+    e->internal_error = 0;
+    e->delimiters = parser ? &parser->inline_delimiters : NULL;
+    if (e->delimiters && markdown_core_delimiter_engine_begin(
+                             e->delimiters,
+                             MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count
+                         ) != MARKDOWN_CORE_DELIMITER_OK) {
+        e->internal_error = 1;
+    }
     e->active_attachment = NULL;
     e->phase = INLINE_PHASE_SCAN;
     e->claim_clock = 0;
@@ -341,8 +345,6 @@ static void subject_from_buf(
     }
     e->scanned_for_backticks = false;
     e->no_link_openers = true;
-    e->oom = 0;
-    e->internal_error = 0;
 }
 
 static MARKDOWN_CORE_INLINE int isbacktick(int c) { return (c == '`'); }
@@ -732,7 +734,7 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
     b->previous = subj->last_bracket;
     b->position = subj->pos;
     b->claim_order = claim_order;
-    b->delimiter_mark = markdown_core_delimiter_engine_mark(&subj->delimiters);
+    b->delimiter_mark = markdown_core_delimiter_engine_mark(subj->delimiters);
     b->bracket_after = false;
     if (image) {
         b->in_bracket_image1 = true;
@@ -769,7 +771,7 @@ static markdown_core_node *handle_delim(subject *subj, unsigned char c, bool sma
         subject_set_delimiter_failure(
             subj,
             markdown_core_delimiter_engine_push(
-                &subj->delimiters,
+                subj->delimiters,
                 core_delimiter_binding(c),
                 can_open,
                 can_close,
@@ -854,8 +856,8 @@ static void process_delimiters(markdown_core_parser *parser, subject *subj, mark
     }
     subj->phase = INLINE_PHASE_REDUCE;
     result = subject_has_failure(parser, subj)
-                 ? markdown_core_delimiter_engine_truncate(&subj->delimiters, mark)
-                 : markdown_core_delimiter_engine_process(&subj->delimiters, parser, subj, mark);
+                 ? markdown_core_delimiter_engine_truncate(subj->delimiters, mark)
+                 : markdown_core_delimiter_engine_process(subj->delimiters, parser, subj, mark);
     subj->phase = INLINE_PHASE_SCAN;
     subject_set_delimiter_failure(subj, result);
 }
@@ -932,16 +934,13 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
             while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
                 end += 2;
             }
-            if (end - start >= 4) {
-                markdown_core_bufsize output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)subj->mem->calloc(subj->mem, (size_t)output_len + 1, 1);
-                if (output) {
-                    markdown_core_chunk contents = {output, output_len, 1};
-                    memset(output, '\\', (size_t)output_len);
-                    subj->pos = end;
-                    return make_str(subj, start, end - 1, contents);
-                }
-            }
+            /* Every complete pair decodes to one backslash. The first half
+             * of an all-backslash source run is therefore already the exact
+             * output bytes: borrow it while the node scope covers the full
+             * consumed run. This is the same operation for one or many pairs
+             * and requires no transformed-payload allocation. */
+            subj->pos = end;
+            return make_str(subj, start, end - 1, markdown_core_chunk_dup(&subj->input, start, (end - start) / 2));
         }
         // only ascii symbols and newline can be escaped
         advance(subj);
@@ -1622,7 +1621,7 @@ static markdown_core_node *consume_rule_close(
     if (!node) {
         return NULL;
     }
-    result = markdown_core_delimiter_engine_push(&subj->delimiters, binding, 0, 1, node, start, end, 0);
+    result = markdown_core_delimiter_engine_push(subj->delimiters, binding, 0, 1, node, start, end, 0);
     if (result != MARKDOWN_CORE_DELIMITER_OK) {
         markdown_core_node_free(node);
         subject_set_delimiter_failure(subj, result);
@@ -1648,13 +1647,13 @@ static shared_close_result handle_shared_close(markdown_core_parser *parser, sub
 
     for (i = 0; i < bucket->count; i++) {
         const markdown_core_delimiter_binding *binding = bucket->items[i];
-        markdown_core_delimiter_id opener = markdown_core_delimiter_engine_last_open(&subj->delimiters, binding);
+        markdown_core_delimiter_id opener = markdown_core_delimiter_engine_last_open(subj->delimiters, binding);
         markdown_core_bufsize length;
         uint64_t order;
         if (!opener) {
             continue;
         }
-        order = markdown_core_delimiter_engine_claim_order(&subj->delimiters, opener);
+        order = markdown_core_delimiter_engine_claim_order(subj->delimiters, opener);
         if (!order) {
             subj->internal_error = 1;
             result.handled = 1;
@@ -1948,7 +1947,6 @@ void markdown_core_parse_inlines_from(
         ;
 
     process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0});
-    markdown_core_delimiter_engine_free(&subj.delimiters);
     // free bracket stack
     while (subj.last_bracket) {
         pop_bracket(&subj);
@@ -2122,7 +2120,7 @@ markdown_core_node *markdown_core_inline_parser_consume_delimiter(
         return NULL;
     }
     result = markdown_core_delimiter_engine_push(
-        &parser->delimiters,
+        parser->delimiters,
         binding,
         can_open,
         can_close,

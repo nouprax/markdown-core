@@ -6,6 +6,7 @@
 #include "references.h"
 #include "node.h"
 #include "buffer.h"
+#include "delimiter.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -74,6 +75,9 @@ struct markdown_core_parser {
      * trigger buckets and delimiter rule bindings for the attached syntax
      * set, so parsing never scans the extension list to recover an owner. */
     struct markdown_core_inline_config *inline_config;
+    /* Parser-lifetime inline scratch. Every inline unit begins at the empty
+     * mark and retains lane/record capacity for the next unit. */
+    markdown_core_delimiter_engine inline_delimiters;
 };
 
 /** Returns a parser whose parse ended (root handed off or freed) to its

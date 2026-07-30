@@ -507,6 +507,83 @@ cleanup:
     return result;
 }
 
+static int case_unit_lane_growth_and_reuse(void) {
+    static const char case_name[] = "unit_lane_growth_and_reuse";
+    static const markdown_core_delimiter_rule rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_binding first = dr_binding(&rule, 0);
+    markdown_core_delimiter_binding added = dr_binding(&rule, 1);
+    uint64_t allocations_after_first_unit;
+    int result = 0;
+
+    dr_allocator_init(&allocator);
+    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_push(&engine, &first, 1, 0, 0, 1), "first-unit push failed");
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    DR_REQUIRE(
+        engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 1 && engine.capacity == 16,
+        "first unit did not leave reusable storage"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_begin(&engine, 2) == MARKDOWN_CORE_DELIMITER_OK,
+        "second unit did not accept the expanded rule set"
+    );
+    allocator.fail_at = allocator.allocation_attempts + 1;
+    DR_REQUIRE(!dr_push(&engine, &added, 1, 0, 1, 1), "forced lane-growth failure unexpectedly succeeded");
+    DR_REQUIRE(
+        engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 1 && engine.capacity == 16,
+        "failed lane growth discarded storage or published a record"
+    );
+
+    allocator.fail_at = 0;
+    DR_REQUIRE(dr_push(&engine, &added, 1, 0, 1, 1), "lane-growth retry failed");
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    DR_REQUIRE(
+        engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 2 && engine.capacity == 16,
+        "expanded unit did not retain the grown lane table"
+    );
+
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_begin(&engine, 1) == MARKDOWN_CORE_DELIMITER_OK,
+        "third unit did not begin"
+    );
+    allocations_after_first_unit = allocator.allocation_attempts;
+    DR_REQUIRE(dr_push(&engine, &first, 1, 0, 2, 1), "third-unit push failed");
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    DR_REQUIRE(
+        allocator.allocation_attempts == allocations_after_first_unit,
+        "retained lane/record capacity allocated again"
+    );
+    engine.lanes[1].floor_epoch = 1;
+    engine.lanes[1].floor[0] = engine.lanes[1].floor[1] = engine.lanes[1].floor[2] = 7;
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_begin(&engine, 2) == MARKDOWN_CORE_DELIMITER_OK,
+        "regrown rule set did not begin"
+    );
+    DR_REQUIRE(
+        engine.lanes[1].floor_epoch == 0 && engine.lanes[1].floor[0] == 0 && engine.lanes[1].floor[1] == 0 &&
+            engine.lanes[1].floor[2] == 0,
+        "reactivated lane retained stale search floors"
+    );
+    DR_REQUIRE(dr_push(&engine, &added, 1, 0, 3, 1), "reactivated-lane push failed");
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    DR_REQUIRE(
+        allocator.allocation_attempts == allocations_after_first_unit,
+        "reactivated retained lane allocated again"
+    );
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "cross-unit reuse left invalid topology");
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
+    return result;
+}
+
 static int case_reducer_failure_is_terminal(void) {
     static const char case_name[] = "reducer_failure_is_terminal";
     static const markdown_core_delimiter_rule rule = {
@@ -721,6 +798,7 @@ static const dr_case DR_CASES[] = {
     {"residual_run_progress", case_residual_run_progress},
     {"geometric_arena_growth", case_geometric_arena_growth},
     {"arena_growth_oom_transaction", case_arena_growth_oom_transaction},
+    {"unit_lane_growth_and_reuse", case_unit_lane_growth_and_reuse},
     {"reducer_failure_is_terminal", case_reducer_failure_is_terminal},
     {"invalid_push_is_transactional", case_invalid_push_is_transactional},
 };
