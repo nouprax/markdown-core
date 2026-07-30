@@ -25,20 +25,30 @@ relevant specifications or architecture documentation instead of this file.
   behavior, or maintenance debt for a short-term delivery or benchmark gain.
   If the durable design requires a broader refactor, perform that refactor and
   protect its invariants with tests.
-- Performance is a design requirement, not a later patch. Reason about
-  asymptotic work, allocation behavior, data locality, and adversarial inputs;
-  then use measurements as evidence. Do not trade a robust general design for
-  a locally faster special case.
 - Before changing an abstraction, audit all of its callers and consumers so
   the result is repository-wide and internally consistent. Remove superseded
   paths rather than leaving parallel legacy and replacement mechanisms.
-- Tests must verify semantic and complexity invariants, including adversarial
-  shapes that would defeat the previous design. Passing the current examples
-  is necessary but is not proof that the abstraction is sound.
+- Tests must verify semantic invariants and failure boundaries. Passing the
+  current examples is necessary but is not proof that the abstraction is
+  sound.
 - Code review follows the same standard. Reject changes that merely mask a
   symptom, encode an input-shape exception, duplicate an existing model,
   obscure ownership or lifecycle, or buy short-term gains by planting future
   failure modes—even when the patch is small and all current tests pass.
+
+## Performance and complexity
+
+- Performance is a design requirement, not a later patch. Reason about
+  asymptotic work, allocation behavior, data locality, and adversarial inputs
+  before choosing the abstraction.
+- Benchmarks are diagnostic evidence and regression gates; they are not an
+  oracle for designing alternate algorithms around the measured examples.
+- Do not introduce branches based on benchmark-observed cardinality, input
+  size, or a convenient “common case” to recover a local number. Improve
+  constant factors by improving the shared algorithm or its data structure.
+- Complexity tests must verify the intended general invariant, including
+  adversarial shapes that defeat the former implementation. A favorable timing
+  result alone is not proof that the implementation is sound.
 
 ## Execution environment boundaries
 
