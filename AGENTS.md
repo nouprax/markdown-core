@@ -1,10 +1,15 @@
-# Repository agent instructions
+# Agent instructions
+
+These instructions intentionally contain repository-independent engineering
+and execution principles. Keep product concepts, module-specific rules,
+temporary project state, and repository-layout-dependent references in the
+relevant specifications or architecture documentation instead of this file.
 
 ## First-principles engineering
 
-- Every code change must be designed from the full set of current
-  requirements and invariants. Do not optimize for the smallest patch, the
-  fewest edited lines, or the quickest local fix.
+- Every code change must be designed from the full set of current requirements
+  and invariants. Do not optimize for the smallest patch, the fewest edited
+  lines, or the quickest local fix.
 - Prefer the simplest coherent abstraction that makes semantics, ownership,
   lifecycle, failure behavior, and performance explicit. “Minimal” means the
   fewest independent concepts and mechanisms, not the smallest diff.
@@ -46,26 +51,7 @@
   CLI is logged out or offline.
 - When a task depends on a host integration, use the available host-scoped or
   escalated mechanism to verify it before reporting a blocker or asking the
-  user to reconfigure anything. State which environment produced the
-  evidence.
+  user to reconfigure anything. State which environment produced the evidence.
 - Never work around sandbox boundaries implicitly. Use the platform's explicit
   approval or connector path, keep the requested authority scoped to the task,
   and distinguish an approval denial from a real host-side failure.
-
-## Performance refactoring
-
-- Benchmarks are diagnostic evidence and regression gates; they are not an
-  oracle for designing alternate algorithms around the measured examples.
-- Do not introduce branches based on benchmark-observed cardinality, input
-  size, or a convenient “common case” (for example `count == 1`) to recover a
-  local number. One semantic operation must have one coherent algorithm and
-  data model.
-- Improve constant factors by improving that shared algorithm or its data
-  structure. A separate path is acceptable only when a documented semantic,
-  ownership, or lifecycle invariant makes it a genuinely different
-  operation—not because a benchmark happens to favor it.
-- Complexity tests must verify the intended general invariant, including
-  adversarial shapes that defeat the former implementation.
-
-The durable rationale is recorded in
-`docs/specs/test-architecture.md` and the active first-principles ledger.
