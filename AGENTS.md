@@ -35,6 +35,23 @@
   obscure ownership or lifecycle, or buy short-term gains by planting future
   failure modes—even when the patch is small and all current tests pass.
 
+## Execution environment boundaries
+
+- Treat the sandbox, container, and host machine as distinct execution
+  environments. A result observed inside the sandbox is evidence about the
+  sandbox only unless the tool explicitly runs with host access.
+- Do not infer host credential, network, keychain, GUI, daemon, device, or
+  filesystem state from a sandbox failure. In particular, a sandboxed
+  `gh auth status` or GitHub network error does not prove that the host GitHub
+  CLI is logged out or offline.
+- When a task depends on a host integration, use the available host-scoped or
+  escalated mechanism to verify it before reporting a blocker or asking the
+  user to reconfigure anything. State which environment produced the
+  evidence.
+- Never work around sandbox boundaries implicitly. Use the platform's explicit
+  approval or connector path, keep the requested authority scoped to the task,
+  and distinguish an approval denial from a real host-side failure.
+
 ## Performance refactoring
 
 - Benchmarks are diagnostic evidence and regression gates; they are not an
