@@ -82,8 +82,6 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
                 "autolinks",
                 "taskLists",
                 "formulas",
-                "dollarFormulaDelimiters",
-                "latexFormulaDelimiters",
                 "directives",
             )
         val lines =

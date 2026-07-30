@@ -235,8 +235,6 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
         &options->autolinks,
         &options->task_lists,
         &options->formulas,
-        &options->dollar_formula_delimiters,
-        &options->latex_formula_delimiters,
         &options->directives
     };
     size_t i;
@@ -361,8 +359,6 @@ static int case_random_edits(const char *spec_path) {
         options.autolinks = true;
         options.task_lists = true;
         options.formulas = true;
-        options.dollar_formula_delimiters = true;
-        options.latex_formula_delimiters = true;
         options.directives = true;
         for (round = 0; round < 8; round++) {
             char context[64];

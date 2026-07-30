@@ -289,9 +289,9 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-static markdown_core_node *parse_with_formula_extension_options(const char *markdown, int options) {
+static markdown_core_node *parse_with_formula_extension(const char *markdown) {
 
-    markdown_core_parser *parser = markdown_core_parser_new(options);
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
     markdown_core_extension *formula = markdown_core_extension_find("formula");
 
     if (formula) {
@@ -303,17 +303,6 @@ static markdown_core_node *parse_with_formula_extension_options(const char *mark
     markdown_core_parser_free(parser);
 
     return doc;
-}
-
-static markdown_core_node *parse_with_formula_extension(const char *markdown) {
-    return parse_with_formula_extension_options(markdown, MARKDOWN_CORE_OPT_DEFAULT);
-}
-
-static markdown_core_node *parse_with_dollar_formula_extension(const char *markdown) {
-    return parse_with_formula_extension_options(
-        markdown,
-        MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS
-    );
 }
 
 static markdown_core_node *parse_with_directive_extension(const char *markdown) {
@@ -335,24 +324,6 @@ static markdown_core_node *parse_with_directive_extension(const char *markdown) 
 static void formula_extension_accessors(test_batch_runner *runner) {
     markdown_core_node *doc = parse_with_formula_extension("Inline $x+y$ end.\n");
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
-    markdown_core_node *text = markdown_core_node_first_child(paragraph);
-
-    INT_EQ(
-        runner,
-        markdown_core_node_get_type(text),
-        MARKDOWN_CORE_NODE_TEXT,
-        "dollar formula delimiters require opt-in"
-    );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(text),
-        "Inline $x+y$ end.",
-        "dollar formula delimiter text remains literal without opt-in"
-    );
-    markdown_core_node_free(doc);
-
-    doc = parse_with_dollar_formula_extension("Inline $x+y$ end.\n");
-    paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
 
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "formula type string");
@@ -405,7 +376,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     );
     markdown_core_node_free(doc);
 
-    doc = parse_with_dollar_formula_extension("$$x+y$$\n");
+    doc = parse_with_formula_extension("$$x+y$$\n");
     formula = markdown_core_node_first_child(doc);
     STR_EQ(
         runner,
@@ -422,7 +393,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     );
     markdown_core_node_free(doc);
 
-    doc = parse_with_dollar_formula_extension("Display $$a+b$$ end.\n");
+    doc = parse_with_formula_extension("Display $$a+b$$ end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "standalone formula inline type string");
@@ -435,10 +406,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     );
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options(
-        "Inline \\\\(x+y\\\\) end.\n",
-        MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS
-    );
+    doc = parse_with_formula_extension("Inline \\\\(x+y\\\\) end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
@@ -456,10 +424,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     );
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options(
-        "Display \\\\[x+y\\\\] end.\n",
-        MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS
-    );
+    doc = parse_with_formula_extension("Display \\\\[x+y\\\\] end.\n");
     paragraph = markdown_core_node_first_child(doc);
     formula = markdown_core_node_next(markdown_core_node_first_child(paragraph));
     STR_EQ(
@@ -482,10 +447,7 @@ static void formula_extension_accessors(test_batch_runner *runner) {
     );
     markdown_core_node_free(doc);
 
-    doc = parse_with_formula_extension_options(
-        "\\\\[x+y\\\\]\n",
-        MARKDOWN_CORE_OPT_DEFAULT | MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS
-    );
+    doc = parse_with_formula_extension("\\\\[x+y\\\\]\n");
     formula = markdown_core_node_first_child(doc);
     STR_EQ(
         runner,

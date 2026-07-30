@@ -244,13 +244,12 @@ booleans:
 | `autolinks` | `true` |
 | `taskLists` | `true` |
 | `formulas` | `true` |
-| `dollarFormulaDelimiters` | `true` |
-| `latexFormulaDelimiters` | `true` |
 | `directives` | `true` |
 
 Disabling an extension disables recognition of its syntax and produces the
-same fallback core AST on every platform. Delimiter options have no effect
-when `formulas` is false. Scope tracking is mandatory and is not an option.
+same fallback core AST on every platform. `formulas` controls every supported
+formula form together: dollar delimiters, LaTeX delimiters, and `formula`
+fenced code. Scope tracking is mandatory and is not an option.
 Renderer-only `unsafe`, `github-pre-lang`, and `full-info-string` options do
 not exist. Raw HTML, URLs, and full code info strings are always retained.
 

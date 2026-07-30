@@ -25,7 +25,7 @@ dump interface existed, so Phase 6 introduced one instead of repurposing XML.
 
 The stable header exposes only:
 
-- explicit default initialization for the eleven typed parse options;
+- explicit default initialization for the nine typed parse options;
 - parse, root, and document-free operations;
 - canonical node kinds, scope, child count, first-child, and next-sibling
   traversal;

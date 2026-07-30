@@ -6,6 +6,11 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Breaking (C, Swift, Kotlin, and ECMAScript): formula parsing now has one
+  `formulas` option. Enabling it recognizes dollar delimiters, LaTeX
+  delimiters, and `formula` fenced code together; disabling it turns off the
+  complete formula grammar. The separate dollar and LaTeX delimiter options
+  and their native parser flags have been removed.
 - Breaking (C, Swift, Kotlin, and ECMAScript): directive labels are now
   first-class `DirectiveLabel` markup in the canonical AST. A present label is
   the directive's first real child, owns its complete inline content, and has a

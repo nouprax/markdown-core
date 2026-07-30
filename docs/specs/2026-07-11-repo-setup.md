@@ -639,9 +639,8 @@ Document.parse(markdownSource, options = ParseOptions.default)
 - strikethrough
 - autolink
 - task list
-- formula extension
-- dollar formula delimiters
-- LaTeX formula delimiters
+- formulas, including dollar delimiters, LaTeX delimiters, and `formula`
+  fenced code
 - directive extension
 
 Consumer 可以通过 `ParseOptions` 分别启用或关闭上述 AST-affecting 能力。任何 options 组合都必须在三端产生相同 AST。
@@ -1661,7 +1660,7 @@ Acceptance：
 4. Swift、Kotlin、ES 的 `Document.parse` 都是同步 API；ES package 负责在该入口可用前完成 WASM 初始化，异步调度由 consumer 决定。
 5. AST 保留类型名 `List`；Kotlin consumer 使用 `com.nouprax.markdown.core.List` 或 import alias 解决标准集合重名。
 6. 每个 `Markup` 公开完整、非 optional 的 `Scope(start, end)`，不只公开 start position；坐标数值与语义原样继承同一 release 的 native C parser，binding 不建立额外解释层。
-7. Consumer 可逐次传入跨端一致的 immutable `ParseOptions`。默认启用 smart punctuation、footnotes、strip HTML comments、table、strikethrough、autolink、task list、formula、dollar/LaTeX formula delimiters 和 directive；source tracking 永远启用。`unsafe`、`github-pre-lang`、`full-info-string` 等 renderer-only flags 不进入新 options。
+7. Consumer 可逐次传入跨端一致的 immutable `ParseOptions`。默认启用 smart punctuation、footnotes、strip HTML comments、table、strikethrough、autolink、task list、formula（统一包含 dollar delimiters、LaTeX delimiters 与 `formula` fenced code）和 directive；source tracking 永远启用。`unsafe`、`github-pre-lang`、`full-info-string` 等 renderer-only flags 不进入新 options。
 8. 三端同时公开 typed Visitor 和只读 depth-first Walker API。
 9. TypeScript 使用递归 `readonly`，但不实施任何 runtime freeze。
 10. C facade 使用 length-delimited UTF-8 string view 与显式 error/free model；不承诺跨 release C binary ABI compatibility，每次 release clean rebuild，不提供兼容 shim。

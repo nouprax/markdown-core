@@ -740,8 +740,7 @@ static const char *FB_SWEEP_EXTENSIONS[] = {"table", "strikethrough", "autolink"
 
 static markdown_core_node *fb_sweep_parse(markdown_core_mem *mem) {
     int options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART |
-                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS | MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS |
-                  MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
+                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
     markdown_core_parser *parser = markdown_core_parser_new_with_mem(options, mem);
     markdown_core_node *root;
     size_t i;

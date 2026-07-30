@@ -38,7 +38,7 @@ typedef struct pc_context {
 static const char *const PC_TABLE_ONLY[] = {"table", NULL};
 static const char *const PC_AUTOLINK_ONLY[] = {"autolink", NULL};
 static const char *const PC_DIRECTIVE_ONLY[] = {"directive", NULL};
-static const char *const PC_FORMULA[] = {"formula", "dollar-formula-delimiters", "latex-formula-delimiters", NULL};
+static const char *const PC_FORMULA[] = {"formula", NULL};
 
 /* Builds prefix + unit*count + suffix into context->input. */
 static int pc_build(pc_context *context, const char *prefix, const char *unit, size_t count, const char *suffix) {

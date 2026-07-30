@@ -20,6 +20,30 @@ class ApiTest {
     }
 
     @Test
+    fun formulasOptionGatesEverySupportedSyntax() {
+        val inlineDollar = Document.parse("\$x\$\n")
+        val blockDollar = Document.parse("\$\$x\$\$\n")
+        val inlineLaTeX = Document.parse("\\\\(x\\\\)\n")
+        val blockLaTeX = Document.parse("\\\\[x\\\\]\n")
+        val fenced = Document.parse("```formula\nx\n```\n")
+
+        assertIs<Formula>((inlineDollar.content.first() as Paragraph).content.first())
+        assertIs<FormulaBlock>(blockDollar.content.first())
+        assertIs<Formula>((inlineLaTeX.content.first() as Paragraph).content.first())
+        assertIs<FormulaBlock>(blockLaTeX.content.first())
+        assertIs<FormulaBlock>(fenced.content.first())
+
+        val disabled = ParseOptions(formulas = false)
+        assertIs<Text>((Document.parse("\$x\$\n", disabled).content.first() as Paragraph).content.first())
+        assertIs<Paragraph>(Document.parse("\$\$x\$\$\n", disabled).content.first())
+        assertIs<Text>(
+            (Document.parse("\\\\(x\\\\)\n", disabled).content.first() as Paragraph).content.first(),
+        )
+        assertIs<Paragraph>(Document.parse("\\\\[x\\\\]\n", disabled).content.first())
+        assertIs<CodeBlock>(Document.parse("```formula\nx\n```\n", disabled).content.first())
+    }
+
+    @Test
     fun visitorAndWalkerAreTypedAndDepthFirst() {
         val document = Document.parse("# Heading\n\nBody\n")
         val visitor = KindVisitor()

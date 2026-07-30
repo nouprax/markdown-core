@@ -74,7 +74,8 @@ on_enter/on_exit 是 renderer payload)。
 
 选项映射说明:legacy「extension 挂载但 option 关闭」的 option-gates 套件在
 facade 中等价于对应 `ParseOptions` 字段为 false;`-e footnotes`→`footnotes`
-字段;tagfilter 不进入 `ParseOptions`(无 AST 语义)。
+字段;tagfilter 不进入 `ParseOptions`(无 AST 语义)。后续 formula 配置已收敛为
+单一 `formulas` 字段，formula option-gate 现在关闭完整 extension 与全部 delimiter。
 
 ## 4. 测试基础设施变化
 

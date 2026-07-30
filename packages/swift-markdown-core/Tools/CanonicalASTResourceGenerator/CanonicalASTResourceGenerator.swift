@@ -125,8 +125,6 @@ private struct CanonicalParseOptions: Codable {
     let autolinks: Bool
     let taskLists: Bool
     let formulas: Bool
-    let dollarFormulaDelimiters: Bool
-    let latexFormulaDelimiters: Bool
     let directives: Bool
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
@@ -138,8 +136,6 @@ private struct CanonicalParseOptions: Codable {
         case autolinks
         case taskLists
         case formulas
-        case dollarFormulaDelimiters
-        case latexFormulaDelimiters
         case directives
     }
 
@@ -164,8 +160,6 @@ private struct CanonicalParseOptions: Codable {
         autolinks = try values.decode(Bool.self, forKey: .autolinks)
         taskLists = try values.decode(Bool.self, forKey: .taskLists)
         formulas = try values.decode(Bool.self, forKey: .formulas)
-        dollarFormulaDelimiters = try values.decode(Bool.self, forKey: .dollarFormulaDelimiters)
-        latexFormulaDelimiters = try values.decode(Bool.self, forKey: .latexFormulaDelimiters)
         directives = try values.decode(Bool.self, forKey: .directives)
     }
 }

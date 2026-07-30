@@ -302,11 +302,7 @@
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZ)V
-  method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZZ)V
-  method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.component1 ()Z
-  method com/nouprax/markdown/core/ParseOptions.component10 ()Z
-  method com/nouprax/markdown/core/ParseOptions.component11 ()Z
   method com/nouprax/markdown/core/ParseOptions.component2 ()Z
   method com/nouprax/markdown/core/ParseOptions.component3 ()Z
   method com/nouprax/markdown/core/ParseOptions.component4 ()Z
@@ -315,14 +311,12 @@
   method com/nouprax/markdown/core/ParseOptions.component7 ()Z
   method com/nouprax/markdown/core/ParseOptions.component8 ()Z
   method com/nouprax/markdown/core/ParseOptions.component9 ()Z
-  method com/nouprax/markdown/core/ParseOptions.copy (ZZZZZZZZZZZ)Lcom/nouprax/markdown/core/ParseOptions;
+  method com/nouprax/markdown/core/ParseOptions.copy (ZZZZZZZZZ)Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/ParseOptions.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/ParseOptions.getAutolinks ()Z
   method com/nouprax/markdown/core/ParseOptions.getDirectives ()Z
-  method com/nouprax/markdown/core/ParseOptions.getDollarFormulaDelimiters ()Z
   method com/nouprax/markdown/core/ParseOptions.getFootnotes ()Z
   method com/nouprax/markdown/core/ParseOptions.getFormulas ()Z
-  method com/nouprax/markdown/core/ParseOptions.getLatexFormulaDelimiters ()Z
   method com/nouprax/markdown/core/ParseOptions.getSmartPunctuation ()Z
   method com/nouprax/markdown/core/ParseOptions.getStrikethrough ()Z
   method com/nouprax/markdown/core/ParseOptions.getStripHTMLComments ()Z

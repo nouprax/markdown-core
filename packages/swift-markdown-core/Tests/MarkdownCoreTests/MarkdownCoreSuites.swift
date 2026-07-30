@@ -25,6 +25,34 @@ import Testing
                 .content.first is Paragraph
         )
     }
+
+    @Test("the formulas switch controls every supported formula syntax")
+    func formulaOption() throws {
+        let inlineDollar = try Document.parse("$x$\n")
+        let blockDollar = try Document.parse("$$x$$\n")
+        let inlineLaTeX = try Document.parse("\\\\(x\\\\)\n")
+        let blockLaTeX = try Document.parse("\\\\[x\\\\]\n")
+        let fenced = try Document.parse("```formula\nx\n```\n")
+
+        #expect((inlineDollar.content.first as? Paragraph)?.content.first is Formula)
+        #expect(blockDollar.content.first is FormulaBlock)
+        #expect((inlineLaTeX.content.first as? Paragraph)?.content.first is Formula)
+        #expect(blockLaTeX.content.first is FormulaBlock)
+        #expect(fenced.content.first is FormulaBlock)
+
+        let disabled = ParseOptions(formulas: false)
+        #expect(
+            (try Document.parse("$x$\n", options: disabled).content.first as? Paragraph)?
+                .content.first is Text
+        )
+        #expect(try Document.parse("$$x$$\n", options: disabled).content.first is Paragraph)
+        #expect(
+            (try Document.parse("\\\\(x\\\\)\n", options: disabled).content.first as? Paragraph)?
+                .content.first is Text
+        )
+        #expect(try Document.parse("\\\\[x\\\\]\n", options: disabled).content.first is Paragraph)
+        #expect(try Document.parse("```formula\nx\n```\n", options: disabled).content.first is CodeBlock)
+    }
 }
 
 @Suite("unicode") struct UnicodeSuite {
@@ -133,15 +161,11 @@ private func makeConcurrencyCombos() throws -> [ConcurrencyCombo] {
             autolinks: false,
             taskLists: false,
             formulas: false,
-            dollarFormulaDelimiters: false,
-            latexFormulaDelimiters: false,
             directives: false
         ),
         ParseOptions(
             strikethrough: false,
-            formulas: false,
-            dollarFormulaDelimiters: false,
-            latexFormulaDelimiters: false
+            formulas: false
         ),
     ]
     return try sources.flatMap { source in

@@ -32,15 +32,11 @@ class ConcurrencyJvmTest {
                     autolinks = false,
                     taskLists = false,
                     formulas = false,
-                    dollarFormulaDelimiters = false,
-                    latexFormulaDelimiters = false,
                     directives = false,
                 ),
                 ParseOptions(
                     strikethrough = false,
                     formulas = false,
-                    dollarFormulaDelimiters = false,
-                    latexFormulaDelimiters = false,
                 ),
             )
         val combos =

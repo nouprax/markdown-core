@@ -170,19 +170,13 @@ static markdown_core_node *make_formula_node(
     return node;
 }
 
-static int scan_formula_block_open(
-    const unsigned char *data,
-    markdown_core_bufsize len,
-    markdown_core_bufsize pos,
-    int latex_formula_delimiters,
-    int dollar_formula_delimiters
-) {
-    if (latex_formula_delimiters && pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' &&
-        data[pos + 2] == '[' && markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 3)) {
+static int scan_formula_block_open(const unsigned char *data, markdown_core_bufsize len, markdown_core_bufsize pos) {
+    if (pos + 3 <= len && data[pos] == '\\' && data[pos + 1] == '\\' && data[pos + 2] == '[' &&
+        markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 3)) {
         return FORMULA_BLOCK_DELIM_LATEX_BACKSLASH;
     }
 
-    if (dollar_formula_delimiters && pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
+    if (pos + 2 <= len && data[pos] == '$' && data[pos + 1] == '$' &&
         markdown_core_ext_has_only_spaces_until_line_end(data, len, pos + 2)) {
         return FORMULA_BLOCK_DELIM_DOLLAR;
     }
@@ -226,13 +220,7 @@ static markdown_core_node *try_opening_formula_block(
         return NULL;
     }
 
-    block_delim = scan_formula_block_open(
-        input,
-        (markdown_core_bufsize)len,
-        (markdown_core_bufsize)first_nonspace,
-        parser->options & MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS,
-        parser->options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS
-    );
+    block_delim = scan_formula_block_open(input, (markdown_core_bufsize)len, (markdown_core_bufsize)first_nonspace);
     if (block_delim == FORMULA_BLOCK_DELIM_NONE) {
         return NULL;
     }
@@ -351,14 +339,6 @@ static markdown_core_bufsize scan_backslash_close(
     return 0;
 }
 
-static int latex_formula_delimiters_enabled(markdown_core_parser *parser) {
-    return parser->options & MARKDOWN_CORE_OPT_LATEX_FORMULA_DELIMITERS;
-}
-
-static int dollar_formula_delimiters_enabled(markdown_core_parser *parser) {
-    return parser->options & MARKDOWN_CORE_OPT_DOLLAR_FORMULA_DELIMITERS;
-}
-
 static markdown_core_node *match(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -373,10 +353,6 @@ static markdown_core_node *match(
     markdown_core_bufsize closer_len;
 
     if (character == '$') {
-        if (!dollar_formula_delimiters_enabled(parser)) {
-            return NULL;
-        }
-
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
             return match_formula_delimiter(parser, inline_parser, FORMULA_DELIM_DOLLAR_DISPLAY, 2, 1, 1);
         }
@@ -392,56 +368,52 @@ static markdown_core_node *match(
             );
         }
     } else if (character == '\\') {
-        if (latex_formula_delimiters_enabled(parser)) {
-            opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
-            if (opener_len) {
-                return match_formula_delimiter(
-                    parser,
-                    inline_parser,
-                    FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                    opener_len,
-                    1,
-                    0
-                );
-            }
-
-            opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
-            if (opener_len) {
-                return match_formula_delimiter(
-                    parser,
-                    inline_parser,
-                    FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                    opener_len,
-                    1,
-                    0
-                );
-            }
+        opener_len = scan_formula_latex_backslash_display_open(chunk->data, len, offset);
+        if (opener_len) {
+            return match_formula_delimiter(
+                parser,
+                inline_parser,
+                FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                opener_len,
+                1,
+                0
+            );
         }
 
-        if (latex_formula_delimiters_enabled(parser)) {
-            closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
-            if (closer_len) {
-                return match_formula_delimiter(
-                    parser,
-                    inline_parser,
-                    FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
-                    closer_len,
-                    0,
-                    1
-                );
-            }
+        opener_len = scan_formula_latex_backslash_inline_open(chunk->data, len, offset);
+        if (opener_len) {
+            return match_formula_delimiter(
+                parser,
+                inline_parser,
+                FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                opener_len,
+                1,
+                0
+            );
+        }
 
-            closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
-            if (closer_len) {
-                return match_formula_delimiter(
-                    parser,
-                    inline_parser,
-                    FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
-                    closer_len,
-                    0,
-                    1
-                );
-            }
+        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ']', 2);
+        if (closer_len) {
+            return match_formula_delimiter(
+                parser,
+                inline_parser,
+                FORMULA_DELIM_LATEX_BACKSLASH_DISPLAY,
+                closer_len,
+                0,
+                1
+            );
+        }
+
+        closer_len = scan_backslash_close(chunk->data, chunk->len, offset, ')', 2);
+        if (closer_len) {
+            return match_formula_delimiter(
+                parser,
+                inline_parser,
+                FORMULA_DELIM_LATEX_BACKSLASH_INLINE,
+                closer_len,
+                0,
+                1
+            );
         }
     }
 

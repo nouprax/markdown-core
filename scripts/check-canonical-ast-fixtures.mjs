@@ -67,8 +67,6 @@ const optionNames = [
     "autolinks",
     "taskLists",
     "formulas",
-    "dollarFormulaDelimiters",
-    "latexFormulaDelimiters",
     "directives"
 ];
 const stateValidators = {

@@ -80,7 +80,7 @@ int sr_replay_commit(sr_replay *replay);
  * directly.  The format is:
  *
  *   options: two little-endian bytes; bit i enables parse option i in
- *     markdown_core_parse_options field order (11 bits used)
+ *     markdown_core_parse_options field order (9 bits used)
  *   then operations until the script runs out, selected by op & 3:
  *     0 insert   pos16 len8 bytes...
  *     1 delete   pos16 span16
