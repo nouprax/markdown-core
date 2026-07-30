@@ -4,8 +4,8 @@
  * per input byte. Scanner/map/reference cases span 4 KiB to 128 MiB;
  * delimiter-dense cases use a smaller 4 KiB to 64 KiB span so the regression
  * test does not require millions of AST nodes. Every parse-scaling endpoint
- * is warmed once before adaptive timed sampling. Both spans expose nonlinear
- * growth without relying on absolute wall-clock thresholds. Scope-table
+ * is warmed once before adaptive process-CPU sampling. Both spans expose
+ * nonlinear growth without relying on absolute time thresholds. Scope-table
  * materialization separately walks committed deep trees through the public
  * batch API, pinning the first-scope-use path to linear growth. Ordered delta
  * materialization measures a deep touched path independently of parsing,
@@ -24,7 +24,7 @@ static const size_t SCALING_SIZES[] = {4096, 134217728};
 static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
 #define SCALING_STEPS (sizeof(SCALING_SIZES) / sizeof(SCALING_SIZES[0]))
 #define SCALING_REPEATS 3
-#define MIN_SAMPLE_NS 25000000ULL
+#define MIN_SAMPLE_CPU_NS 25000000ULL
 /* A linear parser has constant asymptotic work per input byte, but millions of
  * parsed nodes cross allocator and cache regimes that a 4 KiB sample does not.
  * The inherited qsort path measured 4.442x across these endpoints; reject at
@@ -606,12 +606,12 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
     return 0;
 }
 
-/* Session repeats take the minimum, not the median: contention on shared CI
- * runners only ever adds time, and it inflates the large session (the
- * cache- and bandwidth-heavy working set) far more than the small one,
- * which skews the ratio the flatness bound is about. The minimum estimates
- * the uncontended per-commit cost on both sides of that ratio. Five windows
- * give the minimum a real chance to see a quiet slice on a noisy machine. */
+/* Session repeats take the minimum, not the median: competing processes are
+ * excluded by the process CPU clock, but cache and memory-bandwidth pressure
+ * can still inflate the large working set more than the small one. The
+ * minimum estimates the uncontended per-commit cost on both sides of that
+ * ratio. Five windows give both endpoints a chance to observe a quiet cache
+ * and memory slice. */
 #define CC_SESSION_REPEATS 5
 
 static int cc_session_measure(size_t size, int mode, double *seconds_per_commit) {
@@ -625,7 +625,7 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
         return -1;
     }
     for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t commits = 0;
         double sample;
@@ -635,8 +635,8 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
                 return -1;
             }
             commits += CC_SESSION_OPS;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         sample = (double)elapsed / (1e9 * (double)commits);
         if (repeat == 0 || sample < floor_seconds) {
             floor_seconds = sample;
@@ -724,7 +724,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
         return -1;
     }
     for (repeat = 0; repeat < CC_SESSION_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t commits = 0;
         do {
@@ -752,8 +752,8 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
             }
             op_counter++;
             commits++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         {
             double sample = (double)elapsed / (1e9 * (double)commits);
             if (repeat == 0 || sample < floor_seconds) {
@@ -839,7 +839,7 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t iterations = 0;
         do {
@@ -860,8 +860,8 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
                 return -1;
             }
             iterations++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_session_free(session);
@@ -954,7 +954,7 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; ++repeat) {
-        uint64_t started = ts_monotonic_ns();
+        uint64_t started = ts_process_cpu_ns();
         uint64_t elapsed;
         size_t iterations = 0;
         do {
@@ -979,8 +979,8 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
                 return -1;
             }
             ++iterations;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_delta_free(changes);
@@ -1059,7 +1059,7 @@ static int cc_measure(const char *input, size_t length, const char *option, cc_v
         uint64_t started;
         uint64_t elapsed;
         size_t iterations = 0;
-        started = ts_monotonic_ns();
+        started = ts_process_cpu_ns();
         do {
             markdown_core_document *document = ts_ast_parse((const uint8_t *)input, length, &options);
             if (!document) {
@@ -1067,18 +1067,19 @@ static int cc_measure(const char *input, size_t length, const char *option, cc_v
             }
             markdown_core_document_free(document);
             iterations++;
-            elapsed = ts_monotonic_ns() - started;
-        } while (elapsed < MIN_SAMPLE_NS);
+            elapsed = ts_process_cpu_ns() - started;
+        } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
         /* Classify from the first post-warmup bucket. A single parse already
          * gives a long, stable sample for the large endpoint; later one-parse
-         * buckets are scheduler outliers handled by the median below. */
+         * buckets are cache/memory outliers handled by the median below. */
         if (repeat == 0 && iterations == 1) {
             *seconds = samples[repeat];
             return 0;
         }
     }
-    /* Median of three for short samples where scheduler noise matters. */
+    /* Median of three for short samples where cache and allocator noise
+     * matters. */
     {
         double a = samples[0], b = samples[1], c = samples[2];
         double high = a > b ? (a > c ? a : c) : (b > c ? b : c);

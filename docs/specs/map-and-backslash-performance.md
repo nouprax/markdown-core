@@ -264,12 +264,14 @@ normalized slowdown = large_time / small_time / 32768
 最新本机 normalized slowdown 为 0.663–1.164。128 MiB unclosed-backslash 从约 2.49 秒降至
 0.189 秒，修复后为 0.979×。
 
-wall-clock threshold 为 4.0，而不是把 2.0 当作 n log n 的数学判别线。原因是 128 MiB
-解析会创建数百万个对象并跨越 4 KiB 样本没有覆盖的 allocator/cache regime；远端 macOS
-上 expected-linear unique-attribute hash path 曾测得 2.753–3.318。4.0 仍低于已测旧 sort
-路径的 4.442，并能拒绝旧 backslash 路径的 9.850。
+normalized threshold 为 4.0，而不是把 2.0 当作 n log n 的数学判别线。它最初由 wall-clock
+数据校准：128 MiB 解析会创建数百万个对象并跨越 4 KiB 样本没有覆盖的 allocator/cache
+regime；远端 macOS 上 expected-linear unique-attribute hash path 曾测得 2.753–3.318，
+旧 sort 路径为 4.442，旧 backslash 路径为 9.850。当前 complexity runner 对同一
+normalized bound 使用 process CPU time，排除 descheduling，但仍保留 allocator/cache
+计算成本。
 
-timing gate 负责捕获真实端到端退化，但不单独证明算法复杂度。结构性保证来自：
+CPU-timing gate 负责捕获真实计算量退化，但不单独证明算法复杂度。结构性保证来自：
 
 - 0.5 load factor；
 - 64-probe hard limit，以及探测耗尽后的单次事务性扩容重试；

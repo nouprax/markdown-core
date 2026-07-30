@@ -141,7 +141,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
-| `complexity` | `pathological_complexity_*` 附加的次级调度 label:sanitizer presets 用它排除 wall-clock 复杂度 gate,这些 case 的主 label 仍是 `pathological` |
+| `complexity` | `pathological_complexity_*` 附加的次级调度 label:sanitizer presets 用它排除 process-CPU 复杂度 gate,这些 case 的主 label 仍是 `pathological` |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
 | `packaging` | corpus/workspace 政策 guard(`packaging_corpus_guard`) |
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
@@ -254,12 +254,14 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   程残留;CLI 测试通过管道等待退出)。
 - 串行/资源锁:benchmark 与 complexity 测试标记 `RUN_SERIAL`;benchmark preset
   以单 job 执行。
-- Performance 测量固定 warmup/repeat(complexity parse-scaling:每个 endpoint
-  warmup 1,随后长样本单次完整 parse、短样本 3 个至少 25 ms 的 sample 取中位
-  数;benchmark:warmup 1 + repeats 5 取中位数)。complexity 的 parse-scaling
-  cases 分别以 scanner/map/reference 4 KiB → 128 MiB 与 delimiter-dense 4 KiB
-  → 64 KiB endpoint 的每字节成本断言渐近趋势；benchmark 使用 doubling 相对比
-  率；均不使用绝对 wall-clock gate。
+- Performance 测量固定 warmup/repeat。complexity runner 统一使用 process
+  user+kernel CPU time，排除 hosted runner 将进程 deschedule 的时间：parse-scaling
+  每个 endpoint warmup 1，随后长样本单次完整 parse、短样本 3 个至少 25 ms CPU
+  的 sample 取中位数。benchmark runner 单独使用 monotonic wall-clock，warmup 1 +
+  repeats 5 取中位数。complexity 的 parse-scaling cases 分别以
+  scanner/map/reference 4 KiB → 128 MiB 与 delimiter-dense 4 KiB → 64 KiB
+  endpoint 的每字节 CPU 成本断言渐近趋势；benchmark 使用 doubling 相对比率；
+  均不使用易波动的绝对时间 gate。
 - Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
   禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
   “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
@@ -269,7 +271,7 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
 - 复杂度 gate 必须验证一般不变量和能击穿旧实现的 adversarial shape。一次更快的
   benchmark 结果不能为违反上述单一算法约束的 special case 提供正当性。
 - Delimiter engine 的 test-only deterministic counters 直接断言 arena growth、
-  per-rule candidate visits、reduction、unlink 与 truncate work；wall-clock
+  per-rule candidate visits、reduction、unlink 与 truncate work；process-CPU
   delimiter-dense scaling 只是其平台级补充证据。
 - 诊断输出确定性:不输出指针、环境路径、locale 或时间戳(benchmark 的时间数
   值除外,其格式固定)。

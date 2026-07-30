@@ -634,7 +634,7 @@ invalid_push_is_transactional
 attachment permutations；complexity runner 使用 balanced dollar/backslash Formula
 adversarial inputs 验证 4 KiB 到 64 KiB 的 normalized scaling。
 
-Wall-clock complexity runner 保留为二级 regression gate，继续使用 normalized endpoint
+Process-CPU complexity runner 保留为二级 regression gate，继续使用 normalized endpoint
 scaling；它不能替代 deterministic operation invariant。
 
 ## 14. 实施映射

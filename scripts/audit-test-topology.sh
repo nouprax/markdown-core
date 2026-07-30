@@ -93,10 +93,10 @@ fi
 
 for preset in correctness-asan correctness-ubsan correctness-tsan; do
     if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
-        fail "$preset includes wall-clock complexity gates"
+        fail "$preset includes timing-based complexity gates"
     fi
 done
-note "sanitizer presets exclude wall-clock complexity gates"
+note "sanitizer presets exclude timing-based complexity gates"
 
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native
