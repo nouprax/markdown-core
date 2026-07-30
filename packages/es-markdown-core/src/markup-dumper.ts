@@ -5,6 +5,8 @@ import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
+import type { CrossLink } from "./model/cross-link.js";
+import type { Embed } from "./model/embed.js";
 import type { Emphasis } from "./model/emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";
 import type { FormulaBlock } from "./model/formula-block.js";
@@ -132,7 +134,9 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
         ),
     visitDirective: (node: Directive) =>
         record("Directive", directiveFields(node.mode, node.name, node.attributes), node.label === null ? 0 : 1),
-    visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", [`id=${jsonString(node.label)}`])
+    visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", [`id=${jsonString(node.label)}`]),
+    visitCrossLink: (node: CrossLink) => record("CrossLink", [`reference=${jsonString(node.reference)}`]),
+    visitEmbed: (node: Embed) => record("Embed", [`reference=${jsonString(node.reference)}`])
 };
 
 function record(kind: string, fields: readonly string[] = [], children = 0): PendingRecord {

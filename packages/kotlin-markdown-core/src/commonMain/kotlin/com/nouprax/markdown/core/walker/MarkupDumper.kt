@@ -212,6 +212,12 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
 
     override fun visit(node: FootnoteReference): DumpRecord =
         record("FootnoteReference", fields = listOf("id=${jsonString(node.label)}"))
+
+    override fun visit(node: CrossLink): DumpRecord =
+        record("CrossLink", fields = listOf("reference=${jsonString(node.reference)}"))
+
+    override fun visit(node: Embed): DumpRecord =
+        record("Embed", fields = listOf("reference=${jsonString(node.reference)}"))
 }
 
 private fun record(

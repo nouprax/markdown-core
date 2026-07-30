@@ -1676,6 +1676,8 @@ void markdown_core_inlines_remove_flanking_skip_character(markdown_core_parser *
     parser->skip_chars[c] = 0;
 }
 
+static delimiter *find_extension_opener_for_special_char(markdown_core_parser *parser, subject *subj, unsigned char c);
+
 static markdown_core_node *try_extensions(
     markdown_core_parser *parser,
     markdown_core_node *parent,
@@ -1684,11 +1686,28 @@ static markdown_core_node *try_extensions(
 ) {
     markdown_core_node *res = NULL;
     markdown_core_llist *tmp;
+    markdown_core_extension *preferred = NULL;
+
+    /*
+     * More than one inline extension may close on ']'. Give the extension
+     * owning the most recent semantic opener the first chance to consume it;
+     * registration order must not change nested-syntax meaning.
+     */
+    if (c == ']') {
+        delimiter *opener = find_extension_opener_for_special_char(parser, subj, c);
+        if (opener) {
+            preferred = get_extension_for_special_char(parser, opener->delim_char);
+            res = preferred->match_inline(preferred, parser, parent, c, subj);
+            if (res) {
+                return res;
+            }
+        }
+    }
 
     for (tmp = parser->inline_extensions; tmp; tmp = tmp->next) {
         markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
 
-        if (!extension_has_special_char(ext, c)) {
+        if (ext == preferred || !extension_has_special_char(ext, c)) {
             continue;
         }
 
@@ -1782,6 +1801,10 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         new_inl = handle_period(subj, (options & MARKDOWN_CORE_OPT_SMART) != 0);
         break;
     case '[':
+        new_inl = try_extensions(parser, parent, c, subj);
+        if (new_inl != NULL) {
+            break;
+        }
         advance(subj);
         new_inl = make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("["));
         if (new_inl) {

@@ -61,13 +61,13 @@ println(document.dump())
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives. The `formulas` option controls formula fences and every supported
-formula delimiter, including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The
-result is an immutable value tree whose nodes carry a stable identity (`id`) and
-a change `revision`; equality is O(1) over that pair. Absolute source scopes are
-resolved through the snapshot with `document.scope(node)`. The package exposes
-parsing, incremental sessions, and read-only AST traversal, not rendering or
-mutation.
+directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+`formulas` option controls formula fences and every supported formula delimiter,
+including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The result is an immutable
+value tree whose nodes carry a stable identity (`id`) and a change `revision`;
+equality is O(1) over that pair. Absolute source scopes are resolved through the
+snapshot with `document.scope(node)`. The package exposes parsing, incremental
+sessions, and read-only AST traversal, not rendering or mutation.
 
 ## Traverse and Inspect
 

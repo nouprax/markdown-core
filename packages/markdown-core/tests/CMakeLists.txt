@@ -38,7 +38,9 @@ set(MARKDOWN_CORE_CANONICAL_OPTION_NAMES
     autolinks
     taskLists
     formulas
-    directives)
+    directives
+    crossLinks
+    embeds)
 foreach(case_index RANGE 0 ${MARKDOWN_CORE_CANONICAL_CASE_LAST})
     string(
         JSON
@@ -353,6 +355,21 @@ markdown_core_add_test(
     directive)
 markdown_core_add_test(extensions_directive_option_gates extensions 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-directive-option-gates.txt")
+markdown_core_add_test(
+    extensions_cross_link_embed
+    extensions
+    120
+    spec_runner
+    --spec
+    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-cross-link-embed.txt"
+    --option
+    cross-link
+    --option
+    embed
+    --option
+    directive)
+markdown_core_add_test(extensions_cross_link_embed_option_gates extensions 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/extensions-cross-link-embed-option-gates.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list` and `complexity_runner --list`.
@@ -413,6 +430,7 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     directive_closers_after_emphasis
     nested_directive_label_closers
     many_email_autolinks
+    unclosed_cross_references
     session_stream_flat
     session_edit_storm
     session_ref_retarget

@@ -432,6 +432,14 @@ private fun WireReader.record(
             FootnoteReference(id, revision, requiredString())
         }
 
+        WireKind.CROSS_LINK -> {
+            CrossLink(id, revision, requiredString())
+        }
+
+        WireKind.EMBED -> {
+            Embed(id, revision, requiredString())
+        }
+
         else -> {
             error("unsupported native node kind $kind")
         }
@@ -608,4 +616,6 @@ private object WireKind {
     const val IMAGE = 27
     const val DIRECTIVE = 28
     const val FOOTNOTE_REFERENCE = 29
+    const val CROSS_LINK = 30
+    const val EMBED = 31
 }

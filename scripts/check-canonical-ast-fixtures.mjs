@@ -67,7 +67,9 @@ const optionNames = [
     "autolinks",
     "taskLists",
     "formulas",
-    "directives"
+    "directives",
+    "crossLinks",
+    "embeds"
 ];
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
@@ -255,7 +257,9 @@ for (const testCase of manifest.cases ?? []) {
             Link: ["destination", "title"],
             Image: ["source", "title"],
             Directive: ["mode", "name", "attributes"],
-            FootnoteReference: ["id"]
+            FootnoteReference: ["id"],
+            CrossLink: ["reference"],
+            Embed: ["reference"]
         };
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {

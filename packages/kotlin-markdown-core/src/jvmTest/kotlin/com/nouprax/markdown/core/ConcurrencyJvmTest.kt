@@ -33,6 +33,8 @@ class ConcurrencyJvmTest {
                     taskLists = false,
                     formulas = false,
                     directives = false,
+                    crossLinks = false,
+                    embeds = false,
                 ),
                 ParseOptions(
                     strikethrough = false,

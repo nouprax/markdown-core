@@ -35,6 +35,8 @@ class SessionConcurrencyTest {
                         taskLists = false,
                         formulas = false,
                         directives = false,
+                        crossLinks = false,
+                        embeds = false,
                     ),
                 )
             // Single-threaded references computed up front.

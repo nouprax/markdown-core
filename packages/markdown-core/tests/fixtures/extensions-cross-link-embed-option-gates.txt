@@ -1,0 +1,37 @@
+# Cross-link and embed option gates
+
+Cross-links are recognized only when their option is enabled.
+
+```````````````````````````````` example cross-link
+[[reference]]
+.
+Document scope=1:1..1:13 children=1
+└── Paragraph scope=1:1..1:13 children=1
+    └── CrossLink scope=1:1..1:13 reference="reference" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+[[reference]]
+.
+Document scope=1:1..1:13 children=1
+└── Paragraph scope=1:1..1:13 children=1
+    └── Text scope=1:1..1:13 literal="[[reference]]" children=0
+````````````````````````````````
+
+Embeds are independently recognized only when their option is enabled.
+
+```````````````````````````````` example embed
+![[reference]]
+.
+Document scope=1:1..1:14 children=1
+└── Paragraph scope=1:1..1:14 children=1
+    └── Embed scope=1:1..1:14 reference="reference" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+![[reference]]
+.
+Document scope=1:1..1:14 children=1
+└── Paragraph scope=1:1..1:14 children=1
+    └── Text scope=1:1..1:14 literal="![[reference]]" children=0
+````````````````````````````````

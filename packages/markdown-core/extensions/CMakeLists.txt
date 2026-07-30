@@ -16,6 +16,7 @@ set(LIBRARY_SOURCES
     autolink.c
     formula.c
     directive.c
+    cross_reference.c
     ext_scanners.c
     ext_scanners.re
     ext_scanners.h

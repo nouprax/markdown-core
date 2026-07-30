@@ -8,4 +8,6 @@ export interface ParseOptions {
     readonly taskLists?: boolean;
     readonly formulas?: boolean;
     readonly directives?: boolean;
+    readonly crossLinks?: boolean;
+    readonly embeds?: boolean;
 }

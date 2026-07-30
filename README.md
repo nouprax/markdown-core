@@ -25,10 +25,10 @@ returns; the C API exposes an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
-dollar and LaTeX delimiters), and directives. Each option can be disabled per
-parse. `TreeDumper` and `dump()` produce a canonical diagnostic representation
-for logs, tests, and debugging; dump text is not a persistence or interchange
-format.
+dollar and LaTeX delimiters), directives, cross-links (`[[reference]]`), and
+embeds (`![[reference]]`). Each option can be disabled per parse. `TreeDumper`
+and `dump()` produce a canonical diagnostic representation for logs, tests,
+and debugging; dump text is not a persistence or interchange format.
 
 ### Swift
 

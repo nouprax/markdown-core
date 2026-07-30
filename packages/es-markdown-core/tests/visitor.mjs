@@ -27,5 +27,7 @@ export const kindVisitor = {
     visitLink: (node) => node.kind,
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
-    visitFootnoteReference: (node) => node.kind
+    visitFootnoteReference: (node) => node.kind,
+    visitCrossLink: (node) => node.kind,
+    visitEmbed: (node) => node.kind
 };

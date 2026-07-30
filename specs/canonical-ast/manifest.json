@@ -38,7 +38,9 @@
             "Link",
             "Image",
             "Directive",
-            "FootnoteReference"
+            "FootnoteReference",
+            "CrossLink",
+            "Embed"
         ],
         "states": [
             "placement.embedded",
@@ -106,7 +108,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": [
@@ -156,7 +160,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": [
@@ -222,7 +228,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Formula", "FormulaBlock"],
@@ -249,7 +257,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": [
@@ -266,6 +276,8 @@
                     "DirectiveLabel",
                     "Formula",
                     "FootnoteReference",
+                    "CrossLink",
+                    "Embed",
                     "LineBreak",
                     "HTML",
                     "SoftBreak",
@@ -300,7 +312,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": ["Document", "ThematicBreak", "Paragraph", "Text"],
@@ -321,7 +335,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": [
@@ -365,7 +381,9 @@
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
             },
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Code", "HTML", "Emphasis"],

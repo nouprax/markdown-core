@@ -40,7 +40,9 @@ const stringField = {
     imageSource: 5,
     imageTitle: 6,
     footnoteLabel: 7,
-    errorMessage: 8
+    crossLinkReference: 8,
+    embedReference: 9,
+    errorMessage: 10
 } as const;
 
 const scratchSize = 4 * BigUint64Array.BYTES_PER_ELEMENT;
@@ -345,6 +347,10 @@ export class NodeDecoder {
             }
             case "footnoteReference":
                 return { kind, id, revision, label: this.requiredString(node, stringField.footnoteLabel) };
+            case "crossLink":
+                return { kind, id, revision, reference: this.requiredString(node, stringField.crossLinkReference) };
+            case "embed":
+                return { kind, id, revision, reference: this.requiredString(node, stringField.embedReference) };
             case "tableRow":
                 return this.copyTableRow(node, id, revision, children);
             case "tableCell":

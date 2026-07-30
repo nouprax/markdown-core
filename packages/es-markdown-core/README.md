@@ -29,9 +29,10 @@ console.log(MarkupDumper.dump(document, document.content[0]));
 
 All parse options default to `true`: smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives. The `formulas` option controls every formula form, including dollar
-and LaTeX delimiters and `formula` fenced code. Pass only the options you want
-to override.
+directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+`formulas` option controls every formula form, including dollar and LaTeX
+delimiters and `formula` fenced code. Pass only the options you want to
+override.
 
 `Document.parse` returns a discriminated `Markup` union with recursively
 readonly TypeScript properties. The JavaScript objects are not runtime-frozen.

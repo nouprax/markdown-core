@@ -5,6 +5,8 @@ import type { DirectiveBlock } from "./directive-block.js";
 import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
 import type { Document } from "./document.js";
+import type { CrossLink } from "./cross-link.js";
+import type { Embed } from "./embed.js";
 import type { Emphasis } from "./emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./footnote.js";
 import type { FormulaBlock } from "./formula-block.js";
@@ -53,4 +55,6 @@ export type Markup =
     | Link
     | Image
     | Directive
-    | FootnoteReference;
+    | FootnoteReference
+    | CrossLink
+    | Embed;

@@ -1,0 +1,107 @@
+# Cross-links and embeds
+
+Cross-links and embeds are distinct leaves with source-faithful references.
+
+```````````````````````````````` example
+before [[cross]] and ![[embed]] after
+.
+Document scope=1:1..1:37 children=1
+└── Paragraph scope=1:1..1:37 children=5
+    ├── Text scope=1:1..1:7 literal="before " children=0
+    ├── CrossLink scope=1:8..1:16 reference="cross" children=0
+    ├── Text scope=1:17..1:21 literal=" and " children=0
+    ├── Embed scope=1:22..1:31 reference="embed" children=0
+    └── Text scope=1:32..1:37 literal=" after" children=0
+````````````````````````````````
+
+The reference is opaque to the Markdown parser. Heading, block, and display
+suffixes stay in the reference for the consumer to interpret.
+
+```````````````````````````````` example
+[[folder/note#^block|display]] ![[folder/note#^block|display]]
+.
+Document scope=1:1..1:62 children=1
+└── Paragraph scope=1:1..1:62 children=3
+    ├── CrossLink scope=1:1..1:30 reference="folder/note#^block|display" children=0
+    ├── Text scope=1:31..1:31 literal=" " children=0
+    └── Embed scope=1:32..1:62 reference="folder/note#^block|display" children=0
+````````````````````````````````
+
+Empty, unclosed, and cross-line constructs remain ordinary Markdown text.
+
+```````````````````````````````` example
+![[]] [[]] [[open ![[open
+[[cross
+line]]
+![[cross
+line]]
+.
+Document scope=1:1..5:6 children=1
+└── Paragraph scope=1:1..5:6 children=9
+    ├── Text scope=1:1..1:25 literal="![[]] [[]] [[open ![[open" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:7 literal="[[cross" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=3:1..3:6 literal="line]]" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=4:1..4:8 literal="![[cross" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=5:1..5:6 literal="line]]" children=0
+````````````````````````````````
+
+Backslash-escaped openers suppress the construct. Escaped close brackets do
+not terminate either form.
+
+```````````````````````````````` example
+\[[escaped]] !\[[escaped]] [[still\]] open ![[still\]] open
+.
+Document scope=1:1..1:59 children=1
+└── Paragraph scope=1:1..1:59 children=1
+    └── Text scope=1:1..1:59 literal="[[escaped]] ![[escaped]] [[still]] open ![[still]] open" children=0
+````````````````````````````````
+
+The closest opener wins, and regular image and emphasis syntax keeps its
+normal meaning around cross-links and embeds.
+
+```````````````````````````````` example
+[[outer[[inner]] _em_
+![[outer![[inner]] ![alt](image.png)
+.
+Document scope=1:1..2:36 children=1
+└── Paragraph scope=1:1..2:36 children=9
+    ├── Text scope=1:1..1:7 literal="[[outer" children=0
+    ├── CrossLink scope=1:8..1:16 reference="inner" children=0
+    ├── Text scope=1:17..1:17 literal=" " children=0
+    ├── Emphasis scope=1:18..1:21 children=1
+    │   └── Text scope=1:19..1:20 literal="em" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:8 literal="![[outer" children=0
+    ├── Embed scope=2:9..2:18 reference="inner" children=0
+    ├── Text scope=2:19..2:19 literal=" " children=0
+    └── Image scope=2:20..2:36 source="image.png" title=null children=1
+        └── Text scope=2:22..2:24 literal="alt" children=0
+````````````````````````````````
+
+When syntaxes sharing `]` are nested, the most recent semantic opener owns the
+close. Cross-links and embeds can therefore occur in directive labels, while a
+directive inside either construct remains part of its opaque reference.
+
+```````````````````````````````` example
+:note[before [[link]] and ![[embed]] after]
+[[outer :note[label]]]
+![[outer :note[label]]]
+.
+Document scope=1:1..3:23 children=1
+└── Paragraph scope=1:1..3:23 children=5
+    ├── Directive scope=1:1..1:43 mode=embedded name="note" attributes=null children=1
+    │   └── DirectiveLabel scope=1:6..1:43 children=5
+    │       ├── Text scope=1:7..1:13 literal="before " children=0
+    │       ├── CrossLink scope=1:14..1:21 reference="link" children=0
+    │       ├── Text scope=1:22..1:26 literal=" and " children=0
+    │       ├── Embed scope=1:27..1:36 reference="embed" children=0
+    │       └── Text scope=1:37..1:42 literal=" after" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── CrossLink scope=2:1..2:22 reference="outer :note[label]" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Embed scope=3:1..3:23 reference="outer :note[label]" children=0
+````````````````````````````````

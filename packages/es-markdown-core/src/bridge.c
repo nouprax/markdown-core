@@ -12,6 +12,8 @@ enum es_string_field {
     ES_STRING_IMAGE_SOURCE,
     ES_STRING_IMAGE_TITLE,
     ES_STRING_FOOTNOTE_ID,
+    ES_STRING_CROSS_LINK_REFERENCE,
+    ES_STRING_EMBED_REFERENCE,
     ES_STRING_ERROR_MESSAGE
 };
 
@@ -65,6 +67,8 @@ markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **err
     options.task_lists = (flags & (1u << 6)) != 0;
     options.formulas = (flags & (1u << 7)) != 0;
     options.directives = (flags & (1u << 8)) != 0;
+    options.cross_links = (flags & (1u << 9)) != 0;
+    options.embeds = (flags & (1u << 10)) != 0;
     return markdown_core_session_open(&options, error);
 }
 
@@ -341,6 +345,12 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
         break;
     case ES_STRING_FOOTNOTE_ID:
         markdown_core_node_footnote_id(node, &first);
+        break;
+    case ES_STRING_CROSS_LINK_REFERENCE:
+        markdown_core_node_cross_link_reference(node, &first);
+        break;
+    case ES_STRING_EMBED_REFERENCE:
+        markdown_core_node_embed_reference(node, &first);
         break;
     case ES_STRING_ERROR_MESSAGE:
         first = markdown_core_error_get_message((const markdown_core_error *)object);

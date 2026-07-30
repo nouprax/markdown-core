@@ -102,6 +102,8 @@ export function relink(previous: Markup, revision: number, replacements: ChildRe
         case "html":
         case "formula":
         case "footnoteReference":
+        case "crossLink":
+        case "embed":
             // Leaves have no descendants to bubble from; tolerated for
             // robustness against a wider-than-necessary delta.
             return { ...previous, revision };

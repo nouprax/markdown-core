@@ -136,6 +136,8 @@ typedef struct markdown_core_parse_options {
     bool task_lists;
     bool formulas;
     bool directives;
+    bool cross_links;
+    bool embeds;
 } markdown_core_parse_options;
 
 typedef enum markdown_core_error_code {
@@ -175,7 +177,9 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_LINK,
     MARKDOWN_CORE_KIND_IMAGE,
     MARKDOWN_CORE_KIND_DIRECTIVE,
-    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE
+    MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
+    MARKDOWN_CORE_KIND_CROSS_LINK,
+    MARKDOWN_CORE_KIND_EMBED
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
@@ -286,6 +290,14 @@ MARKDOWN_CORE_API bool markdown_core_node_image_properties(
     markdown_core_string_view *title
 );
 MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
+MARKDOWN_CORE_API bool markdown_core_node_cross_link_reference(
+    const markdown_core_node *node,
+    markdown_core_string_view *reference
+);
+MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
+    const markdown_core_node *node,
+    markdown_core_string_view *reference
+);
 
 /**
  * Allocates one immutable `(id, revision, absolute scope)` row for every

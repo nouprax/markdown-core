@@ -37,6 +37,7 @@ const extensions = [
     "autolink.c",
     "formula.c",
     "directive.c",
+    "cross_reference.c",
     "ext_scanners.c",
     "tasklist.c"
 ].map((file) => path.join(root, "packages/markdown-core/extensions", file));

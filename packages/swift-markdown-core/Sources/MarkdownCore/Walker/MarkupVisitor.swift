@@ -32,4 +32,6 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Image) -> Result
     mutating func visit(_ node: Directive) -> Result
     mutating func visit(_ node: FootnoteReference) -> Result
+    mutating func visit(_ node: CrossLink) -> Result
+    mutating func visit(_ node: Embed) -> Result
 }
