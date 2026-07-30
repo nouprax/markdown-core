@@ -18,8 +18,54 @@ typedef struct {
     markdown_core_chunk reference;
 } node_cross_reference;
 
-static const markdown_core_extension cross_link_extension;
-static const markdown_core_extension embed_extension;
+static void opaque_alloc(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
+static void opaque_free(markdown_core_extension *extension, markdown_core_mem *mem, markdown_core_node *node);
+static markdown_core_node *match(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_node *parent,
+    unsigned char character,
+    markdown_core_inline_parser *inline_parser
+);
+static delimiter *insert(
+    markdown_core_extension *extension,
+    markdown_core_parser *parser,
+    markdown_core_inline_parser *inline_parser,
+    delimiter *opener,
+    delimiter *closer
+);
+static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node);
+
+static const unsigned char cross_link_special_chars[] = {'[', ']', CROSS_LINK_DELIM};
+static const unsigned char embed_special_chars[] = {'!', ']', EMBED_DELIM};
+static const unsigned char cross_link_flanking_skip_chars[] = {CROSS_LINK_DELIM};
+static const unsigned char embed_flanking_skip_chars[] = {EMBED_DELIM};
+
+static const markdown_core_extension cross_link_extension = {
+    .name = "cross_link",
+    .match_inline = match,
+    .insert_inline_from_delim = insert,
+    .get_type_string = get_type_string,
+    .alloc_opaque = opaque_alloc,
+    .free_opaque = opaque_free,
+    .special_inline_chars = cross_link_special_chars,
+    .special_inline_char_count = sizeof(cross_link_special_chars),
+    .flanking_skip_chars = cross_link_flanking_skip_chars,
+    .flanking_skip_char_count = sizeof(cross_link_flanking_skip_chars),
+};
+
+static const markdown_core_extension embed_extension = {
+    .name = "embed",
+    .match_inline = match,
+    .insert_inline_from_delim = insert,
+    .get_type_string = get_type_string,
+    .alloc_opaque = opaque_alloc,
+    .free_opaque = opaque_free,
+    .special_inline_chars = embed_special_chars,
+    .special_inline_char_count = sizeof(embed_special_chars),
+    .flanking_skip_chars = embed_flanking_skip_chars,
+    .flanking_skip_char_count = sizeof(embed_flanking_skip_chars),
+};
 
 static int is_cross_reference_node(const markdown_core_node *node) {
     return node && (node->type == MARKDOWN_CORE_NODE_CROSS_LINK || node->type == MARKDOWN_CORE_NODE_EMBED);
@@ -181,37 +227,6 @@ static const char *get_type_string(markdown_core_extension *extension, markdown_
     }
     return "<unknown>";
 }
-
-static const unsigned char cross_link_special_chars[] = {'[', ']', CROSS_LINK_DELIM};
-static const unsigned char embed_special_chars[] = {'!', ']', EMBED_DELIM};
-static const unsigned char cross_link_flanking_skip_chars[] = {CROSS_LINK_DELIM};
-static const unsigned char embed_flanking_skip_chars[] = {EMBED_DELIM};
-
-static const markdown_core_extension cross_link_extension = {
-    .name = "cross_link",
-    .match_inline = match,
-    .insert_inline_from_delim = insert,
-    .get_type_string = get_type_string,
-    .alloc_opaque = opaque_alloc,
-    .free_opaque = opaque_free,
-    .special_inline_chars = cross_link_special_chars,
-    .special_inline_char_count = sizeof(cross_link_special_chars),
-    .flanking_skip_chars = cross_link_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(cross_link_flanking_skip_chars),
-};
-
-static const markdown_core_extension embed_extension = {
-    .name = "embed",
-    .match_inline = match,
-    .insert_inline_from_delim = insert,
-    .get_type_string = get_type_string,
-    .alloc_opaque = opaque_alloc,
-    .free_opaque = opaque_free,
-    .special_inline_chars = embed_special_chars,
-    .special_inline_char_count = sizeof(embed_special_chars),
-    .flanking_skip_chars = embed_flanking_skip_chars,
-    .flanking_skip_char_count = sizeof(embed_flanking_skip_chars),
-};
 
 markdown_core_extension *markdown_core_cross_link_extension(void) {
     return (markdown_core_extension *)&cross_link_extension;
