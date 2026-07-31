@@ -211,6 +211,10 @@ One-shot `Document.parse` is unchanged and keeps its v1 memory profile.
 The language-neutral contract — identity and ordering rules, delta
 semantics, and the incremental cost model — is specified in
 [`docs/specs/sessions-and-deltas.md`](docs/specs/sessions-and-deltas.md).
+The reviewed, intentionally breaking target for a future self-contained,
+field-tracked AST and complete commit change index is frozen separately in
+[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md);
+it is a design contract, not a claim about the currently shipped API.
 
 ## Repository layout
 
