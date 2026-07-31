@@ -31,7 +31,7 @@ surfaces.
 | The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, normatively reference-identical unchanged subtrees — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
 | A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after later commits and session close |
-| One node `revision` conflates local and descendant changes | The old member is removed; `selfRevision` and `subtreeRevision` have distinct meanings |
+| One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is an `O(log n)` query against stable extents; a position-only shift produces no diff entry at all |
@@ -142,7 +142,7 @@ Path A puts the whole burden on AST shape, so every binding must guarantee:
   unmodified as a SwiftUI `ForEach(id:)`, a Compose `key()`, or a React `key`.
   It survives edits elsewhere and is never reused after retirement (5.2).
 - **`O(1)` equality.** Node equality and hashing are `(MarkupID,
-  subtreeRevision)` for whole-subtree equality and `(MarkupID, selfRevision)`
+  revision.subtree)` for whole-subtree equality and `(MarkupID, revision.self)`
   for local equality: two-word comparisons, allocation-free, safe in a render
   hot path. Equal means the values are identical; storage layout produces no
   false negatives.
@@ -357,10 +357,14 @@ Markup {
 }
 
 MarkupTrack {
-    MarkupID         identity
-    DocumentRevision selfRevision
-    DocumentRevision subtreeRevision
-    SourceExtentID   primarySource
+    MarkupID       identity
+    MarkupRevision revision
+    SourceExtent   extent
+}
+
+MarkupRevision {
+    Revision self       // this node's own local projection
+    Revision subtree    // that, plus everything reachable below it
 }
 ```
 
@@ -368,8 +372,10 @@ This is a semantic shape, not a mandatory memory layout. Bindings may expose
 properties, methods, protocols, interfaces, or borrowed views, but every value
 has exactly one owner and one meaning.
 
-`node.track.identity` is the sole public node identity. There is no
-`track.revision` alias and no wrapper identity layered around `MarkupID`.
+`node.track.identity` is the sole public node identity. `track.revision` is
+always the pair and never a single number: no scalar member conflates local
+with subtree change, which is the ambiguity section 1 removes. No wrapper
+identity is layered around `MarkupID`.
 
 `MarkupTrack` is deliberately small — four members, and no more may be added.
 Per-field, per-text, per-edge, per-source, and per-relation revision stamps
@@ -387,8 +393,8 @@ that exact AST revision. These concepts are distinct:
 
 - logical continuity: `MarkupID`;
 - exact view identity: `(DocumentVersion, MarkupID)`; and
-- selected-value equality: `(MarkupID, selfRevision)` for the node's local
-  projection, `(MarkupID, subtreeRevision)` for its whole subtree.
+- selected-value equality: `(MarkupID, revision.self)` for the node's local
+  projection, `(MarkupID, revision.subtree)` for its whole subtree.
 
 An old node view resolves only through its retained old `Document`. It cannot
 be passed to a new document as an exact view merely because its `MarkupID`
@@ -423,7 +429,7 @@ The tree need not copy every descendant wrapper into each parent:
 
 When only a descendant field changes, an implementation may share every
 unchanged ancestor's local record and child sequence. A persistent aggregate
-trace index may advance `subtreeRevision` without copying all ancestor
+trace index may advance `revision.subtree` without copying all ancestor
 payloads.
 
 ### 4.2 Self-contained document revisions
@@ -452,7 +458,7 @@ a retained snapshot is only conditionally usable.
 ```text
 DocumentVersion {
     DocumentDomain   domain
-    DocumentRevision revision
+    Revision revision
 }
 ```
 
@@ -465,7 +471,7 @@ update.
 A domain is opaque and is only ever compared for equality. A consumer never
 constructs or inspects one.
 
-`DocumentRevision` is positive and monotonic within one domain. A successful
+`Revision` is positive and monotonic within one domain. A successful
 canonical no-op reuses the exact current `Document` and revision. Every
 published canonical change advances it. Reserved candidate revisions may be
 burned on failure but never reused.
@@ -495,11 +501,11 @@ node wins" against the new order.
 
 ### 5.3 Revision law
 
-There is one counter. `DocumentRevision` is positive and strictly monotonic
-within a domain, and every other stamp in this contract is a value drawn from
-it: `selfRevision` and `subtreeRevision` each record the document revision at
-which that projection last changed. Nothing has a private revision space, and
-no type exists for a per-node, per-source, per-field, or per-edge revision.
+There is one counter, and one scalar type for it. `Revision` is positive and
+strictly monotonic within a domain; every stamp in this contract is a value
+drawn from it, and `revision.self` and `revision.subtree` each record the
+revision at which that projection last changed. Nothing has a private revision
+space, and no type exists for a per-source, per-field, or per-edge revision.
 
 - zero is invalid;
 - a canonical no-op publishes nothing, so no stamp moves;
@@ -511,7 +517,7 @@ Because every stamp is a document revision, stamps are comparable, and the
 comparison a consumer actually wants costs `O(1)`:
 
 ```text
-markup.track.subtreeRevision > rememberedVersion.revision
+markup.track.revision.subtree > remembered.revision
 ```
 
 answers "did this subtree change since I last looked" with no diff and no
@@ -526,7 +532,7 @@ required, and none may be added.
 
 ### 5.4 Node aggregate traces
 
-`selfRevision` covers the node's local canonical projection:
+`revision.self` covers the node's local canonical projection:
 
 - kind;
 - scalar and text field values;
@@ -535,17 +541,16 @@ required, and none may be added.
 - stable source shape/provenance, excluding revision-relative numeric
   coordinates.
 
-`subtreeRevision` covers `selfRevision` plus the recursively reachable child
+`revision.subtree` covers `revision.self` plus the recursively reachable child
 semantic projections.
 
 These are equality and pruning aids, not the update mechanism. Two views with
-equal `(MarkupID, selfRevision)` have identical local values; equal
-`(MarkupID, subtreeRevision)` have identical subtrees. `subtreeRevision`
+equal `(MarkupID, revision.self)` have identical local values; equal
+`(MarkupID, revision.subtree)` have identical subtrees. `revision.subtree`
 advancing is exactly the membership condition of section 9.1, and
-`selfRevision` advancing is exactly the condition for a flag other than
-`DESCENDANT`. Section 9 is how a
-consumer learns *that* something changed; these stamps are how it cheaply
-confirms that something did not.
+`revision.self` advancing is exactly the condition for a flag other than
+`DESCENDANT`. Section 9 is how a consumer learns *that* something changed;
+these stamps are how it cheaply confirms that something did not.
 
 ## 6. Tracked AST values
 
@@ -694,7 +699,7 @@ an empty `diffs`. Old documents retain their exact old bytes.
 ### 7.2 Stable extents and lazy coordinates
 
 ```text
-SourceExtentID {
+SourceExtent {
     DocumentDomain domain
     ExtentOrdinal  value
 }
@@ -706,7 +711,7 @@ CoordinateProfile =
   | LINE_COLUMN
   | NATIVE(closed binding-defined projection)
 
-Document.scope(SourceExtentID, CoordinateProfile)
+Document.scope(SourceExtent, CoordinateProfile)
     -> Optional<Scope>
 ```
 
@@ -753,9 +758,14 @@ Affinity is what a consumer-owned marker needs in order to survive an edit
 without a reparse — a cursor, a bookmark, a selection. That is consumer state,
 and it is the consumer's to keep (3).
 
-`SourceExtentID` stays distinct from `MarkupID` so that sub-node extents (a
-link destination span, a fence info string) can be named later without a new
-addressing scheme. A node's `primarySource` is one such identity today.
+`SourceExtent` stays distinct from `MarkupID` so that sub-node extents — a
+link destination span, a fence info string — can be named later without a new
+addressing scheme. A node's `extent` is the only one today, which is why it is
+not called a *primary* extent: there is no secondary one to be primary against.
+
+It carries no `ID` suffix, unlike `MarkupID`, because the identity is the whole
+of it. A `MarkupID` names a `Markup` that exists separately; there is no
+`SourceExtent` record behind a `SourceExtent`.
 
 An extent that no longer exists resolves to `none`; the parser never silently
 retargets it by current dense ordinal.
@@ -777,7 +787,7 @@ identity, canonical semantic field content, or a diff entry.
 A prefix insertion:
 
 - preserves every later node's `MarkupID`;
-- preserves their `selfRevision` and `subtreeRevision`;
+- preserves their `revision.self` and `revision.subtree`;
 - preserves parse and derived relation values;
 - changes the numeric coordinates obtained by resolving their stable extents;
   and
@@ -942,7 +952,7 @@ there is no lifecycle tag: a consumer distinguishes the case with
 differs from `⊥` in every part it has, so it carries all of them.
 
 **`DESCENDANT ∈ parts(n)` exactly when some node below `n` differs**, which is
-exactly when `n`'s `subtreeRevision` advanced (5.4). The ancestor spine of
+exactly when `n`'s `revision.subtree` advanced (5.4). The ancestor spine of
 every change is therefore in `diffs`, because those ancestors' projections
 genuinely differ — their `DESCENDANT` part changed. A consumer that
 materializes a parent-linked structure needs precisely that; a consumer that
@@ -1186,6 +1196,15 @@ deduplicated ancestor spine (9.1), bounded by `O(changed * depth)` and
 independent of document width and size: a one-block insertion into a document
 of any size produces its own entry plus one per enclosing container.
 
+Two implementation constraints follow from that bound and are easy to violate.
+`DESCENDANT` must be discovered by walking **up** from the changed frontier,
+never by testing a container's children: a retired child seeds that walk
+exactly as a changed one does, whereas deciding a container's `DESCENDANT` by
+comparing its child list costs `O(width)` per container and breaks the bound.
+And a node reaches the frontier only if its own projection actually differs —
+an edit that resolves to no change must not seed the walk, or a no-op
+publishes an ancestor spine (14.5.4, 14.5.5).
+
 A definition or footnote edit costs the reparse and re-resolution of exactly
 the units whose answers changed, collected through the parser-owned inverted
 index. It must not scan every unit that contains a reference.
@@ -1397,6 +1416,10 @@ For a pinned large document:
     never accompanies a created or retired entry. One forward pass over
     `diffs` rebuilds a parent-linked value tree with no ancestor walk, no
     sort, and no second traversal.
+11. Removing one grandchild of a container with `W` children emits
+    `DESCENDANT` on that container in work independent of `W`, and an edit
+    whose normalized result changes no projection publishes nothing at all —
+    not an empty-parts entry on a live node, and not a spine (11.1).
 
 ### 14.6 Delta application gates
 
@@ -1462,7 +1485,8 @@ section says otherwise. `byte` and `integer` are primitives.
 | `DiffParts` | a set of `DiffPart`; a six-flag bitmask | 9.1 |
 | `Document` | one immutable parsed unit; the AST's only public root | 4 |
 | `DocumentDomain` | the opaque scope that identities and revisions live in | 5.1 |
-| `DocumentRevision` | positive, monotonic counter within one domain; the only revision type | 5.1 |
+| `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
+| `Revision` | positive, monotonic counter within one domain; the only revision type | 5.1 |
 | `DocumentTrack` | a document's version, schema, profiles, source, and relations | 4 |
 | `DocumentVersion` | which published document: `(domain, revision)` | 5.1 |
 | `EncodedOffset` | zero-based offset in a projected coordinate space, never storage | 7.2 |
@@ -1480,7 +1504,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Session` | the single mutable owner of one document's pending source | 8.1 |
 | `Source` | a document's committed bytes and how they are read | 7.1 |
 | `SourceEdit` | one byte-level edit: a span to replace, and its replacement | 8.1 |
-| `SourceExtentID` | stable identity of one source extent: `(domain, ordinal)` | 7.2 |
+| `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
 | `SourceProfile` | closed selector for which byte sequences may be stored | 7.1 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
 | `SpanPair` | one entry of a `TextMap`: a canonical span and its source span | 6.1 |
@@ -1494,7 +1518,7 @@ section of their own because there is nothing more to say about them.
 ChildOrdinal     = non-negative integer  // position within one child list
 DiffParts        = set of DiffPart       // a six-flag bitmask
 DocumentDomain   = opaque token          // compared for equality, never read
-DocumentRevision = positive integer      // the only revision type (5.3)
+Revision         = positive integer      // the only revision scalar (5.3)
 EncodedOffset    = non-negative integer  // in a projected coordinate space
 ExtentOrdinal    = positive integer      // unique within one domain
 MarkupOrdinal    = positive integer      // unique within one domain, not reused
