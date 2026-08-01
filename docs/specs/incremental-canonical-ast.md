@@ -28,7 +28,7 @@ surfaces.
 
 | Superseded contract | This contract |
 | --- | --- |
-| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, normatively reference-identical unchanged subtrees — so no binding API may require a delta |
+| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, and unchanged subtrees the core reuses rather than rebuilds — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
 | A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after later commits and session close |
 | One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
@@ -136,7 +136,9 @@ there is no framework to diff on the consumer's behalf. A is why `Delta` is
 optional: a B or C consumer that drops or distrusts a delta falls back to A
 and reaches the same state (9.6). Neither direction is a downgrade.
 
-Path A puts the whole burden on AST shape, so every binding must guarantee:
+Path A puts the whole burden on AST shape. The first two below are what every
+binding must guarantee; the last two are properties of the core that a binding
+inherits and must not throw away.
 
 - **Identity.** `MarkupID` is a stable, hashable, serializable key, usable
   unmodified as a SwiftUI `ForEach(id:)`, a Compose `key()`, or a React `key`.
@@ -146,16 +148,30 @@ Path A puts the whole burden on AST shape, so every binding must guarantee:
   for local equality: two-word comparisons, allocation-free, safe in a render
   hot path. Equal means the values are identical; storage layout produces no
   false negatives.
-- **Reference identity.** An unchanged subtree is the *same* platform value
-  instance in the next document, not merely an equal one, so a framework's
-  identity short-circuit fires before any field is read.
+- **Instance reuse.** The core reuses an unchanged subtree rather than
+  rebuilding it, so the next document holds the same node, not merely an equal
+  one. This is what makes the structural sharing below a memory fact rather
+  than a hope, and it is stated of the core because that is where it is true.
+
+  It is deliberately *not* required of a binding's node views. In Swift an
+  idiomatic view is a `struct`, and a value type has no identity to compare —
+  there the requirement would not be hard to meet, it would be meaningless. And
+  in a language whose views are references, a binding that constructs a fresh
+  wrapper on each `node(id)` call destroys the property regardless of what the
+  core did, so keeping it would oblige every binding to cache wrappers and
+  manage their lifetimes.
+
+  The short-circuit a framework actually runs is the `O(1)` equality above,
+  which behaves identically for a `struct`, a `data class`, and a JavaScript
+  object. A binding whose views are references may offer identity as an extra
+  one-word check; none is obliged to.
 - **Structural sharing.** Adjacent documents share every unchanged node, so
   retaining the previous document to diff against costs the changed frontier,
   not a second tree.
 
 The last two also serve path B: a consumer walking `diffs` can skip an
-unchanged subtree by reference, and retaining the old document to compare
-against is cheap.
+unchanged subtree on the two-word comparison alone, and retaining the old
+document to compare against is cheap.
 
 The cost of the path-A diff is stated in 11.3. It is not `O(changed)` — no
 top-down value diff can be — but every comparison it performs is `O(1)`, and a
@@ -589,9 +605,16 @@ between pairs.
 Both spans are therefore stored, rather than one span and a shared length.
 Neither side's length derives from the other, and neither derives from the
 neighbouring entries, because the canonical side is contiguous while the
-source side may have gaps. When a pair's two spans have equal length the
+source side may have gaps. When a pair's two spans hold *identical bytes* the
 correspondence inside it is byte for byte and a consumer may address any
 interior position; otherwise the pair corresponds only as a unit.
+
+Equal length is not the test, and using it would be unsound. With smart
+punctuation `...` is three source bytes and `…` is three UTF-8 bytes, and
+`---` and `—` are three and three: the lengths agree while no interior position
+corresponds, so a consumer addressing into one would land inside a UTF-8
+scalar. Comparing the bytes costs `O(len)` on two slices the consumer already
+holds, and is paid only when interior addressing is actually wanted.
 
 No entry carries the text it maps, and none may be added. A consumer that
 wants the bytes takes them itself: `value` for the canonical side, the
@@ -1112,7 +1135,7 @@ only index the update needs, and the consumer necessarily already has it.
 ```text
 sync(commit):
     if myBase != commit.delta.before:
-        rebuild from commit.document; myBase = commit.document.identity; return
+        rebuild from commit.document; myBase = commit.document.version; return
     for diff in commit.delta.diffs:              // children before parents
         node = commit.document.node(diff.markup)
         if node == none:                drop my state for diff.markup
@@ -1375,8 +1398,9 @@ For each binding, against a pinned document and an adjacent commit:
 2. Node equality and hashing are the two-word tuples of 2.1, allocation-free,
    and equal implies value-identical with no false negative from storage
    layout or rebalancing.
-3. Every unchanged subtree is the *same* platform value instance in the next
-   document, verified by reference, not by value comparison.
+3. The core reuses every unchanged subtree in the next document, verified by
+   reference at the C level. At a binding, the equality of gate 2 reports that
+   subtree unchanged whether or not that binding's views carry identity at all.
 4. A top-down value diff of the two documents reports exactly the nodes whose
    subtree projection differs — no false negatives against a fresh comparison,
    and no descent into a subtree whose root compared equal.
@@ -1402,7 +1426,11 @@ For a pinned large document:
    two documents, verified against a fresh comparison.
 4. Private compaction, rebalancing, and interning emit an empty delta.
 5. A canonical no-op emits an empty delta and reuses the document.
-6. Entries are unique per `MarkupID` and ordered by position in `after`.
+6. Entries are unique per `MarkupID`, and ordered as 9.5 requires: retired
+   entries first in `before` postorder, then live entries in `after` postorder.
+   A retired identity has no position in `after` at all — `Document.node`
+   resolves it only in `before` — so a single after-order would be undefined
+   for every deletion.
 7. A definition or footnote flip emits `RELATIONS` on exactly the identities
    whose answers changed, and the collection work is proportional to that set,
    not to the reference population.
@@ -1413,9 +1441,12 @@ For a pinned large document:
 9. Adding or removing a singular child edge (`Table.header`,
    `Directive.label`) emits `VALUE` on the owner, never `CHILDREN`.
 10. `DESCENDANT` never appears alone on a node whose own value changed, and
-    never accompanies a created or retired entry. One forward pass over
-    `diffs` rebuilds a parent-linked value tree with no ancestor walk, no
-    sort, and no second traversal.
+    never accompanies a retired entry, which has no parts at all. A *created*
+    container does carry it, because 9.1 gives a created node every part it
+    has and a container's projection includes what is below it; forbidding it
+    there would contradict the membership law. One forward pass over `diffs`
+    rebuilds a parent-linked value tree with no ancestor walk, no sort, and no
+    second traversal.
 11. Removing one grandchild of a container with `W` children emits
     `DESCENDANT` on that container in work independent of `W`, and an edit
     whose normalized result changes no projection publishes nothing at all —
