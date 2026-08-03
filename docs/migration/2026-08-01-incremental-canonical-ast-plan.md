@@ -86,6 +86,24 @@ The corollary for implementation: a gate that cannot fail is not evidence.
 When a gate is added, run it once against the pre-fix input and confirm it
 fails there.
 
+### Prerequisite — pin the benchmarks, before anything else lands
+
+§14.7 requires the existing representative, large-document, extension, and
+adversarial parser benchmarks to be pinned **before the C-layer AST is
+extended**. This plan previously attached that to M5, which is too late: M2.5
+introduces concrete records and M3 and M4 introduce extents and
+`CanonicalText`, and all three move allocation, traversal, and copy counts. A
+baseline recorded after any of them already contains part of the new engine,
+so M9's paired comparison — every size-dependent term identical with the CST
+and without it, only records-created permitted to move (§11.1) — would be
+measuring the new engine against itself.
+
+So it lands first, as its own change, before M2. It is also the one step here
+that needs no design decision: run `benchmark:c-host`, `benchmark:swift-macos`,
+`benchmark:kotlin-jvm`, and `benchmark:es-node` on the current tree and record
+the results the way `2026-07-11-phase-0-baseline.md` records its environment
+and figures, so a later run is comparable rather than merely similar.
+
 ### M0 — Quality gate (delivered 2026-08-01)
 
 The unit-test coverage gate is in place across all four platforms:
@@ -296,6 +314,44 @@ prefix; a tiny retained slice must respect the declared amplification bound;
 and `Span` is built from `Offset`, never `EncodedOffset`, so a projected
 coordinate cannot be fed back in as an edit.
 
+### M2.5 — Unified CST substrate and definition sets
+
+The §0 substrate: concrete node and token records captured during the existing
+passes, region-relative offsets, the ownership-region classification of §11.1,
+and `Document.concrete`. Nothing before this milestone builds a CST, and
+everything after it depends on one, which is why it sits here rather than
+being folded into a neighbour. It is numbered M2.5 rather than renumbering the
+tail because `../specs/test-architecture.md` names M7 as the acceptance
+mechanism for the dump comparison, and that reference is worth more than a
+tidy sequence.
+
+**Publication step 0 lands here, not in M6.** §6.3's order gained a step
+before CST construction on 2026-08-03, because an undefined `[^x]` is `Text`
+and an undefined `[x]` is prose: whether a run of bytes is one `Text` or a
+reference node depends on a label the document may define anywhere. So the two
+definition label sets — footnote labels and link-reference labels, which
+normalize alike but share no key space — and the **mention** index that names
+which regions flip are *parse-time inputs*, not derived relations. Mention,
+not resolution: a bracket that was prose until now has no occurrence record,
+so an index keyed by resolution cannot find it. Both must be proportional to
+the reparsed region and the flipped labels, never to the document.
+
+Putting them in M6 would have forced this milestone to build a provisional CST
+whose node shape M6 then corrected — a divergent model to be replaced, which
+is what the M1–M6 independent-mergeability property exists to prevent.
+
+Regions nest, and a region's concrete offsets are relative to that region.
+That single property is what keeps the CST out of every bound that depends on
+document size; without it the milestone still compiles and M9's complexity
+gates fail.
+
+Gates: §14.1.9 (one physical CST, two interfaces, no parallel hierarchy),
+§14.1.10 (unmatched core Markdown candidates become literal content; bounded
+islands recover only inside their boundary), and a definition-flip gate — with
+`[^x]` occurrences in a large document, adding and removing the definition
+converts exactly those occurrences, reparses only their regions, and does work
+independent of document size.
+
 ### M3 — Extents and coordinates
 
 `SourceExtent` as identity, the order-maintenance aggregate sequence carrying
@@ -310,13 +366,12 @@ be. Markdown bounds no nesting depth: a measured 1000-deep `BlockQuote` chain
 took 1001 descents where a flat 10000-block document took 9. A container
 addresses a range of the one sequence.
 
-This is also where §11.1's **ownership region** becomes real, because the
-region is the unit concrete offsets are relative to (§0). Regions nest, and a
-region's offsets are its own, so an edit inside a paragraph rewrites that
-paragraph's concrete records and leaves every enclosing `ListItem`, `List`,
-and `BlockQuote` marker record untouched at any depth. That property is what
-keeps the CST out of every size-dependent bound; without it M3 and M2 both
-compile but the complexity gates in M9 fail.
+The units this sequence is built over are the CST's, so M2.5 has to land
+first. Its **ownership regions** are also what keeps the CST out of every
+size-dependent bound: a region's concrete offsets are its own, so an edit
+inside a paragraph rewrites that paragraph's records and leaves every
+enclosing `ListItem`, `List`, and `BlockQuote` marker record untouched at any
+depth.
 
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
@@ -359,12 +414,6 @@ The persistent child sequence, structural sharing across adjacent documents,
 `MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
 `MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
 
-**Prerequisite, and this is the milestone that owns it.** §14.7 requires the
-existing representative, large-document, extension, and adversarial benchmarks
-to be pinned *before the C-layer AST is extended*, and M5 is where that
-happens. Pin them as their own change, merged first, or the "no size-dependent
-term moved" comparison M9 has to make has no baseline to make it against.
-
 **The continuity rule is now fixed, not left to the implementation.** §5.2
 previously said only "a language-specific continuity proof"; it now states the
 matcher: nothing outside a reparsed region is matched at all, identity never
@@ -400,18 +449,11 @@ Parser answers moved into the document as immutable data behind the §4.1
 `ANSWERS` change cost the affected nodes rather than the reference population,
 and explicit negative resolutions.
 
-**Publication step 0 belongs to this milestone.** §6.3's order gained a step
-before CST construction on 2026-08-03, because an undefined `[^x]` is `Text`
-and an undefined `[x]` is prose: whether a run of bytes is one `Text` or a
-reference node depends on a label the document may define anywhere, so
-building the CST at step 1 needed step 3's answer. Step 0 updates the two
-definition label sets — footnote labels and link-reference labels, which
-normalize alike but share no key space — from the reparsed region, and names
-the further regions whose brackets flip through a **mention** index. Mention,
-not resolution: a bracket that was prose until now has no occurrence record,
-so an index keyed by resolution cannot find it. Both steps must be
-proportional to the reparsed region and the flipped labels, never to the
-document.
+**Publication step 0 is not here — it is M2.5.** It reads as an answers
+concern and is not one: the definition label sets decide the CST's node shape,
+so they are a parse-time input rather than a derived relation. What stays here
+is steps 3 through 5 — the persistent relation indexes, the answer comparison,
+and the `ANSWERS` parts.
 
 **Two answer-record rules that reviews have already caught once.** `number`
 and `referenceCount` describe the *label*, not the node asked: a shadowed
@@ -658,7 +700,22 @@ answer. What survives is the definition side — a `Definition` or
 targets live outside the document. The clause must be rewritten to say that,
 or it will read as a requirement nothing can satisfy.
 
-Gates: §14.5.7. Clears: most of the `extensions/footnote.c`,
+Gates: §14.5.7, plus a **shadowed-definition answer-value gate** this
+milestone has to add. §14.5.7 checks which identities carry `ANSWERS` and what
+the collection costs; it asserts nothing about the values, so a node-scoped
+implementation returning `number = 0` and `referenceCount = 0` beside a
+non-zero `winner` completes M6 while violating the contract. The gate: given
+`[x]: /first`, a later `[x]: /shadowed`, and a reference `[x]`, querying the
+shadowed definition returns the winner's non-zero `number` and
+`referenceCount` with an empty `Document.references`; with the reference
+removed, the same query returns 0 for both. Run it once against a node-scoped
+implementation and confirm it fails there.
+
+That this gate was missing from the same commit that added the rule above it
+is the failure mode this document opens by naming. It is cheaper to notice in
+a plan than in a review, and cheapest of all to notice while writing the rule.
+
+Clears: most of the `extensions/footnote.c`,
 `extensions/lookups.c`, and `extensions/cross_reference.c` ledger entries.
 
 ### M7 — The atomic flip
@@ -699,8 +756,9 @@ captures no syntax-only record, on the same trace. §11.1 permits the CST to
 move exactly one of them — the records created inside a reparsed region — and
 nothing else. Regions reparsed, persistent nodes copied, extent-resolution
 descents, and `|diffs|` must be identical with the CST and without it. That
-comparison is against the benchmarks M5 pinned; if M5 shipped without pinning
-them, this milestone has nothing to compare to and the gate is unenforceable.
+comparison is against the benchmarks the prerequisite above pinned. If they
+were recorded after any milestone from M2.5 onward, they already contain part
+of the new engine and this gate is measuring it against itself.
 
 ## How the unpinned surface shrinks
 
