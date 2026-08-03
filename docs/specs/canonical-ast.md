@@ -215,9 +215,13 @@ Every row above also carries the inherited `track: MarkupTrack`; it is not
 repeated in the table. No row has a stored scope, and no row has a stored
 absolute offset of any kind.
 
-Exactly one field per kind is a `CanonicalText` — the kind's content text,
-spelled `literal` where it exists, plus `Text.literal` — and it carries the
-map back to the source bytes that produced it. Every other string field above
+At most one field per kind is a `CanonicalText` — the kind's content text,
+spelled `literal` — and it carries the map back to the source bytes that
+produced it. Seven kinds have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`,
+`Text`, `Code`, `HTML`, and `Formula`. The other twenty-seven have none;
+their content is a child sequence or nothing, and a kind with no textual
+value simply never carries the `TEXT` or `TEXT_MAP` parts of
+`incremental-canonical-ast.md` §9.1. Every other string field above
 is a plain scalar holding decoded characters with no map: `Link.destination`
 and `Link.title`, `Image.source` and `Image.title`,
 `ReferenceDefinition.destination` and `.title`, `CodeBlock.info` and

@@ -1114,7 +1114,7 @@ Source {
 }
 
 SourceProfile =
-    STRICT_UTF8       // stored bytes must be valid UTF-8
+    STRICT_UTF8       // valid UTF-8, except for one truncated final code point
   | PERMISSIVE_BYTES  // any byte sequence may be stored
 ```
 
@@ -1125,6 +1125,42 @@ The source owns the exact committed stored bytes, including bytes that are not
 valid UTF-8 when the selected source profile permits them. Canonical Markdown
 decoding and recovery are deterministic functions of those bytes and the
 frozen profile.
+
+`STRICT_UTF8` accepts exactly one deviation from validity: a **truncated final
+code point** — a well-formed UTF-8 prefix at end-of-source that some
+continuation byte would complete. Any other invalid sequence, including a
+truncated code point anywhere but at the end, is a profile violation and
+fails the commit under 8.1.
+
+The exception is load-bearing, not a courtesy. Edits name byte ranges, and a
+streamed chunk may carry the first half of a multi-byte character with the
+rest arriving in a later chunk (8.1, 8.2). Rejecting that intermediate state
+would make streaming legal only under `PERMISSIVE_BYTES`, and 8.2's rule that
+streaming is ordinary editing with no separate path would become conditional
+on the profile — which is exactly the special-casing that section forbids.
+Accepting a complete invalid sequence instead would erase the difference
+between the two profiles, since both would then store anything.
+
+A truncated final code point parses as `PERMISSIVE_BYTES` would parse it: the
+incomplete bytes decode to U+FFFD for that commit. A commit that completes the
+character reparses the whole character and produces the same AST as a fresh
+parse of the resulting bytes, which is what 13 already requires of every chunk
+partition.
+
+**Such a document is legal as a final document, not only as an intermediate
+one.** There is no finalize operation to reject it: 8.2 forbids one, a session
+may be closed at any commit, and a caller may simply parse `0xE2 0x82` and
+stop. So `STRICT_UTF8` guarantees "valid UTF-8, except that the last code
+point may be truncated" at every moment of a document's life, and never the
+stronger property its name suggests. A consumer that needs whole-character
+validity tests `Source.content` itself; the parser does not hold a document
+back waiting for bytes that may never arrive, because doing so would be the
+provisional state 8.2 forbids.
+
+That is the honest cost of the exception, and it is the smaller one. The
+alternative — rejecting the truncated tail — makes streaming legal only under
+`PERMISSIVE_BYTES` and makes 8.2's "streaming is ordinary editing" conditional
+on the profile, which is the special-casing that section exists to forbid.
 
 The source carries no revision of its own: every published document has
 different stored bytes from its predecessor, because a commit whose normalized
@@ -1292,7 +1328,9 @@ Edits name the current pending source coordinate space. A binding may expose
 single-edit and batch conveniences, but they normalize to one deterministic
 non-overlapping edit set before parsing. Overlap, overflow, stale source base,
 or a source-profile violation fails without publishing a partial source or
-AST.
+AST. Under `STRICT_UTF8` a truncated final code point is not a violation
+(7.1); it is the one intermediate state streaming needs, and the next chunk
+resolves it.
 
 Edits do not directly mutate a published `Document`. `commit` applies pending
 edits to a private source candidate, parses and validates one complete
@@ -1318,6 +1356,16 @@ There must not be a streaming-only node, mutable tail, provisional AST type,
 finalize opcode, revision domain, cache class, invalidation branch, or parser
 algorithm. Chunk partition and commit scheduling may affect performance and
 intermediate valid ASTs, but not final canonical output.
+
+A chunk boundary that falls inside a multi-byte character is the one place
+this needs saying twice. Both profiles accept the truncated tail — under
+`STRICT_UTF8` by the single exception of 7.1 — and both decode it to U+FFFD
+for that commit. This is not a provisional AST: the document is an ordinary
+complete document that happens to describe bytes ending mid-character, it is
+exactly what a fresh parse of those same bytes produces, and it stays valid
+and readable forever whether or not another chunk arrives. The completing
+chunk, if there is one, is an ordinary append, and 13's chunk
+equivalence covers it.
 
 ## 9. Delta
 
@@ -1500,9 +1548,10 @@ Two facts about the canonical node inventory remove the parameters:
 
 - no canonical node has two text-valued fields, so `TEXT` and `TEXT_MAP` need
   no field address. This is a rule about the inventory, not an accident of it:
-  **exactly one field per kind is a `CanonicalText`** — the kind's content
-  text, spelled `literal` where it exists — and every other string field is a
-  plain scalar carrying decoded characters and no `TextMap`. Without that rule
+  **at most one field per kind is a `CanonicalText`** — the kind's content
+  text, spelled `literal` — and every other string field is a plain scalar
+  carrying decoded characters and no `TextMap`. Seven kinds carry one; the
+  rest carry none and therefore never carry these two parts. Without that rule
   the claim is false, because `Link` and `Image` each pair a destination with
   a title and `ReferenceDefinition` carries both beside its label, and
   CommonMark resolves escapes and entities inside all of them. Naming the
@@ -1708,13 +1757,21 @@ A region is one of:
   `FormulaBlock`, `ThematicBreak`, `ReferenceDefinition` — together with its
   complete inline child sequence, because inline syntax is non-local within a
   leaf and cannot be reparsed in fragments;
-- the inline sequence of a `TableCell`, a `FootnoteDefinition`'s own content,
-  or a block `DirectiveLabel`, each of which owns the source backing that
-  sequence; or
-- the container marker material of one `BlockQuote`, `List`, `ListItem`,
-  `Table`, `TableRow`, or `DirectiveBlock` — its `>` runs, bullet or ordinal
-  markers, delimiter row, or fence lines — which belongs to the container's
-  own region and not to any child's.
+- the inline sequence of a `TableCell` or a block `DirectiveLabel`, each of
+  which owns the source backing that sequence; or
+- the marker material of one `BlockQuote`, `List`, `ListItem`, `Table`,
+  `TableRow`, `DirectiveBlock`, or `FootnoteDefinition` — its `>` runs, bullet
+  or ordinal markers, delimiter row, fence lines, or `[^label]:` opener —
+  which belongs to that container's own region and not to any child's.
+
+`FootnoteDefinition` belongs to the third class and not the second: its
+`content` is **block** content (`canonical-ast.md`), so it is a container whose
+children are their own regions, and what it owns directly is the `[^label]:`
+opener that introduces it. Classifying it by its content category is what
+gives that opener a region to be rebuilt from; an edit to the label would
+otherwise have nowhere to write its region-relative concrete records. Only
+`TableCell` and a block `DirectiveLabel` own an inline sequence without being
+a leaf block, which is why the second class has exactly two members.
 
 Inline containers are never regions. `Emphasis`, `Strong`, `Strikethrough`,
 `Link`, `Image`, `LinkReference`, `ImageReference`, and an inline `Directive`'s
@@ -1966,6 +2023,25 @@ identity rules, or the diff list.
    frontier plus inserted/removed content.
 5. Long append traces avoid prefix-sum copying; tiny retained slices respect
    the declared memory amplification bound.
+6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
+   is asymmetric and gates 1 and 14.8 pass without it — gate 1 exercises only
+   *legal* edits, and 14.8 compares only final outputs, so an implementation
+   that rejected every incomplete chunk, or one that accepted every invalid
+   sequence, would satisfy both. Under `STRICT_UTF8`:
+   - a commit whose bytes end in a truncated final code point **succeeds**,
+     publishes a document that decodes that tail to U+FFFD, and stays readable
+     with no further commit;
+   - a commit whose bytes contain a complete invalid sequence **fails**,
+     publishing neither source nor AST (8.1);
+   - a commit whose bytes contain a truncated code point followed by any
+     further byte **fails**, since the exception is positional and covers only
+     end-of-source; and
+   - the same three inputs under `PERMISSIVE_BYTES` all succeed, which is what
+     makes the two profiles observably different.
+7. Splitting one multi-byte character across two commits under `STRICT_UTF8`
+   produces, after the completing commit, the document a fresh parse of the
+   final bytes produces (13), and the intermediate document remains valid and
+   readable after the session closes.
 
 ### 14.4 Framework-integration gates
 
@@ -2095,8 +2171,14 @@ its timing on a small fixture.
 
 1. Run human typing, paste, IME, remote, and LLM chunk traces through only
    ordinary byte edits and `commit`.
-2. Randomize chunk boundaries and commit cadence.
-3. Compare every final document with a fresh parse.
+2. Randomize chunk boundaries and commit cadence, including boundaries that
+   fall inside a multi-byte character, under both source profiles. Every such
+   commit succeeds, and the trace is also run to completion *without* the
+   completing chunk, since a stream may simply stop there (7.1).
+3. Compare every final document with a fresh parse — including a final
+   document whose bytes end in a truncated code point, which is a legal
+   `STRICT_UTF8` document and must compare equal to a fresh parse of exactly
+   those bytes.
 4. Compare consumer state with a fresh projection under applied deltas,
    concatenated deltas, and discarded deltas.
 5. Audit public types and branches to prove there is no streaming-only

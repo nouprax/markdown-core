@@ -65,9 +65,14 @@ revisions are excluded — they are document history, not content.
   (`incremental-canonical-ast.md` §8.1). Byte granularity is what lets a
   streamed append complete a multi-byte character whose first bytes arrived in
   an earlier edit.
-- The store never normalizes its contents. NUL and invalid UTF-8 are replaced
-  with U+FFFD during parsing, per line, exactly as a one-shot parse does,
-  under the `STRICT_UTF8` profile; `PERMISSIVE_BYTES` stores them verbatim.
+- The store never normalizes its contents, under either profile. What the
+  profiles differ in is what they **accept**: `PERMISSIVE_BYTES` stores any
+  byte sequence, while `STRICT_UTF8` fails a commit whose bytes are not valid
+  UTF-8, with one exception — a truncated final code point at end-of-source,
+  which is the intermediate state a streamed chunk boundary produces
+  (`incremental-canonical-ast.md` §7.1). Whatever is stored, NUL and any byte
+  sequence that is not valid UTF-8 decode to U+FFFD during parsing, per line,
+  exactly as a one-shot parse does.
 - Edits are cheap: they update the pending text and extend the pending edit
   script. No parsing happens until commit. Multiple edits may be queued per
   commit, and they normalize to one deterministic non-overlapping ascending
@@ -140,18 +145,22 @@ never consults a newer session revision.
 ```text
 FootnoteAnswer {
     MarkupID winner          // the winning FootnoteDefinition for this label
-    integer  number          // 1-based, in first-use order of the label
+    integer  number          // the winner's 1-based number in first-use order
+                             // of the label; 0 when the LABEL has no reference
     integer  ordinal         // 1-based among that label's references in
                              // document order; 0 when asked of a definition
-    integer  referenceCount  // references resolving to `winner`
+    integer  referenceCount  // references resolving to `winner`; a property of
+                             // the label, so a shadowed definition reports it
 }
 
 Resolution {
     MarkupID winner          // the winning ReferenceDefinition for this label
-    integer  number          // 1-based, in first-use order of the label
+    integer  number          // the winner's 1-based number in first-use order
+                             // of the label; 0 when the LABEL has no reference
     integer  ordinal         // 1-based among that label's references in
                              // document order; 0 when asked of a definition
-    integer  referenceCount  // references resolving to `winner`
+    integer  referenceCount  // references resolving to `winner`; a property of
+                             // the label, so a shadowed definition reports it
 }
 ```
 
@@ -165,17 +174,34 @@ footnote semantics).
   defined, so there is no unresolved case to encode.
 - Asked of a `FootnoteDefinition` or `ReferenceDefinition`, `winner` is the
   definition that wins the label — its own identity unless an earlier
-  definition shadows it — `ordinal` is 0, and `referenceCount` is 0 for a
-  definition nothing refers to. That zero is a real immutable value, so a
-  later definition insertion is discovered as an ordinary `ANSWERS` change
-  rather than by rescanning.
-- Asked of any other kind, the result is absent.
+  definition shadows it — and `ordinal` is 0, because a definition is not one
+  of its own references.
 
-`Document.footnotes()` returns the referenced winning definitions in first-use
-order — the order a renderer lists them in. `Document.references(definition)`
-returns the references resolving to a winning definition in document order,
-and is empty for a shadowed definition, an unreferenced one, or a non-
-definition identity.
+  **`number` and `referenceCount` describe the label, not the node asked.**
+  They are the winner's number in first-use order and the count of references
+  resolving to that winner, so a shadowed definition reports the same pair its
+  winner does. Both are 0 when **the label** has no references at all:
+  numbering is first-use order, so a label with no first use has no number,
+  and 0 is the sentinel for that rather than an absent field. Reading them as
+  properties of the queried node instead would make a shadowed definition
+  report 0 beside a non-zero `winner`, which is the one combination the record
+  cannot mean.
+
+  `Document.references(identity)` is the accessor that *is* node-scoped: it
+  returns the references resolving to a winning definition in document order,
+  and is empty for a shadowed definition, for a definition whose label nothing
+  refers to, and for a non-definition identity. So a shadowed definition
+  answers a non-zero `referenceCount` and an empty `references` list, and the
+  two are consistent because they are answering different questions.
+
+  `Document.footnotes()` returns the referenced winning definitions in
+  first-use order — the order a renderer lists them in — which is exactly the
+  set whose `number` is non-zero.
+
+  Those zeros are real immutable values, not "nothing was read", so a later
+  definition insertion or a first reference appearing is discovered as an
+  ordinary `ANSWERS` change rather than by rescanning.
+- Asked of any other kind, the result is absent.
 
 Labels match case-folded with collapsed whitespace, the earliest definition in
 document order wins, and reference labels longer than the link-label limit
