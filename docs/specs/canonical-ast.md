@@ -8,11 +8,16 @@ section and
 off node values for v2 milestone M4 on 2026-07-17 (`MarkupSession` becomes a
 canonical entry point; the footnote label field is renamed `label` because
 `id` now names node identity); directive labels promoted to the public
-`DirectiveLabel` kind on 2026-07-29, expanding the inventory to 29 kinds; the
+`DirectiveLabel` kind on 2026-07-29; the
 reference model unified with the footnote model on 2026-08-02, adding
-`ReferenceDefinition`, `LinkReference`, and `ImageReference` for 32 kinds and,
+`ReferenceDefinition`, `LinkReference`, and `ImageReference` for the present
+34 kinds and,
 in the same revision, making an undefined footnote reference literal text so
-all three reference forms answer "no definition" the same way.
+all three reference forms answer "no definition" the same way; adopted the
+unified-CST ownership model on 2026-08-03, replacing the single `revision`
+scalar with `MarkupTrack`, moving parser answers from session scope to the
+immutable published document, and pinning which string fields carry a
+`TextMap` (`incremental-canonical-ast.md`).
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -26,15 +31,20 @@ or semantics.
 
 ## Core rules
 
-- `Markup` is the only abstract AST node type.
-- Every `Markup` has a non-optional identity `id: MarkupID` and a
-  `revision`; equality and hashing are `(id, revision)` — O(1) and
+- `Markup` is the only abstract AST node type, and it is the typed semantic
+  projection of one unified CST rather than a separately allocated tree
+  (`incremental-canonical-ast.md`, §0).
+- Every `Markup` has a non-optional `track: MarkupTrack` carrying its
+  `MarkupID`, its `MarkupRevision` pair, and its `SourceExtent`. Equality and
+  hashing are `(MarkupID, revision.subtree)` for whole-subtree equality and
+  `(MarkupID, revision.self)` for local equality — both O(1) and
   allocation-free — and equal nodes are guaranteed to have identical AST
   content. See the identity and equality section.
-- Nodes do not store absolute source positions. Scopes are resolved through
-  the owning snapshot (`document.scope(of:)`), supplied with every `MarkupWalker`
-  event, and printed by the dump; see `sessions-and-deltas.md` for the
-  resolution rules.
+- Nodes do not store absolute source positions. Scopes are resolved on demand
+  through the owning document (`document.scope(of:)`) in `O(log n)`, supplied
+  with every `MarkupWalker` event, and printed by the dump; see
+  `incremental-canonical-ast.md` §7.2 for the resolution rules and the
+  coordinate profiles.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -201,22 +211,58 @@ error rather than silently dropping a value.
 | `CrossLink` | `reference: String` | source-faithful non-empty reference from `[[reference]]`; leaf; has no in-document definition, so it is never undefined |
 | `Embed` | `reference: String` | source-faithful non-empty reference from `![[reference]]`; leaf; as `CrossLink` |
 
-Every row above also has the inherited identity fields `id: MarkupID` and
-`revision`; they are not repeated in the table. No row has a stored scope.
+Every row above also carries the inherited `track: MarkupTrack`; it is not
+repeated in the table. No row has a stored scope, and no row has a stored
+absolute offset of any kind.
+
+Exactly one field per kind is a `CanonicalText` — the kind's content text,
+spelled `literal` where it exists, plus `Text.literal` — and it carries the
+map back to the source bytes that produced it. Every other string field above
+is a plain scalar holding decoded characters with no map: `Link.destination`
+and `Link.title`, `Image.source` and `Image.title`,
+`ReferenceDefinition.destination` and `.title`, `CodeBlock.info` and
+`.language`, every `label`, `name`, `attributes`, and `reference`. Naming the
+source span of one of those scalars is a sub-node extent that does not exist
+yet (`incremental-canonical-ast.md` §7.2); a consumer that needs one today
+resolves the owning node's extent and searches within it.
 
 ### Identity and equality
 
-`MarkupID` packs the owning session's random `lineage` salt with the node's
-raw 64-bit id: ids are unique within a session, never reused, and stable
-across incremental commits while the node remains the same kind of thing at
-the same place; nodes from different sessions (one-shot parses included —
-`Document.parse` runs an internal single-commit session) never compare
-equal. `revision` is the commit revision at which the node's own fields,
-child list, or any descendant last changed; a pure positional shift never
-changes it. Equality and hashing on every kind are `(id, revision)`,
-identifiable-style APIs use `MarkupID` alone, and two equal nodes are
-guaranteed to have identical AST content. Absolute source position is not
-content. The full identity contract lives in `sessions-and-deltas.md`.
+```text
+MarkupTrack {
+    MarkupID       identity
+    MarkupRevision revision      // { self, subtree }
+    SourceExtent   extent
+}
+```
+
+`MarkupID` pairs the owning document's opaque `DocumentDomain` with a positive
+ordinal: ordinals are unique within a domain, never reused after retirement,
+and stable across incremental commits while the node remains the same logical
+node. Nodes from different domains never compare equal, and passing an
+identity from another domain is a programmer error that traps rather than a
+result value. A one-shot parse gets its own domain, as does any change to the
+schema, parse options, or source profile.
+
+`revision` is a pair, never a single number. `revision.self` is the revision
+at which the node's own local projection last changed — its kind, scalar and
+text fields, direct child membership and order, and the parser answers
+addressed to it. `revision.subtree` is that plus everything reachable below
+it. A pure positional shift changes neither. Both are drawn from the one
+positive, strictly monotonic `Revision` counter of the owning domain; zero is
+invalid.
+
+Equality and hashing on every kind are `(MarkupID, revision.subtree)`, which
+is whole-subtree equality; `(MarkupID, revision.self)` compares the node's own
+projection without its descendants. Identifiable-style APIs use `MarkupID`
+alone. Two equal nodes are guaranteed to have identical AST content. Absolute
+source position is not content.
+
+Which identities survive an edit is decided by the anchored continuity rule of
+`incremental-canonical-ast.md` §5.2: identity never crosses a parent or a
+kind, nodes the edit does not overlap are matched positionally against stable
+old witnesses, and only the children the edit overlaps are matched by content.
+The full identity contract lives there.
 
 ### Relationship to upstream cmark-gfm
 
@@ -326,21 +372,29 @@ consumer that owns those targets, not for the parser. They are nodes whenever
 their syntax matches, and "unresolved" is not a state this AST can observe.
 
 Numbering, first-use order, resolution state, and back-reference ordinals are
-not AST content. They are queries over a session-maintained index defined in
-`sessions-and-deltas.md`; renderers that need the GFM presentation
+not AST content. They are parser answers: queries over the relation indexes
+the immutable published document pins, addressed by `MarkupID`
+(`incremental-canonical-ast.md` §4.1 and §6.3), with the answer record types
+defined in `sessions-and-deltas.md`. They are not a live-session feature, and
+a retained document keeps answering them after later commits and session
+close. Renderers that need the GFM presentation
 (definitions gathered at the tail in first-use order, numbered markers)
 derive it from those queries. This aligns the tree with the mdast model and
 keeps edits from rewriting unrelated parts of the document.
 
 Making definedness decide a node's type puts a document-scoped fact inside an
 inline parse, which an incremental parser has to answer without reading the
-whole document each time. It is answered by session-persistent definition
-tables — one for reference definitions, one for footnote definitions — that a
-commit retracts and re-registers over the lines it reparses. A label whose
-definedness flips re-refines exactly the units that read it. The two kinds get
-separate tables rather than one keyed by label: `[x]:` and `[^x]:` would share
-a bucket, one kind's flip could hide behind the other's presence, and the units
-that read the hidden one would keep a stale tree.
+whole document each time. It is answered by persistent definition tables — one
+for reference definitions, one for footnote definitions — that a commit
+retracts and re-registers over the lines it reparses, before it builds the CST
+for them; this is publication step 0 of `incremental-canonical-ast.md` §6.3,
+and it is why the CST's node inventory can depend on a document-wide relation
+without the publication order becoming circular. A label whose definedness
+flips re-refines exactly the units that read it, found through the mention
+index rather than by scanning. The two kinds get separate tables rather than
+one keyed by label: `[x]:` and `[^x]:` would share a bucket, one kind's flip
+could hide behind the other's presence, and the units that read the hidden one
+would keep a stale tree.
 
 ### Typed table ownership
 
@@ -408,14 +462,14 @@ not exist. Raw HTML, URLs, and full code info strings are always retained.
 ## MarkupVisitor and MarkupWalker
 
 The typed `MarkupVisitor<Result>` has one dispatch method for every `Markup`
-kind in the 31-kind node inventory, including `TableRow`, `TableCell`, and
+kind in the 34-kind node inventory, including `TableRow`, `TableCell`, and
 `DirectiveLabel`. The interface is exhaustive: every typed method is required,
 there is no `defaultVisit`, optional handler, catch-all adapter, or
 protocol-extension fallback. Adding a `Markup` kind must therefore produce
 compile errors in every visitor until the new case is handled. Visiting one
 node does not implicitly recurse.
 
-The standard read-only `MarkupWalker` walks a `Document` snapshot (whole or from
+The standard read-only `MarkupWalker` walks a `Document` (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
 every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
 exhaustive MarkupVisitor on `entering` invokes it exactly once per node. MarkupWalker owns
