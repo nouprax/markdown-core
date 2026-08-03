@@ -1142,11 +1142,25 @@ Accepting a complete invalid sequence instead would erase the difference
 between the two profiles, since both would then store anything.
 
 A truncated final code point parses as `PERMISSIVE_BYTES` would parse it: the
-incomplete bytes decode to U+FFFD for that commit. The commit that completes
-the character reparses the whole character and produces the same AST as a
-fresh parse of the final bytes, which is what 13 already requires of every
-chunk partition. So the tolerance changes which intermediate documents exist,
-never a final one.
+incomplete bytes decode to U+FFFD for that commit. A commit that completes the
+character reparses the whole character and produces the same AST as a fresh
+parse of the resulting bytes, which is what 13 already requires of every chunk
+partition.
+
+**Such a document is legal as a final document, not only as an intermediate
+one.** There is no finalize operation to reject it: 8.2 forbids one, a session
+may be closed at any commit, and a caller may simply parse `0xE2 0x82` and
+stop. So `STRICT_UTF8` guarantees "valid UTF-8, except that the last code
+point may be truncated" at every moment of a document's life, and never the
+stronger property its name suggests. A consumer that needs whole-character
+validity tests `Source.content` itself; the parser does not hold a document
+back waiting for bytes that may never arrive, because doing so would be the
+provisional state 8.2 forbids.
+
+That is the honest cost of the exception, and it is the smaller one. The
+alternative — rejecting the truncated tail — makes streaming legal only under
+`PERMISSIVE_BYTES` and makes 8.2's "streaming is ordinary editing" conditional
+on the profile, which is the special-casing that section exists to forbid.
 
 The source carries no revision of its own: every published document has
 different stored bytes from its predecessor, because a commit whose normalized
@@ -1346,10 +1360,11 @@ intermediate valid ASTs, but not final canonical output.
 A chunk boundary that falls inside a multi-byte character is the one place
 this needs saying twice. Both profiles accept the truncated tail — under
 `STRICT_UTF8` by the single exception of 7.1 — and both decode it to U+FFFD
-for that intermediate commit. This is not a provisional AST: the intermediate
-document is an ordinary complete document that happens to describe bytes
-ending mid-character, and it is exactly what a fresh parse of those same bytes
-produces. The completing chunk is an ordinary append, and 13's chunk
+for that commit. This is not a provisional AST: the document is an ordinary
+complete document that happens to describe bytes ending mid-character, it is
+exactly what a fresh parse of those same bytes produces, and it stays valid
+and readable forever whether or not another chunk arrives. The completing
+chunk, if there is one, is an ordinary append, and 13's chunk
 equivalence covers it.
 
 ## 9. Delta
@@ -2008,6 +2023,25 @@ identity rules, or the diff list.
    frontier plus inserted/removed content.
 5. Long append traces avoid prefix-sum copying; tiny retained slices respect
    the declared memory amplification bound.
+6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
+   is asymmetric and gates 1 and 14.8 pass without it — gate 1 exercises only
+   *legal* edits, and 14.8 compares only final outputs, so an implementation
+   that rejected every incomplete chunk, or one that accepted every invalid
+   sequence, would satisfy both. Under `STRICT_UTF8`:
+   - a commit whose bytes end in a truncated final code point **succeeds**,
+     publishes a document that decodes that tail to U+FFFD, and stays readable
+     with no further commit;
+   - a commit whose bytes contain a complete invalid sequence **fails**,
+     publishing neither source nor AST (8.1);
+   - a commit whose bytes contain a truncated code point followed by any
+     further byte **fails**, since the exception is positional and covers only
+     end-of-source; and
+   - the same three inputs under `PERMISSIVE_BYTES` all succeed, which is what
+     makes the two profiles observably different.
+7. Splitting one multi-byte character across two commits under `STRICT_UTF8`
+   produces, after the completing commit, the document a fresh parse of the
+   final bytes produces (13), and the intermediate document remains valid and
+   readable after the session closes.
 
 ### 14.4 Framework-integration gates
 
@@ -2137,8 +2171,14 @@ its timing on a small fixture.
 
 1. Run human typing, paste, IME, remote, and LLM chunk traces through only
    ordinary byte edits and `commit`.
-2. Randomize chunk boundaries and commit cadence.
-3. Compare every final document with a fresh parse.
+2. Randomize chunk boundaries and commit cadence, including boundaries that
+   fall inside a multi-byte character, under both source profiles. Every such
+   commit succeeds, and the trace is also run to completion *without* the
+   completing chunk, since a stream may simply stop there (7.1).
+3. Compare every final document with a fresh parse — including a final
+   document whose bytes end in a truncated code point, which is a legal
+   `STRICT_UTF8` document and must compare equal to a fresh parse of exactly
+   those bytes.
 4. Compare consumer state with a fresh projection under applied deltas,
    concatenated deltas, and discarded deltas.
 5. Audit public types and branches to prove there is no streaming-only
