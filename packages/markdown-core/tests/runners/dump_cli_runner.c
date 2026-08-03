@@ -70,23 +70,58 @@ static char *run_cli(const char *program, const char *markdown_path, size_t *out
     return output;
 }
 
-/* Runs the CLI over stdin with extra arguments and returns its stdout, with
- * the exit status in *status. */
-static char *run_cli_stdin(const char *program, const char *extra, const char *input, int *status) {
+/* Runs the CLI over `input` with extra arguments and returns its stdout, with
+ * the exit status in *status.
+ *
+ * The input still arrives on stdin, redirected from a temporary file rather
+ * than piped from `printf`. The pipeline needed `printf` and POSIX
+ * single-quoting, and `cmd.exe` supplies neither, so on Windows the shell ran
+ * a command that was not the one written here and all ten cases failed.
+ * Redirection is the one form both shells share.
+ *
+ * Passing the file as an argument instead would have been simpler and was
+ * wrong twice: it stops exercising the CLI's stdin path, which nothing else
+ * covers, and it puts a path after `--profile`, so the missing-value case
+ * would quietly become a second unknown-profile case. */
+static char *run_cli_input(const char *program, const char *extra, const char *input, size_t index, int *status) {
     char command[2048];
+    char path[64];
     FILE *pipe;
+    FILE *file;
     char *output;
     size_t capacity = 4096;
     size_t length = 0;
+    size_t input_length = strlen(input);
 
-    snprintf(command, sizeof(command), "printf '%%s' '%s' | \"%s\" %s 2>/dev/null", input, program, extra);
+    snprintf(path, sizeof(path), "dump-cli-profile-%zu.md", index);
+    file = fopen(path, "wb");
+    if (!file) {
+        return NULL;
+    }
+    /* Byte for byte what the pipeline used to deliver: no terminator is added,
+     * because `printf '%s'` added none either. */
+    if (fwrite(input, 1, input_length, file) != input_length) {
+        fclose(file);
+        remove(path);
+        return NULL;
+    }
+    fclose(file);
+
+#if defined(_WIN32)
+    /* cmd.exe /c strips the first and last quote from a quoted command. */
+    snprintf(command, sizeof(command), "\"\"%s\" %s <\"%s\" 2>NUL\"", program, extra, path);
+#else
+    snprintf(command, sizeof(command), "\"%s\" %s <\"%s\" 2>/dev/null", program, extra, path);
+#endif
     pipe = ts_popen(command, "r");
     if (!pipe) {
+        remove(path);
         return NULL;
     }
     output = (char *)malloc(capacity);
     if (!output) {
         ts_pclose(pipe);
+        remove(path);
         return NULL;
     }
     for (;;) {
@@ -100,12 +135,14 @@ static char *run_cli_stdin(const char *program, const char *extra, const char *i
         if (!grown) {
             free(output);
             ts_pclose(pipe);
+            remove(path);
             return NULL;
         }
         output = grown;
     }
     output[length] = '\0';
     *status = ts_pclose(pipe);
+    remove(path);
     return output;
 }
 
@@ -146,7 +183,7 @@ static int check_profiles(const char *program) {
 
     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int status = -1;
-        char *out = run_cli_stdin(program, cases[i].arguments, cases[i].input, &status);
+        char *out = run_cli_input(program, cases[i].arguments, cases[i].input, i, &status);
         int succeeded;
         if (!out) {
             fprintf(stderr, "%s: CLI invocation failed\n", cases[i].name);
