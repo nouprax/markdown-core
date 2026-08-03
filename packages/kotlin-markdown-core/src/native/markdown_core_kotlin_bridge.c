@@ -314,6 +314,23 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         put_string(buffer, second, second.data != NULL);
         put_child_ids(buffer, node);
         break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
+        markdown_core_string_view third = {NULL, 0};
+        markdown_core_node_reference_definition_properties(node, &first, &second, &third);
+        put_string(buffer, first, true);
+        put_string(buffer, second, second.data != NULL);
+        put_string(buffer, third, third.data != NULL);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
+        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+        markdown_core_node_reference_properties(node, &first, &form);
+        put_string(buffer, first, true);
+        put_u8(buffer, (uint8_t)form);
+        put_child_ids(buffer, node);
+        break;
+    }
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header = false;
         markdown_core_node_table_row_is_header(node, &header);

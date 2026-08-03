@@ -222,6 +222,15 @@ private class WireReader(
 
     fun requiredString(): String = requireNotNull(string()) { "missing native field" }
 
+    /** The form a reference was written in, as the bridge encodes it. */
+    fun referenceForm(): ReferenceForm =
+        when (val raw = byte().toInt()) {
+            0 -> ReferenceForm.FULL
+            1 -> ReferenceForm.COLLAPSED
+            2 -> ReferenceForm.SHORTCUT
+            else -> error("unknown reference form $raw")
+        }
+
     fun scope(): Scope = Scope(Position(int(), int()), Position(int(), int()))
 
     fun kind(): Int = byte().toInt() and 0xff
@@ -440,6 +449,18 @@ private fun WireReader.record(
             Embed(id, revision, requiredString())
         }
 
+        WireKind.REFERENCE_DEFINITION -> {
+            ReferenceDefinition(id, revision, requiredString(), string(), string())
+        }
+
+        WireKind.LINK_REFERENCE -> {
+            LinkReference(id, revision, requiredString(), referenceForm(), children(mirror))
+        }
+
+        WireKind.IMAGE_REFERENCE -> {
+            ImageReference(id, revision, requiredString(), referenceForm(), children(mirror))
+        }
+
         else -> {
             error("unsupported native node kind $kind")
         }
@@ -618,4 +639,11 @@ private object WireKind {
     const val FOOTNOTE_REFERENCE = 29
     const val CROSS_LINK = 30
     const val EMBED = 31
+
+    // Appended, not inserted: the numbering is positional and shared with the
+    // C enum, so a kind added in the middle would renumber every kind after
+    // it in all four bindings.
+    const val REFERENCE_DEFINITION = 32
+    const val LINK_REFERENCE = 33
+    const val IMAGE_REFERENCE = 34
 }

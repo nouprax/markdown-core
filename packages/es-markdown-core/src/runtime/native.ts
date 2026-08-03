@@ -53,6 +53,7 @@ export interface NativeExports extends WebAssembly.Exports {
     es_scope_table(document: number, dataOutput: number): number;
     es_scope_table_free(data: number): void;
     es_node_heading_level(node: number): number;
+    es_node_reference_form(node: number): number;
     /** Writes i32 flavor, i32 tight, i32 has-start, i32 padding, i64 start
      * to `output` in one crossing. */
     es_node_list_properties(node: number, output: number): void;

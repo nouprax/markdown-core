@@ -287,6 +287,9 @@ private struct CountingVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) { record(node) }
     mutating func visit(_ node: Directive) { record(node) }
     mutating func visit(_ node: FootnoteReference) { record(node) }
+    mutating func visit(_ node: ReferenceDefinition) { record(node) }
+    mutating func visit(_ node: LinkReference) { record(node) }
+    mutating func visit(_ node: ImageReference) { record(node) }
     mutating func visit(_ node: CrossLink) { record(node) }
     mutating func visit(_ node: Embed) { record(node) }
 }

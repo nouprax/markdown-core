@@ -227,6 +227,18 @@ typedef int (*markdown_core_materialize_inline_func)(
 /** Should return 'true' if 'input' can be contained in 'container',
  *  'false' otherwise.
  */
+/* Whether an open block continues on this line, with three outcomes:
+ *
+ *   > 0  it continues;
+ *   = 0  it does not match — its prefix is absent. A paragraph inside it may
+ *        still continue lazily, the way one continues out of a block quote;
+ *   < 0  it ends here, having consumed its own terminator. The engine
+ *        finalizes it at once and stops processing the line, which is what a
+ *        closing fence means and what keeps the next line from continuing
+ *        content the terminator already closed.
+ *
+ * An extension that only ever continues or fails to match returns 0 and 1 and
+ * needs to know nothing about the third. */
 typedef int (*markdown_core_match_block_func)(
     markdown_core_extension *extension,
     markdown_core_parser *parser,

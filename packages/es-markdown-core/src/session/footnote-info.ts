@@ -12,11 +12,12 @@ import type { MarkupID } from "../model/markup-id.js";
  */
 export interface FootnoteInfo {
     /** The label's winning definition (for a definition: its own id unless
-     * an earlier definition shadows it); null while the label is
-     * unresolved. */
+     * an earlier definition shadows it). Every node this can be asked about
+     * has one: a reference exists only where its label is defined, and a
+     * definition defines its own. */
     readonly definition: MarkupID | null;
-    /** The label's 1-based first-use ordinal; null while the label is
-     * unresolved or unreferenced. */
+    /** The label's 1-based first-use ordinal; null for a definition no
+     * reference names. */
     readonly number: number | null;
     /** For a reference: its 1-based position among the label's references
      * in document order. null for definitions. */

@@ -259,7 +259,10 @@ for (const testCase of manifest.cases ?? []) {
             Directive: ["mode", "name", "attributes"],
             FootnoteReference: ["id"],
             CrossLink: ["reference"],
-            Embed: ["reference"]
+            Embed: ["reference"],
+            ReferenceDefinition: ["label", "destination", "title"],
+            LinkReference: ["label", "form"],
+            ImageReference: ["label", "form"]
         };
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {

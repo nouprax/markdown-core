@@ -8,6 +8,7 @@ kotlin = "2.4.0"
 kotlin-stdlib = "2.2.21"
 dokka = "2.1.0"
 kotlinx-coroutines = "1.10.2"
+jacoco = "0.8.13"
 ktlintCli = "1.8.0"
 ktlintPlugin = "14.2.0"
 

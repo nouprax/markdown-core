@@ -1033,6 +1033,14 @@ static const char FB_SWEEP_CORPUS[] =
     "\n"
     ":inline{a=1 b=2 a=3}\n"
     "\n"
+    // Shorthand and repeated classes: `class` accumulates rather than
+    // replacing, and that merge allocates, so the sweep must reach it.
+    ":shorthand{#one .red .blue class=green k=v}\n"
+    "\n"
+    // An inline directive carrying a label: the label opener emits the
+    // directive before the bracket, and that allocation must be swept too.
+    ":cite[a *b*]{k=v} tail\n"
+    "\n"
     "Cross [[folder/note#heading]] and embed ![[asset.png|preview]].\n"
     "\n"
     "[^fn]: footnote *body*\n"
@@ -1771,13 +1779,30 @@ static const markdown_core_node *fb_child_of_type(const markdown_core_node *pare
     return NULL;
 }
 
-static int fb_link_destination_is(const markdown_core_node *node, const char *expected) {
+/* A reference carries no destination. It names a label; which definition that
+ * label resolves to is an answer, and the destination is stated once at that
+ * definition, where the source writes it. So this asks the answer first and
+ * reads the winning definition second — which is also why retargeting a
+ * definition leaves every reference node untouched. */
+static int fb_reference_destination_is(
+    const markdown_core_session *session,
+    const markdown_core_node *node,
+    const char *expected
+) {
+    markdown_core_reference_info info;
+    const markdown_core_node *definition;
+    markdown_core_string_view label;
     markdown_core_string_view destination;
     markdown_core_string_view title;
     size_t length = strlen(expected);
 
-    return node && markdown_core_node_link_properties(node, &destination, &title) && destination.length == length &&
-           memcmp(destination.data, expected, length) == 0;
+    if (!node || !markdown_core_session_reference_info(session, markdown_core_node_get_id(node), &info) ||
+        info.definition == 0) {
+        return 0;
+    }
+    definition = markdown_core_session_node_by_id(session, info.definition);
+    return definition && markdown_core_node_reference_definition_properties(definition, &label, &destination, &title) &&
+           destination.length == length && memcmp(destination.data, expected, length) == 0;
 }
 
 static const markdown_core_lookup_record *fb_lookup_record_find(
@@ -1885,6 +1910,7 @@ static int case_block_directive_label_lookup_locality(void) {
     const markdown_core_node *body;
     const markdown_core_node *tail;
     markdown_core_node_id root_id;
+    markdown_core_node_id definition_id = 0;
     markdown_core_node_id directive_id;
     markdown_core_node_id label_id;
     markdown_core_node_id link_id;
@@ -1918,7 +1944,13 @@ static int case_block_directive_label_lookup_locality(void) {
     }
 
     root = markdown_core_document_root(markdown_core_session_document(session));
+    // The leading `[reference]: /a` is a ReferenceDefinition node now, where
+    // it used to be consumed and leave the directive as the first child.
     directive = root ? root->first_child : NULL;
+    while (directive && directive->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
+        definition_id = markdown_core_node_get_id(directive);
+        directive = directive->next;
+    }
     label = markdown_core_node_directive_label(directive);
     label_first = markdown_core_node_get_first_child(label);
     link = label_first ? label_first->next : NULL;
@@ -1928,10 +1960,10 @@ static int case_block_directive_label_lookup_locality(void) {
         markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
         markdown_core_node_get_parent(label) != directive || !label_first ||
         label_first->type != MARKDOWN_CORE_NODE_TEXT || label_first->parent != label || !link ||
-        link->type != MARKDOWN_CORE_NODE_LINK || link->parent != label || link->next || !body ||
+        link->type != MARKDOWN_CORE_NODE_LINK_REFERENCE || link->parent != label || link->next || !body ||
         markdown_core_node_get_next_sibling(label) != body || body->type != MARKDOWN_CORE_NODE_PARAGRAPH ||
         body->parent != directive || !tail || tail->type != MARKDOWN_CORE_NODE_PARAGRAPH || tail->next ||
-        !fb_link_destination_is(link, "/a")) {
+        !fb_reference_destination_is(session, link, "/a")) {
         fputs("FAILED: block_directive_label_lookup_locality: unexpected baseline tree\n", stderr);
         goto done;
     }
@@ -2008,16 +2040,23 @@ static int case_block_directive_label_lookup_locality(void) {
             fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel identity diverged\n", stderr);
             goto done;
         }
-        if (markdown_core_node_get_revision(directive) <= directive_revision) {
-            fputs("FAILED: block_directive_label_lookup_locality: semantic owner revision did not bubble\n", stderr);
+        /* Retargeting the definition moves an answer, not a node. The
+         * reference inside the label never carried the destination, so it is
+         * byte-identical across the commit and nothing above it bubbles —
+         * which is what makes a definition edit local to the definition.
+         * This scenario still pins the locality it was written for: the
+         * label's lookup posting must survive the rebuild, checked below. */
+        if (markdown_core_node_get_revision(directive) != directive_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: semantic owner revision moved\n", stderr);
             goto done;
         }
-        if (markdown_core_node_get_revision(label) <= label_revision) {
-            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel revision did not bubble\n", stderr);
+        if (markdown_core_node_get_revision(label) != label_revision) {
+            fputs("FAILED: block_directive_label_lookup_locality: DirectiveLabel revision moved\n", stderr);
             goto done;
         }
-        if (!link || link->parent != label || link->next || !fb_link_destination_is(link, destinations[round]) ||
-            markdown_core_node_get_revision(link) <= link_revision) {
+        if (!link || link->parent != label || link->next ||
+            !fb_reference_destination_is(session, link, destinations[round]) ||
+            markdown_core_node_get_revision(link) != link_revision) {
             fprintf(
                 stderr,
                 "FAILED: block_directive_label_lookup_locality: label Link identity diverged "
@@ -2025,7 +2064,7 @@ static int case_block_directive_label_lookup_locality(void) {
                 link != NULL,
                 link && link->parent == label,
                 link && link->next != NULL,
-                link && fb_link_destination_is(link, destinations[round]),
+                link && fb_reference_destination_is(session, link, destinations[round]),
                 (unsigned long long)markdown_core_node_get_revision(link),
                 (unsigned long long)link_revision
             );
@@ -2057,24 +2096,26 @@ static int case_block_directive_label_lookup_locality(void) {
             goto done;
         }
         count = markdown_core_delta_changed(changes, &ids);
-        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_CHANGED, link_id) ||
+        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_CHANGED, definition_id) ||
+            fb_delta_contains(changes, FB_DELTA_CHANGED, link_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, label_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, directive_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, body_id) ||
             fb_delta_contains(changes, FB_DELTA_CHANGED, tail_id)) {
-            fputs("FAILED: block_directive_label_lookup_locality: changed delta is not the label Link\n", stderr);
+            fputs("FAILED: block_directive_label_lookup_locality: changed delta is not the definition\n", stderr);
             goto done;
         }
+        /* The definition is a document child, so the only ancestor above it
+         * is the document. The directive and its label are no longer on the
+         * path from the change to the root — they were only ever there
+         * because the destination lived inside the label. */
         count = markdown_core_delta_bubbled(changes, &ids);
-        if (count != 3 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, label_id) ||
-            !fb_delta_contains(changes, FB_DELTA_BUBBLED, directive_id) ||
-            !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id) ||
+        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id) ||
+            fb_delta_contains(changes, FB_DELTA_BUBBLED, label_id) ||
+            fb_delta_contains(changes, FB_DELTA_BUBBLED, directive_id) ||
             fb_delta_contains(changes, FB_DELTA_BUBBLED, body_id) ||
             fb_delta_contains(changes, FB_DELTA_BUBBLED, tail_id)) {
-            fputs(
-                "FAILED: block_directive_label_lookup_locality: ancestor bubble is not label, owner, document\n",
-                stderr
-            );
+            fputs("FAILED: block_directive_label_lookup_locality: ancestor bubble is not the document\n", stderr);
             goto done;
         }
         directive_revision = markdown_core_node_get_revision(directive);
@@ -2138,6 +2179,7 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
     markdown_core_node_id *paragraph_ids = NULL;
     uint64_t *link_revisions = NULL;
     markdown_core_node_id root_id;
+    markdown_core_node_id definition_id = 0;
     markdown_core_node_id tail_id;
     uint64_t tail_revision;
     char *source = NULL;
@@ -2164,6 +2206,13 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
     root = markdown_core_document_root(markdown_core_session_document(session));
     root_id = markdown_core_node_get_id(root);
     node = root ? root->first_child : NULL;
+    // The leading `[x]: /aaaa` is a ReferenceDefinition node now, where it
+    // used to be consumed and leave the document's children starting at the
+    // first paragraph.
+    while (node && node->type == MARKDOWN_CORE_NODE_REFERENCE_DEFINITION) {
+        definition_id = markdown_core_node_get_id(node);
+        node = node->next;
+    }
     for (i = 0; i < dependent_count; i++) {
         const markdown_core_node *link;
         if (!node || node->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
@@ -2175,8 +2224,8 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
             );
             goto done;
         }
-        link = fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK);
-        if (!link || !fb_link_destination_is(link, "/aaaa")) {
+        link = fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK_REFERENCE);
+        if (!link || !fb_reference_destination_is(session, link, "/aaaa")) {
             fprintf(
                 stderr,
                 "FAILED: reference_fanout_uniform_routing: %zu: dependent Link %zu missing\n",
@@ -2191,7 +2240,7 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
         node = node->next;
     }
     if (!node || node->type != MARKDOWN_CORE_NODE_PARAGRAPH || node->next ||
-        fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK)) {
+        fb_child_of_type(node, MARKDOWN_CORE_NODE_LINK_REFERENCE)) {
         fprintf(stderr, "FAILED: reference_fanout_uniform_routing: %zu: tail shape diverged\n", dependent_count);
         goto done;
     }
@@ -2267,8 +2316,14 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
             );
             goto done;
         }
+        /* Retargeting a definition changes the definition and nothing else.
+         * The references never carried the destination, so their nodes are
+         * byte-identical before and after and no fanout is routed to them —
+         * which is the property this whole change exists to produce, and what
+         * this scenario now pins. Only the definition is `changed`, and only
+         * the root bubbles above it. */
         count = markdown_core_delta_changed(changes, &ids);
-        if (count != dependent_count) {
+        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_CHANGED, definition_id)) {
             fprintf(
                 stderr,
                 "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu changed %zu nodes\n",
@@ -2279,7 +2334,7 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
             goto done;
         }
         count = markdown_core_delta_bubbled(changes, &ids);
-        if (count != dependent_count + 1 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id)) {
+        if (count != 1 || !fb_delta_contains(changes, FB_DELTA_BUBBLED, root_id)) {
             fprintf(
                 stderr,
                 "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu bubbled %zu nodes\n",
@@ -2292,11 +2347,12 @@ static int fb_reference_fanout_scenario(size_t dependent_count) {
         for (i = 0; i < dependent_count; i++) {
             const markdown_core_node *link = markdown_core_session_node_by_id(session, link_ids[i]);
             const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_ids[i]);
+            /* The answer moved; the node did not. */
             if (!link || !paragraph || link->parent != paragraph ||
-                !fb_link_destination_is(link, destinations[round]) ||
-                markdown_core_node_get_revision(link) <= link_revisions[i] ||
-                !fb_delta_contains(changes, FB_DELTA_CHANGED, link_ids[i]) ||
-                !fb_delta_contains(changes, FB_DELTA_BUBBLED, paragraph_ids[i])) {
+                !fb_reference_destination_is(session, link, destinations[round]) ||
+                markdown_core_node_get_revision(link) != link_revisions[i] ||
+                fb_delta_contains(changes, FB_DELTA_CHANGED, link_ids[i]) ||
+                fb_delta_contains(changes, FB_DELTA_BUBBLED, paragraph_ids[i])) {
                 fprintf(
                     stderr,
                     "FAILED: reference_fanout_uniform_routing: %zu: retarget %zu dependent %zu diverged\n",

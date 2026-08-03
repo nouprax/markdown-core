@@ -9,6 +9,9 @@
   field com/nouprax/markdown/core/ParseErrorCode.INVALID_ARGUMENT Lcom/nouprax/markdown/core/ParseErrorCode;
   field com/nouprax/markdown/core/PlacementMode.EMBEDDED Lcom/nouprax/markdown/core/PlacementMode;
   field com/nouprax/markdown/core/PlacementMode.STANDALONE Lcom/nouprax/markdown/core/PlacementMode;
+  field com/nouprax/markdown/core/ReferenceForm.COLLAPSED Lcom/nouprax/markdown/core/ReferenceForm;
+  field com/nouprax/markdown/core/ReferenceForm.FULL Lcom/nouprax/markdown/core/ReferenceForm;
+  field com/nouprax/markdown/core/ReferenceForm.SHORTCUT Lcom/nouprax/markdown/core/ReferenceForm;
   field com/nouprax/markdown/core/TableAlignment.CENTER Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/TableAlignment.LEFT Lcom/nouprax/markdown/core/TableAlignment;
   field com/nouprax/markdown/core/TableAlignment.NONE Lcom/nouprax/markdown/core/TableAlignment;
@@ -191,6 +194,15 @@
   method com/nouprax/markdown/core/Image.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.hashCode ()I
   method com/nouprax/markdown/core/Image.revisionBits ()J
+  method com/nouprax/markdown/core/ImageReference.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/ImageReference.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/ImageReference.getContent ()Ljava/util/List;
+  method com/nouprax/markdown/core/ImageReference.getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+  method com/nouprax/markdown/core/ImageReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/ImageReference.getLabel ()Ljava/lang/String;
+  method com/nouprax/markdown/core/ImageReference.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ImageReference.hashCode ()I
+  method com/nouprax/markdown/core/ImageReference.revisionBits ()J
   method com/nouprax/markdown/core/LineBreak.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/LineBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/LineBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -206,6 +218,15 @@
   method com/nouprax/markdown/core/Link.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/Link.hashCode ()I
   method com/nouprax/markdown/core/Link.revisionBits ()J
+  method com/nouprax/markdown/core/LinkReference.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/LinkReference.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/LinkReference.getContent ()Ljava/util/List;
+  method com/nouprax/markdown/core/LinkReference.getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+  method com/nouprax/markdown/core/LinkReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/LinkReference.getLabel ()Ljava/lang/String;
+  method com/nouprax/markdown/core/LinkReference.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/LinkReference.hashCode ()I
+  method com/nouprax/markdown/core/LinkReference.revisionBits ()J
   method com/nouprax/markdown/core/List.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/List.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/List.getFlavor ()Lcom/nouprax/markdown/core/ListFlavor;
@@ -278,11 +299,14 @@
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Image;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/ImageReference;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/LinkReference;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/ReferenceDefinition;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
@@ -358,6 +382,18 @@
   method com/nouprax/markdown/core/Position.getLine ()I
   method com/nouprax/markdown/core/Position.hashCode ()I
   method com/nouprax/markdown/core/Position.toString ()Ljava/lang/String;
+  method com/nouprax/markdown/core/ReferenceDefinition.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/ReferenceDefinition.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/ReferenceDefinition.getDestination ()Ljava/lang/String;
+  method com/nouprax/markdown/core/ReferenceDefinition.getId ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/ReferenceDefinition.getLabel ()Ljava/lang/String;
+  method com/nouprax/markdown/core/ReferenceDefinition.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ReferenceDefinition.getTitle ()Ljava/lang/String;
+  method com/nouprax/markdown/core/ReferenceDefinition.hashCode ()I
+  method com/nouprax/markdown/core/ReferenceDefinition.revisionBits ()J
+  method com/nouprax/markdown/core/ReferenceForm.getEntries ()Lkotlin/enums/EnumEntries;
+  method com/nouprax/markdown/core/ReferenceForm.valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ReferenceForm;
+  method com/nouprax/markdown/core/ReferenceForm.values ()[Lcom/nouprax/markdown/core/ReferenceForm;
   method com/nouprax/markdown/core/Scope.<init> (Lcom/nouprax/markdown/core/Position;Lcom/nouprax/markdown/core/Position;)V
   method com/nouprax/markdown/core/Scope.component1 ()Lcom/nouprax/markdown/core/Position;
   method com/nouprax/markdown/core/Scope.component2 ()Lcom/nouprax/markdown/core/Position;
@@ -453,8 +489,10 @@ class com/nouprax/markdown/core/HTML extends java/lang/Object implements com/nou
 class com/nouprax/markdown/core/HTMLBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Heading extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Image extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ImageReference extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/LineBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Link extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/LinkReference extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/List extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/ListFlavor extends java/lang/Enum implements 
 class com/nouprax/markdown/core/ListItem extends java/lang/Object implements com/nouprax/markdown/core/Markup
@@ -472,6 +510,8 @@ class com/nouprax/markdown/core/ParseException extends java/lang/RuntimeExceptio
 class com/nouprax/markdown/core/ParseOptions extends java/lang/Object implements 
 class com/nouprax/markdown/core/PlacementMode extends java/lang/Enum implements 
 class com/nouprax/markdown/core/Position extends java/lang/Object implements 
+class com/nouprax/markdown/core/ReferenceDefinition extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/ReferenceForm extends java/lang/Enum implements 
 class com/nouprax/markdown/core/Scope extends java/lang/Object implements 
 class com/nouprax/markdown/core/SoftBreak extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Strikethrough extends java/lang/Object implements com/nouprax/markdown/core/Markup

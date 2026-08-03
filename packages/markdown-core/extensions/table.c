@@ -347,11 +347,11 @@ static markdown_core_node *try_opening_table_header(
     uint16_t i;
 
     if (parent_container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
-        return parent_container;
+        return NULL;
     }
 
     if (!scan_table_start(input, len, markdown_core_parser_get_first_nonspace(parser))) {
-        return parent_container;
+        return NULL;
     }
 
     // Since scan_table_start was successful, we must have a delimiter row.
@@ -362,7 +362,7 @@ static markdown_core_node *try_opening_table_header(
     );
     // assert may be optimized out, don't rely on it for security boundaries
     if (!delimiter_row) {
-        return parent_container;
+        return NULL;
     }
 
     assert(delimiter_row);
@@ -376,13 +376,13 @@ static markdown_core_node *try_opening_table_header(
         free_table_row(parser->mem, delimiter_row);
         free_table_row(parser->mem, header_row);
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
-        return parent_container;
+        return NULL;
     }
 
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
-        return parent_container;
+        return NULL;
     }
 
     if (header_row->paragraph_offset) {
@@ -409,7 +409,7 @@ static markdown_core_node *try_opening_table_header(
         parser->oom = true;
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
-        return parent_container;
+        return NULL;
     }
     set_n_table_columns(parent_container, header_row->n_columns);
 
@@ -420,7 +420,7 @@ static markdown_core_node *try_opening_table_header(
         parser->oom = true;
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
-        return parent_container;
+        return NULL;
     }
     for (i = 0; i < delimiter_row->n_columns; ++i) {
         node_cell *node = &delimiter_row->cells[i];
@@ -445,7 +445,7 @@ static markdown_core_node *try_opening_table_header(
     if (!table_header) {
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);
-        return parent_container;
+        return NULL;
     }
     markdown_core_node_set_extension(table_header, self);
     table_header->end_column = parent_container->start_column + (int)strlen(parent_string) - 2;
@@ -490,6 +490,10 @@ static markdown_core_node *try_opening_table_header(
 
     free_table_row(parser->mem, header_row);
     free_table_row(parser->mem, delimiter_row);
+    /* The only claiming return: the paragraph node was retyped in place, so
+     * the container the caller already holds *is* the table. Every path above
+     * returns NULL, because returning the container unchanged would tell the
+     * dispatcher a block had been opened when none had. */
     return parent_container;
 }
 

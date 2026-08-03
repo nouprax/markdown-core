@@ -86,7 +86,8 @@ const exported = [
     "es_node_table_alignment",
     "es_node_table_row_header",
     "es_node_directive_properties",
-    "es_string"
+    "es_string",
+    "es_node_reference_form"
 ].map((name) => `_${name}`);
 /** A spawnSync result with `error` set means the tool never launched
  * (typically ENOENT) and `stdout`/`stderr` are undefined — writing them

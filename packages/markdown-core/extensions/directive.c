@@ -72,7 +72,14 @@ static int directive_enabled(markdown_core_parser *parser) { return parser->opti
 
 static int ascii_is_space(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
 
-static int is_attr_name_char(unsigned char c);
+static int is_attr_name_start_char(int32_t c);
+static int is_attr_name_char(int32_t c);
+/* Length of the name at `pos`, or 0 if none starts there. */
+static markdown_core_bufsize scan_attr_name(
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize pos
+);
 
 static int scan_name(
     unsigned char *data,
@@ -83,6 +90,15 @@ static int scan_name(
 ) {
     markdown_core_bufsize match_len = scan_directive_name(data, len, pos);
     if (match_len == 0) {
+        return 0;
+    }
+
+    // A name may contain `-` and `_` but may not begin or end with one. The
+    // reference implementation (micromark-extension-directive) rejects both
+    // ends; its prose documents only the trailing rule, so the leading one was
+    // verified against the implementation itself: `:-a[]` and `:_a[]` are not
+    // directives there, while `:1a[]` is.
+    if (data[pos] == '-' || data[pos] == '_') {
         return 0;
     }
 
@@ -235,16 +251,12 @@ static void free_attribute_list(markdown_core_mem *mem, directive_attribute *att
 }
 
 static int attribute_name_is_valid(const unsigned char *name, markdown_core_bufsize name_len) {
-    markdown_core_bufsize i;
     if (name_len == 0) {
         return 0;
     }
-    for (i = 0; i < name_len; i++) {
-        if (!is_attr_name_char(name[i])) {
-            return 0;
-        }
-    }
-    return 1;
+    /* One scan of the whole name: it is valid only if the grammar consumes
+     * every byte of it. */
+    return scan_attr_name(name, name_len, 0) == name_len;
 }
 
 static int append_attribute(
@@ -335,6 +347,84 @@ static int normalize_duplicate_attributes_sorted(markdown_core_mem *mem, directi
         i = end;
     }
     mem->free(mem, sorted);
+    return 1;
+}
+
+/* `class` is the one attribute whose repeats accumulate instead of replacing:
+ * `{.a .b}`, `{.a.b}`, and `{class=a .b}` all mean `class="a b"`, in source
+ * order. Every other name keeps the last value, `id` included.
+ *
+ * This runs before duplicate normalization and collapses the repeats out of
+ * the list entirely, so the two dedup paths below never see more than one
+ * `class` and neither needs to know the rule. `*count` is updated because both
+ * of them size allocations from it.
+ */
+static int merge_class_attributes(markdown_core_mem *mem, directive_attribute *head, size_t *count) {
+    static const char CLASS_NAME[] = "class";
+    const markdown_core_bufsize class_len = (markdown_core_bufsize)(sizeof(CLASS_NAME) - 1);
+    directive_attribute *first = NULL;
+    directive_attribute *attr;
+    markdown_core_strbuf joined;
+    int merged = 0;
+
+    for (attr = head; attr; attr = attr->next) {
+        if (attr->name.len != class_len || memcmp(attr->name.data, CLASS_NAME, (size_t)class_len) != 0) {
+            continue;
+        }
+        if (!first) {
+            first = attr;
+            continue;
+        }
+        merged = 1;
+    }
+    if (!merged) {
+        return 1;
+    }
+
+    // Collect the joined value first, then unlink the repeats. Removing them
+    // outright rather than deactivating them is what lets the dedup passes stay
+    // unaware of this rule: they walk the list without consulting `active`.
+    markdown_core_strbuf_init(mem, &joined, 32);
+    {
+        directive_attribute *previous = NULL;
+        attr = head;
+        while (attr) {
+            directive_attribute *next = attr->next;
+            int is_class = attr->name.len == class_len && memcmp(attr->name.data, CLASS_NAME, (size_t)class_len) == 0;
+            if (is_class) {
+                // The separator goes before every value once something has
+                // accumulated, an empty value included: `{.a class="" .b}` is
+                // `class="a  b"`. An empty value at the front accumulates
+                // nothing, so `{class="" .b}` is `"b"` rather than `" b"` —
+                // micromark-extension-directive tests the accumulated string,
+                // not the count of values seen.
+                if (joined.size) {
+                    markdown_core_strbuf_putc(&joined, ' ');
+                }
+                markdown_core_strbuf_put(&joined, attr->value.data, attr->value.len);
+                if (attr != first) {
+                    // `first` precedes every repeat, so a repeat is never the
+                    // head and `previous` is always set here.
+                    previous->next = next;
+                    attr->next = NULL;
+                    free_attribute_list(mem, attr);
+                    (*count)--;
+                    attr = next;
+                    continue;
+                }
+            }
+            previous = attr;
+            attr = next;
+        }
+    }
+    // strbuf keeps `ptr` pointing at a static sentinel and reports failure
+    // through `oom`, so testing the pointer would never catch a lost
+    // allocation and the join would silently truncate.
+    if (joined.oom || !replace_chunk_bytes(mem, &first->value, joined.ptr, (markdown_core_bufsize)joined.size)) {
+        markdown_core_strbuf_free(&joined);
+        return 0;
+    }
+    markdown_core_strbuf_free(&joined);
     return 1;
 }
 
@@ -767,8 +857,59 @@ static void directive_opaque_free(
     mem->free(mem, directive);
 }
 
-static int is_attr_name_char(unsigned char c) {
-    return c > 0x20 && c != '=' && c != '"' && c != '\'' && c != '<' && c != '>' && c != '/' && c != '{' && c != '}';
+/* Attribute names follow micromark-extension-directive: a name may not begin
+ * with whitespace or punctuation, except that `-` and `_` are allowed there,
+ * and from the second character `.` and `:` are allowed as well. `:` and `.`
+ * being punctuation is why `{a:b}` is a name and `{:_a}` is not a valid
+ * attribute block at all.
+ *
+ * The reference tests `\p{P}|\p{S}`. Below U+0080 the two agree exactly,
+ * because C's ispunct spans both categories; above it this uses the parser's
+ * own punctuation table, which carries the P categories but not the non-ASCII
+ * S ones. A non-ASCII symbol in an attribute name is therefore the one place
+ * the grammars can still differ. */
+static int is_attr_name_start_char(int32_t c) {
+    if (c == '-' || c == '_') {
+        return 1;
+    }
+    return !markdown_core_utf8proc_is_space(c) && !markdown_core_utf8proc_is_punctuation(c);
+}
+
+static int is_attr_name_char(int32_t c) {
+    if (c == '-' || c == '_' || c == '.' || c == ':') {
+        return 1;
+    }
+    return !markdown_core_utf8proc_is_space(c) && !markdown_core_utf8proc_is_punctuation(c);
+}
+
+/* The name is scanned by code point, not by byte: the rules above are Unicode
+ * predicates, and a multi-byte character tested one byte at a time would be
+ * classified by bytes that mean nothing on their own. */
+static markdown_core_bufsize scan_attr_name(
+    const unsigned char *data,
+    markdown_core_bufsize len,
+    markdown_core_bufsize pos
+) {
+    markdown_core_bufsize start = pos;
+    int first = 1;
+
+    while (pos < len) {
+        int32_t code = 0;
+        markdown_core_bufsize width = markdown_core_utf8proc_iterate(data + pos, len - pos, &code);
+        /* Bounds guard, not a grammar rule: with UTF-8 validation on — which
+         * every parse path here enables — the buffer holds no invalid
+         * sequence and this cannot fire. It stays because advancing by a
+         * non-positive width would not terminate. */
+        if (width <= 0) {
+            break;
+        }
+        if (first ? !is_attr_name_start_char(code) : !is_attr_name_char(code)) {
+            break;
+        }
+        first = 0;
+        pos += width;
+    }
+    return pos - start;
 }
 
 static int parse_attr_value(
@@ -783,10 +924,15 @@ static int parse_attr_value(
     while (*pos < len && ascii_is_space(data[*pos])) {
         (*pos)++;
     }
-    if (*pos >= len || ascii_is_space(data[*pos])) {
-        *value = data + *pos;
-        *value_len = 0;
-        return 1;
+    // An `=` promises a value. Reaching the end of the block without one — the
+    // block interior arrives with its `}` already removed, so this covers both
+    // `{a=}` and `{a=` followed by the line ending — makes the whole attribute
+    // block malformed rather than yielding an attribute with an empty value.
+    // micromark-extension-directive rejects it at `valueBefore`, and the
+    // difference is visible: an empty value would otherwise be
+    // indistinguishable from the valueless `{a}`, which is a different thing.
+    if (*pos >= len) {
+        return 0;
     }
     if (data[*pos] == '"' || data[*pos] == '\'') {
         quote = data[(*pos)++];
@@ -800,10 +946,37 @@ static int parse_attr_value(
         *value = data + start;
         *value_len = *pos - start;
         (*pos)++;
+        // A quoted value has to be separated from whatever follows it. Without
+        // this, `{a="x"b=1}` reads as two attributes here and as an invalid
+        // block in micromark-extension-directive — and, worse, a quote that
+        // only closes much later lets the block swallow everything between,
+        // which is how an unterminated quote used to absorb the rest of a
+        // paragraph.
+        if (*pos < len && !ascii_is_space(data[*pos]) && data[*pos] != '}') {
+            return 0;
+        }
         return 1;
     }
+    // An unquoted value ends at whitespace or at the block's closer, and may
+    // not contain `"`, `'`, `<`, `=`, `>`, or a backtick anywhere — reaching
+    // one of those does not end the value, it makes the block malformed
+    // (micromark-extension-directive, `valueUnquoted`). Quotes are already
+    // refused earlier by the closer probe, which will not accept a block whose
+    // quote never closes; they are listed here because this function is where
+    // the grammar lives, not because the earlier check is in doubt.
     start = *pos;
     while (*pos < len && !ascii_is_space(data[*pos])) {
+        switch (data[*pos]) {
+        case '"':
+        case '\'':
+        case '<':
+        case '=':
+        case '>':
+        case '`':
+            return 0;
+        default:
+            break;
+        }
         (*pos)++;
     }
     *value = data + start;
@@ -846,17 +1019,41 @@ static int scan_attribute_sequence(
         if (pos >= len) {
             break;
         }
+        // `#name` and `.name` are shorthand for the `id` and `class`
+        // attributes, as in micromark-extension-directive. A marker with no
+        // name after it is skipped rather than failing the block: `{#}` and
+        // `{.}` produce a directive with no attributes there.
         if (data[pos] == '#' || data[pos] == '.') {
-            return 0;
+            const unsigned char *shorthand =
+                data[pos] == '#' ? (const unsigned char *)"id" : (const unsigned char *)"class";
+            markdown_core_bufsize shorthand_len = data[pos] == '#' ? 2 : 5;
+            pos++;
+            start = pos;
+            // A shorthand value ends at the next marker as well as at the
+            // characters an ordinary name ends at, so `{.a.b}` is two classes
+            // rather than one named `a.b`.
+            while (pos < len && is_attr_name_char(data[pos]) && data[pos] != '.' && data[pos] != '#') {
+                pos++;
+            }
+            // A marker with no name is not a valid attribute, and it
+            // invalidates the block rather than being skipped: remark parses
+            // `:n{#}` as a directive named `n` followed by the literal text
+            // `{#}`, which is the malformed-block fallback above.
+            if (pos == start) {
+                return 0;
+            }
+            if (sink && !sink(context, shorthand, shorthand_len, data + start, pos - start, count)) {
+                return 0;
+            }
+            count++;
+            continue;
         }
         start = pos;
-        while (pos < len && is_attr_name_char(data[pos])) {
-            pos++;
-        }
-        if (pos == start) {
+        name_len = scan_attr_name(data, len, pos);
+        if (name_len == 0) {
             return 0;
         }
-        name_len = pos - start;
+        pos += name_len;
         while (pos < len && ascii_is_space(data[pos])) {
             pos++;
         }
@@ -919,6 +1116,12 @@ static int parse_attributes(
 
     *result = NULL;
     ok = scan_attribute_sequence(data, len, build_attribute, &builder, &count);
+    if (ok && !merge_class_attributes(mem, builder.head, &count)) {
+        if (oom) {
+            *oom = 1;
+        }
+        ok = 0;
+    }
     if (ok && !normalize_duplicate_attributes(mem, builder.head, count)) {
         if (oom) {
             *oom = 1;
@@ -961,10 +1164,22 @@ static int parse_directive_suffix(
         }
     }
 
+    // An attribute block that does not parse does not invalidate the
+    // directive: the name still stands and the braces stay as literal text,
+    // which is what micromark-extension-directive does — `:invalid{=value}`
+    // is a directive named `invalid` followed by the text `{=value}`. Ending
+    // the directive at `pos` leaves the braces unconsumed, so the inline
+    // parser emits them as text.
+    //
+    // Allocation loss is not a syntax verdict, so it still fails the parse
+    // rather than silently producing an attribute-less directive.
     if (pos < len && data[pos] == '{') {
-        parsed->has_attributes = 1;
-        if (!scan_attributes_raw(data, len, pos, &attr_start, &attr_len, &pos) ||
-            !parse_attributes(mem, data + attr_start, attr_len, &parsed->attributes, &parsed->oom)) {
+        markdown_core_bufsize after_attributes = pos;
+        if (scan_attributes_raw(data, len, pos, &attr_start, &attr_len, &after_attributes) &&
+            parse_attributes(mem, data + attr_start, attr_len, &parsed->attributes, &parsed->oom)) {
+            parsed->has_attributes = 1;
+            pos = after_attributes;
+        } else if (parsed->oom) {
             return 0;
         }
     }
@@ -1184,6 +1399,7 @@ static markdown_core_bufsize probe_label_close(
 static markdown_core_node *match_colon_directive(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
+    markdown_core_node *parent,
     markdown_core_inline_parser *inline_parser,
     markdown_core_chunk *chunk,
     markdown_core_bufsize offset
@@ -1192,7 +1408,15 @@ static markdown_core_node *match_colon_directive(
     markdown_core_bufsize name_len;
     markdown_core_bufsize pos;
 
+    // A text directive's colon may not sit next to another colon on either
+    // side. The trailing rule keeps `:red:` available to emoji; the leading one
+    // keeps a run of colons whole, so `x ::a` is text rather than `x :` plus a
+    // directive. `::name` and `:::name` at the start of a line are leaf and
+    // container directives and are opened by the block path instead.
     if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
+        return NULL;
+    }
+    if (offset > 0 && chunk->data[offset - 1] == ':') {
         return NULL;
     }
 
@@ -1202,6 +1426,23 @@ static markdown_core_node *match_colon_directive(
 
     pos = name_start + name_len;
     if (pos < chunk->len && chunk->data[pos] == '[') {
+        // The directive is emitted before the label opens, and the delimiter
+        // marker is the bracket alone. A label that never closes then leaves
+        // exactly what the reference implementation produces — the directive
+        // standing on its name, followed by the literal `[` — with no
+        // lookahead: an opener the engine never pairs discards only the
+        // bracket.
+        //
+        // Scanning ahead for the closer instead would be quadratic on
+        // `:x[:x[:x[...]]]`, where every opener's match sits at the far end.
+        // The engine already pairs delimiters in linear time, so the fallback
+        // has to be expressed in what it leaves behind rather than recomputed.
+        markdown_core_node *directive =
+            make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
+        if (!directive) {
+            return NULL;
+        }
+        markdown_core_node_append_child_unchecked(parent, directive);
         return match_directive_delimiter(inline_parser, pos + 1);
     }
 
@@ -1215,12 +1456,18 @@ static markdown_core_node *match_colon_directive(
         node_directive *directive;
         int attr_oom = 0;
 
+        // An attribute block that does not parse leaves the directive standing
+        // on its name alone and the braces as literal text, matching
+        // micromark-extension-directive: `:invalid{=value}` is a directive
+        // named `invalid` followed by the text `{=value}`. Allocation loss is
+        // not a syntax verdict and still fails.
         if (!scan_attributes_raw(chunk->data, chunk->len, pos, &attr_start, &attr_len, &end) ||
             !parse_attributes(parser->mem, chunk->data + attr_start, attr_len, &attributes, &attr_oom)) {
             if (attr_oom) {
                 parser->oom = true;
+                return NULL;
             }
-            return NULL;
+            return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
         }
         node = make_directive_node(extension, parser, chunk->data + name_start, name_len, 0, 0, 0, 0);
         if (!node) {
@@ -1262,6 +1509,7 @@ static markdown_core_node *match(
     return match_colon_directive(
         extension,
         parser,
+        parent,
         inline_parser,
         markdown_core_inline_parser_get_chunk(inline_parser),
         (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser)
@@ -1403,6 +1651,11 @@ static int directive_block_matches(
             len - markdown_core_parser_get_offset(parser),
             false
         );
+        /* The container ends here, on its own terminator. Reporting that
+         * rather than "matched" is what closes the content inside it now: a
+         * paragraph left open until the next non-matching line would take that
+         * line as a lazy continuation, from outside the container. */
+        return -1;
     }
 
     return 1;
@@ -1483,27 +1736,19 @@ static markdown_core_delimiter_result insert_directive(
     opener_literal = &opener_node->as.literal;
     closer_literal = &closer_node->as.literal;
 
-    if (opener_literal->len < 3 || opener_literal->data[0] != ':' ||
-        opener_literal->data[opener_literal->len - 1] != '[' || closer_literal->len < 1 ||
-        closer_literal->data[0] != ']') {
+    /* The opener marker is the bracket alone; the directive it belongs to was
+     * emitted just before it, so an unpaired opener leaves that directive
+     * standing with a literal `[` after it. */
+    directive_node = opener_node->prev;
+    if (opener_literal->len != 1 || opener_literal->data[0] != '[' || closer_literal->len < 1 ||
+        closer_literal->data[0] != ']' || !directive_node || directive_node->type != MARKDOWN_CORE_NODE_DIRECTIVE) {
         assert(0 && "directive reducer received malformed delimiter literals");
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
-
-    name_len = opener_literal->len - 2;
-    directive_node = make_directive_node(
-        extension,
-        parser,
-        opener_literal->data + 1,
-        name_len,
-        opener_node->start_line,
-        opener_node->start_column,
-        closer_node->end_line,
-        closer_node->end_column
-    );
-    if (!directive_node) {
-        return MARKDOWN_CORE_DELIMITER_OOM;
-    }
+    (void)name_len;
+    markdown_core_node_unlink(directive_node);
+    directive_node->end_line = closer_node->end_line;
+    directive_node->end_column = closer_node->end_column;
 
     {
         int attr_oom = 0;

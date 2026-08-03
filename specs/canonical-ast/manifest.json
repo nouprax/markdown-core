@@ -26,6 +26,7 @@
             "DirectiveBlock",
             "DirectiveLabel",
             "FootnoteDefinition",
+            "ReferenceDefinition",
             "Text",
             "SoftBreak",
             "LineBreak",
@@ -37,6 +38,8 @@
             "Strikethrough",
             "Link",
             "Image",
+            "LinkReference",
+            "ImageReference",
             "Directive",
             "FootnoteReference",
             "CrossLink",
@@ -281,7 +284,10 @@
                     "LineBreak",
                     "HTML",
                     "SoftBreak",
-                    "FootnoteDefinition"
+                    "FootnoteDefinition",
+                    "LinkReference",
+                    "ImageReference",
+                    "ReferenceDefinition"
                 ],
                 "states": [
                     "placement.embedded",

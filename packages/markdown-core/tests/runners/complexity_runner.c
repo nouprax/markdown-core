@@ -37,9 +37,32 @@ static const double MAX_NORMALIZED_SLOWDOWN = 4.0;
  * work to 2.0. Taking the median across six adjacent steps rejects sustained
  * superlinear growth without making one allocator/cache boundary the oracle. */
 static const double MAX_SCOPE_MEDIAN_NORMALIZED_STEP = 1.75;
+/* Same reading for the footnote renumber steps, which also double: linear
+ * normalizes to 1.0 and quadratic to 2.0. Measured 0.984x-0.996x across eight
+ * runs of the healthy implementation, and 1.934x-1.952x with the footnote
+ * index diff's dedup set reduced to a linear scan, so the ceiling sits
+ * between the two with room for a loaded hosted runner. */
+static const double MAX_FOOTNOTE_RENUMBER_MEDIAN_NORMALIZED_STEP = 1.50;
 static const double MAX_DELTA_ORDER_NORMALIZED_SLOWDOWN = 4.0;
 
 typedef char *(*cc_builder)(size_t size, size_t *length);
+
+static double cc_median(double *values, size_t count) {
+    size_t index;
+    for (index = 1; index < count; index++) {
+        double value = values[index];
+        size_t slot = index;
+        while (slot && values[slot - 1] > value) {
+            values[slot] = values[slot - 1];
+            slot--;
+        }
+        values[slot] = value;
+    }
+    if (count % 2) {
+        return values[count / 2];
+    }
+    return (values[count / 2 - 1] + values[count / 2]) / 2.0;
+}
 
 static char *cc_quoted_value(size_t size, size_t *length) {
     char *value = ts_repeat("a", size, NULL);
@@ -675,8 +698,17 @@ static int cc_run_session(const char *name, int mode) {
 
 /* A first-reference label flip renumbers every later footnote. This scales
  * the number of query-only changed nodes, rather than unrelated document
- * bulk, so the normalized ratio catches quadratic index-diff deduplication. */
-static const size_t CC_FOOTNOTE_RENUMBER_COUNTS[] = {256, 4096};
+ * bulk, so the normalized growth catches quadratic index-diff deduplication.
+ *
+ * A doubling sequence rather than two endpoints, for the reason the scope
+ * gate already carries: the per-commit cost here is linear in the footnote
+ * count by construction (the delta reports one changed node per renumbered
+ * footnote), so the whole signal is the *deviation* from linear, and one
+ * allocator or cache transition between two lone endpoints is the same size
+ * as the thing being measured. Read as two endpoints this gate passed on one
+ * commit of a branch and failed on the next with only a text file changed
+ * between them. */
+static const size_t CC_FOOTNOTE_RENUMBER_COUNTS[] = {256, 512, 1024, 2048, 4096};
 #define CC_FOOTNOTE_RENUMBER_STEPS (sizeof(CC_FOOTNOTE_RENUMBER_COUNTS) / sizeof(CC_FOOTNOTE_RENUMBER_COUNTS[0]))
 #define CC_FOOTNOTE_RENUMBER_LABEL_OFFSET 10
 
@@ -769,6 +801,8 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
 
 static int cc_run_footnote_renumber(const char *name) {
     double timings[CC_FOOTNOTE_RENUMBER_STEPS];
+    double normalized_steps[CC_FOOTNOTE_RENUMBER_STEPS - 1];
+    double median_normalized_step;
     size_t step;
     int failed = 0;
 
@@ -778,19 +812,19 @@ static int cc_run_footnote_renumber(const char *name) {
             return -1;
         }
     }
-    {
-        double count_growth = (double)CC_FOOTNOTE_RENUMBER_COUNTS[CC_FOOTNOTE_RENUMBER_STEPS - 1] /
-                              (double)CC_FOOTNOTE_RENUMBER_COUNTS[0];
-        double normalized_slowdown = timings[CC_FOOTNOTE_RENUMBER_STEPS - 1] / timings[0] / count_growth;
-        if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN) {
-            failed = 1;
-        }
-        printf("%s ... %s (", name, failed ? "[FAILED non-linear diff scaling]" : "[PASSED]");
-        for (step = 0; step < CC_FOOTNOTE_RENUMBER_STEPS; step++) {
-            printf("%s%zu footnotes: %.9fs/commit", step ? ", " : "", CC_FOOTNOTE_RENUMBER_COUNTS[step], timings[step]);
-        }
-        printf(", normalized slowdown: %.3fx)\n", normalized_slowdown);
+    for (step = 1; step < CC_FOOTNOTE_RENUMBER_STEPS; step++) {
+        double count_growth = (double)CC_FOOTNOTE_RENUMBER_COUNTS[step] / (double)CC_FOOTNOTE_RENUMBER_COUNTS[step - 1];
+        normalized_steps[step - 1] = timings[step] / timings[step - 1] / count_growth;
     }
+    median_normalized_step = cc_median(normalized_steps, CC_FOOTNOTE_RENUMBER_STEPS - 1);
+    if (median_normalized_step > MAX_FOOTNOTE_RENUMBER_MEDIAN_NORMALIZED_STEP) {
+        failed = 1;
+    }
+    printf("%s ... %s (", name, failed ? "[FAILED sustained non-linear diff scaling]" : "[PASSED]");
+    for (step = 0; step < CC_FOOTNOTE_RENUMBER_STEPS; step++) {
+        printf("%s%zu footnotes: %.9fs/commit", step ? ", " : "", CC_FOOTNOTE_RENUMBER_COUNTS[step], timings[step]);
+    }
+    printf(", median normalized step: %.3fx)\n", median_normalized_step);
     return failed ? -1 : 0;
 }
 
@@ -798,23 +832,6 @@ static const size_t CC_DEEP_DEPTHS[] = {2048, 16384};
 #define CC_DEEP_STEPS (sizeof(CC_DEEP_DEPTHS) / sizeof(CC_DEEP_DEPTHS[0]))
 static const size_t CC_SCOPE_DEPTHS[] = {512, 1024, 2048, 4096, 8192, 16384, 32768};
 #define CC_SCOPE_STEPS (sizeof(CC_SCOPE_DEPTHS) / sizeof(CC_SCOPE_DEPTHS[0]))
-
-static double cc_median(double *values, size_t count) {
-    size_t index;
-    for (index = 1; index < count; index++) {
-        double value = values[index];
-        size_t slot = index;
-        while (slot && values[slot - 1] > value) {
-            values[slot] = values[slot - 1];
-            slot--;
-        }
-        values[slot] = value;
-    }
-    if (count % 2) {
-        return values[count / 2];
-    }
-    return (values[count / 2 - 1] + values[count / 2]) / 2.0;
-}
 
 static markdown_core_session *cc_scope_build(size_t depth) {
     markdown_core_session *session = NULL;

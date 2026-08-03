@@ -18,6 +18,13 @@ struct markdown_core_map_entry {
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
     uint64_t owner; /* owning document-child id (0 = the head region) */
+    /* The ReferenceDefinition node this entry was written as: a node pointer
+     * during the parse, rewritten to that node's session id by the same walk
+     * that resolves `owner`. It is what makes "which definition does this
+     * reference resolve to" answerable from the map alone — the map already
+     * elects the winner per label and is already maintained incrementally, so
+     * the answer needs no second index and no per-commit rebuild. */
+    uint64_t definition_node;
     /* Source line of the harvesting paragraph (absolute; sessions keep it in
      * committed-text coordinates). Head-region entries (owner 0) classify by
      * this line, so a restart inside a leading definition cluster retracts

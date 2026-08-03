@@ -6,6 +6,7 @@ export type { DirectiveBlock } from "./model/directive-block.js";
 export type { DirectiveLabel } from "./model/directive-label.js";
 export type { Directive } from "./model/directive.js";
 export type { CrossLink } from "./model/cross-link.js";
+export type { ImageReference, LinkReference, ReferenceDefinition, ReferenceForm } from "./model/reference.js";
 export type { Emphasis } from "./model/emphasis.js";
 export type { Embed } from "./model/embed.js";
 export type { FootnoteDefinition, FootnoteReference } from "./model/footnote.js";

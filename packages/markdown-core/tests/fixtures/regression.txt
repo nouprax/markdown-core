@@ -460,10 +460,8 @@ Footnotes interacting with strikethrough should not lead to a use-after-free
 |Tot.....[^_a_]|
 .
 Document scope=1:1..1:16 children=1
-└── Paragraph scope=1:1..1:16 children=3
-    ├── Text scope=1:1..1:9 literal="|Tot....." children=0
-    ├── FootnoteReference scope=1:10..1:15 id="_a_" children=0
-    └── Text scope=1:16..1:16 literal="|" children=0
+└── Paragraph scope=1:1..1:16 children=1
+    └── Text scope=1:1..1:16 literal="|Tot.....[^_a_]|" children=0
 ````````````````````````````````
 
 Footnotes interacting with strikethrough should not lead to a use-after-free pt2
@@ -473,7 +471,7 @@ Footnotes interacting with strikethrough should not lead to a use-after-free pt2
 .
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── FootnoteReference scope=1:1..1:10 id="~~is~~1" children=0
+    └── Text scope=1:1..1:10 literal="[^~~is~~1]" children=0
 ````````````````````````````````
 
 Adjacent unused footnotes definitions should not lead to a use after free

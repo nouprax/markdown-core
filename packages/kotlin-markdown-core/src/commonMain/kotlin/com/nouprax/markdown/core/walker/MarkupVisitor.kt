@@ -59,6 +59,12 @@ public interface MarkupVisitor<Result> {
 
     public fun visit(node: FootnoteReference): Result
 
+    public fun visit(node: ReferenceDefinition): Result
+
+    public fun visit(node: LinkReference): Result
+
+    public fun visit(node: ImageReference): Result
+
     public fun visit(node: CrossLink): Result
 
     public fun visit(node: Embed): Result

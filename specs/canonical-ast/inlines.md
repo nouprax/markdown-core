@@ -3,3 +3,7 @@ Text *em* **strong** ~~strike~~ `code` [link](/go "title") ![alt](/image.png "im
 soft
 
 [^note]: definition
+
+Ref [full][target] and [target][] and [target] plus ![alt][target]
+
+[target]: /ref "ref title"

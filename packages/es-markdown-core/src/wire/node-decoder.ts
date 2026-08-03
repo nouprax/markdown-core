@@ -42,8 +42,14 @@ const stringField = {
     footnoteLabel: 7,
     crossLinkReference: 8,
     embedReference: 9,
-    errorMessage: 10
+    errorMessage: 10,
+    definitionLabel: 11,
+    definitionDestination: 12,
+    definitionTitle: 13,
+    referenceLabel: 14
 } as const;
+
+const referenceForms = ["full", "collapsed", "shortcut"] as const;
 
 const scratchSize = 4 * BigUint64Array.BYTES_PER_ELEMENT;
 
@@ -351,6 +357,25 @@ export class NodeDecoder {
                 return { kind, id, revision, reference: this.requiredString(node, stringField.crossLinkReference) };
             case "embed":
                 return { kind, id, revision, reference: this.requiredString(node, stringField.embedReference) };
+            case "referenceDefinition":
+                return {
+                    kind,
+                    id,
+                    revision,
+                    label: this.requiredString(node, stringField.definitionLabel),
+                    destination: this.readString(node, stringField.definitionDestination),
+                    title: this.readString(node, stringField.definitionTitle)
+                };
+            case "linkReference":
+            case "imageReference":
+                return {
+                    kind,
+                    id,
+                    revision,
+                    label: this.requiredString(node, stringField.referenceLabel),
+                    form: referenceForms[this.native.es_node_reference_form(node)] ?? "shortcut",
+                    content: children
+                };
             case "tableRow":
                 return this.copyTableRow(node, id, revision, children);
             case "tableCell":

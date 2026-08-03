@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,14 +25,29 @@
 #include <fcntl.h>
 #endif
 
-// The CLI is a diagnostic dump tool: it always parses with the canonical
-// default options and all bundled extensions, exactly like the platform
-// bindings' default ParseOptions, and prints the canonical AST dump.
+// The CLI is a diagnostic dump tool: it parses with a named option profile and
+// prints the canonical AST dump.
+//
+// `default` is the canonical default options and every bundled extension,
+// exactly like the platform bindings' default ParseOptions. `gfm` is the subset
+// Markdown Core shares with upstream cmark-gfm — this repository's own
+// extensions off, and smart punctuation and HTML-comment stripping off because
+// upstream defaults them off too. It exists so a reader can reproduce what the
+// upstream-parity check compares (scripts/check-upstream-parity.mjs), and so
+// any question about "is this ours or GFM's?" can be answered by running both.
+// `gfm-smart` is that same subset with smart punctuation on, which upstream
+// also offers as an opt-in flag; it exists so the smart-punctuation fixture has
+// an upstream to be compared against rather than only its own golden dump.
 void print_usage(void) {
-    printf("Usage:   markdown-core [FILE*]\n");
-    printf("Parses Markdown from FILE arguments (or stdin) with the canonical\n");
-    printf("default options and prints the canonical AST dump.\n");
+    printf("Usage:   markdown-core [--profile NAME] [FILE*]\n");
+    printf("Parses Markdown from FILE arguments (or stdin) and prints the\n");
+    printf("canonical AST dump.\n");
     printf("Options:\n");
+    printf("  --profile NAME   Option profile:\n");
+    printf("                     default       every option and extension\n");
+    printf("                     gfm           only what upstream cmark-gfm parses\n");
+    printf("                     gfm-smart     gfm plus smart punctuation\n");
+    printf("                     gfm-extended  gfm plus this repository's own extensions\n");
     printf("  --help, -h       Print usage information\n");
     printf("  --version        Print version\n");
 }
@@ -79,6 +95,7 @@ int main(int argc, char *argv[]) {
     markdown_core_node *document = NULL;
     int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
                   MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    bool gfm_profile = false;
     int res = 1;
 
 #ifdef USE_PLEDGE
@@ -102,6 +119,24 @@ int main(int argc, char *argv[]) {
         } else if ((strcmp(argv[i], "--help") == 0) || (strcmp(argv[i], "-h") == 0)) {
             print_usage();
             goto success;
+        } else if (strcmp(argv[i], "--profile") == 0) {
+            if (i + 1 >= argc) {
+                print_usage();
+                goto failure;
+            }
+            i++;
+            if (strcmp(argv[i], "gfm") == 0) {
+                gfm_profile = true;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+            } else if (strcmp(argv[i], "gfm-smart") == 0) {
+                gfm_profile = true;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_SMART;
+            } else if (strcmp(argv[i], "gfm-extended") == 0) {
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_DIRECTIVE;
+            } else if (strcmp(argv[i], "default") != 0) {
+                fprintf(stderr, "Unknown profile %s\n", argv[i]);
+                goto failure;
+            }
         } else if (*argv[i] == '-') {
             print_usage();
             goto failure;
@@ -112,10 +147,18 @@ int main(int argc, char *argv[]) {
 
     parser = markdown_core_parser_new(options);
 
-    if (!attach_extension(parser, "table") || !attach_extension(parser, "strikethrough") ||
-        !attach_extension(parser, "autolink") || !attach_extension(parser, "tasklist") ||
-        !attach_extension(parser, "formula") || !attach_extension(parser, "directive") ||
-        !attach_extension(parser, "cross_link") || !attach_extension(parser, "embed")) {
+    // Attachment order is priority, and `table` goes last for the reason given
+    // in extensions/session.c: its row opener matches any line inside an open
+    // table, so every narrower claim has to come first. The others here are
+    // cmark-gfm's own; the repository's own extensions are off under the gfm
+    // profile so a comparison against upstream compares the same language.
+    if (!attach_extension(parser, "strikethrough") || !attach_extension(parser, "autolink") ||
+        !attach_extension(parser, "tasklist")) {
+        goto failure;
+    }
+    if ((!gfm_profile && (!attach_extension(parser, "formula") || !attach_extension(parser, "directive") ||
+                          !attach_extension(parser, "cross_link") || !attach_extension(parser, "embed"))) ||
+        !attach_extension(parser, "table")) {
         goto failure;
     }
 

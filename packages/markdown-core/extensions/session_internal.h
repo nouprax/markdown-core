@@ -140,7 +140,6 @@ typedef struct {
     size_t *reference_offsets;         // in_use_count + 1 entries
 } markdown_core_footnote_index;
 
-// Per-unit record of the normalized labels the unit's inline parse looked up
 // (hits and misses alike: every lookup is an answer a definition edit can
 // change). Labels are owned NUL-terminated strings; `positions` runs
 // parallel to `labels` and holds each label's entry position inside its
@@ -232,6 +231,47 @@ typedef struct {
     size_t capacity;
 } markdown_core_clean_index;
 
+// One kind of document-scoped definition, as the session keeps it: the map
+// plus the line-ordered index over that map. Link reference definitions and
+// footnote definitions get one table each.
+//
+// Two tables rather than one map with a kind discriminator on the entry. A
+// shared map puts `[x]:` and `[^x]:` in the same label bucket, and the commit
+// reconciler decides what to re-refine by comparing that bucket's winner
+// before and after: a footnote definition appearing while a link definition
+// of the same label stays put leaves the winner "still present", so every
+// unit that read `[^x]` keeps a tree that is now wrong. That is an
+// under-invalidation — the failure mode a kind-filtered lookup would only
+// paper over, because the two definitions would still have to share one
+// winner election. In separate tables they never meet and the state cannot be
+// written down.
+//
+// Nothing is duplicated to buy that: the coordination chain takes the table it
+// operates on and runs once per table. One mechanism, two instances.
+typedef struct {
+    // Session-persistent definitions. Each entry carries the id of the
+    // document child anchoring it (0 = the region before the first child), so
+    // a commit retracts exactly the definitions whose bytes it reparses. At
+    // rest every entry's `order` stems from the most recent full parse, so
+    // per-label winner election sees true document order.
+    markdown_core_map *map;
+    // At-rest entries ordered by start line (equal to document order):
+    // staleness and prefix/suffix classification are line-interval range
+    // queries, and a commit's stale range splices in place. Rebuilt by the
+    // full path; an aborted reconciliation is covered by definitions_stale.
+    markdown_core_map_entry **index;
+    size_t count;
+    size_t capacity;
+} markdown_core_definition_table;
+
+// The instances. Indices, not named fields, because every step of the
+// coordination chain is written once and run per table.
+typedef enum {
+    MARKDOWN_CORE_DEFINITIONS_REFERENCES = 0,
+    MARKDOWN_CORE_DEFINITIONS_FOOTNOTES = 1,
+    MARKDOWN_CORE_DEFINITION_TABLE_COUNT = 2,
+} markdown_core_definition_kind;
+
 // Coalesced summary of the edits since the last successful commit: one dirty
 // byte range in current-text coordinates plus the net length delta. Bytes
 // before `new_lo` and at/after `new_hi` are byte-identical to the committed
@@ -254,12 +294,8 @@ struct markdown_core_session {
     markdown_core_id_table ids;
     markdown_core_footnote_index footnotes;
     markdown_core_footnote_labels footnote_labels;
-    // Session-persistent reference map (refmap v2): definitions carry the id
-    // of the document child anchoring them (0 = the region before the first
-    // child), so a commit retracts exactly the definitions whose bytes it
-    // reparses. At rest every entry's `order` stems from the most recent
-    // full parse, so per-label winner election sees true document order.
-    markdown_core_map *refmap;
+    // The definition tables (see markdown_core_definition_table).
+    markdown_core_definition_table definitions[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     // Persistent unit-id -> looked-up-labels table backing per-unit re-runs
     // when a commit changes per-label winners. Maintained by both commit
     // paths; skipped entirely for the one-shot convenience parse.
@@ -269,18 +305,10 @@ struct markdown_core_session {
     bool one_shot;
     bool record_lookups;
     // The incremental pipeline reconciled definitions in place and then could
-    // not finish: the map no longer matches the committed tree, so the next
-    // commit must take the full path (which rebuilds the map and clears
-    // this).
-    bool refmap_stale;
-    // At-rest definition entries ordered by start line (equal to document
-    // order): staleness and prefix/suffix classification are line-interval
-    // range queries, and a commit's stale range splices in place. Rebuilt
-    // by the full path; an aborted reconciliation is covered by
-    // refmap_stale.
-    markdown_core_map_entry **def_index;
-    size_t def_count;
-    size_t def_capacity;
+    // not finish: a table no longer matches the committed tree, so the next
+    // commit must take the full path (which rebuilds both tables and clears
+    // this). One flag for both, because the full path is wholesale either way.
+    bool definitions_stale;
     markdown_core_clean_index clean;
     markdown_core_edit_summary pending;
     int total_lines;      // parser line count of the committed text
@@ -481,8 +509,8 @@ markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session
 
 /** Hands a parser back after its parse ended: a healthy one is renewed and
  * held warm for the next commit, a poisoned one (or a second hand-back) is
- * freed. The parser's refmap must be its own or NULL — never the session's
- * map. Defined in session.c. */
+ * freed. The parser's definition maps must be its own or NULL — never the
+ * session's. Defined in session.c. */
 void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
 
 /** Seals a freshly refined tree: positions become parent-relative deltas and
@@ -508,7 +536,8 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
  * just-adopted parse to that node's session id (owner 0 stays 0: the region
  * before the first document child). Owners already holding ids are never
  * present when this runs — full parses replace the whole map, incremental
- * commits remove pointer-stamped duplicates instead. */
+ * commits remove pointer-stamped duplicates instead. Runs per definition
+ * table. */
 void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
 
 /** Rebuilds the session's line-ordered at-rest definition index from `map`
@@ -531,8 +560,6 @@ bool markdown_core_session_index_clean_children(
     const markdown_core_map *map,
     markdown_core_clean_index *out
 );
-
-// --- lookup records (lookups.c) ---------------------------------------------
 
 /** Prepares an empty recording bound to `mem`. */
 void markdown_core_lookup_recording_init(markdown_core_lookup_recording *recording, markdown_core_mem *mem);

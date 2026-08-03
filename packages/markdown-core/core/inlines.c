@@ -238,28 +238,6 @@ static markdown_core_node *make_str_with_entities(
     }
 }
 
-// Duplicate a chunk by creating a copy of the buffer not by reusing the
-// buffer like markdown_core_chunk_dup does.
-static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) {
-    markdown_core_chunk c;
-    markdown_core_bufsize len = src->len;
-
-    c.len = len;
-    c.data = (unsigned char *)subj->mem->calloc(subj->mem, (size_t)len + 1, 1);
-    if (!c.data) {
-        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
-        subj->oom = 1;
-        return empty;
-    }
-    c.alloc = 1;
-    if (len) {
-        memcpy(c.data, src->data, len);
-    }
-    c.data[len] = '\0';
-
-    return c;
-}
-
 static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_core_chunk *url, int is_email) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
@@ -401,7 +379,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(subject *subj, int (*
         len++;
     }
 
-    return markdown_core_chunk_dup(&subj->input, startpos, len);
+    return markdown_core_chunk_borrow(&subj->input, startpos, len);
 }
 
 // Return the number of newlines in a given span of text in a subject.  If
@@ -481,7 +459,7 @@ static markdown_core_node *stage_source_text(
     if (!node) {
         return NULL;
     }
-    node->as.literal = markdown_core_chunk_dup(&subj->input, start, end - start);
+    node->as.literal = markdown_core_chunk_borrow(&subj->input, start, end - start);
     node->start_line = span->start_line;
     node->start_column = span->start_column;
     node->end_line = span->end_line;
@@ -762,7 +740,7 @@ static markdown_core_node *handle_delim(subject *subj, unsigned char c, bool sma
     } else if (c == '"' && smart) {
         contents = markdown_core_chunk_literal(can_close ? RIGHTDOUBLEQUOTE : LEFTDOUBLEQUOTE);
     } else {
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos - numdelims, numdelims);
+        contents = markdown_core_chunk_borrow(&subj->input, subj->pos - numdelims, numdelims);
     }
 
     inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
@@ -940,11 +918,11 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
              * consumed run. This is the same operation for one or many pairs
              * and requires no transformed-payload allocation. */
             subj->pos = end;
-            return make_str(subj, start, end - 1, markdown_core_chunk_dup(&subj->input, start, (end - start) / 2));
+            return make_str(subj, start, end - 1, markdown_core_chunk_borrow(&subj->input, start, (end - start) / 2));
         }
         // only ascii symbols and newline can be escaped
         advance(subj);
-        return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_dup(&subj->input, subj->pos - 1, 1));
+        return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_borrow(&subj->input, subj->pos - 1, 1));
     } else if (!is_eof(subj) && skip_line_end(subj)) {
         return make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
     } else {
@@ -1031,7 +1009,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
     // first try to match a URL autolink
     matchlen = scan_autolink_uri(&subj->input, subj->pos);
     if (matchlen > 0) {
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos, matchlen - 1);
+        contents = markdown_core_chunk_borrow(&subj->input, subj->pos, matchlen - 1);
         subj->pos += matchlen;
 
         return make_autolink(subj, subj->pos - 1 - matchlen, subj->pos - 1, contents, 0);
@@ -1040,7 +1018,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
     // next try to match an email autolink
     matchlen = scan_autolink_email(&subj->input, subj->pos);
     if (matchlen > 0) {
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos, matchlen - 1);
+        contents = markdown_core_chunk_borrow(&subj->input, subj->pos, matchlen - 1);
         subj->pos += matchlen;
 
         return make_autolink(subj, subj->pos - 1 - matchlen, subj->pos - 1, contents, 1);
@@ -1104,7 +1082,7 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         }
     }
     if (matchlen > 0) {
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos - 1, matchlen + 1);
+        contents = markdown_core_chunk_borrow(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
         adjust_subj_node_newlines(subj, node, matchlen, 1);
@@ -1149,7 +1127,7 @@ static int link_label(subject *subj, markdown_core_chunk *raw_label) {
     }
 
     if (c == ']') { // match found
-        *raw_label = markdown_core_chunk_dup(&subj->input, startpos + 1, subj->pos - (startpos + 1));
+        *raw_label = markdown_core_chunk_borrow(&subj->input, startpos + 1, subj->pos - (startpos + 1));
         markdown_core_chunk_trim(raw_label);
         advance(subj); // advance past ]
         return 1;
@@ -1240,6 +1218,53 @@ static markdown_core_bufsize manual_scan_link_url(
     return i - offset;
 }
 
+/* The node a source `[^label]` becomes.
+ *
+ * A label the document defines is a footnote reference. A label nobody
+ * defines is not an unresolved reference — it is the text the author typed,
+ * and it is built here as one literal Text node.
+ *
+ * Two consequences worth stating, because both were reached the other way
+ * first. The label is not reparsed: `[^~~x~~]` is the literal nine characters,
+ * not a bracket around a strikethrough, which is why this synthesizes the text
+ * instead of falling through to the ordinary "emit the `]` and let the
+ * delimiter stack sort it out" tail. And the answer is a definedness question
+ * asked of the whole document, so it belongs to the session's footnote map
+ * rather than to the block being parsed. */
+static markdown_core_node *make_footnote_reference_or_text(
+    subject *subj,
+    const markdown_core_chunk *literal,
+    int label_span,
+    bool defined
+) {
+    markdown_core_node *node;
+    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
+
+    if (defined) {
+        node = make_simple(subj->mem, MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE);
+        if (node) {
+            node->as.literal = markdown_core_chunk_borrow(literal, 1, label_span);
+        }
+        return node;
+    }
+
+    node = make_simple(subj->mem, MARKDOWN_CORE_NODE_TEXT);
+    if (!node) {
+        return NULL;
+    }
+    /* Owned, not borrowed: the brackets and the caret are not contiguous with
+     * the label in any buffer the node could point into. */
+    markdown_core_strbuf_puts(&buf, "[^");
+    markdown_core_strbuf_put(&buf, literal->data + 1, label_span);
+    markdown_core_strbuf_putc(&buf, ']');
+    node->as.literal = markdown_core_chunk_buf_detach(&buf);
+    if (!node->as.literal.data) {
+        markdown_core_node_free(node);
+        return NULL;
+    }
+    return node;
+}
+
 // Return a link, an image, or a literal close bracket.
 static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj) {
     markdown_core_bufsize initial_pos, after_link_text_pos;
@@ -1247,13 +1272,23 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     markdown_core_bufsize sps, n;
     markdown_core_reference *ref = NULL;
     markdown_core_chunk url_chunk, title_chunk;
-    markdown_core_chunk url, title;
+    /* Empty on the reference path, which reaches `match` without writing
+     * either: a reference carries no destination. Only the inline `[a](/u)`
+     * form fills them, and only it hands them to the node. */
+    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_chunk title = MARKDOWN_CORE_CHUNK_EMPTY;
     bracket *opener;
     markdown_core_node *inl;
     markdown_core_chunk raw_label;
     int found_label;
     markdown_core_node *tmp, *tmpnext;
     bool is_image;
+    /* Set on the reference path only. `[a](/u)` writes its destination in
+     * the source and keeps carrying it; a reference does not, so the two
+     * produce different node kinds from this one `match` label. */
+    bool is_reference = false;
+    markdown_core_reference_type form = MARKDOWN_CORE_SHORTCUT_REFERENCE;
+    markdown_core_chunk label = markdown_core_chunk_literal("");
 
     advance(subj); // advance past ]
     initial_pos = subj->pos;
@@ -1293,7 +1328,7 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         if (peek_at(subj, endall) == ')') {
             subj->pos = endall + 1;
 
-            title_chunk = markdown_core_chunk_dup(&subj->input, starttitle, endtitle - starttitle);
+            title_chunk = markdown_core_chunk_borrow(&subj->input, starttitle, endtitle - starttitle);
             {
                 int lost = 0;
                 url = markdown_core_clean_url(subj->mem, &url_chunk, &lost);
@@ -1316,6 +1351,9 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = link_label(subj, &raw_label);
+    if (found_label) {
+        form = raw_label.len ? MARKDOWN_CORE_FULL_REFERENCE : MARKDOWN_CORE_COLLAPSED_REFERENCE;
+    }
     if (!found_label) {
         // If we have a shortcut reference link, back up
         // to before the spacse we skipped.
@@ -1324,18 +1362,33 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
 
     if ((!found_label || raw_label.len == 0) && !opener->bracket_after) {
         markdown_core_chunk_free(subj->mem, &raw_label);
-        raw_label = markdown_core_chunk_dup(&subj->input, opener->position, initial_pos - opener->position - 1);
+        raw_label = markdown_core_chunk_borrow(&subj->input, opener->position, initial_pos - opener->position - 1);
         found_label = true;
     }
 
     if (found_label) {
         ref = (markdown_core_reference *)markdown_core_map_lookup(subj->refmap, &raw_label);
-        markdown_core_chunk_free(subj->mem, &raw_label);
+        if (ref != NULL) {
+            /* Kept for the node: the label as written, which is what the
+             * source says. Its normalized form stays the map's. chunk_dup
+             * borrows the block's content, which the node outlives. */
+            label = raw_label;
+            if (!markdown_core_chunk_to_cstr(subj->mem, &label)) {
+                subj->oom = 1;
+            }
+            is_reference = true;
+        } else {
+            markdown_core_chunk_free(subj->mem, &raw_label);
+        }
     }
 
     if (ref != NULL) { // found
-        url = chunk_clone(subj, &ref->url);
-        title = chunk_clone(subj, &ref->title);
+        /* The definition's destination is deliberately not copied here. It
+         * was, while a resolved reference was a Link carrying a payload; the
+         * clones then outlived their last reader by exactly nothing, because
+         * the reference node stores only the label. Copying it back would
+         * reintroduce both the leak and the dependency that made every
+         * `[foo]: /new` edit reparse each unit mentioning `[foo]`. */
         goto match;
     } else {
         goto noMatch;
@@ -1372,18 +1425,27 @@ noMatch:
                 return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
             }
 
+            // Whether the document defines the label decides which node this
+            // is, not merely how a consumer resolves it. The three reference
+            // forms answer "no definition" the same way — as text — and for
+            // link and image references the syntax leaves no other option, so
+            // a footnote reference that stayed a node would be the one place a
+            // renderer had to special-case. The label reads exactly as the
+            // borrow below reads it.
+            //
+            // The map is the session's, spanning the whole document: a
+            // paragraph reparsed on its own still sees a definition a hundred
+            // lines further down, so an incremental tree equals the one-shot
+            // tree. A definedness flip is what re-refines the units that read
+            // the label.
+            markdown_core_chunk probe = {literal->data + 1, label_span, 0};
+            bool defined = markdown_core_map_lookup(parser->footnote_defs, &probe) != NULL;
+
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
             // bracket, ie if it went looking for a `link_label`.
             // Let's just rewind the subject's position:
             subj->pos = initial_pos;
-
-            markdown_core_node *fnref = make_simple(subj->mem, MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE);
-            if (!fnref) {
-                subj->oom = 1;
-                pop_bracket(subj);
-                return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
-            }
 
             // the start and end of the footnote ref is the opening and closing brace
             // i.e. the subject's current position, and the opener's start_column
@@ -1399,12 +1461,11 @@ noMatch:
             //
             // this copies the footnote reference string, even if between the
             // `opener` and the subject's current position there are other nodes
-            //
-            // (first, check for underflows)
-            if ((fnref_start_column + 2) <= fnref_end_column) {
-                fnref->as.literal = markdown_core_chunk_dup(literal, 1, (fnref_end_column - fnref_start_column) - 2);
-            } else {
-                fnref->as.literal = markdown_core_chunk_dup(literal, 1, 0);
+            markdown_core_node *fnref = make_footnote_reference_or_text(subj, literal, label_span, defined);
+            if (!fnref) {
+                subj->oom = 1;
+                pop_bracket(subj);
+                return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
             }
 
             fnref->start_line = fnref->end_line = subj->line;
@@ -1449,17 +1510,30 @@ noMatch:
     return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
 
 match:
-    inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
+    if (is_reference) {
+        inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE_REFERENCE : MARKDOWN_CORE_NODE_LINK_REFERENCE);
+    } else {
+        inl = make_simple(subj->mem, is_image ? MARKDOWN_CORE_NODE_IMAGE : MARKDOWN_CORE_NODE_LINK);
+    }
     if (!inl) {
         subj->oom = 1;
         markdown_core_chunk_free(subj->mem, &url);
         markdown_core_chunk_free(subj->mem, &title);
+        markdown_core_chunk_free(subj->mem, &label);
         pop_bracket(subj);
         subj->pos = initial_pos;
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("]"));
     }
-    inl->as.link.url = url;
-    inl->as.link.title = title;
+    if (is_reference) {
+        /* The destination is the definition's, stated once there. Resolving
+         * it into every reference is what made a definition edit reparse
+         * every unit that mentions the label. */
+        inl->as.reference.label = label;
+        inl->as.reference.form = form;
+    } else {
+        inl->as.link.url = url;
+        inl->as.link.title = title;
+    }
     inl->start_line = inl->end_line = subj->line;
     inl->start_column = opener->inl_text->start_column;
     inl->end_column = subj->pos + subj->column_offset + subj->block_offset;
@@ -1814,7 +1888,7 @@ static int parse_inline(markdown_core_parser *parser, subject *subj, markdown_co
         }
 
         endpos = subject_find_special_char(subj, options);
-        contents = markdown_core_chunk_dup(&subj->input, subj->pos, endpos - subj->pos);
+        contents = markdown_core_chunk_borrow(&subj->input, subj->pos, endpos - subj->pos);
         startpos = subj->pos;
         subj->pos = endpos;
 
@@ -2013,7 +2087,7 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     spnl(&subj);
     matchlen = subj.pos == beforetitle ? 0 : scan_link_title(&subj.input, subj.pos);
     if (matchlen) {
-        title = markdown_core_chunk_dup(&subj.input, subj.pos, matchlen);
+        title = markdown_core_chunk_borrow(&subj.input, subj.pos, matchlen);
         subj.pos += matchlen;
     } else {
         subj.pos = beforetitle;

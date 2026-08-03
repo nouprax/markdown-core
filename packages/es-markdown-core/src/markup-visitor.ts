@@ -5,6 +5,7 @@ import type { DirectiveBlock } from "./model/directive-block.js";
 import type { DirectiveLabel } from "./model/directive-label.js";
 import type { Directive } from "./model/directive.js";
 import type { Document } from "./model/document.js";
+import type { ImageReference, LinkReference, ReferenceDefinition } from "./model/reference.js";
 import type { CrossLink } from "./model/cross-link.js";
 import type { Embed } from "./model/embed.js";
 import type { Emphasis } from "./model/emphasis.js";
@@ -57,6 +58,9 @@ export interface MarkupVisitor<Result> {
     visitImage(this: void, node: Image): Result;
     visitDirective(this: void, node: Directive): Result;
     visitFootnoteReference(this: void, node: FootnoteReference): Result;
+    visitReferenceDefinition(this: void, node: ReferenceDefinition): Result;
+    visitLinkReference(this: void, node: LinkReference): Result;
+    visitImageReference(this: void, node: ImageReference): Result;
     visitCrossLink(this: void, node: CrossLink): Result;
     visitEmbed(this: void, node: Embed): Result;
 }
@@ -121,6 +125,12 @@ export function visit<Result>(node: Markup, visitor: MarkupVisitor<Result>): Res
             return visitor.visitDirective(node);
         case "footnoteReference":
             return visitor.visitFootnoteReference(node);
+        case "referenceDefinition":
+            return visitor.visitReferenceDefinition(node);
+        case "linkReference":
+            return visitor.visitLinkReference(node);
+        case "imageReference":
+            return visitor.visitImageReference(node);
         case "crossLink":
             return visitor.visitCrossLink(node);
         case "embed":

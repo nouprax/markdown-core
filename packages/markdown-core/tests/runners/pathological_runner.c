@@ -613,12 +613,57 @@ static int pc_directive_literal_case(pc_context *context, const char *unit, size
     return pc_expect_text_is_input(context);
 }
 
+/* `:x[` is a directive named `x` followed by a literal `[`: the label opener is
+ * emitted after the directive, so an opener the delimiter engine never pairs
+ * leaves only the bracket behind (see extensions/directive.c). The adversarial
+ * property is unchanged — the parse stays linear and every input byte survives
+ * — but the node counts follow the corrected semantics. */
 static int case_directive_unclosed_labels(pc_context *context) {
-    return pc_directive_literal_case(context, ":x[", 20000);
+    char *expected;
+    size_t expected_length = 0;
+    int result;
+
+    if (pc_build(context, NULL, ":x[", 20000, NULL) != 0 || pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, 0, "DirectiveBlock") != 0) {
+        return -1;
+    }
+    expected = ts_repeat("[", 20000, &expected_length);
+    if (!expected) {
+        return -1;
+    }
+    result = pc_expect_text(context, expected, expected_length);
+    free(expected);
+    return result;
 }
 
+/* `:x{` is a directive named `x` followed by a literal `{`: an attribute block
+ * that does not parse leaves the name standing, as it does in
+ * micromark-extension-directive (see extensions/directive.c). The adversarial
+ * property this case guards is unchanged — the parse stays linear and every
+ * input byte survives — but the node counts follow the corrected semantics
+ * rather than the old all-text one. */
 static int case_directive_unclosed_attributes(pc_context *context) {
-    return pc_directive_literal_case(context, ":x{", 20000);
+    char *expected;
+    size_t expected_length = 0;
+    int result;
+
+    if (pc_build(context, NULL, ":x{", 20000, NULL) != 0 || pc_parse(context, PC_DIRECTIVE_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE, 20000, "Directive") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, 0, "DirectiveBlock") != 0) {
+        return -1;
+    }
+    expected = ts_repeat("{", 20000, &expected_length);
+    if (!expected) {
+        return -1;
+    }
+    result = pc_expect_text(context, expected, expected_length);
+    free(expected);
+    return result;
 }
 
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
@@ -825,6 +870,10 @@ static int ps_expect_kind(const sr_replay *replay, markdown_core_node_kind kind,
         fprintf(stderr, "cannot count node kinds in the session document\n");
         return -1;
     }
+    if ((size_t)kind >= TS_KIND_COUNT) {
+        fprintf(stderr, "node kind %d is outside TS_KIND_COUNT; the table is stale\n", (int)kind);
+        return -1;
+    }
     if (counts[kind] != expected) {
         fprintf(stderr, "expected %zu %s node(s) in the session document, found %zu\n", expected, what, counts[kind]);
         return -1;
@@ -1007,7 +1056,8 @@ done:
 }
 
 /* 2048 colliding reference definitions, every entry referencing one shared
- * undefined label: appending that label's definition resolves 2047 links
+ * undefined label: appending that label's definition turns 2047 of them
+ * into reference nodes
  * across the whole document in one commit, and deleting it collapses them
  * back to literal text — maximal cross-document re-resolution against a
  * collision-saturated reference map. */
@@ -1031,14 +1081,14 @@ static int case_session_reference_collisions(pc_context *context) {
         return -1;
     }
     if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
+        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
         goto done;
     }
     for (round = 0; round < 2; round++) {
         if (ps_splice(&replay, replay.shadow.length, replay.shadow.length, definition) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK, COLLISIONS - 1, "Link") != 0 ||
+            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0 ||
             ps_splice(&replay, replay.shadow.length - definition_length, replay.shadow.length, NULL) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK, 0, "Link") != 0) {
+            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
             goto done;
         }
     }

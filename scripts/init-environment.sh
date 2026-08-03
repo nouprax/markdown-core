@@ -13,6 +13,11 @@ EMSCRIPTEN_VERSION=4.0.23
 # The emsdk repository commit of the 4.0.23 release tag; keep the pair in
 # lockstep when bumping the version.
 EMSCRIPTEN_COMMIT=c0bb220cb6e6f4e0fabb6f6db9efd53390ef5e56
+# The newest tag upstream cmark-gfm has published, with its immutable commit.
+# This pin defines what "parity with upstream" means, so moving it is a
+# reviewed change, not a routine bump (see specs/upstream-parity/deltas.json).
+CMARK_GFM_VERSION=0.29.0.gfm.13
+CMARK_GFM_COMMIT=587a12bb54d95ac37241377e6ddc93ea0e45439b
 CLANG_FORMAT_VERSION=22.1.8
 CMAKE_FORMAT_VERSION=0.6.13
 SWIFTLINT_VERSION=0.65.0
@@ -28,7 +33,7 @@ Usage: scripts/init-environment.sh --check [component ...]
        scripts/init-environment.sh --install [component ...]
 
 Components: core node java wrappers android android-emulator swift emscripten
-            dependencies tools
+            upstream-cmark dependencies tools
 
 With no components, the command checks or installs the complete environment
 supported by the current host. --check never installs or downloads anything.
@@ -60,7 +65,7 @@ fi
 
 for component do
     case "$component" in
-        core | node | java | wrappers | android | android-emulator | swift | emscripten | dependencies | tools) ;;
+        core | node | java | wrappers | android | android-emulator | swift | emscripten | upstream-cmark | dependencies | tools) ;;
         *)
             echo "Unknown environment component: $component" >&2
             usage >&2
@@ -310,6 +315,20 @@ check_emscripten() {
     return 0
 }
 
+cmark_gfm_path() {
+    printf '%s\n' "$root/.tools/cmark-gfm/$CMARK_GFM_VERSION/build/src/cmark-gfm"
+}
+
+check_upstream_cmark() {
+    binary=$(cmark_gfm_path)
+    if [ ! -x "$binary" ]; then
+        fail "upstream cmark-gfm $CMARK_GFM_VERSION is not built"
+        return
+    fi
+    ok "upstream cmark-gfm $CMARK_GFM_VERSION"
+    return 0
+}
+
 check_dependencies() {
     if [ -f node_modules/.modules.yaml ]; then
         ok "frozen JavaScript dependency install"
@@ -456,6 +475,35 @@ install_emscripten() {
     "$directory/emsdk" activate "$EMSCRIPTEN_VERSION"
 }
 
+# The upstream parser is the oracle for scripts/check-upstream-parity.mjs. It
+# is pinned to an immutable commit for the same reason emsdk is: a moved tag
+# must never change what the comparison is comparing against.
+install_upstream_cmark() {
+    directory="$root/.tools/cmark-gfm/$CMARK_GFM_VERSION"
+    if [ ! -d "$directory/.git" ]; then
+        mkdir -p "$(dirname "$directory")"
+        git clone --filter=blob:none https://github.com/github/cmark-gfm.git "$directory"
+    fi
+    git -C "$directory" rev-parse --quiet --verify "$CMARK_GFM_COMMIT^{commit}" >/dev/null \
+        || git -C "$directory" fetch --filter=blob:none origin "$CMARK_GFM_COMMIT"
+    git -C "$directory" checkout --quiet "$CMARK_GFM_COMMIT"
+    actual_commit=$(git -C "$directory" rev-parse HEAD)
+    [ "$actual_commit" = "$CMARK_GFM_COMMIT" ] || {
+        fail "cmark-gfm checkout is $actual_commit, expected $CMARK_GFM_COMMIT"
+        return
+    }
+    # Upstream's CMakeLists still declares a pre-3.5 minimum, which current
+    # CMake refuses outright; the policy override is what lets a dormant
+    # project keep building without patching its tree.
+    cmake -S "$directory" -B "$directory/build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMARK_TESTS=OFF \
+        -DCMARK_SHARED=OFF \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 >/dev/null
+    cmake --build "$directory/build" --parallel >/dev/null
+    [ -x "$(cmark_gfm_path)" ] || fail "cmark-gfm build produced no binary"
+}
+
 install_tools() {
     require_command python3 || return
     clang_directory="$root/.tools/clang-format/$CLANG_FORMAT_VERSION"
@@ -479,6 +527,7 @@ if [ "$mode" = --install ]; then
     has_component android-emulator "$@" && install_android_emulator
     has_component swift "$@" && check_swift
     has_component emscripten "$@" && install_emscripten
+    has_component upstream-cmark "$@" && install_upstream_cmark
     has_component dependencies "$@" \
         && npx --yes "pnpm@$PNPM_VERSION" install --frozen-lockfile
     has_component tools "$@" && install_tools
@@ -494,6 +543,7 @@ has_component android "$@" && check_android
 has_component android-emulator "$@" && check_android_emulator
 has_component swift "$@" && check_swift
 has_component emscripten "$@" && check_emscripten
+has_component upstream-cmark "$@" && check_upstream_cmark
 has_component dependencies "$@" && check_dependencies
 has_component tools "$@" && check_tools
 

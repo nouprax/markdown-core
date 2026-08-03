@@ -460,10 +460,12 @@ done:
 }
 
 /* Scripted footnote edits: the tree stays source-faithful (definitions never
- * move, references never degrade), so every commit must dump-equal a
- * one-shot parse while first-use ordinals cascade underneath; ordinal and
- * resolution changes surface as revision-only `changed` entries, which the
- * mirror check validates against a fresh walk. */
+ * move), so every commit must dump-equal a one-shot parse while first-use
+ * ordinals cascade underneath; ordinal changes surface as revision-only
+ * `changed` entries, which the mirror check validates against a fresh walk.
+ * Adding or removing a definition is the harder case, because definedness
+ * decides whether a reference is a node at all: the edit changes the tree of
+ * every unit that read the label, wherever in the document it sits. */
 static int case_footnote_edits(void) {
     static const char initial[] = "alpha[^a] then beta[^b] then beta again[^b]\n"
                                   "\n"
@@ -1023,6 +1025,125 @@ static int case_boundary_edits(void) {
     return failures ? -1 : 0;
 }
 
+/* Scripted edits inside a cluster of link reference definitions.
+ *
+ * `link_ref_edits` drives one label's duplicates; this drives a *population*
+ * of distinct labels, which is what the session's definition index is for.
+ * Three shapes the other equivalence cases never produce:
+ *
+ *   - inserting a definition between two adjacent ones. Definition order is
+ *     dense, so the vacated order span between neighbours is zero and cannot
+ *     seat a new entry: the commit has to renumber the surviving prefix and
+ *     suffix rather than splice in place;
+ *   - definition-only paragraphs that leave no tree node. Each vanishes from
+ *     the AST while remaining a valid restart point, and a commit below them
+ *     has to resolve several such points, at distinct lines, well past the
+ *     first line of the document; and
+ *   - a tab-indented continuation, whose column advances to the next stop
+ *     rather than by one, deciding whether the line seals the cluster.
+ *
+ * Every assertion is the harness's: each commit must dump byte-identically to
+ * a one-shot parse of the same bytes, with the delta accounting for every
+ * changed node. Nothing here inspects the index, the splice, or the restart
+ * point — those are internals, and section 13 of the incremental canonical AST
+ * contract binds their replacement to exactly these equivalences. */
+static int case_definition_cluster_edits(void) {
+    static const char initial[] = "See [a][alpha], [b][beta], and [c][gamma].\n"
+                                  "\n"
+                                  "[alpha]: /a-one\n"
+                                  "[beta]: /b-one\n"
+                                  "[gamma]: /c-one\n";
+    /* Separate paragraphs, so each one vanishes from the tree on its own and
+     * leaves its own restart point behind. */
+    static const char scattered[] = "intro\n"
+                                    "\n"
+                                    "[delta]: /d-one\n"
+                                    "\n"
+                                    "[epsilon]: /e-one\n"
+                                    "\n"
+                                    "[zeta]: /f-one\n"
+                                    "\n";
+    sr_replay replay;
+    markdown_core_parse_options options;
+    int result = -1;
+    size_t position;
+
+    markdown_core_parse_options_init(&options);
+    if (eq_open(&replay, "definition_cluster_edits", &options) != 0) {
+        return -1;
+    }
+
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* One definition between two adjacent ones: the order span is zero. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[beta]:") - (char *)replay.shadow.bytes);
+    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[inserted]: /i-one\n", 19) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Two at once into the same gap, so the staged run outruns the span by
+     * more than one. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[gamma]:") - (char *)replay.shadow.bytes);
+    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[extra]: /x-one\n[more]: /m-one\n", 31) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* A tab-indented continuation of the last definition's title. */
+    if (eq_replay_append_commit(&replay, (const uint8_t *)"\t\"gamma title\"\n", 15) != 0) {
+        goto done;
+    }
+
+    /* Definition-only paragraphs ahead of the cluster: every one of them
+     * vanishes, and they sit at distinct lines below the first. */
+    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)scattered, sizeof(scattered) - 1) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* An edit below every vanished paragraph has to resolve all of them. */
+    if (eq_replay_append_commit(&replay, (const uint8_t *)"\ntail [d][delta] and [f][zeta]\n", 31) != 0) {
+        goto done;
+    }
+
+    /* Removing a middle definition re-elects nothing but renumbers the rest. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[epsilon]: /e-one\n") - (char *)replay.shadow.bytes);
+    if (sr_replay_edit(&replay, position, position + strlen("[epsilon]: /e-one\n"), NULL, 0) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Reinstating it at a different line moves it across the index. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[alpha]:") - (char *)replay.shadow.bytes);
+    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[epsilon]: /e-two\n", 18) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    /* Collapsing the scattered paragraphs into one cluster retires several
+     * restart points in a single commit. */
+    position = (size_t)(strstr((const char *)replay.shadow.bytes, "[delta]: /d-one\n") - (char *)replay.shadow.bytes);
+    if (sr_replay_edit(
+            &replay,
+            position,
+            (size_t)(strstr((const char *)replay.shadow.bytes, "[zeta]: /f-one\n") - (char *)replay.shadow.bytes),
+            (const uint8_t *)"[delta]: /d-two\n",
+            16
+        ) != 0 ||
+        sr_replay_commit(&replay) != 0) {
+        goto done;
+    }
+
+    result = failures ? -1 : 0;
+done:
+    sr_replay_close(&replay);
+    return result;
+}
+
 /* --- entry point ---------------------------------------------------------- */
 
 static const char *const EQ_CASES[] = {
@@ -1031,6 +1152,7 @@ static const char *const EQ_CASES[] = {
     "random_edits",
     "link_ref_edits",
     "footnote_edits",
+    "definition_cluster_edits",
     "directive_multiline_attributes",
     "boundary_edits"
 };
@@ -1089,6 +1211,8 @@ int main(int argc, char **argv) {
         case_link_ref_edits();
     } else if (case_name && strcmp(case_name, "footnote_edits") == 0) {
         case_footnote_edits();
+    } else if (case_name && strcmp(case_name, "definition_cluster_edits") == 0) {
+        case_definition_cluster_edits();
     } else if (case_name && strcmp(case_name, "directive_multiline_attributes") == 0) {
         case_directive_multiline_attributes();
     } else if (case_name && strcmp(case_name, "boundary_edits") == 0) {

@@ -24,6 +24,8 @@ import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.process.ExecOperations
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 import org.jetbrains.kotlin.gradle.dsl.abi.ExperimentalAbiValidation
@@ -559,6 +561,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.dokka)
+    jacoco
     `maven-publish`
 }
 
@@ -975,6 +978,63 @@ tasks.register<Sync>("stageJvmBenchmarkArtifact") {
 
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+// JVM-target coverage for the repository's one coverage gate.
+//
+// The Android, Native, and JS targets compile the same commonMain sources, so
+// one instrumented JVM run measures the shared binding logic once rather than
+// reporting every common file four times under four toolchains. The
+// target-specific sources each keep their own gate through their own platform.
+//
+// Kover would be the idiomatic choice and is deliberately not used: it refuses
+// to configure against the AGP Kotlin-multiplatform Android target this module
+// declares, because it looks for the legacy `android` extension that target
+// does not create.
+jacoco {
+    toolVersion = libs.versions.jacoco.get()
+}
+
+// Instrumentation is off unless the coverage run asks for it. Applying the
+// JaCoCo plugin otherwise attaches the agent to every Test task, which would
+// silently change what `pnpm test:kotlin-jvm` executes — the frozen test
+// architecture owns that path, and a coverage tool is not entitled to alter
+// it.
+val coverageRequested = providers.gradleProperty("markdownCoreCoverage").isPresent()
+tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> { isEnabled = coverageRequested }
+}
+
+tasks.register<JacocoReport>("jvmCoverageReport") {
+    group = "verification"
+    description = "Aggregates JVM correctness and conformance coverage into one JaCoCo XML report."
+    val correctness = tasks.named<Test>("jvmTest")
+    val conformance = tasks.named<Test>("jvmConformanceTest")
+    dependsOn(correctness, conformance)
+    // Captured as a local so the task action holds a boolean rather than a
+    // reference to this build script, which the configuration cache rejects.
+    val instrumented = coverageRequested
+    // Declaring the switch as an input is what makes the guard below reachable:
+    // without it the task stays up to date across a toggle and would hand back
+    // a report produced by an earlier instrumented run.
+    inputs.property("markdownCoreCoverage", instrumented)
+    doFirst {
+        check(instrumented) {
+            "jvmCoverageReport needs instrumentation: run it with -PmarkdownCoreCoverage, " +
+                "or through scripts/coverage-kotlin-jvm.sh, which passes it."
+        }
+    }
+    executionData.setFrom(
+        correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+        conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
+    )
+    sourceDirectories.setFrom(files("src/commonMain/kotlin", "src/jvmMain/kotlin"))
+    classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
+    reports {
+        xml.required.set(true)
+        html.required.set(false)
+        csv.required.set(false)
+    }
 }
 
 for (target in listOf("macosArm64", "linuxX64")) {

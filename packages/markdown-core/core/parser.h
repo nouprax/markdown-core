@@ -18,6 +18,16 @@ struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
+    /* Which footnote labels the document defines. Block parsing registers a
+     * definition the moment its container opens; the inline phase, which runs
+     * only once every block is closed, asks whether `[^x]` names one. A
+     * reference to a label nobody defines is not a footnote at all — it is the
+     * literal text the author typed — so this answer decides a node's type,
+     * and it has to be the whole document's answer even when a session
+     * reparses one paragraph of it. That is why the map is the session's, not
+     * the parse's: see markdown_core_footnote_definition_create for why it is
+     * a second map rather than a discriminated column of `refmap`. */
+    struct markdown_core_map *footnote_defs;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
     /* The last open block after a line is fully processed */
@@ -78,6 +88,20 @@ struct markdown_core_parser {
     /* Parser-lifetime inline scratch. Every inline unit begins at the empty
      * mark and retains lane/record capacity for the next unit. */
     markdown_core_delimiter_engine inline_delimiters;
+    /* Where each appended line of the open paragraph came from, so a link
+     * reference definition harvested out of that paragraph's accumulated
+     * content at finalize can be given the position it was written at.
+     *
+     * A paragraph is a leaf, so at most one is ever open and one array on the
+     * parser suffices — no node grows a field. It is not an asymptotic cost:
+     * three ints per line describing a buffer that already holds the line. */
+    struct markdown_core_line_mark {
+        markdown_core_bufsize content_offset;
+        int line;
+        int column;
+    } *line_marks;
+    size_t line_mark_count;
+    size_t line_mark_capacity;
 };
 
 /** Returns a parser whose parse ended (root handed off or freed) to its

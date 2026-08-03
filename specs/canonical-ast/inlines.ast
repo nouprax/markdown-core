@@ -1,4 +1,4 @@
-Document scope=1:1..5:19 children=2
+Document scope=1:1..9:26 children=4
 ├── Paragraph scope=1:1..3:4 children=29
 │   ├── Text scope=1:1..1:5 literal="Text " children=0
 │   ├── Emphasis scope=1:6..1:9 children=1
@@ -36,6 +36,20 @@ Document scope=1:1..5:19 children=2
 │   ├── HTML scope=2:38..2:41 literal="</i>" children=0
 │   ├── SoftBreak scope=0:0..0:0 children=0
 │   └── Text scope=3:1..3:4 literal="soft" children=0
-└── FootnoteDefinition scope=5:10..5:19 id="note" children=1
-    └── Paragraph scope=5:10..5:19 children=1
-        └── Text scope=5:10..5:19 literal="definition" children=0
+├── FootnoteDefinition scope=5:10..6:0 id="note" children=1
+│   └── Paragraph scope=5:10..5:19 children=1
+│       └── Text scope=5:10..5:19 literal="definition" children=0
+├── Paragraph scope=7:1..7:66 children=8
+│   ├── Text scope=7:1..7:4 literal="Ref " children=0
+│   ├── LinkReference scope=7:5..7:18 label="target" form=full children=1
+│   │   └── Text scope=7:6..7:9 literal="full" children=0
+│   ├── Text scope=7:19..7:23 literal=" and " children=0
+│   ├── LinkReference scope=7:24..7:33 label="target" form=collapsed children=1
+│   │   └── Text scope=7:25..7:30 literal="target" children=0
+│   ├── Text scope=7:34..7:38 literal=" and " children=0
+│   ├── LinkReference scope=7:39..7:46 label="target" form=shortcut children=1
+│   │   └── Text scope=7:40..7:45 literal="target" children=0
+│   ├── Text scope=7:47..7:52 literal=" plus " children=0
+│   └── ImageReference scope=7:53..7:66 label="target" form=full children=1
+│       └── Text scope=7:55..7:57 literal="alt" children=0
+└── ReferenceDefinition scope=9:1..9:26 label="target" destination="/ref" title="ref title" children=0

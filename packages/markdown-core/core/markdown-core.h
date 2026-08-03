@@ -39,6 +39,17 @@ typedef enum {
     MARKDOWN_CORE_NODE_HEADING = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0008,
     MARKDOWN_CORE_NODE_THEMATIC_BREAK = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0009,
     MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x000a,
+    /* A link reference definition, at the position it was written. Upstream
+     * cmark-gfm consumes these into its reference map and leaves no node, so
+     * the source carried text the tree did not account for. A reference's
+     * destination is stated here, once, rather than copied into every
+     * reference that resolves to it.
+     * The value continues past the extension block range (table, formula,
+     * directive) rather than following FOOTNOTE_DEFINITION: those are
+     * compile-time constants in the same numbering, so 0x000b..0x000f are
+     * taken.
+     */
+    MARKDOWN_CORE_NODE_REFERENCE_DEFINITION = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0010,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,
@@ -51,12 +62,30 @@ typedef enum {
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
     MARKDOWN_CORE_NODE_IMAGE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
     MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
+    /* `[text][label]`, `[label][]`, and `[label]`. It carries the label and
+     * the form it was written in, and no destination: which definition it
+     * resolves to is answered from the definition, exactly as a footnote
+     * reference's number is. `LINK` and `IMAGE` stay the inline forms
+     * `[a](/u)` and `![a](/u)`, whose destination is written in the source.
+     * These values continue past the extension inline range for the same
+     * reason DEFINITION does. */
+    MARKDOWN_CORE_NODE_LINK_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
+    MARKDOWN_CORE_NODE_IMAGE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0012,
 } markdown_core_node_type;
 
 /* Extension node types are compile-time constants defined in the owning
  * extension headers (extensions/table.h, strikethrough.h, formula.h,
  * directive.h). They continue the block/inline value ranges above; the
  * engine holds no runtime node-type registry. */
+
+/** How a reference was written: `[text][label]`, `[label][]`, or `[label]`.
+ * The three resolve identically and differ only in source form, which the
+ * tree keeps because it is what was written. */
+typedef enum {
+    MARKDOWN_CORE_FULL_REFERENCE,
+    MARKDOWN_CORE_COLLAPSED_REFERENCE,
+    MARKDOWN_CORE_SHORTCUT_REFERENCE
+} markdown_core_reference_type;
 
 typedef enum { MARKDOWN_CORE_NO_LIST, MARKDOWN_CORE_BULLET_LIST, MARKDOWN_CORE_ORDERED_LIST } markdown_core_list_type;
 

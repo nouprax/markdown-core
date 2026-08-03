@@ -245,6 +245,18 @@ public final class com/nouprax/markdown/core/Image : com/nouprax/markdown/core/M
 	public fun revisionBits ()J
 }
 
+public final class com/nouprax/markdown/core/ImageReference : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ljava/util/List;
+	public final fun getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getRevision-s-VKNKU ()J
+	public fun hashCode ()I
+	public fun revisionBits ()J
+}
+
 public final class com/nouprax/markdown/core/LineBreak : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
@@ -262,6 +274,18 @@ public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Ma
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
 	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun revisionBits ()J
+}
+
+public final class com/nouprax/markdown/core/LinkReference : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ljava/util/List;
+	public final fun getForm ()Lcom/nouprax/markdown/core/ReferenceForm;
+	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getRevision-s-VKNKU ()J
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -373,11 +397,14 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/HTMLBlock;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Heading;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Image;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/ImageReference;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/LineBreak;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Link;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/LinkReference;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/List;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/ListItem;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Paragraph;)Ljava/lang/Object;
+	public abstract fun visit (Lcom/nouprax/markdown/core/ReferenceDefinition;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/SoftBreak;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Strikethrough;)Ljava/lang/Object;
 	public abstract fun visit (Lcom/nouprax/markdown/core/Strong;)Ljava/lang/Object;
@@ -483,6 +510,27 @@ public final class com/nouprax/markdown/core/Position {
 	public final fun getLine ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/ReferenceDefinition : com/nouprax/markdown/core/Markup {
+	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDestination ()Ljava/lang/String;
+	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun getRevision-s-VKNKU ()J
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun revisionBits ()J
+}
+
+public final class com/nouprax/markdown/core/ReferenceForm : java/lang/Enum {
+	public static final field COLLAPSED Lcom/nouprax/markdown/core/ReferenceForm;
+	public static final field FULL Lcom/nouprax/markdown/core/ReferenceForm;
+	public static final field SHORTCUT Lcom/nouprax/markdown/core/ReferenceForm;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ReferenceForm;
+	public static fun values ()[Lcom/nouprax/markdown/core/ReferenceForm;
 }
 
 public final class com/nouprax/markdown/core/Scope {

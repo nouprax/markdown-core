@@ -38,13 +38,23 @@
                 "CMAKE_BUILD_TYPE": "Tsan",
                 "MARKDOWN_CORE_SHARED": "OFF"
             }
+        },
+        {
+            "name": "coverage",
+            "displayName": "Source-based coverage instrumentation",
+            "binaryDir": "${sourceDir}/build/coverage",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Coverage",
+                "MARKDOWN_CORE_SHARED": "OFF"
+            }
         }
     ],
     "buildPresets": [
         { "name": "default", "configurePreset": "default" },
         { "name": "asan", "configurePreset": "asan" },
         { "name": "ubsan", "configurePreset": "ubsan" },
-        { "name": "tsan", "configurePreset": "tsan" }
+        { "name": "tsan", "configurePreset": "tsan" },
+        { "name": "coverage", "configurePreset": "coverage" }
     ],
     "testPresets": [
         {
@@ -85,6 +95,17 @@
             "configurePreset": "ubsan",
             "output": { "outputOnFailure": true },
             "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "execution": { "noTestsAction": "error" }
+        },
+        {
+            "name": "coverage",
+            "displayName": "Suites that assert parse output, under coverage instrumentation",
+            "configurePreset": "coverage",
+            "output": { "outputOnFailure": true },
+            "filter": {
+                "include": { "label": "^(spec|extensions|regression|conformance|equivalence|pathological)$" },
+                "exclude": { "label": "^complexity$" }
+            },
             "execution": { "noTestsAction": "error" }
         },
         {

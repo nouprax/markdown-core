@@ -113,6 +113,9 @@ function children(node: Markup): readonly Markup[] {
             return node.content;
         case "directive":
             return node.label === null ? [] : [node.label];
+        case "linkReference":
+        case "imageReference":
+            return [...node.content];
         case "thematicBreak":
         case "codeBlock":
         case "htmlBlock":
@@ -124,6 +127,7 @@ function children(node: Markup): readonly Markup[] {
         case "html":
         case "formula":
         case "footnoteReference":
+        case "referenceDefinition":
         case "crossLink":
         case "embed":
             return [];

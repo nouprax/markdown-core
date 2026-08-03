@@ -212,13 +212,26 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown
     return 1;
 }
 
+/* Both definition maps, asked as one question: a parse missing either cannot
+ * be trusted, and reset and renew poison the parser on the same terms. */
+static bool S_definition_maps_ready(const markdown_core_parser *parser) {
+    return parser->refmap != NULL && parser->footnote_defs != NULL;
+}
+
 static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
 
-    if (parser->refmap) {
-        markdown_core_map_free(parser->refmap);
+    /* map_free tolerates NULL, which a parser poisoned at reset can hold. */
+    markdown_core_map_free(parser->refmap);
+    markdown_core_map_free(parser->footnote_defs);
+
+    if (parser->line_marks) {
+        parser->mem->free(parser->mem, parser->line_marks);
+        parser->line_marks = NULL;
+        parser->line_mark_count = 0;
+        parser->line_mark_capacity = 0;
     }
 }
 
@@ -240,6 +253,7 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     markdown_core_node *document = make_document(parser->mem);
 
     parser->refmap = markdown_core_reference_map_new(parser->mem);
+    parser->footnote_defs = markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
     parser->current = document;
 
@@ -250,14 +264,14 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
 
     /* A reset that could not rebuild its structures poisons the parser: feed
      * becomes a no-op and finish reports failure. */
-    if (!parser->root || !parser->refmap || parser->curline.oom) {
+    if (!parser->root || !S_definition_maps_ready(parser) || parser->curline.oom) {
         parser->oom = true;
     }
 }
 
 /* Like markdown_core_parser_reset, but keeps the allocations one parse hands
- * back intact for the next: the line buffers' capacity, the reference map
- * when the caller left one attached (a consumed map is replaced by a fresh
+ * back intact for the next: the line buffers' capacity, the definition maps
+ * when the caller left them attached (a consumed map is replaced by a fresh
  * one), and the extension attachments. A kept map must be empty — the caller
  * either never inserted into it or took it away. Failure poisons the parser
  * exactly like a failed reset. */
@@ -268,11 +282,16 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
     int saved_options = parser->options;
     markdown_core_mem *saved_mem = parser->mem;
     markdown_core_map *saved_refmap = parser->refmap;
+    markdown_core_map *saved_footnote_defs = parser->footnote_defs;
     markdown_core_strbuf saved_curline = parser->curline;
     markdown_core_strbuf saved_linebuf = parser->linebuf;
 
     if (parser->root) {
         markdown_core_node_free(parser->root);
+    }
+
+    if (parser->line_marks) {
+        parser->mem->free(parser->mem, parser->line_marks);
     }
 
     memset(parser, 0, sizeof(markdown_core_parser));
@@ -286,6 +305,8 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
     markdown_core_node *document = make_document(parser->mem);
 
     parser->refmap = saved_refmap ? saved_refmap : markdown_core_reference_map_new(parser->mem);
+    parser->footnote_defs =
+        saved_footnote_defs ? saved_footnote_defs : markdown_core_footnote_definition_map_new(parser->mem);
     parser->root = document;
     parser->current = document;
 
@@ -294,7 +315,7 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
     parser->inline_delimiters = saved_inline_delimiters;
     parser->options = saved_options;
 
-    if (!parser->root || !parser->refmap || parser->curline.oom || parser->linebuf.oom) {
+    if (!parser->root || !S_definition_maps_ready(parser) || parser->curline.oom || parser->linebuf.oom) {
         parser->oom = true;
     }
 }
@@ -376,10 +397,41 @@ static MARKDOWN_CORE_INLINE bool contains_inlines(markdown_core_node *node) {
     return markdown_core_node_owns_inlines(node);
 }
 
+/* Records where the line about to be appended to the open paragraph came
+ * from. A lost mark poisons the parse rather than degrading quietly: without
+ * it the definitions on that line get a fallback position, so the parse would
+ * succeed with a different tree than the same input produces when the
+ * allocation succeeds. That is precisely what the OOM sweep compares, and a
+ * silently different tree is worse than a reported failure. */
+static void S_record_line_mark(markdown_core_parser *parser, const markdown_core_node *node) {
+    struct markdown_core_line_mark *grown;
+    size_t capacity;
+
+    if (S_type(node) != MARKDOWN_CORE_NODE_PARAGRAPH) {
+        return;
+    }
+    if (parser->line_mark_count == parser->line_mark_capacity) {
+        capacity = parser->line_mark_capacity ? parser->line_mark_capacity * 2 : 8;
+        grown = (struct markdown_core_line_mark *)
+                    parser->mem->realloc(parser->mem, parser->line_marks, capacity * sizeof(*grown));
+        if (!grown) {
+            parser->oom = true;
+            return;
+        }
+        parser->line_marks = grown;
+        parser->line_mark_capacity = capacity;
+    }
+    parser->line_marks[parser->line_mark_count].content_offset = node->content.size;
+    parser->line_marks[parser->line_mark_count].line = parser->line_number;
+    parser->line_marks[parser->line_mark_count].column = (int)parser->column + 1;
+    parser->line_mark_count++;
+}
+
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    S_record_line_mark(parser, node);
     if (parser->partially_consumed_tab) {
         parser->offset += 1; // skip over tab
         // add space characters:
@@ -454,20 +506,188 @@ static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, mar
     return anchor;
 }
 
+/* Maps an offset in the open paragraph's accumulated content back to the
+ * source position those bytes came from. Marks ascend in `content_offset`,
+ * and definitions are consumed front to back, so `*cursor` only ever moves
+ * forward: the whole harvest costs one pass over the marks rather than a scan
+ * per definition, which is what a paragraph of N definitions needs to stay
+ * linear. */
+static void S_content_position(
+    const markdown_core_parser *parser,
+    const markdown_core_node *b,
+    markdown_core_bufsize offset,
+    size_t *cursor,
+    int *line,
+    int *column
+) {
+    const struct markdown_core_line_mark *mark;
+
+    while (*cursor + 1 < parser->line_mark_count && parser->line_marks[*cursor + 1].content_offset <= offset) {
+        (*cursor)++;
+    }
+    if (parser->line_mark_count == 0 || parser->line_marks[*cursor].content_offset > offset) {
+        *line = b->start_line;
+        *column = b->start_column;
+        return;
+    }
+    mark = &parser->line_marks[*cursor];
+    *line = mark->line;
+    *column = mark->column + (int)(offset - mark->content_offset);
+}
+
+/* Emits the Definition node for the paragraph-content span [start, end),
+ * inserted before the paragraph so the tree keeps source order. The span's
+ * trailing line ending and spaces are not part of what was written. */
+static void S_emit_definition(
+    markdown_core_parser *parser,
+    markdown_core_node *b,
+    markdown_core_bufsize start,
+    markdown_core_bufsize end,
+    const markdown_core_reference *harvested,
+    size_t *cursor
+) {
+    markdown_core_node *node;
+    markdown_core_chunk span;
+    markdown_core_bufsize last = end;
+    markdown_core_bufsize label_end;
+
+    while (last > start && (S_is_line_end_char(b->content.ptr[last - 1]) || b->content.ptr[last - 1] == ' ' ||
+                            b->content.ptr[last - 1] == '\t')) {
+        last--;
+    }
+    node = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, parser->mem);
+    if (!node) {
+        parser->oom = true;
+        return;
+    }
+
+    /* The label is the source's, exactly as written between `[` and `]`, the
+     * rule FootnoteDefinition already follows; the normalized form matching
+     * runs on stays the map's. Destination and title are copied from the
+     * entry this harvest just created, so they carry the unescaping done
+     * there and the node cannot disagree with the map. */
+    span.data = b->content.ptr + start;
+    span.len = last - start;
+    span.alloc = 0;
+    label_end = 1;
+    while (label_end < span.len && span.data[label_end] != ']') {
+        if (span.data[label_end] == '\\' && label_end + 1 < span.len) {
+            label_end++;
+        }
+        label_end++;
+    }
+    /* chunk_dup borrows; the node outlives both the paragraph's content
+     * buffer and the map entry, so each field takes an owned copy. */
+    node->as.definition.label = markdown_core_chunk_borrow(&span, 1, label_end > 1 ? label_end - 1 : 0);
+    if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.label)) {
+        parser->oom = true;
+    }
+    if (harvested) {
+        node->as.definition.url = markdown_core_chunk_borrow(&harvested->url, 0, harvested->url.len);
+        node->as.definition.title = markdown_core_chunk_borrow(&harvested->title, 0, harvested->title.len);
+        if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.url) ||
+            !markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.title)) {
+            parser->oom = true;
+        }
+    }
+    S_content_position(parser, b, start, cursor, &node->start_line, &node->start_column);
+    S_content_position(parser, b, last > start ? last - 1 : start, cursor, &node->end_line, &node->end_column);
+    node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
+    /* Only the first definition inherits the paragraph's restart-anchor bits.
+     * Those bits say "reparsing from this line reproduces everything after
+     * it", and that held for the line the paragraph opened on — which is the
+     * line the first definition starts on. A later definition starts on a
+     * line that arrived while the paragraph was already open, and such a line
+     * can be the continuation of the definition above it: `[foo]:` on one
+     * line, its indented url on the next. Restarting there reads the
+     * continuation as an indented code block.
+     *
+     * Before definitions had nodes, a definition-only paragraph vanished and
+     * the session kept a sentinel clean entry to stand in for the anchor the
+     * tree no longer had; the node is now that anchor. */
+    if (start == 0) {
+        node->flags |= b->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
+    }
+    if (!markdown_core_node_insert_before(b, node)) {
+        /* Containment is proved by construction here, so a refusal means the
+         * insert lost an allocation. Freeing the node keeps the failure from
+         * also leaking it. */
+        parser->oom = true;
+        markdown_core_node_free(node);
+        return;
+    }
+
+    /* A definition now has a node of its own, so its map entry is owned by
+     * that node's document child rather than by the paragraph the bytes were
+     * harvested from. This is what the owner always meant — "retract this
+     * entry exactly when its bytes are reparsed" — and it was approximated by
+     * the harvesting paragraph only because the definition had nowhere else
+     * to live. A definition-only paragraph vanishing can no longer orphan an
+     * entry, since the node it now belongs to is the thing that survives. */
+    if (harvested) {
+        markdown_core_reference *entry = (markdown_core_reference *)harvested;
+        entry->entry.owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, node);
+        entry->entry.definition_node = (uint64_t)(uintptr_t)node;
+        entry->entry.start_line = node->start_line;
+    }
+}
+
 // returns true if content remains after link defs are resolved.
 static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_bufsize pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    markdown_core_bufsize consumed = 0;
+    size_t mark_cursor = 0;
     if (parser->refmap) {
         parser->refmap->pending_owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, b);
         parser->refmap->pending_line = b->start_line;
     }
-    while (chunk.len && chunk.data[0] == '[' &&
-           (pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap))) {
+    while (chunk.len && chunk.data[0] == '[') {
+        /* The harvest pushes its entry at the head of the live chain, so the
+         * head is this definition's exactly when the chain moved. A parse
+         * that consumed bytes without adding one — a label normalizing to
+         * nothing — leaves the node without a destination rather than
+         * borrowing the previous definition's. */
+        const markdown_core_map_entry *before = parser->refmap ? parser->refmap->refs : NULL;
+        const markdown_core_map_entry *after;
 
+        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap);
+        if (!pos) {
+            break;
+        }
+        after = parser->refmap ? parser->refmap->refs : NULL;
+        S_emit_definition(
+            parser,
+            b,
+            consumed,
+            consumed + pos,
+            after != before ? (const markdown_core_reference *)after : NULL,
+            &mark_cursor
+        );
+        consumed += pos;
         chunk.data += pos;
         chunk.len -= pos;
+    }
+    /* The harvested bytes left the content, so the paragraph no longer starts
+     * where it opened: its first surviving byte does. Without this the
+     * paragraph claims source the definitions occupy — and every inline
+     * position inside it is computed from this start, so they were all off by
+     * the definitions' lines. The defect predates the ReferenceDefinition
+     * node; it was invisible while a definition left nothing to overlap with,
+     * and neither parity oracle compares positions. The session's restart
+     * reparses from the surviving line and got this right, which is how the
+     * equivalence gate found it. */
+    if (consumed) {
+        S_content_position(parser, b, consumed, &mark_cursor, &b->start_line, &b->start_column);
+        /* The restart-anchor bits asserted that reparsing from the line the
+         * paragraph opened on reproduces it. That line now belongs to the
+         * first definition, which took the bits; the paragraph's new start is
+         * a line that arrived while it was already open, and reparsing from
+         * there does not reproduce it — an indented continuation reads as a
+         * code block instead. Moving the start without dropping the claim is
+         * what made the session restart mid-definition. */
+        b->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
     markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
     return !is_blank(&b->content, 0);
@@ -511,7 +731,8 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         b->end_column = parser->last_line_length;
     } else if (
         S_type(b) == MARKDOWN_CORE_NODE_DOCUMENT || (S_type(b) == MARKDOWN_CORE_NODE_CODE_BLOCK && b->as.code.fenced) ||
-        (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext)
+        (S_type(b) == MARKDOWN_CORE_NODE_HEADING && b->as.heading.setext) ||
+        (b->flags & MARKDOWN_CORE_NODE__ENDS_ON_CURRENT_LINE)
     ) {
         b->end_line = parser->line_number;
         b->end_column = parser->curline.size;
@@ -697,8 +918,15 @@ static void S_parse_node_inlines(
     markdown_core_map *refmap,
     int options
 ) {
+    /* Both definition maps attribute to the same unit: a lookup in either is
+     * a dependency of the block whose inlines are being parsed. One test arms
+     * both, because a watcher attaches its sink to both maps or to neither
+     * (session.c, watch_definition_lookups) — so a watched reference map is
+     * proof that the footnote map is there. */
     if (refmap && refmap->lookup_sink) {
-        refmap->lookup_unit = S_lookup_attribution(cur);
+        markdown_core_node *unit = S_lookup_attribution(cur);
+        refmap->lookup_unit = unit;
+        parser->footnote_defs->lookup_unit = unit;
     }
     /* A session-staged leaf may carry an inline seam in user_data (offset+1):
      * bytes before it are an inert, already-materialized prefix whose nodes
@@ -1243,21 +1471,48 @@ static bool parse_html_block_prefix(markdown_core_parser *parser, markdown_core_
     return res;
 }
 
+/* `last_block_matches` answers with three outcomes, not two:
+ *
+ *   > 0  the line continues this block;
+ *   = 0  the line does not match it — the block's prefix is absent, and a
+ *        paragraph inside it may still continue lazily, as it may out of a
+ *        block quote; and
+ *   < 0  the block ends on this line, having consumed its own terminator.
+ *
+ * The third is what a fence is: the block is finished here, so it is finalized
+ * on the spot and the line stops being processed — the same two steps
+ * parse_code_block_prefix takes for a closing code fence. Finalizing at the
+ * terminator rather than at the next line that fails to match is what stops
+ * the following line from continuing a paragraph the fence already ended. */
 static bool parse_extension_block(
     markdown_core_parser *parser,
     markdown_core_node *container,
-    markdown_core_chunk *input
+    markdown_core_chunk *input,
+    bool *should_continue
 ) {
-    bool res = false;
+    int matched = 0;
 
     if (container->extension->last_block_matches) {
-        if (container->extension
-                ->last_block_matches(container->extension, parser, input->data, input->len, container)) {
-            res = true;
+        matched =
+            container->extension->last_block_matches(container->extension, parser, input->data, input->len, container);
+    }
+    if (matched < 0) {
+        *should_continue = false;
+        /* Close from the innermost open block outwards. `finalize` closes one
+         * block, and a container that ends here can still hold an open
+         * paragraph; closing the container around it would leave that
+         * paragraph open inside a closed parent and take its end position from
+         * the wrong line. The core's own fenced construct needs no such loop
+         * because a code block holds no open children. */
+        while (parser->current != container) {
+            parser->current = finalize(parser, parser->current);
         }
+        container->flags |= (markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__ENDS_ON_CURRENT_LINE;
+        parser->current = finalize(parser, container);
+        return false;
     }
 
-    return res;
+    return matched != 0;
 }
 
 /**
@@ -1285,7 +1540,7 @@ static markdown_core_node *check_open_blocks(
         S_find_first_nonspace(parser, input);
 
         if (container->extension) {
-            if (!parse_extension_block(parser, container, input)) {
+            if (!parse_extension_block(parser, container, input, &should_continue)) {
                 goto done;
             }
             continue;
@@ -1458,7 +1713,7 @@ static void open_new_blocks(
             !indented && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && depth < MAX_LIST_DEPTH &&
             (matched = scan_footnote_definition(input, parser->first_nonspace))
         ) {
-            markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
+            markdown_core_chunk c = markdown_core_chunk_borrow(input, parser->first_nonspace + 2, matched - 2);
 
             while (c.data[c.len - 1] != ']') {
                 --c.len;
@@ -1485,6 +1740,20 @@ static void open_new_blocks(
             (*container)->as.literal = c;
 
             (*container)->internal_offset = matched;
+
+            /* Registered here, at the moment the container opens, rather than
+             * at finalize like a link reference definition: a footnote's label
+             * is settled by the opening line alone, while a link definition is
+             * only harvested once its whole paragraph has accumulated. The
+             * definition is defined from this point on either way — the inline
+             * phase does not start until every block is closed. */
+            markdown_core_footnote_definition_create(
+                parser->footnote_defs,
+                &c,
+                (uint64_t)(uintptr_t)S_definition_anchor(parser, *container),
+                (*container)->start_line,
+                (uint64_t)(uintptr_t)*container
+            );
         } else if (
             (!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 && depth < MAX_LIST_DEPTH &&
             (matched = parse_list_marker(
@@ -1565,6 +1834,10 @@ static void open_new_blocks(
             markdown_core_llist *tmp;
             markdown_core_node *new_container = NULL;
 
+            /* Attachment order is priority: the first extension to claim the
+             * line wins, and a non-null return is that claim. An extension
+             * that did not open a block returns null — including when it
+             * leaves the container exactly as it found it. */
             for (tmp = parser->extensions; tmp; tmp = tmp->next) {
                 markdown_core_extension *ext = (markdown_core_extension *)tmp->data;
 
@@ -1694,6 +1967,9 @@ static void add_text_to_container(
         } else {
             // create paragraph container for line
             container = add_child(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH, parser->first_nonspace + 1);
+            // A paragraph is a leaf: the marks of the one that just closed
+            // can go, since no two are ever open at once.
+            parser->line_mark_count = 0;
             if (!container) {
                 return;
             }
@@ -1941,7 +2217,7 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
 
     /* All allocation-loss routes converge here: block/inline structures set
      * parser->oom directly, definition maps carry their own sticky flag. */
-    if (parser->refmap && parser->refmap->oom) {
+    if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
         parser->oom = true;
     }
     if (parser->oom || parser->internal_error) {

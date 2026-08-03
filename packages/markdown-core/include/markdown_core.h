@@ -179,13 +179,28 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_DIRECTIVE,
     MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE,
     MARKDOWN_CORE_KIND_CROSS_LINK,
-    MARKDOWN_CORE_KIND_EMBED
+    MARKDOWN_CORE_KIND_EMBED,
+    /* Appended rather than grouped with the other block and inline kinds:
+     * the wire format numbers this enum positionally and four bindings decode
+     * that number, so inserting in the middle renumbers everything after it.
+     * Block-ness is carried by the node type, not by position here. */
+    MARKDOWN_CORE_KIND_REFERENCE_DEFINITION,
+    MARKDOWN_CORE_KIND_LINK_REFERENCE,
+    MARKDOWN_CORE_KIND_IMAGE_REFERENCE
 } markdown_core_node_kind;
 
 typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_BULLET = 1,
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
+
+/** How a reference was written. The three resolve identically and differ
+ * only in source form, which the tree keeps because it is what was written. */
+typedef enum markdown_core_reference_form {
+    MARKDOWN_CORE_REFERENCE_FULL = 0,
+    MARKDOWN_CORE_REFERENCE_COLLAPSED = 1,
+    MARKDOWN_CORE_REFERENCE_SHORTCUT = 2
+} markdown_core_reference_form;
 
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
@@ -279,6 +294,23 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     markdown_core_string_view *attributes
 );
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
+/** A link reference definition's label as written, and the destination and
+ * title it defines. */
+MARKDOWN_CORE_API bool markdown_core_node_reference_definition_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *label,
+    markdown_core_string_view *destination,
+    markdown_core_string_view *title
+);
+
+/** A reference's label as written and the form it was written in. It has no
+ * destination: that belongs to the definition the label resolves to. */
+MARKDOWN_CORE_API bool markdown_core_node_reference_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *label,
+    markdown_core_reference_form *form
+);
+
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string_view *destination,
@@ -419,6 +451,31 @@ typedef struct markdown_core_footnote_info {
     uint64_t reference_ordinal;
     uint64_t reference_count;
 } markdown_core_footnote_info;
+
+/** Answers for one reference node — the facts that hold between a reference
+ * and its definition and therefore live in neither.
+ *
+ * `definition` is the winning ReferenceDefinition's id, and 0 when the label
+ * resolves to nothing. Asked of a ReferenceDefinition it answers the same
+ * question about that node's own label: its own id unless an earlier
+ * definition shadows it.
+ *
+ * A reference carries no destination: read it from the winning definition
+ * through markdown_core_node_reference_definition_properties. An edit that
+ * only retargets a definition therefore changes this answer and leaves every
+ * reference node untouched. */
+typedef struct markdown_core_reference_info {
+    markdown_core_node_id definition;
+} markdown_core_reference_info;
+
+/** Fills `info` for the reference node with the given id at the current
+ * revision. Returns false (with `info` zeroed) when the id does not name a
+ * reference or reference definition of this session. */
+MARKDOWN_CORE_API bool markdown_core_session_reference_info(
+    const markdown_core_session *session,
+    markdown_core_node_id id,
+    markdown_core_reference_info *info
+);
 
 /** Fills `info` for the footnote node with the given id at the current
  * revision. Returns false (with `info` zeroed) when the id does not name a

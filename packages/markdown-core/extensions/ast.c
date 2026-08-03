@@ -200,6 +200,12 @@ markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *no
         return MARKDOWN_CORE_KIND_DIRECTIVE_LABEL;
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
         return MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        return MARKDOWN_CORE_KIND_REFERENCE_DEFINITION;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+        return MARKDOWN_CORE_KIND_LINK_REFERENCE;
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        return MARKDOWN_CORE_KIND_IMAGE_REFERENCE;
     case MARKDOWN_CORE_NODE_TEXT:
         return MARKDOWN_CORE_KIND_TEXT;
     case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -268,9 +274,12 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
         "Directive",
         "FootnoteReference",
         "CrossLink",
-        "Embed"
+        "Embed",
+        "ReferenceDefinition",
+        "LinkReference",
+        "ImageReference"
     };
-    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_EMBED) {
+    if (kind < MARKDOWN_CORE_KIND_NONE || kind > MARKDOWN_CORE_KIND_IMAGE_REFERENCE) {
         return "None";
     }
     return names[kind];
@@ -782,6 +791,57 @@ static bool link_properties(
     return true;
 }
 
+static const char *reference_form_name(markdown_core_reference_form form) {
+    switch (form) {
+    case MARKDOWN_CORE_REFERENCE_FULL:
+        return "full";
+    case MARKDOWN_CORE_REFERENCE_COLLAPSED:
+        return "collapsed";
+    case MARKDOWN_CORE_REFERENCE_SHORTCUT:
+        break;
+    }
+    return "shortcut";
+}
+
+bool markdown_core_node_reference_definition_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *label,
+    markdown_core_string_view *destination,
+    markdown_core_string_view *title
+) {
+    if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !label || !destination || !title) {
+        return false;
+    }
+    view_chunk(label, &node->as.definition.label);
+    view_chunk(destination, &node->as.definition.url);
+    view_chunk(title, &node->as.definition.title);
+    return true;
+}
+
+bool markdown_core_node_reference_properties(
+    const markdown_core_node *node,
+    markdown_core_string_view *label,
+    markdown_core_reference_form *form
+) {
+    if (!node || !label || !form ||
+        (node->type != MARKDOWN_CORE_NODE_LINK_REFERENCE && node->type != MARKDOWN_CORE_NODE_IMAGE_REFERENCE)) {
+        return false;
+    }
+    view_chunk(label, &node->as.reference.label);
+    switch (node->as.reference.form) {
+    case MARKDOWN_CORE_FULL_REFERENCE:
+        *form = MARKDOWN_CORE_REFERENCE_FULL;
+        break;
+    case MARKDOWN_CORE_COLLAPSED_REFERENCE:
+        *form = MARKDOWN_CORE_REFERENCE_COLLAPSED;
+        break;
+    case MARKDOWN_CORE_SHORTCUT_REFERENCE:
+        *form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+        break;
+    }
+    return true;
+}
+
 bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string_view *destination,
@@ -957,6 +1017,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
     markdown_core_placement_mode mode;
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     bool x, y;
     size_t count, i;
     int32_t level;
@@ -1072,6 +1133,23 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, b);
         break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_reference_definition_properties(node, &a, &b, &c);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " destination=");
+        buffer_optional_string(buffer, b);
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, c);
+        break;
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE:
+        markdown_core_node_reference_properties(node, &a, &form);
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, a);
+        buffer_cstr(buffer, " form=");
+        buffer_cstr(buffer, reference_form_name(form));
+        break;
     case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_image_properties(node, &a, &b);
         buffer_cstr(buffer, " source=");
@@ -1138,6 +1216,18 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         markdown_core_node_literal(a, &a1);
         markdown_core_node_literal(b, &b1);
         return view_content_equal(a1, b1);
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
+        markdown_core_node_reference_definition_properties(a, &a1, &a2, &a3);
+        markdown_core_node_reference_definition_properties(b, &b1, &b2, &b3);
+        return view_content_equal(a1, b1) && view_content_equal(a2, b2) && view_content_equal(a3, b3);
+    }
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
+        markdown_core_reference_form form_a, form_b;
+        markdown_core_node_reference_properties(a, &a1, &form_a);
+        markdown_core_node_reference_properties(b, &b1, &form_b);
+        return form_a == form_b && view_content_equal(a1, b1);
+    }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
         markdown_core_placement_mode mode_a, mode_b;

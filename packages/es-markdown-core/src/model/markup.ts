@@ -6,6 +6,7 @@ import type { DirectiveLabel } from "./directive-label.js";
 import type { Directive } from "./directive.js";
 import type { Document } from "./document.js";
 import type { CrossLink } from "./cross-link.js";
+import type { ImageReference, LinkReference, ReferenceDefinition } from "./reference.js";
 import type { Embed } from "./embed.js";
 import type { Emphasis } from "./emphasis.js";
 import type { FootnoteDefinition, FootnoteReference } from "./footnote.js";
@@ -56,5 +57,8 @@ export type Markup =
     | Image
     | Directive
     | FootnoteReference
+    | ReferenceDefinition
+    | LinkReference
+    | ImageReference
     | CrossLink
     | Embed;

@@ -100,7 +100,8 @@ note "sanitizer presets exclude timing-based complexity gates"
 
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native
-facade_dump_cli" ]; then
+facade_dump_cli
+facade_dump_cli_profiles" ]; then
     fail "C conformance selection does not contain exactly the public contract checks"
 else
     note "C conformance selection is isolated from correctness"

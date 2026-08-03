@@ -20,6 +20,9 @@
         "benchmark:es-node": "node packages/es-markdown-core/scripts/build.mjs && node packages/es-markdown-core/scripts/benchmark.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
+        "check:upstream-parity": "node scripts/check-upstream-parity.mjs",
+        "check:mdast-parity": "node scripts/check-mdast-parity.mjs",
+        "fuzz:parity": "node scripts/fuzz-parity.mjs",
         "check:contracts": "node scripts/check-canonical-ast-fixtures.mjs && scripts/gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",
         "check:gradle-model": "scripts/gradle-model-smoke.sh",
         "check:kotlin-consumers": "scripts/check-kotlin-consumers.sh",
@@ -33,6 +36,10 @@
         "conformance:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64ConformanceTest",
         "conformance:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64ConformanceTest",
         "conformance:es-node": "pnpm --dir packages/es-markdown-core run conformance",
+        "coverage:c-host": "scripts/coverage-c-host.sh",
+        "coverage:swift-macos": "scripts/coverage-swift-macos.sh",
+        "coverage:kotlin-jvm": "scripts/coverage-kotlin-jvm.sh",
+        "coverage:es-node": "scripts/coverage-es-node.sh",
         "format": "pnpm run format:c && pnpm run format:cmake && pnpm run format:swift && pnpm run format:kotlin && pnpm run format:es",
         "format:check": "pnpm run format:c:check && pnpm run format:cmake:check && pnpm run format:swift:check && pnpm run format:kotlin:check && pnpm run format:es:check",
         "format:c": "scripts/format-c.sh",
@@ -70,7 +77,12 @@
         "@eslint/js": "10.0.1",
         "eslint": "10.0.1",
         "prettier": "3.9.5",
+        "remark-directive": "^4.0.0",
+        "remark-gfm": "^4.0.1",
+        "remark-math": "^6.0.0",
+        "remark-parse": "^11.0.0",
         "typescript": "6.0.3",
-        "typescript-eslint": "8.63.0"
+        "typescript-eslint": "8.63.0",
+        "unified": "^11.0.5"
     }
 }

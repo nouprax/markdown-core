@@ -44,6 +44,22 @@ typedef struct {
     markdown_core_chunk title;
 } markdown_core_link;
 
+/* A link reference definition. `label` is the bytes between `[` and `]` as
+ * written; the normalized form matching runs on belongs to the reference map,
+ * not to the node. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_chunk url;
+    markdown_core_chunk title;
+} markdown_core_definition;
+
+/* A reference to a definition. It holds no destination: that is the
+ * definition's, stated once there. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_reference_type form;
+} markdown_core_reference_link;
+
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
@@ -57,6 +73,12 @@ enum markdown_core_node__internal_flags {
     // blocks) stay raw and unsealed so incremental line shifts of an
     // ancestor cannot move their zero markers; resolution treats an unsealed
     // node's fields as final.
+    /* The block ended on the line being processed, having consumed its own
+     * terminator, so its end position is that line rather than the one
+     * before. `finalize` names the block types this is true of; an extension
+     * container that closed at its fence sets the flag instead, because the
+     * property is about how the block ended and not about what kind it is. */
+    MARKDOWN_CORE_NODE__ENDS_ON_CURRENT_LINE = (1 << 6),
     MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
 
     // The node currently owns raw inline source that the core refine pipeline
@@ -133,6 +155,8 @@ struct markdown_core_node {
         markdown_core_code code;
         markdown_core_heading heading;
         markdown_core_link link;
+        markdown_core_definition definition;
+        markdown_core_reference_link reference;
         int html_block_type;
         int cell_index; // For keeping track of TABLE_CELL table alignments
         void *opaque;

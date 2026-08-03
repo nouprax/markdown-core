@@ -303,7 +303,7 @@ static markdown_core_node *www_match(
         return NULL;
     }
     text->as.literal =
-        markdown_core_chunk_dup(chunk, (markdown_core_bufsize)max_rewind, (markdown_core_bufsize)link_end);
+        markdown_core_chunk_borrow(chunk, (markdown_core_bufsize)max_rewind, (markdown_core_bufsize)link_end);
     markdown_core_node_append_child(node, text);
 
     markdown_core_inline_source_span span;
@@ -375,7 +375,7 @@ static markdown_core_node *url_match(
     }
 
     markdown_core_chunk url =
-        markdown_core_chunk_dup(chunk, max_rewind - rewind, (markdown_core_bufsize)(link_end + rewind));
+        markdown_core_chunk_borrow(chunk, max_rewind - rewind, (markdown_core_bufsize)(link_end + rewind));
     node->as.link.url = url;
 
     markdown_core_node *text = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TEXT, parser->mem);
@@ -468,12 +468,12 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
     size_t offset = 0;
     sourcepos_cursor source_cursor = {0, text->start_line, text->start_column};
     // `text` is going to be split into a list of nodes containing shorter segments
-    // of text, so we detach the memory buffer from text and use `markdown_core_chunk_dup` to
+    // of text, so we detach the memory buffer from text and use `markdown_core_chunk_borrow` to
     // create references to it. Later, `markdown_core_chunk_to_cstr` is used to convert
     // the references into allocated buffers. The detached buffer is freed before we
     // return.
     markdown_core_chunk detached_chunk = text->as.literal;
-    text->as.literal = markdown_core_chunk_dup(&detached_chunk, 0, detached_chunk.len);
+    text->as.literal = markdown_core_chunk_borrow(&detached_chunk, 0, detached_chunk.len);
 
     // Cache the common end of every trailing segment once; source_cursor then
     // consumes prefixes and links from left to right without rescanning them.
@@ -612,7 +612,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             markdown_core_node_free(link_node);
             break;
         }
-        markdown_core_chunk email = markdown_core_chunk_dup(
+        markdown_core_chunk email = markdown_core_chunk_borrow(
             &detached_chunk,
             (markdown_core_bufsize)(start + offset + max_rewind - rewind),
             (markdown_core_bufsize)(link_end + rewind)
@@ -633,7 +633,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
             parser->oom = true;
             break;
         }
-        post->as.literal = markdown_core_chunk_dup(
+        post->as.literal = markdown_core_chunk_borrow(
             &detached_chunk,
             (markdown_core_bufsize)post_start,
             (markdown_core_bufsize)post_len
@@ -642,7 +642,7 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
 
         markdown_core_node_insert_after(link_node, post);
 
-        text->as.literal = markdown_core_chunk_dup(
+        text->as.literal = markdown_core_chunk_borrow(
             &detached_chunk,
             (markdown_core_bufsize)prefix_start,
             (markdown_core_bufsize)prefix_len

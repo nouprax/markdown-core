@@ -234,6 +234,9 @@ private struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> String { kindName(node) }
     mutating func visit(_ node: Directive) -> String { kindName(node) }
     mutating func visit(_ node: FootnoteReference) -> String { kindName(node) }
+    mutating func visit(_ node: ReferenceDefinition) -> String { kindName(node) }
+    mutating func visit(_ node: LinkReference) -> String { kindName(node) }
+    mutating func visit(_ node: ImageReference) -> String { kindName(node) }
     mutating func visit(_ node: CrossLink) -> String { kindName(node) }
     mutating func visit(_ node: Embed) -> String { kindName(node) }
 }

@@ -249,10 +249,11 @@ The tree is source-faithful (`canonical-ast.md`, footnote semantics):
 definitions never move and references always carry their label. Everything
 presentational is a query against the session's committed revision:
 
-- `footnote(id)` — for a `FootnoteReference`: the winning definition's id
-  (0 while unresolved), the label's 1-based first-use `number` (0 while
-  unresolved), the reference's 1-based ordinal among the label's references
-  in document order, and how many references share the label. For a
+- `footnote(id)` — for a `FootnoteReference`: the winning definition's id,
+  the label's 1-based first-use `number`, the reference's 1-based ordinal
+  among the label's references in document order, and how many references
+  share the label. A reference node exists only where its label is defined
+  (`canonical-ast.md`), so none of these is ever the unresolved 0. For a
   `FootnoteDefinition`: the label's winning definition id (its own unless an
   earlier definition shadows it), the label's `number` and reference count
   (0 when unreferenced), and ordinal 0.

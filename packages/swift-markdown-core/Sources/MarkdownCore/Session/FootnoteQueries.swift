@@ -10,11 +10,13 @@ import MarkdownCoreC
 /// with a revision bump and identical dump content.
 public struct FootnoteInfo: Sendable, Hashable {
     /// The label's winning definition (for a definition: its own id unless
-    /// an earlier definition shadows it); nil while the label is unresolved.
+    /// an earlier definition shadows it). Every node this can be asked about
+    /// has one: a reference exists only where its label is defined, and a
+    /// definition defines its own.
     public let definition: MarkupID?
 
-    /// The label's 1-based first-use ordinal; nil while the label is
-    /// unresolved or unreferenced.
+    /// The label's 1-based first-use ordinal; nil for a definition no
+    /// reference names.
     public let number: Int?
 
     /// For a reference: its 1-based position among the label's references in
