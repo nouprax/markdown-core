@@ -408,6 +408,15 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
   比较六个相邻区间 normalized growth 的中位数。这样持续的 ancestor-walk
   quadratic growth 会在多数尺度上失败，而单次 allocator/cache 层级切换不会被
   错当成复杂度类别。
+- Footnote-renumber complexity 同样是 trend-based：256 → 4096 的 doubling
+  序列，gate 比较四个相邻区间 normalized growth 的中位数。这条 case 的
+  per-commit 成本按构造就是 footnote 数量的线性函数（delta 为每个被重编号的
+  footnote 报告一个 changed node），所以被测的信号只是**对线性的偏离**，两个
+  孤立 endpoint 之间的一次 allocator/cache 切换与该信号同量级。之前的两点比值
+  形式正是这样失效的：同一份 C 代码在一个 commit 上通过、在只改了一个文本
+  文件的下一个 commit 上以 4.099x 失败。中位数形式实测健康实现为
+  0.984x–0.996x；把 footnote index diff 的 dedup set 换成线性扫描后为
+  1.934x–1.952x，gate 正确失败。
 - Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
   禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
   “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
