@@ -238,28 +238,6 @@ static markdown_core_node *make_str_with_entities(
     }
 }
 
-// Duplicate a chunk by creating a copy of the buffer not by reusing the
-// buffer like markdown_core_chunk_borrow does.
-static markdown_core_chunk chunk_clone(subject *subj, markdown_core_chunk *src) {
-    markdown_core_chunk c;
-    markdown_core_bufsize len = src->len;
-
-    c.len = len;
-    c.data = (unsigned char *)subj->mem->calloc(subj->mem, (size_t)len + 1, 1);
-    if (!c.data) {
-        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
-        subj->oom = 1;
-        return empty;
-    }
-    c.alloc = 1;
-    if (len) {
-        memcpy(c.data, src->data, len);
-    }
-    c.data[len] = '\0';
-
-    return c;
-}
-
 static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_core_chunk *url, int is_email) {
     markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT(subj->mem);
 
@@ -1294,7 +1272,11 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     markdown_core_bufsize sps, n;
     markdown_core_reference *ref = NULL;
     markdown_core_chunk url_chunk, title_chunk;
-    markdown_core_chunk url, title;
+    /* Empty on the reference path, which reaches `match` without writing
+     * either: a reference carries no destination. Only the inline `[a](/u)`
+     * form fills them, and only it hands them to the node. */
+    markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
+    markdown_core_chunk title = MARKDOWN_CORE_CHUNK_EMPTY;
     bracket *opener;
     markdown_core_node *inl;
     markdown_core_chunk raw_label;
@@ -1401,8 +1383,12 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
     if (ref != NULL) { // found
-        url = chunk_clone(subj, &ref->url);
-        title = chunk_clone(subj, &ref->title);
+        /* The definition's destination is deliberately not copied here. It
+         * was, while a resolved reference was a Link carrying a payload; the
+         * clones then outlived their last reader by exactly nothing, because
+         * the reference node stores only the label. Copying it back would
+         * reintroduce both the leak and the dependency that made every
+         * `[foo]: /new` edit reparse each unit mentioning `[foo]`. */
         goto match;
     } else {
         goto noMatch;

@@ -521,7 +521,8 @@ static bool commit_full(
         indexed = id_table_build(session->mem, root, &ids) &&
                   markdown_core_session_index_clean_children(session, root, map, &clean);
         for (s = 0; indexed && s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-            indexed = markdown_core_session_index_definitions(session, staged[s].map, &staged[s].index, &staged[s].count);
+            indexed =
+                markdown_core_session_index_definitions(session, staged[s].map, &staged[s].index, &staged[s].count);
             staged[s].capacity = staged[s].count ? staged[s].count : 1;
         }
     }

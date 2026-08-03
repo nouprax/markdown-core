@@ -66,6 +66,9 @@ const visitor: MarkupVisitor<string> = {
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
     visitFootnoteReference: (node) => node.label,
+    visitReferenceDefinition: (node) => node.destination ?? node.label,
+    visitLinkReference: (node) => node.form,
+    visitImageReference: (node) => node.label,
     visitCrossLink: (node) => node.reference,
     visitEmbed: (node) => node.reference
 };

@@ -2715,9 +2715,7 @@ static void session_footnote_queries(test_batch_runner *runner) {
         def_b_dup = markdown_core_node_get_id(child);
         child = markdown_core_node_get_next_sibling(child);
         def_u = markdown_core_node_get_id(child);
-        OK(runner,
-           ref_b1 && ref_a && ref_b2 && def_a && def_b && def_b_dup && def_u,
-           "footnote nodes all carry ids");
+        OK(runner, ref_b1 && ref_a && ref_b2 && def_a && def_b && def_b_dup && def_u, "footnote nodes all carry ids");
         OK(runner,
            tail && markdown_core_node_get_kind(tail) == MARKDOWN_CORE_KIND_TEXT &&
                !markdown_core_node_get_next_sibling(tail),
@@ -2880,8 +2878,8 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
                "the untouched paragraph re-refined [^x] into its literal text");
             OK(runner,
                second && markdown_core_node_get_kind(second) == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE &&
-                   markdown_core_node_footnote_id(second, &literal) && literal.length == 1 &&
-                   literal.data[0] == 'y' && !markdown_core_node_get_next_sibling(second),
+                   markdown_core_node_footnote_id(second, &literal) && literal.length == 1 && literal.data[0] == 'y' &&
+                   !markdown_core_node_get_next_sibling(second),
                "[^y] is the only reference the paragraph has left");
             OK(runner,
                paragraph && markdown_core_node_get_revision(paragraph) > paragraph_rev_before,

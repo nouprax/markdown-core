@@ -2950,9 +2950,8 @@ static void incremental_finalize_geometry(incremental_pipeline *pipeline) {
         for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
             const definition_stream *stream = &pipeline->streams[s];
             markdown_core_definition_table *table = stream->table;
-            size_t start = stream->reconcile.applied
-                               ? stream->reconcile.splice_lo + stream->new_defs.count
-                               : def_lower_bound(table->index, table->count, plan->boundary_line);
+            size_t start = stream->reconcile.applied ? stream->reconcile.splice_lo + stream->new_defs.count
+                                                     : def_lower_bound(table->index, table->count, plan->boundary_line);
             size_t at;
             for (at = start; at < table->count; at++) {
                 table->index[at]->start_line += splice->delta_lines;
@@ -2990,8 +2989,7 @@ static void incremental_finalize_definitions(incremental_pipeline *pipeline) {
                 uint64_t anchor = stream->new_defs.items[i]->entry.owner;
                 stream->old_defs.items[i]->entry.owner =
                     anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
-                stream->old_defs.items[i]->entry.definition_node =
-                    adopted_definition_node(stream->new_defs.items[i]);
+                stream->old_defs.items[i]->entry.definition_node = adopted_definition_node(stream->new_defs.items[i]);
                 stream->old_defs.items[i]->entry.start_line = stream->new_defs.items[i]->entry.start_line;
                 stream->old_defs.items[i]->entry.from_vanished_clean =
                     stream->new_defs.items[i]->entry.from_vanished_clean;
@@ -3002,8 +3000,7 @@ static void incremental_finalize_definitions(incremental_pipeline *pipeline) {
                 uint64_t anchor = stream->new_defs.items[i]->entry.owner;
                 stream->new_defs.items[i]->entry.owner =
                     anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
-                stream->new_defs.items[i]->entry.definition_node =
-                    adopted_definition_node(stream->new_defs.items[i]);
+                stream->new_defs.items[i]->entry.definition_node = adopted_definition_node(stream->new_defs.items[i]);
             }
         }
     }
