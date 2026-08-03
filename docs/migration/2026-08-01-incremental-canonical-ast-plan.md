@@ -1,10 +1,19 @@
 # Incremental canonical AST: delivery plan
 
-Status: planning (2026-08-01). The design is frozen in
+Status: planning (2026-08-01; milestones resynced 2026-08-03). The design is
+frozen in
 [`../specs/incremental-canonical-ast.md`](../specs/incremental-canonical-ast.md)
 and is not restated here; this document records how that contract gets built,
 in what order, what each step must prove before the next starts, and how the
 unit-test coverage gate landed on 2026-08-01 burns down alongside it.
+
+The contract moved three times after this plan was first written — the
+reference-model unification, the unified-CST ownership model, and the review
+fixes on top of it. Every milestone below has been re-read against the current
+text rather than left to be reconciled during implementation, because two of
+the changes invalidate acceptance criteria this plan previously stated: M4's
+worked example proved nothing, and M3's structure would not have met its own
+bound. Where a milestone's definition changed, the reason is stated in it.
 
 The implementation language is the existing C core. Every binding is a
 consumer of the C surface, so the C header is the pivot on which all four
@@ -36,15 +45,18 @@ partial version of its target column. Nothing in the table below is a rename.
 
 | Contract | Today | Nature of the work |
 | --- | --- | --- |
+| §0 one unified CST, region-relative concrete records, `Document.concrete` | No concrete layer at all: tokens are consumed, not retained | New substrate, threaded through the existing passes |
 | §2 `Commit{document, delta}`; §4.2 self-contained immutable `Document` | Session-borrowed view, invalid after the next commit | Storage-layer rewrite |
 | §4 `MarkupRevision{self, subtree}` | One scalar `revision` with the subtree meaning | New per-node local stamp |
 | §5.1–5.2 `DocumentVersion`/`MarkupID` as `(domain, ordinal)` | `lineage` and `node_id` as bare `uint64_t` | Type restructure, positive-only |
+| §5.2 anchored continuity: positional witnesses outside the edit, content LCS inside | Best-effort adoption by kind and position | Rule is now pinned; the matcher must become a pure function of (old children, new children, normalized edit) |
 | §6.1 `CanonicalText` + `TextMap` | Bare string views, no source correspondence | New subsystem |
 | §6.2 persistent child sequence | Plain linked list | Persistent sequence |
 | §6.3 parser answers owned by the document | Live session footnote index | Ownership move + inverted index |
 | §7.1 `Source{profile, content}`, `PERMISSIVE_BYTES` | Session-held text, UTF-8 only | New |
 | §7.2 `SourceExtent`, `O(log n)` `Document.scope`, five coordinate profiles | Precomputed line/column plus a whole-document scope table | Order-maintenance aggregate tree |
 | §9 `Delta{before, after, diffs, edits}`, postorder, six-flag parts | Four disjoint arrays plus a separate ordered-entry API | Rewrite, and delete the old surface |
+| §11.1 the ownership region as a defined unit | Stale-range reparse with no named boundary | Classification exists; regions must become the unit concrete offsets are relative to |
 | §14 acceptance gates (about 60) | Partial: the equivalence runner | Large test build-out |
 
 ## Milestones
@@ -53,6 +65,44 @@ Each milestone states what it delivers, what proves it, and which coverage
 ledger entries it is expected to clear. A milestone is done when its gates pass
 **and** its files are off the ledger — new code is at 100% by the gate's first
 rule, so only pre-existing files need clearing.
+
+### The rule every milestone is held to
+
+**For each rule a milestone adds, name the gate that fails when it is
+violated.** If no gate fails, the gate is missing, and adding it is part of
+the milestone rather than follow-up.
+
+This is stated because it is the failure mode this work has actually produced,
+three times across two review rounds, always in the same shape: the prose
+asserted something stronger than the check verified, so the check passed and
+the wrong text shipped. The contract said "exactly one `CanonicalText` per
+kind" while the check tested "at most one"; it classified every kind into an
+ownership region and the check confirmed the partition was complete but never
+that a class matched the inventory's own content category; it introduced the
+asymmetric `STRICT_UTF8` boundary with no gate on either side of it. Each was
+caught by review rather than by a test, which is the expensive way.
+
+The corollary for implementation: a gate that cannot fail is not evidence.
+When a gate is added, run it once against the pre-fix input and confirm it
+fails there.
+
+### Prerequisite — pin the benchmarks, before anything else lands
+
+§14.7 requires the existing representative, large-document, extension, and
+adversarial parser benchmarks to be pinned **before the C-layer AST is
+extended**. This plan previously attached that to M5, which is too late: M2.5
+introduces concrete records and M3 and M4 introduce extents and
+`CanonicalText`, and all three move allocation, traversal, and copy counts. A
+baseline recorded after any of them already contains part of the new engine,
+so M9's paired comparison — every size-dependent term identical with the CST
+and without it, only records-created permitted to move (§11.1) — would be
+measuring the new engine against itself.
+
+So it lands first, as its own change, before M2. It is also the one step here
+that needs no design decision: run `benchmark:c-host`, `benchmark:swift-macos`,
+`benchmark:kotlin-jvm`, and `benchmark:es-node` on the current tree and record
+the results the way `2026-07-11-phase-0-baseline.md` records its environment
+and figures, so a later run is comparable rather than merely similar.
 
 ### M0 — Quality gate (delivered 2026-08-01)
 
@@ -232,15 +282,96 @@ not be written.
 persistent byte storage behind it, and the `SourceEdit`/`Span` primitive in
 stored-byte coordinates.
 
-Gates: §14.3.1, §14.3.4, §14.3.5. Requirement that is easy to lose: repeated
-tail appends must not copy the prefix, and a tiny retained slice must respect
-the declared amplification bound.
+**`STRICT_UTF8` is not "valid UTF-8 only", and this is the milestone's main
+trap.** It admits exactly one deviation: a truncated final code point — a
+well-formed prefix at end-of-source that a continuation byte would complete.
+Edits are byte-addressed, so a streamed chunk may split a multi-byte
+character; rejecting that intermediate commit would make streaming legal only
+under `PERMISSIVE_BYTES` and turn §8.2's "streaming is ordinary editing" into
+a profile-conditional rule, which is the special-casing that section exists to
+forbid. The boundary is asymmetric and all four cases are separate behaviour:
+
+| Input, `STRICT_UTF8` | Result |
+| --- | --- |
+| truncated final code point | accepted; that tail decodes to U+FFFD |
+| complete invalid sequence | rejected; neither source nor AST published |
+| truncated code point with further bytes after it | rejected — the exception is positional |
+| all three under `PERMISSIVE_BYTES` | accepted |
+
+A document ending in a truncated tail is legal as a **final** document, not
+only as an intermediate one: §8.2 forbids a finalize operation, a session may
+close at any commit, and a caller may parse two bytes and stop. Do not build a
+pending or awaiting-continuation state; there is none.
+
+Gates: §14.3.1, §14.3.4, §14.3.5, §14.3.6, §14.3.7, and the multi-byte
+boundary clauses of §14.8.2–3. §14.3.6 and §14.3.7 were added on 2026-08-03
+because the boundary above had no gate at all: §14.3.1 exercises only *legal*
+edits and §14.8 compares only final outputs, so an implementation rejecting
+every incomplete chunk and one accepting every invalid sequence both passed.
+
+Requirements that are easy to lose: repeated tail appends must not copy the
+prefix; a tiny retained slice must respect the declared amplification bound;
+and `Span` is built from `Offset`, never `EncodedOffset`, so a projected
+coordinate cannot be fed back in as an edit.
+
+### M2.5 — Unified CST substrate and definition sets
+
+The §0 substrate: concrete node and token records captured during the existing
+passes, region-relative offsets, the ownership-region classification of §11.1,
+and `Document.concrete`. Nothing before this milestone builds a CST, and
+everything after it depends on one, which is why it sits here rather than
+being folded into a neighbour. It is numbered M2.5 rather than renumbering the
+tail because `../specs/test-architecture.md` names M7 as the acceptance
+mechanism for the dump comparison, and that reference is worth more than a
+tidy sequence.
+
+**Publication step 0 lands here, not in M6.** §6.3's order gained a step
+before CST construction on 2026-08-03, because an undefined `[^x]` is `Text`
+and an undefined `[x]` is prose: whether a run of bytes is one `Text` or a
+reference node depends on a label the document may define anywhere. So the two
+definition label sets — footnote labels and link-reference labels, which
+normalize alike but share no key space — and the **mention** index that names
+which regions flip are *parse-time inputs*, not derived relations. Mention,
+not resolution: a bracket that was prose until now has no occurrence record,
+so an index keyed by resolution cannot find it. Both must be proportional to
+the reparsed region and the flipped labels, never to the document.
+
+Putting them in M6 would have forced this milestone to build a provisional CST
+whose node shape M6 then corrected — a divergent model to be replaced, which
+is what the M1–M6 independent-mergeability property exists to prevent.
+
+Regions nest, and a region's concrete offsets are relative to that region.
+That single property is what keeps the CST out of every bound that depends on
+document size; without it the milestone still compiles and M9's complexity
+gates fail.
+
+Gates: §14.1.9 (one physical CST, two interfaces, no parallel hierarchy),
+§14.1.10 (unmatched core Markdown candidates become literal content; bounded
+islands recover only inside their boundary), and a definition-flip gate — with
+`[^x]` occurrences in a large document, adding and removing the definition
+converts exactly those occurrences, reparses only their regions, and does work
+independent of document size.
 
 ### M3 — Extents and coordinates
 
 `SourceExtent` as identity, the order-maintenance aggregate sequence carrying
 subtree byte sums, and `Document.scope(extent, profile)` across all five
 coordinate profiles.
+
+**One document-wide sequence of leaf source-bearing units, not one sequence
+per container.** §7.2 was tightened on 2026-08-03 to say so, because the
+per-container shape resolves a node by summing a prefix at every level of its
+spine — `O(depth · log width)`, which is `O(log n)` only when depth happens to
+be. Markdown bounds no nesting depth: a measured 1000-deep `BlockQuote` chain
+took 1001 descents where a flat 10000-block document took 9. A container
+addresses a range of the one sequence.
+
+The units this sequence is built over are the CST's, so M2.5 has to land
+first. Its **ownership regions** are also what keeps the CST out of every
+size-dependent bound: a region's concrete offsets are its own, so an edit
+inside a paragraph rewrites that paragraph's records and leaves every
+enclosing `ListItem`, `List`, and `BlockQuote` marker record untouched at any
+depth.
 
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
@@ -253,14 +384,59 @@ at all.
 escapes, smart punctuation — and the equal-length-but-non-corresponding cases
 §6.1 calls out.
 
+**A `SpanPair`'s source span is relative to the owning node's extent, not to
+the document.** Absolute offsets would make a prefix insertion differ on every
+later text field — one diff entry per suffix node, which §7.3 and §14.5.1
+forbid. A consumer that wants the bytes resolves the node's extent once
+through `Document.scope` and adds the pair's offsets to it.
+
+**At most one field per kind is a `CanonicalText`.** Seven of the 34 kinds
+carry one (`CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
+`Formula`); the other 27 carry none and therefore never carry `TEXT` or
+`TEXT_MAP` at all. Every other string field — `Link.destination`,
+`Link.title`, `Image.source`, `CodeBlock.info`, every `label`, `name`,
+`attributes`, `reference` — is a plain scalar of decoded characters with no
+map, even though CommonMark resolves escapes and entities inside several of
+them. Naming their source spans is the sub-node extent §7.2 defers.
+
 Gates: the `TEXT` versus `TEXT_MAP` distinction of §9.1, proven on
-`&amp;` → `&#38;` rewriting with unchanged canonical text.
+`&amp;` → `&#x26;` rewriting with unchanged canonical text. **The example was
+`&#38;` until 2026-08-03, and it proved nothing**: both spellings are five
+source bytes producing one canonical byte, so the two maps are byte-identical
+and §9.1 correctly reports no part at all. The working example needs the two
+spans to differ in length, which `&#x26;` (six bytes) does. A test written
+against the old example would have asserted a false proposition and passed by
+accident only if `TEXT_MAP` were computed wrongly.
 
 ### M5 — Persistent tree, identity, and revisions
 
 The persistent child sequence, structural sharing across adjacent documents,
 `MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
 `MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
+
+**The continuity rule is now fixed, not left to the implementation.** §5.2
+previously said only "a language-specific continuity proof"; it now states the
+matcher: nothing outside a reparsed region is matched at all, identity never
+crosses a parent or a kind, children the edit does not overlap are matched by
+ordinal from the near end against stable old witnesses, and only the children
+the edit overlaps are matched by content LCS with the leftmost tie winning.
+The result must be a pure function of the old child sequence, the new child
+sequence, and the normalized edit span — no dependence on hash order, arena
+addresses, or traversal order.
+
+The positional step is not decoration. Given `[A, A, B]` and an insertion at
+the front producing `[A, A, A, B]`, content carries nothing that distinguishes
+the inserted `A` from the survivors, so a content-only match — including an
+order-preserving LCS — hands the first survivor's identity to the new node and
+reports the survivor created. That is the §5.2 failure 14.2.3 tests for, and
+the information needed to avoid it is in the edit span, not in the tree.
+
+**`List.tight` needs an aggregate here.** It is folded over the item sequence,
+so a grandchild edit that flips tightness emits `VALUE` on the `List` — the
+one documented exception to §14.5.11's `DESCENDANT`-only shape — and "some
+item is loose" must ride the persistent item sequence as a monoid. Refolding
+it per commit makes an `O(1)` edit cost `O(W)` and breaks the bound for every
+list in the document.
 
 Gates: §14.2 in full, §14.4.3, §14.4.5. This is where the self-contained
 document of §4.2 becomes real: no `materialize()` step, and retained documents
@@ -272,6 +448,22 @@ Parser answers moved into the document as immutable data behind the §4.1
 `Document` queries, with the parser-owned inverted index that makes an
 `ANSWERS` change cost the affected nodes rather than the reference population,
 and explicit negative resolutions.
+
+**Publication step 0 is not here — it is M2.5.** It reads as an answers
+concern and is not one: the definition label sets decide the CST's node shape,
+so they are a parse-time input rather than a derived relation. What stays here
+is steps 3 through 5 — the persistent relation indexes, the answer comparison,
+and the `ANSWERS` parts.
+
+**Two answer-record rules that reviews have already caught once.** `number`
+and `referenceCount` describe the *label*, not the node asked: a shadowed
+definition reports the same pair its winner does, and both are zero only when
+the label itself has no references — reading them as node-scoped would report
+zero beside a non-zero `winner`, the one combination the record cannot mean.
+`Document.references` is the node-scoped accessor and is empty for a shadowed
+definition. And relation indexes are eager for any document a session can
+commit from; only a one-shot document may defer them, because step 4 compares
+old and new answers at commit time.
 
 **One reference model, decided 2026-08-02.** A link reference and a footnote
 reference are the same concept — a label that resolves against a definition —
@@ -508,7 +700,22 @@ answer. What survives is the definition side — a `Definition` or
 targets live outside the document. The clause must be rewritten to say that,
 or it will read as a requirement nothing can satisfy.
 
-Gates: §14.5.7. Clears: most of the `extensions/footnote.c`,
+Gates: §14.5.7, plus a **shadowed-definition answer-value gate** this
+milestone has to add. §14.5.7 checks which identities carry `ANSWERS` and what
+the collection costs; it asserts nothing about the values, so a node-scoped
+implementation returning `number = 0` and `referenceCount = 0` beside a
+non-zero `winner` completes M6 while violating the contract. The gate: given
+`[x]: /first`, a later `[x]: /shadowed`, and a reference `[x]`, querying the
+shadowed definition returns the winner's non-zero `number` and
+`referenceCount` with an empty `Document.references`; with the reference
+removed, the same query returns 0 for both. Run it once against a node-scoped
+implementation and confirm it fails there.
+
+That this gate was missing from the same commit that added the rule above it
+is the failure mode this document opens by naming. It is cheaper to notice in
+a plan than in a review, and cheapest of all to notice while writing the rule.
+
+Clears: most of the `extensions/footnote.c`,
 `extensions/lookups.c`, and `extensions/cross_reference.c` ledger entries.
 
 ### M7 — The atomic flip
@@ -542,6 +749,16 @@ Gates: §14.4, §14.6, §14.8.
 
 The §14.7 telemetry, the §11 bounds enforced separately per §16.6, and the
 §16 rollout checklist.
+
+The measurement §14.7 now requires is a **paired** one: every term reported
+for the new engine is reported a second time for an AST-only baseline that
+captures no syntax-only record, on the same trace. §11.1 permits the CST to
+move exactly one of them — the records created inside a reparsed region — and
+nothing else. Regions reparsed, persistent nodes copied, extent-resolution
+descents, and `|diffs|` must be identical with the CST and without it. That
+comparison is against the benchmarks the prerequisite above pinned. If they
+were recorded after any milestone from M2.5 onward, they already contain part
+of the new engine and this gate is measuring it against itself.
 
 ## How the unpinned surface shrinks
 
