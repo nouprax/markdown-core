@@ -16,6 +16,7 @@ class AstTest {
                 "Text *em* **strong** ~~strike~~ `code` [link](/go \"title\") ![alt](/image.png) :badge[label]{kind=demo} \$x\$ [^n] [[cross_link]] ![[embed]]  \nnext <i>raw</i>\nsoft\n\n[^n]: definition\n",
                 "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
                 "\$\$\ny\n\$\$\n",
+                "[full][target] and [target][] and [target] plus ![alt][target]\n\n[target]: /ref \"ref title\"\n",
             )
         val documents = sources.map { Document.parse(it) }
         val values = documents.flatMap(::flatten)
@@ -52,6 +53,9 @@ class AstTest {
                 "FootnoteReference",
                 "CrossLink",
                 "Embed",
+                "ReferenceDefinition",
+                "LinkReference",
+                "ImageReference",
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
@@ -84,6 +88,45 @@ class AstTest {
         assertNull(link.title)
         assertEquals("/image", image.source)
         assertEquals("title", image.title)
+    }
+
+    @Test
+    fun referenceNodesCarryTheirLabelFormAndDefinition() {
+        val document =
+            Document.parse(
+                "[full][target] and [target][] and [target] plus ![alt][target]\n\n[target]: /ref \"ref title\"\n",
+            )
+        val paragraph = document.content[0] as Paragraph
+        val references = paragraph.content.filterIsInstance<LinkReference>()
+        // The three source forms resolve identically and are kept apart only
+        // because the tree says what was written.
+        assertEquals(kotlin.collections.List(3) { "target" }, references.map { it.label })
+        assertEquals(
+            listOf(ReferenceForm.FULL, ReferenceForm.COLLAPSED, ReferenceForm.SHORTCUT),
+            references.map { it.form },
+        )
+        assertEquals("full", (references[0].content.single() as Text).literal)
+
+        val image = paragraph.content.filterIsInstance<ImageReference>().single()
+        assertEquals("target", image.label)
+        assertEquals(ReferenceForm.FULL, image.form)
+        assertEquals("alt", (image.content.single() as Text).literal)
+
+        // The destination is stated once, at the definition, and nowhere else.
+        val definition = document.content[1] as ReferenceDefinition
+        assertEquals("target", definition.label)
+        assertEquals("/ref", definition.destination)
+        assertEquals("ref title", definition.title)
+
+        // Value identity is the id/revision pair, as for every other kind:
+        // equal to itself, unequal to another node, and never equal to a
+        // non-Markup value.
+        for (node in listOf<Markup>(definition, references[0], image)) {
+            assertEquals(node, node)
+            assertEquals(node.hashCode(), node.hashCode())
+            assertTrue(node != paragraph)
+            assertTrue(!node.equals("not markup"))
+        }
     }
 
     @Test
@@ -205,6 +248,8 @@ private fun flatten(root: Any): kotlin.collections.List<Any> =
             is Strikethrough -> root.content.flatMap(::flatten)
             is Link -> root.content.flatMap(::flatten)
             is Image -> root.content.flatMap(::flatten)
+            is LinkReference -> root.content.flatMap(::flatten)
+            is ImageReference -> root.content.flatMap(::flatten)
             is Directive -> listOfNotNull(root.label).flatMap(::flatten)
             else -> emptyList()
         }

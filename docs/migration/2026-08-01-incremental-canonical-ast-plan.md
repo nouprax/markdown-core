@@ -440,6 +440,22 @@ Slice order.
    fold that guarantee into the type is a separate decision, not one to take
    blind here.
 
+   Two binding entries grew by one branch each, for the same reason and not
+   the corpus one: a new node kind forces a new arm in an exhaustive
+   dispatch, and the arm is unreachable by construction.
+   `wire/WireDecoder.kt` gains the `else -> error(...)` of `referenceForm()`,
+   which the bridge cannot trigger because it only ever encodes 0, 1, or 2 —
+   the same shape the file's two boolean decoders already contribute.
+   `session/relink.ts` gains `case "referenceDefinition"`, which joins nine
+   sibling leaf cases that are all unreachable for one structural reason: a
+   leaf has no children, so it never appears in a commit's `bubbled` list.
+   Both arms exist to keep the dispatch exhaustive for the type checker, and
+   neither has a test seam short of hand-assembling a wire payload or
+   defeating exhaustiveness with a `default`. The Kotlin model file the same
+   change adds, `model/Reference.kt`, needs no entry at all: a new equality
+   and form test brings it to 100%, where its thirty sibling model files each
+   still carry their unpinned `equals`/`hashCode` pair.
+
    Every other entry moved down: `extensions/incremental.c` by 36 lines, one
    function, and 20 branches (the coordination chain is now written once and
    run per table, so the second instance costs no new surface),

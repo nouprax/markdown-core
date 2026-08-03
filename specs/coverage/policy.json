@@ -306,7 +306,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 40,
+            "minimumMeasuredFiles": 41,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/BlockQuote.kt": {
                     "lines": 2,
@@ -484,9 +484,9 @@
                     "branches": 1
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
-                    "lines": 4,
+                    "lines": 5,
                     "functions": 0,
-                    "branches": 28
+                    "branches": 29
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt": {
                     "lines": 3,
@@ -551,7 +551,7 @@
                 "packages/es-markdown-core/src/session/relink.ts": {
                     "lines": 17,
                     "functions": 1,
-                    "branches": 17
+                    "branches": 18
                 },
                 "packages/es-markdown-core/src/session/scope-resolver.ts": {
                     "lines": 5,

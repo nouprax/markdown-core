@@ -1217,7 +1217,6 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         markdown_core_node_literal(b, &b1);
         return view_content_equal(a1, b1);
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
-        markdown_core_string_view a2, b2, a3, b3;
         markdown_core_node_reference_definition_properties(a, &a1, &a2, &a3);
         markdown_core_node_reference_definition_properties(b, &b1, &b2, &b3);
         return view_content_equal(a1, b1) && view_content_equal(a2, b2) && view_content_equal(a3, b3);
