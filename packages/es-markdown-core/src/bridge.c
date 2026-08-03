@@ -14,7 +14,13 @@ enum es_string_field {
     ES_STRING_FOOTNOTE_ID,
     ES_STRING_CROSS_LINK_REFERENCE,
     ES_STRING_EMBED_REFERENCE,
-    ES_STRING_ERROR_MESSAGE
+    ES_STRING_ERROR_MESSAGE,
+    /* Appended: the ids are shared with the decoder's `stringField` table, so
+     * inserting one in the middle would renumber the rest. */
+    ES_STRING_DEFINITION_LABEL,
+    ES_STRING_DEFINITION_DESTINATION,
+    ES_STRING_DEFINITION_TITLE,
+    ES_STRING_REFERENCE_LABEL
 };
 
 typedef struct {
@@ -236,6 +242,15 @@ size_t es_scope_table(const markdown_core_document *document, uintptr_t *data) {
 
 void es_scope_table_free(markdown_core_scope_entry *rows) { markdown_core_scope_table_free(rows); }
 
+/* A reference's source form. Its label travels through es_string like every
+ * other string; only this scalar needs an accessor of its own. */
+int32_t es_node_reference_form(const markdown_core_node *node) {
+    markdown_core_string_view label = {NULL, 0};
+    markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+    markdown_core_node_reference_properties(node, &label, &form);
+    return (int32_t)form;
+}
+
 int32_t es_node_heading_level(const markdown_core_node *node) {
     int32_t value = 0;
     markdown_core_node_heading_level(node, &value);
@@ -355,6 +370,23 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     case ES_STRING_ERROR_MESSAGE:
         first = markdown_core_error_get_message((const markdown_core_error *)object);
         break;
+    case ES_STRING_DEFINITION_LABEL:
+    case ES_STRING_DEFINITION_DESTINATION:
+    case ES_STRING_DEFINITION_TITLE: {
+        markdown_core_string_view third = {NULL, 0};
+        markdown_core_node_reference_definition_properties(node, &first, &second, &third);
+        if (field == ES_STRING_DEFINITION_DESTINATION) {
+            first = second;
+        } else if (field == ES_STRING_DEFINITION_TITLE) {
+            first = third;
+        }
+        break;
+    }
+    case ES_STRING_REFERENCE_LABEL: {
+        markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
+        markdown_core_node_reference_properties(node, &first, &form);
+        break;
+    }
     default:
         break;
     }

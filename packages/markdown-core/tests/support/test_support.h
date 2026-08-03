@@ -78,7 +78,12 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
 /* Counts every node kind in the subtree. `counts` must hold
  * MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE + 1 entries. Returns 0 on success. */
 int ts_ast_count_kinds(const markdown_core_node *root, size_t *counts);
-#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE + 1)
+/* One past the last node kind. It must track the end of
+ * markdown_core_node_kind: a stale value silently drops the kinds past it
+ * from every count, and lets a caller asking about one read off the end of
+ * the array. It named FOOTNOTE_REFERENCE until 2026-08-02, so CrossLink and
+ * Embed had been uncountable since they were added. */
+#define TS_KIND_COUNT (MARKDOWN_CORE_KIND_IMAGE_REFERENCE + 1)
 
 /* Concatenates the literals of every Text node in pre-order into a malloc'd
  * NUL-terminated buffer (embedded NULs impossible: parser replaces them). */

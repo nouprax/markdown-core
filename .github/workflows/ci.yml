@@ -1223,6 +1223,118 @@ jobs:
                       fi
                   done
 
+    # Coverage is its own layer, not a test consumer: every producer must
+    # compile an instrumented tree, which the test layer forbids by contract.
+    # It sits beside Tests and Benchmarks as a third parallel aggregate.
+    #
+    # c-host and swift-macos run on macOS because llvm-cov must match the clang
+    # that produced the profile, and the Xcode toolchain ships the pair; the
+    # recorded ledger and measured-file floors come from that same toolchain.
+    coverage:
+        name: Coverage - ${{ matrix.label }}
+        needs: health-checks-ready
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - platform: c-host
+                      label: C / Host
+                      os: macos-latest
+                      needs-java: false
+                      needs-emsdk: false
+                    - platform: swift-macos
+                      label: Swift / macOS
+                      os: macos-latest
+                      needs-java: false
+                      needs-emsdk: false
+                    - platform: kotlin-jvm
+                      label: Kotlin / JVM
+                      os: ubuntu-latest
+                      needs-java: true
+                      needs-emsdk: false
+                    - platform: es-node
+                      label: ES / Node
+                      os: ubuntu-latest
+                      needs-java: false
+                      needs-emsdk: true
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+              if: ${{ matrix.needs-java }}
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
+              if: ${{ matrix.needs-emsdk }}
+              with:
+                  version: 4.0.23
+            - name: Install coverage dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Enforce the coverage gate
+              run: pnpm "coverage:${{ matrix.platform }}"
+
+    coverage-ready:
+        name: Coverage - Ready
+        if: ${{ always() }}
+        needs:
+            - coverage
+        runs-on: ubuntu-latest
+        steps:
+            - name: Require every platform coverage gate
+              env:
+                  COVERAGE: ${{ needs.coverage.result }}
+              run: |
+                  if [ "$COVERAGE" != success ]; then
+                      echo "A required coverage dependency concluded: $COVERAGE" >&2
+                      exit 1
+                  fi
+
+    # The two gates that check Markdown Core's semantics against authorities
+    # outside itself: cmark-gfm for the base language, and the remark ecosystem
+    # for the constructs cmark-gfm does not implement. Both build this parser,
+    # so they sit beside Coverage as their own layer rather than in the Test
+    # layer, which forbids compilers.
+    upstream-parity:
+        name: External parity
+        needs: health-checks-ready
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - name: Install parity dependencies
+              run: pnpm install --frozen-lockfile
+            - name: Build this parser
+              run: pnpm build:c
+            - name: Build the pinned upstream parser
+              run: scripts/init-environment.sh --install upstream-cmark
+            - name: Compare against upstream cmark-gfm
+              run: pnpm check:upstream-parity
+            - name: Compare against the remark ecosystem
+              run: pnpm check:mdast-parity
+            # Bounded and seeded, so a CI failure replays locally with the seed
+            # it prints. The mdast oracle is deliberately not fuzzed here yet:
+            # it still reports divergences of mixed root cause that have not
+            # been triaged, and a gate nobody can act on is noise.
+            - name: Fuzz against upstream cmark-gfm
+              run: pnpm fuzz:parity -- --oracle upstream --iterations 400 --seed 1
+            - name: Fuzz against the remark ecosystem
+              run: pnpm fuzz:parity -- --oracle mdast --iterations 400 --seed 1
+
     required-gates:
         # Push runs use an independent, non-required context. PR and
         # merge-queue runs alone own the name referenced by the ruleset.
@@ -1231,13 +1343,17 @@ jobs:
         needs:
             - tests-ready
             - benchmarks-ready
+            - coverage-ready
+            - upstream-parity
         runs-on: ubuntu-latest
         steps:
-            - name: Require the complete test and benchmark layers
+            - name: Require the complete test, benchmark, coverage, and parity layers
               env:
                   TESTS_READY: ${{ needs.tests-ready.result }}
                   BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}
+                  COVERAGE_READY: ${{ needs.coverage-ready.result }}
+                  UPSTREAM_PARITY: ${{ needs.upstream-parity.result }}
               run: |
-                  for result in "$TESTS_READY" "$BENCHMARKS_READY"; do
+                  for result in "$TESTS_READY" "$BENCHMARKS_READY" "$COVERAGE_READY" "$UPSTREAM_PARITY"; do
                       test "$result" = success
                   done

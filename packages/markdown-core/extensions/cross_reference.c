@@ -217,7 +217,7 @@ static markdown_core_delimiter_result insert(
      * swallowed by an outer opaque reference then allocate nothing; the
      * survivor materialization pass copies only nodes in the final AST.
      */
-    payload->reference = markdown_core_chunk_dup(chunk, body_start, body_end - body_start);
+    payload->reference = markdown_core_chunk_borrow(chunk, body_start, body_end - body_start);
     node->start_line = opener_node->start_line;
     node->start_column = opener_node->start_column;
     node->end_line = closer_node->end_line;

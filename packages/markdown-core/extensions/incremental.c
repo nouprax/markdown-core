@@ -443,16 +443,16 @@ static bool id_set_holds(const uint64_t *ids, size_t count, uint64_t id) {
  * one contiguous range of the session's line-ordered index. */
 static bool collect_stale_definitions(
     markdown_core_mem *mem,
-    markdown_core_session *session,
+    const markdown_core_definition_table *table,
     int restart_line,
     int boundary_line,
     reference_list *out
 ) {
-    size_t lo = def_lower_bound(session->def_index, session->def_count, restart_line);
-    size_t hi = def_lower_bound(session->def_index, session->def_count, boundary_line);
+    size_t lo = def_lower_bound(table->index, table->count, restart_line);
+    size_t hi = def_lower_bound(table->index, table->count, boundary_line);
     size_t i;
     for (i = lo; i < hi; i++) {
-        if (!reference_push(mem, out, (markdown_core_reference *)session->def_index[i])) {
+        if (!reference_push(mem, out, (markdown_core_reference *)table->index[i])) {
             return false;
         }
     }
@@ -520,8 +520,6 @@ typedef struct {
     markdown_core_key_index affected; // label -> label_plan
     label_plan *plans;
     size_t plan_count;
-    markdown_core_key_index dirty; // labels whose winning payload changed
-    size_t dirty_count;
     markdown_core_reference **prefix_entries; // surviving entries by document order
     size_t prefix_count;
     markdown_core_reference **suffix_entries;
@@ -540,7 +538,6 @@ static void reconcile_release(markdown_core_mem *mem, reconcile_state *state) {
         return;
     }
     markdown_core_key_index_free(&state->affected);
-    markdown_core_key_index_free(&state->dirty);
     if (state->plans) {
         mem->free(mem, state->plans);
     }
@@ -553,30 +550,46 @@ static void reconcile_release(markdown_core_mem *mem, reconcile_state *state) {
     memset(state, 0, sizeof(*state));
 }
 
-static bool reference_payloads_equal(const markdown_core_map_entry *a, const markdown_core_map_entry *b) {
-    if (!a || !b) {
-        return a == b;
-    }
-    return chunks_equal(&((const markdown_core_reference *)a)->url, &((const markdown_core_reference *)b)->url) &&
-           chunks_equal(&((const markdown_core_reference *)a)->title, &((const markdown_core_reference *)b)->title);
+/* Whether a label's winner change can alter a unit's *tree*, which is what
+ * decides whether the units that looked the label up must be reparsed.
+ *
+ * Only definedness can. A reference carries its label and no destination, so
+ * retargeting a definition produces byte-identical reference nodes; the
+ * destination moved, and that is an answer, reported by the definition node's
+ * own content change. Comparing payloads here — as this did while a resolved
+ * reference was a Link carrying a copy of the url — reparsed every unit
+ * mentioning the label on every keystroke inside a definition body, for a
+ * result that could not differ. */
+static bool reference_winners_equivalent(const markdown_core_map_entry *a, const markdown_core_map_entry *b) {
+    return (a != NULL) == (b != NULL);
 }
 
 /* Builds the whole reconciliation plan without touching the map. Returns
  * false with *fallback set when only a full reparse can settle the commit
  * (index build failure, an anchor that defies classification), and false
- * with *fallback clear on allocation loss. */
+ * with *fallback clear on allocation loss.
+ *
+ * `dirty` is the commit's, not the table's: every table contributes the
+ * labels whose definedness it flipped to one set, because a unit's
+ * dependencies are recorded by label alone. The label namespaces overlap
+ * there — a flipped `[x]:` can also select units that only read `[^x]` — and
+ * that direction is the safe one. Each table contributes its own flips, so
+ * the union covers every real dependent; the extra ones re-refine to the
+ * tree they already had. */
 static bool reconcile_prepare(
-    markdown_core_session *session,
-    markdown_core_map *map,
+    markdown_core_mem *mem,
+    markdown_core_definition_table *table,
     uint64_t order_floor,
     int restart_line,
     int boundary_line,
     const reference_list *old_defs,
     const reference_list *new_defs,
     reconcile_state *state,
+    markdown_core_key_index *dirty,
+    size_t *dirty_count,
     bool *fallback
 ) {
-    markdown_core_mem *mem = session->mem;
+    markdown_core_map *map = table->map;
     size_t affected_upper = old_defs->count + new_defs->count;
     size_t i;
 
@@ -591,8 +604,7 @@ static bool reconcile_prepare(
         return false;
     }
 
-    if (!markdown_core_key_index_init(&state->affected, mem) || !markdown_core_key_index_init(&state->dirty, mem)) {
-        markdown_core_key_index_free(&state->affected);
+    if (!markdown_core_key_index_init(&state->affected, mem)) {
         return false;
     }
     state->prepared = true;
@@ -602,15 +614,14 @@ static bool reconcile_prepare(
         return false;
     }
 
-    // The stale entries form one line range of the session's definition
+    // The stale entries form one line range of the table's definition
     // index; its neighbors bound the vacated order span. More staged
     // entries than the span holds means the whole map renumbers (rare,
     // O(definitions)) — only then are the surviving slices copied.
-    state->splice_lo = def_lower_bound(session->def_index, session->def_count, restart_line);
-    state->splice_hi = def_lower_bound(session->def_index, session->def_count, boundary_line);
-    state->prefix_max_order = state->splice_lo ? session->def_index[state->splice_lo - 1]->order : 0;
-    state->suffix_min_order =
-        state->splice_hi < session->def_count ? session->def_index[state->splice_hi]->order : UINT64_MAX;
+    state->splice_lo = def_lower_bound(table->index, table->count, restart_line);
+    state->splice_hi = def_lower_bound(table->index, table->count, boundary_line);
+    state->prefix_max_order = state->splice_lo ? table->index[state->splice_lo - 1]->order : 0;
+    state->suffix_min_order = state->splice_hi < table->count ? table->index[state->splice_hi]->order : UINT64_MAX;
     {
         uint64_t span =
             state->suffix_min_order == UINT64_MAX ? UINT64_MAX : state->suffix_min_order - state->prefix_max_order - 1;
@@ -618,7 +629,7 @@ static bool reconcile_prepare(
     }
     if (state->renumber) {
         size_t prefix = state->splice_lo;
-        size_t suffix = session->def_count - state->splice_hi;
+        size_t suffix = table->count - state->splice_hi;
         state->prefix_entries =
             (markdown_core_reference **)mem->calloc(mem, prefix ? prefix : 1, sizeof(*state->prefix_entries));
         state->suffix_entries =
@@ -627,25 +638,24 @@ static bool reconcile_prepare(
             reconcile_release(mem, state);
             return false;
         }
-        memcpy(state->prefix_entries, session->def_index, prefix * sizeof(*state->prefix_entries));
-        memcpy(state->suffix_entries, session->def_index + state->splice_hi, suffix * sizeof(*state->suffix_entries));
+        memcpy(state->prefix_entries, table->index, prefix * sizeof(*state->prefix_entries));
+        memcpy(state->suffix_entries, table->index + state->splice_hi, suffix * sizeof(*state->suffix_entries));
         state->prefix_count = prefix;
         state->suffix_count = suffix;
     }
 
     // Reserve the definition-index splice room while failing is still free.
     {
-        size_t needed = session->def_count - (state->splice_hi - state->splice_lo) + new_defs->count;
-        if (needed > session->def_capacity) {
+        size_t needed = table->count - (state->splice_hi - state->splice_lo) + new_defs->count;
+        if (needed > table->capacity) {
             markdown_core_map_entry **grown =
-                (markdown_core_map_entry **)
-                    mem->realloc(mem, session->def_index, (needed ? needed : 1) * sizeof(*grown));
+                (markdown_core_map_entry **)mem->realloc(mem, table->index, (needed ? needed : 1) * sizeof(*grown));
             if (!grown) {
                 reconcile_release(mem, state);
                 return false;
             }
-            session->def_index = grown;
-            session->def_capacity = needed ? needed : 1;
+            table->index = grown;
+            table->capacity = needed ? needed : 1;
         }
     }
 
@@ -709,12 +719,12 @@ static bool reconcile_prepare(
 
         new_winner =
             plan->prefix_head ? plan->prefix_head : (plan->staged_head ? plan->staged_head : plan->suffix_head);
-        if (!reference_payloads_equal(old_winner, new_winner)) {
-            if (!markdown_core_key_index_insert(&state->dirty, seed->label, label_len, plan, 0, NULL)) {
+        if (!reference_winners_equivalent(old_winner, new_winner)) {
+            if (!markdown_core_key_index_insert(dirty, seed->label, label_len, plan, 0, NULL)) {
                 reconcile_release(mem, state);
                 return false;
             }
-            state->dirty_count++;
+            (*dirty_count)++;
         }
     }
     return true;
@@ -731,11 +741,11 @@ static int reference_order_compare(const void *a, const void *b) {
  * everything in document order), and relinks every affected bucket. Nothing
  * here can fail; from the first unlink onward the map only converges. */
 static void reconcile_apply(
-    markdown_core_session *session,
-    markdown_core_map *map,
+    markdown_core_definition_table *table,
     const reference_list *new_defs,
     reconcile_state *state
 ) {
+    markdown_core_map *map = table->map;
     size_t i;
 
     state->applied = true;
@@ -816,7 +826,7 @@ static void reconcile_apply(
     // The stale set is exactly the collected index range; back links make
     // each unlink O(1).
     for (i = state->splice_lo; i < state->splice_hi; i++) {
-        markdown_core_map_entry *entry = session->def_index[i];
+        markdown_core_map_entry *entry = table->index[i];
         if (entry->prev) {
             entry->prev->next = entry->next;
         } else {
@@ -834,16 +844,16 @@ static void reconcile_apply(
     // because staged lines lie strictly between the surviving neighbors.
     {
         size_t staged = new_defs->count;
-        size_t tail = session->def_count - state->splice_hi;
+        size_t tail = table->count - state->splice_hi;
         memmove(
-            session->def_index + state->splice_lo + staged,
-            session->def_index + state->splice_hi,
-            tail * sizeof(*session->def_index)
+            table->index + state->splice_lo + staged,
+            table->index + state->splice_hi,
+            tail * sizeof(*table->index)
         );
         for (i = 0; i < staged; i++) {
-            session->def_index[state->splice_lo + i] = &new_defs->items[i]->entry;
+            table->index[state->splice_lo + i] = &new_defs->items[i]->entry;
         }
-        session->def_count = state->splice_lo + staged + tail;
+        table->count = state->splice_lo + staged + tail;
     }
 }
 
@@ -1979,18 +1989,33 @@ typedef struct {
     bool revisions_stamped;
 } incremental_splice_state;
 
-/* Stack-owned incremental transaction. The parser temporarily borrows `map`
- * and `own_map` must be restored before its lease ends. `root` owns staged
- * children until install; `holder` owns dependent clones while they are
- * parked; a detached graveyard keeps committed parent stamps. After
- * `reconcile.applied`, abort quarantines the map via `refmap_stale`.
- * `footnotes_built` denotes an index owned here until its immediate PONR
- * transfer. False phase returns use `result` to distinguish failure from
- * fallback, and no allocation or failure is allowed after refresh succeeds. */
+/* One definition table's per-commit state. The chain runs once per table and
+ * the tables never meet; only `dirty` on the pipeline is shared, and only
+ * because a unit's dependencies are recorded by label with no table attached.
+ * The parser borrows `table->map` for the staged parse and `own_map` — the
+ * parser's own, empty map — must be restored before its lease ends. */
+typedef struct {
+    markdown_core_definition_table *table;
+    markdown_core_map *own_map;
+    markdown_core_map_entry *previous_head;
+    uint64_t order_floor;
+    reference_list new_defs;
+    reference_list old_defs;
+    reconcile_state reconcile;
+    bool defs_equal;
+} definition_stream;
+
+/* Stack-owned incremental transaction. The parser temporarily borrows each
+ * stream's map. `root` owns staged children until install; `holder` owns
+ * dependent clones while they are parked; a detached graveyard keeps committed
+ * parent stamps. After any stream's `reconcile.applied`, abort quarantines the
+ * maps via `definitions_stale`. `footnotes_built` denotes an index owned here
+ * until its immediate PONR transfer. False phase returns use `result` to
+ * distinguish failure from fallback, and no allocation or failure is allowed
+ * after refresh succeeds. */
 typedef struct {
     markdown_core_session *session;
     markdown_core_mem *mem;
-    markdown_core_map *map;
     const unsigned char *bytes;
     size_t length;
     markdown_core_node *doc;
@@ -2002,13 +2027,14 @@ typedef struct {
     markdown_core_incremental_result result;
 
     markdown_core_parser *parser;
-    markdown_core_map *own_map;
-    markdown_core_map_entry *previous_head;
-    uint64_t order_floor;
+    definition_stream streams[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
+    // Labels whose definedness flipped, pooled across the streams; `prepared`
+    // says whether the index was ever built (only a changed stream needs it).
+    markdown_core_key_index dirty;
+    size_t dirty_count;
+    bool dirty_prepared;
     markdown_core_node *root;
     offset_list line_offsets;
-    reference_list new_defs;
-    reference_list old_defs;
     uint64_t *stale_ids;
     size_t stale_count;
     markdown_core_footnote_index footnotes;
@@ -2018,8 +2044,6 @@ typedef struct {
     markdown_core_lookup_recording recording;
     markdown_core_unit_lookups *bundles;
     size_t bundle_count;
-    reconcile_state reconcile;
-    bool defs_equal;
     dependent_unit *dependents;
     size_t dependent_count;
     markdown_core_node *holder;
@@ -2042,10 +2066,11 @@ static void incremental_pipeline_init(
     markdown_core_delta *changes,
     markdown_core_error **error
 ) {
+    size_t s;
+
     memset(pipeline, 0, sizeof(*pipeline));
     pipeline->session = session;
     pipeline->mem = session->mem;
-    pipeline->map = session->refmap;
     pipeline->bytes = markdown_core_text_bytes(&session->text);
     pipeline->length = markdown_core_text_length(&session->text);
     pipeline->doc = session->view.root;
@@ -2057,9 +2082,13 @@ static void incremental_pipeline_init(
     pipeline->changes = changes;
     pipeline->error = error;
     pipeline->result = MARKDOWN_CORE_INCREMENTAL_FAILED;
-    pipeline->previous_head = pipeline->map->refs;
-    pipeline->order_floor = pipeline->map->next_order + 1;
-    pipeline->defs_equal = true;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        definition_stream *stream = &pipeline->streams[s];
+        stream->table = &session->definitions[s];
+        stream->previous_head = stream->table->map->refs;
+        stream->order_floor = stream->table->map->next_order + 1;
+        stream->defs_equal = true;
+    }
     pipeline->plan.restart_pos = -1;
     pipeline->plan.boundary_pos = -1;
     pipeline->plan.boundary_line = INT_MAX;
@@ -2069,6 +2098,30 @@ static void incremental_pipeline_init(
 static bool incremental_use_fallback(incremental_pipeline *pipeline) {
     pipeline->result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
     return false;
+}
+
+/* Sticky allocation loss in any definition map: one lost definition or lookup
+ * structure makes the staged tree untrustworthy whichever table lost it. */
+static bool definitions_lost(const incremental_pipeline *pipeline) {
+    size_t s;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        if (pipeline->streams[s].table->map->oom) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Every table reproduced the definitions its stale region held, so no winner
+ * anywhere can have moved and the commit skips reconciliation entirely. */
+static bool definitions_all_equal(const incremental_pipeline *pipeline) {
+    size_t s;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        if (!pipeline->streams[s].defs_equal) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static bool incremental_plan_restart(incremental_pipeline *pipeline) {
@@ -2135,8 +2188,13 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
         return false;
     }
     parser = pipeline->parser;
-    pipeline->own_map = parser->refmap;
-    parser->refmap = pipeline->map;
+    // The staged parse writes into, and reads from, the session's tables: a
+    // reparsed paragraph must see the definitions of the lines it does not
+    // reparse. The parser's own (empty) maps go back on release.
+    pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].own_map = parser->refmap;
+    pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].own_map = parser->footnote_defs;
+    parser->refmap = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].table->map;
+    parser->footnote_defs = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].table->map;
     parser->line_number = plan->restart_line - 1;
 
     // finalize() dates a block closed in the middle of a line to the end of
@@ -2169,7 +2227,7 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
         }
         markdown_core_parser_feed(parser, (const char *)pipeline->bytes + feed_pos, next - feed_pos);
         plan->fed_lines++;
-        if (parser->oom || pipeline->map->oom) {
+        if (parser->oom || definitions_lost(pipeline)) {
             return false;
         }
         feed_pos = next;
@@ -2186,7 +2244,7 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
     }
 
     markdown_core_parser_finalize_blocks(parser);
-    if (parser->oom || pipeline->map->oom) {
+    if (parser->oom || definitions_lost(pipeline)) {
         return false;
     }
     plan->total_lines = parser->line_number;
@@ -2220,26 +2278,36 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
         }
         qsort(pipeline->stale_ids, pipeline->stale_count, sizeof(*pipeline->stale_ids), id_compare);
     }
-    if (!collect_new_definitions(pipeline->mem, pipeline->map, pipeline->previous_head, &pipeline->new_defs) ||
-        !collect_stale_definitions(
-            pipeline->mem,
-            session,
-            plan->restart_line,
-            plan->boundary_line,
-            &pipeline->old_defs
-        )) {
-        return false;
+    {
+        size_t s;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            definition_stream *stream = &pipeline->streams[s];
+            if (!collect_new_definitions(pipeline->mem, stream->table->map, stream->previous_head, &stream->new_defs) ||
+                !collect_stale_definitions(
+                    pipeline->mem,
+                    stream->table,
+                    plan->restart_line,
+                    plan->boundary_line,
+                    &stream->old_defs
+                )) {
+                return false;
+            }
+            stream->defs_equal = definition_sequences_equal(&stream->old_defs, &stream->new_defs);
+        }
     }
 
     // Sentinel lines for the staged region: vanished clean definition
     // paragraphs of this parse, one per line, taken from the staged list
     // before any map surgery. `new_defs` is document-ordered, so deduping
-    // neighbors suffices.
+    // neighbors suffices. Reference definitions only — a footnote definition
+    // is a block of its own, so no paragraph can vanish out from under it and
+    // leave the session without a restart anchor.
     if (!pipeline->doc->first_child || plan->restart_node == pipeline->doc->first_child) {
+        const reference_list *staged = &pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].new_defs;
         size_t i;
         size_t upper = 0;
-        for (i = 0; i < pipeline->new_defs.count; i++) {
-            const markdown_core_map_entry *entry = &pipeline->new_defs.items[i]->entry;
+        for (i = 0; i < staged->count; i++) {
+            const markdown_core_map_entry *entry = &staged->items[i]->entry;
             if (entry->owner == 0 && entry->from_vanished_clean) {
                 upper++;
             }
@@ -2250,8 +2318,8 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
             if (!pipeline->sentinel_lines) {
                 return false;
             }
-            for (i = 0; i < pipeline->new_defs.count; i++) {
-                const markdown_core_map_entry *entry = &pipeline->new_defs.items[i]->entry;
+            for (i = 0; i < staged->count; i++) {
+                const markdown_core_map_entry *entry = &staged->items[i]->entry;
                 if (entry->owner == 0 && entry->from_vanished_clean &&
                     (pipeline->sentinel_count == 0 ||
                      pipeline->sentinel_lines[pipeline->sentinel_count - 1] != entry->start_line)) {
@@ -2261,24 +2329,46 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
         }
     }
 
-    pipeline->defs_equal = definition_sequences_equal(&pipeline->old_defs, &pipeline->new_defs);
-    if (!pipeline->defs_equal) {
+    if (!definitions_all_equal(pipeline)) {
         bool fallback = false;
+        size_t s;
         size_t i;
-        if (!reconcile_prepare(
+
+        // Every changed table plans against the same dirty set, and every
+        // plan must be built before the first one is applied: prepare is the
+        // step that can still fail for free, apply is the step that cannot be
+        // undone.
+        if (!markdown_core_key_index_init(&pipeline->dirty, pipeline->mem)) {
+            return false;
+        }
+        pipeline->dirty_prepared = true;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            definition_stream *stream = &pipeline->streams[s];
+            if (stream->defs_equal) {
+                continue;
+            }
+            if (!reconcile_prepare(
+                    pipeline->mem,
+                    stream->table,
+                    stream->order_floor,
+                    plan->restart_line,
+                    plan->boundary_line,
+                    &stream->old_defs,
+                    &stream->new_defs,
+                    &stream->reconcile,
+                    &pipeline->dirty,
+                    &pipeline->dirty_count,
+                    &fallback
+                )) {
+                if (fallback) {
+                    pipeline->result = MARKDOWN_CORE_INCREMENTAL_FALLBACK;
+                }
+                return false;
+            }
+        }
+        if (!collect_dependents(
                 session,
-                pipeline->map,
-                pipeline->order_floor,
-                plan->restart_line,
-                plan->boundary_line,
-                &pipeline->old_defs,
-                &pipeline->new_defs,
-                &pipeline->reconcile,
-                &fallback
-            ) ||
-            !collect_dependents(
-                session,
-                &pipeline->reconcile.dirty,
+                &pipeline->dirty,
                 pipeline->stale_ids,
                 pipeline->stale_count,
                 &pipeline->dependents,
@@ -2311,8 +2401,13 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
             }
         }
         // The last allocation-bearing definition step is behind; reconcile
-        // the map in place so the inline phase resolves the final winners.
-        reconcile_apply(session, pipeline->map, &pipeline->new_defs, &pipeline->reconcile);
+        // the maps in place so the inline phase resolves the final winners.
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            definition_stream *stream = &pipeline->streams[s];
+            if (!stream->defs_equal) {
+                reconcile_apply(stream->table, &stream->new_defs, &stream->reconcile);
+            }
+        }
     }
 
     // A sentinel boundary's suffix starts at the first real child whose start
@@ -2355,23 +2450,29 @@ static void incremental_arm_inline_seam(incremental_pipeline *pipeline) {
 
 static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
     markdown_core_session *session = pipeline->session;
-    markdown_core_map *map = pipeline->map;
+    markdown_core_map *map = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].table->map;
     markdown_core_parser *parser = pipeline->parser;
     size_t phase_expansion;
     bool parse_lost;
     bool domain_replaced = false;
     bool internal_error;
+    size_t s;
     size_t i;
 
     incremental_arm_inline_seam(pipeline);
 
     // Unlimited budget: the estimate check below proves a one-shot parse
     // stays within its own budget, so no lookup can be denied in either.
+    // Reference expansion is the reference table's alone — a footnote
+    // definition expands to nothing at the reference site.
     map->ref_size = 0;
     map->max_ref_size = (size_t)-1;
     if (session->record_lookups) {
-        map->lookup_sink = markdown_core_lookup_recording_sink;
-        map->lookup_context = &pipeline->recording;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            markdown_core_map *watched = pipeline->streams[s].table->map;
+            watched->lookup_sink = markdown_core_lookup_recording_sink;
+            watched->lookup_context = &pipeline->recording;
+        }
     }
     pipeline->root = markdown_core_parser_refine_blocks(parser);
     if (pipeline->root && pipeline->dependent_count) {
@@ -2394,16 +2495,21 @@ static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
             }
         }
     }
-    map->lookup_sink = NULL;
-    map->lookup_context = NULL;
-    map->lookup_unit = NULL;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        markdown_core_map *watched = pipeline->streams[s].table->map;
+        watched->lookup_sink = NULL;
+        watched->lookup_context = NULL;
+        watched->lookup_unit = NULL;
+    }
 
     phase_expansion = map->ref_size;
     internal_error = parser->internal_error;
-    parse_lost = parser->oom || internal_error || map->oom || pipeline->recording.lost;
+    parse_lost = parser->oom || internal_error || definitions_lost(pipeline) || pipeline->recording.lost;
     map->max_ref_size = pipeline->budget;
-    parser->refmap = pipeline->own_map;
-    pipeline->own_map = NULL;
+    parser->refmap = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].own_map;
+    parser->footnote_defs = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].own_map;
+    pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].own_map = NULL;
+    pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].own_map = NULL;
     markdown_core_session_release_parser(session, parser);
     pipeline->parser = NULL;
     if (internal_error && pipeline->error && !*pipeline->error) {
@@ -2840,39 +2946,65 @@ static void incremental_finalize_geometry(incremental_pipeline *pipeline) {
 
     // At-rest definitions beyond the boundary follow the suffix line shift.
     if (plan->boundary_pos >= 0 && splice->delta_lines != 0) {
-        size_t start =
-            pipeline->reconcile.applied
-                ? pipeline->reconcile.splice_lo + pipeline->new_defs.count
-                : def_lower_bound(pipeline->session->def_index, pipeline->session->def_count, plan->boundary_line);
-        size_t at;
-        for (at = start; at < pipeline->session->def_count; at++) {
-            pipeline->session->def_index[at]->start_line += splice->delta_lines;
+        size_t s;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            const definition_stream *stream = &pipeline->streams[s];
+            markdown_core_definition_table *table = stream->table;
+            size_t start = stream->reconcile.applied
+                               ? stream->reconcile.splice_lo + stream->new_defs.count
+                               : def_lower_bound(table->index, table->count, plan->boundary_line);
+            size_t at;
+            for (at = start; at < table->count; at++) {
+                table->index[at]->start_line += splice->delta_lines;
+            }
         }
     }
 }
 
+/* The id of the node a staged definition was written as, from the pointer the
+ * parse stamped. Every entry that reaches adoption carries one: a definition
+ * whose node was lost to allocation failure fails the parse instead. */
+static uint64_t adopted_definition_node(const markdown_core_reference *staged) {
+    return ((const markdown_core_node *)(uintptr_t)staged->entry.definition_node)->id;
+}
+
 static void incremental_finalize_definitions(incremental_pipeline *pipeline) {
-    size_t i;
     uint64_t head_owner = pipeline->splice.prefix_tail ? pipeline->splice.prefix_tail->id : 0;
+    size_t s;
+    size_t i;
 
     // Equal sequences keep the old entries and take over the staged anchors
     // and geometry. Reconciled sequences keep staged entries and turn their
     // pointer-stamped anchors into adopted ids.
-    if (pipeline->defs_equal) {
-        for (i = 0; i < pipeline->old_defs.count; i++) {
-            uint64_t anchor = pipeline->new_defs.items[i]->entry.owner;
-            pipeline->old_defs.items[i]->entry.owner =
-                anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
-            pipeline->old_defs.items[i]->entry.start_line = pipeline->new_defs.items[i]->entry.start_line;
-            pipeline->old_defs.items[i]->entry.from_vanished_clean =
-                pipeline->new_defs.items[i]->entry.from_vanished_clean;
-        }
-        markdown_core_map_remove_until(pipeline->map, pipeline->previous_head);
-    } else {
-        for (i = 0; i < pipeline->new_defs.count; i++) {
-            uint64_t anchor = pipeline->new_defs.items[i]->entry.owner;
-            pipeline->new_defs.items[i]->entry.owner =
-                anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+    //
+    // `definition_node` is stamped and adopted exactly like `owner`, because
+    // it is the same kind of fact: a node pointer the parse could produce and
+    // only adoption can turn into an id. Both branches dereference the staged
+    // pointer, which is right either way — adoption has already given that
+    // node its final id, minted or inherited from the stale node it paired
+    // with.
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        definition_stream *stream = &pipeline->streams[s];
+        if (stream->defs_equal) {
+            for (i = 0; i < stream->old_defs.count; i++) {
+                uint64_t anchor = stream->new_defs.items[i]->entry.owner;
+                stream->old_defs.items[i]->entry.owner =
+                    anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+                stream->old_defs.items[i]->entry.definition_node =
+                    adopted_definition_node(stream->new_defs.items[i]);
+                stream->old_defs.items[i]->entry.start_line = stream->new_defs.items[i]->entry.start_line;
+                stream->old_defs.items[i]->entry.from_vanished_clean =
+                    stream->new_defs.items[i]->entry.from_vanished_clean;
+            }
+            markdown_core_map_remove_until(stream->table->map, stream->previous_head);
+        } else {
+            for (i = 0; i < stream->new_defs.count; i++) {
+                uint64_t anchor = stream->new_defs.items[i]->entry.owner;
+                stream->new_defs.items[i]->entry.owner =
+                    anchor == 0 ? head_owner : ((const markdown_core_node *)(uintptr_t)anchor)->id;
+                stream->new_defs.items[i]->entry.definition_node =
+                    adopted_definition_node(stream->new_defs.items[i]);
+            }
         }
     }
 }
@@ -3092,21 +3224,30 @@ static void incremental_abort(incremental_pipeline *pipeline) {
     assert(!pipeline->splice.dependents_installed);
     assert(!pipeline->splice.revisions_stamped);
 
-    if (pipeline->reconcile.applied) {
-        // The map was reconciled in place and cannot be reconstructed from
-        // the released stale entries. Keep the committed tree valid and force
-        // the next commit through the wholesale full-path rebuild.
-        pipeline->session->refmap_stale = true;
-    } else {
-        // Pointer-stamped staged definitions never survive an abandoned
-        // pipeline.
-        markdown_core_map_remove_until(pipeline->map, pipeline->previous_head);
+    {
+        size_t s;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            definition_stream *stream = &pipeline->streams[s];
+            if (stream->reconcile.applied) {
+                // The map was reconciled in place and cannot be reconstructed
+                // from the released stale entries. Keep the committed tree
+                // valid and force the next commit through the wholesale
+                // full-path rebuild, which replaces every table.
+                pipeline->session->definitions_stale = true;
+            } else {
+                // Pointer-stamped staged definitions never survive an
+                // abandoned pipeline.
+                markdown_core_map_remove_until(stream->table->map, stream->previous_head);
+            }
+        }
     }
     if (pipeline->parser) {
-        pipeline->parser->refmap = pipeline->own_map;
+        pipeline->parser->refmap = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].own_map;
+        pipeline->parser->footnote_defs = pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].own_map;
         markdown_core_session_release_parser(pipeline->session, pipeline->parser);
         pipeline->parser = NULL;
-        pipeline->own_map = NULL;
+        pipeline->streams[MARKDOWN_CORE_DEFINITIONS_REFERENCES].own_map = NULL;
+        pipeline->streams[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].own_map = NULL;
     }
     if (pipeline->root) {
         markdown_core_node_free(pipeline->root);
@@ -3122,8 +3263,9 @@ static void incremental_abort(incremental_pipeline *pipeline) {
 }
 
 static void incremental_pipeline_release(incremental_pipeline *pipeline) {
+    size_t s;
+
     assert(!pipeline->parser);
-    assert(!pipeline->own_map);
     assert(!pipeline->root);
     assert(!pipeline->footnotes_built);
     assert(!pipeline->splice.graveyard_detached);
@@ -3131,14 +3273,28 @@ static void incremental_pipeline_release(incremental_pipeline *pipeline) {
     assert(!pipeline->splice.dependents_installed);
     assert(!pipeline->splice.revisions_stamped);
 
-    pipeline->map->lookup_sink = NULL;
-    pipeline->map->lookup_context = NULL;
-    pipeline->map->lookup_unit = NULL;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        definition_stream *stream = &pipeline->streams[s];
+        markdown_core_map *map = stream->table->map;
+        assert(!stream->own_map);
+        map->lookup_sink = NULL;
+        map->lookup_context = NULL;
+        map->lookup_unit = NULL;
+        reconcile_release(pipeline->mem, &stream->reconcile);
+        if (stream->new_defs.items) {
+            pipeline->mem->free(pipeline->mem, stream->new_defs.items);
+        }
+        if (stream->old_defs.items) {
+            pipeline->mem->free(pipeline->mem, stream->old_defs.items);
+        }
+    }
+    if (pipeline->dirty_prepared) {
+        markdown_core_key_index_free(&pipeline->dirty);
+    }
     markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_defs);
     markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_refs);
     markdown_core_lookup_recording_release(&pipeline->recording);
     markdown_core_unit_lookups_free(pipeline->mem, pipeline->bundles, pipeline->bundle_count);
-    reconcile_release(pipeline->mem, &pipeline->reconcile);
     if (pipeline->dependents) {
         size_t i;
         for (i = 0; i < pipeline->dependent_count; i++) {
@@ -3160,12 +3316,6 @@ static void incremental_pipeline_release(incremental_pipeline *pipeline) {
     }
     if (pipeline->line_offsets.items) {
         pipeline->mem->free(pipeline->mem, pipeline->line_offsets.items);
-    }
-    if (pipeline->new_defs.items) {
-        pipeline->mem->free(pipeline->mem, pipeline->new_defs.items);
-    }
-    if (pipeline->old_defs.items) {
-        pipeline->mem->free(pipeline->mem, pipeline->old_defs.items);
     }
     if (pipeline->stale_ids) {
         pipeline->mem->free(pipeline->mem, pipeline->stale_ids);

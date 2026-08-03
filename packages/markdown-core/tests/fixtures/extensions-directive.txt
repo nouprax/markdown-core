@@ -89,7 +89,7 @@ wins while their first source position is retained.
 .
 Document scope=1:1..1:77 children=1
 └── Paragraph scope=1:1..1:77 children=1
-    └── Directive scope=1:1..1:77 mode=embedded name="ordinary" attributes="{\"id\":\"last\",\"class\":\"blue\",\"key\":\"value\"}" children=1
+    └── Directive scope=1:1..1:77 mode=embedded name="ordinary" attributes="{\"id\":\"last\",\"class\":\"red green blue\",\"key\":\"value\"}" children=1
         └── DirectiveLabel scope=1:10..1:16 children=1
             └── Text scope=1:11..1:15 literal="label" children=0
 ````````````````````````````````
@@ -102,10 +102,12 @@ attributes and remain ordinary Markdown text.
 :open{title="value}
 .
 Document scope=1:1..2:19 children=1
-└── Paragraph scope=1:1..2:19 children=3
-    ├── Text scope=1:1..1:16 literal=":invalid{=value}" children=0
+└── Paragraph scope=1:1..2:19 children=5
+    ├── Directive scope=1:1..1:8 mode=embedded name="invalid" attributes=null children=0
+    ├── Text scope=1:9..1:16 literal="{=value}" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:19 literal=":open{title=\"value}" children=0
+    ├── Directive scope=2:1..2:5 mode=embedded name="open" attributes=null children=0
+    └── Text scope=2:6..2:19 literal="{title=\"value}" children=0
 ````````````````````````````````
 
 HTML-style `#id` and `.class` shortcuts are outside this extension's generic
@@ -117,9 +119,9 @@ key-value grammar and remain ordinary Markdown text.
 .
 Document scope=1:1..2:17 children=1
 └── Paragraph scope=1:1..2:17 children=3
-    ├── Text scope=1:1..1:22 literal=":shortcut{#identifier}" children=0
+    ├── Directive scope=1:1..1:22 mode=embedded name="shortcut" attributes="{\"id\":\"identifier\"}" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    └── Text scope=2:1..2:17 literal=":shortcut{.class}" children=0
+    └── Directive scope=2:1..2:17 mode=embedded name="shortcut" attributes="{\"class\":\"class\"}" children=0
 ````````````````````````````````
 
 Text directive labels can contain links.
@@ -205,8 +207,12 @@ Document scope=1:1..1:7 children=1
     └── Text scope=1:7..1:7 literal=":" children=0
 ````````````````````````````````
 
-Directive names can start with punctuation characters allowed by the syntax,
-but they cannot end with a hyphen or underscore.
+A directive name may contain a hyphen or underscore but may not begin or end
+with one. This example previously expected `:-a[]` and `:_a[]` to be
+directives; scripts/check-mdast-parity.mjs found the disagreement with
+micromark-extension-directive, which rejects both. Its prose documents only the
+trailing rule, so the leading one was confirmed against the implementation
+directly: `:-a[]` and `:_a[]` produce no directive there, while `:1a[]` does.
 
 ```````````````````````````````` example
 :a-[]
@@ -217,11 +223,30 @@ Document scope=1:1..3:5 children=1
 └── Paragraph scope=1:1..3:5 children=5
     ├── Text scope=1:1..1:5 literal=":a-[]" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    ├── Directive scope=2:1..2:5 mode=embedded name="-a" attributes=null children=1
-    │   └── DirectiveLabel scope=2:4..2:5 children=0
+    ├── Text scope=2:1..2:5 literal=":-a[]" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
-    └── Directive scope=3:1..3:5 mode=embedded name="_a" attributes=null children=1
-        └── DirectiveLabel scope=3:4..3:5 children=0
+    └── Text scope=3:1..3:5 literal=":_a[]" children=0
+````````````````````````````````
+
+A digit may begin a name, as it may in the reference implementation.
+
+```````````````````````````````` example
+:1a[]
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=1
+    └── Directive scope=1:1..1:5 mode=embedded name="1a" attributes=null children=1
+        └── DirectiveLabel scope=1:4..1:5 children=0
+````````````````````````````````
+
+An underscore may not end a name either, the same as a hyphen.
+
+```````````````````````````````` example
+:a_[]
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=1
+    └── Text scope=1:1..1:5 literal=":a_[]" children=0
 ````````````````````````````````
 
 Leaf directives use two colons on their own line. Repeated metadata keys use
@@ -231,7 +256,7 @@ their last value and are not projected onto HTML.
 ::youtube[Video of a *cat*]{vid=01ab2cd3efg class=embed class=featured}
 .
 Document scope=1:1..1:71 children=1
-└── DirectiveBlock scope=1:1..1:71 mode=standalone name="youtube" attributes="{\"vid\":\"01ab2cd3efg\",\"class\":\"featured\"}" children=1
+└── DirectiveBlock scope=1:1..1:71 mode=standalone name="youtube" attributes="{\"vid\":\"01ab2cd3efg\",\"class\":\"embed featured\"}" children=1
     └── DirectiveLabel scope=1:10..1:27 children=2
         ├── Text scope=1:11..1:21 literal="Video of a " children=0
         └── Emphasis scope=1:22..1:26 children=1
@@ -251,11 +276,11 @@ She is born.
 ::::
 .
 Document scope=1:1..7:4 children=1
-└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"blue\"}" children=2
+└── DirectiveBlock scope=1:1..7:4 mode=standalone name="spoiler" attributes="{\"id\":\"outer\",\"class\":\"red green blue\"}" children=2
     ├── Paragraph scope=2:1..2:8 children=1
     │   └── Text scope=2:1..2:8 literal="He dies." children=0
-    └── DirectiveBlock scope=4:1..7:4 mode=standalone name="spoiler" attributes=null children=1
-        └── Paragraph scope=5:1..7:4 children=1
+    └── DirectiveBlock scope=4:1..6:3 mode=standalone name="spoiler" attributes=null children=1
+        └── Paragraph scope=5:1..5:12 children=1
             └── Text scope=5:1..5:12 literal="She is born." children=0
 ````````````````````````````````
 
@@ -311,4 +336,322 @@ Document scope=1:1..1:5 children=1
     ├── Text scope=1:1..1:2 literal="a}" children=0
     └── Emphasis scope=1:3..1:5 children=1
         └── Text scope=1:4..1:4 literal="b" children=0
+````````````````````````````````
+
+`#name` and `.name` are shorthand for the `id` and `class` attributes. A
+shorthand value ends at the next marker, so `{.a.b}` is two classes rather
+than one class named `a.b`.
+
+```````````````````````````````` example
+:n{.a.b}
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=1
+    └── Directive scope=1:1..1:8 mode=embedded name="n" attributes="{\"class\":\"a b\"}" children=0
+````````````````````````````````
+
+`class` is the one attribute whose repeats accumulate, in source order, whether
+they were written as shorthand or as `class=`. Every other name keeps the last
+value.
+
+```````````````````````````````` example
+:n{class=x .y}
+.
+Document scope=1:1..1:14 children=1
+└── Paragraph scope=1:1..1:14 children=1
+    └── Directive scope=1:1..1:14 mode=embedded name="n" attributes="{\"class\":\"x y\"}" children=0
+````````````````````````````````
+
+`id` keeps the last value, like an ordinary name.
+
+```````````````````````````````` example
+:n{#a#b}
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=1
+    └── Directive scope=1:1..1:8 mode=embedded name="n" attributes="{\"id\":\"b\"}" children=0
+````````````````````````````````
+
+A shorthand marker with no name after it is not a valid attribute and
+invalidates the block, which then takes the malformed-block fallback: the name
+stands and the braces stay as text.
+
+```````````````````````````````` example
+:n{#}
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="n" attributes=null children=0
+    └── Text scope=1:3..1:5 literal="{#}" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:n{.}
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="n" attributes=null children=0
+    └── Text scope=1:3..1:5 literal="{.}" children=0
+````````````````````````````````
+
+An ordinary attribute whose name is as long as `class` is not treated as one.
+
+```````````````````````````````` example
+:n{other=1 .a .b}
+.
+Document scope=1:1..1:17 children=1
+└── Paragraph scope=1:1..1:17 children=1
+    └── Directive scope=1:1..1:17 mode=embedded name="n" attributes="{\"other\":\"1\",\"class\":\"a b\"}" children=0
+````````````````````````````````
+
+The separator goes before every class value once something has accumulated, an
+empty value included.
+
+```````````````````````````````` example
+:n{.a class="" .b}
+.
+Document scope=1:1..1:18 children=1
+└── Paragraph scope=1:1..1:18 children=1
+    └── Directive scope=1:1..1:18 mode=embedded name="n" attributes="{\"class\":\"a  b\"}" children=0
+````````````````````````````````
+
+An empty value at the front accumulates nothing, so it contributes no leading
+separator.
+
+```````````````````````````````` example
+:n{class="" .b}
+.
+Document scope=1:1..1:15 children=1
+└── Paragraph scope=1:1..1:15 children=1
+    └── Directive scope=1:1..1:15 mode=embedded name="n" attributes="{\"class\":\"b\"}" children=0
+````````````````````````````````
+
+Shorthand also reaches the label-close probe, which validates the attribute
+block after `]` before the label is accepted.
+
+```````````````````````````````` example
+:n[label]{#i .c}
+.
+Document scope=1:1..1:16 children=1
+└── Paragraph scope=1:1..1:16 children=1
+    └── Directive scope=1:1..1:16 mode=embedded name="n" attributes="{\"id\":\"i\",\"class\":\"c\"}" children=1
+        └── DirectiveLabel scope=1:3..1:9 children=1
+            └── Text scope=1:4..1:8 literal="label" children=0
+````````````````````````````````
+
+A text directive's colon may not sit next to another colon on either side. The
+trailing rule keeps `:red:` available to emoji; the leading one keeps a run of
+colons whole, so a run inside a paragraph is text rather than a shorter run
+plus a directive. `::name` and `:::name` at the start of a line are leaf and
+container directives and open through the block path instead.
+
+```````````````````````````````` example
+x ::a y
+.
+Document scope=1:1..1:7 children=1
+└── Paragraph scope=1:1..1:7 children=1
+    └── Text scope=1:1..1:7 literal="x ::a y" children=0
+````````````````````````````````
+
+A longer run behaves the same way; the directive never starts inside it.
+
+```````````````````````````````` example
+x ::::a y
+.
+Document scope=1:1..1:9 children=1
+└── Paragraph scope=1:1..1:9 children=1
+    └── Text scope=1:1..1:9 literal="x ::::a y" children=0
+````````````````````````````````
+
+A colon run with no space before it is text as well.
+
+```````````````````````````````` example
+x:::a
+.
+Document scope=1:1..1:5 children=1
+└── Paragraph scope=1:1..1:5 children=1
+    └── Text scope=1:1..1:5 literal="x:::a" children=0
+````````````````````````````````
+
+A quoted value must be separated from whatever follows it by whitespace or the
+closing brace. Without that rule an unterminated quote lets the block run on
+and swallow the rest of the paragraph.
+
+```````````````````````````````` example
+:n{a="x"b=1}
+.
+Document scope=1:1..1:12 children=1
+└── Paragraph scope=1:1..1:12 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="n" attributes=null children=0
+    └── Text scope=1:3..1:12 literal="{a=\"x\"b=1}" children=0
+````````````````````````````````
+
+An attribute name may not begin with punctuation, so a leading colon makes
+the whole block invalid and it falls back to text. `:` and `.` are allowed
+from the second character on, which is why `{a:b}` is a name.
+
+```````````````````````````````` example
+:x{:_a}
+.
+Document scope=1:1..1:7 children=1
+└── Paragraph scope=1:1..1:7 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:7 literal="{:_a}" children=0
+````````````````````````````````
+
+A symbol is punctuation for this rule too.
+
+```````````````````````````````` example
+:x{a$b}
+.
+Document scope=1:1..1:7 children=1
+└── Paragraph scope=1:1..1:7 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:7 literal="{a$b}" children=0
+````````````````````````````````
+
+Letters outside ASCII are names, not punctuation; the grammar is applied to
+code points rather than bytes.
+
+```````````````````````````````` example
+:x{中文=1}
+.
+Document scope=1:1..1:12 children=1
+└── Paragraph scope=1:1..1:12 children=1
+    └── Directive scope=1:1..1:12 mode=embedded name="x" attributes="{\"中文\":\"1\"}" children=0
+````````````````````````````````
+
+`:` and `.` inside a name are ordinary name characters.
+
+```````````````````````````````` example
+:x{a:b .c}
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=1
+    └── Directive scope=1:1..1:10 mode=embedded name="x" attributes="{\"a:b\":\"\",\"class\":\"c\"}" children=0
+````````````````````````````````
+
+A leaf directive is a single line: the next line starts new content rather than
+continuing it, unlike a container, which runs until its fence.
+
+```````````````````````````````` example
+::leaf[L]{a=b}
+after
+.
+Document scope=1:1..2:5 children=2
+├── DirectiveBlock scope=1:1..1:14 mode=standalone name="leaf" attributes="{\"a\":\"b\"}" children=1
+│   └── DirectiveLabel scope=1:7..1:9 children=1
+│       └── Text scope=1:8..1:8 literal="L" children=0
+└── Paragraph scope=2:1..2:5 children=1
+    └── Text scope=2:1..2:5 literal="after" children=0
+````````````````````````````````
+
+An `=` promises a value. With none before the block ends, the whole attribute
+block is malformed and its source stays text — an empty value would otherwise be
+indistinguishable from the valueless `{a}`, which means something else.
+
+```````````````````````````````` example
+:x{a=}t
+.
+Document scope=1:1..1:7 children=1
+└── Paragraph scope=1:1..1:7 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:7 literal="{a=}t" children=0
+````````````````````````````````
+
+The same when only whitespace separates the `=` from the closer, and when the
+block spans a line ending.
+
+```````````````````````````````` example
+:x{a= }t
+.
+Document scope=1:1..1:8 children=1
+└── Paragraph scope=1:1..1:8 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:8 literal="{a= }t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:x{a=
+}t
+.
+Document scope=1:1..2:2 children=1
+└── Paragraph scope=1:1..2:2 children=4
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    ├── Text scope=1:3..1:5 literal="{a=" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    └── Text scope=2:1..2:2 literal="}t" children=0
+````````````````````````````````
+
+An unquoted value may not contain `<`, `>`, `=`, or a backtick. Reaching one
+does not end the value, it makes the block malformed.
+
+```````````````````````````````` example
+:x{a=b<c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:10 literal="{a=b<c}t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:x{a=b>c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:10 literal="{a=b>c}t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:x{a=b=c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:10 literal="{a=b=c}t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:x{a=b`c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:2 mode=embedded name="x" attributes=null children=0
+    └── Text scope=1:3..1:10 literal="{a=b`c}t" children=0
+````````````````````````````````
+
+A brace is not in that set: it is an ordinary character inside an unquoted
+value, and a space ends the value and starts the next attribute's name.
+
+```````````````````````````````` example
+:x{a=b{c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:9 mode=embedded name="x" attributes="{\"a\":\"b{c\"}" children=0
+    └── Text scope=1:10..1:10 literal="t" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+:x{a=b c}t
+.
+Document scope=1:1..1:10 children=1
+└── Paragraph scope=1:1..1:10 children=2
+    ├── Directive scope=1:1..1:9 mode=embedded name="x" attributes="{\"a\":\"b\",\"c\":\"\"}" children=0
+    └── Text scope=1:10..1:10 literal="t" children=0
+````````````````````````````````
+
+An unquoted value may span a line ending before it starts; the value itself is
+what may not.
+
+```````````````````````````````` example
+:x{a=
+b}t
+.
+Document scope=1:1..2:3 children=1
+└── Paragraph scope=1:1..2:3 children=2
+    ├── Directive scope=1:1..2:2 mode=embedded name="x" attributes="{\"a\":\"b\"}" children=0
+    └── Text scope=2:3..2:3 literal="t" children=0
 ````````````````````````````````

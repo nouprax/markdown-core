@@ -186,6 +186,18 @@ public object MarkupWalker {
                 emptyList()
             }
 
+            is ReferenceDefinition -> {
+                emptyList()
+            }
+
+            is LinkReference -> {
+                content
+            }
+
+            is ImageReference -> {
+                content
+            }
+
             is CrossLink -> {
                 emptyList()
             }

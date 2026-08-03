@@ -64,6 +64,8 @@ export function relink(previous: Markup, revision: number, replacements: ChildRe
         case "strikethrough":
         case "link":
         case "image":
+        case "linkReference":
+        case "imageReference":
         case "tableCell":
         case "directiveLabel":
             return { ...previous, revision, content: replaced(previous.content, replacements) };
@@ -91,6 +93,7 @@ export function relink(previous: Markup, revision: number, replacements: ChildRe
                 revision,
                 label: directiveLabel(previous, replacements)
             };
+        case "referenceDefinition":
         case "thematicBreak":
         case "codeBlock":
         case "htmlBlock":

@@ -9,6 +9,7 @@ set(LIBRARY_SOURCES
     incremental.c
     lookups.c
     footnote.c
+    reference.c
     delta.c
     core-extensions.c
     table.c

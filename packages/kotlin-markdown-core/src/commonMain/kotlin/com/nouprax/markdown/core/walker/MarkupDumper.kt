@@ -213,12 +213,43 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
     override fun visit(node: FootnoteReference): DumpRecord =
         record("FootnoteReference", fields = listOf("id=${jsonString(node.label)}"))
 
+    override fun visit(node: ReferenceDefinition): DumpRecord =
+        record(
+            "ReferenceDefinition",
+            fields =
+                listOf(
+                    "label=${jsonString(node.label)}",
+                    "destination=${optionalString(node.destination)}",
+                    "title=${optionalString(node.title)}",
+                ),
+        )
+
+    override fun visit(node: LinkReference): DumpRecord =
+        referenceRecord("LinkReference", node.label, node.form, node.content.size)
+
+    override fun visit(node: ImageReference): DumpRecord =
+        referenceRecord("ImageReference", node.label, node.form, node.content.size)
+
     override fun visit(node: CrossLink): DumpRecord =
         record("CrossLink", fields = listOf("reference=${jsonString(node.reference)}"))
 
     override fun visit(node: Embed): DumpRecord =
         record("Embed", fields = listOf("reference=${jsonString(node.reference)}"))
 }
+
+private fun referenceRecord(
+    kind: String,
+    label: String,
+    form: ReferenceForm,
+    children: Int,
+): DumpRecord = DumpRecord(kind, listOf("label=${jsonString(label)}", "form=${form.token()}"), children)
+
+private fun ReferenceForm.token(): String =
+    when (this) {
+        ReferenceForm.FULL -> "full"
+        ReferenceForm.COLLAPSED -> "collapsed"
+        ReferenceForm.SHORTCUT -> "shortcut"
+    }
 
 private fun record(
     kind: String,

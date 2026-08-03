@@ -65,6 +65,18 @@ if(CMAKE_BUILD_TYPE STREQUAL "Tsan")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=thread")
 endif()
 
+# The coverage build type instruments the same graph the sanitizer types do,
+# so the gate measures exactly the product sources the correctness and
+# conformance suites exercise. It is unoptimized on purpose: at -O2 clang
+# merges and clones regions, and the counters then describe the optimizer's
+# view of the code rather than the reviewed source.
+if(CMAKE_BUILD_TYPE STREQUAL "Coverage")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-instr-generate -fcoverage-mapping -O0 -g")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping -O0 -g")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fprofile-instr-generate")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-instr-generate")
+endif()
+
 add_subdirectory(core)
 add_subdirectory(extensions)
 
@@ -96,5 +108,5 @@ endif()
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE
         "Release"
-        CACHE STRING "Choose the type of build, options are: Debug Profile Release Asan Ubsan." FORCE)
+        CACHE STRING "Choose the type of build, options are: Debug Profile Release Asan Ubsan Tsan Coverage." FORCE)
 endif(NOT CMAKE_BUILD_TYPE)

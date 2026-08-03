@@ -482,10 +482,16 @@ static void formula_extension_accessors(test_batch_runner *runner) {
 }
 
 static void directive_extension_accessors(test_batch_runner *runner) {
+    // `class` accumulates across repeats rather than keeping the last value,
+    // as it does in micromark-extension-directive; every other name still
+    // keeps the last.
     const char *source_attributes = "{\"id\":\"123\",\"muted\":\"true\",\"title\":\"My Video\","
-                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"blue\"}";
+                                    "\"bare\":\"\",\"dup\":\"last\",\"class\":\"red green blue\"}";
     markdown_core_node *doc = parse_with_directive_extension(
-        ":-a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
+        // The name is only a carrier here; this case is about attribute
+        // accessors. It used to read `:-a[]`, which a directive name may not
+        // begin with — see extensions-directive.txt.
+        ":a[]{id=first muted=true title=\"My Video\" bare dup=first dup=last "
         "class=red class=green class=blue id=123}\n"
     );
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
@@ -507,7 +513,7 @@ static void directive_extension_accessors(test_batch_runner *runner) {
     size_t i;
 
     STR_EQ(runner, markdown_core_node_get_type_string(directive), "directive", "directive inline type string");
-    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "-a", "directive name getter");
+    STR_EQ(runner, markdown_core_extensions_get_directive_name(directive), "a", "directive name getter");
     STR_EQ(
         runner,
         markdown_core_extensions_get_directive_attributes(directive),
@@ -1618,6 +1624,30 @@ static void source_pos_inlines(test_batch_runner *runner) {
     );
 }
 
+/* A reference names a label; which definition that resolves to is an answer,
+ * and the destination is stated once at that definition. Retargeting the
+ * definition therefore moves this result without touching the reference. */
+static int reference_destination_is(
+    const markdown_core_session *session,
+    const markdown_core_node *node,
+    const char *expected
+) {
+    markdown_core_reference_info info;
+    const markdown_core_node *definition;
+    markdown_core_string_view label;
+    markdown_core_string_view destination;
+    markdown_core_string_view title;
+    size_t length = strlen(expected);
+
+    if (!node || !markdown_core_session_reference_info(session, markdown_core_node_get_id(node), &info) ||
+        info.definition == 0) {
+        return 0;
+    }
+    definition = markdown_core_session_node_by_id(session, info.definition);
+    return definition && markdown_core_node_reference_definition_properties(definition, &label, &destination, &title) &&
+           destination.length == length && memcmp(destination.data, expected, length) == 0;
+}
+
 static void ref_source_pos(test_batch_runner *runner) {
     static const char markdown[] = "Let's try [reference] links.\n"
                                    "\n"
@@ -1627,13 +1657,14 @@ static void ref_source_pos(test_batch_runner *runner) {
         runner,
         markdown,
         0,
-        "Document scope=1:1..3:40 children=1\n"
-        "└── Paragraph scope=1:1..1:28 children=3\n"
-        "    ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
-        "    ├── Link scope=1:11..1:21 destination=\"https://github.com\" "
-        "title=\"GitHub\" children=1\n"
-        "    │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
-        "    └── Text scope=1:22..1:28 literal=\" links.\" children=0\n",
+        "Document scope=1:1..3:40 children=2\n"
+        "├── Paragraph scope=1:1..1:28 children=3\n"
+        "│   ├── Text scope=1:1..1:10 literal=\"Let's try \" children=0\n"
+        "│   ├── LinkReference scope=1:11..1:21 label=\"reference\" form=shortcut children=1\n"
+        "│   │   └── Text scope=1:12..1:20 literal=\"reference\" children=0\n"
+        "│   └── Text scope=1:22..1:28 literal=\" links.\" children=0\n"
+        "└── ReferenceDefinition scope=3:1..3:40 label=\"reference\" "
+        "destination=\"https://github.com\" title=\"GitHub\" children=0\n",
         "reference link scopes are as expected"
     );
 }
@@ -2334,8 +2365,14 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
        "block-label lookup baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        // The leading reference definition is a node now, so it is the
+        // document's first child and the directive follows it.
         const markdown_core_node *directive = markdown_core_node_get_first_child(root);
-        const markdown_core_node *label = markdown_core_node_directive_label(directive);
+        const markdown_core_node *label;
+        while (directive && markdown_core_node_get_kind(directive) == MARKDOWN_CORE_KIND_REFERENCE_DEFINITION) {
+            directive = markdown_core_node_get_next_sibling(directive);
+        }
+        label = markdown_core_node_directive_label(directive);
         const markdown_core_node *label_text = markdown_core_node_get_first_child(label);
         const markdown_core_node *body = markdown_core_node_get_next_sibling(label);
         const markdown_core_node *link = NULL;
@@ -2345,11 +2382,9 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         markdown_core_footnote_info footnote_info;
         const markdown_core_node_id *footnote_ids = NULL;
         size_t footnote_count;
-        markdown_core_string_view destination;
-        markdown_core_string_view title;
 
         for (child = label_text; child; child = markdown_core_node_get_next_sibling(child)) {
-            if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_LINK) {
+            if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_LINK_REFERENCE) {
                 link = child;
             } else if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE) {
                 footnote_reference = child;
@@ -2391,8 +2426,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         INT_EQ(runner, (int)label_text_scope.start.column, 9, "block label Text starts inside DirectiveLabel");
         INT_EQ(runner, (int)label_text_scope.end.column, 12, "block label Text ends inside DirectiveLabel");
         OK(runner,
-           markdown_core_node_link_properties(link, &destination, &title) && destination.length == 2 &&
-               memcmp(destination.data, "/a", 2) == 0,
+           reference_destination_is(session, link, "/a"),
            "block-label reference resolves inside its canonical DirectiveLabel");
         OK(runner,
            footnote_reference && markdown_core_node_get_parent(footnote_reference) == label && footnote_definition &&
@@ -2431,16 +2465,14 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         const markdown_core_node_id *ids = NULL;
         const markdown_core_node_id *footnote_ids = NULL;
         markdown_core_footnote_info footnote_info;
-        markdown_core_string_view destination;
-        markdown_core_string_view title;
         size_t count;
         OK(runner,
            directive && label && markdown_core_node_directive_label(directive) == label &&
                markdown_core_node_get_parent(label) == directive,
            "reference retarget preserves DirectiveLabel id and parent edge");
         OK(runner,
-           label && markdown_core_node_get_revision(label) > label_revision,
-           "changed label descendant bubbles the stable DirectiveLabel");
+           label && markdown_core_node_get_revision(label) == label_revision,
+           "retargeting a definition leaves the DirectiveLabel's revision alone");
         OK(runner,
            label_text && markdown_core_node_get_parent(label_text) == label,
            "reparsed block label content remains owned by DirectiveLabel");
@@ -2448,12 +2480,11 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            label_text && markdown_core_node_get_revision(label_text) == label_text_revision,
            "unmodified block-label Text keeps its revision");
         OK(runner,
-           link && markdown_core_node_link_properties(link, &destination, &title) && destination.length == 2 &&
-               memcmp(destination.data, "/b", 2) == 0,
-           "lookup attribution survives canonical DirectiveLabel reparsing");
+           reference_destination_is(session, link, "/b"),
+           "the retargeted definition answers the block-label reference");
         OK(runner,
-           link && markdown_core_node_get_revision(link) > link_revision,
-           "changed block-label reference advances its revision");
+           link && markdown_core_node_get_revision(link) == link_revision,
+           "the reference node itself is untouched by the retarget");
         OK(runner,
            footnote_reference && markdown_core_node_get_parent(footnote_reference) == label &&
                markdown_core_node_get_revision(footnote_reference) == footnote_reference_revision,
@@ -2476,14 +2507,14 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
                markdown_core_node_get_revision(body) == body_revision,
            "block-label reparse preserves the block body's identity and revision");
         count = markdown_core_delta_changed(changes, &ids);
-        OK(runner, delta_contains(ids, count, link_id), "re-resolved block-label Link is changed");
+        OK(runner, !delta_contains(ids, count, link_id), "the reference is not classified as changed");
         OK(runner, !delta_contains(ids, count, label_id), "stable DirectiveLabel is not classified as changed");
         OK(runner,
            !delta_contains(ids, count, footnote_reference_id),
            "unmodified block-label footnote is absent from changed delta");
         count = markdown_core_delta_bubbled(changes, &ids);
-        OK(runner, delta_contains(ids, count, label_id), "re-resolved Link bubbles its DirectiveLabel");
-        OK(runner, delta_contains(ids, count, directive_id), "re-resolved block-label Link bubbles its directive");
+        OK(runner, !delta_contains(ids, count, label_id), "nothing bubbles through the DirectiveLabel");
+        OK(runner, !delta_contains(ids, count, directive_id), "nothing bubbles through the directive");
         label_revision = markdown_core_node_get_revision(label);
     }
 
@@ -2637,9 +2668,14 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
 
 static void session_footnote_queries(test_batch_runner *runner) {
     /* Source-faithful tree + index-backed queries: [^b] is used twice and
-     * numbered first, [^A] case-folds onto [^a], [^missing] stays an
-     * unresolved reference, the duplicate [^b] definition loses to the
-     * earlier one, and [^u] is retained unused. */
+     * numbered first, [^A] case-folds onto [^a], the duplicate [^b]
+     * definition loses to the earlier one, and [^u] is retained unused.
+     *
+     * `[^missing]` names no definition, so as of the three-axis unification
+     * it is not a reference at all — it is the literal text the author wrote,
+     * merged into the text node before it. There is therefore no node to ask
+     * a query about, which is the point: "unresolved" stopped being a state a
+     * consumer has to handle. */
     const char *source = "b1[^b] a1[^A] b2[^b] n1[^missing]\n"
                          "\n"
                          "[^a]: alpha body\n"
@@ -2648,7 +2684,7 @@ static void session_footnote_queries(test_batch_runner *runner) {
                          "[^u]: unused body\n";
     markdown_core_error *error = NULL;
     markdown_core_session *session = markdown_core_session_open(NULL, &error);
-    markdown_core_node_id ref_b1, ref_a, ref_b2, ref_missing, def_a, def_b, def_b_dup, def_u, paragraph_id;
+    markdown_core_node_id ref_b1, ref_a, ref_b2, def_a, def_b, def_b_dup, def_u, paragraph_id;
     markdown_core_footnote_info info;
 
     OK(runner, session != NULL, "footnote query session opens");
@@ -2662,14 +2698,14 @@ static void session_footnote_queries(test_batch_runner *runner) {
         const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *child = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *tail;
         paragraph_id = markdown_core_node_get_id(paragraph);
         ref_b1 = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
         child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
         ref_a = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
         child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
         ref_b2 = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
-        child = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
-        ref_missing = markdown_core_node_get_id(markdown_core_node_get_next_sibling(child));
+        tail = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(child));
 
         child = markdown_core_node_get_next_sibling(paragraph);
         def_a = markdown_core_node_get_id(child);
@@ -2680,8 +2716,12 @@ static void session_footnote_queries(test_batch_runner *runner) {
         child = markdown_core_node_get_next_sibling(child);
         def_u = markdown_core_node_get_id(child);
         OK(runner,
-           ref_b1 && ref_a && ref_b2 && ref_missing && def_a && def_b && def_b_dup && def_u,
+           ref_b1 && ref_a && ref_b2 && def_a && def_b && def_b_dup && def_u,
            "footnote nodes all carry ids");
+        OK(runner,
+           tail && markdown_core_node_get_kind(tail) == MARKDOWN_CORE_KIND_TEXT &&
+               !markdown_core_node_get_next_sibling(tail),
+           "the undefined [^missing] is literal text, not a trailing reference");
     }
 
     OK(runner,
@@ -2696,10 +2736,6 @@ static void session_footnote_queries(test_batch_runner *runner) {
        markdown_core_session_footnote_info(session, ref_a, &info) && info.definition == def_a && info.number == 2 &&
            info.reference_ordinal == 1 && info.reference_count == 1,
        "[^A] case-folds onto [^a] and is number 2");
-    OK(runner,
-       markdown_core_session_footnote_info(session, ref_missing, &info) && info.definition == 0 && info.number == 0 &&
-           info.reference_ordinal == 1 && info.reference_count == 1,
-       "unresolved reference reports no definition and no number");
 
     OK(runner,
        markdown_core_session_footnote_info(session, def_b, &info) && info.definition == def_b && info.number == 1 &&
@@ -2818,20 +2854,39 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     markdown_core_delta_free(changes);
     changes = NULL;
 
-    /* Relabeling [^x]'s definition to [^z] flips the reference back to
-     * unresolved: another revision-only change for the reference. The "x"
-     * of "[^x]: X" sits at byte 31 of the edited text
-     * ("# zero[^y]\n\n" + "one[^x] two[^y]\n" + "\n" + "[^"). */
+    /* Relabeling [^x]'s definition to [^z] takes the label's definedness
+     * away, and an undefined [^x] is literal text: unlike the ordinal shift
+     * above, this is a *tree* change in a paragraph the edit never touched.
+     * It is the reason the footnote definitions live in a session-persistent
+     * map with the reference definitions' retraction machinery — the commit
+     * has to notice the flip and re-refine the paragraph that read the label,
+     * which sits above the reparsed region. The "x" of "[^x]: X" sits at byte
+     * 31 of the edited text ("# zero[^y]\n\n" + "one[^x] two[^y]\n" + "\n" +
+     * "[^"). */
     {
-        uint64_t ref_x_rev_before = markdown_core_node_get_revision(markdown_core_session_node_by_id(session, ref_x));
+        uint64_t paragraph_rev_before =
+            markdown_core_node_get_revision(markdown_core_session_node_by_id(session, paragraph_id));
         markdown_core_session_edit(session, 31, 32, (const uint8_t *)"z", 1, &error);
         OK(runner, markdown_core_session_commit(session, &changes, &error), "resolution flip commit succeeds");
-        OK(runner,
-           markdown_core_session_footnote_info(session, ref_x, &info) && info.definition == 0 && info.number == 0,
-           "[^x] became unresolved");
-        OK(runner,
-           markdown_core_node_get_revision(markdown_core_session_node_by_id(session, ref_x)) > ref_x_rev_before,
-           "the unresolved flip advances the reference revision");
+        {
+            const markdown_core_node *paragraph = markdown_core_session_node_by_id(session, paragraph_id);
+            const markdown_core_node *child = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL;
+            const markdown_core_node *second = child ? markdown_core_node_get_next_sibling(child) : NULL;
+            markdown_core_string_view literal = {NULL, 0};
+            OK(runner,
+               child && markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_TEXT &&
+                   markdown_core_node_literal(child, &literal) && literal.length == 11 &&
+                   memcmp(literal.data, "one[^x] two", 11) == 0,
+               "the untouched paragraph re-refined [^x] into its literal text");
+            OK(runner,
+               second && markdown_core_node_get_kind(second) == MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE &&
+                   markdown_core_node_footnote_id(second, &literal) && literal.length == 1 &&
+                   literal.data[0] == 'y' && !markdown_core_node_get_next_sibling(second),
+               "[^y] is the only reference the paragraph has left");
+            OK(runner,
+               paragraph && markdown_core_node_get_revision(paragraph) > paragraph_rev_before,
+               "the re-refined paragraph's revision advances");
+        }
         {
             const markdown_core_node_id *ids = NULL;
             size_t count = markdown_core_session_footnotes(session, &ids);

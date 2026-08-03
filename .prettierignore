@@ -32,3 +32,8 @@ build/
 .build/
 .gradle/
 pnpm-lock.yaml
+
+# Written by scripts/check-coverage.mjs --update-ledger. Reformatting it
+# here would put every ledger update in permanent conflict with the gate that
+# writes it.
+specs/coverage/policy.json

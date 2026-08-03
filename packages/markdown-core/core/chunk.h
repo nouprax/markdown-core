@@ -115,7 +115,13 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(cons
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_dup(const markdown_core_chunk *ch, markdown_core_bufsize pos, markdown_core_bufsize len) {
+/* Returns a chunk viewing `len` bytes of `ch` from `pos`. It copies nothing:
+ * the result borrows `ch`'s storage and is valid only while that storage is,
+ * which is why `alloc` stays 0 and freeing it is a no-op. A caller whose
+ * chunk outlives the source — any chunk stored on a node — must follow this
+ * with markdown_core_chunk_to_cstr to take ownership. It was called `_dup`
+ * until 2026-08-02, which read as a copy and is not one. */
+markdown_core_chunk_borrow(const markdown_core_chunk *ch, markdown_core_bufsize pos, markdown_core_bufsize len) {
     markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
     return c;
 }
@@ -140,7 +146,7 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_buf_detach(m
  * allocated; forces a newly allocated chunk. */
 static MARKDOWN_CORE_INLINE markdown_core_chunk
 markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
+    markdown_core_chunk r = markdown_core_chunk_borrow(c, 0, c->len);
     markdown_core_chunk_ltrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {
         /* Callers rely on an owned copy; report the loss as empty instead of
@@ -153,7 +159,7 @@ markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk
 markdown_core_chunk_rtrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
+    markdown_core_chunk r = markdown_core_chunk_borrow(c, 0, c->len);
     markdown_core_chunk_rtrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;

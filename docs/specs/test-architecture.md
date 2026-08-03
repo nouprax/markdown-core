@@ -13,6 +13,7 @@
 | `pnpm test:<platform>` | 直接调用该 execution platform 的具名原生 correctness target |
 | `pnpm conformance:<platform>` | 直接调用该 execution platform 的具名原生 conformance target |
 | `pnpm benchmark:<platform>` | 直接调用该 execution platform 的具名原生 benchmark target；没有可信测量环境的平台不暴露空 target |
+| `pnpm coverage:<platform>` | 在该 execution platform 的插桩构建上运行其 correctness 与 conformance suites，并把 toolchain-native 报告交给全仓唯一的 coverage gate |
 
 约束:
 
@@ -79,9 +80,11 @@ Required CI 使用 build-once/test-many DAG，而不是把 build 和多个 suite
 5. `Test - <platform>` correctness、
    conformance、sanitizer、browser、simulator 与 page-size leaves 一次性并行启动，各自下载 artifact，
    只安装运行环境并调用原生 runner 的 no-build 模式；
-6. `Tests - Ready` 与 `Benchmarks - Ready` 分别 fail-closed 聚合普通 test 与 benchmark 层，稳定的
-   `Required gates` 同时依赖这两个并列聚合点；任一前置层失败导致 consumer skipped 时，对应聚合点
-   也必须失败而不是把 skipped 当成成功；
+6. `Tests - Ready`、`Benchmarks - Ready` 与 `Coverage - Ready` 分别 fail-closed 聚合 test、benchmark
+   与 coverage 层，稳定的 `Required gates` 同时依赖这三个并列聚合点；任一前置层失败导致 consumer
+   skipped 时，对应聚合点也必须失败而不是把 skipped 当成成功。coverage 层直接依赖 health barrier
+   而不是 build artifact：它必须自行编译插桩树，这正是 test consumer 层所禁止的，因此它是独立层
+   而非 test consumer；
 7. consumer job 中出现 compiler、Gradle build task、`swift build`、`xcodebuild build`、`emcc` 或
    publication 即为架构回归；cache 只能加速 producer，不能代替可校验 artifact；
 8. packaging/deployment/consumer contract 本身属于 build/resolve 验证时可保持独立 contract job，
@@ -236,6 +239,144 @@ execution platform 独立的 required gate，也不复制 suite/case discovery�
   确定性)并与 expected byte-for-byte 比较。`spec_runner --rewrite` 是显式维护
   模式,用当前 parser 重新生成 expected;生成的 fixture diff 必须经人工审查后
   才能提交,不得用于隐藏未经批准的 parser drift。
+
+## 5.0 外部权威对标门禁
+
+仓库里除这两个门禁外，全部测试都是拿 Markdown Core 和它自己比。spec fixtures 看着
+像外部权威（装的是 CommonMark/GFM 官方例子），但 expected 块是本解析器自己生成的
+canonical AST dump，只钉住"别再变"，不证明"是对的"。
+
+| 门禁 | 权威 | 覆盖的语义域 |
+| --- | --- | --- |
+| `pnpm check:upstream-parity` | cmark-gfm 0.29.0.gfm.13（commit 锁定） | CommonMark / GFM 基础语言 |
+| `pnpm check:mdast-parity` | unified / remark（pnpm lockfile 锁定） | directive、math、footnote 位置、引用链接模型 |
+
+两者都要求：差异要么是缺陷，要么是登记在 `specs/*/deltas.json` 并写进
+`canonical-ast.md` 的有意差异；**已登记的差异必须仍然复现**，否则判失败——上游哪天
+把某条修了，会变成需要评审的事件而不是一条没人再看的登记。未映射的节点种类同样判
+失败：两个未映射的种类会渲染成相同字符串从而"比较相等"，那是最容易假通过的形态。
+
+### 语料范围：oracle 能判的 golden 一律送进去
+
+**凡是某个 oracle 有能力判定的 golden 语料，必须出现在该 oracle 的 corpus 里。**
+一份从未被任何 oracle 读过的 golden，只是"输出没变过"的记录——它同样忠实地钉住
+缺陷和正确行为，而且分不出哪个是哪个。这条规则曾经被违反：网关最初只跑 `spec.txt`，
+`regression.txt`、`extensions.txt`、`smart_punct.txt` 与全部 extension fixture
+从未对过外部权威。
+
+反过来，**oracle 没有能力判定的东西不得登记为分歧**。登记会读成"权威不同意"，而
+实际情况是它根本没被问到。这类范围写在 `deltas.json` 的 `oracle.notAnAuthorityFor`
+里，不写进分歧表。
+
+### 一条 delta 必须被网关执行，而不只是被描述
+
+`deltas.json` 里的每一条都必须落到两种机制之一，选哪种本身是对"这个差异有多宽"的
+断言：
+
+- **model delta** —— 差异是一条规则，构造出现在哪里就在哪里出现。它实现为
+  normalizer 里的投影（如 `footnote-resolution-model` 把上游的脚注解析模型施加到
+  本仓库的源忠实树上），语料再宽也不需要新增条目。
+- **input delta** —— 上游某个函数里的点状行为，没有规则可投影（如
+  `tasklist-checked-marker` 的子串搜索）。它按精确输入登记，且必须仍在语料中出现：
+  一条不再被触及的登记和一条不再复现的登记是同一种腐烂。
+
+两种都不是的条目判失败：网关不作用于它的 delta 是散文，不是规则。
+
+因为要编译两个 parser，它们和 coverage 一样是自带编译的独立层，不属于禁止编译器的
+test consumer 层。
+
+### golden 为什么不能被 oracle 取代
+
+自然的想法是：既然有了外部权威，就让 oracle 直接当 golden，删掉自产的 expected 块。
+不行——两者回答的不是同一个问题。oracle 回答"我们和参考实现是否一致"，golden 回答
+"我们的输出是否变了"。后者覆盖前者够不到的部分，而那部分不小：
+
+- **oracle 比较的是投影，不是完整 canonical AST。** 上游 XML writer 不输出表格列
+  对齐、fenced/indented 标志、fence 是否闭合、inline code 的 placement、脚注标签；
+  这些字段在 oracle 那边根本没有对应物可比。它们只由 golden 钉住。
+- **两个 oracle 都不比较 scope 位置。** 本轮修复改动了三处 golden 的位置，全部只有
+  golden 抓到。
+- **`cross_link` / `embed` 没有任何 oracle。** 上游侧只能验证"扩展关闭时不干扰"。
+- **golden 在纯 CTest 图里跑，不依赖外部 toolchain。** oracle 需要编译 cmark-gfm 和
+  安装 remark；把正确性判定挂到它们上面，等于每次跑测试都要拉起两套外部工具链。
+- **已登记的有意差异，本来就只能由 golden 钉住**——那些地方参考实现按定义是错的。
+
+所以分工是固定的：**oracle 判定它有权威的部分，golden 钉住其余的全部。** golden 的
+自产性不是问题，只要它能被 oracle 判定的部分都真的送进了 oracle——这正是上面那条
+语料范围规则存在的原因。
+
+## 5.1 行为钉住覆盖率门禁
+
+**这个门禁的唯一目的是：证明重构不改变 `source -> canonical AST` 的输出。**
+它不是代码质量分，也绝不能被用来把当前行为登记为"可接受"。
+
+因此产出者只运行**断言解析输出**的套件（`spec`、`extensions`、`regression`、
+`conformance`、`equivalence`、`pathological`）。这条口径是全部含义所在：一个被
+覆盖的分支，是"它的行为若改变会有 golden 断言失败"的分支；一个未覆盖的分支，
+是重构可以静默改掉而无人发现的行为。跑过代码但不断言解析输出的套件
+（`api`、`facade`、`consumer`、`fuzz`、`packaging`）不计入——它们提高数字却不
+提供任何回归保护。
+
+由此，`unpinned` 记录的是**未受保护的行为面**，不是"欠写的单元测试"。它靠**新增
+语料输入**变小，不靠新增执行代码的测试：一个提高覆盖率却不断言解析输出的测试，
+不偿还任何东西。
+
+生成代码**不可豁免**。没有人评审生成代码，它的行为比手写代码更需要被钉住而不是
+更不需要。`exempt` 唯一正当的理由是"任何 source 输入都无法到达该文件"。而任何
+source 输入都到达不了的代码，是缺陷或死代码，需要决策，**不得**登记为 `unpinned`
+——登记它等于承诺一个写不出来的测试。
+
+全仓只有一份政策数据 `specs/coverage/policy.json` 和一个执行器
+`scripts/check-coverage.mjs`；每个 execution platform 只负责产出 toolchain-native
+报告，不得自带阈值、豁免或第二套"什么算已覆盖"的定义。
+
+| 平台 | 产出者 | 报告格式 |
+| --- | --- | --- |
+| `c-host` | `scripts/coverage-c-host.sh`（CMake `coverage` preset + llvm-cov） | llvm-cov export |
+| `swift-macos` | `scripts/coverage-swift-macos.sh`（SwiftPM `--enable-code-coverage`） | llvm-cov export |
+| `kotlin-jvm` | `scripts/coverage-kotlin-jvm.sh`（JaCoCo，JVM target） | JaCoCo XML |
+| `es-node` | `scripts/coverage-es-node.sh`（Node 内置 coverage） | LCOV |
+
+目标是 lines/functions/branches 全部 100%。落地规则四条：
+
+- 政策中**没有 `unpinned` 条目的 measured file 必须 100%**——这是新增代码从诞生
+  起就必须满足的门禁；
+- **`unpinned` 条目是该文件未钉住数的上界**，只能减少，不能增加；
+- **`exempt` 条目把文件移出测量**，仅在"任何 source 输入都无法到达该文件"时正当；
+- 平台**无法产出某项 metric 时必须在 `unsupportedMetrics` 中声明并写明理由**。
+
+`unpinned` 用上界而非等值比较，是因为同一份源码在 required jobs 的不同操作系统上
+编译结果不同，等值比较会把无关的平台差异变成覆盖率失败。条目变松时每次运行都
+会报告，并由 `--update-ledger` 重写。
+
+**归属必须按代码的真实来源文件计算。** `llvm-cov` 的 per-file summary 把一个函数
+的全部分支记在该函数**起始**所在的文件上，因此被预处理器展开进函数体的代码（函数体内
+`#include` 的生成表、header 里的 inline helper）会被记到宿主文件头上，而其自身报告
+0/0 看起来完全覆盖。所以 llvm-cov 产出者一律导出全量报告而非 `-summary-only`，由
+`scripts/lib/coverage.mjs` 从 function-level 记录按各分支自己的 `fileId` 重算；
+执行器直接拒绝 `-summary-only` 报告——那不是"信息少一点"，而是朝着好看方向错的。
+
+覆盖率门禁真正的失败模式不是数字低，而是数字高却什么都没测。三条反粉饰规则：
+
+- `minimumMeasuredFiles` 记录报告应覆盖的文件数下界。文件整体从报告中消失
+  （插桩器静默跳过无法读取的 class、filter 不再匹配）否则会被读成改进；
+- 报告中无法映射到仓库路径的文件**直接判失败**，不得静默丢弃；
+- 某项 required metric **完全没有计数**时判失败——插桩器悄悄停止产出分支数据，
+  否则会通过全部逐文件规则却什么都没证明。
+
+C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `complexity`：那些 case
+断言的是**用时**而不是输出，且其执行路径受调度影响，会让 required gate 变成 flaky。
+它们在普通 preset 下仍是 required gate，被排除的是覆盖率归属，不是测试本身。
+
+`unpinned` 不是永久豁免。其收敛排期由
+`docs/migration/2026-08-01-incremental-canonical-ast-plan.md` 的里程碑拥有；
+该文档同时记录 M7 的验收方式：同一份语料在新旧实现下的 canonical dump 必须逐字节
+相同。
+
+已知未覆盖到的一层：`swift-macos`、`kotlin-jvm`、`es-node` 三个 producer 目前仍运行
+各自的完整套件，而不是按上面的口径只选断言解析输出的套件。三端 binding 主要是
+对 C 结果的再暴露，`source -> AST` 的真值在 C 侧，但这三个数字因此**不是**行为钉住
+覆盖率，读的时候不能与 `c-host` 同口径比较。对齐它们属于后续工作。
 
 ## 6. 通用执行策略
 

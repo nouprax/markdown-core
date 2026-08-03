@@ -141,3 +141,79 @@ Document scope=1:1..1:55 children=1
     └── Emphasis scope=1:51..1:55 children=1
         └── Text scope=1:52..1:54 literal="\b b" children=0
 ````````````````````````````````
+
+An embed marker takes precedence over CommonMark's nested-bracket image
+form, so a document that relies on that form parses differently once embeds
+are enabled. The parity gate proves the collision is opt-in: with the
+extension off this is upstream's image.
+
+```````````````````````````````` example
+![[[foo](uri1)](uri2)](uri3)
+.
+Document scope=1:1..1:28 children=1
+└── Paragraph scope=1:1..1:28 children=3
+    ├── Text scope=1:1..1:3 literal="![[" children=0
+    ├── Link scope=1:4..1:14 destination="uri1" title=null children=1
+    │   └── Text scope=1:5..1:7 literal="foo" children=0
+    └── Text scope=1:15..1:28 literal="](uri2)](uri3)" children=0
+````````````````````````````````
+
+A cross-link takes the innermost bracket pair, so a triple-bracket reference
+form becomes a cross-link rather than a link reference.
+
+```````````````````````````````` example
+[[[foo]]]
+
+[[[foo]]]: /url
+.
+Document scope=1:1..3:15 children=2
+├── Paragraph scope=1:1..1:9 children=1
+│   └── CrossLink scope=1:1..1:9 reference="[foo]" children=0
+└── Paragraph scope=3:1..3:15 children=2
+    ├── CrossLink scope=3:1..3:9 reference="[foo]" children=0
+    └── Text scope=3:10..3:15 literal=": /url" children=0
+````````````````````````````````
+
+A cross-link reference is taken verbatim, emphasis markers included; it is
+not parsed as inline content.
+
+```````````````````````````````` example
+[[*foo* bar]]
+
+[*foo* bar]: /url "title"
+.
+Document scope=1:1..3:25 children=2
+├── Paragraph scope=1:1..1:13 children=1
+│   └── CrossLink scope=1:1..1:13 reference="*foo* bar" children=0
+└── ReferenceDefinition scope=3:1..3:25 label="*foo* bar" destination="/url" title="title" children=0
+````````````````````````````````
+
+An embed shadows a reference image whose label is itself bracketed.
+
+```````````````````````````````` example
+![[foo]]
+
+[[foo]]: /url "title"
+.
+Document scope=1:1..3:21 children=2
+├── Paragraph scope=1:1..1:8 children=1
+│   └── Embed scope=1:1..1:8 reference="foo" children=0
+└── Paragraph scope=3:1..3:21 children=2
+    ├── CrossLink scope=3:1..3:7 reference="foo" children=0
+    └── Text scope=3:8..3:21 literal=": /url \"title\"" children=0
+````````````````````````````````
+
+A backslash-escaped closing bracket keeps a definition label intact and does
+not open a cross-link.
+
+```````````````````````````````` example
+[bar\\]: /uri
+
+[bar\\]
+.
+Document scope=1:1..3:7 children=2
+├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" destination="/uri" title="" children=0
+└── Paragraph scope=3:1..3:7 children=1
+    └── LinkReference scope=3:1..3:7 label="bar\\\\" form=shortcut children=1
+        └── Text scope=3:2..3:6 literal="bar\\" children=0
+````````````````````````````````

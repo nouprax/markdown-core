@@ -35,7 +35,7 @@ surfaces.
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is an `O(log n)` query against stable extents; a position-only shift produces no diff entry at all |
-| Footnote and reference indexes are live-session queries | Parser-defined sites, buckets, winners, negative resolutions, and ordered relations are immutable data in the one `Document` |
+| Footnote and reference indexes are live-session queries | Parser-defined sites, buckets, winners, negative resolutions, and ordering are immutable data in the one `Document`, asked of it by `MarkupID` |
 | The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
 
 `canonical-ast.md`, `sessions-and-deltas.md`, public headers, bindings,
@@ -92,7 +92,7 @@ There must not be:
 - a nested AST plus a separately authoritative normalized AST;
 - a compatibility `Document` reconstructed from another public model;
 - two independently versioned copies of one field, text, edge, source extent,
-  or relation;
+  or parser answer;
 - a synchronization protocol between parser-owned semantic surfaces; or
 - correctness that depends on replaying every `Delta`.
 
@@ -236,7 +236,7 @@ preprocessor must splice a header in before parsing because the header can
 change how the unit parses; a TeX or typst import must expand during
 processing for the same reason, since a macro definition changes later
 tokenization. Markdown has no construct by which a target affects its host's
-syntax or its host's relation answers, so an embed is an unresolved external
+syntax or its host's parser answers, so an embed is an unresolved external
 reference, and resolving it can wait until the composer holds every unit it
 needs. That is why a model borrowed from those systems does not transfer here,
 and it is the only property this boundary actually rests on: were Markdown
@@ -247,7 +247,7 @@ Composition is cheap to own because the parser hands it working primitives:
 stable `MarkupID`s to key its own structures by (5.2); immutable
 self-contained documents with structural sharing, so it can hold many units at
 once and no unit's commit can invalidate another's (4.2, 14.4.7); and
-per-document relation answers, so it knows exactly what remains unresolved
+per-document parser answers, so it knows exactly what remains unresolved
 (6.3).
 
 This is not a scoping preference. Three things in this contract break at once
@@ -336,7 +336,7 @@ document and it defeats the framework's own skip.
 
 Two consequences belong to the composer rather than the parser. A target
 embedded `k` times is one immutable `Document` shared by `k` composition
-subtrees instead of `k` materialized copies. And relation answers are
+subtrees instead of `k` materialized copies. And parser answers are
 per-document by 6.3 — a target's `footnotes()` numbers the target's own
 footnotes — so a composed presentation that wants one continuous sequence
 assigns display numbers itself.
@@ -351,16 +351,10 @@ Conceptually:
 
 ```text
 Document : Markup {
-    DocumentTrack documentTrack
-    ChildList<Markup> content
-}
-
-DocumentTrack {
     DocumentVersion version
     SchemaVersion   schema
     ParseOptions    options
     Source          source
-    Relations       relations
 }
 
 Markup {
@@ -369,7 +363,7 @@ Markup {
     typed Scalar fields
     typed CanonicalText fields
     typed optional/singular child fields
-    typed ChildList fields
+    at most one typed [Markup] child list
 }
 
 MarkupTrack {
@@ -388,13 +382,30 @@ This is a semantic shape, not a mandatory memory layout. Bindings may expose
 properties, methods, protocols, interfaces, or borrowed views, but every value
 has exactly one owner and one meaning.
 
+The document's four members are direct rather than grouped behind one track
+member. `MarkupTrack` is grouped because it is replicated on every node and
+capped below; a document carries its members once, so there is nothing to
+fence, and `version` — which every consumer reads for the one comparison of
+9.6 — would otherwise need a bypass accessor to avoid a walk. The parser's
+answer store is not among them: it is private storage behind the queries of
+4.1, for the reason 6.3 gives.
+
+`Document` is itself a `Markup`: it carries a `MarkupID`, and it appears in
+`diffs` like any other node. A top-level insertion or removal is `CHILDREN`
+on the document, which is the only node that owns that sequence, and the
+ancestor spine of 9.1 terminates there. Its `revision.subtree` is not a
+restatement of `DocumentVersion`: a commit that changes bytes without
+changing the AST (7.1) advances the version and leaves the root revision
+alone.
+
 `node.track.identity` is the sole public node identity. `track.revision` is
 always the pair and never a single number: no scalar member conflates local
 with subtree change, which is the ambiguity section 1 removes. No wrapper
 identity is layered around `MarkupID`.
 
-`MarkupTrack` is deliberately small — four members, and no more may be added.
-Per-field, per-text, per-edge, per-source, and per-relation revision stamps
+`MarkupTrack` is deliberately small — an identity, a revision pair, and an
+extent — and no more may be added.
+Per-field, per-text, per-edge, per-source, and per-answer revision stamps
 must not be stored on the node.
 Their only consumer is a pull-mode diff, which is `O(document)` regardless
 (section 11.3), and it compares whole nodes rather than fields. The same
@@ -428,13 +439,30 @@ type layered around it. The accessor keeps the name `node` because a caller
 reads it as "the node for this id", and because a second `markup` spelling
 would collide with the member it is passed.
 
-`Document.version` is the direct accessor for `documentTrack.version`. Every
-consumer needs it for the one comparison of 9.6, so no consumer should have to
-walk to it.
+`Document.version` is a direct member for the reason given in 4: every
+consumer reads it for the one comparison of 9.6.
 
 `none` means the identity is not live in this document. Passing an identity
 from another domain is a programmer error and traps; it is not a result
 value. There is no `Checked<Optional<...>>` double wrapping.
+
+Every parser answer (6.3) is a `Document` member of the same shape,
+addressed by the `MarkupID` whose answer it is:
+
+```text
+Document.footnote(MarkupID)   -> Optional<FootnoteAnswer>
+Document.footnotes()          -> [MarkupID]
+Document.references(MarkupID) -> [MarkupID]
+Document.resolution(MarkupID) -> Optional<Resolution>
+```
+
+The answer types belong to `sessions-and-deltas.md` (6.3); what this contract
+fixes is where the queries live. They are members of the document and not of
+the session, because 4.2 requires a retained document to answer them after
+its session closes, and because the detached projection of 10 releases the
+session while keeping the answers. A consumer that learns from an `ANSWERS`
+part which identities re-answer must be able to ask *those* identities, on
+the document it already holds.
 
 The tree need not copy every descendant wrapper into each parent:
 
@@ -458,7 +486,7 @@ Every published `Document` must be:
 - independent of later session commits;
 - usable after the session closes;
 - able to resolve every live `MarkupID`, parser-owned site, extent, text,
-  child edge, relation, and absolute source coordinate it exposes; and
+  child edge, parser answer, and absolute source coordinate it exposes; and
 - structurally shareable with adjacent immutable revisions.
 
 Lazy indexes are allowed only when their computation depends entirely on
@@ -515,6 +543,14 @@ New siblings cannot steal identities from surviving old siblings. Matching
 must use stable old witnesses and deterministic tie-breaking, not "first equal
 node wins" against the new order.
 
+The `domain` is what makes the pair usable as a host-wide key. A host that
+parses many units at once — a chat transcript, a feed, a notebook — holds
+identities from many documents in one collection, and every document's
+ordinals start from the same place. Without the domain those roots collide,
+and an identity-keyed view or map silently merges nodes from different units
+rather than reporting an error. `MarkupOrdinal` is therefore never the
+public identity on its own.
+
 ### 5.3 Revision law
 
 There is one counter, and one scalar type for it. `Revision` is positive and
@@ -553,7 +589,7 @@ required, and none may be added.
 - kind;
 - scalar and text field values;
 - direct typed child-edge membership and order;
-- directly stored parser relations; and
+- directly stored parser answers; and
 - stable source shape/provenance, excluding revision-relative numeric
   coordinates.
 
@@ -636,52 +672,84 @@ the binding's documented amplification limit.
 
 ### 6.2 Typed child edges
 
-```text
-ChildList<T: Markup> {
-    ChildRole role
-    [T]       value
-}
-
-ChildRole =
-    CONTENT | ITEMS | ROWS | CELLS
-```
+A node's list-valued child edge is an ordered sequence of `Markup`, reached
+through the field the canonical AST schema names for that kind — `content`,
+`items`, `rows`, or `cells`. No canonical node has two, so the sequence needs
+no role tag and this contract adds no wrapper type around it: the field
+already names the edge, and 9.3 depends on that to keep `CHILDREN`
+unparameterized. Child kind legality remains statically or dynamically
+checked by the canonical AST schema.
 
 The child sequence must be persistent: localized insert/remove/replace
-operations path-copy only the
-affected persistent frontier plus inserted or removed members. Dense positions
-and private order labels do not escape as stable identity. Rebalancing a
-persistent sequence with equal membership and order changes no public
-revision and emits no diff entry. Child kind legality remains statically or
-dynamically checked by the canonical AST schema.
+operations path-copy only the affected persistent frontier plus inserted or
+removed members. A copy-on-write array costs `O(width)` per commit and shares
+nothing, which neither the bounds of 9.1 nor the unchanged-ancestor sharing of
+4.1 survives. Dense positions and private order labels do not escape as stable
+identity.
 
-### 6.3 Parser-owned auxiliary records
+### 6.3 Parser answers
 
-```text
-Relations     // opaque; a document's parser-owned auxiliary records
-```
+The parser derives facts that hold of a node but live in no node: which
+definition a reference resolves to, which of several same-label definitions
+wins, a footnote's number and ordinal, where a cross-link or embed occurs and
+how the parser classified it, and the recovery facts that explain a malformed
+region's canonical AST. The tree is source-faithful, so it stores what was
+written; a fact that holds *between* nodes, or that is computed over the whole
+document, has no node to live at. These are the node's *answers*, and a
+consumer asks for them by `MarkupID` through the `Document` members of 4.1.
 
-`Relations` is opaque in this contract. Its record types and its query surface
-are owned by `canonical-ast.md`; what is specified here is only how a change
-to it reaches a consumer. It holds immutable parser-defined records for:
+The records behind them are:
 
 - link/reference definitions and occurrences;
 - normalized definition buckets and deterministic winners;
-- positive and negative reference resolutions;
+- reference resolutions, and on the definition side their absence: a
+  `ReferenceDefinition` or `FootnoteDefinition` nothing refers to. A negative
+  resolution has no node on the reference side to carry it — a link reference
+  exists only where its definition does, because a bare bracket with no
+  definition is prose (amended 2026-08-02, when the two reference models were
+  unified; `CrossLink` and `Embed` are the exception and keep their nodes,
+  since their targets live outside the document and resolving them is the
+  consumer's);
 - footnote definitions, references, ordering, and labels;
 - cross-link and embed occurrences; and
 - recovery facts required to explain the canonical AST.
 
-Each record has a stable typed identity. Negative results are explicit
-immutable values so a later definition insertion can be discovered without
-pretending "nothing was read."
+Their record types and answer types are defined in `sessions-and-deltas.md`,
+which 16 requires to move them from session scope to this contract's
+one-document ownership: a retained `Document` must answer them after its
+session closes (4.2). Each record has a stable typed identity. Negative
+results are explicit immutable values so a later definition insertion can be
+discovered without pretending "nothing was read."
 
-A change to any of these records surfaces as a `RELATIONS` part on
-every `Markup` whose answers changed, discovered through a parser-owned
-inverted index so that the cost is proportional to the affected nodes and not
-to the number of nodes that could have been affected. Auxiliary records carry
-no separate public revision scope: a consumer that projects a relation-derived
-value holds it against the `MarkupID` it belongs to, and that identity is what
-the diff entry names.
+The public surface names no type for these records. The queries of 4.1 are the
+capability, and how the document stores what serves them is structure (2) —
+the same split 7.1 makes when it keeps the `O(log n)` coordinate index out of
+`Source`. A public member would be readable by no one in any case: every
+answer is reached by identity, and nothing can be projected from the store
+itself. It carries no separate public revision scope either, because a
+consumer that projects an answer holds it against the `MarkupID` it belongs
+to, and that identity is what the diff entry names.
+
+Grouping the records behind one private handle on the document is the expected
+implementation, and this contract does not constrain the layout inside it.
+They share a lifetime, a refcount, and one share-or-copy decision per commit,
+so one handle is what a document actually carries; the record kinds differ
+enough — a normalized label map with duplicate buckets and a deterministic
+winner, a first-use ordering with per-reference ordinals, an ordered
+occurrence list, a sparse per-node recovery annotation — that each keeps its
+own structure within it.
+
+Those structures must be persistent across adjacent revisions, for the reason
+6.1 and 6.2 give for text and child sequences. A commit that changes no record
+of a given kind shares that structure with its predecessor outright; one that
+changes a record path-copies only the affected part. Rebuilding an index per
+commit would make every commit `O(document)` in the record population and
+defeat 11.1 — and a streamed document would pay that once per chunk.
+
+A change to any of these records surfaces as an `ANSWERS` part on every
+`Markup` whose answers changed, discovered through the parser-owned inverted
+indexes so that the cost is proportional to the affected nodes and not to the
+number of nodes that could have been affected.
 
 These records describe Markdown parsing only. An embed occurrence contains
 the authored target and parser-defined classification; it does not load or
@@ -811,7 +879,7 @@ A prefix insertion:
 
 - preserves every later node's `MarkupID`;
 - preserves their `revision.self` and `revision.subtree`;
-- preserves parse and derived relation values;
+- preserves parse and derived answer values;
 - changes the numeric coordinates obtained by resolving their stable extents;
   and
 - **emits no diff entry for any of them**.
@@ -914,7 +982,7 @@ Diff {
 }
 
 DiffPart =
-    VALUE | TEXT | TEXT_MAP | CHILDREN | RELATIONS | DESCENDANT
+    VALUE | TEXT | TEXT_MAP | CHILDREN | ANSWERS | DESCENDANT
 ```
 
 9.1 gives each part its meaning and 9.3 the rule that closes the set.
@@ -946,13 +1014,13 @@ changes it. What a path-B consumer mutates is its own state, addressed by
 Write `proj(n)` for a node's observable projection, split into parts:
 
 ```text
-proj(n) = (VALUE, TEXT, TEXT_MAP, CHILDREN, RELATIONS, DESCENDANT)
+proj(n) = (VALUE, TEXT, TEXT_MAP, CHILDREN, ANSWERS, DESCENDANT)
 
 VALUE       kind, scalar fields, singular child edges, source shape
 TEXT        canonical text bytes
 TEXT_MAP    raw-source to canonical-text segment mapping
 CHILDREN    the list-valued child edge: membership and order
-RELATIONS   this node's parser relation answers
+ANSWERS     this node's parser answers, asked of the document (4.1)
 DESCENDANT  the projections of everything below it
 ```
 
@@ -1047,8 +1115,8 @@ taxonomy:
 > a part exists if and only if a consumer that ignored it would either be
 > wrong, or pay more than `O(1)`.
 
-`TEXT` and `TEXT_MAP` are `O(length)`. `CHILDREN` is `O(width)`. `RELATIONS`
-is the cost of a parser relation query. A consumer that ignored `DESCENDANT`
+`TEXT` and `TEXT_MAP` are `O(length)`. `CHILDREN` is `O(width)`. `ANSWERS`
+is the cost of a parser answer query (4.1). A consumer that ignored `DESCENDANT`
 while materializing a parent-linked structure would be *wrong*: it would
 retain an ancestor holding a stale child, and a value-diffing UI below it
 would never reach the change. Everything else about a node — its kind, its
@@ -1063,8 +1131,9 @@ Two facts about the canonical node inventory remove the parameters:
   no field address; and
 - no canonical node has two list-valued child edges — `Table` pairs one
   singular `header` with one list `rows`, `DirectiveBlock` pairs one singular
-  `label` with one list `content`, and every other kind has exactly one of
-  `content`, `items`, `rows`, or `cells` — so `CHILDREN` needs no `ChildRole`.
+  `label` with one list `content`, and every other kind has at most one of
+  `content`, `items`, `rows`, or `cells` — so `CHILDREN` needs no role
+  parameter.
 
 A change to a singular child edge is a change to the owning node's local
 value, and is therefore `VALUE`: relinking one child reference is `O(1)`.
@@ -1190,10 +1259,35 @@ instead calls `Document.scope` on demand pays nothing for a shift. Which of
 the two happens is a consumer decision, and the parser is not told which.
 
 **Query-derived projections.** A consumer holding a footnote list or a
-resolved-link view watches for the `RELATIONS` part on the identities it
-holds and re-runs the parser query for those. Negative and empty results are
-real immutable values in the document, so a later definition insertion is
-discovered as an ordinary `RELATIONS` change rather than by rescanning.
+resolved-link view watches for the `ANSWERS` part on the identities it
+holds and re-runs the parser query (4.1) for those. Negative and empty results
+are real immutable values in the document, so a later definition insertion is
+discovered as an ordinary `ANSWERS` change rather than by rescanning.
+
+**Detached projection.** A consumer may project each commit into a
+self-contained value tree of its own — resolving at projection time every
+parser answer it will need — and then release the document and the session
+outright. What it keeps is ordinary immutable values keyed by `MarkupID`,
+holding no parser reference, so it costs nothing beyond its own tree, crosses
+threads and actors as a value, and outlives the parse. Nothing above that
+projection can tell that a parser was ever involved: a resolved destination
+and a footnote number are a string and an integer in the tree, not a call
+back into anything.
+
+This is the shape for a host that renders many independently parsed units and
+edits only a few at a time — a chat transcript whose finished messages never
+change again, a feed, a notebook. Only the units under active edit keep a
+session; every other unit is a value. It is not a separate parser mode or a
+second output: the projection consumes the same `diffs`, and rebuilding one
+unit from its document remains available whenever the consumer still holds
+one (9.6).
+
+Detaching removes the retained parser, not the projection work. The tree is
+still rebuilt along each commit's spine, which is the `O(changed * depth)`
+term 9.1 already bounds, and a consumer that detaches gives up the option of
+querying the document later — every answer it did not project is gone with
+the document. Which units to detach and when is a consumer decision, and the
+parser is not told.
 
 ## 11. Complexity contract
 
@@ -1205,7 +1299,7 @@ discovered as an ordinary `RELATIONS` change rather than by rescanning.
 - reparsed grammar ownership regions;
 - identity-matching frontier;
 - changed canonical AST records and trace stamps;
-- parser relation/index maintenance;
+- parser answer index maintenance;
 - persistent nodes/bytes copied; and
 - `Delta` construction.
 
@@ -1230,7 +1324,7 @@ publishes an ancestor spine (14.5.4, 14.5.5).
 
 A definition or footnote edit costs the reparse and re-resolution of exactly
 the units whose answers changed, collected through the parser-owned inverted
-index. It must not scan every unit that contains a reference.
+indexes. It must not scan every unit that contains a reference.
 
 ### 11.2 Delta application cost
 
@@ -1369,7 +1463,7 @@ identity rules, or the diff list.
 3. Duplicate-equal sibling matching is deterministic and cannot let a new
    sibling steal an old survivor's identity.
 4. Local-only, subtree-only, text-only, projection-only, edge-only, and
-   relation-only changes advance exactly their specified stamps.
+   answer-only changes advance exactly their specified stamps.
 5. A -> B -> A advances the affected stamps strictly without identity reuse.
 6. Canonical no-op reuses the exact document and revisions.
 7. Old node views resolve only through their retained old document; a
@@ -1431,7 +1525,7 @@ For a pinned large document:
    A retired identity has no position in `after` at all — `Document.node`
    resolves it only in `before` — so a single after-order would be undefined
    for every deletion.
-7. A definition or footnote flip emits `RELATIONS` on exactly the identities
+7. A definition or footnote flip emits `ANSWERS` on exactly the identities
    whose answers changed, and the collection work is proportional to that set,
    not to the reference population.
 8. A scalar-field edit on a container with `W` children emits `VALUE` and not
@@ -1476,7 +1570,7 @@ Pinned large-document traces report:
 - `|diffs|`, entries by kind, and parts by kind;
 - persistent nodes/bytes copied by the parser;
 - reparsed regions and identity-matching frontier;
-- relation index probes and affected units;
+- answer index probes and affected units;
 - delta application work, separated into the `O(|diffs|)` term and the
   consumer's own projection work; and
 - rebuild cost, labeled and measured separately.
@@ -1505,9 +1599,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | Type | What it is | Defined |
 | --- | --- | --- |
 | `CanonicalText` | a node's text field: canonical UTF-8 plus its map back to source | 6.1 |
-| `ChildList` | a node's one list-valued child edge | 6.2 |
 | `ChildOrdinal` | zero-based position within one child list; a non-negative integer | here |
-| `ChildRole` | names a node's list-valued child edge: `content`, `items`, `rows`, or `cells` | here |
 | `Commit` | what `Session.commit()` returns: `{document, delta}` | 2 |
 | `CoordinateProfile` | closed selector for the space a `Scope` resolves in | 7.2 |
 | `Delta` | the difference between two documents, at both of a document's levels | 9 |
@@ -1516,20 +1608,21 @@ section says otherwise. `byte` and `integer` are primitives.
 | `DiffParts` | a set of `DiffPart`; a six-flag bitmask | 9.1 |
 | `Document` | one immutable parsed unit; the AST's only public root | 4 |
 | `DocumentDomain` | the opaque scope that identities and revisions live in | 5.1 |
-| `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
-| `Revision` | positive, monotonic counter within one domain; the only revision type | 5.1 |
-| `DocumentTrack` | a document's version, schema, profiles, source, and relations | 4 |
 | `DocumentVersion` | which published document: `(domain, revision)` | 5.1 |
 | `EncodedOffset` | zero-based offset in a projected coordinate space, never storage | 7.2 |
+| `ExtentOrdinal` | positive integer, unique within one domain | here |
+| `FootnoteAnswer` | what `Document.footnote` answers for one identity | sessions-and-deltas.md, 4.1 |
 | `Markup` | one canonical AST node | canonical-ast.md |
 | `MarkupID` | stable identity of one logical node: `(domain, ordinal)` | 5.2 |
 | `MarkupKind` | which canonical node kind a `Markup` is | canonical-ast.md |
 | `MarkupOrdinal` | positive integer, unique within one domain, never reused | here |
+| `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
 | `MarkupTrack` | a node's identity, two revisions, and primary extent | 4 |
 | `Offset` | zero-based byte offset; the context names which buffer | here |
 | `ParseOptions` | the parse-time options that can affect AST truth | canonical-ast.md |
 | `Position` | one endpoint of a `Scope`; widened per coordinate profile | canonical-ast.md, 7.2 |
-| `Relations` | a document's immutable parser-owned auxiliary records | 6.3 |
+| `Resolution` | what `Document.resolution` answers for one identity | sessions-and-deltas.md, 4.1 |
+| `Revision` | positive, monotonic counter within one domain; the only revision type | 5.1 |
 | `SchemaVersion` | the frozen AST-schema version a document conforms to | here |
 | `Scope` | a resolved source region: `(start: Position, end: Position)` | canonical-ast.md |
 | `Session` | the single mutable owner of one document's pending source | 8.1 |
@@ -1549,21 +1642,23 @@ section of their own because there is nothing more to say about them.
 ChildOrdinal     = non-negative integer  // position within one child list
 DiffParts        = set of DiffPart       // a six-flag bitmask
 DocumentDomain   = opaque token          // compared for equality, never read
-Revision         = positive integer      // the only revision scalar (5.3)
 EncodedOffset    = non-negative integer  // in a projected coordinate space
 ExtentOrdinal    = positive integer      // unique within one domain
 MarkupOrdinal    = positive integer      // unique within one domain, not reused
 Offset           = non-negative integer  // a byte offset into a named buffer
+Revision         = positive integer      // the only revision scalar (5.3)
 SchemaVersion    = positive integer      // the frozen AST-schema version
 Utf8Text         = a run of valid UTF-8
 ```
 
 Types this contract deliberately does **not** have, each removed for a reason
-stated where it would have appeared: a lifecycle tag, a parent or position
-member on `Diff` (9.4), a per-field address (9.3), a delta schema member (9),
-a source identity or boundary affinity on an extent (7.2), a coordinate index
-member on `Source` (7.1), and every consumer registry, route, interest,
-contract, target, and acknowledgement type (3, 14.1.3).
+stated where it would have appeared: a lifecycle tag, a wrapper type or role
+tag on a child edge (6.2), a parent or position member on `Diff` (9.4), a
+per-field address (9.3), a delta schema member (9), a source identity or
+boundary affinity on an extent (7.2), a coordinate index member on `Source`
+(7.1), an answer-store member on `Document` (6.3), and every consumer
+registry, route, interest, contract, target, and acknowledgement type
+(3, 14.1.3).
 
 ## 16. Rollout gate
 
@@ -1572,8 +1667,9 @@ The capability ships only when:
 1. `canonical-ast.md` and session contracts adopt this exact one-document
    ownership model;
 2. every binding exposes equivalent identities, traces, source values,
-   `Delta`, and rebuild behavior, and the consumer-facing surface in each
-   binding is `Delta` plus `DiffPart` — nothing more;
+   `Delta`, and rebuild behavior, and the delta-facing surface in each binding
+   is `Delta` plus `DiffPart` — no registry, subscription, interest, or
+   acknowledgement type is layered around it (3, 14.1.3);
 3. the old four-array delta, its separate ordered-entry table, and
    whole-snapshot scope materialization are absent rather than deprecated;
 4. one-shot, incremental, cache-disabled, and fresh-parse fixtures agree;

@@ -29,7 +29,10 @@ export type NativeKind =
     | "directive"
     | "footnoteReference"
     | "crossLink"
-    | "embed";
+    | "embed"
+    | "referenceDefinition"
+    | "linkReference"
+    | "imageReference";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -63,5 +66,10 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "directive",
     "footnoteReference",
     "crossLink",
-    "embed"
+    "embed",
+    // Appended: this array is indexed by the native kind value, so a kind
+    // inserted in the middle would renumber every kind after it.
+    "referenceDefinition",
+    "linkReference",
+    "imageReference"
 ]);

@@ -256,7 +256,7 @@ static markdown_core_node *make_borrowed_formula_node(
     }
 
     formula->mode = mode;
-    formula->literal = markdown_core_chunk_dup(source, literal_start, literal_len);
+    formula->literal = markdown_core_chunk_borrow(source, literal_start, literal_len);
     formula->escaped_close = escaped_close;
     return node;
 }
@@ -495,6 +495,48 @@ static void free_nodes_through(markdown_core_node *first, markdown_core_node *la
     }
 }
 
+/* Inline math carries the same padding rule as a code span: when the content
+ * both begins and ends with a space and is not entirely spaces, one is removed
+ * from each end, so `$ x $` and `$x$` mean the same thing. Line endings count
+ * as spaces for this purpose.
+ *
+ * The rule is the ecosystem's, not an invention here — micromark-extension-math
+ * states it, and this repository's own code spans already implement it in
+ * S_normalize_code. Inline math not following it was the inconsistency.
+ *
+ * The span is only narrowed: the literal borrows the source chunk, so there is
+ * nothing to rewrite. */
+/* A carriage return never reaches inline content: the parser normalizes line
+ * endings while reading input, so by this point a CRLF source has already
+ * become LF. Checking for one would be an unreachable branch. */
+static bool is_inline_math_pad(unsigned char c) { return c == ' ' || c == '\n'; }
+
+static void strip_inline_math_padding(
+    const markdown_core_chunk *chunk,
+    markdown_core_bufsize *start,
+    markdown_core_bufsize *len
+) {
+    markdown_core_bufsize i;
+    bool contains_nonspace = false;
+
+    if (*len < 2) {
+        return;
+    }
+    for (i = 0; i < *len; i++) {
+        if (!is_inline_math_pad(chunk->data[*start + i])) {
+            contains_nonspace = true;
+            break;
+        }
+    }
+    if (!contains_nonspace) {
+        return;
+    }
+    if (is_inline_math_pad(chunk->data[*start]) && is_inline_math_pad(chunk->data[*start + *len - 1])) {
+        *start += 1;
+        *len -= 2;
+    }
+}
+
 static markdown_core_delimiter_result insert_formula(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -524,6 +566,8 @@ static markdown_core_delimiter_result insert_formula(
         literal_start++;
         literal_len -= 2;
     }
+
+    strip_inline_math_padding(chunk, &literal_start, &literal_len);
 
     mode = mode_for_kind(match->kind);
     if (is_backslash_kind(match->kind)) {

@@ -235,6 +235,17 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}"
     ${MARKDOWN_CORE_CANONICAL_NAMES})
 
+# The CLI's option profiles select which language it parses; scripts/check-upstream-parity.mjs
+# depends on `gfm` leaving this repository's own extensions off.
+markdown_core_add_test(
+    facade_dump_cli_profiles
+    conformance
+    120
+    dump_cli_runner
+    --program
+    $<TARGET_FILE:markdown-core>
+    --profiles)
+
 # spec: CommonMark spec, smart punctuation, entities.  Expected results are
 # canonical AST dumps; the runner also asserts dump determinism per example.
 markdown_core_add_test(spec_commonmark spec 240 spec_runner --spec "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
@@ -314,6 +325,8 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
 markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
 markdown_core_add_test(equivalence_footnote_edits equivalence 120 equivalence_runner --case footnote_edits)
+markdown_core_add_test(equivalence_definition_cluster_edits equivalence 120 equivalence_runner --case
+                       definition_cluster_edits)
 markdown_core_add_test(equivalence_directive_multiline_attributes equivalence 120 equivalence_runner --case
                        directive_multiline_attributes)
 markdown_core_add_test(equivalence_boundary_edits equivalence 120 equivalence_runner --case boundary_edits)

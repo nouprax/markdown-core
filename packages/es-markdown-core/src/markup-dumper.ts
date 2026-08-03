@@ -1,3 +1,4 @@
+import type { ImageReference, LinkReference, ReferenceDefinition } from "./model/reference.js";
 import type { BlockQuote } from "./model/block-quote.js";
 import type { CodeBlock } from "./model/code-block.js";
 import type { Code } from "./model/code.js";
@@ -136,6 +137,16 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
         record("Directive", directiveFields(node.mode, node.name, node.attributes), node.label === null ? 0 : 1),
     visitFootnoteReference: (node: FootnoteReference) => record("FootnoteReference", [`id=${jsonString(node.label)}`]),
     visitCrossLink: (node: CrossLink) => record("CrossLink", [`reference=${jsonString(node.reference)}`]),
+    visitReferenceDefinition: (node: ReferenceDefinition): PendingRecord =>
+        record("ReferenceDefinition", [
+            `label=${jsonString(node.label)}`,
+            `destination=${optionalString(node.destination)}`,
+            `title=${optionalString(node.title)}`
+        ]),
+    visitLinkReference: (node: LinkReference): PendingRecord =>
+        record("LinkReference", [`label=${jsonString(node.label)}`, `form=${node.form}`], node.content.length),
+    visitImageReference: (node: ImageReference): PendingRecord =>
+        record("ImageReference", [`label=${jsonString(node.label)}`, `form=${node.form}`], node.content.length),
     visitEmbed: (node: Embed) => record("Embed", [`reference=${jsonString(node.reference)}`])
 };
 

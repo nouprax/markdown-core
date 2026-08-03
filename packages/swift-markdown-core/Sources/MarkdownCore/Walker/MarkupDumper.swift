@@ -245,6 +245,40 @@ private struct DumpVisitor: MarkupVisitor {
         record("FootnoteReference", fields: ["id=\(jsonString(node.label))"])
     }
 
+    mutating func visit(_ node: ReferenceDefinition) -> DumpRecord {
+        record(
+            "ReferenceDefinition",
+            fields: [
+                "label=\(jsonString(node.label))",
+                "destination=\(optionalString(node.destination))",
+                "title=\(optionalString(node.title))",
+            ]
+        )
+    }
+
+    mutating func visit(_ node: LinkReference) -> DumpRecord {
+        referenceRecord("LinkReference", node.label, node.form, node.content.count)
+    }
+
+    mutating func visit(_ node: ImageReference) -> DumpRecord {
+        referenceRecord("ImageReference", node.label, node.form, node.content.count)
+    }
+
+    private func referenceRecord(
+        _ kind: String,
+        _ label: String,
+        _ form: ReferenceForm,
+        _ children: Int
+    ) -> DumpRecord {
+        let token =
+            switch form {
+            case .full: "full"
+            case .collapsed: "collapsed"
+            case .shortcut: "shortcut"
+            }
+        return record(kind, fields: ["label=\(jsonString(label))", "form=\(token)"], children: children)
+    }
+
     mutating func visit(_ node: CrossLink) -> DumpRecord {
         record("CrossLink", fields: ["reference=\(jsonString(node.reference))"])
     }
