@@ -1,7 +1,7 @@
 # Incremental canonical AST contract
 
 Status: **frozen design contract** for the next Markdown Core
-self-contained-AST and stable-trace session milestone, revised 2026-07-31. No
+self-contained-AST and stable-trace session milestone, revised 2026-08-03. No
 current public API implements this target. Shipping requires every
 conformance, failure-injection, and complexity gate in this document.
 
@@ -12,12 +12,188 @@ Companion contracts:
 - `sessions-and-deltas.md` defines the current session baseline that this
   SemVer-major contract replaces.
 
-This document defines one edit-optimized canonical Markdown AST and the
-exact-base delta that lets a consumer update its own state in work
-proportional to what actually changed. It does not define a renderer, layout
-model, document workspace, consumer state model, or second parser output.
+This document defines the edit-optimized typed projection of one canonical
+Markdown CST and the exact-base delta that lets a consumer update its own
+state in work proportional to what actually changed. It does not define a
+renderer, layout model, document workspace, consumer state model, or second
+parser output.
 
 The words **must**, **must not**, **should**, and **may** are normative.
+
+## 0. Unified CST prerequisite
+
+This contract presupposes one front-end ownership chain, in the same sense
+that a compiler keeps one source-faithful syntax substrate and derives later
+representations from it:
+
+```text
+Source
+    -> concrete interface: Unified CST
+    -> semantic interface: typed AST projection (`Document` / `Markup`)
+       -- Markdown Core boundary --
+    -> Semantic IR (downstream)
+    -> Frame Tree (downstream)
+```
+
+The unified CST is Markdown Core's only physical parser tree. It is
+recoverable and lossless wherever the grammar assigns concrete spelling or
+boundaries: it retains the tokens, delimiters, trivia, authored forms, and
+source-backed recovery material needed to explain the parse. `Source` remains
+the authority for the exact stored bytes. Every CST node and token maps back
+to that source, and every AST value maps through its backing CST node rather
+than reconstructing provenance after parsing.
+
+The canonical Markdown AST described by this and `canonical-ast.md` is the
+typed semantic projection of that CST. `Document` and `Markup` remain the
+public semantic API, but they are read-only views over the same canonical
+ownership: an AST field or typed child edge selects and interprets CST
+structure; it does not belong to a separately allocated AST that must be kept
+in sync. The projection does not remint a surviving semantic node's
+`MarkupID`, source extent, or revision. Incremental reparsing, identity
+matching, structural sharing, and source mapping therefore happen once at the
+CST boundary and are inherited by every later projection.
+
+The changed frontier is not inherited that way, and assuming it is publishes
+noise. A concrete difference is only a *candidate*: the frontier a `Delta`
+reports is that candidate set filtered by comparing semantic projections
+(9.1), and only a node that survives the filter seeds the ancestor spine
+(11.1). Trailing whitespace and a rewritten delimiter — `*x*` for `_x_`, which
+`canonical-ast.md` gives no marker field — both change the CST and change no
+projection, so both publish an empty `diffs` (14.5.4, 14.5.11).
+
+This is an ownership and API refactor, not a replacement parser. The current
+C-layer tree, block parser, inline delimiter engine, extension reducers,
+incremental restart planning, and adoption strategy remain the parsing
+mechanism. The C-layer node ownership is extended into the unified CST by
+recording concrete boundaries, tokens, trivia, and recovery during those same
+passes. The `semantic` interface is a zero-copy typed view over that result;
+it must not run a second parser, walk the complete CST to construct an AST, or
+allocate one semantic object per node merely to expose the existing
+`Document` and `Markup` shape.
+
+Concrete fidelity does not imply that every punctuation token is a full
+`Markup`-sized tree record. Syntax-only tokens and trivia should use compact
+source-backed records or implicit source gaps, and carry only the identity,
+kind, flags, and extent their concrete API requires. They do not need semantic
+fields, answer slots, child pointers, or `MarkupTrack`. A full semantic-node
+allocation for every delimiter or trivia run requires separate benchmark and
+memory evidence; it is not the default representation this contract permits.
+
+Two layout rules keep the concrete material out of every bound that depends on
+document size. They are normative because the obvious representation — one
+interleaved child sequence per node, with offsets into the document — violates
+both, and no complexity gate below survives it.
+
+- **Concrete offsets are relative to the grammar-owned region that gets
+  reparsed as a unit, never to the document.** A token, trivia run, or
+  recovery record therefore never becomes a leaf of a document-wide structure,
+  and an edit elsewhere can never touch one. This is what keeps the `O(log n)`
+  extent resolution of 7.2 counting the same units it counted before the CST
+  existed.
+- **A container's typed semantic child edge stays separately addressable from
+  its concrete child order.** Projecting that edge is proportional to the edge,
+  not to the container's token count, which is what 11.1 and 14.7 require of
+  ordinary traversal and what 9.4 requires of `Document.index`; a concrete
+  ordinal is not a `ChildOrdinal`. The persistent sequence 6.2 requires is that
+  typed edge, not the concrete order. Recovering the concrete order by merging
+  on those relative offsets — paid only by the `concrete` interface — is the
+  expected way to keep both.
+
+Under these two rules the CST is a memory trade and not a complexity one: it
+multiplies the record count inside a reparsed region by a small constant and
+enters no other term. 14.7 requires that constant to be reported rather than
+absorbed into a timing number.
+
+The CST is concrete syntax with exactly one document-wide input: the set of
+labels the document defines. `canonical-ast.md` makes an undefined `[^x]`
+`Text`, and 6.3 makes a link reference exist only where its definition does,
+so whether a run of bytes is one `Text` or a reference node is not a local
+question. The definition set is therefore established before the CST is built
+(6.3, step 0) and the CST is built under it. The alternative — a
+definition-agnostic CST whose projection merges sibling runs into a `Text`
+node no single CST node backs — is forbidden: such a node has nowhere to carry
+its `MarkupID`, `SourceExtent`, or revision stamps, and it contradicts the
+rule above that every AST value maps through its backing CST node. Nothing
+else about the CST depends on a semantic relation.
+
+Markdown Core exposes those two views through two public interfaces over the
+same immutable published-document ownership:
+
+- `concrete` exposes the unified CST: `ConcreteNode`s and `ConcreteToken`s in
+  source order, delimiters and trivia, `MissingToken`, `UnexpectedToken` and
+  `ErrorRegion`, child traversal, and source mapping. A materialized concrete
+  node or token carries a `ConcreteID`; a trivia run left as an implicit source
+  gap has no record and therefore no identity, and the interface must not
+  pretend otherwise by minting one on demand. `ConcreteID` never appears in a
+  semantic value, a parser answer, or a `Delta`.
+- `semantic` accepts that concrete tree and exposes `Document` and `Markup` as
+  its typed semantic projection: canonical kinds, typed fields and edges,
+  canonical text, and parser-defined answers. Syntax-only tokens, trivia, and
+  recovery detail remain reachable through `concrete`; they are not copied
+  into a parallel semantic tree.
+
+Conceptually, independent of a binding's naming conventions:
+
+```text
+concrete.parse(source, options) -> ConcreteTree
+semantic(ConcreteTree)          -> Document
+Document.node(MarkupID)         -> Markup
+Document.concrete               -> ConcreteTree
+```
+
+The direction and ownership are normative even where a binding packages the
+entry points differently: `semantic` cannot construct a `Document` without
+its backing concrete tree, and `concrete` must never reconstruct a CST from
+`Document` or `Markup`. A `Document` retains the exact immutable
+published-document owner and CST revision that resolve all of its projected
+values.
+
+`Document.concrete` is how the incremental path reaches that owner, and it is
+required rather than optional. Without it the `concrete` interface exists only
+for one-shot parsing: `session.commit()` returns `Commit {document, delta}`,
+and 2 forbids adding the tree as a third member, so a consumer of an
+incrementally maintained document would have no legal way to reach the
+interface gate 14.1.9 audits. It returns the retained owner, never a second
+tree or a reconstruction, so calling it allocates nothing and advances no
+trace.
+
+Recovery follows the boundary the grammar can actually prove:
+
+- Core Markdown constructs with open, context-sensitive matching continue to
+  use literal fallback. An unmatched emphasis, link, list-continuation, or
+  similar candidate remains concrete text/token content; the parser must not
+  guess an error span, missing closer, or intended structure.
+- A bounded syntax island may recover structurally only after its grammar's
+  commit point. Formula, directive, footnote, cross-link, and embedded-content
+  forms have explicit openers and a local closing or termination rule; once
+  committed, their CST may contain `MissingToken`, `UnexpectedToken`, and
+  `ErrorRegion` nodes inside that proven boundary. Before the commit point the
+  same bytes use literal fallback. Recovery must not consume an unrelated
+  following Markdown region merely to complete an island.
+
+Syntax and semantic diagnostics are different products of different layers.
+A syntax diagnostic explains CST recognition or bounded recovery — what token
+was absent or unexpected and which source region was recovered. A semantic
+diagnostic explains a well-formed projected construct or a relation between
+constructs — for example an invalid semantic combination, a duplicate
+definition, or a resolution result. Semantic analysis must not rewrite CST
+recovery, and a syntax recovery node must not acquire semantic meaning merely
+because the AST hides or summarizes it.
+
+The project's downstream compatibility target is that adapters can construct
+`Semantic IR` and then `Frame Tree` from this stable AST projection without
+reparsing source or depending on private parser state. Markdown Core itself
+does not define, return, cache, incrementally maintain, or own either output;
+its semantic API ends at `Document`, `Markup`, parser-defined answers, and
+diagnostics. The supported adapter boundary is the `semantic` interface alone:
+an IR or frame adapter must not require concrete tokens, recovery nodes, or
+private CST access. `Semantic IR` may resolve, normalize, and combine the
+semantic values for a downstream composition or rendering policy, and `Frame
+Tree` may then express layout and presentation. Neither feeds back into CST or
+AST identity, and neither can become a second canonical Markdown tree. This
+ownership chain is a prerequisite to every identity, delta, source, and
+complexity rule below: there is one canonical tree and multiple derived views,
+never a synchronized CST/AST pair.
 
 ## 1. SemVer-major adoption
 
@@ -35,43 +211,51 @@ surfaces.
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is an `O(log n)` query against stable extents; a position-only shift produces no diff entry at all |
-| Footnote and reference indexes are live-session queries | Parser-defined sites, buckets, winners, negative resolutions, and ordering are immutable data in the one `Document`, asked of it by `MarkupID` |
+| Footnote and reference indexes are live-session queries | One `Document` pins persistent semantic relation indexes and derives every answer by `MarkupID` |
 | The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
 
 `canonical-ast.md`, `sessions-and-deltas.md`, public headers, bindings,
 fixtures, and examples must adopt this contract atomically. A package cannot
 advertise this capability while exposing the superseded four-array API.
 
-## 2. One public parser model
+## 2. One parser model, two public interfaces
 
-Markdown Core has exactly one semantic output: the canonical Markdown AST
-rooted at `Document`.
+Markdown Core has exactly one parser-owned model with the `concrete` and
+`semantic` interfaces of section 0. The only public semantic parser output is
+the typed canonical Markdown AST projection rooted at `Document`; Semantic IR
+and Frame Tree are downstream consumers, not additional parser outputs.
 
 ```text
 one-shot:
     stored Markdown bytes + ParseOptions
-        -> Document
+        -> concrete tree
+        -> semantic(concrete tree): Document
 
 incremental:
     Session + ordinary byte edits
+        -> committed concrete tree
         -> session.commit(): Commit
 
 Commit {
-    Document document
+    Document document  // semantic projection retaining that concrete tree
     Delta delta
 }
 ```
 
 `Commit.document` is the complete correctness result. It is the same public
-AST type returned by one-shot parsing. `Commit.delta` is an immutable
-exact-base description of what changed between the session's immediately
-preceding published document and `Commit.document`.
+AST type returned by one-shot parsing. Its retained concrete owner is exposed
+through the `concrete` interface; it is not a third `Commit` member or a
+separately published tree. `Commit.delta` is an immutable exact-base
+description of what changed between the session's immediately preceding
+published document and `Commit.document`.
 
 A consumer may ignore or discard `Delta` and derive all of its state from
 `Commit.document`. Doing so cannot change parser output, identity, revisions,
 or structural sharing.
 
-The one `Document` owns all parser-produced truth:
+The one backing immutable published-document owner contains the unified CST
+plus non-tree persistent indexes derived from it. `Document` retains that
+owner and projects:
 
 - canonical node kinds, scalar fields, text fields, and typed child edges;
 - stable node and parser-owned auxiliary identities;
@@ -81,14 +265,17 @@ The one `Document` owns all parser-produced truth:
 - definition, reference, resolution, footnote, link, and embed facts; and
 - immutable indexes required to resolve those AST values without a session.
 
-Tracking fields are part of the AST. They describe identity, continuity,
-source, and semantic equality of the same canonical values. They are not a
-second tree, reactive snapshot, subscriber graph, or consumer model.
+Tracking fields are part of the canonical syntax ownership and exposed
+through the AST projection. They describe identity, continuity, source, and
+semantic equality of the same canonical values. They are not a second tree,
+reactive snapshot, subscriber graph, or consumer model.
 
 There must not be:
 
-- a `ReactiveDocument`, `ReactiveSnapshot`, mirror tree, or projection root
-  beside `Document`;
+- a `ReactiveDocument`, `ReactiveSnapshot`, mirror tree, or independently
+  owned projection root beside `Document`;
+- separately allocated CST and AST node hierarchies joined by synchronization,
+  remapping, or duplicated identity;
 - a nested AST plus a separately authoritative normalized AST;
 - a compatibility `Document` reconstructed from another public model;
 - two independently versioned copies of one field, text, edge, source extent,
@@ -186,7 +373,8 @@ Markdown Core remains a Markdown parser:
 
 ```text
 stored Markdown bytes
-    -> canonical Markdown syntax and parser-defined semantics
+    -> unified concrete syntax
+    -> canonical Markdown AST projection and parser-defined semantics
     + stable tracking fields for that AST
     + the exact changed frontier of each commit
 ```
@@ -378,9 +566,11 @@ MarkupRevision {
 }
 ```
 
-This is a semantic shape, not a mandatory memory layout. Bindings may expose
-properties, methods, protocols, interfaces, or borrowed views, but every value
-has exactly one owner and one meaning.
+This is the semantic shape projected from the unified CST, not a second
+mandatory memory layout. Bindings may expose properties, methods, protocols,
+interfaces, or borrowed views, but every value has exactly one owner and one
+meaning. No binding or core implementation may materialize this shape as an
+independently authoritative tree that must be synchronized with the CST.
 
 The document's four members are direct rather than grouped behind one track
 member. `MarkupTrack` is grouped because it is replicated on every node and
@@ -432,6 +622,7 @@ Document.version          -> DocumentVersion
 Document.node(MarkupID)   -> Optional<Markup>
 Document.parent(MarkupID) -> Optional<MarkupID>
 Document.index(MarkupID)  -> Optional<ChildOrdinal>
+Document.concrete         -> ConcreteTree
 ```
 
 A returned `Markup` *is* the document-bound view; there is no separate view
@@ -446,8 +637,8 @@ consumer reads it for the one comparison of 9.6.
 from another domain is a programmer error and traps; it is not a result
 value. There is no `Checked<Optional<...>>` double wrapping.
 
-Every parser answer (6.3) is a `Document` member of the same shape,
-addressed by the `MarkupID` whose answer it is:
+Every parser answer (6.3) is a query on the `semantic` interface, addressed by
+the `MarkupID` whose answer it is:
 
 ```text
 Document.footnote(MarkupID)   -> Optional<FootnoteAnswer>
@@ -457,12 +648,14 @@ Document.resolution(MarkupID) -> Optional<Resolution>
 ```
 
 The answer types belong to `sessions-and-deltas.md` (6.3); what this contract
-fixes is where the queries live. They are members of the document and not of
-the session, because 4.2 requires a retained document to answer them after
-its session closes, and because the detached projection of 10 releases the
-session while keeping the answers. A consumer that learns from an `ANSWERS`
-part which identities re-answer must be able to ask *those* identities, on
-the document it already holds.
+fixes is where the queries live. They are members of the semantic document and
+not of the concrete node API or session, because 4.2 requires a retained
+document to answer them after its session closes, and because the detached
+projection of 10 releases the session while keeping the answers. A consumer
+that learns from an `ANSWERS` part which identities re-answer must be able to
+ask *those* identities on the document it already holds. The query resolves
+through that document's immutable owner; it never consults a newer session
+revision or reparses its CST.
 
 The tree need not copy every descendant wrapper into each parent:
 
@@ -539,9 +732,40 @@ becomes live again in the same domain. Delete and later reinsert allocates
 a fresh identity, even if bytes and canonical value return to an earlier
 value.
 
-New siblings cannot steal identities from surviving old siblings. Matching
-must use stable old witnesses and deterministic tie-breaking, not "first equal
-node wins" against the new order.
+New siblings cannot steal identities from surviving old siblings. Matching is
+therefore anchored to the edit rather than to content, and the rule is fixed
+here because it decides the observable `MarkupID` stream and with it every
+`diffs` list a fixture will ever freeze:
+
+1. **Nothing outside a reparsed region is matched at all.** Those nodes are
+   retained, not re-identified (4.1).
+2. **Within a region, identity never crosses a parent or a kind.** A node
+   matches only a former child of the same parent with the same `MarkupKind`;
+   a paragraph that becomes a heading is a retirement and a creation.
+3. **Nodes the edit does not overlap are matched positionally.** A child whose
+   old source lies wholly before the normalized edit span matches by its
+   ordinal from the start of the sequence; one whose old source lies wholly
+   after it matches by its ordinal from the end. These are the stable old
+   witnesses, and the session has them at every commit because it normalizes
+   the edit script before parsing (9.2).
+4. **Only the children the edit overlaps are matched by content**, as a
+   longest common subsequence over `(kind, discriminator)` with the leftmost
+   pair winning each tie.
+5. Unmatched new children take fresh identities; unmatched old children
+   retire.
+
+Step 3 is what step 4 cannot do alone. Given `[A, A, B]` and an insertion at
+the front producing `[A, A, A, B]`, content carries nothing that distinguishes
+the inserted `A` from the two survivors, so a content-only match — including
+an order-preserving one — hands the first survivor's identity to the new node
+and reports the survivor created. That is exactly the "first equal node wins"
+failure, and the information needed to avoid it is in the edit span, not in
+the tree.
+
+The result is a pure function of the old child sequence, the new child
+sequence, and the normalized edit span. It must not depend on hash order,
+arena addresses, allocation order, or traversal order, which is what 14.2.3
+tests.
 
 The `domain` is what makes the pair usable as a host-wide key. A host that
 parses many units at once — a chat transcript, a feed, a notebook — holds
@@ -589,7 +813,8 @@ required, and none may be added.
 - kind;
 - scalar and text field values;
 - direct typed child-edge membership and order;
-- directly stored parser answers; and
+- parser answers addressed to this node, derived through its pinned relation
+  indexes; and
 - stable source shape/provenance, excluding revision-relative numeric
   coordinates.
 
@@ -618,7 +843,7 @@ TextMap = [SpanPair]       // ascending, non-overlapping, covers `value`
 
 SpanPair {
     Span canonical         // into this field's `value`
-    Span source            // into the document's stored bytes
+    Span source            // relative to the owning node's SourceExtent
 }
 ```
 
@@ -629,6 +854,18 @@ not an absent node; a presence change is an ordinary field change.
 each stretch of it to the source bytes that produced it, one `Span` (8.1) per
 side. An entry carries no text of its own: unlike a run in a text-layout or
 attributed-string API, it is a correspondence, not a slice of content.
+
+The source side is measured from the owning node's `SourceExtent`, not from
+the document. It has to be. `TEXT_MAP` is a projection part compared by value
+(9.1), so absolute offsets would make a prefix insertion differ on every later
+text field in the document — one entry per suffix node, which is exactly what
+7.3 forbids and what 14.5.1 tests for. Node-relative spans put the shift where
+7.3 already puts every other coordinate: in the `O(log n)` resolution of a
+stable extent, and in no projection value at all. A consumer that wants the
+source bytes resolves the node's extent once through `Document.scope` and adds
+the pair's offsets to it; a consumer that only wants the correspondence — the
+common case, since the canonical side is what it is mapping from — needs no
+resolution.
 
 The two spaces are not the same and do not advance at the same rate: `value`
 holds decoded text, the source holds what was authored, and they diverge
@@ -653,17 +890,22 @@ scalar. Comparing the bytes costs `O(len)` on two slices the consumer already
 holds, and is paid only when interior addressing is actually wanted.
 
 No entry carries the text it maps, and none may be added. A consumer that
-wants the bytes takes them itself: `value` for the canonical side, the
-document's `Source.content` for the source side, both sliced by the span it
-already holds. `O(1)` persistent slicing is required of both (7.1 and below),
-so the slice is a view, not a copy. Storing the content in the map instead
-would keep a second copy of every text field in the document and defeat the
-structural sharing the rest of this contract rests on — and what to do with
-those slices, including composing them with anything else, is consumer work
-(3).
+wants the bytes takes them itself: `value` for the canonical side, and the
+document's `Source.content` for the source side, sliced by the pair's span
+offset by the node's resolved extent. `O(1)` persistent slicing is required of
+both (7.1 and below), so the slice is a view, not a copy. Storing the content
+in the map instead would keep a second copy of every text field in the
+document and defeat the structural sharing the rest of this contract rests
+on — and what to do with those slices, including composing them with anything
+else, is consumer work (3).
 
-Equal canonical text with a changed escape/entity/provenance mapping — `&amp;`
-rewritten as `&#38;` — is a `TEXT_MAP` change, not a `TEXT` change (9.1).
+Equal canonical text with a changed escape/entity mapping — `&amp;` rewritten
+as `&#x26;`, five source bytes becoming six for the same one canonical byte —
+is a `TEXT_MAP` change, not a `TEXT` change (9.1). The rewrite has to change a
+span for the part to fire: `&amp;` to `&#38;` is five bytes for five, so both
+maps are identical and 9.1 reports nothing, which is correct. A pair records a
+correspondence and not how it arose, so provenance that leaves both spans
+unchanged is not observable and no field may be added to make it so.
 
 Text storage must support persistent slicing and localized replacement.
 Repeated tail appends must not copy the complete prefix each commit. A tiny
@@ -689,16 +931,69 @@ identity.
 
 ### 6.3 Parser answers
 
-The parser derives facts that hold of a node but live in no node: which
-definition a reference resolves to, which of several same-label definitions
-wins, a footnote's number and ordinal, where a cross-link or embed occurs and
-how the parser classified it, and the recovery facts that explain a malformed
-region's canonical AST. The tree is source-faithful, so it stores what was
-written; a fact that holds *between* nodes, or that is computed over the whole
-document, has no node to live at. These are the node's *answers*, and a
-consumer asks for them by `MarkupID` through the `Document` members of 4.1.
+Parser answers belong to the `semantic` interface, but they are neither
+concrete syntax nor fields stored in a second AST. They are relations derived
+from the complete typed projection: which definition a reference resolves to,
+which of several same-label definitions wins, a footnote's number and ordinal,
+and where a cross-link or embed occurs and how the parser classified it. A
+source-faithful node stores what was written; a fact that holds *between*
+nodes, or that is computed over the whole document, has no node field to live
+at. A consumer asks for that fact by `MarkupID` through the `Document` queries
+of 4.1.
 
-The records behind them are:
+The immutable published-document owner therefore has one tree and one class
+of derived, non-tree storage:
+
+```text
+published document owner
+├── Source
+├── Unified CST                           // the only tree
+└── persistent semantic relation indexes // derived accelerators
+
+concrete -> Unified CST
+semantic -> Document / Markup + answer queries
+```
+
+A relation index is logically a pure derived function of the unified CST,
+schema, and parse options through the typed semantic projection. The index
+pins sites, normalized keys, buckets, winners, document order, and reverse
+edges needed to answer queries efficiently; the answer returned for a
+`MarkupID` is a query result over that revision, not a materialized per-node
+answer snapshot.
+
+A relation index is prepared at publication for every document a session can
+commit from. That is not a preference: publication compares old and new
+observable answers to emit the `ANSWERS` parts (step 4 below), which needs
+both sides materialized at commit time, so a document that becomes a delta's
+`before` was never free to defer. A one-shot document that no session will
+commit from may derive its indexes lazily from its immutable owner-held
+values. Individual query results may be memoized in either case. None of these
+choices is observable: enabling, disabling, filling, compacting, or
+rebalancing an index or memo cache cannot change a `Document`, revision, or
+`Delta`. A lazy query must not consult the live session, a newer document,
+private mutable parser state, or external content.
+
+The session may keep mutable site lists, label interning, inverted indexes,
+and other derivation machinery used to prepare the next commit. Those are
+transaction-local caches, not published relation truth and not a query target
+for any retained `Document`. The published relation-index generation uses
+stable semantic identities rather than raw pointers whose target is replaced
+by reparsing. A sequence-preserving commit whose relations do not change
+shares the exact persistent index roots even when the session patches its
+private site pointers. When relations do change, the new generation
+path-copies only the affected sites, buckets, and ordered runs. It must never
+copy or persist one answer value per semantic node merely to keep the old
+document readable; the old document remains valid because it retains its old
+index roots and derives its old answers from them.
+
+Only projected semantic nodes participate. Public answer keys and values use
+`MarkupID`; concrete token identities, trivia, `MissingToken`,
+`UnexpectedToken`, and `ErrorRegion` never escape through an answer. A
+recovered syntax island can receive semantic answers only when its CST
+projects a typed `Markup` node. Its concrete recovery detail remains on the
+`concrete` interface and in syntax diagnostics.
+
+The relation indexes contain:
 
 - link/reference definitions and occurrences;
 - normalized definition buckets and deterministic winners;
@@ -712,44 +1007,97 @@ The records behind them are:
   consumer's);
 - footnote definitions, references, ordering, and labels;
 - cross-link and embed occurrences; and
-- recovery facts required to explain the canonical AST.
+- the forward, reverse, and document-order indexes required to answer those
+  relations without scanning the CST.
+
+An answer addressed to one semantic node contributes to that node's
+`ANSWERS` projection. An ordered document-wide answer such as
+`Document.footnotes()` contributes to the root `Document` node's `ANSWERS`
+projection. This gives every observable answer exactly one diff address; no
+answer-store identity or separate revision domain is required.
 
 Their record types and answer types are defined in `sessions-and-deltas.md`,
-which 16 requires to move them from session scope to this contract's
-one-document ownership: a retained `Document` must answer them after its
-session closes (4.2). Each record has a stable typed identity. Negative
-results are explicit immutable values so a later definition insertion can be
-discovered without pretending "nothing was read."
+which section 16 requires to move from the current session scope to this
+contract's immutable published-document ownership. A one-shot document and an
+incrementally committed document must expose the same answers, and a retained
+old `Document` must keep answering its old values after later commits and
+session close (4.2). Each parser-owned site has a stable typed identity.
+Negative results are explicit immutable values so a later definition
+insertion can be discovered without pretending "nothing was read."
 
-The public surface names no type for these records. The queries of 4.1 are the
-capability, and how the document stores what serves them is structure (2) —
-the same split 7.1 makes when it keeps the `O(log n)` coordinate index out of
-`Source`. A public member would be readable by no one in any case: every
-answer is reached by identity, and nothing can be projected from the store
-itself. It carries no separate public revision scope either, because a
-consumer that projects an answer holds it against the `MarkupID` it belongs
-to, and that identity is what the diff entry names.
+The public surface names no type for these indexes. The queries of 4.1 are the
+capability, and how the immutable owner accelerates them is private
+structure (2) — the same split 7.1 makes when it keeps the `O(log n)`
+coordinate index out of `Source`. The `concrete` interface exposes neither
+the relation indexes nor their storage. A public store member would be readable
+by no one in any case: every answer is reached by semantic identity, and
+nothing can be projected from the store itself. It carries no separate public
+revision scope either, because a consumer that projects an answer holds it
+against the `MarkupID` it belongs to, and that identity is what the diff entry
+names.
 
-Grouping the records behind one private handle on the document is the expected
-implementation, and this contract does not constrain the layout inside it.
-They share a lifetime, a refcount, and one share-or-copy decision per commit,
-so one handle is what a document actually carries; the record kinds differ
-enough — a normalized label map with duplicate buckets and a deterministic
-winner, a first-use ordering with per-reference ordinals, an ordered
-occurrence list, a sparse per-node recovery annotation — that each keeps its
-own structure within it.
+Grouping the relation indexes behind one private handle on the
+published-document owner
+is the expected implementation, and this contract does not constrain the
+layout inside it. They share a lifetime, a refcount, and one share-or-copy
+decision per commit; the record kinds differ enough — a normalized label map
+with duplicate buckets and a deterministic winner, a first-use ordering with
+per-reference ordinals, and ordered occurrence and reverse-reference lists —
+that each keeps its own structure within the bundle.
 
 Those structures must be persistent across adjacent revisions, for the reason
-6.1 and 6.2 give for text and child sequences. A commit that changes no record
-of a given kind shares that structure with its predecessor outright; one that
-changes a record path-copies only the affected part. Rebuilding an index per
-commit would make every commit `O(document)` in the record population and
-defeat 11.1 — and a streamed document would pay that once per chunk.
+6.1 and 6.2 give for text and child sequences. A commit that changes no
+relation structure of a given kind shares it with its predecessor outright;
+one that changes a relation path-copies only the affected part. Rebuilding an
+index per commit would make every commit `O(document)` in the relation
+population and defeat 11.1 — and a streamed document would pay that once per
+chunk.
 
-A change to any of these records surfaces as an `ANSWERS` part on every
-`Markup` whose answers changed, discovered through the parser-owned inverted
-indexes so that the cost is proportional to the affected nodes and not to the
-number of nodes that could have been affected.
+A relation change may change one or more query results. The commit compares
+old and new answers only for identities reached through the affected relation
+frontier, and emits `ANSWERS` on every `Markup` whose observable result
+changed. It does not compare or snapshot every answer in the document. The
+parser-owned inverted indexes make that work proportional to the affected
+nodes rather than the number that could have been affected.
+
+Publication is ordered and transactional:
+
+0. update the document's two definition label sets — footnote labels and
+   link-reference labels, which normalize the same way but do not share a key
+   space — from the reparsed region, and, through the mention index, name the
+   further regions whose bracketed forms change between prose and a
+   `FootnoteReference`, `LinkReference`, or `ImageReference` because a label
+   appeared or disappeared;
+1. build the candidate unified CST for those regions under that definition set
+   and establish surviving semantic `MarkupID`s;
+2. derive the changed semantic-site frontier from the old and new projections;
+3. persistently update only affected relation sites, buckets, winners, order
+   indexes, and reverse indexes;
+4. compare old and new observable answers, add `ANSWERS` to each affected
+   `MarkupID` (including the root for document-wide answers), and advance the
+   corresponding local and subtree traces; and
+5. publish the CST owner, relation-index roots, traces, and `Delta` as one
+   immutable document revision observed through the semantic projection, or
+   publish none of them on failure.
+
+Step 0 exists because step 1 would otherwise need step 3's answer: whether
+`[^x]` is a `FootnoteReference` or prose is decided by a label the document
+may define anywhere (§0). It is not a document scan. The definition set is
+maintained incrementally, so the step costs the reparsed region plus one
+lookup per label whose defined-ness flipped; the mention index is keyed by
+mention rather than by resolution, which is what lets it name blocks whose
+brackets were prose until now. Both are independent of document size.
+
+The rest of the order is not an implementation pipeline that creates
+intermediate public trees. It defines the dependency and atomicity law. A
+fresh parse computes the same final answer values from the final CST, while an
+incremental commit may reuse the unaffected persistent index structures.
+
+Parser answers are values, not diagnostics. Syntax diagnostics read concrete
+recovery directly. Semantic diagnostics may use projected values and parser
+answers, but a diagnostic record is not an answer, cannot change resolution or
+numbering, and cannot cause an `ANSWERS` diff unless an answer value itself
+changed.
 
 These records describe Markdown parsing only. An embed occurrence contains
 the authored target and parser-defined classification; it does not load or
@@ -866,6 +1214,15 @@ not require a whole-document materialization pass. A persistent aggregate
 sequence keyed by private order-maintenance labels, carrying subtree byte
 sums, satisfies this: an edit path-copies `O(log n)` nodes, and every other
 node's absolute coordinate is recomputed on demand from the same tree.
+
+That sequence is one document-wide sequence of leaf source-bearing units, and
+a container addresses a range of it. It must not be one sequence per
+container. The distinction is the whole bound: Markdown nesting has no depth
+limit — `>` repeated a thousand times is a legal thousand-deep `BlockQuote`
+chain — so resolving a node by summing a prefix at every level of its spine
+costs `O(depth * log width)`, which is `O(log n)` only when depth happens to
+be. A thousand-deep spine measures a thousand steps where the document-wide
+sequence measures ten.
 
 Every `CoordinateProfile` is deterministic and schema-versioned. `NATIVE` is
 data, never a callback or platform object.
@@ -1018,11 +1375,17 @@ proj(n) = (VALUE, TEXT, TEXT_MAP, CHILDREN, ANSWERS, DESCENDANT)
 
 VALUE       kind, scalar fields, singular child edges, source shape
 TEXT        canonical text bytes
-TEXT_MAP    raw-source to canonical-text segment mapping
+TEXT_MAP    raw-source to canonical-text segment mapping, node-relative (6.1)
 CHILDREN    the list-valued child edge: membership and order
 ANSWERS     this node's parser answers, asked of the document (4.1)
 DESCENDANT  the projections of everything below it
 ```
+
+`ANSWERS` includes every node-addressed semantic query value and, on the root
+`Document`, every document-wide ordered answer. It does not include concrete
+recovery, syntax diagnostics, relation-index layout, or cache state. Thus a
+change to `Document.footnotes()` has a stable address even if no ordinary
+node field changed, while lazily filling the index emits nothing.
 
 Absence is a projection value: `proj(n) = ⊥` when `n` is not live in that
 document. Then, for every `n` live in `before` or `after`:
@@ -1050,7 +1413,15 @@ materializes a parent-linked structure needs precisely that; a consumer that
 keys a flat map skips a `DESCENDANT`-only entry with one flag test.
 
 **A node whose only change is its absolute source position emits nothing**,
-because position is not in `proj` at all.
+because position is not in `proj` at all. `TEXT_MAP` is the one part that
+could have smuggled it in, and 6.1 keeps its source spans node-relative for
+exactly this reason.
+
+**A node whose CST changed but whose projection did not emits nothing**, for
+the same reason a compaction does: `proj` is the whole membership test, and a
+respelled delimiter or a trivia edit changes no component of it. The concrete
+difference narrows the work a commit must do; it is not itself the frontier
+(§0, 11.1).
 
 **Private storage compaction, rebalancing, interning, and cache maintenance
 emit nothing**, because they change no projection. A canonical no-op produces
@@ -1128,7 +1499,16 @@ vocabulary in every binding forever.
 Two facts about the canonical node inventory remove the parameters:
 
 - no canonical node has two text-valued fields, so `TEXT` and `TEXT_MAP` need
-  no field address; and
+  no field address. This is a rule about the inventory, not an accident of it:
+  **exactly one field per kind is a `CanonicalText`** — the kind's content
+  text, spelled `literal` where it exists — and every other string field is a
+  plain scalar carrying decoded characters and no `TextMap`. Without that rule
+  the claim is false, because `Link` and `Image` each pair a destination with
+  a title and `ReferenceDefinition` carries both beside its label, and
+  CommonMark resolves escapes and entities inside all of them. Naming the
+  source span of one of those scalars is the sub-node extent 7.2 defers; until
+  it exists, a consumer that needs it resolves the owning node's extent and
+  searches within it; and
 - no canonical node has two list-valued child edges — `Table` pairs one
   singular `header` with one list `rows`, `DirectiveBlock` pairs one singular
   `label` with one list `content`, and every other kind has at most one of
@@ -1137,6 +1517,18 @@ Two facts about the canonical node inventory remove the parameters:
 
 A change to a singular child edge is a change to the owning node's local
 value, and is therefore `VALUE`: relinking one child reference is `O(1)`.
+
+One scalar in the inventory is not local: `List.tight` is false when any item
+is separated from its neighbour by a blank line, so it is a fold over the item
+sequence rather than a reading of the list's own bytes. Two things follow, and
+both are normative. A grandchild edit that flips tightness emits `VALUE` on
+the `List` and not only `DESCENDANT`, which is the one exception to the shape
+14.5.11 otherwise describes. And the fold must be maintained as an aggregate
+on the persistent item sequence — "some item is loose" is a monoid, so it
+rides the `O(log W)` path copy 6.2 already pays — because recomputing it by
+walking the items would make an `O(1)` edit cost `O(W)` and break 14.5.11's
+bound for every list in the document. No other field in the inventory has this
+shape; a future one that does inherits both rules.
 
 `parts` is consequently a six-flag bitmask, a `Diff` is a `MarkupID` plus one
 byte, and `diffs` is a flat array with no variable-size records and no
@@ -1297,15 +1689,49 @@ parser is not told.
 
 - edited stored bytes and persistent source paths;
 - reparsed grammar ownership regions;
+- concrete token/trivia records created, retained, and copied;
+- definition-set updates and mention-index probes (6.3, step 0);
 - identity-matching frontier;
 - changed canonical AST records and trace stamps;
-- parser answer index maintenance;
+- semantic relation-index maintenance;
+- persistent relation-index records and bytes path-copied;
 - persistent nodes/bytes copied; and
 - `Delta` construction.
 
-A localized edit may legitimately reparse a complete paragraph, unclosed
-fence, raw HTML block, directive region, or other grammar-defined owner. It
-must not repeat a whole-document parse once per changed node.
+The unit a localized edit reparses is the **ownership region**, and it is
+defined rather than left to taste, because §0's rule that concrete offsets are
+region-relative is parameterized on it and so is every constant below.
+
+A region is one of:
+
+- a leaf block — `Paragraph`, `Heading`, `CodeBlock`, `HTMLBlock`,
+  `FormulaBlock`, `ThematicBreak`, `ReferenceDefinition` — together with its
+  complete inline child sequence, because inline syntax is non-local within a
+  leaf and cannot be reparsed in fragments;
+- the inline sequence of a `TableCell`, a `FootnoteDefinition`'s own content,
+  or a block `DirectiveLabel`, each of which owns the source backing that
+  sequence; or
+- the container marker material of one `BlockQuote`, `List`, `ListItem`,
+  `Table`, `TableRow`, or `DirectiveBlock` — its `>` runs, bullet or ordinal
+  markers, delimiter row, or fence lines — which belongs to the container's
+  own region and not to any child's.
+
+Inline containers are never regions. `Emphasis`, `Strong`, `Strikethrough`,
+`Link`, `Image`, `LinkReference`, `ImageReference`, and an inline `Directive`'s
+label are materialized during the surrounding leaf's parse, so they stay inside
+it rather than copying and reparsing the same bytes.
+
+Regions nest, and a region's concrete offsets are relative to that region.
+That is what makes the bound hold: an edit inside a paragraph rewrites the
+paragraph's concrete records and nothing else, and every enclosing `ListItem`,
+`List`, and `BlockQuote` keeps its marker records untouched however deep the
+nesting runs.
+
+An edit may legitimately widen from its innermost region to an enclosing one —
+an edit inside an unclosed fence, a raw HTML block, or a directive region
+reparses forward to the end of that construct, and an edit that changes a
+block boundary reparses the neighbours that boundary joins or splits. It must
+not repeat a whole-document parse once per changed node.
 
 Structural edits path-copy `O(log n)` persistent sequence nodes plus the
 inserted or removed members. `|diffs|` is the changed frontier plus its
@@ -1325,6 +1751,38 @@ publishes an ancestor spine (14.5.4, 14.5.5).
 A definition or footnote edit costs the reparse and re-resolution of exactly
 the units whose answers changed, collected through the parser-owned inverted
 indexes. It must not scan every unit that contains a reference.
+
+Projecting `Document` and `Markup` is `O(1)` per accessed value and allocates
+nothing in the core. A semantic traversal visits semantic nodes, not every
+syntax-only token hidden by the projection, which is what the separately
+addressable typed child edge of §0 buys. CST capture adds work only where the
+existing parse recognizes or preserves concrete material; it must not add a
+second whole-document AST-construction pass.
+
+Introducing the CST must not move any bound in this section. Because concrete
+offsets are region-relative (§0), a token is never a leaf of a document-wide
+structure and no edit elsewhere can reach one: regions reparsed, persistent
+nodes copied, extent-resolution descents, and `|diffs|` are the same with the
+CST as without it, and the concrete material shows up only as a constant
+factor on the records created inside the reparsed region. 14.7 measures that
+factor against an AST-only baseline on the same trace; a design in which it
+also multiplies a size-dependent term fails this section, whatever its timing
+on a small fixture.
+
+A change that a concrete difference alone would have propagated — trivia,
+delimiter spelling — still costs its region's reparse, which is unavoidable
+and localized, and then publishes nothing (9.1). The projection comparison
+that discards it is proportional to the region, not to the document.
+
+Retaining an old document must not turn an answer-preserving localized commit
+into `O(total answers)` copying. No answer snapshot is copied at all. If an
+edit changes `k` relation sites, buckets, or ordered runs, publication copies
+their persistent paths and payloads in `O(k log n)` (or a tighter
+structure-specific bound), while sharing every unaffected relation structure.
+A truly global renumbering may still require `O(affected)` answer comparisons,
+trace updates, and diff entries because those observable query results
+genuinely changed; it does not require materializing those results in the
+document.
 
 ### 11.2 Delta application cost
 
@@ -1455,6 +1913,32 @@ identity rules, or the diff list.
    application maintains its own mutable state entirely from `diffs` and
    never re-derives. Every binding ships and documents both, and section 14.6
    proves they reach the same state.
+9. Public API and implementation audits find one physical unified CST and two
+   interfaces over it. `concrete` exposes nodes, tokens, trivia, recovery, and
+   source mapping; `semantic` projects `Document` and `Markup`. Every public
+   AST node, typed edge, identity, extent, revision, and source map resolves
+   from that ownership; there is no parallel AST node hierarchy, CST-to-AST
+   remap, or synchronization pass. `Document.concrete` reaches that owner from
+   an incrementally committed document, not only from a one-shot parse.
+10. Recovery fixtures prove that unmatched core Markdown candidates become
+    literal content without `MissingToken`, `UnexpectedToken`, or
+    `ErrorRegion`, while every committed bounded-island failure recovers only
+    inside its specified boundary and preserves all authored source.
+11. Diagnostic fixtures classify bounded recognition/recovery failures as
+    syntax diagnostics and projected-value or cross-node failures as semantic
+    diagnostics. Neither class changes the other layer's tree or identity.
+12. Reference Semantic IR and Frame Tree adapters consume only the public
+    semantic projection and parser answers: they do not reparse source or use
+    private parser state. Public API audits find no Semantic IR or Frame Tree
+    type, value, cache, revision, or update surface in Markdown Core.
+13. One-shot, incremental, cache-disabled, and lazily indexed one-shot
+    documents expose equal parser answers for equal semantic projections.
+    Retained old documents keep their old answers after later commits and
+    session close. A document a session commits from carries a prepared
+    relation index at publication (6.3).
+14. Public answer APIs accept and return semantic identities only. Concrete
+    tokens and recovery nodes have no parser answers, and syntax diagnostics
+    are unchanged when semantic relation indexes are disabled or rebuilt.
 
 ### 14.2 Identity and trace gates
 
@@ -1545,6 +2029,17 @@ For a pinned large document:
     `DESCENDANT` on that container in work independent of `W`, and an edit
     whose normalized result changes no projection publishes nothing at all —
     not an empty-parts entry on a live node, and not a spine (11.1).
+12. A change to a document-wide ordered answer emits `ANSWERS` on the root
+    `Document`; a node-addressed answer change emits it on exactly that node.
+    Filling or compacting an answer cache emits no entry.
+13. A concrete-only edit publishes an empty `diffs`: trailing whitespace, and
+    a delimiter respelled from `*x*` to `_x_`. Both reparse their region and
+    neither emits an entry or a spine.
+14. A prefix insertion leaves every later `TEXT_MAP` equal, and the later
+    nodes' `Document.scope` results move by exactly the inserted length.
+15. Inserting a definition emits `ANSWERS` on exactly the identities whose
+    answers changed and converts exactly the bracketed forms that now resolve;
+    the blocks reparsed and `|diffs|` are the same for a document of any size.
 
 ### 14.6 Delta application gates
 
@@ -1568,9 +2063,17 @@ For randomized edit traces against a randomized consumer projection:
 Pinned large-document traces report:
 
 - `|diffs|`, entries by kind, and parts by kind;
+- semantic-node and syntax-only-token counts, record bytes, and allocations;
 - persistent nodes/bytes copied by the parser;
 - reparsed regions and identity-matching frontier;
-- answer index probes and affected units;
+- relation-index probes, affected units, and persistent index bytes
+  path-copied;
+- semantic-projection allocations and full-CST walks, both required to be
+  zero for ordinary node access and traversal, and syntax-only tokens stepped
+  over by a semantic traversal, required to be zero;
+- every term above measured a second time against an AST-only baseline that
+  captures no syntax-only record on the same trace, with the CST permitted to
+  move only the records-created term (11.1);
 - delta application work, separated into the `O(|diffs|)` term and the
   consumer's own projection work; and
 - rebuild cost, labeled and measured separately.
@@ -1578,6 +2081,15 @@ Pinned large-document traces report:
 `|diffs|` and delta application must be independent of unrelated document
 nodes. Framework-diff traces are reported separately and measured against
 11.3, never against `|diffs|`.
+
+The migration pins the existing representative, large-document, extension,
+and adversarial parser benchmarks before the C-layer AST is extended. The
+same workloads then report one-shot parse time, localized commit time, peak
+memory, concrete-record bytes, zero-copy semantic traversal, and commits with
+an old document retained. A result that preserves asymptotic bounds by adding
+an unconditional second parse, full AST materialization, full relation-index
+copy, or full-sized node per punctuation token fails this gate regardless of
+its timing on a small fixture.
 
 ### 14.8 Streaming gates
 
@@ -1601,12 +2113,18 @@ section says otherwise. `byte` and `integer` are primitives.
 | `CanonicalText` | a node's text field: canonical UTF-8 plus its map back to source | 6.1 |
 | `ChildOrdinal` | zero-based position within one child list; a non-negative integer | here |
 | `Commit` | what `Session.commit()` returns: `{document, delta}` | 2 |
+| `ConcreteID` | stable identity of one concrete node or token: `(domain, ordinal)` | 0 |
+| `ConcreteNode` | one unified-CST node: kind, children in source order, identity, extent | 0 |
+| `ConcreteToken` | one syntax-only token or trivia run: kind, flags, extent | 0 |
+| `ConcreteTree` | the unified CST of one document; what `concrete` exposes | 0 |
+| `ErrorRegion` | a recovered span inside a committed bounded island | 0 |
+| `MissingToken` | a token the grammar required and the source did not supply | 0 |
 | `CoordinateProfile` | closed selector for the space a `Scope` resolves in | 7.2 |
 | `Delta` | the difference between two documents, at both of a document's levels | 9 |
 | `Diff` | one node whose projection differs, plus which parts differ | 9 |
 | `DiffPart` | closed vocabulary of which part of a node differs | 9.1 |
 | `DiffParts` | a set of `DiffPart`; a six-flag bitmask | 9.1 |
-| `Document` | one immutable parsed unit; the AST's only public root | 4 |
+| `Document` | one immutable parsed unit; the semantic projection's public root | 4 |
 | `DocumentDomain` | the opaque scope that identities and revisions live in | 5.1 |
 | `DocumentVersion` | which published document: `(domain, revision)` | 5.1 |
 | `EncodedOffset` | zero-based offset in a projected coordinate space, never storage | 7.2 |
@@ -1617,7 +2135,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `MarkupKind` | which canonical node kind a `Markup` is | canonical-ast.md |
 | `MarkupOrdinal` | positive integer, unique within one domain, never reused | here |
 | `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
-| `MarkupTrack` | a node's identity, two revisions, and primary extent | 4 |
+| `MarkupTrack` | a node's identity, revision pair, and extent | 4 |
 | `Offset` | zero-based byte offset; the context names which buffer | here |
 | `ParseOptions` | the parse-time options that can affect AST truth | canonical-ast.md |
 | `Position` | one endpoint of a `Scope`; widened per coordinate profile | canonical-ast.md, 7.2 |
@@ -1631,8 +2149,9 @@ section says otherwise. `byte` and `integer` are primitives.
 | `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
 | `SourceProfile` | closed selector for which byte sequences may be stored | 7.1 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
-| `SpanPair` | one entry of a `TextMap`: a canonical span and its source span | 6.1 |
+| `SpanPair` | one entry of a `TextMap`: a canonical span and its node-relative source span | 6.1 |
 | `TextMap` | relates a field's canonical text to the source bytes that produced it | 6.1 |
+| `UnexpectedToken` | a token the grammar did not admit at that position | 0 |
 | `Utf8Text` | canonical UTF-8 text; the value half of `CanonicalText` | here |
 
 Every scalar above, in one place. These are the definitions; they get no
@@ -1677,7 +2196,12 @@ The capability ships only when:
 6. release telemetry enforces the parser, diff-list-size, application,
    storage, and memory bounds separately; and
 7. no parser package acquires rendering, layout, workspace, target-loading,
-   framework, or application-model responsibilities.
+   framework, or application-model responsibilities; and
+8. the session-owned answer APIs and mutation-bounded borrowed answer arrays
+   are replaced by the self-contained `Document` queries of 4.1; one-shot and
+   incremental documents retain the same immutable answer capability.
 
-Markdown Core remains independently useful as a Markdown parser whose sole
-output is its canonical self-contained AST.
+Markdown Core remains independently useful as a Markdown parser. Its public
+parser model is one unified CST exposed by `concrete` and one self-contained
+typed AST projection exposed by `semantic`; the latter is its only semantic
+product and the complete adapter boundary for Semantic IR and Frame Tree.

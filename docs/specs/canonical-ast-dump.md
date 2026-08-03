@@ -1,7 +1,11 @@
 # Canonical AST file-tree dump
 
 Status: frozen for Phase 5 on 2026-07-11; amended on 2026-07-29 for the
-public `DirectiveLabel` kind.
+public `DirectiveLabel` kind; amended on 2026-08-03 to add the field order of
+`ReferenceDefinition`, `LinkReference`, and `ImageReference`, which the
+reference-model unification of 2026-08-02 shipped into the golden corpus and
+the manifest without adding them here, and to record which coordinate profile
+the dump prints.
 
 The dump is a deterministic public diagnostic representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
@@ -74,12 +78,25 @@ presence is topology: a `DirectiveLabel` child is either present or absent.
   follow it, and `children` is always last.
 
 The dump prints the native C parser's public scope coordinates exactly, without
-normalizing or interpreting particular line/column combinations.
+normalizing or interpreting particular line/column combinations. Its
+coordinate profile is `LINE_COLUMN`, which is the one profile whose `Position`
+is a line/column pair (`incremental-canonical-ast.md` §7.2); the dump never
+prints a byte, scalar, UTF-16, or binding-native offset. Scopes are resolved
+on demand from stable extents, so a commit that only shifts later content
+changes what the dump prints without changing any node's projection.
 
 Directive parents have no `label=` scalar field. No `DirectiveLabel` child
 means the label is absent; a `DirectiveLabel` line with `children=0` means an
 explicit empty `[]`. A label node's scope covers the complete bracketed span,
 including both delimiters.
+
+The two footnote kinds print their label under the key `id=`, while the three
+reference kinds print theirs under `label=`. This is deliberate and frozen.
+The AST field is named `label` on all five (`canonical-ast.md`), because
+`track.identity` is what `id` names on a node; the footnote dump key predates
+that rename and is kept so the reviewed `.ast` corpus stays byte-stable. The
+asymmetry is only in the dump vocabulary, and all four implementations must
+reproduce it exactly.
 
 ## Field order by record kind
 
@@ -98,6 +115,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `TableRow` | `isHeader` |
 | `DirectiveBlock` | `mode`, `name`, `attributes` |
 | `FootnoteDefinition` | `id` |
+| `ReferenceDefinition` | `label`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `mode`, `literal` |
 | `HTML` | `literal` |
@@ -105,6 +123,8 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
+| `LinkReference` | `label`, `form` |
+| `ImageReference` | `label`, `form` |
 | `Directive` | `mode`, `name`, `attributes` |
 | `FootnoteReference` | `id` |
 | `CrossLink` | `reference` |

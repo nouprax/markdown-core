@@ -1,345 +1,315 @@
-# Sessions and deltas contract
+# Sessions, deltas, and platform surfaces
 
-Status: draft for v2.0 (milestone M0, 2026-07-15; footnote queries added
-with the revised footnote contract, M3, 2026-07-16; platform surface
-concretized with the M4 Swift binding, 2026-07-17 — the per-commit id-set
-record is named **delta** everywhere: `markdown_core_delta_*` in C, `Delta`
-on the platforms). This contract is not fully implemented yet; it becomes
-binding when the v2 milestones land.
-Companion documents: `canonical-ast.md` (node inventory),
-`canonical-ast-dump.md` (diagnostic dump grammar), and
-`../migration/2026-07-15-v2-incremental-sessions-plan.md` (design rationale
-and delivery plan).
+Status: rewritten 2026-08-03 onto the unified-CST ownership model. This
+contract is not implemented yet; it becomes binding together with
+`incremental-canonical-ast.md`, and the two ship atomically with
+`canonical-ast.md` (that document's rollout gate, section 16).
 
-This is the language-neutral public contract for incremental parsing. Platform
-APIs may use idiomatic syntax, but they must not change names, semantics,
-ordering, identity rules, or cost guarantees defined here.
+Companion documents: `incremental-canonical-ast.md` owns the model — one
+unified CST, its typed semantic projection, identity, revisions, extents, the
+delta, and every complexity bound. `canonical-ast.md` owns the node inventory.
+`canonical-ast-dump.md` owns the diagnostic dump grammar.
+
+**This document owns two things and defers everything else:** the parser
+answer record types, and the concrete platform and C surfaces that expose the
+model. Where it restates a rule from `incremental-canonical-ast.md` it does so
+to name the API that carries it, never to redefine it; a conflict is resolved
+in that document's favour.
+
+Platform APIs may use idiomatic syntax, but they must not change names,
+semantics, ordering, identity rules, or cost guarantees.
 
 ## Model
 
-A **session** is the single mutable owner of one Markdown text and its living
-AST. Consumers apply **edits** (insert, replace, delete on byte ranges;
-appending a streamed token is an edit at end-of-text), then **commit**. Each
-commit incrementally reparses only the stale region around the edits and
-produces:
+A **session** is the single mutable owner of one Markdown text. Consumers
+apply **edits** to byte ranges, then **commit**. Each commit reparses only the
+ownership regions the edit touched and publishes a `Commit`:
 
-- a **snapshot**: an immutable `Document` value tree that structurally shares
-  every unchanged node with the previous snapshot, and
-- an optional **delta**: the exact set of node ids that were added,
-  removed, or changed by the commit.
+```text
+Commit {
+    Document document
+    Delta    delta
+}
+```
+
+`Commit.document` is the complete correctness result and is immediately
+self-contained: it stays readable after later commits and after the session
+closes, with no materialization step. `Commit.delta` describes what changed
+between the session's previously published document and this one. A consumer
+may discard every delta and re-derive from `Commit.document`; the three
+integration paths are `incremental-canonical-ast.md` §2.1, and a binding must
+support all three.
 
 `Document.parse(source, options)` remains the one-shot entry point. It is a
-pure function implemented as an internal single-commit session and keeps its
-v1 memory profile (no session survives the call).
+pure function of `(bytes, options)` and returns the same `Document` type. It
+gets its own `DocumentDomain`, so its identities never compare equal to
+another parse's.
 
-There is no process-global state anywhere in the parse path. Any number of
-sessions may be created and used concurrently with no global locks and no
-cross-session interference.
+There is no process-global state in the parse path. Any number of sessions may
+advance concurrently with no shared lock and no cross-session interference.
 
 ## Equivalence invariant
 
 After any sequence of edits and commits, the session's document is
 semantically identical to a from-scratch `Document.parse` of the same final
-text: the canonical diagnostic dump of both trees is byte-equal. Node ids and
-revisions are excluded from this invariant (they are session history, not
-content).
-
-## Node identity
-
-Every node has:
-
-- `id` — unique within its session, assigned when the node is created, never
-  reused. Ids are stable **within a node kind**: if an edit changes what kind
-  of node occupies a source region (paragraph becomes a heading, a paragraph
-  is promoted to a formula block or retyped into a table), the old node is
-  reported `removed` and a new node `added`. Ids are never adopted across
-  kinds.
-- `revision` — the commit revision at which the node's own fields, its child
-  list, or any descendant last changed. A pure positional shift caused by an
-  edit elsewhere does not change a node's revision.
-
-Sessions also expose a `lineage` value (a per-session random 64-bit salt).
-Nodes from different sessions never compare equal.
-
-### Id stability guarantees
-
-- Nodes outside the stale region of an edit keep their id and revision.
-- A block whose source bytes are unchanged by an edit keeps its id, its
-  revision, and its entire subtree, even when the surrounding structure is
-  reparsed.
-- During append-only streaming, the open block at the end of the document
-  (for example the paragraph currently receiving tokens) keeps its id across
-  commits, and its trailing `Text` node keeps its id with a revision bump per
-  content change. Earlier inline siblings that are byte-identical keep id and
-  revision.
-- A present `DirectiveLabel` is an ordinary semantic node and adoption unit.
-  If edits leave it a label at the same place, it keeps its id under the same
-  rules as `TableCell` or `Paragraph`; adding or removing the brackets adds or
-  removes the node rather than mutating hidden parent metadata.
-- Everything else is best effort: reparsed regions adopt old ids where kind
-  and position match, and report honest `added`/`removed` entries where they
-  do not.
-
-## Equality
-
-Platform node equality is `(lineage, id, revision)` — O(1), allocation-free,
-and safe in render hot paths. Two equal nodes are guaranteed to have
-identical AST content (fields and descendants). Hash values are derived from
-the same tuple. Unchanged nodes are additionally the same platform object
-across consecutive snapshots (reference identity is a valid fast path).
-
-Absolute source position is not content: two equal nodes may sit at different
-absolute positions in different snapshots.
-
-## Scope
-
-Nodes do not store absolute source positions. The public API is:
-
-- `document.scope(of: node)` — resolves the absolute `Scope` (start/end
-  line:column) of a node within that snapshot, O(1) after one O(n)
-  whole-snapshot materialization.
-- `MarkupWalker` supplies the resolved scope with every event; `MarkupDumper` prints
-  absolute scopes for a `Document` root, byte-identical to the v1 dump
-  grammar. Dumping a non-`Document` subtree prints scopes with the subtree as
-  origin.
-
-One-shot `Document.parse` materializes scopes eagerly, so the returned value
-is immediately self-contained and `scope(of:)` behaves identically in every
-binding.
-
-The C facade exposes the same primitive as
-`markdown_core_document_scope_table`: it returns one caller-owned row per
-canonical node in preorder. Rows remain valid after the source document or
-session is freed and must be released with
-`markdown_core_scope_table_free`.
-
-Session snapshots resolve scopes lazily: deltas deliberately omit pure
-positional shifts (an edit that only moves later content commits an empty
-delta), so a snapshot cannot carry positions in its shared node values.
-Instead, the first scope use on a snapshot — `scope(of:)`, a scopeful
-`MarkupWalker` event walk, or a dump — obtains every scope from the session's
-native batch table in one O(n) operation and caches it; the snapshot is
-self-contained from then on, including after the session advances or is
-freed. Queueing edits does not end a snapshot's currency (edits never touch
-the committed tree); the next successful commit does. Requesting a scope
-from a snapshot that was superseded before it ever materialized is a
-documented programmer error (platforms trap), as is passing a node of a
-different session or revision.
-
-A caller that retains a snapshot across commits makes the contract explicit
-with `materialize()` on the snapshot: it performs the same one-time
-resolution immediately, so the retained value's usability no longer depends
-on whether some other read happened to run while the snapshot was current.
-Structural traversal never depends on materialization: the scope-free
-visitor overload of `MarkupWalker` walks any retained snapshot regardless of
-resolver state.
+bytes: the canonical diagnostic dump of both is byte-equal. Identities and
+revisions are excluded — they are document history, not content.
 
 ## Edits
 
-- `edit(byteStart, byteEnd, replacement)` replaces the byte range
-  `[byteStart, byteEnd)` of the current text with the replacement bytes.
-  `byteStart == byteEnd` inserts; an empty replacement deletes; `append` is
-  sugar for an edit at `[length, length)`.
-- Offsets refer to the session's **stored text**: the raw bytes exactly as
-  edited, which is also what `session.length` reports. The store never
-  normalizes its contents; NUL and invalid UTF-8 are replaced with U+FFFD
-  during parsing, per line, exactly as the one-shot parse does. This is what
-  lets a streamed append complete a multi-byte character whose first bytes
-  arrived in an earlier edit — the completing commit parses the whole
-  character, identical to a batch parse of the same final bytes.
-- Edits are cheap: they update the text store and extend the pending stale
-  range. No parsing
-  happens until commit. Multiple edits may be queued per commit; coalescing
-  token appends into fewer commits is the recommended way to trade latency
-  for throughput.
+- `edit(byteStart, byteEnd, replacement)` replaces `[byteStart, byteEnd)` of
+  the session's current pending bytes. `byteStart == byteEnd` inserts; an empty
+  replacement deletes; `append` is sugar for an edit at `[length, length)`.
+- Offsets are **stored bytes**, not a resolved `Scope`. The two are separate
+  types so a projected coordinate cannot be fed back in as an edit
+  (`incremental-canonical-ast.md` §8.1). Byte granularity is what lets a
+  streamed append complete a multi-byte character whose first bytes arrived in
+  an earlier edit.
+- The store never normalizes its contents. NUL and invalid UTF-8 are replaced
+  with U+FFFD during parsing, per line, exactly as a one-shot parse does,
+  under the `STRICT_UTF8` profile; `PERMISSIVE_BYTES` stores them verbatim.
+- Edits are cheap: they update the pending text and extend the pending edit
+  script. No parsing happens until commit. Multiple edits may be queued per
+  commit, and they normalize to one deterministic non-overlapping ascending
+  script before parsing. Overlap, overflow, a stale base, or a profile
+  violation fails the commit without publishing a partial source or AST.
+- `commit(source)` is an optional convenience for a host that owns whole text
+  rather than the edit — a two-way text binding, a reload from disk, a remote
+  replacement. It normalizes the difference into the same script and must
+  produce an identical document, identities, and delta. It costs one byte-level
+  diff, so a host that already knows its edit submits that edit instead.
 
-## Commit and deltas
+Typing, paste, IME replacement, collaboration chunks, and LLM output all use
+this one path. There is no streaming-only node, provisional AST, finalize
+opcode, or parser mode.
 
-`commit()` reparses incrementally and returns the new snapshot plus, on
-request, a delta containing four id arrays:
+## Commit and delta
 
-| Array | Meaning |
-| --- | --- |
-| `added` | nodes that did not exist at the previous revision |
-| `removed` | nodes that no longer exist (ids are retired, never reused) |
-| `changed` | nodes whose own fields or direct child list changed |
-| `bubbled` | ancestors whose revision changed only because a descendant did |
+```text
+Delta {
+    DocumentVersion before
+    DocumentVersion after
+    [Diff]          diffs      // how the nodes differ
+    [SourceEdit]    edits      // how the bytes differ
+}
 
-The four arrays are disjoint. Applying a delta to a mirror of the
-previous revision (materialize `added` and `changed`, relink `bubbled`, evict
-`removed`) yields exactly the new tree; this is the mechanism bindings use to
-build snapshots without decoding unchanged subtrees. Its cost is O(delta)
-plus the direct-child slots copied into rebuilt immutable containers; a
-contiguous platform array necessarily copies a wide parent even when only
-one child value changes.
+Diff {
+    MarkupID  markup
+    DiffParts parts
+}
 
-Deltas are plain caller-owned data and remain valid after the session
-advances or is freed.
+DiffPart = VALUE | TEXT | TEXT_MAP | CHILDREN | ANSWERS | DESCENDANT
+```
 
-While the delta's originating session is still at its `after` revision, the
-C facade's `markdown_core_session_ordered_delta_entries` materializes
-`added ∪ changed ∪ bubbled` as one deterministic caller-owned
-`(id, parent, change)` table. Every non-root parent is another row later in
-the table, so bindings rebuild immutable values in one
-children-before-parents pass without defining their own depth or sorting
-rule. Construction is O(delta) expected time and O(delta) temporary space,
-does not walk unaffected nodes, and rejects a delta from another session
-lineage even when its revision matches. The rows remain valid after the
-session or delta is released and must be freed with
-`markdown_core_delta_entries_free`.
+`diffs` is one postorder list and is the only form: retired entries first in
+`before` postorder, then live entries in `after` postorder, each `MarkupID`
+appearing exactly once carrying the union of its differing parts. There is no
+second ordered-entry API, no lifecycle tag, no parent member, no position
+member, and no per-field address; each is derivable from the document in
+`O(1)` or `O(log n)`. The membership law, the meaning of each part, and the
+`|diffs|` bound are `incremental-canonical-ast.md` §9.
 
-## Cost model
+`Delta` is plain immutable caller-owned data. It retains no session, remains
+valid after the session advances or closes, and is not an AST mutation
+protocol: an entry names an address, and the consumer re-reads the current
+document there. Concatenating adjacent deltas is sound and idempotent, so
+there is no compose operation, acknowledgement, nonce, or fallback-reason
+enumeration. A stale or mistrusted delta is detected by the single `before`
+comparison and resolved by rebuilding from the current document.
 
-- Per-commit work is proportional to the size of the touched leaf blocks plus
-  the delta, independent of total document size. Streaming appends touch
-  only the open frontier.
-- Platform mirror construction additionally copies the direct-child
-  collections of rebuilt or relinked containers. Each such collection is
-  subjected to one replacement-lookup pass and at most one contiguous copy
-  per commit, so reconstruction is O(delta + copied child slots), never
-  O(changes × parent width).
-- Inline content is reparsed per touched leaf block (inline syntax is
-  non-local within a leaf). Streaming into one enormous paragraph is
-  therefore linear per commit in that paragraph's size.
-- Reference-dependent inline reparsing operates on one complete ownership
-  domain: a stable semantic owner, its contiguous inline child span, and the
-  owner content buffer backing that span. Paragraph, Heading, and TableCell
-  domains contain all direct children. A block `DirectiveLabel` owns its raw
-  label source and likewise reparses its complete `content` list. An inline
-  `DirectiveLabel` is materialized during its surrounding Paragraph or
-  TableCell parse, just like Emphasis or Link, so it stays inside that
-  surrounding complete domain instead of copying and reparsing the same
-  bytes. The core records this distinction with generic raw-inline-source
-  lifecycle state; no adopter or lookup rule switches on directive kind or
-  parent shape. Replacement moves the complete owner child list and backing
-  together through the ordinary adopter. The committed and public trees
-  contain the same label node, so there is no prefix/count partition,
-  transparent edge, scope compensation, or directive-specific walker/delta
-  path. Empty, singleton, and large domains all use this one mechanism.
-- Directive-label deltas follow the ordinary topology rules. Absent ↔ present
-  adds or removes the `DirectiveLabel` and changes the directive's direct
-  child list; a change to the label's own child list reports the label
-  `changed`; a descendant-only field edit reports that descendant `changed`
-  and the label and directive ancestors `bubbled`.
-- Documents parsed mid-stream behave as if the input ended at the current
-  text: unterminated constructs parse exactly as `Document.parse` would parse
-  them (for example `CodeBlock.closed == false`).
-- Non-local Markdown constructs degrade gracefully and stay linear in the
-  document — bounded by one full reparse of the affected material plus the
-  per-node adoption, delta, and index upkeep over it, a small constant
-  multiple of `Document.parse` on the same text (measured ≈3–4x for
-  whole-document reparses; a bare reparse without adoption is what "one
-  full parse" alone would buy, and a commit must also re-identify every
-  surviving node): an edit inside an unclosed fence, raw-HTML block, or
-  directive reparses forward to end of input; an edit that changes the
-  document's link-reference definitions (label, destination, or title —
-  a reparse that re-harvests byte-identical definitions does not count)
-  re-resolves exactly the blocks that looked the changed labels up — an
-  inverted label-to-units index makes collecting them O(affected), so a
-  definition edit costs the affected blocks' reparse, not a scan of every
-  block with references; a
-  footnote ordinal or resolution change bumps only the revisions of the
-  references whose query answers changed (definitions stay at their source
-  position; numbering and resolution are index-backed queries, per the
-  revised footnote decision of 2026-07-16).
+## Parser answers
 
-## Footnote queries
+Numbering, first-use order, resolution, and back-reference ordinals are not
+node fields. They are relations over the whole document, so they are queries
+on the semantic document, addressed by the `MarkupID` whose answer they are:
 
-The tree is source-faithful (`canonical-ast.md`, footnote semantics):
-definitions never move and references always carry their label. Everything
-presentational is a query against the session's committed revision:
+```text
+Document.footnote(MarkupID)   -> Optional<FootnoteAnswer>
+Document.footnotes()          -> [MarkupID]
+Document.resolution(MarkupID) -> Optional<Resolution>
+Document.references(MarkupID) -> [MarkupID]
+```
 
-- `footnote(id)` — for a `FootnoteReference`: the winning definition's id,
-  the label's 1-based first-use `number`, the reference's 1-based ordinal
-  among the label's references in document order, and how many references
-  share the label. A reference node exists only where its label is defined
-  (`canonical-ast.md`), so none of these is ever the unresolved 0. For a
-  `FootnoteDefinition`: the label's winning definition id (its own unless an
-  earlier definition shadows it), the label's `number` and reference count
-  (0 when unreferenced), and ordinal 0.
-- `footnotes()` — the referenced winning definitions in first-use order (the
-  order a renderer lists them in).
-- `references(definition)` — the references resolving to a winning
-  definition, in document order (back-reference targets); empty for
-  shadowed, unreferenced, or non-definition ids.
+They are members of the document and not of the session, because a retained
+document must answer them after later commits and after the session closes.
+The query resolves through that document's own immutable relation indexes; it
+never consults a newer session revision.
 
-The C surface is `markdown_core_session_footnote_info`,
-`markdown_core_session_footnotes`, and
-`markdown_core_session_footnote_references` over a
-`markdown_core_footnote_info` record; borrowed arrays stay valid until the
-next mutating call. Labels match case-folded with collapsed whitespace; the
-earliest definition in document order wins; reference labels longer than the
-link-label limit (1000 bytes) never resolve.
+### Answer records
 
-When a commit changes only these answers — an ordinal shift after an earlier
-first use appears, a resolution flip after a definition is added or removed —
-the affected references and definitions are reported `changed` with a
-revision bump and byte-identical dump content, and their untouched ancestors
-`bubbled`. One-shot documents do not carry the index; footnote queries are a
-session feature.
+```text
+FootnoteAnswer {
+    MarkupID winner          // the winning FootnoteDefinition for this label
+    integer  number          // 1-based, in first-use order of the label
+    integer  ordinal         // 1-based among that label's references in
+                             // document order; 0 when asked of a definition
+    integer  referenceCount  // references resolving to `winner`
+}
+
+Resolution {
+    MarkupID winner          // the winning ReferenceDefinition for this label
+    integer  number          // 1-based, in first-use order of the label
+    integer  ordinal         // 1-based among that label's references in
+                             // document order; 0 when asked of a definition
+    integer  referenceCount  // references resolving to `winner`
+}
+```
+
+The two records have the same shape because the two namespaces answer the same
+questions; they stay separate types because `[x]` and `[^x]` are separate
+label spaces that must never share a bucket (`canonical-ast.md`, reference and
+footnote semantics).
+
+- Asked of a `FootnoteReference`, `LinkReference`, or `ImageReference`, the
+  answer is always present: those nodes exist only where their label is
+  defined, so there is no unresolved case to encode.
+- Asked of a `FootnoteDefinition` or `ReferenceDefinition`, `winner` is the
+  definition that wins the label — its own identity unless an earlier
+  definition shadows it — `ordinal` is 0, and `referenceCount` is 0 for a
+  definition nothing refers to. That zero is a real immutable value, so a
+  later definition insertion is discovered as an ordinary `ANSWERS` change
+  rather than by rescanning.
+- Asked of any other kind, the result is absent.
+
+`Document.footnotes()` returns the referenced winning definitions in first-use
+order — the order a renderer lists them in. `Document.references(definition)`
+returns the references resolving to a winning definition in document order,
+and is empty for a shadowed definition, an unreferenced one, or a non-
+definition identity.
+
+Labels match case-folded with collapsed whitespace, the earliest definition in
+document order wins, and reference labels longer than the link-label limit
+(1000 bytes) never resolve — so they never produce a reference node at all.
+
+A change to any of these answers surfaces as the `ANSWERS` part on exactly the
+identities whose observable result changed, and on the root `Document` for a
+change to `footnotes()`. Filling, compacting, or rebuilding an index emits
+nothing.
+
+## Coordinates
+
+Nodes store no absolute position. A node's `track.extent` is a stable
+identity, and coordinates are resolved against the owning document:
+
+```text
+Document.scope(SourceExtent, CoordinateProfile) -> Optional<Scope>
+```
+
+Resolution is `O(log n)` and requires no whole-document pass, in every
+document, including a retained old one. A commit that only shifts later
+content therefore publishes an empty `diffs`, and a consumer that resolves on
+demand pays nothing for the shift. A consumer that has chosen to materialize
+absolute coordinates remaps them from `Delta.edits`; there is no coordinate
+event, remap channel, or scope table.
+
+`CoordinateProfile` selects the space: `STORED_BYTE`, `UNICODE_SCALAR`,
+`UTF16`, `LINE_COLUMN`, or a binding's closed `NATIVE` projection.
+`LINE_COLUMN` is what the dump grammar prints.
+
+## Concrete surface
+
+The unified CST is reachable from any document, one-shot or committed:
+
+```text
+Document.concrete -> ConcreteTree
+```
+
+It exposes concrete nodes and tokens in source order, delimiters and trivia,
+`MissingToken`, `UnexpectedToken`, and `ErrorRegion`, child traversal, and
+source mapping. It is the retained owner, not a second tree or a
+reconstruction, so reaching it allocates nothing and advances no trace.
+`ConcreteID` never appears in a semantic value, a parser answer, or a `Delta`,
+and no answer is ever addressed to a concrete record.
+
+An adapter building Semantic IR or a frame tree consumes the semantic
+projection and parser answers only; requiring concrete access is outside the
+supported boundary.
 
 ## Failure and memory
 
-- Commits are transactional under allocation failure: on OOM the session
-  remains valid at the previous committed revision, the error is reported,
-  and `commit()` may be retried. Text edits already applied to the text store
-  are retained (text advances, tree does not) — this is observable and
-  documented.
-- Session teardown frees everything owned by the session. Snapshots held by
-  bindings are self-contained platform values and survive the session.
+- Commits are transactional. On allocation failure the session remains valid
+  at the previous committed revision, the error is reported, and `commit()`
+  may be retried from the still-current committed source. An aborted identity
+  or revision is burned, never reused.
+- Pending edits already applied to the pending text are retained: text
+  advances, the tree does not. This is observable and documented.
+- Closing a session invalidates no published document, node view, byte slice,
+  or delta.
+- Routine private storage compaction preserves every public identity,
+  revision, and AST value and emits no diff entry.
 
 ## Concurrency
 
-- All calls on one session are externally synchronized (one writer at a
-  time).
-- Between mutating calls, the session's document view, node accessors, and
-  any snapshot are safe for concurrent reads from any thread. The borrowed
-  C document view stays valid across `markdown_core_session_edit` (edits
-  never touch the committed tree) and ends at the next commit or free.
-- Distinct sessions are fully concurrent.
-- One-shot documents keep the v1 concurrency contract verbatim.
+- All mutating calls on one session are externally synchronized (one writer).
+- Published documents and deltas are immutable values, safe for concurrent
+  reads from any thread according to the binding's value contract, including
+  while the session advances.
+- Distinct sessions are fully concurrent, which is what lets a workspace hold
+  one session per open document.
 
 ## Platform surfaces
 
-The canonical entry points on Swift, Kotlin, and ES are `Document.parse`
-(unchanged shape, now implemented over an internal single-commit session so
-one-shot nodes carry ids) and `MarkupSession`:
+The canonical entry points on Swift, Kotlin, and ES are `Document.parse` and
+`MarkupSession`:
 
 | Operation | Contract |
 | --- | --- |
 | `MarkupSession(options)` | options are immutable for the session lifetime |
-| `replace` / `append` | queue edits as defined above (byte ranges of the stored text) |
-| `commit()` | returns a `Commit` value: the new `document` plus its `delta: Delta` |
-| `document` / `revision` | last committed snapshot and its revision; the empty document at revision 0 before the first commit |
-| `node(for:)` | the committed snapshot's current value for an id |
-| `footnote(of:)` / `footnotes()` / `references(of:)` | the footnote queries below |
+| `replace` / `append` | queue edits as byte ranges of the pending text |
+| `commit()` | returns `Commit { document, delta }` |
+| `commit(source)` | optional whole-buffer convenience over the same primitive |
+| `document` / `version` | the last committed document and its `DocumentVersion` |
+| `node(for:)` / `parent(of:)` / `index(of:)` | resolve an identity in that document |
+| `scope(of:profile:)` | resolve a stable extent to a `Scope` |
+| `footnote(of:)` / `footnotes()` / `resolution(of:)` / `references(of:)` | the parser answers above |
+| `concrete` | the retained `ConcreteTree` |
+
+Every one of those accessors is a member of the **document**, not of the
+session, except the session's own `commit`, `edit`, and `document`. There is
+no empty document at revision zero: a session publishes its first document at
+its first commit, and every public identity and revision is positive.
 
 Shared platform types, named identically on all three platforms:
 
-- `MarkupID` — node identity: the session's `lineage` salt plus the raw
-  64-bit id. `Identifiable`-style APIs use `MarkupID` (revision-free, stable
-  across commits); node equality is `MarkupID` plus `revision`.
-- `Commit` — `{ document, delta: Delta }`.
-- `Delta` — `{ beforeRevision, afterRevision, added, removed, changed,
-  bubbled }` as arrays of `MarkupID`. Always present on a platform `Commit`
-  (the C-level nullable out-parameter is a C-consumer knob only).
-- `FootnoteInfo` — the per-node footnote query record; unresolved and
-  not-applicable answers are platform-optional (`nil`/`null`) rather than 0.
+- `MarkupID` — `(DocumentDomain, ordinal)`. Hashable, equatable, and
+  serializable, usable unmodified as a SwiftUI `ForEach(id:)`, a Compose
+  `key()`, or a React `key`.
+- `MarkupTrack` — `{ identity, revision, extent }`; `MarkupRevision` is the
+  `{ self, subtree }` pair. Node equality and hashing are the two-word tuples
+  of `canonical-ast.md`.
+- `Commit` — `{ document, delta }`.
+- `Delta` — `{ before, after, diffs, edits }`. Always present on a platform
+  `Commit`; the C-level nullable out-parameter is a C-consumer knob only.
+- `Diff` / `DiffParts` — one identity plus the six-flag bitmask. No registry,
+  subscription, interest, route, target, or acknowledgement type may be
+  layered around them.
+- `FootnoteAnswer` / `Resolution` — the records above; absent answers are
+  platform-optional (`nil`/`null`) rather than 0.
 
-The platform footnote field on `FootnoteDefinition`/`FootnoteReference` is
-named `label` (the node identity property occupies `id`); the diagnostic
+The footnote label field on `FootnoteDefinition` and `FootnoteReference` is
+named `label`, because `track.identity` names node identity; the diagnostic
 dump grammar keeps its frozen `id=` key for that label.
 
-The C facade exposes the same model as
-`markdown_core_session_open/edit/commit/document/node_by_id/free`,
-`markdown_core_node_get_id/get_revision/get_parent`, and
-`markdown_core_delta_*` accessors. The shared materialization order is
-`markdown_core_session_ordered_delta_entries`, released with
-`markdown_core_delta_entries_free`; node handles borrowed from a session are
-valid until the next mutating call on that session.
+### C facade
+
+```text
+markdown_core_session_open / _edit / _commit / _close
+markdown_core_commit_document / _delta
+markdown_core_document_node / _parent / _index / _scope / _version / _concrete
+markdown_core_document_footnote / _footnotes / _resolution / _references
+markdown_core_delta_before / _after / _diffs / _edits / _free
+```
+
+Answer and diff results are caller-owned values that stay valid after the
+session or document is released; there are no mutation-bounded borrowed
+arrays. The superseded `markdown_core_session_ordered_delta_entries`,
+`markdown_core_session_footnote_*`, and `markdown_core_document_scope_table`
+are removed rather than deprecated, and a package cannot advertise this
+capability while exposing them.
 
 `ParseOptions` and the exhaustive `MarkupVisitor` dispatch contract are
-unchanged from `canonical-ast.md`. `MarkupWalker` has two deliberate traversal
-modes: its typed-visitor overload walks structure in preorder without resolving
-scope, while its event overload emits entering/exiting events with the resolved
-scope.
+unchanged from `canonical-ast.md`. `MarkupWalker` keeps its two traversal
+modes: the typed-visitor overload walks structure in preorder without
+resolving scope, and the event overload emits entering/exiting events with the
+resolved scope. Neither visits a syntax-only token; concrete traversal is the
+`concrete` surface's own.
