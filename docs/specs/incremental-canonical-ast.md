@@ -1114,7 +1114,7 @@ Source {
 }
 
 SourceProfile =
-    STRICT_UTF8       // stored bytes must be valid UTF-8
+    STRICT_UTF8       // valid UTF-8, except for one truncated final code point
   | PERMISSIVE_BYTES  // any byte sequence may be stored
 ```
 
@@ -1125,6 +1125,28 @@ The source owns the exact committed stored bytes, including bytes that are not
 valid UTF-8 when the selected source profile permits them. Canonical Markdown
 decoding and recovery are deterministic functions of those bytes and the
 frozen profile.
+
+`STRICT_UTF8` accepts exactly one deviation from validity: a **truncated final
+code point** — a well-formed UTF-8 prefix at end-of-source that some
+continuation byte would complete. Any other invalid sequence, including a
+truncated code point anywhere but at the end, is a profile violation and
+fails the commit under 8.1.
+
+The exception is load-bearing, not a courtesy. Edits name byte ranges, and a
+streamed chunk may carry the first half of a multi-byte character with the
+rest arriving in a later chunk (8.1, 8.2). Rejecting that intermediate state
+would make streaming legal only under `PERMISSIVE_BYTES`, and 8.2's rule that
+streaming is ordinary editing with no separate path would become conditional
+on the profile — which is exactly the special-casing that section forbids.
+Accepting a complete invalid sequence instead would erase the difference
+between the two profiles, since both would then store anything.
+
+A truncated final code point parses as `PERMISSIVE_BYTES` would parse it: the
+incomplete bytes decode to U+FFFD for that commit. The commit that completes
+the character reparses the whole character and produces the same AST as a
+fresh parse of the final bytes, which is what 13 already requires of every
+chunk partition. So the tolerance changes which intermediate documents exist,
+never a final one.
 
 The source carries no revision of its own: every published document has
 different stored bytes from its predecessor, because a commit whose normalized
@@ -1292,7 +1314,9 @@ Edits name the current pending source coordinate space. A binding may expose
 single-edit and batch conveniences, but they normalize to one deterministic
 non-overlapping edit set before parsing. Overlap, overflow, stale source base,
 or a source-profile violation fails without publishing a partial source or
-AST.
+AST. Under `STRICT_UTF8` a truncated final code point is not a violation
+(7.1); it is the one intermediate state streaming needs, and the next chunk
+resolves it.
 
 Edits do not directly mutate a published `Document`. `commit` applies pending
 edits to a private source candidate, parses and validates one complete
@@ -1318,6 +1342,15 @@ There must not be a streaming-only node, mutable tail, provisional AST type,
 finalize opcode, revision domain, cache class, invalidation branch, or parser
 algorithm. Chunk partition and commit scheduling may affect performance and
 intermediate valid ASTs, but not final canonical output.
+
+A chunk boundary that falls inside a multi-byte character is the one place
+this needs saying twice. Both profiles accept the truncated tail — under
+`STRICT_UTF8` by the single exception of 7.1 — and both decode it to U+FFFD
+for that intermediate commit. This is not a provisional AST: the intermediate
+document is an ordinary complete document that happens to describe bytes
+ending mid-character, and it is exactly what a fresh parse of those same bytes
+produces. The completing chunk is an ordinary append, and 13's chunk
+equivalence covers it.
 
 ## 9. Delta
 
@@ -1500,9 +1533,10 @@ Two facts about the canonical node inventory remove the parameters:
 
 - no canonical node has two text-valued fields, so `TEXT` and `TEXT_MAP` need
   no field address. This is a rule about the inventory, not an accident of it:
-  **exactly one field per kind is a `CanonicalText`** — the kind's content
-  text, spelled `literal` where it exists — and every other string field is a
-  plain scalar carrying decoded characters and no `TextMap`. Without that rule
+  **at most one field per kind is a `CanonicalText`** — the kind's content
+  text, spelled `literal` — and every other string field is a plain scalar
+  carrying decoded characters and no `TextMap`. Seven kinds carry one; the
+  rest carry none and therefore never carry these two parts. Without that rule
   the claim is false, because `Link` and `Image` each pair a destination with
   a title and `ReferenceDefinition` carries both beside its label, and
   CommonMark resolves escapes and entities inside all of them. Naming the
@@ -1708,13 +1742,21 @@ A region is one of:
   `FormulaBlock`, `ThematicBreak`, `ReferenceDefinition` — together with its
   complete inline child sequence, because inline syntax is non-local within a
   leaf and cannot be reparsed in fragments;
-- the inline sequence of a `TableCell`, a `FootnoteDefinition`'s own content,
-  or a block `DirectiveLabel`, each of which owns the source backing that
-  sequence; or
-- the container marker material of one `BlockQuote`, `List`, `ListItem`,
-  `Table`, `TableRow`, or `DirectiveBlock` — its `>` runs, bullet or ordinal
-  markers, delimiter row, or fence lines — which belongs to the container's
-  own region and not to any child's.
+- the inline sequence of a `TableCell` or a block `DirectiveLabel`, each of
+  which owns the source backing that sequence; or
+- the marker material of one `BlockQuote`, `List`, `ListItem`, `Table`,
+  `TableRow`, `DirectiveBlock`, or `FootnoteDefinition` — its `>` runs, bullet
+  or ordinal markers, delimiter row, fence lines, or `[^label]:` opener —
+  which belongs to that container's own region and not to any child's.
+
+`FootnoteDefinition` belongs to the third class and not the second: its
+`content` is **block** content (`canonical-ast.md`), so it is a container whose
+children are their own regions, and what it owns directly is the `[^label]:`
+opener that introduces it. Classifying it by its content category is what
+gives that opener a region to be rebuilt from; an edit to the label would
+otherwise have nowhere to write its region-relative concrete records. Only
+`TableCell` and a block `DirectiveLabel` own an inline sequence without being
+a leaf block, which is why the second class has exactly two members.
 
 Inline containers are never regions. `Emphasis`, `Strong`, `Strikethrough`,
 `Link`, `Image`, `LinkReference`, `ImageReference`, and an inline `Directive`'s

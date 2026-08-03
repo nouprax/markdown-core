@@ -65,9 +65,14 @@ revisions are excluded — they are document history, not content.
   (`incremental-canonical-ast.md` §8.1). Byte granularity is what lets a
   streamed append complete a multi-byte character whose first bytes arrived in
   an earlier edit.
-- The store never normalizes its contents. NUL and invalid UTF-8 are replaced
-  with U+FFFD during parsing, per line, exactly as a one-shot parse does,
-  under the `STRICT_UTF8` profile; `PERMISSIVE_BYTES` stores them verbatim.
+- The store never normalizes its contents, under either profile. What the
+  profiles differ in is what they **accept**: `PERMISSIVE_BYTES` stores any
+  byte sequence, while `STRICT_UTF8` fails a commit whose bytes are not valid
+  UTF-8, with one exception — a truncated final code point at end-of-source,
+  which is the intermediate state a streamed chunk boundary produces
+  (`incremental-canonical-ast.md` §7.1). Whatever is stored, NUL and any byte
+  sequence that is not valid UTF-8 decode to U+FFFD during parsing, per line,
+  exactly as a one-shot parse does.
 - Edits are cheap: they update the pending text and extend the pending edit
   script. No parsing happens until commit. Multiple edits may be queued per
   commit, and they normalize to one deterministic non-overlapping ascending
@@ -140,18 +145,22 @@ never consults a newer session revision.
 ```text
 FootnoteAnswer {
     MarkupID winner          // the winning FootnoteDefinition for this label
-    integer  number          // 1-based, in first-use order of the label
+    integer  number          // 1-based, in first-use order of the label;
+                             // 0 when nothing refers to the label, because an
+                             // unreferenced label has no first use
     integer  ordinal         // 1-based among that label's references in
                              // document order; 0 when asked of a definition
-    integer  referenceCount  // references resolving to `winner`
+    integer  referenceCount  // references resolving to `winner`; 0 when none
 }
 
 Resolution {
     MarkupID winner          // the winning ReferenceDefinition for this label
-    integer  number          // 1-based, in first-use order of the label
+    integer  number          // 1-based, in first-use order of the label;
+                             // 0 when nothing refers to the label, because an
+                             // unreferenced label has no first use
     integer  ordinal         // 1-based among that label's references in
                              // document order; 0 when asked of a definition
-    integer  referenceCount  // references resolving to `winner`
+    integer  referenceCount  // references resolving to `winner`; 0 when none
 }
 ```
 
@@ -165,10 +174,16 @@ footnote semantics).
   defined, so there is no unresolved case to encode.
 - Asked of a `FootnoteDefinition` or `ReferenceDefinition`, `winner` is the
   definition that wins the label — its own identity unless an earlier
-  definition shadows it — `ordinal` is 0, and `referenceCount` is 0 for a
-  definition nothing refers to. That zero is a real immutable value, so a
-  later definition insertion is discovered as an ordinary `ANSWERS` change
-  rather than by rescanning.
+  definition shadows it — and `ordinal` is 0, because a definition is not one
+  of its own references. A definition nothing refers to answers
+  `referenceCount = 0` **and `number = 0`**: numbering is first-use order, so
+  a label with no first use has no number, and 0 is the sentinel for that
+  rather than an absent field. `Document.footnotes()` lists only numbered
+  definitions, which is the same set.
+
+  Those zeros are real immutable values, not "nothing was read", so a later
+  definition insertion or a first reference appearing is discovered as an
+  ordinary `ANSWERS` change rather than by rescanning.
 - Asked of any other kind, the result is absent.
 
 `Document.footnotes()` returns the referenced winning definitions in first-use
