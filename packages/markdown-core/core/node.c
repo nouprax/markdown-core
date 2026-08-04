@@ -182,6 +182,7 @@ static void S_free_nodes(markdown_core_node *e) {
         }
 
         markdown_core_concrete_records_free(NODE_MEM(e), e->concrete);
+        markdown_core_inline_concrete_records_free(NODE_MEM(e), e->inline_concrete);
 
         free_node_as(e);
 

@@ -349,7 +349,13 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
-              capture_growth_ceiling)
+              capture_growth_ceiling
+              inline_shape
+              inline_smart
+              inline_extension_funnel
+              inline_seam_barrier
+              inline_equivalence
+              inline_growth_ceiling)
         markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()

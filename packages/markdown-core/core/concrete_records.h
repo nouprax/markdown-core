@@ -137,6 +137,199 @@ void markdown_core_concrete_records_free(markdown_core_mem *mem, markdown_core_c
  * and sets `*count` to 0 for a node with none. */
 const markdown_core_concrete_record *markdown_core_node_concrete_records(const markdown_core_node *node, size_t *count);
 
+/** Inline concrete token records (incremental-canonical-ast.md 0, 11.1).
+ *
+ * The inline pass consumes or transforms source bytes the semantic tree
+ * does not spell back: emphasis and extension delimiter runs, code-span
+ * tick runs, escape backslashes, entity spellings, autolink brackets,
+ * the bracket tokens and destination tail of a matched link, and the
+ * smart-punctuation replacements. These records keep that material, under
+ * the same doctrine as the block-phase marker records above: a byte run
+ * whose spelling the projection preserves — plain text, trailing
+ * whitespace, line breaks and the spacing that hardens them — is an
+ * implicit gap with no record.
+ *
+ * Records live on the node that owns the inline sequence per 11.1 — the
+ * leaf block, TableCell, or block DirectiveLabel whose reparse unit the
+ * sequence is — in a vector separate from the block-phase `concrete`
+ * vector because the two belong to different ownership domains. The
+ * block records describe the node's own marker lines and stay put when
+ * only the inline domain is rebuilt; the inline records describe the
+ * content buffer and must travel with it: a dependent rebuild swaps
+ * {content, children, inline records} as one domain, and the domain swap
+ * stays self-inverse.
+ *
+ * `start` and `length` are byte extents in the owning node's content
+ * buffer — the exact substrate the inline pass scans, which the node
+ * retains. That coordinate is what the incremental seam relies on: a
+ * valid seam prefix admits no byte that any capture site records (every
+ * record-producing byte is a seam barrier, which the seam gate pins), so
+ * a fast-forwarded reparse's vector is complete without transplanting a
+ * single record.
+ *
+ * Whether delimiter material was consumed as markup is decided at reduce
+ * time, not at capture time. `head` and `tail` count the bytes consumed
+ * from each end of the token: a fully consumed token has head == length,
+ * an untouched candidate 0/0, and a partially consumed emphasis run the
+ * split the reduce loop actually took (`*a***b*` consumes its middle run
+ * from both ends and leaves a literal byte between). head + tail never
+ * exceeds length. `flags` is reserved (always 0) for 14.1.10; during
+ * capture its top bit tombstones records the parse later reinterprets as
+ * raw source (a formula or cross-reference body, a footnote label), and
+ * handoff compacts them away. */
+
+typedef enum markdown_core_inline_concrete_kind {
+    /** A delimiter run the engine tracked: `*`/`_` emphasis runs, smart
+     * quotes, and every extension delimiter (strikethrough, formula,
+     * directive, cross-link/embed) — one record per push, patched at
+     * reduce. An unpaired run keeps head == tail == 0 and its marker
+     * text stays in the tree. */
+    MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN = 1,
+    /** A `'` or `"` under SMART: the source byte is replaced by its curly
+     * glyph at scan time, so it is fully consumed whether or not it later
+     * pairs. */
+    MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE,
+    /** A hyphen run of two or more under SMART, replaced by dashes. A
+     * lone `-` stays itself and gets no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH,
+    /** A `...` under SMART, replaced by an ellipsis. `.` and `..` stay
+     * themselves and get no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_SMART_ELLIPSIS,
+    /** One tick run of a matched code span — two records per span. An
+     * unmatched run stays literal text and gets none. */
+    MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS,
+    /** One markup backslash: a punctuation escape, one per pair of an
+     * all-backslash run, or the backslash of a hard break. A backslash
+     * that escapes nothing stays literal and gets no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE,
+    /** A full entity spelling, `&` through `;`, decoded into the text.
+     * An `&` that opens no entity stays literal and gets no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_ENTITY,
+    /** A whole `<...>` URI or email autolink. Raw HTML keeps its exact
+     * source bytes as its literal and gets no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK,
+    /** A `[` or `![` bracket opener, captured when pushed; consumed only
+     * when its bracket matches. */
+    MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN,
+    /** The `]` of a matched link or image. An unmatched `]` stays
+     * literal and gets no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE,
+    /** The consumed tail after a matched close bracket: `(dest "title")`
+     * of an inline link, `[label]` of a full reference, `[]` of a
+     * collapsed one. A shortcut reference consumes no tail and gets no
+     * record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL,
+    /** The `[^` of a defined footnote reference; its `]` is a
+     * BRACKET_CLOSE. The label between them keeps its spelling on the
+     * node. */
+    MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN
+} markdown_core_inline_concrete_kind;
+
+typedef struct markdown_core_inline_concrete_record {
+    /** Byte offset of the token in the owning node's content buffer. */
+    uint32_t start;
+    /** Token length in bytes; never 0. */
+    uint32_t length;
+    /** Bytes consumed as markup from the token's front. */
+    uint32_t head;
+    /** Bytes consumed as markup from the token's back. */
+    uint32_t tail;
+    /** A markdown_core_inline_concrete_kind. */
+    uint8_t kind;
+    /** Reserved for 14.1.10 recovery material; always 0 once handed to a
+     * node. */
+    uint8_t flags;
+} markdown_core_inline_concrete_record;
+
+/** A node's inline record vector; same single-allocation ownership as the
+ * block vector above. */
+typedef struct markdown_core_inline_concrete_records {
+    size_t count;
+    size_t capacity;
+    markdown_core_inline_concrete_record records[];
+} markdown_core_inline_concrete_records;
+
+/** The capture a subject builds during one inline parse, then hands to
+ * the parsed node. `mem` doubles as the engagement flag: a subject built
+ * without a parser (reference parsing) never captures. */
+typedef struct markdown_core_concrete_capture {
+    markdown_core_mem *mem;
+    markdown_core_inline_concrete_records *records;
+    size_t tombstones;
+} markdown_core_concrete_capture;
+
+/** Engages `capture` for one parse; `mem` may be NULL to leave it inert. */
+void markdown_core_concrete_capture_init(markdown_core_concrete_capture *capture, markdown_core_mem *mem);
+
+/** Appends one record, growing under the same ceiling discipline as the
+ * block append. Returns false on allocator failure or at the doubling
+ * wrap point, leaving the vector valid; the caller owns folding that
+ * loss into the parse's failure. Must not be called on an inert
+ * capture. */
+bool markdown_core_concrete_capture_append(
+    markdown_core_concrete_capture *capture,
+    uint8_t kind,
+    uint32_t start,
+    uint32_t length,
+    uint32_t head,
+    uint32_t tail
+);
+
+/** Number of records appended so far, tombstoned or not. Indexes below
+ * this stay stable until handoff — the engine and the bracket stack key
+ * their patches on them. */
+size_t markdown_core_concrete_capture_count(const markdown_core_concrete_capture *capture);
+
+/** Adds reduce-time consumption to record `index`: emphasis openers
+ * consume from the tail, closers from the head. */
+void markdown_core_concrete_capture_consume(
+    markdown_core_concrete_capture *capture,
+    size_t index,
+    uint32_t head,
+    uint32_t tail
+);
+
+/** Marks record `index` fully consumed (head = length, tail = 0);
+ * idempotent, for tokens consumed whole at scan or reduce time. */
+void markdown_core_concrete_capture_consume_all(markdown_core_concrete_capture *capture, size_t index);
+
+/** Rewrites record `index`'s kind: the smart-quote patch after a generic
+ * delimiter push. */
+void markdown_core_concrete_capture_set_kind(markdown_core_concrete_capture *capture, size_t index, uint8_t kind);
+
+/** Tombstones every record from `index` on: the bracket retraction when
+ * `[^...]` reinterprets its interior as one atomic label. */
+void markdown_core_concrete_capture_tombstone_from(markdown_core_concrete_capture *capture, size_t index);
+
+/** Tombstones every record lying wholly inside [start, end): the
+ * retraction a reducer owes when it discards parsed interior structure
+ * and re-borrows the raw bytes (formula, cross-link/embed). */
+void markdown_core_concrete_capture_tombstone_span(
+    markdown_core_concrete_capture *capture,
+    uint32_t start,
+    uint32_t end
+);
+
+/** Compacts tombstones away and hands the vector over (NULL when nothing
+ * survives, the buffer freed). The capture is reset either way. */
+markdown_core_inline_concrete_records *markdown_core_concrete_capture_take(markdown_core_concrete_capture *capture);
+
+/** Frees a building vector without handoff — the failed-parse path. */
+void markdown_core_concrete_capture_abandon(markdown_core_concrete_capture *capture);
+
+/** Releases a node-owned vector; tolerates NULL. */
+void markdown_core_inline_concrete_records_free(
+    markdown_core_mem *mem,
+    markdown_core_inline_concrete_records *records
+);
+
+/** The inline records of `node`'s own region, ascending by start with no
+ * overlap. Returns NULL and sets `*count` to 0 for a node with none. */
+const markdown_core_inline_concrete_record *markdown_core_node_inline_concrete_records(
+    const markdown_core_node *node,
+    size_t *count
+);
+
 #ifdef __cplusplus
 }
 #endif

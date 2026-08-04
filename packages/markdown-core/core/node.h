@@ -150,6 +150,14 @@ struct markdown_core_node {
     // not canonical content, so it must not move deltas (9.1).
     struct markdown_core_concrete_records *concrete;
 
+    // The inline token records of this node's inline sequence, in content
+    // buffer coordinates (concrete_records.h). A separate vector from
+    // `concrete` because it belongs to the inline ownership domain, not to
+    // the node's marker lines: it moves with {content, children} when a
+    // dependent rebuild swaps that domain, while the marker records stay.
+    // NULL except on the inline-owning region nodes of 11.1.
+    struct markdown_core_inline_concrete_records *inline_concrete;
+
     int start_line;
     int start_column;
     int end_line;

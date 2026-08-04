@@ -61,7 +61,10 @@
 #include "directive.h"
 #include "formula.h"
 #include "houdini.h"
+#include "inlines.h"
+#include "markdown-core-extensions.h"
 #include "markdown_core_ctype.h"
+#include "parser.h"
 #include "strikethrough.h"
 #include "table.h"
 
@@ -235,6 +238,8 @@ static const char *type_name(markdown_core_node_type type) {
     }
     return "(unknown)";
 }
+
+static size_t tree_inline_record_total(const markdown_core_node *root);
 
 /* --- region_partition --------------------------------------------------- */
 
@@ -1399,6 +1404,10 @@ static int case_capture_document(void) {
             fprintf(stderr, "capture_document: one-shot parse captured no records\n");
             failed = 1;
         }
+        if (tree_inline_record_total(markdown_core_document_concrete(document)) == 0) {
+            fprintf(stderr, "capture_document: one-shot parse captured no inline records\n");
+            failed = 1;
+        }
         markdown_core_document_free(document);
     }
 
@@ -1407,7 +1416,7 @@ static int case_capture_document(void) {
     if (!failed) {
         markdown_core_parse_options options = capture_options();
         markdown_core_session *session = markdown_core_session_open(&options, NULL);
-        static const char first[] = "> quoted\n> more\n\n# head #\n";
+        static const char first[] = "> quoted *q*\n> more\n\n# head #\n";
         static const char tail[] = "\n- item\n";
         const markdown_core_document *view;
         if (!session) {
@@ -1421,7 +1430,8 @@ static int case_capture_document(void) {
         }
         view = markdown_core_session_document(session);
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
-            tree_record_total(markdown_core_document_concrete(view)) == 0) {
+            tree_record_total(markdown_core_document_concrete(view)) == 0 ||
+            tree_inline_record_total(markdown_core_document_concrete(view)) == 0) {
             fprintf(stderr, "capture_document: committed view exposes no concrete owner\n");
             failed = 1;
         }
@@ -1466,6 +1476,12 @@ static int compare_tree_records(
     const markdown_core_concrete_record *committed_records =
         markdown_core_node_concrete_records(committed, &committed_count);
     const markdown_core_concrete_record *fresh_records = markdown_core_node_concrete_records(fresh, &fresh_count);
+    size_t committed_inline_count = 0;
+    size_t fresh_inline_count = 0;
+    const markdown_core_inline_concrete_record *committed_inline =
+        markdown_core_node_inline_concrete_records(committed, &committed_inline_count);
+    const markdown_core_inline_concrete_record *fresh_inline =
+        markdown_core_node_inline_concrete_records(fresh, &fresh_inline_count);
     const markdown_core_node *committed_child = committed->first_child;
     const markdown_core_node *fresh_child = fresh->first_child;
     size_t i;
@@ -1515,6 +1531,48 @@ static int compare_tree_records(
                     fresh_records[i].length,
                     committed_records[i].kind,
                     fresh_records[i].kind
+                );
+                failed = 1;
+            }
+        }
+    }
+    if (committed_inline_count != fresh_inline_count) {
+        fprintf(
+            stderr,
+            "%s: commit %d: %s holds %zu inline records, fresh parse %zu\n",
+            context,
+            commit_index,
+            type_name(committed->type),
+            committed_inline_count,
+            fresh_inline_count
+        );
+        failed = 1;
+    } else {
+        for (i = 0; i < committed_inline_count; i++) {
+            if (committed_inline[i].start != fresh_inline[i].start ||
+                committed_inline[i].length != fresh_inline[i].length ||
+                committed_inline[i].head != fresh_inline[i].head ||
+                committed_inline[i].tail != fresh_inline[i].tail ||
+                committed_inline[i].kind != fresh_inline[i].kind ||
+                committed_inline[i].flags != fresh_inline[i].flags) {
+                fprintf(
+                    stderr,
+                    "%s: commit %d: %s inline record %zu diverges "
+                    "(start %u/%u length %u/%u head %u/%u tail %u/%u kind %u/%u)\n",
+                    context,
+                    commit_index,
+                    type_name(committed->type),
+                    i,
+                    committed_inline[i].start,
+                    fresh_inline[i].start,
+                    committed_inline[i].length,
+                    fresh_inline[i].length,
+                    committed_inline[i].head,
+                    fresh_inline[i].head,
+                    committed_inline[i].tail,
+                    fresh_inline[i].tail,
+                    committed_inline[i].kind,
+                    fresh_inline[i].kind
                 );
                 failed = 1;
             }
@@ -1738,7 +1796,7 @@ static void sweep_free(markdown_core_mem *mem, void *pointer) {
     free(pointer);
 }
 
-static const char SWEEP_TEXT[] = "# head ##\n"
+static const char SWEEP_TEXT[] = "# head *em* ##\n"
                                  "\n"
                                  "> one\n"
                                  "> two\n"
@@ -1759,11 +1817,55 @@ static const char SWEEP_TEXT[] = "# head ##\n"
                                  "\n"
                                  "***\n"
                                  "\n"
-                                 "[^n]: def\n";
+                                 "*a* ***mix*** `co`de` [l](/u \"t\") ![i](/i) [r][x] [x] [u](no\n"
+                                 "\n"
+                                 "esc \\* ent &amp; auto <https://e.co/> 'q' d--e w...\n"
+                                 "\n"
+                                 "see [^n] and [^e&amp;e] and [^miss] end\n"
+                                 "\n"
+                                 "~~del~~ ~~odd~ $f*x$ :cite[a *b*]{k=v} [[cx*z]] ![[em&amp;b]]\n"
+                                 "\n"
+                                 "visit www.eg.com and https://a.bc here\n"
+                                 "\n"
+                                 "| h | i |\n"
+                                 "| - | - |\n"
+                                 "| *c* | d |\n"
+                                 "\n"
+                                 ":::note[*bl* lbl]\n"
+                                 "body\n"
+                                 ":::\n"
+                                 "\n"
+                                 "[^n]: def\n"
+                                 "\n"
+                                 "[^e&amp;e]: def two\n"
+                                 "\n"
+                                 "[x]: /X\n";
+
+/* The sweep parser carries every attached extension and SMART, so a single
+ * countdown covers the extension funnel's capture allocations too. */
+static markdown_core_parser *sweep_parser_new(markdown_core_mem *mem) {
+    static const char *extensions[] =
+        {"table", "strikethrough", "autolink", "tasklist", "formula", "directive", "cross_link", "embed"};
+    int options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_DIRECTIVE;
+    markdown_core_parser *parser =
+        mem ? markdown_core_parser_new_with_mem(options, mem) : markdown_core_parser_new(options);
+    size_t i;
+    if (!parser) {
+        return NULL;
+    }
+    for (i = 0; i < sizeof(extensions) / sizeof(extensions[0]); i++) {
+        markdown_core_extension *extension = markdown_core_extension_find(extensions[i]);
+        if (!extension || !markdown_core_parser_attach_extension(parser, extension)) {
+            markdown_core_parser_free(parser);
+            return NULL;
+        }
+    }
+    return parser;
+}
 
 static int case_capture_oom_sweep(void) {
     markdown_core_node *clean_root;
-    markdown_core_parser *clean_parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_FOOTNOTES);
+    markdown_core_parser *clean_parser = sweep_parser_new(NULL);
     long fail_at;
     bool succeeded = false;
 
@@ -1780,7 +1882,7 @@ static int case_capture_oom_sweep(void) {
 
     for (fail_at = 1; fail_at < 100000 && !succeeded; fail_at++) {
         sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
-        markdown_core_parser *parser = markdown_core_parser_new_with_mem(MARKDOWN_CORE_OPT_FOOTNOTES, &sweep.mem);
+        markdown_core_parser *parser = sweep_parser_new(&sweep.mem);
         markdown_core_node *root;
         if (!parser) {
             continue;
@@ -1853,6 +1955,990 @@ static int case_capture_growth_ceiling(void) {
     return failed ? -1 : 0;
 }
 
+/* --- inline capture gates ----------------------------------------------- */
+
+/* The inline gates hold the inline-phase token records to the same standard
+ * the block gates hold the marker records: every record dereferences into
+ * the owning node's content buffer and spells what its kind claims, exact
+ * per-fixture tuple tables pin position, length, and the reduce-time
+ * consumption split, and the doctrine's negative space — plain text,
+ * whitespace, hard breaks, raw HTML, invalid entities, unmatched ticks —
+ * is pinned recordless, which is also what makes the incremental seam's
+ * zero-record inert prefix a theorem rather than a hope. */
+
+static size_t inline_record_count_of(const markdown_core_node *node) {
+    size_t count = 0;
+    markdown_core_node_inline_concrete_records(node, &count);
+    return count;
+}
+
+static size_t tree_inline_record_total(const markdown_core_node *root) {
+    walk_state walk;
+    const markdown_core_node *node;
+    size_t total = 0;
+    walk_init(&walk, root);
+    while ((node = walk_next(&walk)) != NULL) {
+        total += inline_record_count_of(node);
+    }
+    return total;
+}
+
+typedef struct expected_inline_record {
+    uint8_t kind;
+    uint32_t start;
+    uint32_t length;
+    uint32_t head;
+    uint32_t tail;
+} expected_inline_record;
+
+static int expect_inline_records(
+    const char *context,
+    const markdown_core_node *node,
+    const expected_inline_record *expected,
+    size_t expected_count
+) {
+    size_t count = 0;
+    const markdown_core_inline_concrete_record *records =
+        node ? markdown_core_node_inline_concrete_records(node, &count) : NULL;
+    size_t i;
+    int failed = 0;
+    if (!node || count != expected_count) {
+        fprintf(stderr, "%s: expected %zu inline records, found %zu\n", context, expected_count, node ? count : 0);
+        return 1;
+    }
+    for (i = 0; i < expected_count; i++) {
+        if (records[i].kind != expected[i].kind || records[i].start != expected[i].start ||
+            records[i].length != expected[i].length || records[i].head != expected[i].head ||
+            records[i].tail != expected[i].tail) {
+            fprintf(
+                stderr,
+                "%s: inline record %zu is {kind %u start %u length %u head %u tail %u}, "
+                "expected {%u %u %u %u %u}\n",
+                context,
+                i,
+                records[i].kind,
+                records[i].start,
+                records[i].length,
+                records[i].head,
+                records[i].tail,
+                expected[i].kind,
+                expected[i].start,
+                expected[i].length,
+                expected[i].head,
+                expected[i].tail
+            );
+            failed = 1;
+        }
+    }
+    return failed;
+}
+
+/* Structural invariants over a whole tree: vectors only on inline-owning
+ * region nodes, records ascending without overlap inside the content
+ * buffer, the consumption split within bounds, `flags` clean (no tombstone
+ * survives handoff), and the spelling every kind promises unconditionally.
+ * Exactness beyond this — maximality, pairing outcomes — lives in the
+ * tuple tables, which is the reviewed lesson from the block slice. */
+static int check_inline_invariants(const char *context, const markdown_core_node *root) {
+    walk_state walk;
+    const markdown_core_node *node;
+    int failed = 0;
+
+    walk_init(&walk, root);
+    while ((node = walk_next(&walk)) != NULL) {
+        size_t count = 0;
+        const markdown_core_inline_concrete_record *records = markdown_core_node_inline_concrete_records(node, &count);
+        const char *content = (const char *)node->content.ptr;
+        size_t content_size = (size_t)node->content.size;
+        size_t i;
+
+        if (count > 0 && !markdown_core_node_owns_inlines((markdown_core_node *)node)) {
+            fprintf(stderr, "%s: %s holds inline records but owns no inline sequence\n", context, type_name(node->type));
+            failed = 1;
+            continue;
+        }
+        for (i = 0; i < count; i++) {
+            const markdown_core_inline_concrete_record *record = &records[i];
+            const char *bytes = content + record->start;
+            if (record->length == 0 || (size_t)record->start + record->length > content_size ||
+                record->head > record->length || record->tail > record->length - record->head ||
+                record->flags != 0 ||
+                (i > 0 && (size_t)records[i - 1].start + records[i - 1].length > record->start)) {
+                fprintf(
+                    stderr,
+                    "%s: %s inline record %zu breaks the vector invariants "
+                    "{start %u length %u head %u tail %u flags %u}\n",
+                    context,
+                    type_name(node->type),
+                    i,
+                    record->start,
+                    record->length,
+                    record->head,
+                    record->tail,
+                    record->flags
+                );
+                failed = 1;
+                continue;
+            }
+            switch (record->kind) {
+            case MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN:
+                if ((bytes[0] == '*' || bytes[0] == '_' || bytes[0] == '~') && !run_all(bytes, record->length)) {
+                    fprintf(stderr, "%s: delimiter-run record is not one run\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE:
+                if (record->length != 1 || (bytes[0] != '\'' && bytes[0] != '"') || record->head != 1) {
+                    fprintf(stderr, "%s: smart-quote record does not spell a consumed quote\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH:
+                if (record->length < 2 || !run_all(bytes, record->length) || bytes[0] != '-' ||
+                    record->head != record->length) {
+                    fprintf(stderr, "%s: smart-dash record does not spell a hyphen run\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_SMART_ELLIPSIS:
+                if (record->length != 3 || memcmp(bytes, "...", 3) != 0 || record->head != 3) {
+                    fprintf(stderr, "%s: smart-ellipsis record does not spell ...\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS:
+                if (bytes[0] != '`' || !run_all(bytes, record->length) || record->head != record->length) {
+                    fprintf(stderr, "%s: code-ticks record does not spell a consumed tick run\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE:
+                if (record->length != 1 || bytes[0] != '\\' || record->head != 1) {
+                    fprintf(stderr, "%s: escape record is not one consumed backslash\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_ENTITY:
+                if (record->length < 3 || bytes[0] != '&' || bytes[record->length - 1] != ';' ||
+                    record->head != record->length) {
+                    fprintf(stderr, "%s: entity record does not spell &...;\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK:
+                if (record->length < 3 || bytes[0] != '<' || bytes[record->length - 1] != '>' ||
+                    record->head != record->length) {
+                    fprintf(stderr, "%s: autolink record does not spell <...>\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN:
+                if (!((record->length == 1 && bytes[0] == '[') ||
+                      (record->length == 2 && bytes[0] == '!' && bytes[1] == '[')) ||
+                    record->tail != 0 || (record->head != 0 && record->head != record->length)) {
+                    fprintf(stderr, "%s: bracket-open record does not spell [ or ![\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE:
+                if (record->length != 1 || bytes[0] != ']' || record->head != 1) {
+                    fprintf(stderr, "%s: bracket-close record is not one consumed ]\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL:
+                if ((bytes[0] != '(' && bytes[0] != '[') ||
+                    (bytes[record->length - 1] != ')' && bytes[record->length - 1] != ']') ||
+                    record->head != record->length) {
+                    fprintf(stderr, "%s: link-tail record does not span a consumed tail\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN:
+                if (record->length != 2 || memcmp(bytes, "[^", 2) != 0 || record->head != 2) {
+                    fprintf(stderr, "%s: footnote-open record does not spell [^\n", context);
+                    failed = 1;
+                }
+                break;
+            default:
+                fprintf(stderr, "%s: unknown inline record kind %u\n", context, record->kind);
+                failed = 1;
+                break;
+            }
+        }
+    }
+    return failed;
+}
+
+/* --- inline_shape ------------------------------------------------------- */
+
+/* One paragraph (or heading) per construct family, each pinned to its exact
+ * tuple table. The reduce-time consumption split is the load-bearing part:
+ * openers consume from the tail, closers from the head, `*a***b*` splits
+ * its middle run both ways around a surviving literal byte, and everything
+ * the doctrine leaves recordless is pinned at zero. */
+static const char INLINE_SHAPE_TEXT[] = "*a* **b** ***c***\n"
+                                        "\n"
+                                        "*a***b*\n"
+                                        "\n"
+                                        "a *b c* d *e\n"
+                                        "\n"
+                                        "x `code` y ``li`ral`` z\n"
+                                        "\n"
+                                        "um `no close\n"
+                                        "\n"
+                                        "esc \\* pair \\\\ lone \\z\n"
+                                        "\n"
+                                        "hb\\\n"
+                                        "after\n"
+                                        "\n"
+                                        "a &amp; b &#x26; c &bogus; d\n"
+                                        "\n"
+                                        "<https://e.co/> <x@y.zw> <b>i</b> a<b\n"
+                                        "\n"
+                                        "[a](/u)\n"
+                                        "\n"
+                                        "![i](/i \"t\")\n"
+                                        "\n"
+                                        "[r][x]\n"
+                                        "\n"
+                                        "[c][]\n"
+                                        "\n"
+                                        "[x] short\n"
+                                        "\n"
+                                        "[u](nope ] end\n"
+                                        "\n"
+                                        "see [^n] and [^e&amp;e] and [^miss].\n"
+                                        "\n"
+                                        "[*em* txt](/u)\n"
+                                        "\n"
+                                        "plain text one\n"
+                                        "with a hard  \n"
+                                        "break and soft\n"
+                                        "lines here\n"
+                                        "\n"
+                                        "## *h* ##\n"
+                                        "\n"
+                                        "[x]: /X\n"
+                                        "\n"
+                                        "[c]: /C\n"
+                                        "\n"
+                                        "[^n]: n body\n"
+                                        "\n"
+                                        "[^e&amp;e]: e body\n";
+
+static int case_inline_shape(void) {
+    int failed = 0;
+    markdown_core_parse_options options = capture_options();
+    markdown_core_document *document =
+        markdown_core_document_parse((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1, &options, NULL);
+    const markdown_core_node *root;
+
+    static const expected_inline_record EMPH_TRIPLE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 4, 2, 0, 2},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 7, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 10, 3, 0, 3},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 14, 3, 3, 0},
+    };
+    static const expected_inline_record EMPH_MIXED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 3, 1, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 6, 1, 1, 0},
+    };
+    static const expected_inline_record EMPH_CANDIDATE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 6, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 10, 1, 0, 0},
+    };
+    static const expected_inline_record TICKS[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS, 2, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS, 7, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS, 11, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS, 19, 2, 2, 0},
+    };
+    static const expected_inline_record ESCAPES[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, 4, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, 12, 1, 1, 0},
+    };
+    static const expected_inline_record HARD_BREAK[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record ENTITIES[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_ENTITY, 2, 5, 5, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_ENTITY, 10, 6, 6, 0},
+    };
+    static const expected_inline_record AUTOLINKS[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK, 0, 15, 15, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK, 16, 8, 8, 0},
+    };
+    static const expected_inline_record LINK_INLINE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 2, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 3, 4, 4, 0},
+    };
+    static const expected_inline_record IMAGE_TITLED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 3, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 4, 8, 8, 0},
+    };
+    static const expected_inline_record REF_FULL[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 2, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 3, 3, 3, 0},
+    };
+    static const expected_inline_record REF_COLLAPSED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 2, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 3, 2, 2, 0},
+    };
+    static const expected_inline_record REF_SHORTCUT[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record BRACKET_CANDIDATE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 0, 0},
+    };
+    static const expected_inline_record FOOTNOTES_MIXED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN, 4, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 7, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN, 13, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 22, 1, 1, 0},
+    };
+    static const expected_inline_record LINK_INTERIOR[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 1, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 4, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 9, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 10, 4, 4, 0},
+    };
+    static const expected_inline_record HEADING_EMPH[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 1, 1, 0},
+    };
+
+    if (!document) {
+        fprintf(stderr, "inline_shape: fixture failed to parse\n");
+        return -1;
+    }
+    root = markdown_core_document_root(document);
+    failed |= check_inline_invariants("inline_shape", root);
+
+    failed |= expect_inline_records(
+        "inline_shape: emphasis triple",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+        EMPH_TRIPLE,
+        6
+    );
+    failed |= expect_inline_records(
+        "inline_shape: emphasis mixed run",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
+        EMPH_MIXED,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: emphasis candidate",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 2),
+        EMPH_CANDIDATE,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: code ticks",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 3),
+        TICKS,
+        4
+    );
+    failed |= expect_inline_records(
+        "inline_shape: unmatched ticks",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 4),
+        NULL,
+        0
+    );
+    failed |= expect_inline_records(
+        "inline_shape: escapes",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 5),
+        ESCAPES,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_shape: hard-break escape",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 6),
+        HARD_BREAK,
+        1
+    );
+    failed |= expect_inline_records(
+        "inline_shape: entities",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 7),
+        ENTITIES,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_shape: autolinks",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 8),
+        AUTOLINKS,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_shape: inline link",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 9),
+        LINK_INLINE,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: titled image",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 10),
+        IMAGE_TITLED,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: full reference",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 11),
+        REF_FULL,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: collapsed reference",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 12),
+        REF_COLLAPSED,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_shape: shortcut reference",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 13),
+        REF_SHORTCUT,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_shape: bracket candidate",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 14),
+        BRACKET_CANDIDATE,
+        1
+    );
+    failed |= expect_inline_records(
+        "inline_shape: footnote references",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 15),
+        FOOTNOTES_MIXED,
+        4
+    );
+    failed |= expect_inline_records(
+        "inline_shape: link interior emphasis",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 16),
+        LINK_INTERIOR,
+        5
+    );
+    failed |= expect_inline_records(
+        "inline_shape: recordless prose",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 17),
+        NULL,
+        0
+    );
+    if (!nth_node_of_type(root, MARKDOWN_CORE_NODE_LINE_BREAK, 0)) {
+        fprintf(stderr, "inline_shape: recordless prose lost its hard break\n");
+        failed = 1;
+    }
+    failed |= expect_inline_records(
+        "inline_shape: heading emphasis",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_HEADING, 0),
+        HEADING_EMPH,
+        2
+    );
+
+    markdown_core_document_free(document);
+    return failed ? -1 : 0;
+}
+
+/* --- inline_smart ------------------------------------------------------- */
+
+/* SMART destroys quote spellings at scan time whether or not they pair, so
+ * a paired, an unpaired, and a non-flanking quote all read fully consumed;
+ * dash and ellipsis records exist exactly where the replacement does. */
+static const char INLINE_SMART_TEXT[] = "'a' x\n"
+                                        "\n"
+                                        "it's b\n"
+                                        "\n"
+                                        "q ' q\n"
+                                        "\n"
+                                        "\"d\" e\n"
+                                        "\n"
+                                        "a--b ---c d----e f-g\n"
+                                        "\n"
+                                        "w... x.. y. z....\n"
+                                        "\n"
+                                        "*sm* '*q*'\n";
+
+static int case_inline_smart(void) {
+    int failed = 0;
+    markdown_core_parse_options options = capture_options();
+    markdown_core_document *document;
+    const markdown_core_node *root;
+
+    static const expected_inline_record QUOTE_PAIR[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record QUOTE_APOSTROPHE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record QUOTE_LONE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record QUOTE_DOUBLE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 2, 1, 1, 0},
+    };
+    static const expected_inline_record DASHES[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH, 1, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH, 5, 3, 3, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH, 11, 4, 4, 0},
+    };
+    static const expected_inline_record ELLIPSES_RECORDS[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_ELLIPSIS, 1, 3, 3, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_ELLIPSIS, 13, 3, 3, 0},
+    };
+    static const expected_inline_record MIXED_SMART[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 3, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 5, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 6, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 8, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, 9, 1, 1, 0},
+    };
+
+    options.smart_punctuation = true;
+    document =
+        markdown_core_document_parse((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1, &options, NULL);
+    if (!document) {
+        fprintf(stderr, "inline_smart: fixture failed to parse\n");
+        return -1;
+    }
+    root = markdown_core_document_root(document);
+    failed |= check_inline_invariants("inline_smart", root);
+    failed |= expect_inline_records(
+        "inline_smart: paired quotes",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+        QUOTE_PAIR,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_smart: apostrophe",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
+        QUOTE_APOSTROPHE,
+        1
+    );
+    failed |= expect_inline_records(
+        "inline_smart: non-flanking quote",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 2),
+        QUOTE_LONE,
+        1
+    );
+    failed |= expect_inline_records(
+        "inline_smart: double quotes",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 3),
+        QUOTE_DOUBLE,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_smart: dashes",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 4),
+        DASHES,
+        3
+    );
+    failed |= expect_inline_records(
+        "inline_smart: ellipses",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 5),
+        ELLIPSES_RECORDS,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_smart: quoted emphasis",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 6),
+        MIXED_SMART,
+        6
+    );
+    markdown_core_document_free(document);
+    return failed ? -1 : 0;
+}
+
+/* --- inline_extension_funnel -------------------------------------------- */
+
+/* Every extension flows through the one engine funnel: delimiter records
+ * appear with exact spans, a successful range reduce consumes both
+ * endpoints, a no-op reduce (mismatched strikethrough) leaves candidates,
+ * formula and cross-reference re-borrow raw interiors and must retract the
+ * interior records they orphan, directive keeps its label children and
+ * their records, and the autolink extension records nothing at all. */
+static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
+                                         "\n"
+                                         "$a*b$ y $c&amp;d$\n"
+                                         "\n"
+                                         "[[note*x]] ![[img&amp;v]]\n"
+                                         "\n"
+                                         "visit www.eg.com now https://a.bc end x@y.de q\n"
+                                         "\n"
+                                         "| h1 | h2 |\n"
+                                         "| - | - |\n"
+                                         "| *c* | d |\n"
+                                         "\n"
+                                         ":::note[*bl* lbl]\n"
+                                         "body\n"
+                                         ":::\n";
+
+static int case_inline_extension_funnel(void) {
+    int failed = 0;
+    markdown_core_parse_options options = capture_options();
+    markdown_core_document *document = markdown_core_document_parse(
+        (const uint8_t *)INLINE_FUNNEL_TEXT,
+        sizeof(INLINE_FUNNEL_TEXT) - 1,
+        &options,
+        NULL
+    );
+    const markdown_core_node *root;
+
+    static const expected_inline_record STRIKE[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 5, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 12, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 16, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 21, 2, 0, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 25, 1, 0, 0},
+    };
+    static const expected_inline_record FORMULA_PAIRS[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 4, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 8, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 16, 1, 1, 0},
+    };
+    static const expected_inline_record CROSS_EMBED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 8, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 11, 3, 3, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 23, 2, 2, 0},
+    };
+    static const expected_inline_record CELL_EMPH[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 1, 1, 0},
+    };
+    static const expected_inline_record LABEL_EMPH[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 3, 1, 1, 0},
+    };
+
+    if (!document) {
+        fprintf(stderr, "inline_extension_funnel: fixture failed to parse\n");
+        return -1;
+    }
+    root = markdown_core_document_root(document);
+    failed |= check_inline_invariants("inline_extension_funnel", root);
+    failed |= expect_inline_records(
+        "inline_extension_funnel: strikethrough",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+        STRIKE,
+        6
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: formula",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
+        FORMULA_PAIRS,
+        4
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: cross-link and embed",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 2),
+        CROSS_EMBED,
+        4
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: autolink extension",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 3),
+        NULL,
+        0
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: table cell emphasis",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_TABLE_CELL, 4),
+        CELL_EMPH,
+        2
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: directive label",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, 0),
+        LABEL_EMPH,
+        2
+    );
+    markdown_core_document_free(document);
+    return failed ? -1 : 0;
+}
+
+/* --- inline_seam_barrier ------------------------------------------------ */
+
+/* The seam contract the capture leans on: every byte a capture site can
+ * begin a record at is a seam barrier (or, for the tail records, sits
+ * strictly after a barrier `]` of the same construct), so the inert prefix
+ * an incremental reparse fast-forwards over holds zero records and no
+ * record ever needs transplanting. SMART bytes are checked behaviorally
+ * because the seam function owns their clause. */
+static int case_inline_seam_barrier(void) {
+    static const unsigned char RECORD_TRIGGER_BYTES[] =
+        {'*', '_', '`', '\\', '&', '<', '[', ']', '!', '~', '$', ':'};
+    static const unsigned char SMART_TRIGGER_BYTES[] = {'-', '.', '\'', '"'};
+    int failed = 0;
+    markdown_core_parser *parser = sweep_parser_new(NULL);
+    size_t i;
+
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; i < sizeof(RECORD_TRIGGER_BYTES); i++) {
+        if (!parser->inline_config->seam_barrier_chars[RECORD_TRIGGER_BYTES[i]]) {
+            fprintf(
+                stderr,
+                "inline_seam_barrier: record trigger byte '%c' is not a seam barrier\n",
+                RECORD_TRIGGER_BYTES[i]
+            );
+            failed = 1;
+        }
+    }
+    for (i = 0; i < sizeof(SMART_TRIGGER_BYTES); i++) {
+        unsigned char line[8] = {'x', 'x', 0, '\n', 'y', 'y', 0, 0};
+        unsigned char other[8] = {'x', 'x', 0, '\n', 'z', 'z', 0, 0};
+        markdown_core_bufsize seam;
+        line[2] = SMART_TRIGGER_BYTES[i];
+        other[2] = SMART_TRIGGER_BYTES[i];
+        seam = markdown_core_inline_seam_prefix(parser, line, 6, other, 6, MARKDOWN_CORE_OPT_SMART);
+        if (seam != 0) {
+            fprintf(
+                stderr,
+                "inline_seam_barrier: smart byte '%c' fell inside a seam prefix (seam %d)\n",
+                SMART_TRIGGER_BYTES[i],
+                (int)seam
+            );
+            failed = 1;
+        }
+    }
+    /* The two-space hard break is seam-admissible, which is exactly why it
+     * must own no record: the prefix a reparse never rescans still equals
+     * the fresh parse record-for-record only if breaks stay implicit. */
+    {
+        static const unsigned char broken_a[] = "ab  \ncd";
+        static const unsigned char broken_b[] = "ab  \ncq";
+        markdown_core_bufsize seam =
+            markdown_core_inline_seam_prefix(parser, broken_a, 7, broken_b, 7, MARKDOWN_CORE_OPT_SMART);
+        if (seam != 5) {
+            fprintf(stderr, "inline_seam_barrier: hard-break prefix must stay seam-admissible (seam %d)\n", (int)seam);
+            failed = 1;
+        }
+    }
+    markdown_core_parser_free(parser);
+    return failed ? -1 : 0;
+}
+
+/* --- inline_equivalence ------------------------------------------------- */
+
+/* The two incremental paths the inline vectors must survive, each proven to
+ * have actually run before its records are compared:
+ *
+ * - the seam fast-forward: the staged leaf never rescans its inert prefix,
+ *   the old prefix children move over physically (pointer identity), and
+ *   the staged vector is already complete because the prefix owns no
+ *   records;
+ * - the dependent rebuild: a definition flip rebuilds a unit the edit never
+ *   touched, the stable owner keeps its node (pointer identity) while
+ *   {content, children, inline records} swap in — a vector left behind by
+ *   the swap is exactly what the fresh-parse comparison catches. */
+static int case_inline_equivalence(void) {
+    int failed = 0;
+    markdown_core_parse_options options = capture_options();
+
+    /* Seam transplant. */
+    {
+        static const char initial[] = "plain one\nplain two\nedit *here* soon\n";
+        static const char replaced[] = "*there* now\n";
+        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        const markdown_core_document *view;
+        const markdown_core_node *paragraph;
+        const markdown_core_node *prefix_text;
+        markdown_core_document *fresh;
+        static const char final_text[] = "plain one\nplain two\nedit *there* now\n";
+
+        if (!session) {
+            return -1;
+        }
+        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: seam first commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        paragraph = markdown_core_document_root(view)->first_child;
+        prefix_text = paragraph ? paragraph->first_child : NULL;
+        if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: seam fixture lost its paragraph\n");
+            return -1;
+        }
+        if (inline_record_count_of(paragraph) == 0) {
+            fprintf(stderr, "inline_equivalence: seam paragraph captured nothing to compare\n");
+            failed = 1;
+        }
+        if (!markdown_core_session_edit(session, 25, 36, (const uint8_t *)replaced, sizeof(replaced) - 1, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: seam second commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        if (!markdown_core_document_root(view)->first_child ||
+            markdown_core_document_root(view)->first_child->first_child != prefix_text) {
+            fprintf(stderr, "inline_equivalence: seam transplant did not engage (prefix child was reparsed)\n");
+            failed = 1;
+        }
+        if (markdown_core_document_root(view)->first_child &&
+            markdown_core_document_root(view)->first_child->user_data != NULL) {
+            fprintf(stderr, "inline_equivalence: committed leaf retained its seam user_data\n");
+            failed = 1;
+        }
+        fresh = markdown_core_document_parse((const uint8_t *)final_text, sizeof(final_text) - 1, &options, NULL);
+        if (!fresh) {
+            markdown_core_session_free(session);
+            return -1;
+        }
+        failed |= compare_tree_records(
+            "inline_equivalence: seam",
+            markdown_core_document_concrete(view),
+            markdown_core_document_concrete(fresh),
+            1
+        );
+        failed |= check_inline_invariants("inline_equivalence: seam", markdown_core_document_root(view));
+        markdown_core_document_free(fresh);
+        markdown_core_session_free(session);
+    }
+
+    /* Dependent rebuild across a definition flip, both directions. */
+    if (!failed) {
+        static const char initial[] = "alpha [a][x] beta [^n] gamma\n"
+                                      "\n"
+                                      "filler para\n"
+                                      "\n"
+                                      "[x]: /u\n"
+                                      "\n"
+                                      "[^n]: note\n";
+        static const char without_def[] = "alpha [a][x] beta [^n] gamma\n"
+                                          "\n"
+                                          "filler para\n"
+                                          "\n"
+                                          "\n"
+                                          "[^n]: note\n";
+        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        const markdown_core_document *view;
+        const markdown_core_node *unit;
+        markdown_core_document *fresh;
+
+        if (!session) {
+            return -1;
+        }
+        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        unit = markdown_core_document_root(view)->first_child;
+        if (!unit || inline_record_count_of(unit) == 0) {
+            fprintf(stderr, "inline_equivalence: dependent unit captured nothing to compare\n");
+            failed = 1;
+        }
+        /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
+        if (!markdown_core_session_edit(session, 43, 51, (const uint8_t *)"", 0, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        if (markdown_core_document_root(view)->first_child != unit) {
+            fprintf(stderr, "inline_equivalence: dependent rebuild replaced its stable owner\n");
+            failed = 1;
+        }
+        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        if (!fresh) {
+            markdown_core_session_free(session);
+            return -1;
+        }
+        failed |= compare_tree_records(
+            "inline_equivalence: definition removed",
+            markdown_core_document_concrete(view),
+            markdown_core_document_concrete(fresh),
+            2
+        );
+        markdown_core_document_free(fresh);
+
+        /* Flip it back: the same unit swaps again to the resolved shape. */
+        if (!failed) {
+            if (!markdown_core_session_edit(session, 43, 43, (const uint8_t *)"[x]: /u\n", 8, NULL) ||
+                !markdown_core_session_commit(session, NULL, NULL)) {
+                markdown_core_session_free(session);
+                fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
+                return -1;
+            }
+            view = markdown_core_session_document(session);
+            if (markdown_core_document_root(view)->first_child != unit) {
+                fprintf(stderr, "inline_equivalence: restore rebuild replaced its stable owner\n");
+                failed = 1;
+            }
+            fresh = markdown_core_document_parse((const uint8_t *)initial, sizeof(initial) - 1, &options, NULL);
+            if (!fresh) {
+                markdown_core_session_free(session);
+                return -1;
+            }
+            failed |= compare_tree_records(
+                "inline_equivalence: definition restored",
+                markdown_core_document_concrete(view),
+                markdown_core_document_concrete(fresh),
+                3
+            );
+            failed |= check_inline_invariants("inline_equivalence: dependent", markdown_core_document_root(view));
+            markdown_core_document_free(fresh);
+        }
+        markdown_core_session_free(session);
+    }
+    return failed ? -1 : 0;
+}
+
+/* --- inline_growth_ceiling ---------------------------------------------- */
+
+/* The inline twin of capture_growth_ceiling: at the doubling wrap point the
+ * append refuses and disturbs nothing. */
+static int case_inline_growth_ceiling(void) {
+    markdown_core_mem *mem = markdown_core_mem_default();
+    markdown_core_concrete_capture capture;
+    markdown_core_inline_concrete_records *vector =
+        (markdown_core_inline_concrete_records *)mem->calloc(mem, 1, sizeof(markdown_core_inline_concrete_records));
+    markdown_core_inline_concrete_records *witness;
+    int failed = 0;
+    if (!vector) {
+        return -1;
+    }
+    markdown_core_concrete_capture_init(&capture, mem);
+    vector->capacity = SIZE_MAX / sizeof(markdown_core_inline_concrete_record);
+    vector->count = vector->capacity;
+    capture.records = vector;
+    witness = vector;
+    if (markdown_core_concrete_capture_append(&capture, MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, 0, 1, 1, 0)) {
+        fprintf(stderr, "inline_growth_ceiling: append past the wrap point reported success\n");
+        failed = 1;
+    }
+    if (capture.records != witness || vector->count != vector->capacity ||
+        vector->capacity != SIZE_MAX / sizeof(markdown_core_inline_concrete_record)) {
+        fprintf(stderr, "inline_growth_ceiling: refused append disturbed the vector\n");
+        failed = 1;
+    }
+    mem->free(mem, vector);
+    return failed ? -1 : 0;
+}
+
 /* --- case table --------------------------------------------------------- */
 
 typedef struct concrete_case {
@@ -1868,6 +2954,12 @@ static const concrete_case CASES[] = {
     {"capture_equivalence", case_capture_equivalence},
     {"capture_oom_sweep", case_capture_oom_sweep},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
+    {"inline_shape", case_inline_shape},
+    {"inline_smart", case_inline_smart},
+    {"inline_extension_funnel", case_inline_extension_funnel},
+    {"inline_seam_barrier", case_inline_seam_barrier},
+    {"inline_equivalence", case_inline_equivalence},
+    {"inline_growth_ceiling", case_inline_growth_ceiling},
 };
 
 int main(int argc, char **argv) {
