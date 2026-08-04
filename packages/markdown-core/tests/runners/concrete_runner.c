@@ -727,13 +727,31 @@ static int check_node_records(const capture_source *source, const markdown_core_
             }
             break;
         case MARKDOWN_CORE_CONCRETE_FENCE_OPEN:
-            if (node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !node->as.code.fenced || record->line != 0 ||
-                record->length < 3 || !run_all(line + record->column, record->length) ||
-                !run_maximal(line, line_length, record) ||
-                (unsigned char)line[record->column] != node->as.code.fence_char ||
-                node->as.code.fence_length != (record->length > 255 ? 255 : (uint8_t)record->length) ||
-                (int)record->column != node->start_column - 1) {
-                fprintf(stderr, "%s: fence-open record disagrees with code block\n", source->name);
+            if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+                if (!node->as.code.fenced || record->line != 0 || record->length < 3 ||
+                    !run_all(line + record->column, record->length) || !run_maximal(line, line_length, record) ||
+                    (unsigned char)line[record->column] != node->as.code.fence_char ||
+                    node->as.code.fence_length != (record->length > 255 ? 255 : (uint8_t)record->length) ||
+                    (int)record->column != node->start_column - 1) {
+                    fprintf(stderr, "%s: fence-open record disagrees with code block\n", source->name);
+                    failed = 1;
+                }
+            } else if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+                if (record->line != 0 || record->length < 2 || line[record->column] != ':' ||
+                    !run_all(line + record->column, record->length) || !run_maximal(line, line_length, record) ||
+                    (int)record->column != node->start_column - 1) {
+                    fprintf(stderr, "%s: fence-open record disagrees with directive block\n", source->name);
+                    failed = 1;
+                }
+            } else if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+                if (record->line != 0 || record->length != 2 ||
+                    (memcmp(line + record->column, "$$", 2) != 0 && memcmp(line + record->column, "\\[", 2) != 0) ||
+                    (int)record->column != node->start_column - 1) {
+                    fprintf(stderr, "%s: fence-open record disagrees with formula block\n", source->name);
+                    failed = 1;
+                }
+            } else {
+                fprintf(stderr, "%s: fence-open record on %s\n", source->name, type_name(node->type));
                 failed = 1;
             }
             break;
@@ -761,13 +779,30 @@ static int check_node_records(const capture_source *source, const markdown_core_
             break;
         }
         case MARKDOWN_CORE_CONCRETE_FENCE_CLOSE:
-            if (node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !node->as.code.fenced || !node->as.code.fence_closed ||
-                record->length < node->as.code.fence_length || !run_all(line + record->column, record->length) ||
-                !run_maximal(line, line_length, record) ||
-                (unsigned char)line[record->column] != node->as.code.fence_char ||
-                (int)(record->line) !=
-                    node->end_line - (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE ? 0 : node->start_line)) {
-                fprintf(stderr, "%s: fence-close record disagrees with code block\n", source->name);
+            if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+                if (!node->as.code.fenced || !node->as.code.fence_closed ||
+                    record->length < node->as.code.fence_length || !run_all(line + record->column, record->length) ||
+                    !run_maximal(line, line_length, record) ||
+                    (unsigned char)line[record->column] != node->as.code.fence_char ||
+                    (int)(record->line) !=
+                        node->end_line - (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE ? 0 : node->start_line)) {
+                    fprintf(stderr, "%s: fence-close record disagrees with code block\n", source->name);
+                    failed = 1;
+                }
+            } else if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+                if (record->line == 0 || record->length < 2 || line[record->column] != ':' ||
+                    !run_all(line + record->column, record->length) || !run_maximal(line, line_length, record)) {
+                    fprintf(stderr, "%s: fence-close record disagrees with directive block\n", source->name);
+                    failed = 1;
+                }
+            } else if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
+                if (record->line == 0 || record->length != 2 ||
+                    (memcmp(line + record->column, "$$", 2) != 0 && memcmp(line + record->column, "\\]", 2) != 0)) {
+                    fprintf(stderr, "%s: fence-close record disagrees with formula block\n", source->name);
+                    failed = 1;
+                }
+            } else {
+                fprintf(stderr, "%s: fence-close record on %s\n", source->name, type_name(node->type));
                 failed = 1;
             }
             break;
@@ -802,6 +837,123 @@ static int check_node_records(const capture_source *source, const markdown_core_
                 failed = 1;
             }
             break;
+        case MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW: {
+            /* The whole trimmed row, spelled from delimiter-row bytes only,
+             * and decoding to the Table's own alignments column for column:
+             * a record that drifts onto a data row, or a captured row that
+             * disagrees with the alignments the parse kept, fails here. */
+            const uint8_t *alignments =
+                markdown_core_extensions_get_table_alignments((markdown_core_node *)node);
+            uint16_t columns = markdown_core_extensions_get_table_columns((markdown_core_node *)node);
+            size_t b = 0;
+            uint16_t column_index = 0;
+            bool composition = true;
+            const char *bytes = line + record->column;
+            if (node->type != MARKDOWN_CORE_NODE_TABLE || record->line == 0 || record->length < 1 ||
+                bytes[0] == ' ' || bytes[0] == '\t' || bytes[record->length - 1] == ' ' ||
+                bytes[record->length - 1] == '\t' || !alignments) {
+                fprintf(stderr, "%s: table delimiter-row record is not the trimmed row\n", source->name);
+                failed = 1;
+                break;
+            }
+            while (b < record->length && composition) {
+                if (bytes[b] == '|') {
+                    b++;
+                    continue;
+                }
+                if (bytes[b] == ' ' || bytes[b] == '\t') {
+                    b++;
+                    continue;
+                }
+                if (bytes[b] == ':' || bytes[b] == '-') {
+                    bool left = bytes[b] == ':';
+                    size_t start = b;
+                    bool right;
+                    while (b < record->length && (bytes[b] == ':' || bytes[b] == '-')) {
+                        b++;
+                    }
+                    right = bytes[b - 1] == ':';
+                    if (b - start < (size_t)(left ? 1 : 0) + (right ? 1 : 0) + 1) {
+                        composition = false;
+                        break;
+                    }
+                    if (column_index >= columns ||
+                        alignments[column_index] !=
+                            (left && right ? 'c' : (left ? 'l' : (right ? 'r' : 0)))) {
+                        composition = false;
+                        break;
+                    }
+                    column_index++;
+                    continue;
+                }
+                composition = false;
+            }
+            if (!composition || column_index == 0) {
+                fprintf(
+                    stderr,
+                    "%s: table delimiter-row record does not decode to the table's alignments\n",
+                    source->name
+                );
+                failed = 1;
+            }
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_TABLE_PIPE:
+            if (node->type != MARKDOWN_CORE_NODE_TABLE_ROW || record->length != 1 || line[record->column] != '|') {
+                fprintf(stderr, "%s: table-pipe record does not spell one '|'\n", source->name);
+                failed = 1;
+            }
+            break;
+        case MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE:
+            if (node->type != MARKDOWN_CORE_NODE_TABLE_CELL || record->length != 1 ||
+                line[record->column] != '\\' || (size_t)record->column + 1 >= line_length ||
+                line[record->column + 1] != '|') {
+                fprintf(stderr, "%s: cell-escape record is not the backslash of a \\| pair\n", source->name);
+                failed = 1;
+            }
+            break;
+        case MARKDOWN_CORE_CONCRETE_TASK_MARKER:
+            if (node->type != MARKDOWN_CORE_NODE_LIST_ITEM || record->length != 3 || line[record->column] != '[' ||
+                (line[record->column + 1] != ' ' && line[record->column + 1] != 'x' &&
+                 line[record->column + 1] != 'X') ||
+                line[record->column + 2] != ']' ||
+                /* The last firing is the one whose state the item keeps. */
+                (i == count - 1 && node->as.list.checked != (line[record->column + 1] != ' '))) {
+                fprintf(stderr, "%s: task-marker record does not spell the item's checkbox\n", source->name);
+                failed = 1;
+            }
+            break;
+        case MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME: {
+            const char *name = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
+            if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK || record->line != 0 || !name ||
+                strlen(name) != record->length || memcmp(line + record->column, name, record->length) != 0) {
+                fprintf(stderr, "%s: directive-name record does not spell the directive's name\n", source->name);
+                failed = 1;
+            }
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_OPEN:
+            if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK || record->line != 0 || record->length != 1 ||
+                line[record->column] != '[') {
+                fprintf(stderr, "%s: directive-label-open record is not one '['\n", source->name);
+                failed = 1;
+            }
+            break;
+        case MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_CLOSE:
+            if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK || record->line != 0 || record->length != 1 ||
+                line[record->column] != ']') {
+                fprintf(stderr, "%s: directive-label-close record is not one ']'\n", source->name);
+                failed = 1;
+            }
+            break;
+        case MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES:
+            if (node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK || record->line != 0 || record->length < 2 ||
+                line[record->column] != '{' || line[record->column + record->length - 1] != '}' ||
+                !markdown_core_extensions_get_directive_attributes((markdown_core_node *)node)) {
+                fprintf(stderr, "%s: directive-attributes record does not span its braces\n", source->name);
+                failed = 1;
+            }
+            break;
         default:
             fprintf(stderr, "%s: unknown record kind %u on %s\n", source->name, record->kind, type_name(node->type));
             failed = 1;
@@ -812,8 +964,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
     /* Ownership: records appear on exactly the owners 11.1 names, in the
      * multiplicity the grammar admits. A kind with no marker bytes — every
      * inline, Paragraph, HTMLBlock, ReferenceDefinition, indented code,
-     * List, Document, and (until their capture slice) the extension blocks
-     * — must hold none. */
+     * List, Document — must hold none. */
     switch (node->type) {
     case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
         if (count < 1) {
@@ -821,9 +972,84 @@ static int check_node_records(const capture_source *source, const markdown_core_
             failed = 1;
         }
         break;
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        if (count != 1 || records[0].kind != MARKDOWN_CORE_CONCRETE_LIST_MARKER) {
-            fprintf(stderr, "%s: ListItem holds %zu records\n", source->name, count);
+    case MARKDOWN_CORE_NODE_LIST_ITEM: {
+        /* The list marker, then one record per checkbox firing — the
+         * scanner fires on any item line that spells one, so the tail is
+         * unbounded but homogeneous. */
+        bool wrong = count < 1 || records[0].kind != MARKDOWN_CORE_CONCRETE_LIST_MARKER;
+        for (i = 1; i < count && !wrong; i++) {
+            wrong = records[i].kind != MARKDOWN_CORE_CONCRETE_TASK_MARKER;
+        }
+        if (wrong) {
+            fprintf(stderr, "%s: ListItem holds a wrong record set (%zu)\n", source->name, count);
+            failed = 1;
+        }
+        break;
+    }
+    case MARKDOWN_CORE_NODE_TABLE:
+        if (count != 1 || records[0].kind != MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW) {
+            fprintf(stderr, "%s: Table holds %zu records, not its one delimiter row\n", source->name, count);
+            failed = 1;
+        }
+        break;
+    case MARKDOWN_CORE_NODE_TABLE_ROW:
+        /* Every pipe of the row and nothing else; a pipeless row (no
+         * leading, trailing, or separating pipe spelled) holds none. */
+        for (i = 0; i < count; i++) {
+            if (records[i].kind != MARKDOWN_CORE_CONCRETE_TABLE_PIPE) {
+                fprintf(stderr, "%s: TableRow holds a non-pipe record\n", source->name);
+                failed = 1;
+            }
+        }
+        break;
+    case MARKDOWN_CORE_NODE_TABLE_CELL:
+        for (i = 0; i < count; i++) {
+            if (records[i].kind != MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE) {
+                fprintf(stderr, "%s: TableCell holds a non-escape record\n", source->name);
+                failed = 1;
+            }
+        }
+        break;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK: {
+        /* The open fence, the name, then exactly what the open line spells
+         * in source order — label brackets as a pair, attributes when they
+         * parsed — and the close fence last iff one closed the block. The
+         * label pair must agree with the label child's existence. */
+        size_t at = 2;
+        bool has_label_child =
+            node->first_child && node->first_child->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+        bool has_attributes =
+            markdown_core_extensions_get_directive_attributes((markdown_core_node *)node) != NULL;
+        bool wrong = count < 2 || records[0].kind != MARKDOWN_CORE_CONCRETE_FENCE_OPEN ||
+                     records[1].kind != MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME;
+        if (!wrong && has_label_child) {
+            wrong = count < at + 2 || records[at].kind != MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_OPEN ||
+                    records[at + 1].kind != MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_CLOSE;
+            at += 2;
+        }
+        if (!wrong) {
+            /* A block directive's attributes have exactly one source
+             * spelling, on the open line: field and record exist together. */
+            if (has_attributes) {
+                wrong = at >= count || records[at].kind != MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES;
+                at++;
+            } else if (at < count && records[at].kind == MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES) {
+                wrong = true;
+            }
+        }
+        if (!wrong && at < count) {
+            wrong = at + 1 != count || records[at].kind != MARKDOWN_CORE_CONCRETE_FENCE_CLOSE;
+        }
+        if (wrong) {
+            fprintf(stderr, "%s: DirectiveBlock holds a wrong record set (%zu)\n", source->name, count);
+            failed = 1;
+        }
+        break;
+    }
+    case MARKDOWN_CORE_NODE_FORMULA_BLOCK:
+        if (count < 1 || count > 2 || records[0].kind != MARKDOWN_CORE_CONCRETE_FENCE_OPEN ||
+            (count == 2 && records[1].kind != MARKDOWN_CORE_CONCRETE_FENCE_CLOSE)) {
+            fprintf(stderr, "%s: FormulaBlock holds a wrong record set (%zu)\n", source->name, count);
             failed = 1;
         }
         break;
@@ -972,9 +1198,10 @@ static size_t tree_record_total(const markdown_core_node *root) {
 /* Every marker kind, and every consumption edge the block phase owns: lazy
  * continuation (no `>`, no record), nested prefixes, clamped fences, a
  * close fence longer than its open, BOM-prefixed line 1, NUL replacement
- * inside an info string, CRLF, tabs after markers, and the constructs that
- * must stay recordless (indented code, HTML blocks, reference definitions,
- * extension blocks until their slice). */
+ * inside an info string, CRLF, tabs after markers, the extension marker
+ * material (table delimiter row, row pipes, cell `\|` escapes, task
+ * checkboxes, directive and formula fences), and the constructs that must
+ * stay recordless (indented code, HTML blocks, reference definitions). */
 static const capture_source SHAPE_SOURCES[] = {
     {"nested_quotes",
      "> # h1 ##\n"
@@ -1073,6 +1300,63 @@ static const capture_source SHAPE_SOURCES[] = {
      "bar\n"
      "---\n",
      0},
+    {"table",
+     "| a | b\\|c |\n"
+     "| :-: | - |\n"
+     "| d | e |\n"
+     "x | y\\|z\n",
+     0},
+    {"table_lookback",
+     "lead para\n"
+     "| a | b |\n"
+     "| - | - |\n"
+     "x | y |\n",
+     0},
+    {"table_indent",
+     "  | a | b |\n"
+     "  | - | - |\n"
+     "  | c | d |\n",
+     0},
+    {"tasklist",
+     "- [x] done\n"
+     "- [ ] todo\n"
+     "* [X] caps\n"
+     "- [@] not\n"
+     "\n"
+     "1. [x] num\n"
+     "\n"
+     "- [ ] first\n"
+     "\n"
+     "  [x] second\n",
+     0},
+    {"directive_blocks",
+     ":::note[lbl]{#id .cls key=\"v\"}\n"
+     "body\n"
+     ":::\n"
+     "\n"
+     "::leaf\n"
+     "\n"
+     "::::outer\n"
+     ":::inner\n"
+     "inner body\n"
+     ":::\n"
+     "::::\n"
+     "\n"
+     ":::open\n"
+     "tail\n",
+     0},
+    {"formula_blocks",
+     "$$\n"
+     "x + y\n"
+     "$$\n"
+     "\n"
+     "\\[\n"
+     "z\n"
+     "\\]\n"
+     "\n"
+     "$$\n"
+     "tail\n",
+     0},
 };
 
 static int case_capture_shape(void) {
@@ -1104,8 +1388,8 @@ static int case_capture_shape(void) {
     }
 
     /* The kind-complete fixture from the partition gates, under the same
-     * per-record scrutiny: extension blocks hold no records yet, and the
-     * capture must not disturb any of the 34 kinds. */
+     * per-record scrutiny: every owner among the 34 kinds — extension
+     * blocks included — holds exactly its own marker records. */
     {
         capture_source source = {"kind_fixture", FIXTURE, sizeof(FIXTURE) - 1};
         markdown_core_document *document = parse_fixture();
@@ -1381,6 +1665,287 @@ static int case_capture_shape(void) {
         }
         markdown_core_document_free(document);
     }
+    /* Table marker material, tuple by tuple: the delimiter row on the
+     * Table itself, each row's pipes on the row, each collapsed `\|`
+     * backslash on its cell — including the row spelled without a leading
+     * or trailing pipe, whose single separator still records. */
+    {
+        static const expected_record TABLE_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 0, 11}};
+        static const expected_record HEADER_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 11, 1}
+        };
+        static const expected_record ROW_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 8, 1}
+        };
+        static const expected_record BARE_PIPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1}};
+        static const expected_record HEADER_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 0, 7, 1}};
+        static const expected_record DATA_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 0, 5, 1}};
+        const capture_source *table = &SHAPE_SOURCES[14];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)table->text, strlen(table->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: table delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            TABLE_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: table header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            HEADER_PIPES,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: table data-row pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            ROW_PIPES,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: table pipeless-edge row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 2),
+            BARE_PIPE,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: header cell escape",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            HEADER_ESCAPE,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: plain header cell",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 0),
+            NULL,
+            0
+        );
+        failed |= expect_records(
+            "capture_shape: data cell escape",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 5),
+            DATA_ESCAPE,
+            1
+        );
+        markdown_core_document_free(document);
+    }
+    /* The look-back header: the row the table layer recovers from the
+     * paragraph's buffered content records at its true line and columns —
+     * line delta 1 on a row node whose start_line is the retyped
+     * paragraph's first line — and the split-off lead paragraph stays
+     * recordless (its `\|` coordinates are the recovery slice's problem,
+     * stated in the plan). */
+    {
+        static const expected_record LOOKBACK_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 0, 9}};
+        static const expected_record LOOKBACK_HEADER[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 8, 1}
+        };
+        static const expected_record LOOKBACK_DATA[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 6, 1}
+        };
+        const capture_source *lookback = &SHAPE_SOURCES[15];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lookback->text, strlen(lookback->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: lookback delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            LOOKBACK_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: lookback header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            LOOKBACK_HEADER,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: lookback data pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            LOOKBACK_DATA,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: split-off lead paragraph",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+            NULL,
+            0
+        );
+        markdown_core_document_free(document);
+    }
+    /* Indented table: every column in these records is a normalized-line
+     * byte offset, so the two-space indent shifts all of them. */
+    {
+        static const expected_record INDENT_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 2, 9}};
+        static const expected_record INDENT_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 6, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 10, 1}
+        };
+        const capture_source *indent = &SHAPE_SOURCES[16];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)indent->text, strlen(indent->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: indented delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            INDENT_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: indented header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            INDENT_PIPES,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: indented data pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            INDENT_PIPES,
+            3
+        );
+        markdown_core_document_free(document);
+    }
+    /* Task checkboxes: one record per firing wherever the scanner fires —
+     * bullet and ordinal items, the non-marker `[@]` firing nothing, and
+     * a second firing on a later paragraph line of the same item, whose
+     * state (the last spelled one) the item keeps. */
+    {
+        static const expected_record TASK_BULLET[] = {
+            {MARKDOWN_CORE_CONCRETE_LIST_MARKER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 0, 2, 3}
+        };
+        static const expected_record TASK_NONE[] = {{MARKDOWN_CORE_CONCRETE_LIST_MARKER, 0, 0, 1}};
+        static const expected_record TASK_ORDINAL[] = {
+            {MARKDOWN_CORE_CONCRETE_LIST_MARKER, 0, 0, 2},
+            {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 0, 3, 3}
+        };
+        static const expected_record TASK_REFIRED[] = {
+            {MARKDOWN_CORE_CONCRETE_LIST_MARKER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 0, 2, 3},
+            {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 2, 2, 3}
+        };
+        const expected_record *expected[6] = {TASK_BULLET, TASK_BULLET, TASK_BULLET, TASK_NONE, TASK_ORDINAL,
+                                              TASK_REFIRED};
+        const size_t expected_counts[6] = {2, 2, 2, 1, 2, 3};
+        const capture_source *tasks = &SHAPE_SOURCES[17];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)tasks->text, strlen(tasks->text), &options, NULL);
+        size_t t;
+        if (!document) {
+            return -1;
+        }
+        for (t = 0; t < 6; t++) {
+            char context[64];
+            snprintf(context, sizeof(context), "capture_shape: tasklist item %zu", t);
+            failed |= expect_records(
+                context,
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_LIST_ITEM, t),
+                expected[t],
+                expected_counts[t]
+            );
+        }
+        markdown_core_document_free(document);
+    }
+    /* Directive fences: open run, name, label brackets as a pair, the
+     * attribute block braces included, close run at its own length and
+     * line — plus the born-closed `::leaf`, nested fences at both
+     * lengths, and the unclosed tail without a close. */
+    {
+        static const expected_record DIR_FULL[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_OPEN, 0, 7, 1},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_CLOSE, 0, 11, 1},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES, 0, 12, 18},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 3}
+        };
+        static const expected_record DIR_LEAF[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 2, 4}
+        };
+        static const expected_record DIR_OUTER[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 4, 5},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 4, 0, 4}
+        };
+        static const expected_record DIR_INNER[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 5},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 3}
+        };
+        static const expected_record DIR_OPEN[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4}
+        };
+        const expected_record *expected[5] = {DIR_FULL, DIR_LEAF, DIR_OUTER, DIR_INNER, DIR_OPEN};
+        const size_t expected_counts[5] = {6, 2, 3, 3, 2};
+        const capture_source *directives = &SHAPE_SOURCES[18];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)directives->text, strlen(directives->text), &options, NULL);
+        size_t d;
+        if (!document) {
+            return -1;
+        }
+        for (d = 0; d < 5; d++) {
+            char context[64];
+            snprintf(context, sizeof(context), "capture_shape: directive block %zu", d);
+            failed |= expect_records(
+                context,
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, d),
+                expected[d],
+                expected_counts[d]
+            );
+        }
+        markdown_core_document_free(document);
+    }
+    /* Formula fences: the CodeBlock triple's precedent minus the info
+     * (the scanners accept none), in both spellings, unclosed without a
+     * close record. */
+    {
+        static const expected_record FORMULA_CLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 2}
+        };
+        static const expected_record FORMULA_UNCLOSED[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
+        const capture_source *formulas = &SHAPE_SOURCES[19];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)formulas->text, strlen(formulas->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: dollar formula fences",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0),
+            FORMULA_CLOSED,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: latex formula fences",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
+            FORMULA_CLOSED,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: unclosed formula fence",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
+            FORMULA_UNCLOSED,
+            1
+        );
+        markdown_core_document_free(document);
+    }
     return failed ? -1 : 0;
 }
 
@@ -1649,6 +2214,11 @@ static const char EQUIVALENCE_INITIAL[] = "# Title\n"
                                           "| - | - |\n"
                                           "| c | d |\n"
                                           "\n"
+                                          "- [ ] tick\n"
+                                          "- [x] tock\n"
+                                          "\n"
+                                          "inline :name[lb]{.k} here\n"
+                                          "\n"
                                           ":::note[lbl]\n"
                                           "directive body\n"
                                           ":::\n"
@@ -1667,7 +2237,11 @@ static const char EQUIVALENCE_INITIAL[] = "# Title\n"
 
 /* Suffix reflow, a nested reparse, a marker edit, a lazy-continuation flip,
  * fence breakage and repair, both definition flips, and appends: the edits
- * whose locality the region-relative encoding exists to survive. */
+ * whose locality the region-relative encoding exists to survive. The
+ * extension tail then edits inside every extension owner: cell text
+ * growing a `\|`, the delimiter row's alignment, a checkbox flip, the
+ * directive's label and attributes, the formula body, and an inline
+ * directive's respelling. */
 static const capture_edit EQUIVALENCE_EDITS[] = {
     {NULL, "intro paragraph\n\n", 0},
     {"sub item", "sub itXm", 0},
@@ -1679,6 +2253,12 @@ static const capture_edit EQUIVALENCE_EDITS[] = {
     {"[^n]: note body\n", "", 0},
     {NULL, "\n## tail ##\n", (size_t)-1},
     {NULL, "> new quote\n> more\n\n", 0},
+    {"| c | d |", "| c\\|q | d |", 0},
+    {"| - | - |", "| :-: | - |", 0},
+    {"- [ ] tick", "- [x] tick", 0},
+    {":::note[lbl]", ":::note[lbz]{#i .y}", 0},
+    {"formula\n$$", "for$mula\n$$", 0},
+    {":name[lb]{.k}", ":other{q=1}", 0},
 };
 
 static int case_capture_equivalence(void) {
@@ -2172,6 +2752,19 @@ static int check_inline_invariants(const char *context, const markdown_core_node
                     failed = 1;
                 }
                 break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME:
+                if (record->length < 2 || bytes[0] != ':' || record->head != record->length || record->tail != 0) {
+                    fprintf(stderr, "%s: directive-name record does not spell a consumed :name\n", context);
+                    failed = 1;
+                }
+                break;
+            case MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_ATTRIBUTES:
+                if (record->length < 2 || bytes[0] != '{' || bytes[record->length - 1] != '}' ||
+                    record->head != record->length) {
+                    fprintf(stderr, "%s: directive-attributes record does not span its braces\n", context);
+                    failed = 1;
+                }
+                break;
             default:
                 fprintf(stderr, "%s: unknown inline record kind %u\n", context, record->kind);
                 failed = 1;
@@ -2647,7 +3240,11 @@ static int case_inline_smart(void) {
  * endpoints, a no-op reduce (mismatched strikethrough) leaves candidates,
  * formula and cross-reference re-borrow raw interiors and must retract the
  * interior records they orphan, directive keeps its label children and
- * their records, and the autolink extension records nothing at all. */
+ * their records, and the autolink extension records nothing at all — a
+ * bare autolink owns no markup byte. The inline directive's scan-time
+ * consumes are the one sanctioned capture outside the engine: `:name`
+ * and a nameside `{attrs}` record at their consume_source site, while a
+ * labeled form's `]{attrs}` stays the engine closer's run. */
 static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
                                          "\n"
                                          "$a*b$ y $c&amp;d$\n"
@@ -2664,7 +3261,11 @@ static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
                                          "\n"
                                          ":::note[*bl* lbl]\n"
                                          "body\n"
-                                         ":::\n";
+                                         ":::\n"
+                                         "\n"
+                                         ":a one :b[lb]{.c} two\n"
+                                         "\n"
+                                         ":d{k=v} three :e{=bad} four\n";
 
 static int case_inline_extension_funnel(void) {
     int failed = 0;
@@ -2708,6 +3309,23 @@ static int case_inline_extension_funnel(void) {
     static const expected_inline_record FORMULA_COMMENT[] = {
         {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 1, 0},
         {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 11, 1, 1, 0},
+    };
+    /* The labeled form: `:name` records at its scan-time consume, the `[`
+     * through the engine, the `]{attrs}` closer as the engine's one run.
+     * The bare `:a` records name-only. */
+    static const expected_inline_record DIRECTIVE_LABELED[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME, 0, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME, 7, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 9, 1, 1, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 12, 5, 5, 0},
+    };
+    /* The attribute form consumes `:name{attrs}` in one scan and records
+     * it as two spellings; attributes that fail to parse stay literal and
+     * record nothing beside their name. */
+    static const expected_inline_record DIRECTIVE_ATTRS[] = {
+        {MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME, 0, 2, 2, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_ATTRIBUTES, 2, 5, 5, 0},
+        {MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME, 14, 2, 2, 0},
     };
 
     if (!document) {
@@ -2760,6 +3378,18 @@ static int case_inline_extension_funnel(void) {
         nth_node_of_type(root, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, 0),
         LABEL_EMPH,
         2
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: labeled inline directives",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 6),
+        DIRECTIVE_LABELED,
+        4
+    );
+    failed |= expect_inline_records(
+        "inline_extension_funnel: attribute inline directives",
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 7),
+        DIRECTIVE_ATTRS,
+        3
     );
     markdown_core_document_free(document);
     return failed ? -1 : 0;
@@ -2996,6 +3626,81 @@ static int case_inline_equivalence(void) {
             failed |= check_inline_invariants("inline_equivalence: dependent", markdown_core_document_root(view));
             markdown_core_document_free(fresh);
         }
+        markdown_core_session_free(session);
+    }
+
+    /* Dependent rebuild of a table cell: a definition flip converts a
+     * reference inside the cell without reparsing the table's block
+     * structure — the Table and the cell keep pointer identity (a full
+     * reparse would mint new nodes and silently satisfy the dump
+     * comparison), the cell's inline records swap with its domain, and
+     * its block-side records (the row's pipes, the table's delimiter
+     * row) ride the stable nodes unchanged. */
+    if (!failed) {
+        static const char initial[] = "| pre [a][x] | b |\n"
+                                      "| - | - |\n"
+                                      "\n"
+                                      "filler para\n"
+                                      "\n"
+                                      "[x]: /u\n"
+                                      "\n"
+                                      "tail para\n";
+        static const char without_def[] = "| pre [a][x] | b |\n"
+                                          "| - | - |\n"
+                                          "\n"
+                                          "filler para\n"
+                                          "\n"
+                                          "\n"
+                                          "tail para\n";
+        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        const markdown_core_document *view;
+        const markdown_core_node *table;
+        const markdown_core_node *cell;
+        markdown_core_document *fresh;
+
+        if (!session) {
+            return -1;
+        }
+        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: cell first commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        table = markdown_core_document_root(view)->first_child;
+        cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
+        if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
+            return -1;
+        }
+        /* Delete the `[x]: /u\n` definition line. */
+        if (!markdown_core_session_edit(session, 43, 51, (const uint8_t *)"", 0, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            markdown_core_session_free(session);
+            fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
+            return -1;
+        }
+        view = markdown_core_session_document(session);
+        if (markdown_core_document_root(view)->first_child != table ||
+            nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0) != cell) {
+            fprintf(stderr, "inline_equivalence: cell dependent rebuild replaced its stable owner\n");
+            failed = 1;
+        }
+        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        if (!fresh) {
+            markdown_core_session_free(session);
+            return -1;
+        }
+        failed |= compare_tree_records(
+            "inline_equivalence: cell definition removed",
+            markdown_core_document_concrete(view),
+            markdown_core_document_concrete(fresh),
+            2
+        );
+        failed |= check_inline_invariants("inline_equivalence: cell dependent", markdown_core_document_root(view));
+        markdown_core_document_free(fresh);
         markdown_core_session_free(session);
     }
     return failed ? -1 : 0;
