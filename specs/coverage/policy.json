@@ -145,7 +145,7 @@
                 "packages/markdown-core/extensions/ast.c": {
                     "lines": 134,
                     "functions": 1,
-                    "branches": 149
+                    "branches": 148
                 },
                 "packages/markdown-core/extensions/autolink.c": {
                     "lines": 33,
@@ -173,9 +173,9 @@
                     "branches": 292
                 },
                 "packages/markdown-core/extensions/ext_scanners.c": {
-                    "lines": 256,
+                    "lines": 253,
                     "functions": 0,
-                    "branches": 178
+                    "branches": 175
                 },
                 "packages/markdown-core/extensions/ext_scanners.h": {
                     "lines": 0,
@@ -230,7 +230,7 @@
                 "packages/markdown-core/extensions/tasklist.c": {
                     "lines": 16,
                     "functions": 2,
-                    "branches": 16
+                    "branches": 15
                 }
             }
         },
