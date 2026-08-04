@@ -653,8 +653,11 @@ static markdown_core_delimiter_result reduce_pair(
         remove_range(engine, opener_id, closer_id);
         break;
     case MARKDOWN_CORE_DELIMITER_REDUCE_ENDPOINTS:
-        markdown_core_concrete_capture_consume_all(engine->capture, opener->capture_index - 1);
-        markdown_core_concrete_capture_consume_all(engine->capture, closer->capture_index - 1);
+        /* No capture patch: the only ENDPOINTS rules are the smart quotes,
+         * whose records were marked fully consumed at scan time when the
+         * replacement destroyed their spelling — paired or not. A patch
+         * here would be unobservable, and unobservable bookkeeping cannot
+         * be held by any gate. */
         remove_record(engine, opener_id);
         remove_record(engine, closer_id);
         break;
