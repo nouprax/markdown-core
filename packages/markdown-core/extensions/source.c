@@ -438,6 +438,16 @@ typedef struct dirty_range {
 // predecessor guarantees a boundary that close) and runs until it is past
 // `end` on a boundary, hits end-of-source (where a dangling prefix is the
 // admitted truncated final code point), or rejects.
+//
+// Both junctions need a byte of context beyond the range. The left one is
+// the backup above. The right one is the stranding check at the stop: an
+// edit that destroys a character's lead leaves that character's
+// continuation bytes in the retained suffix, and the scan — having ended
+// cleanly on the replacement's own boundary — would otherwise never look
+// at them. A continuation byte at the stopping point can never be legal:
+// the scan is on a boundary, so no character is open to own it, and in
+// the predecessor a continuation there means the suffix no longer starts
+// where a character does.
 static bool validate_range(
     const source_node *root,
     size_t total,
@@ -482,6 +492,14 @@ static bool validate_range(
             }
             position++;
             if (position >= end && state.need == 0) {
+                if (position < total) {
+                    uint8_t next;
+                    node_copy_bytes(root, position, position + 1, &next);
+                    stats->validated_bytes += 1;
+                    if (is_continuation(next)) {
+                        return false;
+                    }
+                }
                 return true;
             }
         }

@@ -712,6 +712,112 @@ static int case_strict_boundary(void) {
         }
     }
 
+    /* A replacement that destroys a character's lead strands its
+     * continuation bytes after the edit: the retained suffix no longer
+     * begins at a character boundary and the commit must reject, even
+     * though the replacement itself ends cleanly. The mirror rows, where
+     * the replacement supplies a compatible lead, must still commit. */
+    if (!failed) {
+        static const uint8_t two_byte_doc[] = {0x78, 0xC2, 0x80, 0x79};  /* x U+0080 y */
+        static const uint8_t four_byte_doc[] = {0xF0, 0x9F, 0x92, 0x96}; /* U+1F496 */
+        static const struct {
+            const uint8_t *doc;
+            size_t doc_length;
+            size_t start;
+            size_t end;
+            const char *replacement;
+            size_t replacement_length;
+            int accepted;
+        } stranded[] = {
+            {two_byte_doc, 4, 1, 2, "a", 1, 0},     /* lead replaced by ASCII */
+            {two_byte_doc, 4, 1, 2, "\xC3", 1, 1},  /* lead replaced by lead */
+            {four_byte_doc, 4, 0, 2, "ab", 2, 0},   /* two of four replaced by ASCII */
+            {four_byte_doc, 4, 0, 1, "\xF1", 1, 1}, /* four-byte lead swapped */
+            {two_byte_doc, 4, 1, 2, "", 0, 0},      /* lead deleted outright */
+        };
+        for (row = 0; row < sizeof(stranded) / sizeof(stranded[0]) && !failed; row++) {
+            markdown_core_source *doc = markdown_core_source_new(
+                &counting.mem,
+                MARKDOWN_CORE_SOURCE_STRICT_UTF8,
+                stranded[row].doc,
+                stranded[row].doc_length,
+                &stats,
+                &status
+            );
+            if (!doc) {
+                failed = 1;
+                break;
+            }
+            edit.span.start = stranded[row].start;
+            edit.span.end = stranded[row].end;
+            edit.replacement = (const uint8_t *)stranded[row].replacement;
+            edit.replacement_length = stranded[row].replacement_length;
+            published = markdown_core_source_apply(doc, &edit, 1, &stats, &status);
+            if (stranded[row].accepted && !published) {
+                fprintf(stderr, "strict_boundary: compatible lead swap %zu rejected (%d)\n", row, (int)status);
+                failed = 1;
+            }
+            if (!stranded[row].accepted && (published || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8)) {
+                fprintf(stderr, "strict_boundary: stranded continuation published (row %zu, 14.3.6)\n", row);
+                failed = 1;
+            }
+            if (published) {
+                markdown_core_source_release(published);
+            }
+            if (expect_bytes(
+                    "strict_boundary (stranded, nothing published)",
+                    doc,
+                    stranded[row].doc,
+                    stranded[row].doc_length
+                ) != 0) {
+                failed = 1;
+            }
+            markdown_core_source_release(doc);
+        }
+        /* The same stranding through the far-apart multi-edit path, so the
+         * split-range flush validates its suffix too. */
+        if (!failed) {
+            uint8_t wide_doc[40];
+            markdown_core_source *doc;
+            size_t i;
+            for (i = 0; i < sizeof(wide_doc); i++) {
+                wide_doc[i] = (uint8_t)('0' + (i % 10));
+            }
+            wide_doc[20] = 0xC2;
+            wide_doc[21] = 0x80;
+            doc = markdown_core_source_new(
+                &counting.mem,
+                MARKDOWN_CORE_SOURCE_STRICT_UTF8,
+                wide_doc,
+                sizeof(wide_doc),
+                &stats,
+                &status
+            );
+            if (!doc) {
+                failed = 1;
+            } else {
+                markdown_core_source_edit pair[2];
+                pair[0].span.start = 20;
+                pair[0].span.end = 21; /* destroys the C2 lead */
+                pair[0].replacement = (const uint8_t *)"a";
+                pair[0].replacement_length = 1;
+                pair[1].span.start = 35;
+                pair[1].span.end = 35;
+                pair[1].replacement = (const uint8_t *)"ok";
+                pair[1].replacement_length = 2;
+                published = markdown_core_source_apply(doc, pair, 2, &stats, &status);
+                if (published || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8) {
+                    fprintf(stderr, "strict_boundary: stranded continuation published via flush path (14.3.6)\n");
+                    failed = 1;
+                    if (published) {
+                        markdown_core_source_release(published);
+                    }
+                }
+                markdown_core_source_release(doc);
+            }
+        }
+    }
+
     /* Row 4: the same three payloads under PERMISSIVE_BYTES all succeed —
      * that acceptance is what keeps the profiles observably different. */
     if (!failed) {
