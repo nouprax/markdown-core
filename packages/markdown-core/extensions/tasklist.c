@@ -80,6 +80,19 @@ static markdown_core_node *open_tasklist_item(
     }
 
     markdown_core_node_set_extension(parent_container, self);
+    /* The checkbox trio is the ListItem's own marker material (11.1) —
+     * consumed here, before any paragraph exists, exactly like the bullet
+     * the list parser captured when the item opened. Every firing records:
+     * the scanner fires on any item line spelling one, and the last firing
+     * is the state the item keeps. The trailing spacechar run the scan
+     * matched is trivia, like the spacing after a footnote opener. */
+    markdown_core_parser_capture_marker(
+        parser,
+        parent_container,
+        MARKDOWN_CORE_CONCRETE_TASK_MARKER,
+        parser->first_nonspace,
+        3
+    );
     markdown_core_parser_advance_offset(parser, (char *)input, 3, false);
 
     // Either an upper or lower case X means the task is completed. Read the

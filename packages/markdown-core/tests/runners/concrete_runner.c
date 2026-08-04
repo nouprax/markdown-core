@@ -744,8 +744,9 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     failed = 1;
                 }
             } else if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-                if (record->line != 0 || record->length != 2 ||
-                    (memcmp(line + record->column, "$$", 2) != 0 && memcmp(line + record->column, "\\[", 2) != 0) ||
+                if (record->line != 0 ||
+                    !((record->length == 2 && memcmp(line + record->column, "$$", 2) == 0) ||
+                      (record->length == 3 && memcmp(line + record->column, "\\\\[", 3) == 0)) ||
                     (int)record->column != node->start_column - 1) {
                     fprintf(stderr, "%s: fence-open record disagrees with formula block\n", source->name);
                     failed = 1;
@@ -796,8 +797,9 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     failed = 1;
                 }
             } else if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-                if (record->line == 0 || record->length != 2 ||
-                    (memcmp(line + record->column, "$$", 2) != 0 && memcmp(line + record->column, "\\]", 2) != 0)) {
+                if (record->line == 0 ||
+                    !((record->length == 2 && memcmp(line + record->column, "$$", 2) == 0) ||
+                      (record->length == 3 && memcmp(line + record->column, "\\\\]", 3) == 0))) {
                     fprintf(stderr, "%s: fence-close record disagrees with formula block\n", source->name);
                     failed = 1;
                 }
@@ -1350,9 +1352,9 @@ static const capture_source SHAPE_SOURCES[] = {
      "x + y\n"
      "$$\n"
      "\n"
-     "\\[\n"
+     "\\\\[\n"
      "z\n"
-     "\\]\n"
+     "\\\\]\n"
      "\n"
      "$$\n"
      "tail\n",
@@ -1919,6 +1921,10 @@ static int case_capture_shape(void) {
             {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2},
             {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 2}
         };
+        static const expected_record FORMULA_LATEX[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 3}
+        };
         static const expected_record FORMULA_UNCLOSED[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
         const capture_source *formulas = &SHAPE_SOURCES[19];
         markdown_core_document *document =
@@ -1935,7 +1941,7 @@ static int case_capture_shape(void) {
         failed |= expect_records(
             "capture_shape: latex formula fences",
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
-            FORMULA_CLOSED,
+            FORMULA_LATEX,
             2
         );
         failed |= expect_records(
