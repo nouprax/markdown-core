@@ -222,7 +222,15 @@ typedef enum markdown_core_inline_concrete_kind {
     /** The `[^` of a defined footnote reference; its `]` is a
      * BRACKET_CLOSE. The label between them keeps its spelling on the
      * node. */
-    MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN
+    MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN,
+    /** A whole inline `<!--...-->` comment parsed under
+     * MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS: the strip pass deletes its
+     * node after the capture handoff, so the bytes the projection
+     * abandons are recorded at scan time, where the option and the
+     * spelling already decide the outcome. Without the option the node
+     * keeps the exact source bytes and, like all raw HTML, records
+     * nothing. */
+    MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT
 } markdown_core_inline_concrete_kind;
 
 typedef struct markdown_core_inline_concrete_record {

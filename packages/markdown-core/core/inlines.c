@@ -1196,6 +1196,22 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
     if (matchlen > 0) {
         contents = markdown_core_chunk_borrow(&subj->input, subj->pos - 1, matchlen + 1);
         subj->pos += matchlen;
+        /* Raw HTML keeps its exact source bytes as its literal and records
+         * nothing — except a comment parsed for stripping, whose node the
+         * strip pass deletes after the capture handoff. The option and the
+         * spelling decide that fate right here, so the record is captured
+         * here; a reducer that later re-borrows the comment as raw interior
+         * retracts it like any other. */
+        if ((options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) && matchlen + 1 >= 4 &&
+            memcmp(contents.data, "<!--", 4) == 0) {
+            capture_token(
+                subj,
+                MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT,
+                subj->pos - matchlen - 1,
+                matchlen + 1,
+                matchlen + 1
+            );
+        }
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
         adjust_subj_node_newlines(subj, node, matchlen, 1);
         return node;
