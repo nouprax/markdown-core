@@ -460,7 +460,16 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
  * A lost record poisons the parse on the same terms as a lost line mark: a
  * parse that succeeded with silently thinner concrete material would differ
  * from the same input parsed without the allocation failure, which is
- * precisely what the OOM sweep compares. */
+ * precisely what the OOM sweep compares. The poison is deferred to the end
+ * of the current line rather than raised here: several capture sites sit
+ * between add_child's can-contain finalizes and add_text_to_container's
+ * re-anchoring of parser->current, and others precede the content append
+ * that establishes a fenced block's info line, so cutting the line short at
+ * the S_process_line oom guard would leave block structure violating the
+ * invariants finalize asserts. The line runs to completion — every capture
+ * failure leaves the tree exactly as a successful capture would — and the
+ * loss becomes parser->oom at the line boundary, before the next line
+ * parses. */
 static void S_capture_marker(
     markdown_core_parser *parser,
     markdown_core_node *node,
@@ -476,7 +485,7 @@ static void S_capture_marker(
             (uint32_t)column,
             (uint32_t)length
         )) {
-        parser->oom = true;
+        parser->capture_lost = true;
     }
 }
 
@@ -2206,6 +2215,12 @@ finished:
     }
     if (parser->last_line_length && input.data[parser->last_line_length - 1] == '\r') {
         parser->last_line_length -= 1;
+    }
+
+    /* The line is structurally complete; a capture loss now becomes the
+     * parse's failure before the next line runs (see capture_lost). */
+    if (parser->capture_lost) {
+        parser->oom = true;
     }
 
     markdown_core_strbuf_clear(&parser->curline);
