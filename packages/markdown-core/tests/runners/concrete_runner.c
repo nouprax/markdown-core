@@ -61,6 +61,7 @@
 #include "directive.h"
 #include "formula.h"
 #include "houdini.h"
+#include "markdown_core_ctype.h"
 #include "strikethrough.h"
 #include "table.h"
 
@@ -576,6 +577,14 @@ static bool run_all(const char *bytes, size_t length) {
     return length > 0;
 }
 
+/* True when the extent is the maximal run of its own first byte: nothing of
+ * the same byte follows it on the line. What pins a run record to the whole
+ * marker rather than a prefix of it. */
+static bool run_maximal(const char *line, size_t line_length, const markdown_core_concrete_record *record) {
+    return (size_t)record->column + record->length == line_length ||
+           line[record->column + record->length] != line[record->column];
+}
+
 typedef struct capture_source {
     const char *name;
     const char *text;
@@ -650,8 +659,12 @@ static int check_node_records(const capture_source *source, const markdown_core_
         }
         switch (record->kind) {
         case MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER:
-            if (node->type != MARKDOWN_CORE_NODE_BLOCK_QUOTE || record->length != 1 || line[record->column] != '>') {
-                fprintf(stderr, "%s: block-quote marker record does not spell '>'\n", source->name);
+            /* The opening record is additionally pinned to the quote's own
+             * start position; continuation columns vary per line and are
+             * pinned by the per-fixture expectation tables. */
+            if (node->type != MARKDOWN_CORE_NODE_BLOCK_QUOTE || record->length != 1 || line[record->column] != '>' ||
+                (i == 0 && (record->line != 0 || (int)record->column != node->start_column - 1))) {
+                fprintf(stderr, "%s: block-quote marker record does not spell the quote's '>'\n", source->name);
                 failed = 1;
             }
             break;
@@ -686,21 +699,23 @@ static int check_node_records(const capture_source *source, const markdown_core_
         case MARKDOWN_CORE_CONCRETE_ATX_OPENER:
             if (node->type != MARKDOWN_CORE_NODE_HEADING || node->as.heading.setext || record->line != 0 ||
                 !run_all(line + record->column, record->length) || line[record->column] != '#' ||
-                (int)record->length != node->as.heading.level || (int)record->column != node->start_column - 1) {
+                !run_maximal(line, line_length, record) || (int)record->length != node->as.heading.level ||
+                (int)record->column != node->start_column - 1) {
                 fprintf(stderr, "%s: ATX opener record disagrees with heading\n", source->name);
                 failed = 1;
             }
             break;
         case MARKDOWN_CORE_CONCRETE_ATX_CLOSER:
             if (node->type != MARKDOWN_CORE_NODE_HEADING || node->as.heading.setext || record->line != 0 ||
-                !run_all(line + record->column, record->length) || line[record->column] != '#') {
+                !run_all(line + record->column, record->length) || line[record->column] != '#' ||
+                !run_maximal(line, line_length, record)) {
                 fprintf(stderr, "%s: ATX closer record does not spell a '#' run\n", source->name);
                 failed = 1;
             }
             break;
         case MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE:
             if (node->type != MARKDOWN_CORE_NODE_HEADING || !node->as.heading.setext || record->line == 0 ||
-                !run_all(line + record->column, record->length) ||
+                !run_all(line + record->column, record->length) || !run_maximal(line, line_length, record) ||
                 line[record->column] != (node->as.heading.level == 1 ? '=' : '-')) {
                 fprintf(stderr, "%s: setext underline record disagrees with heading level\n", source->name);
                 failed = 1;
@@ -709,6 +724,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
         case MARKDOWN_CORE_CONCRETE_FENCE_OPEN:
             if (node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !node->as.code.fenced || record->line != 0 ||
                 record->length < 3 || !run_all(line + record->column, record->length) ||
+                !run_maximal(line, line_length, record) ||
                 (unsigned char)line[record->column] != node->as.code.fence_char ||
                 node->as.code.fence_length != (record->length > 255 ? 255 : (uint8_t)record->length) ||
                 (int)record->column != node->start_column - 1) {
@@ -729,6 +745,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
             markdown_core_strbuf_trim(&decoded);
             markdown_core_strbuf_unescape(&decoded);
             if (node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !node->as.code.fenced || record->line != 0 ||
+                markdown_core_isspace(line[record->column]) ||
+                markdown_core_isspace(line[record->column + record->length - 1]) ||
                 decoded.size != (markdown_core_bufsize)node->as.code.info.len ||
                 memcmp(decoded.ptr, node->as.code.info.data, decoded.size) != 0) {
                 fprintf(stderr, "%s: fence-info record does not decode to as.code.info\n", source->name);
@@ -740,6 +758,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
         case MARKDOWN_CORE_CONCRETE_FENCE_CLOSE:
             if (node->type != MARKDOWN_CORE_NODE_CODE_BLOCK || !node->as.code.fenced || !node->as.code.fence_closed ||
                 record->length < node->as.code.fence_length || !run_all(line + record->column, record->length) ||
+                !run_maximal(line, line_length, record) ||
                 (unsigned char)line[record->column] != node->as.code.fence_char ||
                 (int)(record->line) !=
                     node->end_line - (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE ? 0 : node->start_line)) {
@@ -865,6 +884,51 @@ static int check_node_records(const capture_source *source, const markdown_core_
     return failed;
 }
 
+/* An expected record, matched field-for-field against a node's vector. */
+typedef struct expected_record {
+    uint8_t kind;
+    uint32_t line;
+    uint32_t column;
+    uint32_t length;
+} expected_record;
+
+static int expect_records(
+    const char *context,
+    const markdown_core_node *node,
+    const expected_record *expected,
+    size_t expected_count
+) {
+    size_t count = 0;
+    const markdown_core_concrete_record *records = markdown_core_node_concrete_records(node, &count);
+    size_t i;
+    int failed = 0;
+    if (!node || count != expected_count) {
+        fprintf(stderr, "%s: expected %zu records, found %zu\n", context, expected_count, node ? count : 0);
+        return 1;
+    }
+    for (i = 0; i < expected_count; i++) {
+        if (records[i].kind != expected[i].kind || records[i].line != expected[i].line ||
+            records[i].column != expected[i].column || records[i].length != expected[i].length) {
+            fprintf(
+                stderr,
+                "%s: record %zu is {kind %u line %u column %u length %u}, expected {%u %u %u %u}\n",
+                context,
+                i,
+                records[i].kind,
+                records[i].line,
+                records[i].column,
+                records[i].length,
+                expected[i].kind,
+                expected[i].line,
+                expected[i].column,
+                expected[i].length
+            );
+            failed = 1;
+        }
+    }
+    return failed;
+}
+
 /* The n'th node of `type` in preorder, or NULL. */
 static const markdown_core_node *nth_node_of_type(const markdown_core_node *root, uint16_t type, size_t n) {
     walk_state walk;
@@ -982,8 +1046,10 @@ static const capture_source SHAPE_SOURCES[] = {
      "2. z\n",
      0},
     {"bom", "\xef\xbb\xbf# bom heading\n", 0},
-    {"nul_info", "```i\0nfo\nx\n```\n\npara\0text\n", sizeof("```i\0nfo\nx\n```\n\npara\0text\n") - 1},
-    {"entity_info", "```&#x26;amp\nx\n```\n\n```&#32;\ny\n```\n", 0},
+    {"nul_info",
+     "```i\0nfo\nx\n```\n\npara\0text\n\n# a\0b ##\n\n[^a\0b]: x\n",
+     sizeof("```i\0nfo\nx\n```\n\npara\0text\n\n# a\0b ##\n\n[^a\0b]: x\n") - 1},
+    {"entity_info", "```&#x26;amp\nx\n```\n\n```&#32;\ny\n```\n\n```  padded  \nz\n```\n", 0},
     {"tabs", ">\tq\n\n-\tt\n", 0},
     {"recordless",
      "    indented code\n"
@@ -1076,31 +1142,200 @@ static int case_capture_shape(void) {
         }
         markdown_core_document_free(document);
     }
+    /* Exact record tuples where a plausible wrong capture still spells a
+     * plausible marker: nested continuation columns, closer runs, close
+     * fences longer than their opens, full underlines, trimmed info
+     * extents, and markers beside NUL replacements. A capture that drops,
+     * widens, narrows, or misplaces any of these fails field-for-field. */
     {
+        static const expected_record QUOTE_DEPTH_0[] = {
+            {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 1, 0, 1}
+        };
+        static const expected_record QUOTE_DEPTH_1[] = {
+            {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 1, 2, 1}
+        };
+        static const expected_record QUOTE_DEPTH_2[] = {{MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 4, 1}};
         markdown_core_document *document = markdown_core_document_parse(
             (const uint8_t *)SHAPE_SOURCES[1].text,
             strlen(SHAPE_SOURCES[1].text),
             &options,
             NULL
         );
-        size_t expected[3] = {2, 2, 1};
-        size_t depth;
         if (!document) {
             return -1;
         }
-        for (depth = 0; depth < 3; depth++) {
-            const markdown_core_node *quote = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, depth);
-            if (!quote || record_count_of(quote) != expected[depth]) {
-                fprintf(
-                    stderr,
-                    "capture_shape: quote depth %zu captured %zu of %zu '>' markers\n",
-                    depth,
-                    quote ? record_count_of(quote) : 0,
-                    expected[depth]
-                );
-                failed = 1;
-            }
+        failed |= expect_records(
+            "capture_shape: deep_quotes depth 0",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0),
+            QUOTE_DEPTH_0,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: deep_quotes depth 1",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1),
+            QUOTE_DEPTH_1,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: deep_quotes depth 2",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 2),
+            QUOTE_DEPTH_2,
+            1
+        );
+        markdown_core_document_free(document);
+    }
+    {
+        /* atx_edges, heading by heading: opener always, closer exactly
+         * where the source writes one — total omission of the closer
+         * capture fails here (the reviewed gate gap). */
+        static const expected_record H_HASH[] = {{MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 1}};
+        static const expected_record H_X[] = {{MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 2}};
+        static const expected_record H_Y[] = {
+            {MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_ATX_CLOSER, 0, 6, 3}
+        };
+        static const expected_record H_Z[] = {
+            {MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_ATX_CLOSER, 0, 7, 1}
+        };
+        static const expected_record H_EMPTY_CLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_ATX_CLOSER, 0, 2, 1}
+        };
+        static const expected_record H_TWO[] = {{MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 2}};
+        static const expected_record H_TAB[] = {
+            {MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_ATX_CLOSER, 0, 6, 2}
+        };
+        const expected_record *expected[7] = {H_HASH, H_X, H_Y, H_Z, H_EMPTY_CLOSED, H_TWO, H_TAB};
+        const size_t expected_counts[7] = {1, 1, 2, 2, 2, 1, 2};
+        const capture_source *atx = &SHAPE_SOURCES[5];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)atx->text, strlen(atx->text), &options, NULL);
+        size_t h;
+        if (!document) {
+            return -1;
         }
+        for (h = 0; h < 7; h++) {
+            char context[64];
+            snprintf(context, sizeof(context), "capture_shape: atx_edges heading %zu", h);
+            failed |= expect_records(
+                context,
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, h),
+                expected[h],
+                expected_counts[h]
+            );
+        }
+        markdown_core_document_free(document);
+    }
+    {
+        /* fences, block by block: open runs at true length, info extents
+         * trimmed to the byte, close runs longer than their opens kept at
+         * the close's own length, the unclosed tail without a close. */
+        static const expected_record FENCE_BACKTICK[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_FENCE_INFO, 0, 3, 11},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 6}
+        };
+        static const expected_record FENCE_TILDE[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 5}
+        };
+        static const expected_record FENCE_OFFSET[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 3, 3},
+            {MARKDOWN_CORE_CONCRETE_FENCE_INFO, 0, 6, 6},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 2, 0, 3}
+        };
+        static const expected_record FENCE_UNCLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_FENCE_INFO, 0, 3, 8}
+        };
+        const capture_source *fences = &SHAPE_SOURCES[2];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)fences->text, strlen(fences->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: backtick fence",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 0),
+            FENCE_BACKTICK,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: tilde fence",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 1),
+            FENCE_TILDE,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: offset fence",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 2),
+            FENCE_OFFSET,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: unclosed fence",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 3),
+            FENCE_UNCLOSED,
+            2
+        );
+        markdown_core_document_free(document);
+    }
+    {
+        /* setext: the record is the whole underline run, not a prefix. */
+        static const expected_record SETEXT_FULL[] = {{MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE, 1, 0, 10}};
+        static const expected_record SETEXT_ONE[] = {{MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE, 1, 0, 1}};
+        const capture_source *setext = &SHAPE_SOURCES[3];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)setext->text, strlen(setext->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: setext full underline",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            SETEXT_FULL,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: setext single-byte underline",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 1),
+            SETEXT_ONE,
+            1
+        );
+        markdown_core_document_free(document);
+    }
+    {
+        /* nul_info: normalized-line coordinates beside NUL replacements —
+         * the ATX closer entirely after one, the footnote opener holding
+         * one inside its label (concrete_records.h states exactly this
+         * divergence from stored-source offsets). */
+        static const expected_record NUL_HEADING[] = {
+            {MARKDOWN_CORE_CONCRETE_ATX_OPENER, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_ATX_CLOSER, 0, 8, 2}
+        };
+        static const expected_record NUL_FOOTNOTE[] = {{MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER, 0, 0, 9}};
+        const capture_source *nul = &SHAPE_SOURCES[9];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)nul->text, nul->length, &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: heading beside a NUL replacement",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            NUL_HEADING,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: footnote label holding a NUL replacement",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, 0),
+            NUL_FOOTNOTE,
+            1
+        );
         markdown_core_document_free(document);
     }
 
@@ -1586,6 +1821,38 @@ static int case_capture_oom_sweep(void) {
     return 0;
 }
 
+/* --- capture_growth_ceiling --------------------------------------------- */
+
+/* The append's refusal at the capacity wrap point, driven directly: a
+ * vector whose capacity cannot double without the byte request wrapping
+ * size_t must refuse the append and leave the vector untouched — the
+ * failure contract cannot lean on the address-space size making the
+ * ceiling unreachable (concrete_records.h). */
+static int case_capture_growth_ceiling(void) {
+    markdown_core_mem *mem = markdown_core_mem_default();
+    markdown_core_concrete_records *vector =
+        (markdown_core_concrete_records *)mem->calloc(mem, 1, sizeof(markdown_core_concrete_records));
+    markdown_core_concrete_records *witness;
+    int failed = 0;
+    if (!vector) {
+        return -1;
+    }
+    vector->capacity = SIZE_MAX / sizeof(markdown_core_concrete_record);
+    vector->count = vector->capacity;
+    witness = vector;
+    if (markdown_core_concrete_records_append(mem, &vector, MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 0, 1)) {
+        fprintf(stderr, "capture_growth_ceiling: append past the wrap point reported success\n");
+        failed = 1;
+    }
+    if (vector != witness || vector->count != vector->capacity ||
+        vector->capacity != SIZE_MAX / sizeof(markdown_core_concrete_record)) {
+        fprintf(stderr, "capture_growth_ceiling: refused append disturbed the vector\n");
+        failed = 1;
+    }
+    mem->free(mem, vector);
+    return failed ? -1 : 0;
+}
+
 /* --- case table --------------------------------------------------------- */
 
 typedef struct concrete_case {
@@ -1600,6 +1867,7 @@ static const concrete_case CASES[] = {
     {"capture_document", case_capture_document},
     {"capture_equivalence", case_capture_equivalence},
     {"capture_oom_sweep", case_capture_oom_sweep},
+    {"capture_growth_ceiling", case_capture_growth_ceiling},
 };
 
 int main(int argc, char **argv) {

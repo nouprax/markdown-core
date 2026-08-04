@@ -43,13 +43,18 @@ extern "C" {
  *   record with it, untouched — the same property the sealed
  *   parent-relative line encoding gives node positions.
  * - `column` and `length` are byte extents within that line as the
- *   parser saw it: the normalized line (NUL bytes replaced by U+FFFD,
- *   invalid UTF-8 replaced under MARKDOWN_CORE_OPT_VALIDATE_UTF8, EOL
- *   excluded). Marker bytes are ASCII recognized at or before the line's
- *   first non-space byte, and every replacement target is a non-space
- *   byte no marker scanner accepts, so a replacement can never precede a
- *   marker: every record's extent except a CODE_FENCE_INFO that contains
- *   replaced bytes is byte-identical to the stored source line.
+ *   parser scanned it: the normalized line (each NUL replaced by the
+ *   3-byte U+FFFD, invalid UTF-8 replaced under
+ *   MARKDOWN_CORE_OPT_VALIDATE_UTF8, EOL excluded). A normalized-line
+ *   offset equals the stored-source offset only until the line's first
+ *   replacement. A replaced byte is a non-space byte no marker scanner
+ *   accepts, so it never sits inside or before a marker recognized at
+ *   the line's first non-space byte — but FENCE_INFO can contain
+ *   replacements, FOOTNOTE_OPENER's label can contain them, and
+ *   ATX_CLOSER, recognized from the line's end, can sit entirely after
+ *   one. Resolving a record against the stored source bytes therefore
+ *   composes with the line's replacement positions; the capture gates
+ *   re-derive the normalized line for exactly that reason.
  *
  * Records are appended in parse order, which within one node ascends by
  * (line, column); nothing reorders them. `flags` is reserved (always 0)
@@ -109,11 +114,13 @@ typedef struct markdown_core_concrete_records {
 } markdown_core_concrete_records;
 
 /** Appends one record to `*slot`, allocating or growing the vector
- * through `mem` as needed. Returns false and leaves `*slot` valid and
- * releasable when the allocator does; the caller owns turning that into
- * its failure discipline. No overflow guard: `count` is bounded by the
- * markers of one parsed document, a handful per line of an int-numbered
- * line space, which can never approach the SIZE_MAX/16 growth ceiling. */
+ * through `mem` as needed. Returns false — leaving `*slot` valid and
+ * releasable — when the allocator does, or when doubling would push the
+ * byte request past SIZE_MAX; the caller owns turning either into its
+ * failure discipline. The ceiling is unreachable through parsing on a
+ * 64-bit target, where memory exhausts long before capacity approaches
+ * the wrap point, but a 32-bit size_t meets it at 2^27 records and the
+ * refusal must not depend on which address space it runs in. */
 bool markdown_core_concrete_records_append(
     markdown_core_mem *mem,
     markdown_core_concrete_records **slot,

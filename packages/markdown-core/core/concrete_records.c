@@ -21,7 +21,18 @@ bool markdown_core_concrete_records_append(
     markdown_core_concrete_record *record;
 
     if (!records || records->count == records->capacity) {
-        size_t capacity = records ? records->capacity * 2 : CONCRETE_RECORDS_FIRST_CAPACITY;
+        size_t capacity;
+        /* Growth ceiling: doubling a vector this large would wrap the byte
+         * request and hand a huge capacity a tiny allocation. Parsing
+         * cannot reach this on a 64-bit target — memory exhausts first —
+         * but the failure contract must not lean on address-space size, so
+         * the refusal is checked, not argued, and the gate drives this arm
+         * directly. */
+        if (records && records->capacity > (SIZE_MAX - sizeof(markdown_core_concrete_records)) /
+                                               sizeof(markdown_core_concrete_record) / 2) {
+            return false;
+        }
+        capacity = records ? records->capacity * 2 : CONCRETE_RECORDS_FIRST_CAPACITY;
         markdown_core_concrete_records *grown = (markdown_core_concrete_records *)mem->realloc(
             mem,
             records,
