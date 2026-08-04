@@ -149,9 +149,10 @@ if(MARKDOWN_CORE_STATIC)
     # it links the static archives directly, like fallback_runner.
     add_executable(source_runner runners/source_runner.c)
     target_include_directories(
-        source_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                              "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
-                              "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+        source_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)

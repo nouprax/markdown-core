@@ -23,8 +23,8 @@ typedef struct source_buffer {
 
 typedef struct source_node {
     size_t refcount;
-    size_t length; // subtree stored bytes
-    size_t height; // leaf height is 1
+    size_t length;             // subtree stored bytes
+    size_t height;             // leaf height is 1
     struct source_node *left;  // both NULL for a leaf
     struct source_node *right; // never exactly one NULL
     source_buffer *buffer;     // leaf only
@@ -657,12 +657,7 @@ no_memory:
     return NULL;
 }
 
-void markdown_core_source_copy_bytes(
-    const markdown_core_source *source,
-    size_t offset,
-    size_t length,
-    uint8_t *out
-) {
+void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t offset, size_t length, uint8_t *out) {
     if (length > 0) {
         node_copy_bytes(source->root, offset, offset + length, out);
     }
@@ -707,11 +702,7 @@ static bool sum_buffers(markdown_core_mem *mem, const source_node *node, buffer_
     return buffer_set_add(mem, set, node->buffer, sum);
 }
 
-bool markdown_core_source_retained_bytes(
-    const markdown_core_source *source,
-    markdown_core_mem *mem,
-    size_t *out
-) {
+bool markdown_core_source_retained_bytes(const markdown_core_source *source, markdown_core_mem *mem, size_t *out) {
     buffer_set set = {NULL, 0, 0};
     size_t sum = 0;
     bool ok = true;
