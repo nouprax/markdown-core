@@ -156,7 +156,10 @@ static void capture_row_pipes(
 
     for (i = 0; i < row->n_columns; i++) {
         const node_cell *cell = &row->cells[i];
-        if ((markdown_core_bufsize)cell->start_offset > origin && string[cell->start_offset - 1] == '|') {
+        /* The walk-back that produced start_offset stops only at the row
+         * origin or just past a `|`, so start_offset > origin already
+         * proves the preceding byte is the pipe. */
+        if ((markdown_core_bufsize)cell->start_offset > origin) {
             markdown_core_parser_capture_marker_at(
                 parser,
                 row_node,
@@ -554,9 +557,11 @@ static markdown_core_node *try_opening_table_header(
     {
         const struct markdown_core_line_mark *mark = &parser->line_marks[parser->line_mark_count - 1];
         markdown_core_bufsize delimiter_end = (markdown_core_bufsize)len;
-        while (delimiter_end > (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser) &&
-               (input[delimiter_end - 1] == '\n' || input[delimiter_end - 1] == '\r' ||
-                input[delimiter_end - 1] == ' ' || input[delimiter_end - 1] == '\t')) {
+        /* Trim the EOL and trailing whitespace off the record's extent.
+         * scan_table_start matched a marker byte at first_nonspace, so the
+         * walk stops there at the latest and needs no bound of its own. */
+        while (input[delimiter_end - 1] == '\n' || input[delimiter_end - 1] == '\r' ||
+               input[delimiter_end - 1] == ' ' || input[delimiter_end - 1] == '\t') {
             delimiter_end--;
         }
         markdown_core_parser_capture_marker(

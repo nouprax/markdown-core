@@ -1358,6 +1358,11 @@ static const capture_source SHAPE_SOURCES[] = {
      "  | b |\n"
      "> | - | - |\n",
      0},
+    {"table_crlf",
+     "| a | b |\r\n"
+     "| - | - |\t\r\n"
+     "| c | d |\r\n",
+     0},
 };
 
 static int case_capture_shape(void) {
@@ -1980,6 +1985,41 @@ static int case_capture_shape(void) {
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZY_HEADER,
             2
+        );
+        markdown_core_document_free(document);
+    }
+    /* CRLF lines and a tab after the delimiter row's last pipe: the
+     * delimiter record's extent trims the tab and the whole EOL. */
+    {
+        static const expected_record CRLF_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 0, 9}};
+        static const expected_record CRLF_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 8, 1}
+        };
+        const capture_source *crlf = &SHAPE_SOURCES[21];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)crlf->text, strlen(crlf->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: crlf delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            CRLF_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: crlf header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            CRLF_PIPES,
+            3
+        );
+        failed |= expect_records(
+            "capture_shape: crlf data pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            CRLF_PIPES,
+            3
         );
         markdown_core_document_free(document);
     }
