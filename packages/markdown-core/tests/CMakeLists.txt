@@ -341,8 +341,15 @@ if(MARKDOWN_CORE_STATIC)
     # fields, Document.concrete reachability from one-shot and committed
     # documents (14.1.9), record equality between every session commit and
     # a fresh parse, and the allocation-failure sweep.
-    foreach(case IN ITEMS region_partition region_of_walk capture_shape capture_document capture_equivalence
-                          capture_oom_sweep capture_growth_ceiling)
+    foreach(
+        case IN
+        ITEMS region_partition
+              region_of_walk
+              capture_shape
+              capture_document
+              capture_equivalence
+              capture_oom_sweep
+              capture_growth_ceiling)
         markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()
