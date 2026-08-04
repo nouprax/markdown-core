@@ -1359,6 +1359,11 @@ static const capture_source SHAPE_SOURCES[] = {
      "$$\n"
      "tail\n",
      0},
+    {"table_lazy_header",
+     "> | a |\n"
+     "  | b |\n"
+     "> | - | - |\n",
+     0},
 };
 
 static int case_capture_shape(void) {
@@ -1949,6 +1954,38 @@ static int case_capture_shape(void) {
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
             FORMULA_UNCLOSED,
             1
+        );
+        markdown_core_document_free(document);
+    }
+    /* A lazy continuation line as the look-back header: the line entered
+     * the paragraph buffer from parser->offset 0 with its two-space
+     * indent included, so the mark's byte_offset (0) differs from the
+     * line's first_nonspace (2) — pipe columns must come from the former
+     * plus the in-buffer distance. The delimiter row's column meanwhile
+     * sits after the quote's own consumed prefix. */
+    {
+        static const expected_record LAZY_HEADER[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 6, 1}
+        };
+        static const expected_record LAZY_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 2, 9}};
+        const capture_source *lazy = &SHAPE_SOURCES[20];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: lazy-header delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            LAZY_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: lazy-header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            LAZY_HEADER,
+            2
         );
         markdown_core_document_free(document);
     }
@@ -3643,7 +3680,10 @@ static int case_inline_equivalence(void) {
      * its block-side records (the row's pipes, the table's delimiter
      * row) ride the stable nodes unchanged. */
     if (!failed) {
-        static const char initial[] = "| pre [a][x] | b |\n"
+        /* The cell carries a `\|` so it holds a block-side escape record:
+         * the dependent rebuild swaps {children, content, inline records}
+         * and must leave the cell's block records exactly in place. */
+        static const char initial[] = "| pre\\|q [a][x] | b |\n"
                                       "| - | - |\n"
                                       "\n"
                                       "filler para\n"
@@ -3651,7 +3691,7 @@ static int case_inline_equivalence(void) {
                                       "[x]: /u\n"
                                       "\n"
                                       "tail para\n";
-        static const char without_def[] = "| pre [a][x] | b |\n"
+        static const char without_def[] = "| pre\\|q [a][x] | b |\n"
                                           "| - | - |\n"
                                           "\n"
                                           "filler para\n"
@@ -3681,8 +3721,12 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
             return -1;
         }
+        if (record_count_of(cell) == 0) {
+            fprintf(stderr, "inline_equivalence: cell fixture holds no block record to keep in place\n");
+            failed = 1;
+        }
         /* Delete the `[x]: /u\n` definition line. */
-        if (!markdown_core_session_edit(session, 43, 51, (const uint8_t *)"", 0, NULL) ||
+        if (!markdown_core_session_edit(session, 46, 54, (const uint8_t *)"", 0, NULL) ||
             !markdown_core_session_commit(session, NULL, NULL)) {
             markdown_core_session_free(session);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");

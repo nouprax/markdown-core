@@ -181,11 +181,12 @@ static void capture_row_pipes(
 }
 
 /* Captures the backslash of every `\|` unescape_pipes collapses out of one
- * cell's rebuilt buffer, by re-walking the raw cell extent with the same
- * traversal: skip both bytes of a collapsed pair so `\\|` records only the
- * backslash the table layer consumed. The record rides the TableCell — the
- * cell owns the source backing its inline sequence, and the rebuilt buffer
- * the inline records index no longer holds the backslash. */
+ * cell's rebuilt buffer. A plain adjacent-pair scan equals that function's
+ * skip-ahead traversal: a collapsed pair's second byte is a `|`, which can
+ * never begin another pair, so no pair unescape_pipes skips over could
+ * have matched here. The record rides the TableCell — the cell owns the
+ * source backing its inline sequence, and the rebuilt buffer the inline
+ * records index no longer holds the backslash. */
 static void capture_cell_escapes(
     markdown_core_parser *parser,
     markdown_core_node *cell_node,
@@ -195,10 +196,10 @@ static void capture_cell_escapes(
     markdown_core_bufsize base_col,
     markdown_core_bufsize origin
 ) {
-    int r = cell->start_offset + cell->internal_offset;
+    int r;
 
-    while (r <= cell->end_offset) {
-        if (string[r] == '\\' && r + 1 <= cell->end_offset && string[r + 1] == '|') {
+    for (r = cell->start_offset + cell->internal_offset; r < cell->end_offset; r++) {
+        if (string[r] == '\\' && string[r + 1] == '|') {
             markdown_core_parser_capture_marker_at(
                 parser,
                 cell_node,
@@ -207,9 +208,6 @@ static void capture_cell_escapes(
                 base_col + ((markdown_core_bufsize)r - origin),
                 1
             );
-            r += 2;
-        } else {
-            r++;
         }
     }
 }
