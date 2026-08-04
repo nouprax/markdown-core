@@ -34,14 +34,19 @@ void markdown_core_lookup_recording_release(markdown_core_lookup_recording *reco
     recording->capacity = 0;
 }
 
-/* The map's lookup sink. Events of one unit arrive consecutively (the inline
- * phase parses each unit's content, nested owners included, before moving
- * on), so deduplication only scans the trailing same-unit run. A lost
+/* The maps' shared lookup worker. Events of one unit arrive consecutively
+ * (the inline phase parses each unit's content, nested owners included,
+ * before moving on), so deduplication only scans the trailing same-unit run.
+ * The definition kind is stored structurally on the event — labels stay raw
+ * normalized bytes — so the dedup matches kind and label separately. A lost
  * observation poisons the recording: a commit that cannot trust its records
  * must not commit incrementally. */
-void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, const unsigned char *label) {
-    markdown_core_lookup_recording *recording = (markdown_core_lookup_recording *)context;
-    markdown_core_node *unit = (markdown_core_node *)unit_pointer;
+static void lookup_recording_observe(
+    markdown_core_lookup_recording *recording,
+    markdown_core_node *unit,
+    const unsigned char *label,
+    size_t kind
+) {
     size_t label_size;
     unsigned char *copy;
     size_t i;
@@ -52,7 +57,8 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
     }
 
     for (i = recording->count; i > 0 && recording->items[i - 1].unit == unit; i--) {
-        if (strcmp((const char *)recording->items[i - 1].label, (const char *)label) == 0) {
+        if (recording->items[i - 1].kind == kind &&
+            strcmp((const char *)recording->items[i - 1].label, (const char *)label) == 0) {
             return;
         }
     }
@@ -79,67 +85,131 @@ void markdown_core_lookup_recording_sink(void *context, void *unit_pointer, cons
     memcpy(copy, label, label_size);
     recording->items[recording->count].unit = unit;
     recording->items[recording->count].label = copy;
+    recording->items[recording->count].kind = kind;
     recording->count++;
 }
 
-/* Groups the recording's consecutive same-unit runs into per-unit records,
- * moving label ownership out of the recording. On failure the recording
- * still owns whatever was not yet moved, so releasing both structures never
- * double-frees. */
+void markdown_core_lookup_recording_sink_references(void *context, void *unit_pointer, const unsigned char *label) {
+    lookup_recording_observe(
+        (markdown_core_lookup_recording *)context,
+        (markdown_core_node *)unit_pointer,
+        label,
+        MARKDOWN_CORE_DEFINITIONS_REFERENCES
+    );
+}
+
+void markdown_core_lookup_recording_sink_footnotes(void *context, void *unit_pointer, const unsigned char *label) {
+    lookup_recording_observe(
+        (markdown_core_lookup_recording *)context,
+        (markdown_core_node *)unit_pointer,
+        label,
+        MARKDOWN_CORE_DEFINITIONS_FOOTNOTES
+    );
+}
+
+/* Groups the recording's consecutive same-unit runs into per-unit records
+ * partitioned by definition kind in one pass, moving label ownership out of
+ * the recording. A unit lands in a kind's array only when the run holds
+ * events of that kind. On failure the recording still owns whatever was not
+ * yet moved (moved labels are owned by the bundles, which this function
+ * frees before returning), so releasing both structures never double-frees. */
 bool markdown_core_lookup_recording_bundle(
     markdown_core_lookup_recording *recording,
-    markdown_core_unit_lookups **out,
-    size_t *out_count
+    markdown_core_unit_lookups *bundles[MARKDOWN_CORE_DEFINITION_TABLE_COUNT],
+    size_t bundle_count[MARKDOWN_CORE_DEFINITION_TABLE_COUNT]
 ) {
     markdown_core_mem *mem = recording->mem;
-    markdown_core_unit_lookups *bundles = NULL;
-    size_t bundle_count = 0;
+    size_t s;
     size_t i;
 
-    *out = NULL;
-    *out_count = 0;
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        bundles[s] = NULL;
+        bundle_count[s] = 0;
+    }
     if (recording->count == 0) {
         return true;
     }
 
-    for (i = 0; i < recording->count; i++) {
-        if (i == 0 || recording->items[i].unit != recording->items[i - 1].unit) {
-            bundle_count++;
-        }
-    }
-    bundles = (markdown_core_unit_lookups *)mem->calloc(mem, bundle_count, sizeof(*bundles));
-    if (!bundles) {
-        return false;
-    }
-
+    // Pass 1: per-kind bundle counts — one bundle per (run, kind) with at
+    // least one event of that kind in the run.
     {
-        size_t filled = 0;
         size_t run_start = 0;
         for (i = 1; i <= recording->count; i++) {
             if (i == recording->count || recording->items[i].unit != recording->items[run_start].unit) {
-                size_t run_length = i - run_start;
-                markdown_core_unit_lookups *bundle = &bundles[filled];
-                bundle->unit = recording->items[run_start].unit;
-                bundle->record.labels = (unsigned char **)mem->calloc(mem, run_length, sizeof(unsigned char *));
-                bundle->record.positions = (size_t *)mem->calloc(mem, run_length, sizeof(size_t));
-                if (!bundle->record.labels || !bundle->record.positions) {
-                    markdown_core_unit_lookups_free(mem, bundles, bundle_count);
-                    return false;
+                bool seen[MARKDOWN_CORE_DEFINITION_TABLE_COUNT] = {false};
+                size_t k;
+                for (k = run_start; k < i; k++) {
+                    size_t kind = recording->items[k].kind;
+                    if (!seen[kind]) {
+                        seen[kind] = true;
+                        bundle_count[kind]++;
+                    }
                 }
-                bundle->record.count = run_length;
-                for (size_t k = 0; k < run_length; k++) {
-                    bundle->record.labels[k] = recording->items[run_start + k].label;
-                    recording->items[run_start + k].label = NULL; // moved
-                }
-                filled++;
                 run_start = i;
             }
         }
     }
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        if (bundle_count[s] == 0) {
+            continue;
+        }
+        bundles[s] = (markdown_core_unit_lookups *)mem->calloc(mem, bundle_count[s], sizeof(*bundles[s]));
+        if (!bundles[s]) {
+            goto fail;
+        }
+    }
 
-    *out = bundles;
-    *out_count = bundle_count;
+    // Pass 2: fill each run's per-kind bundles. Both kinds' storage for a
+    // run is allocated before any of the run's labels move, so a failure
+    // leaves every unmoved label owned by the recording.
+    {
+        size_t filled[MARKDOWN_CORE_DEFINITION_TABLE_COUNT] = {0};
+        size_t run_start = 0;
+        for (i = 1; i <= recording->count; i++) {
+            if (i == recording->count || recording->items[i].unit != recording->items[run_start].unit) {
+                size_t run_counts[MARKDOWN_CORE_DEFINITION_TABLE_COUNT] = {0};
+                size_t moved[MARKDOWN_CORE_DEFINITION_TABLE_COUNT] = {0};
+                size_t k;
+                for (k = run_start; k < i; k++) {
+                    run_counts[recording->items[k].kind]++;
+                }
+                for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+                    markdown_core_unit_lookups *bundle;
+                    if (run_counts[s] == 0) {
+                        continue;
+                    }
+                    bundle = &bundles[s][filled[s]];
+                    bundle->unit = recording->items[run_start].unit;
+                    bundle->record.labels = (unsigned char **)mem->calloc(mem, run_counts[s], sizeof(unsigned char *));
+                    bundle->record.positions = (size_t *)mem->calloc(mem, run_counts[s], sizeof(size_t));
+                    if (!bundle->record.labels || !bundle->record.positions) {
+                        goto fail;
+                    }
+                    bundle->record.count = run_counts[s];
+                }
+                for (k = run_start; k < i; k++) {
+                    size_t kind = recording->items[k].kind;
+                    bundles[kind][filled[kind]].record.labels[moved[kind]++] = recording->items[k].label;
+                    recording->items[k].label = NULL; // moved
+                }
+                for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+                    if (run_counts[s]) {
+                        filled[s]++;
+                    }
+                }
+                run_start = i;
+            }
+        }
+    }
     return true;
+
+fail:
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        markdown_core_unit_lookups_free(mem, bundles[s], bundle_count[s]);
+        bundles[s] = NULL;
+        bundle_count[s] = 0;
+    }
+    return false;
 }
 
 static void lookup_record_release(markdown_core_mem *mem, markdown_core_lookup_record *record) {

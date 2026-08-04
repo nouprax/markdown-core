@@ -1822,14 +1822,18 @@ static const markdown_core_lookup_record *fb_lookup_record_find(
 /* Verifies both directions of one persistent lookup-index relation:
  * posting(label)[position] == (unit, ordinal), and
  * record(unit).positions[ordinal] == position. Expected units are a set:
- * every one must occur exactly once, with no extra or duplicate entry. */
+ * every one must occur exactly once, with no extra or duplicate entry.
+ * Every label probed here is a reference-kind label (directive labels
+ * resolve through the reference map), so the probe reads the references
+ * instance of the per-kind lookup tables; labels are raw normalized
+ * bytes. */
 static int fb_lookup_posting_matches(
     const markdown_core_session *session,
     const char *label,
     const markdown_core_node_id *expected_units,
     size_t expected_count
 ) {
-    const markdown_core_lookup_table *table = &session->lookups;
+    const markdown_core_lookup_table *table = &session->lookups[MARKDOWN_CORE_DEFINITIONS_REFERENCES];
     const markdown_core_lookup_posting *posting =
         markdown_core_lookup_postings_find(table, (const unsigned char *)label);
     size_t position;
@@ -2587,6 +2591,190 @@ done:
     return result;
 }
 
+/* The definition-flip gate (M2.5, 6.3 step 0). Footnote and link-reference
+ * labels normalize alike but share no key space: with the same label text
+ * mentioned both as `[^x]` and as `[x]`, flipping one kind's definition
+ * must reparse exactly that kind's mentioning units — never the other
+ * kind's — and the count must not depend on how large the rest of the
+ * document is. A merged label key space fails the exact-count assertions
+ * (every flip selects both kinds' mentioners), which is how this gate
+ * refuses the over-approximation it replaces. */
+/* Compares the session's committed dump with a fresh parse of `text`;
+ * any wrongly-selected or stale dependent shows up as a divergence. */
+static int fb_flip_dump_matches(markdown_core_session *session, const char *text, size_t length) {
+    const markdown_core_document *committed = markdown_core_session_document(session);
+    markdown_core_parse_options options;
+    markdown_core_document *fresh;
+    uint8_t *a = NULL;
+    uint8_t *b = NULL;
+    size_t alen = 0;
+    size_t blen = 0;
+    int result = -1;
+    markdown_core_parse_options_init(&options);
+    options.footnotes = true;
+    fresh = markdown_core_document_parse((const uint8_t *)text, length, &options, NULL);
+    if (!fresh) {
+        return -1;
+    }
+    if (markdown_core_document_dump(committed, &a, &alen, NULL) &&
+        markdown_core_document_dump(fresh, &b, &blen, NULL) && alen == blen && memcmp(a, b, alen) == 0) {
+        result = 0;
+    }
+    markdown_core_dump_free(a);
+    markdown_core_dump_free(b);
+    markdown_core_document_free(fresh);
+    return result;
+}
+
+static int fb_definition_flip_scenario(size_t footnote_mentions, size_t reference_mentions, size_t filler_count) {
+    /* Each definition carries its own trailing blank line: the flips append
+     * at end-of-text, and without the separation the next appended line
+     * would lazily continue the previous (defused) paragraph instead of
+     * opening a definition. */
+    static const char footnote_definition[] = "[^x]: the footnote body\n\n";
+    static const char reference_definition[] = "[x]: /url\n\n";
+    markdown_core_parse_options options;
+    markdown_core_session *session = NULL;
+    char *text = NULL;
+    size_t length = 0;
+    size_t capacity = 0;
+    size_t i;
+    size_t before;
+    size_t full_before;
+    int result = -1;
+    struct {
+        const char *definition;
+        size_t definition_length;
+        size_t expected;
+    } flips[2];
+    size_t flip;
+
+    /* Deliberately unequal mention counts: with equal counts, reparsing the
+     * WRONG kind's units would still balance the arithmetic, and only the
+     * dump comparison would object. */
+    flips[0].definition = footnote_definition;
+    flips[0].definition_length = sizeof(footnote_definition) - 1;
+    flips[0].expected = footnote_mentions;
+    flips[1].definition = reference_definition;
+    flips[1].definition_length = sizeof(reference_definition) - 1;
+    flips[1].expected = reference_mentions;
+
+    capacity = ((footnote_mentions + reference_mentions) + filler_count) * 48 + 128;
+    text = (char *)malloc(capacity);
+    if (!text) {
+        return -1;
+    }
+    for (i = 0; i < footnote_mentions; i++) {
+        length += (size_t)snprintf(text + length, capacity - length, "see [^x] here %03zu\n\n", i);
+    }
+    for (i = 0; i < reference_mentions; i++) {
+        length += (size_t)snprintf(text + length, capacity - length, "see [x] there %03zu\n\n", i);
+    }
+    for (i = 0; i < filler_count; i++) {
+        length += (size_t)snprintf(text + length, capacity - length, "plain filler paragraph %03zu\n\n", i);
+    }
+
+    markdown_core_parse_options_init(&options);
+    options.footnotes = true;
+    session = markdown_core_session_open(&options, NULL);
+    if (!session) {
+        goto done;
+    }
+    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_session_commit(session, NULL, NULL)) {
+        fprintf(stderr, "FAILED: definition_flip_locality: initial commit failed\n");
+        goto done;
+    }
+    full_before = session->full_commits;
+
+    for (flip = 0; flip < 2; flip++) {
+        size_t definition_at = length; /* the appended definition line */
+        /* Adding the definition converts exactly its own kind's mentions. */
+        before = session->dependent_reparses;
+        if (!markdown_core_session_edit(
+                session,
+                definition_at,
+                definition_at,
+                (const uint8_t *)flips[flip].definition,
+                flips[flip].definition_length,
+                NULL
+            ) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            fprintf(stderr, "FAILED: definition_flip_locality: add flip %zu failed\n", flip);
+            goto done;
+        }
+        if (session->dependent_reparses - before != flips[flip].expected) {
+            fprintf(
+                stderr,
+                "FAILED: definition_flip_locality: add flip %zu reparsed %zu dependents, expected %zu "
+                "(filler %zu)\n",
+                flip,
+                session->dependent_reparses - before,
+                flips[flip].expected,
+                filler_count
+            );
+            goto done;
+        }
+        memcpy(text + definition_at, flips[flip].definition, flips[flip].definition_length);
+        if (fb_flip_dump_matches(session, text, length + flips[flip].definition_length) != 0) {
+            fprintf(stderr, "FAILED: definition_flip_locality: add flip %zu diverges from a fresh parse\n", flip);
+            goto done;
+        }
+        /* Removing the definition as an ordinary edit — one byte turns the
+         * definition line into prose — flips the same units back, and only
+         * them. (A whole-line deletion at end-of-text takes the full-reparse
+         * path in today's restart planner, which would count nothing; the
+         * one-byte form keeps the commit on the incremental path this gate
+         * is about.) */
+        before = session->dependent_reparses;
+        if (!markdown_core_session_edit(session, definition_at, definition_at + 1, (const uint8_t *)"x", 1, NULL) ||
+            !markdown_core_session_commit(session, NULL, NULL)) {
+            fprintf(stderr, "FAILED: definition_flip_locality: remove flip %zu failed\n", flip);
+            goto done;
+        }
+        if (session->dependent_reparses - before != flips[flip].expected) {
+            fprintf(
+                stderr,
+                "FAILED: definition_flip_locality: remove flip %zu reparsed %zu dependents, expected %zu "
+                "(filler %zu)\n",
+                flip,
+                session->dependent_reparses - before,
+                flips[flip].expected,
+                filler_count
+            );
+            goto done;
+        }
+        text[definition_at] = 'x';
+        if (fb_flip_dump_matches(session, text, length + flips[flip].definition_length) != 0) {
+            fprintf(stderr, "FAILED: definition_flip_locality: remove flip %zu diverges from a fresh parse\n", flip);
+            goto done;
+        }
+        /* The defused line stays behind as prose; the next flip appends
+         * after it. */
+        length += flips[flip].definition_length;
+    }
+    /* Every flip above took the incremental path: a full reparse would count
+     * nothing and vacuously pass the exact-count assertions. */
+    if (session->full_commits != full_before) {
+        fprintf(stderr, "FAILED: definition_flip_locality: a flip fell back to a full reparse\n");
+        goto done;
+    }
+    result = 0;
+done:
+    markdown_core_session_free(session);
+    free(text);
+    return result;
+}
+
+static int case_definition_flip_locality(void) {
+    /* Same flip, two document sizes: the dependent count tracks the label's
+     * own mentions, not the document (6.3 step 0). */
+    if (fb_definition_flip_scenario(6, 3, 60) != 0) {
+        return -1;
+    }
+    return fb_definition_flip_scenario(6, 3, 240);
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -2611,6 +2799,7 @@ static const fb_case_entry FB_CASES[] = {
     {"block_directive_label_lookup_locality", case_block_directive_label_lookup_locality},
     {"reference_fanout_uniform_routing", case_reference_fanout_uniform_routing},
     {"restart_locality_counters", case_restart_locality_counters},
+    {"definition_flip_locality", case_definition_flip_locality},
 };
 
 int main(int argc, char **argv) {
