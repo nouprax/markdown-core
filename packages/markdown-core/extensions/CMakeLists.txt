@@ -5,6 +5,8 @@ set(LIBRARY_SOURCES
     ast.c
     session.c
     arena.c
+    source.c
+    source.h
     adopt.c
     incremental.c
     lookups.c
