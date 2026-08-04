@@ -797,9 +797,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     failed = 1;
                 }
             } else if (node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-                if (record->line == 0 ||
-                    !((record->length == 2 && memcmp(line + record->column, "$$", 2) == 0) ||
-                      (record->length == 3 && memcmp(line + record->column, "\\\\]", 3) == 0))) {
+                if (record->line == 0 || !((record->length == 2 && memcmp(line + record->column, "$$", 2) == 0) ||
+                                           (record->length == 3 && memcmp(line + record->column, "\\\\]", 3) == 0))) {
                     fprintf(stderr, "%s: fence-close record disagrees with formula block\n", source->name);
                     failed = 1;
                 }
@@ -844,16 +843,15 @@ static int check_node_records(const capture_source *source, const markdown_core_
              * and decoding to the Table's own alignments column for column:
              * a record that drifts onto a data row, or a captured row that
              * disagrees with the alignments the parse kept, fails here. */
-            const uint8_t *alignments =
-                markdown_core_extensions_get_table_alignments((markdown_core_node *)node);
+            const uint8_t *alignments = markdown_core_extensions_get_table_alignments((markdown_core_node *)node);
             uint16_t columns = markdown_core_extensions_get_table_columns((markdown_core_node *)node);
             size_t b = 0;
             uint16_t column_index = 0;
             bool composition = true;
             const char *bytes = line + record->column;
-            if (node->type != MARKDOWN_CORE_NODE_TABLE || record->line == 0 || record->length < 1 ||
-                bytes[0] == ' ' || bytes[0] == '\t' || bytes[record->length - 1] == ' ' ||
-                bytes[record->length - 1] == '\t' || !alignments) {
+            if (node->type != MARKDOWN_CORE_NODE_TABLE || record->line == 0 || record->length < 1 || bytes[0] == ' ' ||
+                bytes[0] == '\t' || bytes[record->length - 1] == ' ' || bytes[record->length - 1] == '\t' ||
+                !alignments) {
                 fprintf(stderr, "%s: table delimiter-row record is not the trimmed row\n", source->name);
                 failed = 1;
                 break;
@@ -880,8 +878,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
                         break;
                     }
                     if (column_index >= columns ||
-                        alignments[column_index] !=
-                            (left && right ? 'c' : (left ? 'l' : (right ? 'r' : 0)))) {
+                        alignments[column_index] != (left && right ? 'c' : (left ? 'l' : (right ? 'r' : 0)))) {
                         composition = false;
                         break;
                     }
@@ -907,9 +904,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
             }
             break;
         case MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE:
-            if (node->type != MARKDOWN_CORE_NODE_TABLE_CELL || record->length != 1 ||
-                line[record->column] != '\\' || (size_t)record->column + 1 >= line_length ||
-                line[record->column + 1] != '|') {
+            if (node->type != MARKDOWN_CORE_NODE_TABLE_CELL || record->length != 1 || line[record->column] != '\\' ||
+                (size_t)record->column + 1 >= line_length || line[record->column + 1] != '|') {
                 fprintf(stderr, "%s: cell-escape record is not the backslash of a \\| pair\n", source->name);
                 failed = 1;
             }
@@ -1018,10 +1014,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
          * parsed — and the close fence last iff one closed the block. The
          * label pair must agree with the label child's existence. */
         size_t at = 2;
-        bool has_label_child =
-            node->first_child && node->first_child->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
-        bool has_attributes =
-            markdown_core_extensions_get_directive_attributes((markdown_core_node *)node) != NULL;
+        bool has_label_child = node->first_child && node->first_child->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL;
+        bool has_attributes = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node) != NULL;
         bool wrong = count < 2 || records[0].kind != MARKDOWN_CORE_CONCRETE_FENCE_OPEN ||
                      records[1].kind != MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME;
         if (!wrong && has_label_child) {
@@ -1844,8 +1838,8 @@ static int case_capture_shape(void) {
             {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 0, 2, 3},
             {MARKDOWN_CORE_CONCRETE_TASK_MARKER, 2, 2, 3}
         };
-        const expected_record *expected[6] = {TASK_BULLET, TASK_BULLET, TASK_BULLET, TASK_NONE, TASK_ORDINAL,
-                                              TASK_REFIRED};
+        const expected_record *expected[6] =
+            {TASK_BULLET, TASK_BULLET, TASK_BULLET, TASK_NONE, TASK_ORDINAL, TASK_REFIRED};
         const size_t expected_counts[6] = {2, 2, 2, 1, 2, 3};
         const capture_source *tasks = &SHAPE_SOURCES[17];
         markdown_core_document *document =
