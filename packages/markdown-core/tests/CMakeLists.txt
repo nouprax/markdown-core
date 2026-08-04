@@ -145,6 +145,14 @@ if(MARKDOWN_CORE_STATIC)
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     target_link_libraries(extension_order_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+    # source_runner drives the internal stored-byte substrate (source.h), so
+    # it links the static archives directly, like fallback_runner.
+    add_executable(source_runner runners/source_runner.c)
+    target_include_directories(
+        source_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+                              "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                              "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -289,6 +297,31 @@ if(MARKDOWN_CORE_STATIC)
         restart_locality_counters)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
+    endforeach()
+
+    # regression: the stored-byte substrate's storage and profile gates —
+    # span canonicalization, path-copy and no-prefix-copy bounds, the
+    # declared amplification bound, the asymmetric STRICT_UTF8 boundary
+    # (14.3.4-6), validation locality, and the allocation-failure sweep.
+    set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES
+        span_validation
+        tree_shapes
+        utf8_matrix
+        storage_sharing
+        append_no_prefix_copy
+        amplification_bound
+        strict_boundary
+        validation_locality
+        oom_sweep)
+    foreach(case IN LISTS MARKDOWN_CORE_SOURCE_REGRESSION_CASES)
+        markdown_core_add_test(regression_source_${case} regression 240 source_runner --case ${case})
+    endforeach()
+
+    # equivalence: substrate edits against an independent oracle and the
+    # multi-byte chunk-partition clauses (14.3.1, 14.3.7, 14.8.2-3).
+    set(MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES random_edits split_character chunk_partition)
+    foreach(case IN LISTS MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES)
+        markdown_core_add_test(equivalence_source_${case} equivalence 240 source_runner --case ${case})
     endforeach()
 endif()
 
