@@ -194,9 +194,13 @@ typedef struct {
 
 // One observed lookup, keyed by the attribution node pointer while ids are
 // still unassigned (adoption resolves them later, like definition owners).
+// `kind` is the definition table the lookup ran against
+// (markdown_core_definition_kind): the label text is raw normalized bytes,
+// and bundling partitions events into that kind's per-table output.
 typedef struct {
     markdown_core_node *unit;
     unsigned char *label; // owned
+    size_t kind;          // markdown_core_definition_kind of the queried map
 } markdown_core_lookup_event;
 
 // Append-only observation list for one staged parse. `lost` poisons the
@@ -296,10 +300,13 @@ struct markdown_core_session {
     markdown_core_footnote_labels footnote_labels;
     // The definition tables (see markdown_core_definition_table).
     markdown_core_definition_table definitions[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-    // Persistent unit-id -> looked-up-labels table backing per-unit re-runs
-    // when a commit changes per-label winners. Maintained by both commit
-    // paths; skipped entirely for the one-shot convenience parse.
-    markdown_core_lookup_table lookups;
+    // Persistent unit-id -> looked-up-labels tables backing per-unit re-runs
+    // when a commit changes per-label winners. One instance per definition
+    // kind, mirroring the definition tables: the two label key spaces are
+    // disjoint by construction (incremental-canonical-ast.md 6.3 step 0), so
+    // labels inside each table are raw normalized bytes. Maintained by both
+    // commit paths; skipped entirely for the one-shot convenience parse.
+    markdown_core_lookup_table lookups[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     // The detached one-shot document keeps node ids but never commits or
     // answers session-only queries, so its commit skips every session index.
     bool one_shot;
@@ -326,6 +333,11 @@ struct markdown_core_session {
     size_t full_commits;
     size_t restarted_commits;
     size_t reflowed_commits;
+    // Dependent units reparsed because a definition flip selected them
+    // through the label postings, summed over successful incremental
+    // commits. The definition-flip gate asserts this equals the mention
+    // count of the flipped label's own kind, independent of document size.
+    size_t dependent_reparses;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty
     // reference map, extension attachments) is commit-invariant, so
@@ -567,18 +579,24 @@ void markdown_core_lookup_recording_init(markdown_core_lookup_recording *recordi
 /** Frees the recording's events and any labels not yet moved out. */
 void markdown_core_lookup_recording_release(markdown_core_lookup_recording *recording);
 
-/** The map lookup sink (markdown_core_map_lookup_sink); `context` is the
- * recording, `unit` the attribution node. Consecutive same-unit duplicates
- * are dropped; allocation loss sets `lost` instead of failing the parse. */
-void markdown_core_lookup_recording_sink(void *context, void *unit, const unsigned char *label);
+/** The map lookup sinks (markdown_core_map_lookup_sink); `context` is the
+ * recording, `unit` the attribution node. Each parser map is armed with the
+ * sink of its own definition kind, which the shared worker stores on the
+ * event structurally — labels stay raw normalized bytes. Consecutive
+ * same-unit duplicates of one kind are dropped; allocation loss sets `lost`
+ * instead of failing the parse. */
+void markdown_core_lookup_recording_sink_references(void *context, void *unit, const unsigned char *label);
+void markdown_core_lookup_recording_sink_footnotes(void *context, void *unit, const unsigned char *label);
 
-/** Groups the recording into per-unit bundles, moving label ownership.
- * Returns false on allocation failure; releasing the recording and any
- * partial bundles stays safe either way. */
+/** Groups the recording into per-unit bundles partitioned by definition
+ * kind in one pass, moving label ownership. A unit appears in a kind's
+ * array only if it recorded events of that kind. Returns false on
+ * allocation failure; releasing the recording and any partial bundles
+ * stays safe either way. */
 bool markdown_core_lookup_recording_bundle(
     markdown_core_lookup_recording *recording,
-    markdown_core_unit_lookups **out,
-    size_t *out_count
+    markdown_core_unit_lookups *bundles[MARKDOWN_CORE_DEFINITION_TABLE_COUNT],
+    size_t bundle_count[MARKDOWN_CORE_DEFINITION_TABLE_COUNT]
 );
 
 /** Frees `count` bundles and every label still owned by them. */

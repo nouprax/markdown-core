@@ -193,9 +193,9 @@
                     "branches": 68
                 },
                 "packages/markdown-core/extensions/incremental.c": {
-                    "lines": 267,
-                    "functions": 2,
-                    "branches": 325
+                    "lines": 253,
+                    "functions": 1,
+                    "branches": 321
                 },
                 "packages/markdown-core/extensions/inline_util.h": {
                     "lines": 0,
@@ -205,7 +205,7 @@
                 "packages/markdown-core/extensions/lookups.c": {
                     "lines": 16,
                     "functions": 0,
-                    "branches": 8
+                    "branches": 7
                 },
                 "packages/markdown-core/extensions/reference.c": {
                     "lines": 9,
@@ -215,7 +215,7 @@
                 "packages/markdown-core/extensions/session.c": {
                     "lines": 58,
                     "functions": 2,
-                    "branches": 49
+                    "branches": 48
                 },
                 "packages/markdown-core/extensions/strikethrough.c": {
                     "lines": 12,

@@ -569,13 +569,11 @@ static bool reference_winners_equivalent(const markdown_core_map_entry *a, const
  * (index build failure, an anchor that defies classification), and false
  * with *fallback clear on allocation loss.
  *
- * `dirty` is the commit's, not the table's: every table contributes the
- * labels whose definedness it flipped to one set, because a unit's
- * dependencies are recorded by label alone. The label namespaces overlap
- * there — a flipped `[x]:` can also select units that only read `[^x]` — and
- * that direction is the safe one. Each table contributes its own flips, so
- * the union covers every real dependent; the extra ones re-refine to the
- * tree they already had. */
+ * `dirty` is this table's own per-kind dirty set: each table plans the
+ * labels whose definedness it flipped into its own instance, so the two
+ * label namespaces stay disjoint (6.3 step 0): a flipped `[x]:` selects
+ * exactly the units that read `[x]` and never the ones that only read
+ * `[^x]`. */
 static bool reconcile_prepare(
     markdown_core_mem *mem,
     markdown_core_definition_table *table,
@@ -921,14 +919,19 @@ static void free_child_chain(markdown_core_node *chain) {
 }
 
 /* Drops every subtree id of the sibling chain from the session's lookup
- * records (missing ids are no-ops; only units ever hold records). Ids that a
- * staged unit adopted get their fresh records re-installed afterwards. */
+ * records (missing ids are no-ops; only units ever hold records). Removal is
+ * by unit id and a unit may hold labels of both kinds, so it runs against
+ * both table instances. Ids that a staged unit adopted get their fresh
+ * records re-installed afterwards. */
 static void lookups_remove_chain(markdown_core_session *session, markdown_core_node *chain) {
     markdown_core_node *top;
     for (top = chain; top; top = top->next) {
         markdown_core_node *node = top;
         for (;;) {
-            markdown_core_lookup_table_remove(session->mem, &session->lookups, node->id);
+            size_t s;
+            for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+                markdown_core_lookup_table_remove(session->mem, &session->lookups[s], node->id);
+            }
             if (node->first_child) {
                 node = node->first_child;
                 continue;
@@ -1048,13 +1051,15 @@ static bool dependent_domain_shape_is_valid(const dependent_unit *dependent) {
 
 /* Collects the units that depend on a label whose winner changed by walking
  * the changed labels' postings — O(affected units), not O(units with
- * lookups) — skipping units the staged reparse rebuilds anyway. Returns
- * false with *fallback set when a record no longer matches the tree or no
- * complete inline-ownership-domain implementation exists, and false with
- * *fallback clear on allocation loss. */
+ * lookups) — skipping units the staged reparse rebuilds anyway. Each kind's
+ * dirty set queries its own lookup-table instance, so a flip never selects
+ * the other kind's mentioning units. Returns false with *fallback set when
+ * a record no longer matches the tree or no complete
+ * inline-ownership-domain implementation exists, and false with *fallback
+ * clear on allocation loss. */
 static bool collect_dependents(
     markdown_core_session *session,
-    const markdown_core_key_index *dirty,
+    const markdown_core_key_index dirty[MARKDOWN_CORE_DEFINITION_TABLE_COUNT],
     const uint64_t *stale_ids,
     size_t stale_count,
     dependent_unit **out,
@@ -1062,7 +1067,6 @@ static bool collect_dependents(
     bool *fallback
 ) {
     markdown_core_mem *mem = session->mem;
-    markdown_core_lookup_table *table = &session->lookups;
     markdown_core_node *doc = session->view.root;
     dependent_unit *dependents = NULL;
     size_t count = 0;
@@ -1072,40 +1076,46 @@ static bool collect_dependents(
     size_t candidate_capacity = 0;
     size_t slot;
     size_t c;
+    size_t s;
 
     *out = NULL;
     *out_count = 0;
     *fallback = false;
-    if (dirty->size == 0) {
-        return true;
-    }
     // Union of the dirty labels' postings; the same unit may sit under
-    // several dirty labels, so sort and unique before the per-unit checks.
-    for (slot = 0; slot < dirty->capacity; slot++) {
-        const markdown_core_lookup_posting *posting;
-        size_t i;
-        if (!dirty->slots[slot].key) {
+    // several dirty labels (of either kind), so sort and unique before the
+    // per-unit checks.
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        const markdown_core_key_index *set = &dirty[s];
+        const markdown_core_lookup_table *table = &session->lookups[s];
+        if (set->size == 0) {
             continue;
         }
-        posting = markdown_core_lookup_postings_find(table, dirty->slots[slot].key);
-        if (!posting) {
-            continue;
-        }
-        for (i = 0; i < posting->count; i++) {
-            if (candidate_count == candidate_capacity) {
-                size_t grown_capacity = candidate_capacity ? candidate_capacity * 2 : 16;
-                markdown_core_node_id *grown =
-                    (markdown_core_node_id *)mem->realloc(mem, candidates, grown_capacity * sizeof(*grown));
-                if (!grown) {
-                    if (candidates) {
-                        mem->free(mem, candidates);
-                    }
-                    return false;
-                }
-                candidates = grown;
-                candidate_capacity = grown_capacity;
+        for (slot = 0; slot < set->capacity; slot++) {
+            const markdown_core_lookup_posting *posting;
+            size_t i;
+            if (!set->slots[slot].key) {
+                continue;
             }
-            candidates[candidate_count++] = posting->items[i].unit;
+            posting = markdown_core_lookup_postings_find(table, set->slots[slot].key);
+            if (!posting) {
+                continue;
+            }
+            for (i = 0; i < posting->count; i++) {
+                if (candidate_count == candidate_capacity) {
+                    size_t grown_capacity = candidate_capacity ? candidate_capacity * 2 : 16;
+                    markdown_core_node_id *grown =
+                        (markdown_core_node_id *)mem->realloc(mem, candidates, grown_capacity * sizeof(*grown));
+                    if (!grown) {
+                        if (candidates) {
+                            mem->free(mem, candidates);
+                        }
+                        return false;
+                    }
+                    candidates = grown;
+                    candidate_capacity = grown_capacity;
+                }
+                candidates[candidate_count++] = posting->items[i].unit;
+            }
         }
     }
     if (candidate_count > 1) {
@@ -1990,9 +2000,9 @@ typedef struct {
 } incremental_splice_state;
 
 /* One definition table's per-commit state. The chain runs once per table and
- * the tables never meet; only `dirty` on the pipeline is shared, and only
- * because a unit's dependencies are recorded by label with no table attached.
- * The parser borrows `table->map` for the staged parse and `own_map` — the
+ * the tables never meet: each plans its flipped labels into its own per-kind
+ * dirty set on the pipeline, mirroring the per-kind lookup tables. The
+ * parser borrows `table->map` for the staged parse and `own_map` — the
  * parser's own, empty map — must be restored before its lease ends. */
 typedef struct {
     markdown_core_definition_table *table;
@@ -2028,9 +2038,11 @@ typedef struct {
 
     markdown_core_parser *parser;
     definition_stream streams[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-    // Labels whose definedness flipped, pooled across the streams; `prepared`
-    // says whether the index was ever built (only a changed stream needs it).
-    markdown_core_key_index dirty;
+    // Labels whose definedness flipped, one set per definition kind so each
+    // table plans into its own label namespace (6.3 step 0); `prepared` says
+    // whether the indexes were ever built (only a changed stream needs
+    // them), and `dirty_count` aggregates across both sets.
+    markdown_core_key_index dirty[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     size_t dirty_count;
     bool dirty_prepared;
     markdown_core_node *root;
@@ -2042,8 +2054,9 @@ typedef struct {
     markdown_core_footnote_site_list staged_refs;
     bool footnotes_built;
     markdown_core_lookup_recording recording;
-    markdown_core_unit_lookups *bundles;
-    size_t bundle_count;
+    // Per-kind recording bundles, one array per lookup-table instance.
+    markdown_core_unit_lookups *bundles[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
+    size_t bundle_count[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     dependent_unit *dependents;
     size_t dependent_count;
     markdown_core_node *holder;
@@ -2334,12 +2347,17 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
         size_t s;
         size_t i;
 
-        // Every changed table plans against the same dirty set, and every
-        // plan must be built before the first one is applied: prepare is the
-        // step that can still fail for free, apply is the step that cannot be
-        // undone.
-        if (!markdown_core_key_index_init(&pipeline->dirty, pipeline->mem)) {
-            return false;
+        // Every changed table plans into its own per-kind dirty set, and
+        // every plan must be built before the first one is applied: prepare
+        // is the step that can still fail for free, apply is the step that
+        // cannot be undone.
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            if (!markdown_core_key_index_init(&pipeline->dirty[s], pipeline->mem)) {
+                while (s-- > 0) {
+                    markdown_core_key_index_free(&pipeline->dirty[s]);
+                }
+                return false;
+            }
         }
         pipeline->dirty_prepared = true;
         for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
@@ -2356,7 +2374,7 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
                     &stream->old_defs,
                     &stream->new_defs,
                     &stream->reconcile,
-                    &pipeline->dirty,
+                    &pipeline->dirty[s],
                     &pipeline->dirty_count,
                     &fallback
                 )) {
@@ -2368,7 +2386,7 @@ static bool incremental_prepare_definitions(incremental_pipeline *pipeline) {
         }
         if (!collect_dependents(
                 session,
-                &pipeline->dirty,
+                pipeline->dirty,
                 pipeline->stale_ids,
                 pipeline->stale_count,
                 &pipeline->dependents,
@@ -2470,7 +2488,9 @@ static bool incremental_refine_and_preflight(incremental_pipeline *pipeline) {
     if (session->record_lookups) {
         for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
             markdown_core_map *watched = pipeline->streams[s].table->map;
-            watched->lookup_sink = markdown_core_lookup_recording_sink;
+            watched->lookup_sink = s == MARKDOWN_CORE_DEFINITIONS_REFERENCES
+                                       ? markdown_core_lookup_recording_sink_references
+                                       : markdown_core_lookup_recording_sink_footnotes;
             watched->lookup_context = &pipeline->recording;
         }
     }
@@ -2717,15 +2737,21 @@ static bool incremental_adopt(incremental_pipeline *pipeline) {
         staged_ok = incremental_collect_dependent_footnotes(pipeline);
     }
     if (staged_ok) {
+        // One bundling pass partitions the recording by kind; each kind's
+        // table reserves against its own bundle array.
+        size_t s;
         staged_ok =
-            markdown_core_lookup_recording_bundle(&pipeline->recording, &pipeline->bundles, &pipeline->bundle_count) &&
-            markdown_core_lookup_table_reserve(pipeline->mem, &session->lookups, pipeline->bundle_count) &&
-            markdown_core_lookup_postings_reserve(
-                pipeline->mem,
-                &session->lookups,
-                pipeline->bundles,
-                pipeline->bundle_count
-            );
+            markdown_core_lookup_recording_bundle(&pipeline->recording, pipeline->bundles, pipeline->bundle_count);
+        for (s = 0; staged_ok && s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            staged_ok =
+                markdown_core_lookup_table_reserve(pipeline->mem, &session->lookups[s], pipeline->bundle_count[s]) &&
+                markdown_core_lookup_postings_reserve(
+                    pipeline->mem,
+                    &session->lookups[s],
+                    pipeline->bundles[s],
+                    pipeline->bundle_count[s]
+                );
+        }
     }
     for (i = 0; i < pipeline->dependent_count && staged_ok; i++) {
         markdown_core_node *ancestor;
@@ -3083,21 +3109,31 @@ static void incremental_finalize_identity_indexes(incremental_pipeline *pipeline
     }
 
     // Replace stale lookup records with the recording bundles from this
-    // commit, transferring each record's ownership into the table.
+    // commit, transferring each record's ownership into its kind's table.
+    // Removal is by unit id and a unit may hold labels of both kinds, so
+    // every dependent's id leaves both instances.
     lookups_remove_chain(session, splice->first_stale);
     for (i = 0; i < pipeline->dependent_count; i++) {
-        markdown_core_lookup_table_remove(pipeline->mem, &session->lookups, pipeline->dependents[i].unit->id);
+        size_t s;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            markdown_core_lookup_table_remove(pipeline->mem, &session->lookups[s], pipeline->dependents[i].unit->id);
+        }
     }
-    for (i = 0; i < pipeline->bundle_count; i++) {
-        markdown_core_lookup_table_put(
-            pipeline->mem,
-            &session->lookups,
-            pipeline->bundles[i].unit->id,
-            pipeline->bundles[i].record
-        );
-        pipeline->bundles[i].record.labels = NULL;
-        pipeline->bundles[i].record.positions = NULL;
-        pipeline->bundles[i].record.count = 0;
+    {
+        size_t s;
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            for (i = 0; i < pipeline->bundle_count[s]; i++) {
+                markdown_core_lookup_table_put(
+                    pipeline->mem,
+                    &session->lookups[s],
+                    pipeline->bundles[s][i].unit->id,
+                    pipeline->bundles[s][i].record
+                );
+                pipeline->bundles[s][i].record.labels = NULL;
+                pipeline->bundles[s][i].record.positions = NULL;
+                pipeline->bundles[s][i].record.count = 0;
+            }
+        }
     }
 
     // Revision stamps were installed before footnote diff; append only their
@@ -3194,6 +3230,7 @@ static void incremental_finalize_commit(incremental_pipeline *pipeline) {
     if (pipeline->plan.boundary_pos >= 0) {
         session->reflowed_commits++;
     }
+    session->dependent_reparses += pipeline->dependent_count;
     session->pending.dirty = false;
     session->pending.new_lo = 0;
     session->pending.new_hi = 0;
@@ -3286,12 +3323,16 @@ static void incremental_pipeline_release(incremental_pipeline *pipeline) {
         }
     }
     if (pipeline->dirty_prepared) {
-        markdown_core_key_index_free(&pipeline->dirty);
+        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+            markdown_core_key_index_free(&pipeline->dirty[s]);
+        }
     }
     markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_defs);
     markdown_core_footnote_site_list_release(pipeline->mem, &pipeline->staged_refs);
     markdown_core_lookup_recording_release(&pipeline->recording);
-    markdown_core_unit_lookups_free(pipeline->mem, pipeline->bundles, pipeline->bundle_count);
+    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
+        markdown_core_unit_lookups_free(pipeline->mem, pipeline->bundles[s], pipeline->bundle_count[s]);
+    }
     if (pipeline->dependents) {
         size_t i;
         for (i = 0; i < pipeline->dependent_count; i++) {
