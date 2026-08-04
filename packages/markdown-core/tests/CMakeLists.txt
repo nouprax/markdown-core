@@ -124,7 +124,10 @@ markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
 # Compile the delimiter engine a second time in a standalone test executable.
 # Its compile-time diagnostics never enter a production library or hot path.
-add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c")
+# concrete_records.c rides along: the engine is the concrete capture's one
+# delimiter choke point.
+add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c"
+                                       "${MARKDOWN_CORE_CORE_SOURCE_DIR}/concrete_records.c")
 target_compile_definitions(delimiter_engine_runner PRIVATE MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
                                                            MARKDOWN_CORE_STATIC_DEFINE)
 target_include_directories(
@@ -349,7 +352,13 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
-              capture_growth_ceiling)
+              capture_growth_ceiling
+              inline_shape
+              inline_smart
+              inline_extension_funnel
+              inline_seam_barrier
+              inline_equivalence
+              inline_growth_ceiling)
         markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()

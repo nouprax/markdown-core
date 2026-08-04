@@ -85,6 +85,9 @@ static markdown_core_delimiter_result insert(
     strikethrough->end_line = match->closer_node->end_line;
     strikethrough->end_column = match->closer_node->end_column;
     markdown_core_node_free(match->closer_node);
+    /* The length-mismatch OK above consumes nothing; only this path does,
+     * and for a RANGE reduce the reducer must say so itself. */
+    markdown_core_inline_parser_concrete_use_endpoints(inline_parser, match);
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 

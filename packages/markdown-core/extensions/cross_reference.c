@@ -225,6 +225,11 @@ static markdown_core_delimiter_result insert(
 
     markdown_core_node_insert_before_unchecked(opener_node, node);
     free_nodes_through(opener_node, closer_node);
+    /* The empty/multi-line OKs above consume nothing; this path consumed
+     * both bracket runs and re-borrowed the body raw, so the interior's
+     * parsed records must be retracted along with the report. */
+    markdown_core_inline_parser_concrete_use_endpoints(inline_parser, match);
+    markdown_core_inline_parser_concrete_reinterpret(inline_parser, match->opener_end, match->closer_start);
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 

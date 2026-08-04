@@ -317,12 +317,14 @@ void markdown_core_delimiter_engine_init(
 
 markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     markdown_core_delimiter_engine *engine,
-    size_t lane_count
+    size_t lane_count,
+    markdown_core_concrete_capture *capture
 ) {
     size_t retained_growth;
-    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count) {
+    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count || !capture) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
+    engine->capture = capture;
     /* A parser may attach rules between documents. Lanes that become active
      * again must not retain a floor epoch from an earlier rule set,
      * especially across process_epoch wrap. Newly allocated lanes are
@@ -425,6 +427,21 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     if (!ensure_lanes(engine) || !ensure_record_capacity(engine)) {
         return MARKDOWN_CORE_DELIMITER_OOM;
     }
+    /* The one concrete choke point for delimiter material: every push —
+     * core emphasis and quotes, the extension funnel, the shared-close
+     * staging — appends its candidate here, before the engine mutates, so
+     * a lost record refuses the push instead of splitting the two states.
+     * The capture is required at begin, so there is no uncaptured mode. */
+    if (!markdown_core_concrete_capture_append(
+            engine->capture,
+            MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN,
+            (uint32_t)source_start,
+            (uint32_t)(source_end - source_start),
+            0,
+            0
+        )) {
+        return MARKDOWN_CORE_DELIMITER_OOM;
+    }
 
     id = (markdown_core_delimiter_id)(engine->count + 1);
     record = &engine->records[engine->count++];
@@ -438,6 +455,7 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     record->original_length = source_end - source_start;
     record->remaining_length = source_end - source_start;
     record->claim_order = claim_order;
+    record->capture_index = (uint32_t)markdown_core_concrete_capture_count(engine->capture);
     record->can_open = can_open != 0;
     record->can_close = can_close != 0;
     record->active = 1;
@@ -609,6 +627,8 @@ static markdown_core_delimiter_result reduce_pair(
     match.opener_remaining = opener->remaining_length;
     match.closer_remaining = closer->remaining_length;
     match.use_length = use_length;
+    match.opener_concrete = opener->capture_index;
+    match.closer_concrete = closer->capture_index;
 
     result = closer->binding->reduce(closer->binding->extension, parser, inline_parser, &match);
     if (result < MARKDOWN_CORE_DELIMITER_OK || result > MARKDOWN_CORE_DELIMITER_INVALID) {
@@ -620,15 +640,30 @@ static markdown_core_delimiter_result reduce_pair(
     DELIMITER_DIAGNOSTIC_ADD(engine, reductions, 1);
     DELIMITER_DIAGNOSTIC_ADD(engine, run_bytes_consumed, use_length * 2);
 
+    /* Consumption follows the reduction shape. RUN and ENDPOINTS reducers
+     * consume exactly when they return OK — the core emphasis and quote
+     * reducers have no other OK — so the engine writes their split itself:
+     * an opener yields the bytes facing the interior (its tail), a closer
+     * its head. A RANGE reduce can return OK as a semantic no-op
+     * (mismatched strikethrough or backslash-formula lengths), so only the
+     * reducer knows whether the endpoints were consumed and reports it
+     * through markdown_core_inline_parser_concrete_use_endpoints. */
     switch (closer->binding->rule->reduction) {
     case MARKDOWN_CORE_DELIMITER_REDUCE_RANGE:
         remove_range(engine, opener_id, closer_id);
         break;
     case MARKDOWN_CORE_DELIMITER_REDUCE_ENDPOINTS:
+        /* No capture patch: the only ENDPOINTS rules are the smart quotes,
+         * whose records were marked fully consumed at scan time when the
+         * replacement destroyed their spelling — paired or not. A patch
+         * here would be unobservable, and unobservable bookkeeping cannot
+         * be held by any gate. */
         remove_record(engine, opener_id);
         remove_record(engine, closer_id);
         break;
     case MARKDOWN_CORE_DELIMITER_REDUCE_RUN:
+        markdown_core_concrete_capture_consume(engine->capture, opener->capture_index - 1, 0, (uint32_t)use_length);
+        markdown_core_concrete_capture_consume(engine->capture, closer->capture_index - 1, (uint32_t)use_length, 0);
         remove_interior(engine, opener_id, closer_id);
         opener->remaining_length -= use_length;
         closer->remaining_length -= use_length;

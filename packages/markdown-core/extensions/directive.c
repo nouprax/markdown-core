@@ -1789,6 +1789,10 @@ static markdown_core_delimiter_result insert_directive(
     markdown_core_node_insert_before_unchecked(opener_node, directive_node);
     markdown_core_node_free(opener_node);
     markdown_core_node_free(closer_node);
+    /* A RANGE reduce reports its own consumption: the `[` opener and the
+     * `]{...}` closer run are markup now. The label children and their
+     * records stay — nothing to retract. */
+    markdown_core_inline_parser_concrete_use_endpoints(inline_parser, match);
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 

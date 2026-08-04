@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "concrete_records.h"
 #include "markdown-core-extension-api.h"
 
 /*
@@ -77,6 +78,9 @@ typedef struct {
     markdown_core_bufsize original_length;
     markdown_core_bufsize remaining_length;
     uint64_t claim_order;
+    /* 1-based index into the unit's concrete capture, 0 when the engine
+     * runs without one. The patch key for reduce-time consumption. */
+    uint32_t capture_index;
     unsigned char can_open;
     unsigned char can_close;
     unsigned char active;
@@ -110,6 +114,11 @@ typedef struct {
     markdown_core_mem *mem;
     markdown_core_delimiter_record *records;
     markdown_core_delimiter_lane *lanes;
+    /* The current inline unit's concrete capture: every push appends one
+     * delimiter-run record through it, and the RUN/ENDPOINTS reductions
+     * patch their consumption back. NULL for engines driven without a
+     * subject (the standalone invariant suite). */
+    markdown_core_concrete_capture *capture;
     size_t count;
     size_t capacity;
     size_t lane_count;
@@ -155,10 +164,12 @@ void markdown_core_delimiter_engine_init(
 /* Starts an independent inline unit while retaining arena allocations.
  * Returns INVALID unless the previous unit has been fully processed back to
  * the empty mark. Lane storage grows lazily if the parser gained rules
- * between documents. */
+ * between documents. `capture` is the unit's concrete capture (NULL only
+ * for the standalone engine suite, which has no unit to record). */
 markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     markdown_core_delimiter_engine *engine,
-    size_t lane_count
+    size_t lane_count,
+    markdown_core_concrete_capture *capture
 );
 void markdown_core_delimiter_engine_free(markdown_core_delimiter_engine *engine);
 
