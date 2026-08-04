@@ -336,9 +336,14 @@ if(MARKDOWN_CORE_STATIC)
 
     # regression: the 11.1 ownership-region partition over every node kind,
     # with the class checked against each node's observed content category,
-    # and region resolution for concrete ownership.
-    foreach(case IN ITEMS region_partition region_of_walk)
-        markdown_core_add_test(regression_concrete_${case} regression 60 concrete_runner --case ${case})
+    # region resolution for concrete ownership, and the block-phase marker
+    # capture gates — records dereferenced against source lines and AST
+    # fields, Document.concrete reachability from one-shot and committed
+    # documents (14.1.9), record equality between every session commit and
+    # a fresh parse, and the allocation-failure sweep.
+    foreach(case IN ITEMS region_partition region_of_walk capture_shape capture_document capture_equivalence
+                          capture_oom_sweep)
+        markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()
 

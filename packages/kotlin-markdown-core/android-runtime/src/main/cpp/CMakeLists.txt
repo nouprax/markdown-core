@@ -12,6 +12,7 @@ add_library(
     markdown_core_kotlin SHARED
     "${MARKDOWN_CORE_CORE_DIR}/markdown_core.c"
     "${MARKDOWN_CORE_CORE_DIR}/node.c"
+    "${MARKDOWN_CORE_CORE_DIR}/concrete_records.c"
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"
     "${MARKDOWN_CORE_CORE_DIR}/blocks.c"
     "${MARKDOWN_CORE_CORE_DIR}/inlines.c"

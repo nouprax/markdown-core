@@ -134,6 +134,13 @@ const markdown_core_node *markdown_core_document_root(const markdown_core_docume
     return document ? document->root : NULL;
 }
 
+const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document) {
+    /* Internal boundary: callers hold a parsed document, so there is no NULL
+     * to tolerate — the semantic root and the concrete owner are the same
+     * retained tree (ast_internal.h). */
+    return document->root;
+}
+
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }

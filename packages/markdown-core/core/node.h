@@ -120,6 +120,8 @@ enum markdown_core_node__internal_flags {
 
 typedef uint16_t markdown_core_node_internal_flags;
 
+struct markdown_core_concrete_records;
+
 struct markdown_core_node {
     markdown_core_strbuf content;
 
@@ -138,6 +140,15 @@ struct markdown_core_node {
     uint64_t last_changed_rev;
 
     void *user_data;
+
+    // The concrete marker records of this node's own ownership region
+    // (concrete_records.h), lazily allocated by the block phase and owned by
+    // the node — they ride it through adoption, transplant, and detach, and
+    // are freed with it. NULL for the many nodes whose region owns no marker
+    // bytes. Invisible to the canonical dump and to
+    // markdown_core_ast_fields_equal by construction: concrete spelling is
+    // not canonical content, so it must not move deltas (9.1).
+    struct markdown_core_concrete_records *concrete;
 
     int start_line;
     int start_column;

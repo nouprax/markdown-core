@@ -23,10 +23,12 @@ set(HEADERS
     houdini.h
     markdown_core_ctype.h
     extension.h
-    text.h)
+    text.h
+    concrete_records.h)
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
+    concrete_records.c
     iterator.c
     blocks.c
     inlines.c
