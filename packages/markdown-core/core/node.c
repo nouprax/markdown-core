@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "concrete_records.h"
 #include "node.h"
 #include "extension.h"
 
@@ -179,6 +180,8 @@ static void S_free_nodes(markdown_core_node *e) {
         if (e->as.opaque && e->extension && e->extension->free_opaque) {
             e->extension->free_opaque(e->extension, NODE_MEM(e), e);
         }
+
+        markdown_core_concrete_records_free(NODE_MEM(e), e->concrete);
 
         free_node_as(e);
 

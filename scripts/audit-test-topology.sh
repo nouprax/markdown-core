@@ -138,6 +138,10 @@ for case_name in $("$runner_dir/equivalence_runner" --list); do
     echo "$tests_all" | grep -q "^equivalence_${case_name}$" \
         || fail "equivalence case '$case_name' is not registered in CTest"
 done
+for case_name in $("$runner_dir/concrete_runner" --list); do
+    echo "$tests_all" | grep -q "^regression_concrete_${case_name}$" \
+        || fail "concrete case '$case_name' is not registered in CTest"
+done
 for workload in $("$runner_dir/bench_runner" --list); do
     echo "$tests_all" | grep -q "^benchmark_${workload}$" \
         || fail "benchmark workload '$workload' is not registered in CTest"

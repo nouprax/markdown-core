@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "markdown_core_ctype.h"
+#include "concrete_records.h"
 #include "extension.h"
 #include "config.h"
 #include "parser.h"
@@ -443,6 +444,48 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content.oom) {
         parser->oom = true;
+    }
+}
+
+/* Captures one concrete marker record on the node whose ownership region the
+ * marker belongs to (11.1): the `>` on its BlockQuote, the bullet on its
+ * ListItem, the fence lines on their CodeBlock. `column` and `length` are
+ * byte extents within the current normalized line; the stored line is the
+ * offset from the node's own first line, which is what keeps every record
+ * region-relative — a suffix reflow moves the node and every record moves
+ * with it, untouched, exactly like the sealed parent-relative node lines.
+ * Capture runs only while the node's parse is live, so start_line is still
+ * the absolute opening line, never the sealed delta.
+ *
+ * A lost record poisons the parse on the same terms as a lost line mark: a
+ * parse that succeeded with silently thinner concrete material would differ
+ * from the same input parsed without the allocation failure, which is
+ * precisely what the OOM sweep compares. The poison is deferred to the end
+ * of the current line rather than raised here: several capture sites sit
+ * between add_child's can-contain finalizes and add_text_to_container's
+ * re-anchoring of parser->current, and others precede the content append
+ * that establishes a fenced block's info line, so cutting the line short at
+ * the S_process_line oom guard would leave block structure violating the
+ * invariants finalize asserts. The line runs to completion — every capture
+ * failure leaves the tree exactly as a successful capture would — and the
+ * loss becomes parser->oom at the line boundary, before the next line
+ * parses. */
+static void S_capture_marker(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    uint8_t kind,
+    markdown_core_bufsize column,
+    markdown_core_bufsize length
+) {
+    if (!markdown_core_concrete_records_append(
+            parser->mem,
+            &node->concrete,
+            kind,
+            (uint32_t)(parser->line_number - node->start_line),
+            (uint32_t)column,
+            (uint32_t)length
+        )) {
+        parser->capture_lost = true;
     }
 }
 
@@ -1196,9 +1239,18 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
     }
 }
 
-static void chop_trailing_hashtags(markdown_core_chunk *ch) {
+/* Removes an ATX heading's closing sequence from the line, reporting the
+ * chopped `#` run through the out-parameters (length 0 when the line has no
+ * closing sequence) so the caller can record the marker these bytes stop
+ * existing anywhere else after this call. */
+static void chop_trailing_hashtags(
+    markdown_core_chunk *ch,
+    markdown_core_bufsize *closer_start,
+    markdown_core_bufsize *closer_length
+) {
     markdown_core_bufsize n, orig_n;
 
+    *closer_length = 0;
     markdown_core_chunk_rtrim(ch);
     orig_n = n = ch->len - 1;
 
@@ -1209,6 +1261,8 @@ static void chop_trailing_hashtags(markdown_core_chunk *ch) {
 
     // Check for a space before the final #s:
     if (n != orig_n && n >= 0 && S_is_space_or_tab(peek_at(ch, n))) {
+        *closer_start = n + 1;
+        *closer_length = orig_n - n;
         ch->len = n;
         markdown_core_chunk_rtrim(ch);
     }
@@ -1350,12 +1404,19 @@ static bool S_open_chain_defs_only(markdown_core_node *root) {
     return true;
 }
 
-static bool parse_block_quote_prefix(markdown_core_parser *parser, markdown_core_chunk *input) {
+static bool parse_block_quote_prefix(
+    markdown_core_parser *parser,
+    markdown_core_chunk *input,
+    markdown_core_node *container
+) {
     bool res = false;
     markdown_core_bufsize matched = 0;
 
     matched = parser->indent <= 3 && peek_at(input, parser->first_nonspace) == '>';
     if (matched) {
+        /* This line's `>` belongs to the quote's own region; the optional
+         * following space is trivia and stays an implicit gap. */
+        S_capture_marker(parser, container, MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, parser->first_nonspace, 1);
 
         S_advance_offset(parser, input, parser->indent + 1, true);
 
@@ -1431,6 +1492,7 @@ static bool parse_code_block_prefix(
             // the end of a line, we can stop processing it:
             *should_continue = false;
             container->as.code.fence_closed = true;
+            S_capture_marker(parser, container, MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, parser->first_nonspace, matched);
             S_advance_offset(parser, input, matched, false);
             parser->current = finalize(parser, container);
         } else {
@@ -1548,7 +1610,7 @@ static markdown_core_node *check_open_blocks(
 
         switch (cont_type) {
         case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-            if (!parse_block_quote_prefix(parser, input)) {
+            if (!parse_block_quote_prefix(parser, input, container)) {
                 goto done;
             }
             break;
@@ -1636,6 +1698,7 @@ static void open_new_blocks(
             if (!*container) {
                 return;
             }
+            S_capture_marker(parser, *container, MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, blockquote_startpos, 1);
 
         } else if (!indented && (matched = scan_atx_heading_start(input, parser->first_nonspace))) {
             markdown_core_bufsize hashpos;
@@ -1658,6 +1721,9 @@ static void open_new_blocks(
             (*container)->as.heading.level = level;
             (*container)->as.heading.setext = false;
             (*container)->internal_offset = matched;
+            /* The opener is the `#` run alone — level bytes at the start the
+             * scanner matched; the spacing `matched` also covers is trivia. */
+            S_capture_marker(parser, *container, MARKDOWN_CORE_CONCRETE_ATX_OPENER, heading_startpos, level);
 
         } else if (!indented && (matched = scan_open_code_fence(input, parser->first_nonspace))) {
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->first_nonspace + 1);
@@ -1670,7 +1736,32 @@ static void open_new_blocks(
             (*container)->as.code.fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
             (*container)->as.code.fence_closed = false;
             (*container)->as.code.info = markdown_core_chunk_literal("");
+            /* The fence run, at its true length where fence_length clamps. */
+            S_capture_marker(parser, *container, MARKDOWN_CORE_CONCRETE_FENCE_OPEN, parser->first_nonspace, matched);
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+            {
+                /* The rest of the fence line is the raw info spelling,
+                 * whitespace-trimmed on the terms finalize trims the decoded
+                 * scalar; its bytes ride the content buffer only until
+                 * finalize drops them, so the record is captured here. */
+                markdown_core_bufsize info_start = parser->offset;
+                markdown_core_bufsize info_end = input->len;
+                while (info_end > info_start && markdown_core_isspace(peek_at(input, info_end - 1))) {
+                    info_end--;
+                }
+                while (info_start < info_end && markdown_core_isspace(peek_at(input, info_start))) {
+                    info_start++;
+                }
+                if (info_end > info_start) {
+                    S_capture_marker(
+                        parser,
+                        *container,
+                        MARKDOWN_CORE_CONCRETE_FENCE_INFO,
+                        info_start,
+                        info_end - info_start
+                    );
+                }
+            }
 
         } else if (
             !indented && ((matched = scan_html_block_start(input, parser->first_nonspace)) ||
@@ -1696,6 +1787,24 @@ static void open_new_blocks(
                 (*container)->type = (uint16_t)MARKDOWN_CORE_NODE_HEADING;
                 (*container)->as.heading.level = lev;
                 (*container)->as.heading.setext = true;
+                {
+                    /* The full underline run; the scanner reports only the
+                     * level, so the run is measured here. Internal spaces
+                     * cannot occur (the scanner rejects them) and trailing
+                     * whitespace is trivia. */
+                    markdown_core_bufsize underline_length = 1;
+                    char underline_char = peek_at(input, parser->first_nonspace);
+                    while (peek_at(input, parser->first_nonspace + underline_length) == underline_char) {
+                        underline_length++;
+                    }
+                    S_capture_marker(
+                        parser,
+                        *container,
+                        MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE,
+                        parser->first_nonspace,
+                        underline_length
+                    );
+                }
                 S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
             }
         } else if (
@@ -1707,6 +1816,23 @@ static void open_new_blocks(
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK, parser->first_nonspace + 1);
             if (!*container) {
                 return;
+            }
+            {
+                /* `matched` runs through the line end; the construct ends at
+                 * its last marker byte (the composition is marker bytes and
+                 * whitespace only, so scanning back to the marker character
+                 * strips the EOL and any trailing whitespace in one rule). */
+                markdown_core_bufsize break_end = parser->first_nonspace + matched;
+                while (peek_at(input, break_end - 1) != peek_at(input, parser->first_nonspace)) {
+                    break_end--;
+                }
+                S_capture_marker(
+                    parser,
+                    *container,
+                    MARKDOWN_CORE_CONCRETE_THEMATIC_BREAK,
+                    parser->first_nonspace,
+                    break_end - parser->first_nonspace
+                );
             }
             S_advance_offset(parser, input, input->len - 1 - parser->offset, false);
         } else if (
@@ -1740,6 +1866,16 @@ static void open_new_blocks(
             (*container)->as.literal = c;
 
             (*container)->internal_offset = matched;
+
+            /* `[^` + label + `]:` — `matched` also covers trailing spacing,
+             * which is trivia; the label chunk measures the marker exactly. */
+            S_capture_marker(
+                parser,
+                *container,
+                MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER,
+                parser->first_nonspace,
+                c.len + 4
+            );
 
             /* Registered here, at the moment the container opens, rather than
              * at finalize like a link reference definition: a footnote's label
@@ -1818,6 +1954,12 @@ static void open_new_blocks(
             }
             memcpy(&((*container)->as.list), data, sizeof(*data));
             parser->mem->free(parser->mem, data);
+            /* The bullet or ordinal-plus-delimiter, exactly as written —
+             * `matched` is the marker alone. It belongs to the item's region;
+             * the List groups items but owns no marker bytes of its own, and
+             * the spacing after the marker is trivia the padding field
+             * already abstracts. */
+            S_capture_marker(parser, *container, MARKDOWN_CORE_CONCRETE_LIST_MARKER, parser->first_nonspace, matched);
         } else if (indented && !maybe_lazy && !parser->blank) {
             S_advance_offset(parser, input, CODE_INDENT, true);
             *container = add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
@@ -1960,7 +2102,12 @@ static void add_text_to_container(
             // ??? do nothing
         } else if (accepts_lines(container)) {
             if (S_type(container) == MARKDOWN_CORE_NODE_HEADING && container->as.heading.setext == false) {
-                chop_trailing_hashtags(input);
+                markdown_core_bufsize closer_start = 0;
+                markdown_core_bufsize closer_length = 0;
+                chop_trailing_hashtags(input, &closer_start, &closer_length);
+                if (closer_length > 0) {
+                    S_capture_marker(parser, container, MARKDOWN_CORE_CONCRETE_ATX_CLOSER, closer_start, closer_length);
+                }
             }
             S_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
             add_line(container, input, parser);
@@ -2068,6 +2215,12 @@ finished:
     }
     if (parser->last_line_length && input.data[parser->last_line_length - 1] == '\r') {
         parser->last_line_length -= 1;
+    }
+
+    /* The line is structurally complete; a capture loss now becomes the
+     * parse's failure before the next line runs (see capture_lost). */
+    if (parser->capture_lost) {
+        parser->oom = true;
     }
 
     markdown_core_strbuf_clear(&parser->curline);
