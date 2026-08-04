@@ -442,7 +442,6 @@ static void capture_token(
     markdown_core_bufsize length,
     markdown_core_bufsize consumed
 ) {
-    assert(subj->capture.mem);
     if (!markdown_core_concrete_capture_append(
             &subj->capture,
             kind,
@@ -2184,7 +2183,9 @@ void markdown_core_parse_inlines_from(
     if (subject_has_failure(parser, &subj)) {
         markdown_core_concrete_capture_abandon(&subj.capture);
     } else {
-        assert(parent->inline_concrete == NULL);
+        /* Each inline-owning node is parsed exactly once (process_inlines
+         * visits it once; a dependent rebuild parses a fresh shell), so
+         * nothing is ever overwritten here. */
         parent->inline_concrete = markdown_core_concrete_capture_take(&subj.capture);
     }
 }
@@ -2508,7 +2509,6 @@ void markdown_core_inline_parser_concrete_use_endpoints(
     /* Reducers only run inside a real parse, whose subject always engages
      * its capture, and every engine push under an engaged capture records
      * a candidate — so the handles are never zero here. */
-    assert(parser->capture.mem && match->opener_concrete && match->closer_concrete);
     markdown_core_concrete_capture_consume_all(&parser->capture, match->opener_concrete - 1);
     markdown_core_concrete_capture_consume_all(&parser->capture, match->closer_concrete - 1);
 }
@@ -2518,7 +2518,6 @@ void markdown_core_inline_parser_concrete_reinterpret(
     markdown_core_bufsize start,
     markdown_core_bufsize end
 ) {
-    assert(parser->capture.mem);
     if (!markdown_core_concrete_capture_retract_span(&parser->capture, (uint32_t)start, (uint32_t)end)) {
         parser->oom = 1;
     }

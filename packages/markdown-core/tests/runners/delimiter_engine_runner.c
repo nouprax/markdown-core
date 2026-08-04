@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "concrete_records.h"
 #include "delimiter.h"
 #include "extension.h"
 
@@ -37,6 +38,30 @@ typedef struct {
     uint64_t calls;
     markdown_core_delimiter_match last;
 } dr_reduction_log;
+
+/* The engine requires a concrete capture at begin. The invariant suite
+ * hands it a plain-libc one so the dr_allocator counters keep measuring
+ * the arena alone; main() abandons it after every case. */
+static void *dr_plain_calloc(markdown_core_mem *mem, size_t count, size_t size) {
+    (void)mem;
+    return calloc(count, size);
+}
+static void *dr_plain_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    (void)mem;
+    return realloc(pointer, size);
+}
+static void dr_plain_free(markdown_core_mem *mem, void *pointer) {
+    (void)mem;
+    free(pointer);
+}
+static markdown_core_mem dr_plain_mem = {dr_plain_calloc, dr_plain_realloc, dr_plain_free};
+static markdown_core_concrete_capture dr_capture;
+
+static int dr_engine_start(markdown_core_delimiter_engine *engine, markdown_core_mem *mem, size_t lane_count) {
+    markdown_core_delimiter_engine_init(engine, mem, lane_count);
+    markdown_core_concrete_capture_init(&dr_capture, &dr_plain_mem);
+    return markdown_core_delimiter_engine_begin(engine, lane_count, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK;
+}
 
 static dr_reduction_log *dr_active_log;
 static markdown_core_delimiter_result dr_reduction_result;
@@ -167,7 +192,7 @@ static int case_balanced_nearest_ranges(void) {
     dr_allocator_init(&allocator);
     memset(&log, 0, sizeof(log));
     dr_active_log = &log;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     for (i = 0; i < DR_RECORD_COUNT; i++) {
         DR_REQUIRE(dr_push(&engine, &binding, 1, 0, position++, 1), "opener push failed");
     }
@@ -221,7 +246,7 @@ static int dr_commonmark_case(
     dr_allocator_init(&allocator);
     memset(&log, 0, sizeof(log));
     dr_active_log = &log;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     DR_REQUIRE(dr_push(&engine, &binding, 1, 1, position, opener_length), "CommonMark opener push failed");
     position += opener_length;
     for (i = 0; i < DR_RECORD_COUNT; i++) {
@@ -277,7 +302,7 @@ static int case_per_rule_isolation(void) {
 
     dr_allocator_init(&allocator);
     dr_active_log = NULL;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, lane_count);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, lane_count), "engine start failed");
     for (i = 0; i < lane_count; i++) {
         bindings[i] = dr_binding(&rule, i);
     }
@@ -322,7 +347,7 @@ static int case_mark_restore_and_reuse(void) {
     dr_allocator_init(&allocator);
     memset(&log, 0, sizeof(log));
     dr_active_log = &log;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
 
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "prefix opener push failed");
     mark = markdown_core_delimiter_engine_mark(&engine);
@@ -385,7 +410,7 @@ static int case_residual_run_progress(void) {
     dr_allocator_init(&allocator);
     memset(&log, 0, sizeof(log));
     dr_active_log = &log;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, DR_RUN_LENGTH), "run opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, DR_RUN_LENGTH, DR_RUN_LENGTH), "run closer push failed");
 
@@ -435,7 +460,7 @@ static int case_geometric_arena_growth(void) {
         expected_growths++;
     }
     dr_allocator_init(&allocator);
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     for (i = 0; i < record_count; i++) {
         DR_REQUIRE(dr_push(&engine, &binding, 1, 0, (markdown_core_bufsize)i, 1), "arena push failed");
     }
@@ -479,7 +504,7 @@ static int case_arena_growth_oom_transaction(void) {
     int result = 0;
 
     dr_allocator_init(&allocator);
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     for (i = 0; i < 16; i++) {
         DR_REQUIRE(dr_push(&engine, &binding, 1, 0, (markdown_core_bufsize)i, 1), "initial-capacity push failed");
     }
@@ -523,7 +548,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     int result = 0;
 
     dr_allocator_init(&allocator);
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     DR_REQUIRE(dr_push(&engine, &first, 1, 0, 0, 1), "first-unit push failed");
     markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
     DR_REQUIRE(
@@ -531,7 +556,11 @@ static int case_unit_lane_growth_and_reuse(void) {
         "first unit did not leave reusable storage"
     );
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a unit without a concrete capture must be refused"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_begin(&engine, 2, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK,
         "second unit did not accept the expanded rule set"
     );
     allocator.fail_at = allocator.allocation_attempts + 1;
@@ -550,7 +579,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     );
 
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 1, NULL) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 1, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK,
         "third unit did not begin"
     );
     allocations_after_first_unit = allocator.allocation_attempts;
@@ -563,7 +592,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     engine.lanes[1].floor_epoch = 1;
     engine.lanes[1].floor[0] = engine.lanes[1].floor[1] = engine.lanes[1].floor[2] = 7;
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 2, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK,
         "regrown rule set did not begin"
     );
     DR_REQUIRE(
@@ -604,7 +633,7 @@ static int case_reducer_failure_is_terminal(void) {
     memset(&log, 0, sizeof(log));
     dr_active_log = &log;
     dr_reduction_result = MARKDOWN_CORE_DELIMITER_OOM;
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 1);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "first opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 1, 1), "first closer push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 2, 1), "second opener push failed");
@@ -700,7 +729,7 @@ static int case_invalid_push_is_transactional(void) {
     int result = 0;
 
     dr_allocator_init(&allocator);
-    markdown_core_delimiter_engine_init(&engine, &allocator.mem, 2);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 2), "engine start failed");
     config = markdown_core_inline_config_new(&allocator.mem, empty_characters, empty_characters);
     DR_REQUIRE(config != NULL, "inline config allocation failed");
     memset(&malformed_extension, 0, sizeof(malformed_extension));
@@ -832,7 +861,9 @@ int main(int argc, char **argv) {
 
     for (i = 0; i < sizeof(DR_CASES) / sizeof(DR_CASES[0]); i++) {
         if (strcmp(DR_CASES[i].name, case_name) == 0) {
-            if (DR_CASES[i].run() == 0) {
+            int failed = DR_CASES[i].run();
+            markdown_core_concrete_capture_abandon(&dr_capture);
+            if (failed == 0) {
                 printf("%s [PASSED]\n", case_name);
                 return 0;
             }

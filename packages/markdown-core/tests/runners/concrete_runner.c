@@ -2937,6 +2937,19 @@ static int case_inline_growth_ceiling(void) {
         fprintf(stderr, "inline_growth_ceiling: refused append disturbed the vector\n");
         failed = 1;
     }
+    /* The retraction-span vector's own wrap point, same drive: a fabricated
+     * full capacity at the ceiling must refuse the note untouched. */
+    capture.retraction_capacity = SIZE_MAX / sizeof(markdown_core_concrete_retraction);
+    capture.retraction_count = capture.retraction_capacity;
+    if (markdown_core_concrete_capture_retract_span(&capture, 0, 1)) {
+        fprintf(stderr, "inline_growth_ceiling: span note past the wrap point reported success\n");
+        failed = 1;
+    }
+    if (capture.retractions != NULL || capture.retraction_count != capture.retraction_capacity ||
+        capture.retraction_capacity != SIZE_MAX / sizeof(markdown_core_concrete_retraction)) {
+        fprintf(stderr, "inline_growth_ceiling: refused span note disturbed the capture\n");
+        failed = 1;
+    }
     mem->free(mem, vector);
     return failed ? -1 : 0;
 }

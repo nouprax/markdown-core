@@ -28,9 +28,9 @@
             "minimumMeasuredFiles": 46,
             "unpinned": {
                 "packages/markdown-core/core/blocks.c": {
-                    "lines": 74,
+                    "lines": 69,
                     "functions": 2,
-                    "branches": 92
+                    "branches": 89
                 },
                 "packages/markdown-core/core/buffer.c": {
                     "lines": 10,
@@ -53,7 +53,7 @@
                     "branches": 54
                 },
                 "packages/markdown-core/core/delimiter.c": {
-                    "lines": 81,
+                    "lines": 79,
                     "functions": 0,
                     "branches": 164
                 },
@@ -68,9 +68,9 @@
                     "branches": 9
                 },
                 "packages/markdown-core/core/inlines.c": {
-                    "lines": 146,
+                    "lines": 129,
                     "functions": 2,
-                    "branches": 147
+                    "branches": 141
                 },
                 "packages/markdown-core/core/iterator.c": {
                     "lines": 8,
@@ -103,8 +103,8 @@
                     "branches": 1
                 },
                 "packages/markdown-core/core/node.c": {
-                    "lines": 348,
-                    "functions": 22,
+                    "lines": 345,
+                    "functions": 21,
                     "branches": 231
                 },
                 "packages/markdown-core/core/node.h": {
@@ -118,9 +118,9 @@
                     "branches": 2
                 },
                 "packages/markdown-core/core/scanners.c": {
-                    "lines": 6109,
+                    "lines": 6084,
                     "functions": 0,
-                    "branches": 6188
+                    "branches": 6170
                 },
                 "packages/markdown-core/core/text.c": {
                     "lines": 9,
@@ -130,7 +130,7 @@
                 "packages/markdown-core/core/utf8.c": {
                     "lines": 54,
                     "functions": 0,
-                    "branches": 230
+                    "branches": 228
                 },
                 "packages/markdown-core/extensions/adopt.c": {
                     "lines": 16,
@@ -145,12 +145,12 @@
                 "packages/markdown-core/extensions/ast.c": {
                     "lines": 134,
                     "functions": 1,
-                    "branches": 150
+                    "branches": 149
                 },
                 "packages/markdown-core/extensions/autolink.c": {
-                    "lines": 38,
-                    "functions": 1,
-                    "branches": 53
+                    "lines": 33,
+                    "functions": 0,
+                    "branches": 49
                 },
                 "packages/markdown-core/extensions/core-extensions.c": {
                     "lines": 9,
@@ -193,9 +193,9 @@
                     "branches": 68
                 },
                 "packages/markdown-core/extensions/incremental.c": {
-                    "lines": 253,
+                    "lines": 251,
                     "functions": 1,
-                    "branches": 321
+                    "branches": 319
                 },
                 "packages/markdown-core/extensions/inline_util.h": {
                     "lines": 0,
@@ -213,9 +213,9 @@
                     "branches": 11
                 },
                 "packages/markdown-core/extensions/session.c": {
-                    "lines": 58,
-                    "functions": 2,
-                    "branches": 48
+                    "lines": 55,
+                    "functions": 1,
+                    "branches": 47
                 },
                 "packages/markdown-core/extensions/strikethrough.c": {
                     "lines": 12,

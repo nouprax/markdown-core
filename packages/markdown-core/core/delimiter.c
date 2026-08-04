@@ -321,7 +321,7 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     markdown_core_concrete_capture *capture
 ) {
     size_t retained_growth;
-    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count) {
+    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count || !capture) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
     engine->capture = capture;
@@ -430,18 +430,17 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     /* The one concrete choke point for delimiter material: every push —
      * core emphasis and quotes, the extension funnel, the shared-close
      * staging — appends its candidate here, before the engine mutates, so
-     * a lost record refuses the push instead of splitting the two states. */
-    if (engine->capture) {
-        if (!markdown_core_concrete_capture_append(
-                engine->capture,
-                MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN,
-                (uint32_t)source_start,
-                (uint32_t)(source_end - source_start),
-                0,
-                0
-            )) {
-            return MARKDOWN_CORE_DELIMITER_OOM;
-        }
+     * a lost record refuses the push instead of splitting the two states.
+     * The capture is required at begin, so there is no uncaptured mode. */
+    if (!markdown_core_concrete_capture_append(
+            engine->capture,
+            MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN,
+            (uint32_t)source_start,
+            (uint32_t)(source_end - source_start),
+            0,
+            0
+        )) {
+        return MARKDOWN_CORE_DELIMITER_OOM;
     }
 
     id = (markdown_core_delimiter_id)(engine->count + 1);
@@ -456,7 +455,7 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     record->original_length = source_end - source_start;
     record->remaining_length = source_end - source_start;
     record->claim_order = claim_order;
-    record->capture_index = engine->capture ? (uint32_t)markdown_core_concrete_capture_count(engine->capture) : 0;
+    record->capture_index = (uint32_t)markdown_core_concrete_capture_count(engine->capture);
     record->can_open = can_open != 0;
     record->can_close = can_close != 0;
     record->active = 1;
@@ -654,18 +653,14 @@ static markdown_core_delimiter_result reduce_pair(
         remove_range(engine, opener_id, closer_id);
         break;
     case MARKDOWN_CORE_DELIMITER_REDUCE_ENDPOINTS:
-        if (engine->capture && opener->capture_index) {
-            markdown_core_concrete_capture_consume_all(engine->capture, opener->capture_index - 1);
-            markdown_core_concrete_capture_consume_all(engine->capture, closer->capture_index - 1);
-        }
+        markdown_core_concrete_capture_consume_all(engine->capture, opener->capture_index - 1);
+        markdown_core_concrete_capture_consume_all(engine->capture, closer->capture_index - 1);
         remove_record(engine, opener_id);
         remove_record(engine, closer_id);
         break;
     case MARKDOWN_CORE_DELIMITER_REDUCE_RUN:
-        if (engine->capture && opener->capture_index) {
-            markdown_core_concrete_capture_consume(engine->capture, opener->capture_index - 1, 0, (uint32_t)use_length);
-            markdown_core_concrete_capture_consume(engine->capture, closer->capture_index - 1, (uint32_t)use_length, 0);
-        }
+        markdown_core_concrete_capture_consume(engine->capture, opener->capture_index - 1, 0, (uint32_t)use_length);
+        markdown_core_concrete_capture_consume(engine->capture, closer->capture_index - 1, (uint32_t)use_length, 0);
         remove_interior(engine, opener_id, closer_id);
         opener->remaining_length -= use_length;
         closer->remaining_length -= use_length;

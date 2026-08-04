@@ -268,7 +268,9 @@ typedef struct markdown_core_concrete_capture {
     markdown_core_concrete_retraction *retractions;
     size_t retraction_count;
     size_t retraction_capacity;
-    size_t tombstones;
+    /* Some record carries the building-phase tombstone bit, so handoff
+     * must compact. */
+    bool dirty;
 } markdown_core_concrete_capture;
 
 /** Engages `capture` for one parse; `mem` may be NULL to leave it inert. */
