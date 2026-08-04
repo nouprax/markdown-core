@@ -586,6 +586,12 @@ static markdown_core_delimiter_result insert_formula(
 
     markdown_core_node_insert_before_unchecked(match->opener_node, formula);
     free_nodes_through(match->opener_node, match->closer_node);
+    /* Concrete bookkeeping the engine cannot infer for a RANGE reduce: the
+     * delimiter runs were consumed here (the OK returns above consume
+     * nothing), and the interior's parsed records now claim consumption the
+     * borrowed raw literal no longer shows — retract them. */
+    markdown_core_inline_parser_concrete_use_endpoints(inline_parser, match);
+    markdown_core_inline_parser_concrete_reinterpret(inline_parser, match->opener_end, match->closer_start);
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 

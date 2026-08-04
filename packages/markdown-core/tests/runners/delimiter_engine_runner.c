@@ -531,7 +531,7 @@ static int case_unit_lane_growth_and_reuse(void) {
         "first unit did not leave reusable storage"
     );
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 2) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_OK,
         "second unit did not accept the expanded rule set"
     );
     allocator.fail_at = allocator.allocation_attempts + 1;
@@ -550,7 +550,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     );
 
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 1) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 1, NULL) == MARKDOWN_CORE_DELIMITER_OK,
         "third unit did not begin"
     );
     allocations_after_first_unit = allocator.allocation_attempts;
@@ -563,7 +563,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     engine.lanes[1].floor_epoch = 1;
     engine.lanes[1].floor[0] = engine.lanes[1].floor[1] = engine.lanes[1].floor[2] = 7;
     DR_REQUIRE(
-        markdown_core_delimiter_engine_begin(&engine, 2) == MARKDOWN_CORE_DELIMITER_OK,
+        markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_OK,
         "regrown rule set did not begin"
     );
     DR_REQUIRE(

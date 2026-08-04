@@ -124,7 +124,10 @@ markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
 
 # Compile the delimiter engine a second time in a standalone test executable.
 # Its compile-time diagnostics never enter a production library or hot path.
-add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c")
+# concrete_records.c rides along: the engine is the concrete capture's one
+# delimiter choke point.
+add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c"
+                                       "${MARKDOWN_CORE_CORE_SOURCE_DIR}/concrete_records.c")
 target_compile_definitions(delimiter_engine_runner PRIVATE MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
                                                            MARKDOWN_CORE_STATIC_DEFINE)
 target_include_directories(

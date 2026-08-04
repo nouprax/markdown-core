@@ -164,7 +164,34 @@ typedef struct {
     markdown_core_bufsize opener_remaining;
     markdown_core_bufsize closer_remaining;
     markdown_core_bufsize use_length;
+    /* The endpoints' concrete capture handles (opaque, 0 when the engine
+     * runs uncaptured). A RANGE reducer that actually consumed its
+     * endpoints passes the match back through
+     * markdown_core_inline_parser_concrete_use_endpoints; RUN and
+     * ENDPOINTS reductions are recorded by the engine itself. */
+    uint32_t opener_concrete;
+    uint32_t closer_concrete;
 } markdown_core_delimiter_match;
+
+/** Records that a RANGE reduce consumed both endpoint delimiter runs as
+ * markup. Call exactly on the reducer's success path — a reduce that
+ * returns OK without changing the tree must not call it, which is why the
+ * engine cannot infer this for RANGE shapes. */
+void markdown_core_inline_parser_concrete_use_endpoints(
+    markdown_core_inline_parser *parser,
+    const markdown_core_delimiter_match *match
+);
+
+/** Records that a reduce re-interpreted [start, end) of the unit's content
+ * as raw source — a formula or cross-reference body whose parsed interior
+ * nodes it discarded. Every concrete record lying wholly inside the span
+ * is retracted, because the spelling it claimed to consume is preserved
+ * verbatim again. */
+void markdown_core_inline_parser_concrete_reinterpret(
+    markdown_core_inline_parser *parser,
+    markdown_core_bufsize start,
+    markdown_core_bufsize end
+);
 
 /** This will search for the syntax extension named 'name' among the
  *  bundled syntax extensions (immutable compile-time descriptors; there is

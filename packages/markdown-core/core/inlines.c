@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include <assert.h>
+
 #include "markdown_core_ctype.h"
 #include "config.h"
 #include "node.h"
@@ -14,6 +16,7 @@
 #include "inlines.h"
 #include "extension.h"
 #include "delimiter.h"
+#include "concrete_records.h"
 
 static const char *EMDASH = "\xE2\x80\x94";
 static const char *ENDASH = "\xE2\x80\x93";
@@ -40,6 +43,11 @@ typedef struct bracket {
     markdown_core_bufsize position;
     uint64_t claim_order;
     markdown_core_delimiter_mark delimiter_mark;
+    /* Capture index of this bracket's BRACKET_OPEN record: the patch key
+     * when the bracket matches, and the retraction floor when a footnote
+     * reference reinterprets everything from the opener on as one atomic
+     * label. */
+    size_t concrete_floor;
     bool image;
     bool active;
     bool bracket_after;
@@ -71,6 +79,13 @@ typedef struct subject {
     inline_phase phase;
     uint64_t claim_clock;
     bracket *last_bracket;
+    /* The unit's inline concrete records under construction
+     * (concrete_records.h): every capture site appends through it, the
+     * engine patches reduce-time consumption into it, and the parse hands
+     * it to the parsed node on success or abandons it with the parse.
+     * Inert (mem NULL) exactly when there is no parser — reference
+     * parsing dispatches no capturing handler. */
+    markdown_core_concrete_capture capture;
     markdown_core_bufsize backticks[MAXBACKTICKS + 1];
     bool scanned_for_backticks;
     bool no_link_openers;
@@ -307,10 +322,12 @@ static void subject_from_buf(
     e->refmap = refmap;
     e->oom = 0;
     e->internal_error = 0;
+    markdown_core_concrete_capture_init(&e->capture, parser ? mem : NULL);
     e->delimiters = parser ? &parser->inline_delimiters : NULL;
     if (e->delimiters && markdown_core_delimiter_engine_begin(
                              e->delimiters,
-                             MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count
+                             MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count,
+                             &e->capture
                          ) != MARKDOWN_CORE_DELIMITER_OK) {
         e->internal_error = 1;
     }
@@ -411,6 +428,30 @@ static void subject_set_delimiter_failure(subject *subj, markdown_core_delimiter
         subj->oom = 1;
     } else if (result != MARKDOWN_CORE_DELIMITER_OK) {
         subj->internal_error = 1;
+    }
+}
+
+/* Appends one inline concrete record for the token the calling handler just
+ * consumed. Every caller runs under parse_inline, so the capture is always
+ * engaged; a lost record joins the subject's sticky failure and the parse
+ * is discarded rather than published thinner (the OOM sweep's property). */
+static void capture_token(
+    subject *subj,
+    uint8_t kind,
+    markdown_core_bufsize start,
+    markdown_core_bufsize length,
+    markdown_core_bufsize consumed
+) {
+    assert(subj->capture.mem);
+    if (!markdown_core_concrete_capture_append(
+            &subj->capture,
+            kind,
+            (uint32_t)start,
+            (uint32_t)length,
+            (uint32_t)consumed,
+            0
+        )) {
+        subj->oom = 1;
     }
 }
 
@@ -578,6 +619,24 @@ static markdown_core_node *handle_backticks(subject *subj, int options) {
             subj->oom = 1;
         }
 
+        /* Both tick runs vanish from the projection (the Code literal is
+         * the normalized interior), so both are markup material; the
+         * matched closer's run length equals the opener's. */
+        capture_token(
+            subj,
+            MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS,
+            startpos - openticks.len,
+            openticks.len,
+            openticks.len
+        );
+        capture_token(
+            subj,
+            MARKDOWN_CORE_INLINE_CONCRETE_CODE_TICKS,
+            endpos - openticks.len,
+            openticks.len,
+            openticks.len
+        );
+
         markdown_core_node *node =
             make_code(subj, startpos, endpos - openticks.len - 1, markdown_core_chunk_buf_detach(&buf));
         if (!node) {
@@ -701,6 +760,15 @@ static void push_bracket(subject *subj, bool image, markdown_core_node *inl_text
         subj->mem->free(subj->mem, b);
         return;
     }
+    /* The opener's candidate record: consumed only if this bracket
+     * matches, retracted wholesale if a footnote reference swallows it.
+     * Its index doubles as both the patch key and the retraction floor. */
+    b->concrete_floor = markdown_core_concrete_capture_count(&subj->capture);
+    capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, subj->pos - (image ? 2 : 1), image ? 2 : 1, 0);
+    if (subj->oom) {
+        subj->mem->free(subj->mem, b);
+        return;
+    }
     if (subj->last_bracket != NULL) {
         subj->last_bracket->bracket_after = true;
         b->in_bracket_image0 = subj->last_bracket->in_bracket_image0;
@@ -746,19 +814,29 @@ static markdown_core_node *handle_delim(subject *subj, unsigned char c, bool sma
     inl_text = make_str(subj, subj->pos - numdelims, subj->pos - 1, contents);
 
     if (inl_text && (can_open || can_close) && (!(c == '\'' || c == '"') || smart)) {
-        subject_set_delimiter_failure(
-            subj,
-            markdown_core_delimiter_engine_push(
-                subj->delimiters,
-                core_delimiter_binding(c),
-                can_open,
-                can_close,
-                inl_text,
-                subj->pos - numdelims,
-                subj->pos,
-                0
-            )
+        markdown_core_delimiter_result result = markdown_core_delimiter_engine_push(
+            subj->delimiters,
+            core_delimiter_binding(c),
+            can_open,
+            can_close,
+            inl_text,
+            subj->pos - numdelims,
+            subj->pos,
+            0
         );
+        subject_set_delimiter_failure(subj, result);
+        /* A smart quote's source byte was already replaced by its curly
+         * glyph above, so the token is fully consumed whether or not it
+         * later pairs; rewrite the push's generic run record to say so. */
+        if (result == MARKDOWN_CORE_DELIMITER_OK && smart && (c == '\'' || c == '"')) {
+            size_t index = markdown_core_concrete_capture_count(&subj->capture) - 1;
+            markdown_core_concrete_capture_set_kind(&subj->capture, index, MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE);
+            markdown_core_concrete_capture_consume_all(&subj->capture, index);
+        }
+    } else if (inl_text && smart && (c == '\'' || c == '"')) {
+        /* Replaced but not flanking: no delimiter push happens, yet the
+         * spelling is gone all the same. */
+        capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_SMART_QUOTE, subj->pos - numdelims, numdelims, numdelims);
     }
 
     return inl_text;
@@ -807,6 +885,9 @@ static markdown_core_node *handle_hyphen(subject *subj, bool smart) {
     if (buf.oom) {
         subj->oom = 1;
     }
+    /* A run of two or more was rewritten into dashes; a lone hyphen keeps
+     * its own byte and records nothing (the early return above). */
+    capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_SMART_DASH, startpos, numhyphens, numhyphens);
     return make_str(subj, startpos, subj->pos - 1, markdown_core_chunk_buf_detach(&buf));
 }
 
@@ -817,6 +898,9 @@ static markdown_core_node *handle_period(subject *subj, bool smart) {
         advance(subj);
         if (peek_char(subj) == '.') {
             advance(subj);
+            /* Exactly `...` became an ellipsis; `..` and `.` keep their
+             * bytes below and record nothing. */
+            capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_SMART_ELLIPSIS, subj->pos - 3, 3, 3);
             return make_str(subj, subj->pos - 3, subj->pos - 1, markdown_core_chunk_literal(ELLIPSES));
         } else {
             return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_literal(".."));
@@ -909,6 +993,7 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
     if (markdown_core_ispunct(nextchar)) {
         if (nextchar == '\\' && parser->inline_config->dispatch['\\'].count == 0) {
             markdown_core_bufsize end = start;
+            markdown_core_bufsize pair;
             while (end + 1 < subj->input.len && subj->input.data[end] == '\\' && subj->input.data[end + 1] == '\\') {
                 end += 2;
             }
@@ -917,13 +1002,22 @@ static markdown_core_node *handle_backslash(markdown_core_parser *parser, subjec
              * output bytes: borrow it while the node scope covers the full
              * consumed run. This is the same operation for one or many pairs
              * and requires no transformed-payload allocation. */
+            /* The grammar's assignment, not the borrow trick's: each pair's
+             * first backslash is the escape — one record per pair, the same
+             * records the one-pair-at-a-time path below emits when an
+             * extension owns the '\\' dispatch. */
+            for (pair = start; pair < end; pair += 2) {
+                capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, pair, 1, 1);
+            }
             subj->pos = end;
             return make_str(subj, start, end - 1, markdown_core_chunk_borrow(&subj->input, start, (end - start) / 2));
         }
         // only ascii symbols and newline can be escaped
         advance(subj);
+        capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, start, 1, 1);
         return make_str(subj, subj->pos - 2, subj->pos - 1, markdown_core_chunk_borrow(&subj->input, subj->pos - 1, 1));
     } else if (!is_eof(subj) && skip_line_end(subj)) {
+        capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, start, 1, 1);
         return make_simple_subj(subj, MARKDOWN_CORE_NODE_LINE_BREAK);
     } else {
         return make_str(subj, subj->pos - 1, subj->pos - 1, markdown_core_chunk_literal("\\"));
@@ -948,6 +1042,8 @@ static markdown_core_node *handle_entity(subject *subj) {
     if (ent.oom) {
         subj->oom = 1;
     }
+    /* The full spelling, `&` through `;`, decoded away into the text. */
+    capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_ENTITY, subj->pos - 1 - len, len + 1, len + 1);
     return make_str(subj, subj->pos - 1 - len, subj->pos - 1, markdown_core_chunk_buf_detach(&ent));
 }
 
@@ -1012,6 +1108,16 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         contents = markdown_core_chunk_borrow(&subj->input, subj->pos, matchlen - 1);
         subj->pos += matchlen;
 
+        /* The whole `<...>` construct: brackets consumed, interior decoded
+         * into the link's url and text. Raw HTML below stays recordless —
+         * its literal is the exact source bytes. */
+        capture_token(
+            subj,
+            MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK,
+            subj->pos - 1 - matchlen,
+            matchlen + 1,
+            matchlen + 1
+        );
         return make_autolink(subj, subj->pos - 1 - matchlen, subj->pos - 1, contents, 0);
     }
 
@@ -1021,6 +1127,13 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
         contents = markdown_core_chunk_borrow(&subj->input, subj->pos, matchlen - 1);
         subj->pos += matchlen;
 
+        capture_token(
+            subj,
+            MARKDOWN_CORE_INLINE_CONCRETE_AUTOLINK,
+            subj->pos - 1 - matchlen,
+            matchlen + 1,
+            matchlen + 1
+        );
         return make_autolink(subj, subj->pos - 1 - matchlen, subj->pos - 1, contents, 1);
     }
 
@@ -1476,6 +1589,19 @@ noMatch:
             // being replacing the opening '[' text node with a `^footnote-ref]` node.
             markdown_core_node_insert_before(opener->inl_text, fnref);
 
+            /* The bracket's whole span was reinterpreted as one atomic
+             * label, so every record from the opener's candidate on claims
+             * consumption the tree no longer shows — an entity or escape
+             * inside the label reads verbatim again. A defined reference
+             * then owns `[^` and `]` as markup around the preserved label;
+             * an undefined one is literal text spelling every byte, and
+             * records nothing. */
+            markdown_core_concrete_capture_tombstone_from(&subj->capture, opener->concrete_floor);
+            if (defined) {
+                capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN, opener->position - 1, 2, 2);
+                capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, initial_pos - 1, 1, 1);
+            }
+
             process_delimiters(parser, subj, opener->delimiter_mark);
             // sometimes, the footnote reference text gets parsed into multiple nodes
             // i.e. '[^example]' parsed into '[', '^exam', 'ple]'.
@@ -1548,6 +1674,23 @@ match:
 
     // Free the bracket [:
     markdown_core_node_free(opener->inl_text);
+
+    /* The opener matched: its candidate record becomes markup, the `]`
+     * gets its record, and the consumed tail — `(dest "title")`, `[label]`,
+     * or `[]` — gets one span. A shortcut reference rewound to just past
+     * the `]` and consumes no tail, so it records none. The interior
+     * records stay: the link keeps its children. */
+    markdown_core_concrete_capture_consume_all(&subj->capture, opener->concrete_floor);
+    capture_token(subj, MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, initial_pos - 1, 1, 1);
+    if (subj->pos > initial_pos) {
+        capture_token(
+            subj,
+            MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL,
+            initial_pos,
+            subj->pos - initial_pos,
+            subj->pos - initial_pos
+        );
+    }
 
     process_delimiters(parser, subj, opener->delimiter_mark);
     pop_bracket(subj);
@@ -2032,6 +2175,18 @@ void markdown_core_parse_inlines_from(
     if (subj.internal_error) {
         parser->internal_error = true;
     }
+    /* Handoff: the parsed node owns its inline records from here — through
+     * adoption, the dependent-domain swap, and detach. A failed parse is
+     * discarded whole, records included, so a transient loss can never
+     * publish a quietly thinner tree. A seam parse (start > 0) hands over
+     * a complete vector too: the inert prefix admits no record-producing
+     * byte, which the seam-barrier gate pins. */
+    if (subject_has_failure(parser, &subj)) {
+        markdown_core_concrete_capture_abandon(&subj.capture);
+    } else {
+        assert(parent->inline_concrete == NULL);
+        parent->inline_concrete = markdown_core_concrete_capture_take(&subj.capture);
+    }
 }
 
 // Parse zero or more space characters, including at most one newline.
@@ -2345,3 +2500,26 @@ void markdown_core_node_unput(markdown_core_node *node, int n) {
 }
 
 int markdown_core_inline_parser_get_line(markdown_core_inline_parser *parser) { return parser->line; }
+
+void markdown_core_inline_parser_concrete_use_endpoints(
+    markdown_core_inline_parser *parser,
+    const markdown_core_delimiter_match *match
+) {
+    /* Reducers only run inside a real parse, whose subject always engages
+     * its capture, and every engine push under an engaged capture records
+     * a candidate — so the handles are never zero here. */
+    assert(parser->capture.mem && match->opener_concrete && match->closer_concrete);
+    markdown_core_concrete_capture_consume_all(&parser->capture, match->opener_concrete - 1);
+    markdown_core_concrete_capture_consume_all(&parser->capture, match->closer_concrete - 1);
+}
+
+void markdown_core_inline_parser_concrete_reinterpret(
+    markdown_core_inline_parser *parser,
+    markdown_core_bufsize start,
+    markdown_core_bufsize end
+) {
+    assert(parser->capture.mem);
+    if (!markdown_core_concrete_capture_retract_span(&parser->capture, (uint32_t)start, (uint32_t)end)) {
+        parser->oom = 1;
+    }
+}

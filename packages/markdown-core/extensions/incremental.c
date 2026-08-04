@@ -1938,6 +1938,7 @@ static void swap_dependent_domain(dependent_unit *dependent) {
     markdown_core_node *staged_first = staged->first_child;
     markdown_core_node *staged_last = staged->last_child;
     markdown_core_strbuf content;
+    struct markdown_core_inline_concrete_records *inline_concrete;
 
     assert(unit);
     assert(staged);
@@ -1955,6 +1956,15 @@ static void swap_dependent_domain(dependent_unit *dependent) {
     content = unit->content;
     unit->content = staged->content;
     staged->content = content;
+
+    /* The inline concrete records are offsets into `content` and describe
+     * the child material: they are the third member of this ownership
+     * domain, and leaving them behind would pin the stable owner to a
+     * vector spelling the parse it just replaced. The node's block-marker
+     * records stay — the unit's own marker lines are not this domain's. */
+    inline_concrete = unit->inline_concrete;
+    unit->inline_concrete = staged->inline_concrete;
+    staged->inline_concrete = inline_concrete;
 
     if (staged_first) {
         insert_child_chain(unit, NULL, NULL, staged_first, staged_last);

@@ -1,6 +1,7 @@
 #include "concrete_records.h"
 
 #include <assert.h>
+#include <stdlib.h>
 
 #include "node.h"
 
@@ -94,6 +95,9 @@ const markdown_core_concrete_record *markdown_core_node_concrete_records(
 void markdown_core_concrete_capture_init(markdown_core_concrete_capture *capture, markdown_core_mem *mem) {
     capture->mem = mem;
     capture->records = NULL;
+    capture->retractions = NULL;
+    capture->retraction_count = 0;
+    capture->retraction_capacity = 0;
     capture->tombstones = 0;
 }
 
@@ -159,10 +163,7 @@ size_t markdown_core_concrete_capture_count(const markdown_core_concrete_capture
 
 /* Patch targets are records this parse appended; the append-only vector
  * keeps every index stable until take(). */
-static markdown_core_inline_concrete_record *capture_record_at(
-    markdown_core_concrete_capture *capture,
-    size_t index
-) {
+static markdown_core_inline_concrete_record *capture_record_at(markdown_core_concrete_capture *capture, size_t index) {
     assert(capture->records && index < capture->records->count);
     return &capture->records->records[index];
 }
@@ -191,9 +192,10 @@ void markdown_core_concrete_capture_set_kind(markdown_core_concrete_capture *cap
 
 void markdown_core_concrete_capture_tombstone_from(markdown_core_concrete_capture *capture, size_t index) {
     size_t i;
-    if (!capture->records) {
-        return;
-    }
+    /* Both retraction paths run behind a record they know exists — the
+     * bracket's own candidate, a reducer's endpoint pushes — so the vector
+     * is never absent here. */
+    assert(capture->records && index < capture->records->count);
     for (i = index; i < capture->records->count; i++) {
         markdown_core_inline_concrete_record *record = &capture->records->records[i];
         if (!(record->flags & INLINE_CONCRETE_TOMBSTONE)) {
@@ -203,27 +205,74 @@ void markdown_core_concrete_capture_tombstone_from(markdown_core_concrete_captur
     }
 }
 
-void markdown_core_concrete_capture_tombstone_span(
+bool markdown_core_concrete_capture_retract_span(
     markdown_core_concrete_capture *capture,
     uint32_t start,
     uint32_t end
 ) {
-    size_t i;
-    if (!capture->records) {
-        return;
+    markdown_core_concrete_retraction *span;
+    assert(capture->records);
+    if (capture->retraction_count == capture->retraction_capacity) {
+        size_t capacity;
+        markdown_core_concrete_retraction *grown;
+        /* The same wrap-point refusal as the record vectors. Successful
+         * RANGE reduces retire at least two delimiter records each, so
+         * spans stay below half the record count and hit this ceiling no
+         * later than the records do — but the refusal must still not lean
+         * on that arithmetic holding forever. */
+        if (capture->retraction_capacity > SIZE_MAX / sizeof(*capture->retractions) / 2) {
+            return false;
+        }
+        capacity = capture->retraction_capacity ? capture->retraction_capacity * 2 : CONCRETE_RECORDS_FIRST_CAPACITY;
+        grown = (markdown_core_concrete_retraction *)
+                    capture->mem->realloc(capture->mem, capture->retractions, capacity * sizeof(*capture->retractions));
+        if (!grown) {
+            return false;
+        }
+        capture->retractions = grown;
+        capture->retraction_capacity = capacity;
     }
-    /* Records ascend by start, so the walk backs off the tail; the span's
-     * own endpoints (the reducer's delimiter records) lie outside [start,
-     * end) and stay. */
-    for (i = capture->records->count; i > 0; i--) {
-        markdown_core_inline_concrete_record *record = &capture->records->records[i - 1];
-        if (record->start + record->length > end) {
-            continue;
+    span = &capture->retractions[capture->retraction_count++];
+    span->start = start;
+    span->end = end;
+    return true;
+}
+
+static int retraction_start_compare(const void *left, const void *right) {
+    const markdown_core_concrete_retraction *a = (const markdown_core_concrete_retraction *)left;
+    const markdown_core_concrete_retraction *b = (const markdown_core_concrete_retraction *)right;
+    return a->start < b->start ? -1 : a->start > b->start ? 1 : 0;
+}
+
+/* Applies the deferred retractions in one sweep: sort the spans, merge
+ * overlaps (nested reduces note nested spans), then walk records and spans
+ * together — both ascend by start, so the cursor never backs up. */
+static void capture_apply_retractions(markdown_core_concrete_capture *capture) {
+    size_t merged = 0;
+    size_t cursor = 0;
+    size_t i;
+
+    qsort(capture->retractions, capture->retraction_count, sizeof(*capture->retractions), retraction_start_compare);
+    for (i = 1; i < capture->retraction_count; i++) {
+        markdown_core_concrete_retraction *span = &capture->retractions[i];
+        if (span->start <= capture->retractions[merged].end) {
+            if (span->end > capture->retractions[merged].end) {
+                capture->retractions[merged].end = span->end;
+            }
+        } else {
+            capture->retractions[++merged] = *span;
         }
-        if (record->start < start) {
-            break;
+    }
+    merged++;
+
+    for (i = 0; i < capture->records->count; i++) {
+        markdown_core_inline_concrete_record *record = &capture->records->records[i];
+        while (cursor < merged && capture->retractions[cursor].end <= record->start) {
+            cursor++;
         }
-        if (!(record->flags & INLINE_CONCRETE_TOMBSTONE)) {
+        if (cursor < merged && record->start >= capture->retractions[cursor].start &&
+            record->start + record->length <= capture->retractions[cursor].end &&
+            !(record->flags & INLINE_CONCRETE_TOMBSTONE)) {
             record->flags |= INLINE_CONCRETE_TOMBSTONE;
             capture->tombstones++;
         }
@@ -236,6 +285,15 @@ markdown_core_inline_concrete_records *markdown_core_concrete_capture_take(markd
     size_t read;
     size_t write = 0;
 
+    if (records && capture->retraction_count) {
+        capture_apply_retractions(capture);
+    }
+    if (capture->retractions) {
+        mem->free(mem, capture->retractions);
+        capture->retractions = NULL;
+        capture->retraction_count = 0;
+        capture->retraction_capacity = 0;
+    }
     capture->records = NULL;
     if (!records) {
         capture->tombstones = 0;
@@ -262,6 +320,12 @@ void markdown_core_concrete_capture_abandon(markdown_core_concrete_capture *capt
     if (capture->records) {
         capture->mem->free(capture->mem, capture->records);
         capture->records = NULL;
+    }
+    if (capture->retractions) {
+        capture->mem->free(capture->mem, capture->retractions);
+        capture->retractions = NULL;
+        capture->retraction_count = 0;
+        capture->retraction_capacity = 0;
     }
     capture->tombstones = 0;
 }

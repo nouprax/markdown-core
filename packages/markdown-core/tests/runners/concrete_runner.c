@@ -1551,8 +1551,7 @@ static int compare_tree_records(
         for (i = 0; i < committed_inline_count; i++) {
             if (committed_inline[i].start != fresh_inline[i].start ||
                 committed_inline[i].length != fresh_inline[i].length ||
-                committed_inline[i].head != fresh_inline[i].head ||
-                committed_inline[i].tail != fresh_inline[i].tail ||
+                committed_inline[i].head != fresh_inline[i].head || committed_inline[i].tail != fresh_inline[i].tail ||
                 committed_inline[i].kind != fresh_inline[i].kind ||
                 committed_inline[i].flags != fresh_inline[i].flags) {
                 fprintf(
@@ -2053,7 +2052,12 @@ static int check_inline_invariants(const char *context, const markdown_core_node
         size_t i;
 
         if (count > 0 && !markdown_core_node_owns_inlines((markdown_core_node *)node)) {
-            fprintf(stderr, "%s: %s holds inline records but owns no inline sequence\n", context, type_name(node->type));
+            fprintf(
+                stderr,
+                "%s: %s holds inline records but owns no inline sequence\n",
+                context,
+                type_name(node->type)
+            );
             failed = 1;
             continue;
         }
@@ -2061,8 +2065,7 @@ static int check_inline_invariants(const char *context, const markdown_core_node
             const markdown_core_inline_concrete_record *record = &records[i];
             const char *bytes = content + record->start;
             if (record->length == 0 || (size_t)record->start + record->length > content_size ||
-                record->head > record->length || record->tail > record->length - record->head ||
-                record->flags != 0 ||
+                record->head > record->length || record->tail > record->length - record->head || record->flags != 0 ||
                 (i > 0 && (size_t)records[i - 1].start + records[i - 1].length > record->start)) {
                 fprintf(
                     stderr,
@@ -2656,7 +2659,7 @@ static int case_inline_extension_funnel(void) {
     );
     failed |= expect_inline_records(
         "inline_extension_funnel: table cell emphasis",
-        nth_node_of_type(root, MARKDOWN_CORE_NODE_TABLE_CELL, 4),
+        nth_node_of_type(root, MARKDOWN_CORE_NODE_TABLE_CELL, 2),
         CELL_EMPH,
         2
     );
@@ -2679,8 +2682,7 @@ static int case_inline_extension_funnel(void) {
  * record ever needs transplanting. SMART bytes are checked behaviorally
  * because the seam function owns their clause. */
 static int case_inline_seam_barrier(void) {
-    static const unsigned char RECORD_TRIGGER_BYTES[] =
-        {'*', '_', '`', '\\', '&', '<', '[', ']', '!', '~', '$', ':'};
+    static const unsigned char RECORD_TRIGGER_BYTES[] = {'*', '_', '`', '\\', '&', '<', '[', ']', '!', '~', '$', ':'};
     static const unsigned char SMART_TRIGGER_BYTES[] = {'-', '.', '\'', '"'};
     int failed = 0;
     markdown_core_parser *parser = sweep_parser_new(NULL);

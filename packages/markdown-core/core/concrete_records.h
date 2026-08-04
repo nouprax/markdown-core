@@ -249,12 +249,25 @@ typedef struct markdown_core_inline_concrete_records {
     markdown_core_inline_concrete_record records[];
 } markdown_core_inline_concrete_records;
 
+/** A retraction a reducer deferred: records wholly inside [start, end)
+ * are dropped at handoff. Deferred rather than applied, because nested
+ * balanced formulas reduce inside out with ever-growing interiors —
+ * re-walking each one is the Theta(N^2) the complexity gates measure,
+ * while noting the span is O(1) and one handoff sweep retires them all. */
+typedef struct markdown_core_concrete_retraction {
+    uint32_t start;
+    uint32_t end;
+} markdown_core_concrete_retraction;
+
 /** The capture a subject builds during one inline parse, then hands to
  * the parsed node. `mem` doubles as the engagement flag: a subject built
  * without a parser (reference parsing) never captures. */
 typedef struct markdown_core_concrete_capture {
     markdown_core_mem *mem;
     markdown_core_inline_concrete_records *records;
+    markdown_core_concrete_retraction *retractions;
+    size_t retraction_count;
+    size_t retraction_capacity;
     size_t tombstones;
 } markdown_core_concrete_capture;
 
@@ -298,17 +311,17 @@ void markdown_core_concrete_capture_consume_all(markdown_core_concrete_capture *
 void markdown_core_concrete_capture_set_kind(markdown_core_concrete_capture *capture, size_t index, uint8_t kind);
 
 /** Tombstones every record from `index` on: the bracket retraction when
- * `[^...]` reinterprets its interior as one atomic label. */
+ * `[^...]` reinterprets its interior as one atomic label. The run it
+ * walks is the bracket's own records — nothing later exists yet — so the
+ * walk is the bracket's span, not the vector. */
 void markdown_core_concrete_capture_tombstone_from(markdown_core_concrete_capture *capture, size_t index);
 
-/** Tombstones every record lying wholly inside [start, end): the
- * retraction a reducer owes when it discards parsed interior structure
- * and re-borrows the raw bytes (formula, cross-link/embed). */
-void markdown_core_concrete_capture_tombstone_span(
-    markdown_core_concrete_capture *capture,
-    uint32_t start,
-    uint32_t end
-);
+/** Defers the retraction a reducer owes when it discards parsed interior
+ * structure and re-borrows the raw bytes (formula, cross-link/embed):
+ * every record wholly inside [start, end) is dropped at handoff. Returns
+ * false when noting the span loses an allocation; the caller folds that
+ * into the parse's failure like any lost record. */
+bool markdown_core_concrete_capture_retract_span(markdown_core_concrete_capture *capture, uint32_t start, uint32_t end);
 
 /** Compacts tombstones away and hands the vector over (NULL when nothing
  * survives, the buffer freed). The capture is reset either way. */
@@ -318,10 +331,7 @@ markdown_core_inline_concrete_records *markdown_core_concrete_capture_take(markd
 void markdown_core_concrete_capture_abandon(markdown_core_concrete_capture *capture);
 
 /** Releases a node-owned vector; tolerates NULL. */
-void markdown_core_inline_concrete_records_free(
-    markdown_core_mem *mem,
-    markdown_core_inline_concrete_records *records
-);
+void markdown_core_inline_concrete_records_free(markdown_core_mem *mem, markdown_core_inline_concrete_records *records);
 
 /** The inline records of `node`'s own region, ascending by start with no
  * overlap. Returns NULL and sets `*count` to 0 for a node with none. */
