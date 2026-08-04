@@ -103,8 +103,8 @@
                     "branches": 1
                 },
                 "packages/markdown-core/core/node.c": {
-                    "lines": 345,
-                    "functions": 21,
+                    "lines": 348,
+                    "functions": 22,
                     "branches": 231
                 },
                 "packages/markdown-core/core/node.h": {

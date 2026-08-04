@@ -31,49 +31,61 @@
 #include "strikethrough.h"
 #include "table.h"
 
-/* The complete engine node inventory: 16 block types and 18 inline types,
- * mirroring the 34 canonical kinds. The partition gate requires every one
- * observed, so this table is the fixture's completeness contract. */
+/* The complete engine node inventory with each kind's expected region
+ * class, verbatim from 11.1 — the gate asserts the exact class, not a
+ * class family, so LEAF and INLINE_SEQUENCE cannot drift into each other
+ * unnoticed. DirectiveLabel's entry holds its detached/inline-parent class;
+ * the block-parent side of the contextual pair is asserted explicitly in
+ * the walk. Completeness is anchored to the public kind enumeration, not
+ * to this table: the runtime check below fails the moment a kind is added
+ * to the facade without a row (and a fixture production) here. */
 typedef struct expected_type {
     markdown_core_node_type type;
     const char *name;
+    markdown_core_region_class expected_class;
 } expected_type;
 
+/* One past the last public node kind; grows with the facade enum, which is
+ * what lets the completeness check notice a kind this file has never heard
+ * of. Mirrors test_support's TS_KIND_COUNT and shares its caveat: the end
+ * marker must track the enum's real end. */
+#define CONCRETE_KIND_COUNT (MARKDOWN_CORE_KIND_IMAGE_REFERENCE + 1)
+
 static const expected_type EXPECTED_TYPES[] = {
-    {MARKDOWN_CORE_NODE_DOCUMENT, "Document"},
-    {MARKDOWN_CORE_NODE_BLOCK_QUOTE, "BlockQuote"},
-    {MARKDOWN_CORE_NODE_LIST, "List"},
-    {MARKDOWN_CORE_NODE_LIST_ITEM, "ListItem"},
-    {MARKDOWN_CORE_NODE_CODE_BLOCK, "CodeBlock"},
-    {MARKDOWN_CORE_NODE_HTML_BLOCK, "HTMLBlock"},
-    {MARKDOWN_CORE_NODE_PARAGRAPH, "Paragraph"},
-    {MARKDOWN_CORE_NODE_HEADING, "Heading"},
-    {MARKDOWN_CORE_NODE_THEMATIC_BREAK, "ThematicBreak"},
-    {MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, "FootnoteDefinition"},
-    {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, "ReferenceDefinition"},
-    {MARKDOWN_CORE_NODE_TABLE, "Table"},
-    {MARKDOWN_CORE_NODE_TABLE_ROW, "TableRow"},
-    {MARKDOWN_CORE_NODE_TABLE_CELL, "TableCell"},
-    {MARKDOWN_CORE_NODE_FORMULA_BLOCK, "FormulaBlock"},
-    {MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, "DirectiveBlock"},
-    {MARKDOWN_CORE_NODE_TEXT, "Text"},
-    {MARKDOWN_CORE_NODE_SOFT_BREAK, "SoftBreak"},
-    {MARKDOWN_CORE_NODE_LINE_BREAK, "LineBreak"},
-    {MARKDOWN_CORE_NODE_CODE, "Code"},
-    {MARKDOWN_CORE_NODE_HTML, "HTML"},
-    {MARKDOWN_CORE_NODE_EMPHASIS, "Emphasis"},
-    {MARKDOWN_CORE_NODE_STRONG, "Strong"},
-    {MARKDOWN_CORE_NODE_LINK, "Link"},
-    {MARKDOWN_CORE_NODE_IMAGE, "Image"},
-    {MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE, "FootnoteReference"},
-    {MARKDOWN_CORE_NODE_LINK_REFERENCE, "LinkReference"},
-    {MARKDOWN_CORE_NODE_IMAGE_REFERENCE, "ImageReference"},
-    {MARKDOWN_CORE_NODE_STRIKETHROUGH, "Strikethrough"},
-    {MARKDOWN_CORE_NODE_FORMULA, "Formula"},
-    {MARKDOWN_CORE_NODE_DIRECTIVE, "Directive"},
-    {MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, "DirectiveLabel"},
-    {MARKDOWN_CORE_NODE_CROSS_LINK, "CrossLink"},
-    {MARKDOWN_CORE_NODE_EMBED, "Embed"},
+    {MARKDOWN_CORE_NODE_DOCUMENT, "Document", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_BLOCK_QUOTE, "BlockQuote", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_LIST, "List", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_LIST_ITEM, "ListItem", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_CODE_BLOCK, "CodeBlock", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_HTML_BLOCK, "HTMLBlock", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_PARAGRAPH, "Paragraph", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_HEADING, "Heading", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_THEMATIC_BREAK, "ThematicBreak", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, "FootnoteDefinition", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, "ReferenceDefinition", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_TABLE, "Table", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_TABLE_ROW, "TableRow", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_TABLE_CELL, "TableCell", MARKDOWN_CORE_REGION_INLINE_SEQUENCE},
+    {MARKDOWN_CORE_NODE_FORMULA_BLOCK, "FormulaBlock", MARKDOWN_CORE_REGION_LEAF},
+    {MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, "DirectiveBlock", MARKDOWN_CORE_REGION_CONTAINER},
+    {MARKDOWN_CORE_NODE_TEXT, "Text", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_SOFT_BREAK, "SoftBreak", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_LINE_BREAK, "LineBreak", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_CODE, "Code", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_HTML, "HTML", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_EMPHASIS, "Emphasis", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_STRONG, "Strong", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_LINK, "Link", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_IMAGE, "Image", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE, "FootnoteReference", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_LINK_REFERENCE, "LinkReference", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_IMAGE_REFERENCE, "ImageReference", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_STRIKETHROUGH, "Strikethrough", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_FORMULA, "Formula", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_DIRECTIVE, "Directive", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_DIRECTIVE_LABEL, "DirectiveLabel", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_CROSS_LINK, "CrossLink", MARKDOWN_CORE_REGION_NONE},
+    {MARKDOWN_CORE_NODE_EMBED, "Embed", MARKDOWN_CORE_REGION_NONE},
 };
 
 #define EXPECTED_TYPE_COUNT (sizeof(EXPECTED_TYPES) / sizeof(EXPECTED_TYPES[0]))
@@ -192,6 +204,7 @@ static int case_region_partition(void) {
     const markdown_core_node *node;
     walk_state walk;
     bool seen[EXPECTED_TYPE_COUNT] = {false};
+    bool seen_kinds[CONCRETE_KIND_COUNT] = {false};
     size_t i;
     int failed = 0;
     if (!document) {
@@ -225,7 +238,28 @@ static int case_region_partition(void) {
         if (i == EXPECTED_TYPE_COUNT) {
             fprintf(stderr, "region_partition: unexpected node type 0x%04x\n", node->type);
             failed = 1;
+        } else {
+            /* The exact class of 11.1's own table, per kind — LEAF and
+             * INLINE_SEQUENCE are different capture semantics and must not
+             * drift into each other behind the family invariants below.
+             * The block directive's label is the one contextual override. */
+            markdown_core_region_class expected = EXPECTED_TYPES[i].expected_class;
+            if (node->type == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL && node->parent &&
+                node->parent->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) {
+                expected = MARKDOWN_CORE_REGION_INLINE_SEQUENCE;
+            }
+            if (region_class != expected) {
+                fprintf(
+                    stderr,
+                    "region_partition: %s classifies as %d, 11.1 says %d\n",
+                    type_name(node->type),
+                    (int)region_class,
+                    (int)expected
+                );
+                failed = 1;
+            }
         }
+        seen_kinds[markdown_core_node_get_kind(node)] = true;
 
         /* Partition totality over blocks: every block-typed node is a
          * region — a block the classification does not place has nowhere
@@ -284,6 +318,25 @@ static int case_region_partition(void) {
             fprintf(stderr, "region_partition: fixture never produced %s\n", EXPECTED_TYPES[i].name);
             failed = 1;
         }
+    }
+    /* Completeness against the authority, not this file: every public node
+     * kind must appear, and the expectation table must be exactly as long
+     * as the kind enumeration. A kind added to the facade fails here until
+     * this table, the fixture, and the classification all learn it. */
+    for (i = MARKDOWN_CORE_KIND_NONE + 1; i < CONCRETE_KIND_COUNT; i++) {
+        if (!seen_kinds[i]) {
+            fprintf(stderr, "region_partition: fixture never produced public kind %zu\n", i);
+            failed = 1;
+        }
+    }
+    if (EXPECTED_TYPE_COUNT != CONCRETE_KIND_COUNT - 1) { /* minus the KIND_NONE sentinel */
+        fprintf(
+            stderr,
+            "region_partition: %zu expected types for %d public kinds — the inventory moved\n",
+            EXPECTED_TYPE_COUNT,
+            (int)(CONCRETE_KIND_COUNT - 1)
+        );
+        failed = 1;
     }
     markdown_core_document_free(document);
     return failed ? -1 : 0;
