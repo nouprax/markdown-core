@@ -559,9 +559,11 @@ static markdown_core_node *try_opening_table_header(
         markdown_core_bufsize delimiter_end = (markdown_core_bufsize)len;
         /* Trim the EOL and trailing whitespace off the record's extent.
          * scan_table_start matched a marker byte at first_nonspace, so the
-         * walk stops there at the latest and needs no bound of its own. */
-        while (input[delimiter_end - 1] == '\n' || input[delimiter_end - 1] == '\r' ||
-               input[delimiter_end - 1] == ' ' || input[delimiter_end - 1] == '\t') {
+         * walk stops there at the latest and needs no bound of its own; a
+         * '\r' never appears — the feed splits lines on either terminator
+         * and S_process_line re-appends only '\n'. */
+        while (input[delimiter_end - 1] == '\n' || input[delimiter_end - 1] == ' ' ||
+               input[delimiter_end - 1] == '\t') {
             delimiter_end--;
         }
         markdown_core_parser_capture_marker(
