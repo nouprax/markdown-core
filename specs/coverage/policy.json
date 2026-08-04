@@ -25,7 +25,7 @@
                 "packages/markdown-core/extensions/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 44,
+            "minimumMeasuredFiles": 45,
             "unpinned": {
                 "packages/markdown-core/core/blocks.c": {
                     "lines": 74,
@@ -103,8 +103,8 @@
                     "branches": 1
                 },
                 "packages/markdown-core/core/node.c": {
-                    "lines": 348,
-                    "functions": 22,
+                    "lines": 345,
+                    "functions": 21,
                     "branches": 231
                 },
                 "packages/markdown-core/core/node.h": {
