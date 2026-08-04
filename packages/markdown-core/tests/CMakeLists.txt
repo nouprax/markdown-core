@@ -154,6 +154,14 @@ if(MARKDOWN_CORE_STATIC)
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
+    # concrete_runner drives the ownership-region classification (concrete.h).
+    add_executable(concrete_runner runners/concrete_runner.c)
+    target_include_directories(
+        concrete_runner
+        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+    target_link_libraries(concrete_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -324,6 +332,13 @@ if(MARKDOWN_CORE_STATIC)
     set(MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES random_edits split_character chunk_partition)
     foreach(case IN LISTS MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES)
         markdown_core_add_test(equivalence_source_${case} equivalence 240 source_runner --case ${case})
+    endforeach()
+
+    # regression: the 11.1 ownership-region partition over every node kind,
+    # with the class checked against each node's observed content category,
+    # and region resolution for concrete ownership.
+    foreach(case IN ITEMS region_partition region_of_walk)
+        markdown_core_add_test(regression_concrete_${case} regression 60 concrete_runner --case ${case})
     endforeach()
 endif()
 

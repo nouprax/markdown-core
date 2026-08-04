@@ -7,6 +7,8 @@ set(LIBRARY_SOURCES
     arena.c
     source.c
     source.h
+    concrete.c
+    concrete.h
     adopt.c
     incremental.c
     lookups.c
