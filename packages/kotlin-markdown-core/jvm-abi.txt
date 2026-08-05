@@ -165,6 +165,7 @@
   method com/nouprax/markdown/core/FormulaBlock.revisionBits ()J
   method com/nouprax/markdown/core/HTML.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/HTML.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/HTML.getComment ()Z
   method com/nouprax/markdown/core/HTML.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/HTML.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/HTML.getRevision-s-VKNKU ()J
@@ -172,6 +173,7 @@
   method com/nouprax/markdown/core/HTML.revisionBits ()J
   method com/nouprax/markdown/core/HTMLBlock.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/HTMLBlock.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/HTMLBlock.getComment ()Z
   method com/nouprax/markdown/core/HTMLBlock.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/HTMLBlock.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/HTMLBlock.getRevision-s-VKNKU ()J
@@ -343,10 +345,8 @@
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZZ)V
-  method com/nouprax/markdown/core/ParseOptions.<init> (ZZZZZZZZZZZ)V
   method com/nouprax/markdown/core/ParseOptions.component1 ()Z
   method com/nouprax/markdown/core/ParseOptions.component10 ()Z
-  method com/nouprax/markdown/core/ParseOptions.component11 ()Z
   method com/nouprax/markdown/core/ParseOptions.component2 ()Z
   method com/nouprax/markdown/core/ParseOptions.component3 ()Z
   method com/nouprax/markdown/core/ParseOptions.component4 ()Z
@@ -355,7 +355,7 @@
   method com/nouprax/markdown/core/ParseOptions.component7 ()Z
   method com/nouprax/markdown/core/ParseOptions.component8 ()Z
   method com/nouprax/markdown/core/ParseOptions.component9 ()Z
-  method com/nouprax/markdown/core/ParseOptions.copy (ZZZZZZZZZZZ)Lcom/nouprax/markdown/core/ParseOptions;
+  method com/nouprax/markdown/core/ParseOptions.copy (ZZZZZZZZZZ)Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/ParseOptions.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/ParseOptions.getAutolinks ()Z
   method com/nouprax/markdown/core/ParseOptions.getCrossLinks ()Z
@@ -365,7 +365,6 @@
   method com/nouprax/markdown/core/ParseOptions.getFormulas ()Z
   method com/nouprax/markdown/core/ParseOptions.getSmartPunctuation ()Z
   method com/nouprax/markdown/core/ParseOptions.getStrikethrough ()Z
-  method com/nouprax/markdown/core/ParseOptions.getStripHTMLComments ()Z
   method com/nouprax/markdown/core/ParseOptions.getTables ()Z
   method com/nouprax/markdown/core/ParseOptions.getTaskLists ()Z
   method com/nouprax/markdown/core/ParseOptions.hashCode ()I

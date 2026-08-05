@@ -44,64 +44,6 @@
 
 #define peek_at(i, n) (i)->data[n]
 
-static bool S_html_literal_starts_with_comment(markdown_core_node *node) {
-    markdown_core_chunk *literal;
-    markdown_core_bufsize offset = 0;
-
-    if (node->type != MARKDOWN_CORE_NODE_HTML_BLOCK && node->type != MARKDOWN_CORE_NODE_HTML) {
-        return false;
-    }
-
-    literal = &node->as.literal;
-
-    if (node->type == MARKDOWN_CORE_NODE_HTML_BLOCK) {
-        while (offset < literal->len && (literal->data[offset] == ' ' || literal->data[offset] == '\t')) {
-            offset++;
-        }
-    }
-
-    return literal->len - offset >= 4 && memcmp(literal->data + offset, "<!--", 4) == 0;
-}
-
-/* Block-local HTML-comment strip: removes the block itself when it is a
- * comment HTML block, otherwise removes inline HTML comments inside an
- * inline-owning block and re-consolidates the texts they separated. The
- * iterator precomputes its successor before an ENTER is returned, and the
- * stripped nodes are always leaves, so freeing at ENTER is safe. */
-static bool S_strip_block_html_comments(markdown_core_node *block, bool owns_inlines) {
-    bool stripped = false;
-    markdown_core_iter *iter;
-    markdown_core_event_type ev_type;
-
-    if (S_html_literal_starts_with_comment(block)) {
-        markdown_core_node_free(block);
-        return true;
-    }
-    if (!owns_inlines) {
-        return true;
-    }
-
-    iter = markdown_core_iter_new(block);
-    if (!iter) {
-        return false;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && node != block && S_html_literal_starts_with_comment(node)) {
-            markdown_core_node_free(node);
-            stripped = true;
-        }
-    }
-
-    markdown_core_iter_free(iter);
-
-    if (stripped) {
-        return markdown_core_node_consolidate_texts(block) != 0;
-    }
-    return true;
-}
-
 static bool S_last_line_blank(const markdown_core_node *node) {
     return (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0;
 }
@@ -2446,11 +2388,6 @@ static markdown_core_node *S_postprocess_unit(
         }
     }
 
-    if (parser->options & MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS) {
-        if (!S_strip_block_html_comments(unit, owns_inlines)) {
-            parser->oom = true;
-        }
-    }
     return unit;
 }
 

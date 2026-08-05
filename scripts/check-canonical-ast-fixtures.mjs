@@ -61,7 +61,6 @@ const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((fiel
 const optionNames = [
     "smartPunctuation",
     "footnotes",
-    "stripHTMLComments",
     "tables",
     "strikethrough",
     "autolinks",
@@ -117,7 +116,9 @@ const stateValidators = {
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    "escaping.json": (tree) => /attributes="\{\\"/.test(tree)
+    "escaping.json": (tree) => /attributes="\{\\"/.test(tree),
+    "htmlComment.true": (tree) => / comment=true literal=/.test(tree),
+    "htmlComment.false": (tree) => / comment=false literal=/.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -237,7 +238,7 @@ for (const testCase of manifest.cases ?? []) {
             List: ["flavor", "start", "tight"],
             ListItem: ["checked"],
             CodeBlock: ["mode", "info", "language", "literal", "fenced", "closed"],
-            HTMLBlock: ["literal"],
+            HTMLBlock: ["comment", "literal"],
             FormulaBlock: ["mode", "literal"],
             Table: ["alignments"],
             TableRow: ["isHeader"],
@@ -249,7 +250,7 @@ for (const testCase of manifest.cases ?? []) {
             SoftBreak: [],
             LineBreak: [],
             Code: ["mode", "literal"],
-            HTML: ["literal"],
+            HTML: ["comment", "literal"],
             Formula: ["mode", "literal"],
             Emphasis: [],
             Strong: [],

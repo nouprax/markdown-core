@@ -125,7 +125,7 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: HTMLBlock) -> DumpRecord {
-        record("HTMLBlock", fields: ["literal=\(jsonString(node.literal))"])
+        record("HTMLBlock", fields: ["comment=\(boolean(node.comment))", "literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: FormulaBlock) -> DumpRecord {
@@ -192,7 +192,7 @@ private struct DumpVisitor: MarkupVisitor {
     }
 
     mutating func visit(_ node: HTML) -> DumpRecord {
-        record("HTML", fields: ["literal=\(jsonString(node.literal))"])
+        record("HTML", fields: ["comment=\(boolean(node.comment))", "literal=\(jsonString(node.literal))"])
     }
 
     mutating func visit(_ node: Formula) -> DumpRecord {

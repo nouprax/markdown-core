@@ -129,7 +129,6 @@ typedef struct markdown_core_delta_entry {
 typedef struct markdown_core_parse_options {
     bool smart_punctuation;
     bool footnotes;
-    bool strip_html_comments;
     bool tables;
     bool strikethrough;
     bool autolinks;
@@ -275,6 +274,12 @@ MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     bool *closed
 );
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
+/** For HTMLBlock and HTML nodes: true when the literal is one complete
+ * comment — after surrounding whitespace it opens with `<!--` and its first
+ * `-->` is the terminal bytes. Comment-prefixed html with a same-line tail
+ * is not a comment. Derived purely from the literal, so consumers on
+ * platforms without an html parser can skip comment material by this bit. */
+MARKDOWN_CORE_API bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comment);
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,

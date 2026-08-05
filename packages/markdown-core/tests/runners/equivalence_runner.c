@@ -229,7 +229,6 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
     bool *fields[] = {
         &options->smart_punctuation,
         &options->footnotes,
-        &options->strip_html_comments,
         &options->tables,
         &options->strikethrough,
         &options->autolinks,
@@ -355,7 +354,6 @@ static int case_random_edits(const char *spec_path) {
         markdown_core_parse_options_init(&options);
         options.smart_punctuation = true;
         options.footnotes = true;
-        options.strip_html_comments = true;
         options.tables = true;
         options.strikethrough = true;
         options.autolinks = true;

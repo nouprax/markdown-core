@@ -109,7 +109,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |
 | `CodeBlock` | `mode`, `info`, `language`, `literal`, `fenced`, `closed` |
-| `HTMLBlock` | `literal` |
+| `HTMLBlock` | `comment`, `literal` |
 | `FormulaBlock` | `mode`, `literal` |
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
@@ -118,7 +118,7 @@ Fields appear after `scope` and before `children` in exactly this order:
 | `ReferenceDefinition` | `label`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `mode`, `literal` |
-| `HTML` | `literal` |
+| `HTML` | `comment`, `literal` |
 | `Formula` | `mode`, `literal` |
 | `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Link` | `destination`, `title` |

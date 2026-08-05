@@ -31,9 +31,9 @@ Document scope=1:1..9:26 children=4
 │   ├── Text scope=2:15..2:15 literal=" " children=0
 │   ├── Embed scope=2:16..2:25 reference="embed" children=0
 │   ├── Text scope=2:26..2:31 literal=" next " children=0
-│   ├── HTML scope=2:32..2:34 literal="<i>" children=0
+│   ├── HTML scope=2:32..2:34 comment=false literal="<i>" children=0
 │   ├── Text scope=2:35..2:37 literal="raw" children=0
-│   ├── HTML scope=2:38..2:41 literal="</i>" children=0
+│   ├── HTML scope=2:38..2:41 comment=false literal="</i>" children=0
 │   ├── SoftBreak scope=0:0..0:0 children=0
 │   └── Text scope=3:1..3:4 literal="soft" children=0
 ├── FootnoteDefinition scope=5:10..6:0 id="note" children=1

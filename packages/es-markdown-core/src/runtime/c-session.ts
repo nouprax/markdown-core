@@ -13,15 +13,14 @@ interface OptionDescriptor {
 const optionDescriptors = [
     { name: "smartPunctuation", defaultValue: true, mask: 1 << 0 },
     { name: "footnotes", defaultValue: true, mask: 1 << 1 },
-    { name: "stripHTMLComments", defaultValue: true, mask: 1 << 2 },
-    { name: "tables", defaultValue: true, mask: 1 << 3 },
-    { name: "strikethrough", defaultValue: true, mask: 1 << 4 },
-    { name: "autolinks", defaultValue: true, mask: 1 << 5 },
-    { name: "taskLists", defaultValue: true, mask: 1 << 6 },
-    { name: "formulas", defaultValue: true, mask: 1 << 7 },
-    { name: "directives", defaultValue: true, mask: 1 << 8 },
-    { name: "crossLinks", defaultValue: true, mask: 1 << 9 },
-    { name: "embeds", defaultValue: true, mask: 1 << 10 }
+    { name: "tables", defaultValue: true, mask: 1 << 2 },
+    { name: "strikethrough", defaultValue: true, mask: 1 << 3 },
+    { name: "autolinks", defaultValue: true, mask: 1 << 4 },
+    { name: "taskLists", defaultValue: true, mask: 1 << 5 },
+    { name: "formulas", defaultValue: true, mask: 1 << 6 },
+    { name: "directives", defaultValue: true, mask: 1 << 7 },
+    { name: "crossLinks", defaultValue: true, mask: 1 << 8 },
+    { name: "embeds", defaultValue: true, mask: 1 << 9 }
 ] as const satisfies readonly OptionDescriptor[];
 
 const utf8Encoder = new TextEncoder();

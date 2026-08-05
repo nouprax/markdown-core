@@ -93,8 +93,8 @@ int main(int argc, char *argv[]) {
     markdown_core_parser *parser = NULL;
     size_t bytes;
     markdown_core_node *document = NULL;
-    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS |
-                  MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE |
+                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
     bool gfm_profile = false;
     int res = 1;
 

@@ -391,6 +391,8 @@ final class com.nouprax.markdown.core/FormulaBlock : com.nouprax.markdown.core/M
 }
 
 final class com.nouprax.markdown.core/HTML : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/HTML|null[0]
+    final val comment // com.nouprax.markdown.core/HTML.comment|{}comment[0]
+        final fun <get-comment>(): kotlin/Boolean // com.nouprax.markdown.core/HTML.comment.<get-comment>|<get-comment>(){}[0]
     final val id // com.nouprax.markdown.core/HTML.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/HTML.id.<get-id>|<get-id>(){}[0]
     final val literal // com.nouprax.markdown.core/HTML.literal|{}literal[0]
@@ -404,6 +406,8 @@ final class com.nouprax.markdown.core/HTML : com.nouprax.markdown.core/Markup { 
 }
 
 final class com.nouprax.markdown.core/HTMLBlock : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/HTMLBlock|null[0]
+    final val comment // com.nouprax.markdown.core/HTMLBlock.comment|{}comment[0]
+        final fun <get-comment>(): kotlin/Boolean // com.nouprax.markdown.core/HTMLBlock.comment.<get-comment>|<get-comment>(){}[0]
     final val id // com.nouprax.markdown.core/HTMLBlock.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/HTMLBlock.id.<get-id>|<get-id>(){}[0]
     final val literal // com.nouprax.markdown.core/HTMLBlock.literal|{}literal[0]
@@ -615,7 +619,7 @@ final class com.nouprax.markdown.core/ParseException : kotlin/RuntimeException {
 }
 
 final class com.nouprax.markdown.core/ParseOptions { // com.nouprax.markdown.core/ParseOptions|null[0]
-    constructor <init>(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...) // com.nouprax.markdown.core/ParseOptions.<init>|<init>(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+    constructor <init>(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...) // com.nouprax.markdown.core/ParseOptions.<init>|<init>(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
 
     final val autolinks // com.nouprax.markdown.core/ParseOptions.autolinks|{}autolinks[0]
         final fun <get-autolinks>(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.autolinks.<get-autolinks>|<get-autolinks>(){}[0]
@@ -633,8 +637,6 @@ final class com.nouprax.markdown.core/ParseOptions { // com.nouprax.markdown.cor
         final fun <get-smartPunctuation>(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.smartPunctuation.<get-smartPunctuation>|<get-smartPunctuation>(){}[0]
     final val strikethrough // com.nouprax.markdown.core/ParseOptions.strikethrough|{}strikethrough[0]
         final fun <get-strikethrough>(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.strikethrough.<get-strikethrough>|<get-strikethrough>(){}[0]
-    final val stripHTMLComments // com.nouprax.markdown.core/ParseOptions.stripHTMLComments|{}stripHTMLComments[0]
-        final fun <get-stripHTMLComments>(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.stripHTMLComments.<get-stripHTMLComments>|<get-stripHTMLComments>(){}[0]
     final val tables // com.nouprax.markdown.core/ParseOptions.tables|{}tables[0]
         final fun <get-tables>(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.tables.<get-tables>|<get-tables>(){}[0]
     final val taskLists // com.nouprax.markdown.core/ParseOptions.taskLists|{}taskLists[0]
@@ -642,7 +644,6 @@ final class com.nouprax.markdown.core/ParseOptions { // com.nouprax.markdown.cor
 
     final fun component1(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component1|component1(){}[0]
     final fun component10(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component10|component10(){}[0]
-    final fun component11(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component11|component11(){}[0]
     final fun component2(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component2|component2(){}[0]
     final fun component3(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component3|component3(){}[0]
     final fun component4(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component4|component4(){}[0]
@@ -651,7 +652,7 @@ final class com.nouprax.markdown.core/ParseOptions { // com.nouprax.markdown.cor
     final fun component7(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component7|component7(){}[0]
     final fun component8(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component8|component8(){}[0]
     final fun component9(): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.component9|component9(){}[0]
-    final fun copy(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/ParseOptions.copy|copy(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+    final fun copy(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/ParseOptions.copy|copy(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/ParseOptions.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/ParseOptions.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/ParseOptions.toString|toString(){}[0]

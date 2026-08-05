@@ -97,7 +97,8 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
             `fenced=${node.fenced}`,
             `closed=${node.closed}`
         ]),
-    visitHTMLBlock: (node: HTMLBlock) => record("HTMLBlock", [`literal=${jsonString(node.literal)}`]),
+    visitHTMLBlock: (node: HTMLBlock) =>
+        record("HTMLBlock", [`comment=${node.comment}`, `literal=${jsonString(node.literal)}`]),
     visitFormulaBlock: (node: FormulaBlock) =>
         record("FormulaBlock", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
     visitTable: (node: Table) => record("Table", [`alignments=[${node.alignments.join(",")}]`], 1 + node.rows.length),
@@ -116,7 +117,7 @@ const dumpVisitor: MarkupVisitor<PendingRecord> = {
     visitSoftBreak: () => record("SoftBreak"),
     visitLineBreak: () => record("LineBreak"),
     visitCode: (node: Code) => record("Code", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
-    visitHTML: (node: HTML) => record("HTML", [`literal=${jsonString(node.literal)}`]),
+    visitHTML: (node: HTML) => record("HTML", [`comment=${node.comment}`, `literal=${jsonString(node.literal)}`]),
     visitFormula: (node: Formula) => record("Formula", [`mode=${node.mode}`, `literal=${jsonString(node.literal)}`]),
     visitEmphasis: (node: Emphasis) => record("Emphasis", [], node.content.length),
     visitStrong: (node: Strong) => record("Strong", [], node.content.length),

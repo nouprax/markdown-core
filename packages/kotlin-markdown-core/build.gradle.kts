@@ -78,7 +78,6 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
             listOf(
                 "smartPunctuation",
                 "footnotes",
-                "stripHTMLComments",
                 "tables",
                 "strikethrough",
                 "autolinks",

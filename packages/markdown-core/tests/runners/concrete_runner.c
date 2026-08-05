@@ -1315,6 +1315,8 @@ static int expect_inline_records(
     size_t expected_count
 );
 
+static size_t count_kind(const markdown_core_node *node, uint16_t type);
+
 /* The n'th node of `type` in preorder, or NULL. */
 static const markdown_core_node *nth_node_of_type(const markdown_core_node *root, uint16_t type, size_t n) {
     walk_state walk;
@@ -2887,8 +2889,7 @@ static const char SWEEP_TEXT[] = "[sw]: /s \"sq\"\n"
 static markdown_core_parser *sweep_parser_new(markdown_core_mem *mem) {
     static const char *extensions[] =
         {"table", "strikethrough", "autolink", "tasklist", "formula", "directive", "cross_link", "embed"};
-    int options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_DIRECTIVE |
-                  MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
+    int options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_DIRECTIVE;
     markdown_core_parser *parser =
         mem ? markdown_core_parser_new_with_mem(options, mem) : markdown_core_parser_new(options);
     size_t i;
@@ -3198,12 +3199,6 @@ static int check_inline_invariants(const char *context, const markdown_core_node
                     failed = 1;
                 }
                 break;
-            case MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT:
-                if (record->length < 4 || memcmp(bytes, "<!--", 4) != 0 || record->head != record->length) {
-                    fprintf(stderr, "%s: stripped-comment record does not spell <!--...\n", context);
-                    failed = 1;
-                }
-                break;
             case MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME:
                 if (record->length < 2 || bytes[0] != ':' || record->head != record->length || record->tail != 0) {
                     fprintf(stderr, "%s: directive-name record does not spell a consumed :name\n", context);
@@ -3381,15 +3376,8 @@ static int case_inline_shape(void) {
         {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 0, 1, 0, 1},
         {MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN, 2, 1, 1, 0},
     };
-    static const expected_inline_record STRIPPED_ONE[] = {
-        {MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT, 2, 15, 15, 0},
-    };
-    static const expected_inline_record STRIPPED_MULTILINE[] = {
-        {MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT, 2, 10, 10, 0},
-    };
-    static const expected_inline_record STRIPPED_IN_LINK[] = {
+    static const expected_inline_record COMMENT_IN_LINK[] = {
         {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN, 0, 1, 1, 0},
-        {MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT, 2, 8, 8, 0},
         {MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_CLOSE, 11, 1, 1, 0},
         {MARKDOWN_CORE_INLINE_CONCRETE_LINK_TAIL, 12, 4, 4, 0},
     };
@@ -3519,54 +3507,32 @@ static int case_inline_shape(void) {
         HEADING_EMPH,
         2
     );
-    /* Stripped inline HTML comments (strip_html_comments defaults on): the
-     * strip pass deletes the node after the capture handoff, so the bytes
-     * the projection abandons must be recorded at scan time — one record
-     * per comment, ordinary raw HTML beside it still recordless, and the
-     * subtree walk strips inside link children too. */
+    /* Inline HTML comments are ordinary raw HTML: the node keeps the exact
+     * source bytes and, like all raw HTML, records nothing — including
+     * inside link text, where only the link's own markup records. The
+     * comment bit is the facade's derived classification, not capture
+     * material. */
     failed |= expect_inline_records(
-        "inline_shape: stripped comment",
+        "inline_shape: comment paragraph",
         nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 18),
-        STRIPPED_ONE,
-        1
+        NULL,
+        0
     );
     failed |= expect_inline_records(
-        "inline_shape: stripped multi-line comment",
+        "inline_shape: multi-line comment paragraph",
         nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 19),
-        STRIPPED_MULTILINE,
-        1
+        NULL,
+        0
     );
     failed |= expect_inline_records(
-        "inline_shape: stripped comment inside link text",
+        "inline_shape: comment inside link text",
         nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 20),
-        STRIPPED_IN_LINK,
-        4
+        COMMENT_IN_LINK,
+        3
     );
-
-    /* The same comment under strip_html_comments = false keeps its HTML
-     * node and its spelling, so it records nothing — the record exists
-     * exactly when the projection abandons the bytes. */
-    {
-        static const char kept[] = "q <!-- kept --> r\n";
-        markdown_core_parse_options kept_options = capture_options();
-        markdown_core_document *kept_document;
-        kept_options.strip_html_comments = false;
-        kept_document = markdown_core_document_parse((const uint8_t *)kept, sizeof(kept) - 1, &kept_options, NULL);
-        if (!kept_document) {
-            fprintf(stderr, "inline_shape: kept-comment fixture failed to parse\n");
-            return -1;
-        }
-        failed |= expect_inline_records(
-            "inline_shape: kept comment",
-            nth_node_of_type(markdown_core_document_root(kept_document), MARKDOWN_CORE_NODE_PARAGRAPH, 0),
-            NULL,
-            0
-        );
-        if (!nth_node_of_type(markdown_core_document_root(kept_document), MARKDOWN_CORE_NODE_HTML, 0)) {
-            fprintf(stderr, "inline_shape: kept comment lost its HTML node\n");
-            failed = 1;
-        }
-        markdown_core_document_free(kept_document);
+    if (count_kind(root, MARKDOWN_CORE_NODE_HTML) < 3) {
+        fprintf(stderr, "inline_shape: an inline comment lost its HTML node\n");
+        failed = 1;
     }
 
     markdown_core_document_free(document);
@@ -3811,8 +3777,8 @@ static int case_inline_extension_funnel(void) {
         0
     );
     /* A comment inside a formula body: the reducer re-borrows the raw
-     * interior, so the strip pass never sees the node and the bytes stay
-     * spelled — the comment's record must be retracted with the rest. */
+     * interior, so the comment's parsed records must be retracted with
+     * the rest and the bytes stay spelled. */
     failed |= expect_inline_records(
         "inline_extension_funnel: comment inside formula",
         nth_node_of_type(root, MARKDOWN_CORE_NODE_PARAGRAPH, 4),

@@ -1322,7 +1322,7 @@ static int count_html_comment_nodes(markdown_core_node *root) {
     return count;
 }
 
-static void strip_html_comments(test_batch_runner *runner) {
+static void html_comments_preserved(test_batch_runner *runner) {
     static const char markdown[] = "before <!-- hidden --> after <br>\n"
                                    "\n"
                                    "<!-- block\n"
@@ -1332,48 +1332,43 @@ static void strip_html_comments(test_batch_runner *runner) {
 
     markdown_core_node *doc =
         markdown_core_node_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_DEFAULT);
-    INT_EQ(runner, count_html_comment_nodes(doc), 2, "default parse preserves HTML comment nodes");
-    markdown_core_node_free(doc);
-
-    doc = markdown_core_node_parse_document(markdown, sizeof(markdown) - 1, MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS);
-    INT_EQ(runner, count_html_comment_nodes(doc), 0, "strip-html-comments option removes HTML comment nodes");
+    INT_EQ(runner, count_html_comment_nodes(doc), 2, "comments are ordinary HTML nodes, never deleted");
 
     markdown_core_node *paragraph = markdown_core_node_first_child(doc);
     markdown_core_node *text = markdown_core_node_first_child(paragraph);
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(text),
-        "before  after ",
-        "strip-html-comments preserves surrounding text"
-    );
+    STR_EQ(runner, markdown_core_node_get_literal(text), "before ", "text before an inline comment is its own node");
 
-    markdown_core_node *inline_html = markdown_core_node_next(text);
+    markdown_core_node *comment = markdown_core_node_next(text);
     INT_EQ(
         runner,
-        markdown_core_node_get_type(inline_html),
+        markdown_core_node_get_type(comment),
         MARKDOWN_CORE_NODE_HTML,
-        "strip-html-comments preserves non-comment inline HTML"
+        "the inline comment is an HTML node in place"
+    );
+    STR_EQ(runner, markdown_core_node_get_literal(comment), "<!-- hidden -->", "the inline comment keeps its bytes");
+
+    markdown_core_node *block_comment = markdown_core_node_next(paragraph);
+    INT_EQ(
+        runner,
+        markdown_core_node_get_type(block_comment),
+        MARKDOWN_CORE_NODE_HTML_BLOCK,
+        "the block comment is an HTMLBlock in place"
     );
     STR_EQ(
         runner,
-        markdown_core_node_get_literal(inline_html),
-        "<br>",
-        "strip-html-comments keeps inline HTML literal"
+        markdown_core_node_get_literal(block_comment),
+        "<!-- block\nhidden -->\n",
+        "the block comment keeps its bytes"
     );
 
-    markdown_core_node *block_html = markdown_core_node_next(paragraph);
+    markdown_core_node *block_html = markdown_core_node_next(block_comment);
     INT_EQ(
         runner,
         markdown_core_node_get_type(block_html),
         MARKDOWN_CORE_NODE_HTML_BLOCK,
-        "strip-html-comments preserves non-comment HTML blocks"
+        "non-comment HTML blocks are unaffected"
     );
-    STR_EQ(
-        runner,
-        markdown_core_node_get_literal(block_html),
-        "<div>raw</div>\n",
-        "strip-html-comments keeps block HTML literal"
-    );
+    STR_EQ(runner, markdown_core_node_get_literal(block_html), "<div>raw</div>\n", "block HTML literal unaffected");
 
     markdown_core_node_free(doc);
 }
@@ -2920,7 +2915,7 @@ int main(void) {
     line_endings(runner);
     numeric_entities(runner);
     test_cplusplus(runner);
-    strip_html_comments(runner);
+    html_comments_preserved(runner);
     test_feed_across_line_ending(runner);
     test_pathological_regressions(runner);
     source_pos(runner);

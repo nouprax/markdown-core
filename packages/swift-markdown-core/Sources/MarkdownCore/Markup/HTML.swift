@@ -9,6 +9,10 @@ public struct HTML: Markup {
     /// The raw HTML text.
     public let literal: String
 
+    /// True when the literal is one complete comment; the same rule as
+    /// `HTMLBlock.comment`.
+    public var comment: Bool { htmlLiteralIsComment(literal) }
+
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }

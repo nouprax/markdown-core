@@ -43,7 +43,6 @@ static int parse_option_mask(const char *mask, markdown_core_parse_options *opti
     bool *fields[] = {
         &options->smart_punctuation,
         &options->footnotes,
-        &options->strip_html_comments,
         &options->tables,
         &options->strikethrough,
         &options->autolinks,
@@ -118,8 +117,7 @@ typedef enum option_gate {
     GATE_DIRECTIVES,
     GATE_CROSS_LINKS,
     GATE_EMBEDS,
-    GATE_FOOTNOTES,
-    GATE_STRIP_HTML_COMMENTS
+    GATE_FOOTNOTES
 } option_gate;
 
 static void check_option_gate(option_gate gate, const char *source, const char *forbidden) {
@@ -157,9 +155,6 @@ static void check_option_gate(option_gate gate, const char *source, const char *
     case GATE_FOOTNOTES:
         options.footnotes = false;
         break;
-    case GATE_STRIP_HTML_COMMENTS:
-        options.strip_html_comments = false;
-        break;
     }
     document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &options, &error);
     check(document != NULL && error == NULL, "disabled-option parse succeeds");
@@ -169,6 +164,73 @@ static void check_option_gate(option_gate gate, const char *source, const char *
     check(markdown_core_document_dump(document, &dump, &length, &error), "disabled-option dump succeeds");
     if (dump) {
         check(strstr((const char *)dump, forbidden) == NULL, "disabled parse option falls back to the core AST");
+    }
+done:
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
+/* Comments are never deleted: a default-options parse keeps the inline and
+ * block comment nodes with their bytes, and the surrounding text is not
+ * fused across where a comment sat. */
+static void check_html_comments_kept(void) {
+    static const char source[] = "x <!-- kept --> y\n"
+                                 "\n"
+                                 "<!-- block -->\n";
+    markdown_core_parse_options options;
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    markdown_core_parse_options_init(&options);
+    document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &options, &error);
+    check(document != NULL && error == NULL, "default-options comment parse succeeds");
+    if (!document) {
+        goto done;
+    }
+    check(markdown_core_document_dump(document, &dump, &length, &error), "comment dump succeeds");
+    if (dump) {
+        check(strstr((const char *)dump, "<!-- kept -->") != NULL, "the inline comment node survives by default");
+        check(strstr((const char *)dump, "<!-- block -->") != NULL, "the block comment node survives by default");
+        check(strstr((const char *)dump, "\"x  y\"") == NULL, "text is not fused across a comment");
+    }
+    {
+        bool comment = true;
+        check(
+            !markdown_core_node_html_comment(NULL, &comment) &&
+                !markdown_core_node_html_comment(markdown_core_document_root(document), &comment),
+            "the comment bit answers only for HTML kinds"
+        );
+    }
+    markdown_core_document_free(document);
+    document = NULL;
+    /* The classification's edges: surrounding whitespace trims (indent,
+     * trailing spaces and tab), and an unclosed comment block — no -->
+     * anywhere — is not a comment. */
+    {
+        static const char edges[] = "  <!-- pad -->  \t\n"
+                                    "\n"
+                                    "<!-- open\n";
+        const markdown_core_node *padded;
+        const markdown_core_node *unclosed;
+        bool comment = false;
+        document = markdown_core_document_parse((const uint8_t *)edges, sizeof(edges) - 1, &options, &error);
+        check(document != NULL && error == NULL, "comment-edge parse succeeds");
+        if (!document) {
+            goto done;
+        }
+        padded = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        unclosed = padded ? markdown_core_node_get_next_sibling(padded) : NULL;
+        check(
+            padded && markdown_core_node_html_comment(padded, &comment) && comment,
+            "a padded comment block classifies as a comment"
+        );
+        check(
+            unclosed && markdown_core_node_html_comment(unclosed, &comment) && !comment,
+            "an unclosed comment block is not a comment"
+        );
+        check(padded && !markdown_core_node_html_comment(padded, NULL), "a missing out-param answers false");
     }
 done:
     markdown_core_dump_free(dump);
@@ -475,9 +537,9 @@ static void check_api(void) {
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
     check(
-        options.smart_punctuation && options.footnotes && options.strip_html_comments && options.tables &&
-            options.strikethrough && options.autolinks && options.task_lists && options.formulas &&
-            options.directives && options.cross_links && options.embeds,
+        options.smart_punctuation && options.footnotes && options.tables && options.strikethrough &&
+            options.autolinks && options.task_lists && options.formulas && options.directives && options.cross_links &&
+            options.embeds,
         "parse option defaults are explicit and complete"
     );
 
@@ -551,7 +613,7 @@ static void check_api(void) {
     check_option_gate(GATE_CROSS_LINKS, "[[reference]]\n", "CrossLink scope=");
     check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
-    check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
+    check_html_comments_kept();
     check_scope_table();
     check_ordered_delta_entries();
 }

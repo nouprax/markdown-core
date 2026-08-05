@@ -10,7 +10,7 @@ class ApiTest {
     @Test
     fun defaultsAndOptionGates() {
         val defaults = ParseOptions()
-        assertTrue(defaults.smartPunctuation && defaults.footnotes && defaults.stripHTMLComments)
+        assertTrue(defaults.smartPunctuation && defaults.footnotes)
         assertTrue(defaults.tables && defaults.strikethrough && defaults.autolinks)
         assertTrue(defaults.taskLists && defaults.formulas && defaults.directives)
         assertTrue(defaults.crossLinks && defaults.embeds)

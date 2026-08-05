@@ -11,7 +11,6 @@ public data class ParseOptions
     constructor(
         public val smartPunctuation: Boolean = true,
         public val footnotes: Boolean = true,
-        public val stripHTMLComments: Boolean = true,
         public val tables: Boolean = true,
         public val strikethrough: Boolean = true,
         public val autolinks: Boolean = true,
@@ -27,7 +26,6 @@ internal fun ParseOptions.toNativeMask(): Int =
     listOf(
         smartPunctuation,
         footnotes,
-        stripHTMLComments,
         tables,
         strikethrough,
         autolinks,
