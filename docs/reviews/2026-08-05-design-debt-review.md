@@ -61,10 +61,13 @@ tab-expands, concrete records do not" (`core/parser.h:111-115`).
   position is byte-based: a tab-prefixed lead reported `1:3..1:13` where
   the same paragraph unsplit reports `1:3..1:11`. Fixed by mapping the
   last byte through the extent helper.
-- **E4 (standing, unfixed by design).** `ReferenceDefinition` node
-  positions come from `S_content_position` (`core/blocks.c:665`, `:702`),
-  and the harvesting paragraph's rebased start after a harvest does too
-  (`:792`) — all expanded-space, while sibling nodes are byte-space: on
+- **E4 (standing, unfixed by design).** Three writers still persist
+  expanded-space positions into the tree: `ReferenceDefinition` node
+  positions from `S_content_position` (`core/blocks.c:665`, `:702`), the
+  harvesting paragraph's rebased start after a harvest (`:792`), and the
+  split table's re-dated start, which reads the header mark's column
+  directly (`extensions/table.c:558-559`, whose own comment names the
+  column tab-expanded) — while sibling nodes are byte-space: on
   tab-bearing lines one tree carries both conventions. This is left for
   the M3 unification rather than patched, because the fix belongs to the
   structure M3 replaces.
@@ -83,13 +86,17 @@ fields are implementation residue of the pre-CST engine, not contract.
 
 M3 therefore eliminates the dual space from everything that persists:
 
-1. Extents (byte ranges over stored source) become the stored truth;
-   line/column become on-demand projections selected by an explicit
-   profile. "Which column semantics" turns from an accident into a typed
+1. Extent identities become the stored truth — and an extent "carries no
+   coordinates by construction" (§7.2 defines `SourceExtent` as a
+   domain-qualified ordinal over the aggregate sequence; a stored numeric
+   range would go stale on every preceding edit, which is the whole
+   reason extents exist). Byte offsets and line/column alike become
+   on-demand resolutions through `Document.scope` under an explicit
+   profile: "which column semantics" turns from an accident into a typed
    parameter.
 2. The line marks lose their `column` field; `S_content_position` produces
-   byte positions (or extents), unifying E4 — refdef columns on tab lines
-   change once, under golden review.
+   byte positions (or extent-relative offsets), unifying E4 — refdef and
+   split-table columns on tab lines change once, under golden review.
 3. The quarantine rule becomes checkable: **no structure that outlives the
    scan of one line may store a tab-expanded column.** Expanded columns
    remain scanner-local (`parser->column`, `indent`,

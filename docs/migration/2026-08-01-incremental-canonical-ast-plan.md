@@ -380,9 +380,10 @@ round traced three shipped defects and one standing inconsistency to that
 second space (the incident ledger:
 `docs/reviews/2026-08-05-design-debt-review.md`). When positions resolve on
 demand through extents and a named profile, the marks lose their `column`
-field, `S_content_position` produces byte positions, and
-`ReferenceDefinition` stops being the one expanded-space island in a
-byte-space tree. Tab-expanded columns remain legal only in the block
+field, `S_content_position` produces byte positions, and the tree's
+expanded-space islands — the reference-definition harvest and the split
+table's re-dated header (`extensions/table.c:558-559`) — close together.
+Tab-expanded columns remain legal only in the block
 scanner's processing of the current line, where CommonMark defines
 indentation in columns. The milestone is held to this deletion, not only to
 adding extents.
