@@ -176,6 +176,36 @@ done:
     markdown_core_error_free(error);
 }
 
+/* Comments are never deleted: a default-options parse keeps the inline and
+ * block comment nodes with their bytes, and the surrounding text is not
+ * fused across where a comment sat. */
+static void check_html_comments_kept(void) {
+    static const char source[] = "x <!-- kept --> y\n"
+                                 "\n"
+                                 "<!-- block -->\n";
+    markdown_core_parse_options options;
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+    uint8_t *dump = NULL;
+    size_t length = 0;
+    markdown_core_parse_options_init(&options);
+    document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &options, &error);
+    check(document != NULL && error == NULL, "default-options comment parse succeeds");
+    if (!document) {
+        goto done;
+    }
+    check(markdown_core_document_dump(document, &dump, &length, &error), "comment dump succeeds");
+    if (dump) {
+        check(strstr((const char *)dump, "<!-- kept -->") != NULL, "the inline comment node survives by default");
+        check(strstr((const char *)dump, "<!-- block -->") != NULL, "the block comment node survives by default");
+        check(strstr((const char *)dump, "\"x  y\"") == NULL, "text is not fused across a comment");
+    }
+done:
+    markdown_core_dump_free(dump);
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
 static void check_scope_rows(
     const markdown_core_node *node,
     const markdown_core_scope_entry *entries,
@@ -551,7 +581,7 @@ static void check_api(void) {
     check_option_gate(GATE_CROSS_LINKS, "[[reference]]\n", "CrossLink scope=");
     check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
-    check_option_gate(GATE_STRIP_HTML_COMMENTS, "before <!-- kept --> after\n", "literal=\"before  after\"");
+    check_html_comments_kept();
     check_scope_table();
     check_ordered_delta_entries();
 }
