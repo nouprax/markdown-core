@@ -2369,6 +2369,37 @@ static int case_capture_shape(void) {
         }
         markdown_core_document_free(document);
     }
+    /* A tab before the lead: node columns are byte-based (start_column is
+     * first_nonspace + 1, end_column is the last line's byte length), so
+     * the split-off lead's end must match what the same paragraph reports
+     * unsplit — not the tab-expanded column the content-buffer marks
+     * carry. */
+    {
+        static const char TEXT[] = ">\tlead para\n"
+                                   "> | a | b |\n"
+                                   "> | - | - |\n";
+        const markdown_core_node *lead;
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int quote_resolved =
+                lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
+            int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 3 || lead_end != 1 || lead->end_column != 11) {
+                fprintf(stderr, "capture_shape: the tab-led split-off lead's columns left the byte convention\n");
+                failed = 1;
+            }
+        }
+        markdown_core_document_free(document);
+    }
     return failed ? -1 : 0;
 }
 

@@ -472,8 +472,16 @@ static void try_inserting_table_header_paragraph(
     paragraph->start_line = parent_container->start_line;
     paragraph->start_column = parent_container->start_column;
     paragraph->end_line = parser->line_marks[cursor].line;
-    paragraph->end_column =
-        parser->line_marks[cursor].column + (int)(last - 1 - parser->line_marks[cursor].content_offset);
+    /* Node columns are byte-based (start_column is first_nonspace + 1, a
+     * finalized end_column is the line's byte length), while the marks'
+     * `column` tab-expands — so the last byte maps back through the
+     * byte-exact extent helper, pad included, not through the expanded
+     * column. */
+    {
+        markdown_core_bufsize end_byte;
+        markdown_core_line_mark_extent(&parser->line_marks[cursor], last - 1, last, &end_byte);
+        paragraph->end_column = (int)end_byte + 1;
+    }
 
     /* The retyped table sits in a container that holds paragraphs — it was
      * one — so the checked insert's refusal arms are unreachable here; the
