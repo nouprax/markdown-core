@@ -57,10 +57,36 @@ static void dr_plain_free(markdown_core_mem *mem, void *pointer) {
 static markdown_core_mem dr_plain_mem = {dr_plain_calloc, dr_plain_realloc, dr_plain_free};
 static markdown_core_concrete_capture dr_capture;
 
+/* The engine re-validates itself after every mutating operation and
+ * reports violations here (the diagnostics link contract). Recording
+ * instead of aborting keeps the reaction assertable: main() fails any
+ * case that ends with an unexamined violation, and the corruption case
+ * asserts the report fires at the mutation site it broke. */
+static uint64_t dr_invariant_failures;
+static const char *dr_invariant_site;
+
+void markdown_core_delimiter_engine_invariant_failed(const char *site) {
+    dr_invariant_failures++;
+    dr_invariant_site = site;
+}
+
 static int dr_engine_start(markdown_core_delimiter_engine *engine, markdown_core_mem *mem, size_t lane_count) {
-    markdown_core_delimiter_engine_init(engine, mem, lane_count);
+    markdown_core_delimiter_engine_init(engine, mem);
     markdown_core_concrete_capture_init(&dr_capture, &dr_plain_mem);
     return markdown_core_delimiter_engine_begin(engine, lane_count, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK;
+}
+
+static uint32_t dr_xorshift(uint32_t *state) {
+    uint32_t x = *state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    *state = x;
+    return x;
+}
+
+static uint32_t dr_id_ordinal(markdown_core_delimiter_id id) {
+    return id >> MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS;
 }
 
 static dr_reduction_log *dr_active_log;
@@ -359,13 +385,13 @@ static int case_mark_restore_and_reuse(void) {
         "forged mark was accepted"
     );
     DR_REQUIRE(
-        engine.count == 3 && engine.tail == 3 && markdown_core_delimiter_engine_validate(&engine),
+        engine.count == 3 && dr_id_ordinal(engine.tail) == 3 && markdown_core_delimiter_engine_validate(&engine),
         "forged mark changed engine state"
     );
     markdown_core_delimiter_engine_process(&engine, NULL, NULL, mark);
 
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "mark restore left invalid topology");
-    DR_REQUIRE(engine.count == 1 && engine.tail == 1, "mark restore did not preserve only the prefix");
+    DR_REQUIRE(engine.count == 1 && dr_id_ordinal(engine.tail) == 1, "mark restore did not preserve only the prefix");
     DR_REQUIRE(log.calls == 1 && log.last.opener_start == 1, "suffix pair selected the wrong opener");
 
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 3, 1), "reused closer push failed");
@@ -388,6 +414,455 @@ static int case_mark_restore_and_reuse(void) {
 cleanup:
     markdown_core_delimiter_engine_free(&engine);
     dr_active_log = NULL;
+    return result;
+}
+
+static int case_stale_id_is_refused(void) {
+    static const char case_name[] = "stale_id_is_refused";
+    static const markdown_core_delimiter_rule ordinary_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    static const markdown_core_delimiter_rule shared_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        ']',
+        dr_close_probe,
+    };
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_binding ordinary = dr_binding(&ordinary_rule, 0);
+    markdown_core_delimiter_binding shared = dr_binding(&shared_rule, 1);
+    markdown_core_delimiter_mark mark;
+    markdown_core_delimiter_id stale;
+    int result = 0;
+
+    dr_allocator_init(&allocator);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 2), "engine start failed");
+    DR_REQUIRE(dr_push(&engine, &ordinary, 1, 0, 0, 1), "prefix opener push failed");
+    mark = markdown_core_delimiter_engine_mark(&engine);
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_push(
+            &engine,
+            &shared,
+            1,
+            0,
+            (markdown_core_node *)&dr_marker_storage,
+            1,
+            2,
+            7
+        ) == MARKDOWN_CORE_DELIMITER_OK,
+        "claimed opener push failed"
+    );
+    stale = markdown_core_delimiter_engine_last_open(&engine, &shared);
+    DR_REQUIRE(
+        stale != 0 && markdown_core_delimiter_engine_claim_order(&engine, stale) == 7,
+        "live id did not resolve to its claim order"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, mark) == MARKDOWN_CORE_DELIMITER_OK,
+        "restore to the prefix mark failed"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_claim_order(&engine, stale) == 0,
+        "a reclaimed id resolved past the shrunk arena"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_push(
+            &engine,
+            &shared,
+            1,
+            0,
+            (markdown_core_node *)&dr_marker_storage,
+            2,
+            3,
+            9
+        ) == MARKDOWN_CORE_DELIMITER_OK,
+        "slot-reusing push failed"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_claim_order(&engine, stale) == 0,
+        "a reclaimed id resolved to the record that reused its slot"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_claim_order(
+            &engine,
+            markdown_core_delimiter_engine_last_open(&engine, &shared)
+        ) == 9,
+        "the reusing record did not resolve through its own id"
+    );
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "stale-id probe left invalid topology");
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
+    return result;
+}
+
+static int case_stale_mark_is_refused(void) {
+    static const char case_name[] = "stale_mark_is_refused";
+    static const markdown_core_delimiter_rule rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_binding binding = dr_binding(&rule, 0);
+    markdown_core_delimiter_mark prefix;
+    markdown_core_delimiter_mark stale;
+    markdown_core_delimiter_mark fresh;
+    dr_reduction_log log;
+    int result = 0;
+
+    dr_allocator_init(&allocator);
+    memset(&log, 0, sizeof(log));
+    dr_active_log = &log;
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "prefix opener push failed");
+    prefix = markdown_core_delimiter_engine_mark(&engine);
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 1, 1), "reclaimed opener push failed");
+    stale = markdown_core_delimiter_engine_mark(&engine);
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, prefix) == MARKDOWN_CORE_DELIMITER_OK,
+        "restore to the prefix mark failed"
+    );
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 2, 1), "slot-reusing push failed");
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, stale) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a stale mark was accepted by truncate"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_process(&engine, NULL, NULL, stale) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a stale mark was accepted by process"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, (markdown_core_delimiter_mark){0, stale.tail}) ==
+            MARKDOWN_CORE_DELIMITER_INVALID,
+        "an empty-count mark carrying a tail was accepted"
+    );
+    DR_REQUIRE(
+        engine.count == 2 && log.calls == 0 && markdown_core_delimiter_engine_validate(&engine),
+        "a refused stale mark changed engine state"
+    );
+    fresh = markdown_core_delimiter_engine_mark(&engine);
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 3, 1), "post-refusal opener push failed");
+    DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 4, 1), "post-refusal closer push failed");
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, fresh);
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "fresh-mark process left invalid topology");
+    DR_REQUIRE(engine.count == 2 && log.calls == 1, "an equal-shape fresh mark did not restore and reduce");
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
+    dr_active_log = NULL;
+    return result;
+}
+
+static markdown_core_delimiter_id dr_id_at(const markdown_core_delimiter_engine *engine, uint32_t ordinal) {
+    return (markdown_core_delimiter_id)(((markdown_core_delimiter_id)ordinal
+                                         << MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS) |
+                                        (engine->records[ordinal - 1].generation &
+                                         MARKDOWN_CORE_DELIMITER_ID_GENERATION_MASK));
+}
+
+static int case_validator_rejects_corruption(void) {
+    static const char case_name[] = "validator_rejects_corruption";
+    static const markdown_core_delimiter_rule ordinary_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    static const markdown_core_delimiter_rule shared_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        ']',
+        dr_close_probe,
+    };
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_engine unbegun;
+    markdown_core_delimiter_binding ordinary = dr_binding(&ordinary_rule, 0);
+    markdown_core_delimiter_binding shared = dr_binding(&shared_rule, 1);
+    markdown_core_delimiter_binding foreign_lane;
+    markdown_core_delimiter_record *r1;
+    markdown_core_delimiter_record *r2;
+    markdown_core_delimiter_record *r3;
+    markdown_core_delimiter_lane *lanes_saved;
+    markdown_core_delimiter_mark full;
+    size_t count_saved;
+    size_t capacity_saved;
+    int result = 0;
+
+/* Break one invariant, require the validator to reject the engine, undo
+ * the break, require it to pass again. The restore is part of the claim:
+ * a probe that cannot restore was not the isolated corruption it says. */
+#define DR_CORRUPTION(corrupt, restore, claim)                                                                         \
+    do {                                                                                                               \
+        corrupt;                                                                                                       \
+        DR_REQUIRE(!markdown_core_delimiter_engine_validate(&engine), claim);                                          \
+        restore;                                                                                                       \
+        DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "restore left " claim);                           \
+    } while (0)
+
+    dr_allocator_init(&allocator);
+    dr_active_log = NULL;
+    DR_REQUIRE(!markdown_core_delimiter_engine_validate(NULL), "a null engine validated");
+    markdown_core_delimiter_engine_init(&unbegun, &allocator.mem);
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&unbegun), "a fresh engine did not validate");
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 2), "engine start failed");
+    DR_REQUIRE(dr_push(&engine, &ordinary, 1, 0, 0, 1), "first opener push failed");
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_push(
+            &engine,
+            &shared,
+            1,
+            0,
+            (markdown_core_node *)&dr_marker_storage,
+            1,
+            2,
+            5
+        ) == MARKDOWN_CORE_DELIMITER_OK,
+        "claimed opener push failed"
+    );
+    DR_REQUIRE(dr_push(&engine, &ordinary, 1, 0, 2, 1), "second opener push failed");
+    r1 = &engine.records[0];
+    r2 = &engine.records[1];
+    r3 = &engine.records[2];
+    full = markdown_core_delimiter_engine_mark(&engine);
+    foreign_lane = ordinary;
+    foreign_lane.lane = 99;
+
+    DR_CORRUPTION(r1->binding = NULL, r1->binding = &ordinary, "a bindingless record");
+    DR_CORRUPTION(r1->binding = &foreign_lane, r1->binding = &ordinary, "a record on a lane past the table");
+    DR_CORRUPTION(r1->source_end = 0, r1->source_end = 1, "an empty source range");
+    DR_CORRUPTION(r1->original_length = 2, r1->original_length = 1, "a length detached from its range");
+    DR_CORRUPTION(r1->remaining_length = 0, r1->remaining_length = 1, "an active record with nothing remaining");
+    DR_CORRUPTION(r1->can_open = 0, r1->can_open = 1, "a record that can neither open nor close");
+    DR_CORRUPTION(r2->can_close = 1, r2->can_close = 0, "a shared-close record opening and closing at once");
+    DR_CORRUPTION(r2->claim_order = 0, r2->claim_order = 5, "a shared-close opener without a claim");
+    DR_CORRUPTION(r1->claim_order = 3, r1->claim_order = 0, "a claim on a rule that never claims");
+    DR_CORRUPTION(r2->source_start = 0, r2->source_start = 1, "overlapping source ranges");
+    DR_CORRUPTION(r2->claim_order = 100, r2->claim_order = 5, "a claim past the engine's last issued order");
+    DR_CORRUPTION(r1->previous = dr_id_at(&engine, 3), r1->previous = 0, "a broken active-chain prefix");
+    DR_CORRUPTION(r1->next = 0, r1->next = dr_id_at(&engine, 2), "a severed forward link");
+    DR_CORRUPTION(r2->next = dr_id_at(&engine, 1), r2->next = dr_id_at(&engine, 3), "a backward forward-link");
+    DR_CORRUPTION(r1->generation++, r1->generation--, "links holding a retired generation");
+    DR_CORRUPTION(
+        r3->previous_rule = dr_id_at(&engine, 2),
+        r3->previous_rule = dr_id_at(&engine, 1),
+        "a rule chain crossing lanes"
+    );
+    DR_CORRUPTION(r3->next_rule = dr_id_at(&engine, 1), r3->next_rule = 0, "a lane tail with a next_rule");
+    DR_CORRUPTION(
+        engine.lanes[0].tail = dr_id_at(&engine, 1),
+        engine.lanes[0].tail = dr_id_at(&engine, 3),
+        "a lane tail naming an interior record"
+    );
+    DR_CORRUPTION(
+        engine.lanes[1].open_top = dr_id_at(&engine, 1),
+        engine.lanes[1].open_top = dr_id_at(&engine, 2),
+        "an open stack topped by a foreign record"
+    );
+    DR_CORRUPTION(engine.tail = dr_id_at(&engine, 1), engine.tail = dr_id_at(&engine, 3), "a stale engine tail");
+    DR_CORRUPTION(engine.last_claim_order = 0, engine.last_claim_order = 5, "an engine behind its records' claims");
+    DR_CORRUPTION(engine.count = engine.capacity + 1, engine.count = 3, "a count past the arena");
+    count_saved = engine.count;
+    capacity_saved = engine.capacity;
+    DR_CORRUPTION(
+        (engine.count = MARKDOWN_CORE_DELIMITER_MAX_RECORDS + 1,
+         engine.capacity = MARKDOWN_CORE_DELIMITER_MAX_RECORDS + 2),
+        (engine.count = count_saved, engine.capacity = capacity_saved),
+        "a count past the id space"
+    );
+    lanes_saved = engine.lanes;
+    DR_CORRUPTION(engine.lanes = NULL, engine.lanes = lanes_saved, "a lane count without a lane table");
+
+    /* The refusal at the id-space cap: with count pinned to the last
+     * encodable ordinal, growth must refuse and the push report OOM
+     * without touching the arena. */
+    engine.count = MARKDOWN_CORE_DELIMITER_MAX_RECORDS;
+    engine.capacity = MARKDOWN_CORE_DELIMITER_MAX_RECORDS;
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_push(
+            &engine,
+            &ordinary,
+            1,
+            0,
+            (markdown_core_node *)&dr_marker_storage,
+            3,
+            4,
+            0
+        ) == MARKDOWN_CORE_DELIMITER_OOM,
+        "a push past the id space did not refuse"
+    );
+    engine.count = count_saved;
+    engine.capacity = capacity_saved;
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "the cap probe changed engine state");
+
+    /* An inactive record under a mark's tail: the mark must be refused
+     * before any mutation reaches the hook. */
+    r3->active = 0;
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, full) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a mark on an inactive tail was accepted"
+    );
+    r3->active = 1;
+
+    /* The report itself: corrupt a flag the truncation never reads, let
+     * the post-mutation check find it, and require the violation to be
+     * reported at the mutating site. */
+    r1->can_open = 0;
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, full) == MARKDOWN_CORE_DELIMITER_OK,
+        "a benign-to-execution corruption blocked truncate"
+    );
+    DR_REQUIRE(
+        dr_invariant_failures == 1 && dr_invariant_site && strcmp(dr_invariant_site, "truncate") == 0,
+        "the invariant break was not reported at its mutation site"
+    );
+    r1->can_open = 1;
+    dr_invariant_failures = 0;
+    dr_invariant_site = NULL;
+    DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "the report probe left invalid topology");
+
+#undef DR_CORRUPTION
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
+    return result;
+}
+
+static int case_randomized_operation_soak(void) {
+    static const char case_name[] = "randomized_operation_soak";
+    static const markdown_core_delimiter_rule range_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    static const markdown_core_delimiter_rule run_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RUN,
+        0,
+        NULL,
+    };
+    static const markdown_core_delimiter_rule probe_rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        ']',
+        dr_close_probe,
+    };
+    static const uint32_t seeds[] = {0x5EED0001u, 0xC0FFEE42u};
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_binding bindings[3];
+    markdown_core_delimiter_mark marks[16];
+    markdown_core_bufsize position = 0;
+    uint64_t claim = 0;
+    size_t seed_index;
+    int result = 0;
+
+    dr_allocator_init(&allocator);
+    dr_active_log = NULL;
+    bindings[0] = dr_binding(&range_rule, 0);
+    bindings[1] = dr_binding(&run_rule, 1);
+    bindings[2] = dr_binding(&probe_rule, 2);
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 3), "engine start failed");
+
+    for (seed_index = 0; seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
+        uint32_t state = seeds[seed_index];
+        size_t depth = 0;
+        size_t op;
+        for (op = 0; op < 2000; op++) {
+            uint32_t roll = dr_xorshift(&state) % 100;
+            if (dr_invariant_failures) {
+                fprintf(
+                    stderr,
+                    "%s: invariant tripped after %s (seed %zu op %zu count %zu)\n",
+                    case_name,
+                    dr_invariant_site,
+                    seed_index,
+                    op,
+                    engine.count
+                );
+            }
+            DR_REQUIRE(dr_invariant_failures == 0, "the soak tripped an engine invariant mid-run");
+            if (roll < 55 && engine.count <= 3000) {
+                size_t lane = dr_xorshift(&state) % 3;
+                markdown_core_bufsize length = 1 + (markdown_core_bufsize)(dr_xorshift(&state) % 3);
+                markdown_core_delimiter_result pushed;
+                if (lane == 2) {
+                    int opens = dr_xorshift(&state) & 1;
+                    pushed = markdown_core_delimiter_engine_push(
+                        &engine,
+                        &bindings[2],
+                        opens,
+                        !opens,
+                        (markdown_core_node *)&dr_marker_storage,
+                        position,
+                        position + length,
+                        opens ? ++claim : 0
+                    );
+                } else {
+                    uint32_t flags = dr_xorshift(&state) % 3;
+                    pushed = markdown_core_delimiter_engine_push(
+                        &engine,
+                        &bindings[lane],
+                        flags != 1,
+                        flags != 0,
+                        (markdown_core_node *)&dr_marker_storage,
+                        position,
+                        position + length,
+                        0
+                    );
+                }
+                DR_REQUIRE(pushed == MARKDOWN_CORE_DELIMITER_OK, "soak push failed");
+                position += length;
+            } else if (roll < 70 && depth < 16) {
+                marks[depth++] = markdown_core_delimiter_engine_mark(&engine);
+            } else if (roll < 85) {
+                size_t index = depth ? dr_xorshift(&state) % depth : 0;
+                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0};
+                DR_REQUIRE(
+                    markdown_core_delimiter_engine_process(&engine, NULL, NULL, mark) == MARKDOWN_CORE_DELIMITER_OK,
+                    "soak process failed"
+                );
+                DR_REQUIRE(engine.count == mark.count, "soak process did not restore its mark");
+                depth = index;
+            } else {
+                markdown_core_delimiter_mark before = markdown_core_delimiter_engine_mark(&engine);
+                size_t index = depth ? dr_xorshift(&state) % depth : 0;
+                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0};
+                DR_REQUIRE(
+                    markdown_core_delimiter_engine_truncate(&engine, mark) == MARKDOWN_CORE_DELIMITER_OK,
+                    "soak truncate failed"
+                );
+                depth = index;
+                if (before.count > mark.count) {
+                    DR_REQUIRE(
+                        markdown_core_delimiter_engine_truncate(&engine, before) == MARKDOWN_CORE_DELIMITER_INVALID,
+                        "a mark survived the truncation that reclaimed its tail"
+                    );
+                }
+            }
+        }
+        DR_REQUIRE(
+            markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0}) ==
+                MARKDOWN_CORE_DELIMITER_OK,
+            "soak drain failed"
+        );
+        DR_REQUIRE(
+            engine.count == 0 && engine.tail == 0 && markdown_core_delimiter_engine_validate(&engine),
+            "soak drain left records behind"
+        );
+        DR_REQUIRE(dr_invariant_failures == 0, "the soak tripped an engine invariant");
+    }
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
     return result;
 }
 
@@ -559,19 +1034,23 @@ static int case_unit_lane_growth_and_reuse(void) {
         markdown_core_delimiter_engine_begin(&engine, 2, NULL) == MARKDOWN_CORE_DELIMITER_INVALID,
         "a unit without a concrete capture must be refused"
     );
+    allocator.fail_at = allocator.allocation_attempts + 1;
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_begin(&engine, 2, &dr_capture) == MARKDOWN_CORE_DELIMITER_OOM,
+        "forced lane-growth failure did not fail begin"
+    );
+    DR_REQUIRE(
+        engine.count == 0 && engine.tail == 0 && engine.lane_count == 1 && engine.lane_capacity == 1 &&
+            engine.capacity == 16,
+        "failed begin discarded storage or changed the lane table"
+    );
+
+    allocator.fail_at = 0;
     DR_REQUIRE(
         markdown_core_delimiter_engine_begin(&engine, 2, &dr_capture) == MARKDOWN_CORE_DELIMITER_OK,
         "second unit did not accept the expanded rule set"
     );
-    allocator.fail_at = allocator.allocation_attempts + 1;
-    DR_REQUIRE(!dr_push(&engine, &added, 1, 0, 1, 1), "forced lane-growth failure unexpectedly succeeded");
-    DR_REQUIRE(
-        engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 1 && engine.capacity == 16,
-        "failed lane growth discarded storage or published a record"
-    );
-
-    allocator.fail_at = 0;
-    DR_REQUIRE(dr_push(&engine, &added, 1, 0, 1, 1), "lane-growth retry failed");
+    DR_REQUIRE(dr_push(&engine, &added, 1, 0, 1, 1), "expanded-lane push failed");
     markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
     DR_REQUIRE(
         engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 2 && engine.capacity == 16,
@@ -824,6 +1303,10 @@ static const dr_case DR_CASES[] = {
     {"commonmark_modulo_zero_pairs", case_commonmark_modulo_zero_pairs},
     {"per_rule_isolation", case_per_rule_isolation},
     {"mark_restore_and_reuse", case_mark_restore_and_reuse},
+    {"stale_id_is_refused", case_stale_id_is_refused},
+    {"stale_mark_is_refused", case_stale_mark_is_refused},
+    {"validator_rejects_corruption", case_validator_rejects_corruption},
+    {"randomized_operation_soak", case_randomized_operation_soak},
     {"residual_run_progress", case_residual_run_progress},
     {"geometric_arena_growth", case_geometric_arena_growth},
     {"arena_growth_oom_transaction", case_arena_growth_oom_transaction},
@@ -863,6 +1346,15 @@ int main(int argc, char **argv) {
         if (strcmp(DR_CASES[i].name, case_name) == 0) {
             int failed = DR_CASES[i].run();
             markdown_core_concrete_capture_abandon(&dr_capture);
+            if (failed == 0 && dr_invariant_failures) {
+                fprintf(
+                    stderr,
+                    "%s: engine invariant failed after %s\n",
+                    case_name,
+                    dr_invariant_site ? dr_invariant_site : "(unknown site)"
+                );
+                failed = -1;
+            }
             if (failed == 0) {
                 printf("%s [PASSED]\n", case_name);
                 return 0;

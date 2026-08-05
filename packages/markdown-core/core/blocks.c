@@ -275,7 +275,7 @@ markdown_core_parser *markdown_core_parser_new_with_mem(int options, markdown_co
         mem->free(mem, parser);
         return NULL;
     }
-    markdown_core_delimiter_engine_init(&parser->inline_delimiters, mem, MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT);
+    markdown_core_delimiter_engine_init(&parser->inline_delimiters, mem);
     markdown_core_parser_reset(parser);
     return parser;
 }

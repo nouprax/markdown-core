@@ -53,9 +53,9 @@
                     "branches": 54
                 },
                 "packages/markdown-core/core/delimiter.c": {
-                    "lines": 79,
+                    "lines": 53,
                     "functions": 0,
-                    "branches": 163
+                    "branches": 111
                 },
                 "packages/markdown-core/core/houdini.h": {
                     "lines": 0,
@@ -68,9 +68,9 @@
                     "branches": 9
                 },
                 "packages/markdown-core/core/inlines.c": {
-                    "lines": 129,
+                    "lines": 127,
                     "functions": 2,
-                    "branches": 141
+                    "branches": 140
                 },
                 "packages/markdown-core/core/iterator.c": {
                     "lines": 8,
