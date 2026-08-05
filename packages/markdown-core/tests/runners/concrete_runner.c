@@ -1975,6 +1975,15 @@ static int case_capture_shape(void) {
                 fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
                 failed = 1;
             }
+            /* The record indexes the content buffer, so the buffer itself
+             * is pinned through the parsed text: the escape consumed, the
+             * pipe literal, nothing pipe-collapsed away. */
+            if (!lead || !lead->first_child || lead->first_child->type != MARKDOWN_CORE_NODE_TEXT ||
+                lead->first_child->as.literal.len != 11 ||
+                memcmp(lead->first_child->as.literal.data, "lead | para", 11) != 0) {
+                fprintf(stderr, "capture_shape: the split-off lead's text is not its authored reading\n");
+                failed = 1;
+            }
             if (!table || resolved_start_line(table, root_resolved) != 2) {
                 fprintf(stderr, "capture_shape: the split table does not start on its header row's line\n");
                 failed = 1;
