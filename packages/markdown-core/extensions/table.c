@@ -136,23 +136,26 @@ static int set_cell_index(markdown_core_node *node, int i) {
  * Cells discarded into `paragraph_offset` never reach here, which is what
  * keeps a mid-buffer restart from spelling ghost pipes.
  *
- * Coordinates are affine in the scan string: a string offset X sits at
- * normalized-line column `base_col + (X - origin)`. A data row scans the
- * current line at first_nonspace (origin 0); the look-back header row
- * scans the paragraph's content buffer, whose last line began at the
- * recorded line mark (origin = its content_offset, base_col = its
- * byte_offset). `line` is the absolute line the row was spelled on. */
+ * Coordinates map through a line mark: a data row scans the current line
+ * at first_nonspace, described by a synthetic mark whose byte_offset is
+ * that base (origin 0, no pad); the look-back header row scans the
+ * paragraph's content buffer, whose last line began at the mark the
+ * paragraph recorded — including the stand-in pad a mid-tab lazy
+ * continuation buffered, which markdown_core_line_mark_extent undoes. A
+ * pipe or backslash is never one of the pad's stand-in spaces, so every
+ * extent mapped here starts past the pad. The mark's `line` is the
+ * absolute line the row was spelled on. */
 static void capture_row_pipes(
     markdown_core_parser *parser,
     markdown_core_node *row_node,
     const unsigned char *string,
     const table_row *row,
-    int line,
-    markdown_core_bufsize base_col,
-    markdown_core_bufsize origin
+    const struct markdown_core_line_mark *mark
 ) {
     uint16_t i;
     const node_cell *last;
+    markdown_core_bufsize origin = mark->content_offset;
+    markdown_core_bufsize column;
 
     for (i = 0; i < row->n_columns; i++) {
         const node_cell *cell = &row->cells[i];
@@ -160,24 +163,36 @@ static void capture_row_pipes(
          * origin or just past a `|`, so start_offset > origin already
          * proves the preceding byte is the pipe. */
         if ((markdown_core_bufsize)cell->start_offset > origin) {
+            markdown_core_line_mark_extent(
+                mark,
+                (markdown_core_bufsize)cell->start_offset - 1,
+                (markdown_core_bufsize)cell->start_offset,
+                &column
+            );
             markdown_core_parser_capture_marker_at(
                 parser,
                 row_node,
                 MARKDOWN_CORE_CONCRETE_TABLE_PIPE,
-                line,
-                base_col + ((markdown_core_bufsize)cell->start_offset - 1 - origin),
+                mark->line,
+                column,
                 1
             );
         }
     }
     last = &row->cells[row->n_columns - 1];
     if (string[last->end_offset + 1] == '|') {
+        markdown_core_line_mark_extent(
+            mark,
+            (markdown_core_bufsize)last->end_offset + 1,
+            (markdown_core_bufsize)last->end_offset + 2,
+            &column
+        );
         markdown_core_parser_capture_marker_at(
             parser,
             row_node,
             MARKDOWN_CORE_CONCRETE_TABLE_PIPE,
-            line,
-            base_col + ((markdown_core_bufsize)last->end_offset + 1 - origin),
+            mark->line,
+            column,
             1
         );
     }
@@ -195,20 +210,20 @@ static void capture_cell_escapes(
     markdown_core_node *cell_node,
     const unsigned char *string,
     const node_cell *cell,
-    int line,
-    markdown_core_bufsize base_col,
-    markdown_core_bufsize origin
+    const struct markdown_core_line_mark *mark
 ) {
     int r;
+    markdown_core_bufsize column;
 
     for (r = cell->start_offset + cell->internal_offset; r < cell->end_offset; r++) {
         if (string[r] == '\\' && string[r + 1] == '|') {
+            markdown_core_line_mark_extent(mark, (markdown_core_bufsize)r, (markdown_core_bufsize)r + 1, &column);
             markdown_core_parser_capture_marker_at(
                 parser,
                 cell_node,
                 MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE,
-                line,
-                base_col + ((markdown_core_bufsize)r - origin),
+                mark->line,
+                column,
                 1
             );
         }
@@ -573,15 +588,7 @@ static markdown_core_node *try_opening_table_header(
             (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser),
             delimiter_end - (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser)
         );
-        capture_row_pipes(
-            parser,
-            table_header,
-            (const unsigned char *)parent_string,
-            header_row,
-            mark->line,
-            mark->byte_offset,
-            mark->content_offset
-        );
+        capture_row_pipes(parser, table_header, (const unsigned char *)parent_string, header_row, mark);
 
         for (i = 0; i < header_row->n_columns; ++i) {
             node_cell *cell = &header_row->cells[i];
@@ -600,15 +607,7 @@ static markdown_core_node *try_opening_table_header(
             markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
             markdown_core_node_set_extension(header_cell, self);
             set_cell_index(header_cell, i);
-            capture_cell_escapes(
-                parser,
-                header_cell,
-                (const unsigned char *)parent_string,
-                cell,
-                mark->line,
-                mark->byte_offset,
-                mark->content_offset
-            );
+            capture_cell_escapes(parser, header_cell, (const unsigned char *)parent_string, cell, mark);
         }
     }
 
@@ -682,17 +681,22 @@ static markdown_core_node *try_opening_table_row(
         int i, table_columns = get_n_table_columns(parent_container);
 
         /* Concrete capture: this row is the current line, scanned from
-         * first_nonspace, so string offsets map to columns by that base
-         * alone. Pipes of cells past the table's width still spell row
-         * material and still record; only node creation truncates. */
+         * first_nonspace, so a synthetic mark with that base and no pad
+         * maps string offsets to columns. Pipes of cells past the table's
+         * width still spell row material and still record; only node
+         * creation truncates. */
+        struct markdown_core_line_mark live_mark;
+        live_mark.content_offset = 0;
+        live_mark.line = markdown_core_parser_get_line_number(parser);
+        live_mark.column = 0;
+        live_mark.byte_offset = (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser);
+        live_mark.pad = 0;
         capture_row_pipes(
             parser,
             table_row_block,
             input + markdown_core_parser_get_first_nonspace(parser),
             row,
-            markdown_core_parser_get_line_number(parser),
-            (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser),
-            0
+            &live_mark
         );
 
         for (i = 0; i < row->n_columns && i < table_columns; ++i) {
@@ -716,9 +720,7 @@ static markdown_core_node *try_opening_table_row(
                 node,
                 input + markdown_core_parser_get_first_nonspace(parser),
                 cell,
-                markdown_core_parser_get_line_number(parser),
-                (markdown_core_bufsize)markdown_core_parser_get_first_nonspace(parser),
-                0
+                &live_mark
             );
         }
 

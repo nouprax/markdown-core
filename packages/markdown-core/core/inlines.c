@@ -2221,7 +2221,8 @@ static void spnl(subject *subj) {
 markdown_core_bufsize markdown_core_parse_reference_inline(
     markdown_core_mem *mem,
     markdown_core_chunk *input,
-    markdown_core_map *refmap
+    markdown_core_map *refmap,
+    markdown_core_reference_spans *spans
 ) {
     subject subj;
 
@@ -2231,6 +2232,12 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
 
     markdown_core_bufsize matchlen = 0;
     markdown_core_bufsize beforetitle;
+
+    spans->label_end = 0;
+    spans->url_start = 0;
+    spans->url_end = 0;
+    spans->title_start = 0;
+    spans->title_end = 0;
 
     subject_from_buf(NULL, mem, -1, 0, &subj, input, NULL);
 
@@ -2242,6 +2249,7 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     // colon:
     if (peek_char(&subj) == ':') {
         advance(&subj);
+        spans->label_end = subj.pos;
     } else {
         return 0;
     }
@@ -2249,6 +2257,8 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     // parse link url:
     spnl(&subj);
     if ((matchlen = manual_scan_link_url(&subj.input, subj.pos, &url)) > -1) {
+        spans->url_start = subj.pos;
+        spans->url_end = subj.pos + matchlen;
         subj.pos += matchlen;
     } else {
         return 0;
@@ -2260,6 +2270,8 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     matchlen = subj.pos == beforetitle ? 0 : scan_link_title(&subj.input, subj.pos);
     if (matchlen) {
         title = markdown_core_chunk_borrow(&subj.input, subj.pos, matchlen);
+        spans->title_start = subj.pos;
+        spans->title_end = subj.pos + matchlen;
         subj.pos += matchlen;
     } else {
         subj.pos = beforetitle;
@@ -2270,7 +2282,15 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     skip_spaces(&subj);
     if (!skip_line_end(&subj)) {
         if (matchlen) { // try rewinding before title
+            /* The rewound bytes return to the paragraph, so the definition
+             * has no title at all — scalar, map entry, and spans agree
+             * (CommonMark: "This is a link reference definition, but it
+             * has no title"). Upstream cmark-gfm keeps the scanned title
+             * in its map here, a registered deliberate difference. */
             subj.pos = beforetitle;
+            title = markdown_core_chunk_literal("");
+            spans->title_start = 0;
+            spans->title_end = 0;
             skip_spaces(&subj);
             if (!skip_line_end(&subj)) {
                 return 0;

@@ -46,6 +46,15 @@
  *                        silently thinner tree: under single-shot
  *                        allocation failure at every ordinal, the parse
  *                        either fails cleanly or captures everything.
+ *
+ * The recovery gates hold 14.1.10's boundary: unmatched core Markdown and
+ * unmatched island openers stay literal (recovery_literal_fallback — no
+ * guessed structure, byte-exact Text reconstruction, every surviving
+ * inline record an unconsumed candidate), while a committed bounded
+ * island recovers only inside its own termination rule or closing parent,
+ * preserves its authored source, and never consumes the unrelated region
+ * that follows (recovery_island_boundary — eligibility bound to each
+ * form's commit point, never its node kind).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -952,6 +961,113 @@ static int check_node_records(const capture_source *source, const markdown_core_
                 failed = 1;
             }
             break;
+        case MARKDOWN_CORE_CONCRETE_REFDEF_LABEL: {
+            /* Bracket-through-colon segments: the first starts the node's
+             * spelling with `[` on its own first line, the one before the
+             * destination ends `]:`, and a single-segment label's interior
+             * is byte-for-byte the raw label the node keeps. */
+            bool first = i == 0;
+            bool last = i + 1 >= count || records[i + 1].kind != MARKDOWN_CORE_CONCRETE_REFDEF_LABEL;
+            if (node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                (first && (record->line != 0 || line[record->column] != '[')) ||
+                (last && (record->length < 2 || line[record->column + record->length - 1] != ':' ||
+                          line[record->column + record->length - 2] != ']')) ||
+                (first && last && node->as.definition.label.data &&
+                 ((markdown_core_bufsize)record->length != node->as.definition.label.len + 3 ||
+                  memcmp(line + record->column + 1, node->as.definition.label.data, node->as.definition.label.len) !=
+                      0))) {
+                fprintf(stderr, "%s: refdef label record does not spell its `[label]:` segment\n", source->name);
+                failed = 1;
+            }
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION: {
+            /* The spelling; as.definition.url is the decoded scalar. Decode
+             * the spelled bytes the way clean_url does — the angle form
+             * loses its brackets (the scanner returns only the interior),
+             * surrounding spaces trim, entities decode, backslash escapes
+             * drop — and the scalar must reproduce exactly. */
+            const char *bytes = line + record->column;
+            size_t len = record->length;
+            markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+            if (len >= 2 && bytes[0] == '<' && bytes[len - 1] == '>') {
+                bytes++;
+                len -= 2;
+            }
+            while (len && markdown_core_isspace((unsigned char)bytes[0])) {
+                bytes++;
+                len--;
+            }
+            while (len && markdown_core_isspace((unsigned char)bytes[len - 1])) {
+                len--;
+            }
+            markdown_core_houdini_unescape_html_f(&decoded, (const uint8_t *)bytes, (markdown_core_bufsize)len);
+            markdown_core_strbuf_unescape(&decoded);
+            if (node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                (node->as.definition.url.data &&
+                 (decoded.size != (markdown_core_bufsize)node->as.definition.url.len ||
+                  memcmp(decoded.ptr, node->as.definition.url.data, decoded.size) != 0))) {
+                fprintf(stderr, "%s: refdef destination record does not decode to the url\n", source->name);
+                failed = 1;
+            }
+            markdown_core_strbuf_free(&decoded);
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_REFDEF_TITLE: {
+            /* The first segment opens with a quote or paren, the last
+             * closes with its counterpart, and a single-segment title also
+             * decodes to the definition's title the way clean_title does. */
+            bool first = i == 0 || records[i - 1].kind != MARKDOWN_CORE_CONCRETE_REFDEF_TITLE;
+            bool last = i + 1 == count;
+            int title_failed = node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION;
+            if (!title_failed && first &&
+                (line[record->column] != '"' && line[record->column] != '\'' && line[record->column] != '(')) {
+                title_failed = 1;
+            }
+            if (!title_failed && last) {
+                size_t j = i;
+                char opener_buffer[4096];
+                size_t opener_length = 0;
+                while (j > 0 && records[j - 1].kind == MARKDOWN_CORE_CONCRETE_REFDEF_TITLE) {
+                    j--;
+                }
+                if (!normalized_line(
+                        source->text,
+                        source->length,
+                        (uint32_t)resolved + records[j].line,
+                        opener_buffer,
+                        sizeof(opener_buffer),
+                        &opener_length
+                    )) {
+                    title_failed = 1;
+                } else {
+                    char opener = opener_buffer[records[j].column];
+                    char closer = opener == '(' ? ')' : opener;
+                    if (line[record->column + record->length - 1] != closer) {
+                        title_failed = 1;
+                    }
+                }
+            }
+            if (!title_failed && first && last && record->length >= 2 && node->as.definition.title.data) {
+                markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                markdown_core_houdini_unescape_html_f(
+                    &decoded,
+                    (const uint8_t *)line + record->column + 1,
+                    (markdown_core_bufsize)record->length - 2
+                );
+                markdown_core_strbuf_unescape(&decoded);
+                if (decoded.size != (markdown_core_bufsize)node->as.definition.title.len ||
+                    memcmp(decoded.ptr, node->as.definition.title.data, decoded.size) != 0) {
+                    title_failed = 1;
+                }
+                markdown_core_strbuf_free(&decoded);
+            }
+            if (title_failed) {
+                fprintf(stderr, "%s: refdef title record does not spell its title segment\n", source->name);
+                failed = 1;
+            }
+            break;
+        }
         default:
             fprintf(stderr, "%s: unknown record kind %u on %s\n", source->name, record->kind, type_name(node->type));
             failed = 1;
@@ -961,8 +1077,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
 
     /* Ownership: records appear on exactly the owners 11.1 names, in the
      * multiplicity the grammar admits. A kind with no marker bytes — every
-     * inline, Paragraph, HTMLBlock, ReferenceDefinition, indented code,
-     * List, Document — must hold none. */
+     * inline, Paragraph, HTMLBlock, indented code, List, Document — must
+     * hold none. */
     switch (node->type) {
     case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
         if (count < 1) {
@@ -1091,6 +1207,25 @@ static int check_node_records(const capture_source *source, const markdown_core_
             failed = 1;
         }
         break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION: {
+        /* The `[label]:` segments (one per line the label spans), then the
+         * one destination the grammar requires, then the title's segments
+         * when one was written. */
+        size_t at = 0;
+        bool wrong;
+        while (at < count && records[at].kind == MARKDOWN_CORE_CONCRETE_REFDEF_LABEL) {
+            at++;
+        }
+        wrong = at == 0 || at >= count || records[at].kind != MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION;
+        for (at++; !wrong && at < count; at++) {
+            wrong = records[at].kind != MARKDOWN_CORE_CONCRETE_REFDEF_TITLE;
+        }
+        if (wrong) {
+            fprintf(stderr, "%s: ReferenceDefinition holds a wrong record set (%zu)\n", source->name, count);
+            failed = 1;
+        }
+        break;
+    }
     default:
         if (count != 0) {
             fprintf(
@@ -1126,11 +1261,16 @@ static int expect_records(
     size_t expected_count
 ) {
     size_t count = 0;
-    const markdown_core_concrete_record *records = markdown_core_node_concrete_records(node, &count);
+    const markdown_core_concrete_record *records;
     size_t i;
     int failed = 0;
-    if (!node || count != expected_count) {
-        fprintf(stderr, "%s: expected %zu records, found %zu\n", context, expected_count, node ? count : 0);
+    if (!node) {
+        fprintf(stderr, "%s: expected node is missing from the tree\n", context);
+        return 1;
+    }
+    records = markdown_core_node_concrete_records(node, &count);
+    if (count != expected_count) {
+        fprintf(stderr, "%s: expected %zu records, found %zu\n", context, expected_count, count);
         return 1;
     }
     for (i = 0; i < expected_count; i++) {
@@ -1196,8 +1336,10 @@ static size_t tree_record_total(const markdown_core_node *root) {
  * close fence longer than its open, BOM-prefixed line 1, NUL replacement
  * inside an info string, CRLF, tabs after markers, the extension marker
  * material (table delimiter row, row pipes, cell `\|` escapes, task
- * checkboxes, directive and formula fences), and the constructs that must
- * stay recordless (indented code, HTML blocks, reference definitions). */
+ * checkboxes, directive and formula fences), reference-definition
+ * spellings (multi-line labels and titles included, and the mid-tab lazy
+ * continuation whose buffered spaces stand in for one tab byte), and the
+ * constructs that must stay recordless (indented code, HTML blocks). */
 static const capture_source SHAPE_SOURCES[] = {
     {"nested_quotes",
      "> # h1 ##\n"
@@ -1284,9 +1426,7 @@ static const capture_source SHAPE_SOURCES[] = {
      "\n"
      "<div>\n"
      "html\n"
-     "</div>\n"
-     "\n"
-     "[rd]: /u \"t\"\n",
+     "</div>\n",
      0,
      true},
     {"interrupts",
@@ -1362,6 +1502,25 @@ static const capture_source SHAPE_SOURCES[] = {
      "| a | b |\r\n"
      "| - | - |\t\r\n"
      "| c | d |\r\n",
+     0},
+    {"refdefs",
+     "[a]: /one \"t1\"\n"
+     "[b]: </two three> (t2)\n"
+     "[multi\n"
+     "label]: /three\n"
+     "'long\n"
+     "title'\n"
+     "[d]: /four\n"
+     "\"not title\" tail\n",
+     0},
+    {"refdef_lazy_tab",
+     "> > [l]: /u \"a\n"
+     ">\tb\"\n",
+     0},
+    {"table_lazy_tab",
+     "> > x\n"
+     ">\t| a\\|b |\n"
+     "> > | - | - |\n",
      0},
 };
 
@@ -2023,6 +2182,139 @@ static int case_capture_shape(void) {
         );
         markdown_core_document_free(document);
     }
+    /* Reference definitions: `[label]:` bracket-through-colon, the raw
+     * destination (angle brackets kept), the raw title (delimiters kept) —
+     * one segment record per line a label or title spans, and the
+     * title-rewind definition keeps no title record because the grammar
+     * rewound it back into the paragraph. */
+    {
+        static const expected_record RD_A[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 10, 4}
+        };
+        static const expected_record RD_B[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 12},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 18, 4}
+        };
+        static const expected_record RD_MULTI[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 6},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 1, 0, 7},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 1, 8, 6},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 2, 0, 5},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 3, 0, 6}
+        };
+        static const expected_record RD_D[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 5}
+        };
+        const expected_record *expected[4] = {RD_A, RD_B, RD_MULTI, RD_D};
+        const size_t expected_counts[4] = {3, 3, 5, 2};
+        const capture_source *refdefs = &SHAPE_SOURCES[22];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)refdefs->text, strlen(refdefs->text), &options, NULL);
+        size_t d;
+        if (!document) {
+            return -1;
+        }
+        for (d = 0; d < 4; d++) {
+            char context[64];
+            snprintf(context, sizeof(context), "capture_shape: reference definition %zu", d);
+            failed |= expect_records(
+                context,
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
+                expected[d],
+                expected_counts[d]
+            );
+        }
+        /* The rewound title belongs to the paragraph, not the definition:
+         * once the grammar hands those bytes back, the node's scalar must
+         * agree with its missing REFDEF_TITLE record (CommonMark: "This is
+         * a link reference definition, but it has no title"). Upstream
+         * cmark-gfm keeps the bogus title — a registered deliberate
+         * difference; micromark agrees with this reading. */
+        {
+            const markdown_core_node *rewound =
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
+            if (!rewound || rewound->as.definition.title.len != 0) {
+                fprintf(stderr, "capture_shape: the rewound title leaked into the definition's scalar\n");
+                failed = 1;
+            }
+        }
+        markdown_core_document_free(document);
+    }
+    /* A definition whose title continues onto a lazy line that began
+     * mid-tab: the buffered line holds two spaces standing in for the tab
+     * byte's remaining columns, so the continuation segment's extent must
+     * come out one tab byte wide where the buffer holds two spaces —
+     * anything else dereferences into the wrong source bytes. */
+    {
+        static const expected_record RD_LAZY[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 4, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 9, 2},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 12, 2},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 1, 1, 3}
+        };
+        const capture_source *lazy = &SHAPE_SOURCES[23];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy title continuation",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
+            RD_LAZY,
+            4
+        );
+        markdown_core_document_free(document);
+    }
+    /* The same mid-tab lazy line as a look-back table header: the pipes'
+     * and the cell escape's columns must land on the source line's own
+     * bytes — the buffered stand-in spaces are two bytes where the source
+     * holds one tab — and the split-off lead paragraph stays recordless
+     * (its records are the recovery slice's deferred problem, stated in
+     * the plan). */
+    {
+        static const expected_record LAZYTAB_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 4, 9}};
+        static const expected_record LAZYTAB_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 9, 1}
+        };
+        static const expected_record LAZYTAB_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 1, 5, 1}};
+        const capture_source *lazy = &SHAPE_SOURCES[24];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            LAZYTAB_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            LAZYTAB_PIPES,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header cell escape",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            LAZYTAB_ESCAPE,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab split-off lead paragraph",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+            NULL,
+            0
+        );
+        markdown_core_document_free(document);
+    }
     return failed ? -1 : 0;
 }
 
@@ -2452,7 +2744,12 @@ static void sweep_free(markdown_core_mem *mem, void *pointer) {
     free(pointer);
 }
 
-static const char SWEEP_TEXT[] = "# head *em* ##\n"
+/* The opening definition is the document's first paragraph line on purpose:
+ * its line mark is the parse's first mark allocation, so one sweep ordinal
+ * lands on it and drives the harvest's marks-lost capture skip. */
+static const char SWEEP_TEXT[] = "[sw]: /s \"sq\"\n"
+                                 "\n"
+                                 "# head *em* ##\n"
                                  "\n"
                                  "> one\n"
                                  "> two\n"
@@ -3842,6 +4139,374 @@ typedef struct concrete_case {
     int (*run)(void);
 } concrete_case;
 
+/* --- recovery gates (14.1.10) ------------------------------------------- */
+
+/* Nodes of `type` in the subtree rooted at `node`, the node included. */
+static size_t count_kind(const markdown_core_node *node, uint16_t type) {
+    const markdown_core_node *child;
+    size_t total = node->type == type ? 1 : 0;
+    for (child = node->first_child; child; child = child->next) {
+        total += count_kind(child, type);
+    }
+    return total;
+}
+
+/* Concatenates the subtree's Text literals, a newline per SoftBreak — the
+ * literal-content observable: when nothing may be guessed, every authored
+ * byte reappears here in order. */
+static void concat_inline_text(const markdown_core_node *node, markdown_core_strbuf *out) {
+    const markdown_core_node *child;
+    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+        markdown_core_strbuf_put(out, node->as.literal.data, node->as.literal.len);
+    } else if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+        markdown_core_strbuf_putc(out, '\n');
+    }
+    for (child = node->first_child; child; child = child->next) {
+        concat_inline_text(child, out);
+    }
+}
+
+/* Every inline record in the subtree must be an unconsumed candidate: a
+ * delimiter run or bracket opener whose head and tail are still zero. Any
+ * other kind, or any consumed byte, means the parse turned an unmatched
+ * candidate into structure. */
+static int expect_unconsumed_runs(const char *context, const markdown_core_node *node) {
+    const markdown_core_node *child;
+    size_t count = 0;
+    const markdown_core_inline_concrete_record *records = markdown_core_node_inline_concrete_records(node, &count);
+    size_t i;
+    int failed = 0;
+    for (i = 0; i < count; i++) {
+        if ((records[i].kind != MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN &&
+             records[i].kind != MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN) ||
+            records[i].head != 0 || records[i].tail != 0) {
+            fprintf(
+                stderr,
+                "%s: record %zu {kind %u head %u tail %u} is consumed markup in literal fallback\n",
+                context,
+                i,
+                records[i].kind,
+                records[i].head,
+                records[i].tail
+            );
+            failed = 1;
+        }
+    }
+    for (child = node->first_child; child; child = child->next) {
+        failed |= expect_unconsumed_runs(context, child);
+    }
+    return failed;
+}
+
+/* 14.1.10 clause (a): unmatched core Markdown and unmatched island openers
+ * become literal content — no recovery structure, no guessed pairing, no
+ * consumed markup, every authored byte in the Text spine. The engine has no
+ * MissingToken/UnexpectedToken/ErrorRegion kinds to count, so the gate pins
+ * the observables that adding any of them (or any structure-guessing) would
+ * move: forbidden node kinds at zero, byte-exact literal reconstruction,
+ * and every surviving inline record an unconsumed candidate. */
+static int case_recovery_literal_fallback(void) {
+    typedef struct literal_fixture {
+        const char *name;
+        const char *text;
+        const char *expected;
+        uint16_t forbidden[4];
+    } literal_fixture;
+    static const literal_fixture FIXTURES[] = {
+        {"emphasis",
+         "*a and **b and __c\n",
+         "*a and **b and __c",
+         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG, 0, 0}},
+        {"brackets",
+         "[foo and ![bar and a] end\n",
+         "[foo and ![bar and a] end",
+         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_IMAGE, 0, 0}},
+        {"code_span", "`tick and ``run\n", "`tick and ``run", {MARKDOWN_CORE_NODE_CODE, 0, 0, 0}},
+        {"angle", "<notag and < loose\n", "<notag and < loose", {MARKDOWN_CORE_NODE_HTML, 0, 0, 0}},
+        {"formula_inline",
+         "$x and $$y and \\\\(z end\n",
+         "$x and $$y and \\\\(z end",
+         {MARKDOWN_CORE_NODE_FORMULA, 0, 0, 0}},
+        {"cross_link",
+         "[[target and ![[embed end\n",
+         "[[target and ![[embed end",
+         {MARKDOWN_CORE_NODE_CROSS_LINK, MARKDOWN_CORE_NODE_EMBED, 0, 0}},
+        {"footnote_ref",
+         "[^x unclosed and [^y] undefined\n",
+         "[^x unclosed and [^y] undefined",
+         {MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE, MARKDOWN_CORE_NODE_LINK, 0, 0}},
+        {"strikethrough", "~~open and ~odd\n", "~~open and ~odd", {MARKDOWN_CORE_NODE_STRIKETHROUGH, 0, 0, 0}},
+        {"across_lines",
+         "*a\nstill *b\n",
+         "*a\nstill *b",
+         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG, 0, 0}},
+    };
+    markdown_core_parse_options options = capture_options();
+    int failed = 0;
+    size_t f;
+    for (f = 0; f < sizeof(FIXTURES) / sizeof(FIXTURES[0]); f++) {
+        const literal_fixture *fixture = &FIXTURES[f];
+        capture_source source = {fixture->name, fixture->text, strlen(fixture->text), false};
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        size_t k;
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)fixture->text, strlen(fixture->text), &options, NULL);
+        if (!document) {
+            markdown_core_strbuf_free(&text);
+            return -1;
+        }
+        for (k = 0; k < 4 && fixture->forbidden[k]; k++) {
+            if (count_kind(markdown_core_document_root(document), fixture->forbidden[k]) != 0) {
+                fprintf(stderr, "%s: literal fallback produced a %u node\n", fixture->name, fixture->forbidden[k]);
+                failed = 1;
+            }
+        }
+        concat_inline_text(markdown_core_document_root(document), &text);
+        if (text.size != strlen(fixture->expected) || memcmp(text.ptr, fixture->expected, text.size) != 0) {
+            fprintf(
+                stderr,
+                "%s: literal reconstruction is \"%.*s\", expected \"%s\"\n",
+                fixture->name,
+                (int)text.size,
+                text.ptr,
+                fixture->expected
+            );
+            failed = 1;
+        }
+        failed |= expect_unconsumed_runs(fixture->name, markdown_core_document_root(document));
+        if (tree_record_total(markdown_core_document_root(document)) != 0) {
+            fprintf(stderr, "%s: literal fallback captured block records\n", fixture->name);
+            failed = 1;
+        }
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    return failed ? -1 : 0;
+}
+
+/* 14.1.10 clause (b): a committed bounded island recovers only inside its
+ * own boundary — its grammar's termination rule, or the parent container
+ * that closes it — preserves all authored source, and never consumes an
+ * unrelated following region. Eligibility binds to the form's commit
+ * point: a malformed opener line never commits and stays a paragraph; the
+ * inline directive's name form commits at scan and stands while its
+ * unclosed label falls back around it. */
+static int case_recovery_island_boundary(void) {
+    markdown_core_parse_options options = capture_options();
+    int failed = 0;
+
+    /* An unclosed fence absorbs every later line — headings, quotes — as
+     * its own literal, to EOF. That is its termination rule, and every
+     * authored byte is in the literal. */
+    {
+        static const char TEXT[] = "```\n# h\n> q\n";
+        static const char BODY[] = "# h\n> q\n";
+        static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3}};
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *code;
+        if (!document) {
+            return -1;
+        }
+        code = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
+        if (!code || code->as.code.fence_closed || code->as.code.literal.len != sizeof(BODY) - 1 ||
+            memcmp(code->as.code.literal.data, BODY, sizeof(BODY) - 1) != 0) {
+            fprintf(stderr, "island_boundary: unclosed fence did not keep its authored body\n");
+            failed = 1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE) != 0) {
+            fprintf(stderr, "island_boundary: unclosed fence let a later construct escape\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed fence records", code, OPEN_ONLY, 1);
+        markdown_core_document_free(document);
+    }
+    /* Same rule for the $$ island, with the leading paragraph untouched. */
+    {
+        static const char TEXT[] = "before\n\n$$\nx + y\n# not a heading\n";
+        static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *formula;
+        const char *literal;
+        if (!document) {
+            return -1;
+        }
+        formula = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0);
+        literal = formula ? markdown_core_extensions_get_formula_literal((markdown_core_node *)formula) : NULL;
+        if (!literal || strcmp(literal, "x + y\n# not a heading") != 0) {
+            fprintf(stderr, "island_boundary: unclosed formula block did not keep its authored body\n");
+            failed = 1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING) != 0) {
+            fprintf(stderr, "island_boundary: unclosed formula let a heading escape\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed formula records", formula, OPEN_ONLY, 1);
+        markdown_core_document_free(document);
+    }
+    /* The island's boundary is also its parent's: a quote-nested unclosed
+     * $$ ends where the quote ends, and the following unrelated region is
+     * not consumed — same node, same literal, same sibling. */
+    {
+        static const char TEXT[] = "> $$\n> a\n\nafter\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        const markdown_core_node *quote;
+        const markdown_core_node *formula;
+        const char *literal;
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        quote = root->first_child;
+        formula = quote ? quote->first_child : NULL;
+        literal = formula && formula->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK
+                      ? markdown_core_extensions_get_formula_literal((markdown_core_node *)formula)
+                      : NULL;
+        if (!quote || quote->type != MARKDOWN_CORE_NODE_BLOCK_QUOTE || !literal || strcmp(literal, "a") != 0 ||
+            formula->next != NULL) {
+            fprintf(stderr, "island_boundary: quote-bounded formula did not stop at its container\n");
+            failed = 1;
+        }
+        if (!quote || !quote->next || quote->next->type != MARKDOWN_CORE_NODE_PARAGRAPH || quote->next->next) {
+            fprintf(stderr, "island_boundary: the region after the bounded island changed\n");
+            failed = 1;
+        } else {
+            concat_inline_text(quote->next, &text);
+            if (text.size != 5 || memcmp(text.ptr, "after", 5) != 0) {
+                fprintf(stderr, "island_boundary: the following region's content changed\n");
+                failed = 1;
+            }
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* An unclosed ::: container re-parents parsed blocks — recovery keeps
+     * the children structured, unlike the raw-absorbing fences — and the
+     * close-fence record exists exactly when the source spells one. */
+    {
+        static const char TEXT_UNCLOSED[] = ":::note\nchild para\n## child heading\n";
+        static const char TEXT_CLOSED[] = ":::note\nchild para\n## child heading\n:::\nafter\n";
+        static const expected_record DIR_UNCLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4}
+        };
+        static const expected_record DIR_CLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 3}
+        };
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1, &options, NULL);
+        const markdown_core_node *directive;
+        if (!document) {
+            return -1;
+        }
+        directive = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, 0);
+        if (!directive || count_kind(directive, MARKDOWN_CORE_NODE_PARAGRAPH) != 1 ||
+            count_kind(directive, MARKDOWN_CORE_NODE_HEADING) != 1) {
+            fprintf(stderr, "island_boundary: unclosed directive did not re-parent parsed children\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed directive records", directive, DIR_UNCLOSED, 2);
+        markdown_core_document_free(document);
+
+        document = markdown_core_document_parse((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1, &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        directive = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, 0);
+        failed |= expect_records("island_boundary: closed directive records", directive, DIR_CLOSED, 3);
+        if (!directive || !directive->next || directive->next->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            fprintf(stderr, "island_boundary: the closed directive did not release the following region\n");
+            failed = 1;
+        }
+        markdown_core_document_free(document);
+    }
+    /* Commit-point eligibility, block side: a malformed opener line never
+     * commits — no island, no recovery, the line is paragraph text. */
+    {
+        static const char TEXT[] = ":::note[unclosed\n$$ trailing\n";
+        static const char EXPECTED[] = ":::note[unclosed\n$$ trailing";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA) != 0) {
+            fprintf(stderr, "island_boundary: an uncommitted opener line produced an island\n");
+            failed = 1;
+        }
+        concat_inline_text(markdown_core_document_root(document), &text);
+        if (text.size != sizeof(EXPECTED) - 1 || memcmp(text.ptr, EXPECTED, text.size) != 0) {
+            fprintf(stderr, "island_boundary: the uncommitted opener lines lost bytes\n");
+            failed = 1;
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* Commit-point eligibility, inline side: the directive's name form is
+     * the one inline commit before a closer. The committed name stands,
+     * the unclosed label falls back to a literal `[`, and the label text
+     * parses as ordinary inlines around it. */
+    {
+        static const char TEXT[] = ":name[unclosed rest *em*\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        if (count_kind(root, MARKDOWN_CORE_NODE_DIRECTIVE) != 1 ||
+            count_kind(root, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) != 0 ||
+            count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS) != 1) {
+            fprintf(stderr, "island_boundary: the inline name commit did not hold its boundary\n");
+            failed = 1;
+        }
+        concat_inline_text(root, &text);
+        if (text.size != 17 || memcmp(text.ptr, "[unclosed rest em", 17) != 0) {
+            fprintf(stderr, "island_boundary: the fallen-back label text changed\n");
+            failed = 1;
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* A footnote definition's boundary is the dedent rule: the blank line
+     * plus unindented text ends it, and the following region is a sibling
+     * paragraph, not a child. */
+    {
+        static const char TEXT[] = "[^l]: def\n\nout\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        const markdown_core_node *definition;
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        definition = root->first_child;
+        if (!definition || definition->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION ||
+            count_kind(definition, MARKDOWN_CORE_NODE_PARAGRAPH) != 1 || !definition->next ||
+            definition->next->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            fprintf(stderr, "island_boundary: the footnote definition's dedent boundary moved\n");
+            failed = 1;
+        }
+        markdown_core_document_free(document);
+    }
+    return failed ? -1 : 0;
+}
+
 static const concrete_case CASES[] = {
     {"region_partition", case_region_partition},
     {"region_of_walk", case_region_of_walk},
@@ -3856,6 +4521,8 @@ static const concrete_case CASES[] = {
     {"inline_seam_barrier", case_inline_seam_barrier},
     {"inline_equivalence", case_inline_equivalence},
     {"inline_growth_ceiling", case_inline_growth_ceiling},
+    {"recovery_literal_fallback", case_recovery_literal_fallback},
+    {"recovery_island_boundary", case_recovery_island_boundary},
 };
 
 int main(int argc, char **argv) {

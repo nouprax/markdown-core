@@ -426,6 +426,11 @@ static void S_record_line_mark(markdown_core_parser *parser, const markdown_core
     parser->line_marks[parser->line_mark_count].line = parser->line_number;
     parser->line_marks[parser->line_mark_count].column = (int)parser->column + 1;
     parser->line_marks[parser->line_mark_count].byte_offset = parser->offset;
+    /* The same count add_line's pad loop is about to write, recorded so the
+     * mark can undo it: those spaces stand in for the one tab byte still
+     * sitting at parser->offset. */
+    parser->line_marks[parser->line_mark_count].pad =
+        parser->partially_consumed_tab ? TAB_STOP - (parser->column % TAB_STOP) : 0;
     parser->line_mark_count++;
 }
 
@@ -499,6 +504,27 @@ void markdown_core_parser_capture_marker(
     markdown_core_bufsize length
 ) {
     markdown_core_parser_capture_marker_at(parser, node, kind, parser->line_number, column, length);
+}
+
+/* The pad case in one place: `pad` buffered spaces stand in for the single
+ * tab byte at `byte_offset`, so an extent that begins inside them begins on
+ * the tab byte, and everything past them sits one byte — not `pad` bytes —
+ * after it. `x1` cannot land inside the pad (the header states why), so the
+ * end maps unconditionally through the past-pad arm. */
+markdown_core_bufsize markdown_core_line_mark_extent(
+    const struct markdown_core_line_mark *mark,
+    markdown_core_bufsize x0,
+    markdown_core_bufsize x1,
+    markdown_core_bufsize *column
+) {
+    markdown_core_bufsize pad = (markdown_core_bufsize)mark->pad;
+    markdown_core_bufsize d0 = x0 - mark->content_offset;
+    markdown_core_bufsize d1 = x1 - mark->content_offset;
+    markdown_core_bufsize start = d0 < pad ? mark->byte_offset : mark->byte_offset + (pad ? 1 : 0) + (d0 - pad);
+    markdown_core_bufsize end = mark->byte_offset + (pad ? 1 : 0) + (d1 - pad);
+
+    *column = start;
+    return end - start;
 }
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
@@ -590,6 +616,54 @@ static void S_content_position(
     *column = mark->column + (int)(offset - mark->content_offset);
 }
 
+/* Captures one reference-definition spelling as concrete records on `node`:
+ * one record per line the content extent [x0, x1) spans, each mapped onto
+ * its normalized source line through the paragraph's marks (the trailing
+ * newline of every buffered line is excluded — records never cover an EOL).
+ * The cursor is the caller's monotone walk over the marks, exactly
+ * S_content_position's discipline: spellings are captured front to back, so
+ * the whole harvest stays one pass. A paragraph that reached its harvest
+ * with no marks at all lost a mark allocation — S_record_line_mark already
+ * poisoned that parse, so the spelling has nowhere it could be anchored and
+ * the capture is skipped rather than invented. */
+static void S_capture_definition_span(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    const markdown_core_node *b,
+    uint8_t kind,
+    markdown_core_bufsize x0,
+    markdown_core_bufsize x1,
+    size_t *cursor
+) {
+    if (parser->line_mark_count == 0) {
+        return;
+    }
+    while (x0 < x1) {
+        const struct markdown_core_line_mark *mark;
+        markdown_core_bufsize next;
+        markdown_core_bufsize high;
+
+        while (*cursor + 1 < parser->line_mark_count && parser->line_marks[*cursor + 1].content_offset <= x0) {
+            (*cursor)++;
+        }
+        mark = &parser->line_marks[*cursor];
+        next = *cursor + 1 < parser->line_mark_count ? parser->line_marks[*cursor + 1].content_offset
+                                                     : (markdown_core_bufsize)b->content.size;
+        /* Every buffered line ends in its newline and holds at least one
+         * byte before it (a blank line closes the paragraph instead of
+         * entering it), and x0 is a spelling byte or a line start — never
+         * the newline itself — so the clamped segment is always nonempty
+         * and the record length never 0. */
+        high = x1 < next - 1 ? x1 : next - 1;
+        {
+            markdown_core_bufsize column;
+            markdown_core_bufsize length = markdown_core_line_mark_extent(mark, x0, high, &column);
+            markdown_core_parser_capture_marker_at(parser, node, kind, mark->line, column, length);
+        }
+        x0 = next;
+    }
+}
+
 /* Emits the Definition node for the paragraph-content span [start, end),
  * inserted before the paragraph so the tree keeps source order. The span's
  * trailing line ending and spaces are not part of what was written. */
@@ -599,7 +673,8 @@ static void S_emit_definition(
     markdown_core_bufsize start,
     markdown_core_bufsize end,
     const markdown_core_reference *harvested,
-    size_t *cursor
+    size_t *cursor,
+    const markdown_core_reference_spans *spans
 ) {
     markdown_core_node *node;
     markdown_core_chunk span;
@@ -646,6 +721,42 @@ static void S_emit_definition(
         }
     }
     S_content_position(parser, b, start, cursor, &node->start_line, &node->start_column);
+    /* The spellings, front to back with their own cursor copy: the shared
+     * cursor must not run ahead before the end position resolves. Capture
+     * follows the position assignment because the record encoding is the
+     * line delta from start_line. */
+    {
+        size_t span_cursor = *cursor;
+        S_capture_definition_span(
+            parser,
+            node,
+            b,
+            MARKDOWN_CORE_CONCRETE_REFDEF_LABEL,
+            start,
+            start + spans->label_end,
+            &span_cursor
+        );
+        S_capture_definition_span(
+            parser,
+            node,
+            b,
+            MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION,
+            start + spans->url_start,
+            start + spans->url_end,
+            &span_cursor
+        );
+        if (spans->title_end > spans->title_start) {
+            S_capture_definition_span(
+                parser,
+                node,
+                b,
+                MARKDOWN_CORE_CONCRETE_REFDEF_TITLE,
+                start + spans->title_start,
+                start + spans->title_end,
+                &span_cursor
+            );
+        }
+    }
     S_content_position(parser, b, last > start ? last - 1 : start, cursor, &node->end_line, &node->end_column);
     node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     /* Only the first definition inherits the paragraph's restart-anchor bits.
@@ -706,8 +817,9 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
          * borrowing the previous definition's. */
         const markdown_core_map_entry *before = parser->refmap ? parser->refmap->refs : NULL;
         const markdown_core_map_entry *after;
+        markdown_core_reference_spans spans;
 
-        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap);
+        pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &spans);
         if (!pos) {
             break;
         }
@@ -718,7 +830,8 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
             consumed,
             consumed + pos,
             after != before ? (const markdown_core_reference *)after : NULL,
-            &mark_cursor
+            &mark_cursor,
+            &spans
         );
         consumed += pos;
         chunk.data += pos;
@@ -2423,8 +2536,14 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
     S_postprocess_blocks(parser);
 
     /* All allocation-loss routes converge here: block/inline structures set
-     * parser->oom directly, definition maps carry their own sticky flag. */
+     * parser->oom directly, definition maps carry their own sticky flag, and
+     * capture losses after the last line boundary — the finalize-time
+     * reference-definition harvest has no later S_process_line to fold them
+     * into oom — surface through capture_lost. */
     if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
+        parser->oom = true;
+    }
+    if (parser->capture_lost) {
         parser->oom = true;
     }
     if (parser->oom || parser->internal_error) {

@@ -194,3 +194,23 @@ Document scope=1:1..2:4 children=1
     ├── Code scope=1:4..2:1 mode=embedded literal="x y" children=0
     └── Text scope=2:3..2:4 literal=" b" children=0
 ````````````````````````````````
+
+A definition whose title candidate is followed by non-whitespace: the title
+rewinds out of the definition entirely, and the reference resolves without
+it. remark reads it the same way (cmark-gfm keeps the scanned title in its
+map — the `refdef-title-rewind` entry in specs/upstream-parity/deltas.json).
+
+```````````````````````````````` example
+[foo]: /url
+"title" ok
+
+[foo]
+.
+Document scope=1:1..4:5 children=3
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+├── Paragraph scope=2:1..2:10 children=1
+│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 children=1
+    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+        └── Text scope=4:2..4:4 literal="foo" children=0
+````````````````````````````````

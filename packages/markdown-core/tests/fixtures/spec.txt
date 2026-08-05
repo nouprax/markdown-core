@@ -3253,7 +3253,7 @@ This is a link reference definition, but it has no title:
 "title" ok
 .
 Document scope=1:1..2:10 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="title" children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
 └── Paragraph scope=2:1..2:10 children=1
     └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 ````````````````````````````````

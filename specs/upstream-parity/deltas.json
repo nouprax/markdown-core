@@ -27,6 +27,17 @@
             "evidence": "docs/reviews/2026-07-28-first-principles-review.md, finding I76, fixed in 7c5025d. Still present in upstream 0.29.0.gfm.13."
         },
         {
+            "id": "refdef-title-rewind",
+            "kind": "deliberate-difference",
+            "summary": "When a definition's title candidate is followed by non-whitespace (the title-rewind case), upstream keeps the scanned title in its reference map even though the title bytes stay paragraph text, so a reference to that label resolves with a title the definition does not have. Markdown Core drops the title with the rewind: scalar, map entry, and concrete spelling agree that the definition has none.",
+            "example": "[foo]: /url + a following \"title\" ok line, then [foo]",
+            "upstream": "Link title=\"title\"",
+            "ours": "Link title=null",
+            "rationale": "The CommonMark specification's own prose for this example says \"This is a link reference definition, but it has no title\", and the rewound bytes remain visible paragraph text — reading them a second time as a title states one set of bytes as two things. micromark resolves the reference without a title.",
+            "handling": "Registered as an expected divergence keyed to the regression fixture input; the check requires it to still reproduce.",
+            "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\"."
+        },
+        {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
             "summary": "Upstream unlinks a footnote definition nothing refers to. Markdown Core keeps every definition where it was written, referenced or not, and answers numbering and back-reference ordinals from the session's footnote index.",
@@ -57,6 +68,11 @@
             "id": "tasklist-checked-marker",
             "input": "- [ ] call me [x] later\n",
             "note": "Keyed to an input rather than projected: upstream's substring search is a bug in one function, not a model this side could apply to a tree. Erasing `checked` in the normalizer would blind the gate to every real checked-state difference."
+        },
+        {
+            "id": "refdef-title-rewind",
+            "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
+            "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference."
         }
     ],
     "notDeltas": [],

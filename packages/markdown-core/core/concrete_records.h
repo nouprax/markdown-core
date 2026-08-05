@@ -15,10 +15,11 @@ extern "C" {
  *
  * The block phase consumes marker bytes — `>` runs, list bullets and
  * ordinals, `#` runs, fence lines and their info strings, setext
- * underlines, thematic breaks, `[^label]:` openers — and until now kept
- * only what the canonical AST needs (a level, a fence length clamped to
- * 255, an int the leading zeros of an ordinal collapse into). These
- * records keep the marker material itself: for each marker the grammar
+ * underlines, thematic breaks, `[^label]:` openers, the `[label]:`,
+ * destination, and title spellings of a reference definition — and until
+ * now kept only what the canonical AST needs (a level, a fence length
+ * clamped to 255, an int the leading zeros of an ordinal collapse into).
+ * These records keep the marker material itself: for each marker the grammar
  * assigns to a node's own ownership region, one compact record of where
  * it is and what it is. Trivia — indentation, the spacing around a
  * marker, blank-line runs — stays an implicit source gap with no record
@@ -123,7 +124,21 @@ typedef enum markdown_core_concrete_record_kind {
      * normalized attributes JSON is the decoded scalar, this is its one
      * source spelling. Absent when the attributes fail to parse, because
      * the braces then stay literal text. */
-    MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES
+    MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES,
+    /** One line's segment of a reference definition's `[label]:`, bracket
+     * through colon where they sit on that line. A label may span lines,
+     * and records are single-line extents, so the spelling is the
+     * segments in (line, column) order; `as.definition.label` keeps the
+     * raw interior bytes, this is where the construct sits in the source. */
+    MARKDOWN_CORE_CONCRETE_REFDEF_LABEL,
+    /** A reference definition's destination as spelled — angle brackets
+     * included in the `<...>` form. Single-line by grammar, so exactly one
+     * record; `as.definition.url` is the decoded scalar. */
+    MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION,
+    /** One line's segment of a reference definition's title, quote or
+     * paren delimiters included; `as.definition.title` is the decoded
+     * scalar. Absent when the definition carries no title. */
+    MARKDOWN_CORE_CONCRETE_REFDEF_TITLE
 } markdown_core_concrete_record_kind;
 
 typedef struct markdown_core_concrete_record {

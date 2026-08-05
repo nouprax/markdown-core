@@ -696,6 +696,19 @@ static void truncate_to_mark(markdown_core_delimiter_engine *engine, markdown_co
     if (engine->tail) {
         record_at(engine, engine->tail)->next = 0;
     }
+    /* The rule chains need the same forward clamp as the main chain: a
+     * surviving lane tail's next_rule still names the reclaimed record
+     * that pushed after it, and a later removal of that survivor would
+     * dereference the stale id past the shrunk array. The backward open
+     * chains need nothing — a survivor's links only point at older
+     * records. Lanes allocate on the first push, so a unit that never
+     * pushed truncates with none. */
+    for (i = 0; engine->lanes && i < engine->lane_count; i++) {
+        markdown_core_delimiter_record *tail = record_at(engine, engine->lanes[i].tail);
+        if (tail) {
+            tail->next_rule = 0;
+        }
+    }
 }
 
 static int mark_is_valid(const markdown_core_delimiter_engine *engine, markdown_core_delimiter_mark mark) {

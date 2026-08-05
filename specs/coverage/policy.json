@@ -28,9 +28,9 @@
             "minimumMeasuredFiles": 46,
             "unpinned": {
                 "packages/markdown-core/core/blocks.c": {
-                    "lines": 64,
+                    "lines": 60,
                     "functions": 2,
-                    "branches": 87
+                    "branches": 86
                 },
                 "packages/markdown-core/core/buffer.c": {
                     "lines": 10,
@@ -55,7 +55,7 @@
                 "packages/markdown-core/core/delimiter.c": {
                     "lines": 79,
                     "functions": 0,
-                    "branches": 164
+                    "branches": 163
                 },
                 "packages/markdown-core/core/houdini.h": {
                     "lines": 0,
@@ -118,9 +118,9 @@
                     "branches": 2
                 },
                 "packages/markdown-core/core/scanners.c": {
-                    "lines": 6084,
+                    "lines": 6053,
                     "functions": 0,
-                    "branches": 6170
+                    "branches": 6157
                 },
                 "packages/markdown-core/core/text.c": {
                     "lines": 9,

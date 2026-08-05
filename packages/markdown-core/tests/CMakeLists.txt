@@ -358,7 +358,9 @@ if(MARKDOWN_CORE_STATIC)
               inline_extension_funnel
               inline_seam_barrier
               inline_equivalence
-              inline_growth_ceiling)
+              inline_growth_ceiling
+              recovery_literal_fallback
+              recovery_island_boundary)
         markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()

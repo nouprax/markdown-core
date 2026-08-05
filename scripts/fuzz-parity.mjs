@@ -80,8 +80,11 @@ const ORACLES = {
         // literal `[x]` through recombination reproduces the registered
         // `tasklist-checked-marker` difference — endlessly, and in inputs no
         // registry entry can name in advance. Checked items are exercised by
-        // the corpus gate, which reads the fixtures unrecombined.
-        excludeFragments: ["[x]", "[X]"]
+        // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
+        // is the corpus's one title-then-junk line: recombined under any
+        // definition line it reproduces `refdef-title-rewind` wherever that
+        // label is also referenced.
+        excludeFragments: ["[x]", "[X]", '"title" ok']
     },
     mdast: {
         policy: "specs/mdast-parity/deltas.json",

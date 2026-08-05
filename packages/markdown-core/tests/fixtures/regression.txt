@@ -502,3 +502,54 @@ Document scope=1:1..1:23 children=1
     └── Link scope=1:8..1:23 destination="#section" title=null children=1
         └── Text scope=1:9..1:12 literal="link" children=0
 ````````````````````````````````
+
+A rewound title stays out of the definition — scalar, map entry, and
+concrete spelling agree, and the reference resolves without it. Upstream
+cmark-gfm keeps the scanned title in its map here (the registered
+`refdef-title-rewind` difference); micromark and the CommonMark prose
+("it has no title") agree with this reading.
+
+```````````````````````````````` example
+[foo]: /url
+"title" ok
+
+[foo]
+.
+Document scope=1:1..4:5 children=3
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+├── Paragraph scope=2:1..2:10 children=1
+│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 children=1
+    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+        └── Text scope=4:2..4:4 literal="foo" children=0
+````````````````````````````````
+
+A truncated rule chain must not leave the surviving lane tail pointing at
+reclaimed records: a link close truncates the engine to its bracket's
+mark, and the emphasis lane's surviving tail once kept its stale
+next_rule, which a later removal dereferenced past the shrunk record
+array. Found by the parity fuzzer, crashed on Linux only.
+
+```````````````````````````````` example
+  Foo *bar
+
+- b
+*(*foo)<!-- foo -->*bar*
+[foo *bar](baz*)
+.
+Document scope=1:1..5:16 children=2
+├── Paragraph scope=1:3..1:10 children=1
+│   └── Text scope=1:3..1:10 literal="Foo *bar" children=0
+└── List scope=3:1..5:16 flavor=bullet start=null tight=true children=1
+    └── ListItem scope=3:1..5:16 checked=null children=1
+        └── Paragraph scope=3:3..5:16 children=7
+            ├── Text scope=3:3..3:3 literal="b" children=0
+            ├── SoftBreak scope=0:0..0:0 children=0
+            ├── Text scope=4:3..4:9 literal="*(*foo)" children=0
+            ├── HTML scope=4:10..4:21 literal="<!-- foo -->" children=0
+            ├── Emphasis scope=4:22..4:26 children=1
+            │   └── Text scope=4:23..4:25 literal="bar" children=0
+            ├── SoftBreak scope=0:0..0:0 children=0
+            └── Link scope=5:3..5:18 destination="baz*" title=null children=1
+                └── Text scope=5:4..5:11 literal="foo *bar" children=0
+````````````````````````````````
