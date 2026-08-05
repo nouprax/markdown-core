@@ -373,6 +373,20 @@ inside a paragraph rewrites that paragraph's records and leaves every
 enclosing `ListItem`, `List`, and `BlockQuote` marker record untouched at any
 depth.
 
+**M3 retires the engine's second column space from everything that outlives
+the scan of one line.** The per-node `line`/`column` fields and the paragraph
+line marks' tab-expanded `column` are pre-extent residue; the M2.5 review
+round traced three shipped defects and one standing inconsistency to that
+second space (the incident ledger:
+`docs/reviews/2026-08-05-design-debt-review.md`). When positions resolve on
+demand through extents and a named profile, the marks lose their `column`
+field, `S_content_position` produces byte positions, and
+`ReferenceDefinition` stops being the one expanded-space island in a
+byte-space tree. Tab-expanded columns remain legal only in the block
+scanner's processing of the current line, where CommonMark defines
+indentation in columns. The milestone is held to this deletion, not only to
+adding extents.
+
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
 at all.
