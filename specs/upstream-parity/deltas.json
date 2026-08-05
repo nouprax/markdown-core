@@ -38,6 +38,17 @@
             "evidence": "packages/markdown-core/core/inlines.c, markdown_core_parse_reference_inline rewind branch; CommonMark spec.txt, the example above \"This is a link reference definition, but it has no title\"."
         },
         {
+            "id": "table-split-lead-spelling",
+            "kind": "deliberate-difference",
+            "summary": "When a table's header row is recovered from a multi-line paragraph, upstream runs the split-off lead through the cell pipe-unescape before inline parsing, so the lead's escapes are processed twice: a `\\\\|` renders as `|`. Markdown Core keeps the lead's authored spelling and lets the inline pass read it as any other paragraph — `\\\\|` is an escaped backslash and a literal pipe.",
+            "example": "pre \\\\| lead, above a two-column table",
+            "upstream": "Text literal=\"pre | lead\"",
+            "ours": "Text literal=\"pre \\\\| lead\"",
+            "rationale": "The lead is not table content; a single `\\|` converges either way, and the double-processed `\\\\|` diverges from what the same bytes mean in every plain paragraph. micromark parses the lead as a plain paragraph and agrees — the twin agreement inputs are in specs/mdast-parity/corpus.md.",
+            "handling": "Registered as an expected divergence keyed to the fixture input; the check requires it to still reproduce.",
+            "evidence": "packages/markdown-core/extensions/table.c, try_inserting_table_header_paragraph; upstream extensions/table.c:283-301 (unescape_pipes on the lead)."
+        },
+        {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
             "summary": "Upstream unlinks a footnote definition nothing refers to. Markdown Core keeps every definition where it was written, referenced or not, and answers numbering and back-reference ordinals from the session's footnote index.",
@@ -73,6 +84,11 @@
             "id": "refdef-title-rewind",
             "input": "[foo]: /url\n\"title\" ok\n\n[foo]\n",
             "note": "Keyed to an input rather than projected: upstream's kept title is one assignment in its reference parser, not a model. Erasing resolved titles in the normalizer would blind the gate to every real title difference."
+        },
+        {
+            "id": "table-split-lead-spelling",
+            "input": "pre \\\\| lead\n| a | b |\n| - | - |\n",
+            "note": "Keyed to an input rather than projected: upstream's double unescape is one call in its table extension, not a model. Only a `\\\\|` in a split-off lead diverges — a single `\\|` decodes to `|` on both sides."
         }
     ],
     "notDeltas": [],

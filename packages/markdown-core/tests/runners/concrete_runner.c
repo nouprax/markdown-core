@@ -1462,7 +1462,7 @@ static const capture_source SHAPE_SOURCES[] = {
      "x | y\\|z\n",
      0},
     {"table_lookback",
-     "lead \\| para\n"
+     "lead \\| para \t\n"
      "| a | b |\n"
      "| - | - |\n"
      "x | y |\n",
@@ -1965,14 +1965,20 @@ static int case_capture_shape(void) {
         lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: split-off lead paragraph", lead, NULL, 0);
         failed |= expect_inline_records("capture_shape: split-off lead escape", lead, LOOKBACK_LEAD_ESCAPE, 1);
-        if (!lead || lead->start_line != 1 || lead->start_column != 1 || lead->end_line != 1 ||
-            lead->end_column != 12) {
-            fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
-            failed = 1;
-        }
-        if (!table || table->start_line != 2) {
-            fprintf(stderr, "capture_shape: the split table does not start on its header row's line\n");
-            failed = 1;
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 1 || lead_end != 1 || lead->end_column != 12) {
+                fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
+                failed = 1;
+            }
+            if (!table || resolved_start_line(table, root_resolved) != 2) {
+                fprintf(stderr, "capture_shape: the split table does not start on its header row's line\n");
+                failed = 1;
+            }
         }
         markdown_core_document_free(document);
     }
@@ -2337,10 +2343,20 @@ static int case_capture_shape(void) {
         );
         lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: mid-tab split-off lead paragraph", lead, NULL, 0);
-        if (!lead || lead->start_line != 1 || lead->start_column != 5 || lead->end_line != 1 ||
-            lead->end_column != 5) {
-            fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
-            failed = 1;
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int quote_resolved = lead && lead->parent && lead->parent->parent
+                                     ? resolved_start_line(lead->parent->parent, root_resolved)
+                                     : root_resolved;
+            int inner_resolved = lead && lead->parent ? resolved_start_line(lead->parent, quote_resolved) : 0;
+            int lead_start = lead ? resolved_start_line(lead, inner_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 5 || lead_end != 1 || lead->end_column != 5) {
+                fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
+                failed = 1;
+            }
         }
         markdown_core_document_free(document);
     }
@@ -2811,6 +2827,7 @@ static const char SWEEP_TEXT[] = "[sw]: /s \"sq\"\n"
                                  "\n"
                                  "cm <!-- s --> here and $f<!--t-->g$\n"
                                  "\n"
+                                 "tbl lead\n"
                                  "| h | i |\n"
                                  "| - | - |\n"
                                  "| *c* | d |\n"

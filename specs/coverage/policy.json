@@ -195,7 +195,7 @@
                 "packages/markdown-core/extensions/incremental.c": {
                     "lines": 251,
                     "functions": 1,
-                    "branches": 319
+                    "branches": 318
                 },
                 "packages/markdown-core/extensions/inline_util.h": {
                     "lines": 0,
@@ -223,9 +223,9 @@
                     "branches": 13
                 },
                 "packages/markdown-core/extensions/table.c": {
-                    "lines": 87,
+                    "lines": 82,
                     "functions": 5,
-                    "branches": 72
+                    "branches": 70
                 },
                 "packages/markdown-core/extensions/tasklist.c": {
                     "lines": 16,

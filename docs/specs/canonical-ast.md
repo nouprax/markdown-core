@@ -287,6 +287,7 @@ be preserved by them, not caught.
 | Task-item checked state | substring search for `[x]` over the whole line, so `- [ ] call me [x] later` is reported checked | reads the marker the scanner matched, so that item is unchecked |
 | Footnote definition placement | moved to the document tail in first-reference order | stays at its source position (below) |
 | Rewound definition titles | a title candidate followed by non-whitespace is rewound out of the definition, but the scanned title stays in the reference map, so references resolve with it | the rewind drops the title everywhere — the definition has none, as the spec's own prose says, and micromark agrees |
+| Split table lead's escapes | pipe-unescapes the paragraph lines split off above a recovered header row, then inline-parses them, so a lead's `\\\|` renders `\|` | keeps the lead's authored spelling and parses it like any paragraph — `\\\|` is an escaped backslash and a literal pipe, as micromark also reads it |
 
 Link reference definitions are **not** a difference: both parsers consume them
 into the reference map and neither leaves a node behind.
