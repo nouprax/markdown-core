@@ -2228,6 +2228,20 @@ static int case_capture_shape(void) {
                 expected_counts[d]
             );
         }
+        /* The rewound title belongs to the paragraph, not the definition:
+         * once the grammar hands those bytes back, the node's scalar must
+         * agree with its missing REFDEF_TITLE record (CommonMark: "This is
+         * a link reference definition, but it has no title"). Upstream
+         * cmark-gfm keeps the bogus title — a registered deliberate
+         * difference; micromark agrees with this reading. */
+        {
+            const markdown_core_node *rewound =
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
+            if (!rewound || rewound->as.definition.title.len != 0) {
+                fprintf(stderr, "capture_shape: the rewound title leaked into the definition's scalar\n");
+                failed = 1;
+            }
+        }
         markdown_core_document_free(document);
     }
     /* A definition whose title continues onto a lazy line that began

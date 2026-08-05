@@ -502,3 +502,24 @@ Document scope=1:1..1:23 children=1
     └── Link scope=1:8..1:23 destination="#section" title=null children=1
         └── Text scope=1:9..1:12 literal="link" children=0
 ````````````````````````````````
+
+A rewound title stays out of the definition — scalar, map entry, and
+concrete spelling agree, and the reference resolves without it. Upstream
+cmark-gfm keeps the scanned title in its map here (the registered
+`refdef-title-rewind` difference); micromark and the CommonMark prose
+("it has no title") agree with this reading.
+
+```````````````````````````````` example
+[foo]: /url
+"title" ok
+
+[foo]
+.
+Document scope=1:1..4:5 children=3
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+├── Paragraph scope=2:1..2:10 children=1
+│   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
+└── Paragraph scope=4:1..4:5 children=1
+    └── LinkReference scope=4:1..4:5 label="foo" form=shortcut children=1
+        └── Text scope=4:2..4:4 literal="foo" children=0
+````````````````````````````````

@@ -2282,7 +2282,13 @@ markdown_core_bufsize markdown_core_parse_reference_inline(
     skip_spaces(&subj);
     if (!skip_line_end(&subj)) {
         if (matchlen) { // try rewinding before title
+            /* The rewound bytes return to the paragraph, so the definition
+             * has no title at all — scalar, map entry, and spans agree
+             * (CommonMark: "This is a link reference definition, but it
+             * has no title"). Upstream cmark-gfm keeps the scanned title
+             * in its map here, a registered deliberate difference. */
             subj.pos = beforetitle;
+            title = markdown_core_chunk_literal("");
             spans->title_start = 0;
             spans->title_end = 0;
             skip_spaces(&subj);
