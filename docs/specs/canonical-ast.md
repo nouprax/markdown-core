@@ -184,7 +184,7 @@ error rather than silently dropping a value.
 | `List` | `flavor: ListFlavor`, `start: Int?`, `tight: Bool`, `items: [ListItem]` | `start` is non-null only for ordered lists |
 | `ListItem` | `checked: Bool?`, `content: [Markup]` | `checked == null` means not a task item; block content |
 | `CodeBlock` | `mode`, `info: String?`, `language: String?`, `literal: String`, `fenced: Bool`, `closed: Bool` | mode is `standalone`; `info` is the complete raw info string; `language` is its first non-whitespace token; indented blocks have `fenced=false, closed=true` |
-| `HTMLBlock` | `literal: String` | raw HTML is preserved |
+| `HTMLBlock` | `comment: Bool`, `literal: String` | raw HTML is preserved; `comment` is true when the literal is one complete comment — after surrounding whitespace it opens with `<!--` and its first `-->` is the terminal bytes — so consumers without an HTML parser can skip comment material; comment-prefixed HTML with a same-line tail is not a comment |
 | `FormulaBlock` | `mode`, `literal: String` | mode is `standalone` |
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
@@ -197,7 +197,7 @@ error rather than silently dropping a value.
 | `SoftBreak` | none | leaf |
 | `LineBreak` | none | leaf |
 | `Code` | `mode`, `literal: String` | mode is `embedded`; leaf |
-| `HTML` | `literal: String` | raw HTML is preserved; leaf |
+| `HTML` | `comment: Bool`, `literal: String` | raw HTML is preserved; leaf; `comment` follows the same one-complete-comment rule as `HTMLBlock` |
 | `Formula` | `mode`, `literal: String` | either mode; leaf |
 | `Emphasis` | `content: [Markup]` | inline content |
 | `Strong` | `content: [Markup]` | inline content |

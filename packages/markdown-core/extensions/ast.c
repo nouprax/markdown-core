@@ -758,6 +758,41 @@ bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool
     return true;
 }
 
+/* One complete comment and nothing else: after surrounding whitespace the
+ * literal opens with `<!--` and the first `-->` in it is the terminal
+ * bytes. Comment-prefixed HTML with a same-line tail (`<!-- a --> tail`)
+ * is not a comment — the bit never lies about trailing bytes — and a
+ * literal that is several comments is html to be read, not skipped. The
+ * classification is a pure function of the literal, so every binding can
+ * derive the same answer from the bytes it already holds. */
+bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comment) {
+    const unsigned char *data;
+    markdown_core_bufsize length;
+    markdown_core_bufsize offset = 0;
+    markdown_core_bufsize close;
+    if (!node || (node->type != MARKDOWN_CORE_NODE_HTML_BLOCK && node->type != MARKDOWN_CORE_NODE_HTML) || !comment) {
+        return false;
+    }
+    data = node->as.literal.data;
+    length = node->as.literal.len;
+    while (length > offset && (data[length - 1] == '\n' || data[length - 1] == ' ' || data[length - 1] == '\t')) {
+        length--;
+    }
+    while (offset < length && (data[offset] == ' ' || data[offset] == '\t')) {
+        offset++;
+    }
+    *comment = false;
+    if (length - offset >= 4 && memcmp(data + offset, "<!--", 4) == 0) {
+        for (close = offset + 1; close + 3 <= length; close++) {
+            if (memcmp(data + close, "-->", 3) == 0) {
+                *comment = close + 3 == length;
+                break;
+            }
+        }
+    }
+    return true;
+}
+
 bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
@@ -1069,10 +1104,17 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, " closed=");
         buffer_cstr(buffer, y ? "true" : "false");
         break;
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_TEXT:
+        markdown_core_node_literal(node, &a);
+        buffer_cstr(buffer, " literal=");
+        buffer_json_string(buffer, a);
+        break;
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_HTML:
         markdown_core_node_literal(node, &a);
+        markdown_core_node_html_comment(node, &x);
+        buffer_cstr(buffer, " comment=");
+        buffer_cstr(buffer, x ? "true" : "false");
         buffer_cstr(buffer, " literal=");
         buffer_json_string(buffer, a);
         break;

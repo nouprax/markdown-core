@@ -188,9 +188,6 @@ static int native_options_from(const markdown_core_parse_options *options) {
     if (options->footnotes) {
         native_options |= MARKDOWN_CORE_OPT_FOOTNOTES;
     }
-    if (options->strip_html_comments) {
-        native_options |= MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS;
-    }
     if (options->directives) {
         native_options |= MARKDOWN_CORE_OPT_DIRECTIVE;
     }

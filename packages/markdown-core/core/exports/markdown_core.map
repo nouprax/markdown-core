@@ -19,6 +19,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_list_item_checked;
     markdown_core_node_code_block_properties;
     markdown_core_node_literal;
+    markdown_core_node_html_comment;
     markdown_core_node_formula_properties;
     markdown_core_node_table_column_count;
     markdown_core_node_table_alignment_at;

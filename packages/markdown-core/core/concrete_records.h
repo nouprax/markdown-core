@@ -273,14 +273,6 @@ typedef enum markdown_core_inline_concrete_kind {
      * BRACKET_CLOSE. The label between them keeps its spelling on the
      * node. */
     MARKDOWN_CORE_INLINE_CONCRETE_FOOTNOTE_OPEN,
-    /** A whole inline `<!--...-->` comment parsed under
-     * MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS: the strip pass deletes its
-     * node after the capture handoff, so the bytes the projection
-     * abandons are recorded at scan time, where the option and the
-     * spelling already decide the outcome. Without the option the node
-     * keeps the exact source bytes and, like all raw HTML, records
-     * nothing. */
-    MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT,
     /** An inline directive's `:name` spelling, colon included, consumed
      * at scan time outside the delimiter engine (the engine records only
      * the label's bracket delimiters). Fully consumed: the name lives on

@@ -510,10 +510,6 @@ markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t
  */
 #define MARKDOWN_CORE_OPT_SMART (1 << 10)
 
-/** Strip HTML comment nodes from the parsed AST.
- */
-#define MARKDOWN_CORE_OPT_STRIP_HTML_COMMENTS (1 << 25)
-
 /** Parse footnotes.
  */
 #define MARKDOWN_CORE_OPT_FOOTNOTES (1 << 13)
