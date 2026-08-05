@@ -55,7 +55,7 @@
                 "packages/markdown-core/core/delimiter.c": {
                     "lines": 79,
                     "functions": 0,
-                    "branches": 164
+                    "branches": 163
                 },
                 "packages/markdown-core/core/houdini.h": {
                     "lines": 0,
