@@ -74,9 +74,9 @@ struct markdown_core_parser {
      * markdown_core_parser_finish reports the whole parse as failed (NULL)
      * instead of returning a silently truncated document. */
     bool oom;
-    /* A concrete marker capture (S_capture_marker) lost its allocation on
-     * the line being processed. Deferred rather than folded into `oom`
-     * immediately: the oom guard between open_new_blocks and
+    /* A concrete marker capture (markdown_core_parser_capture_marker) lost
+     * its allocation on the line being processed. Deferred rather than
+     * folded into `oom` immediately: the oom guard between open_new_blocks and
      * add_text_to_container cuts a line short, and several capture sites
      * sit where that skip would strand parser->current on a block the line
      * already finalized or leave a fenced block without its info line. The
@@ -108,6 +108,11 @@ struct markdown_core_parser {
         markdown_core_bufsize content_offset;
         int line;
         int column;
+        /* The byte offset in the normalized line where the append began —
+         * `column` tab-expands, concrete records do not. The table
+         * extension's look-back header capture maps buffer offsets to
+         * normalized-line record columns through this. */
+        markdown_core_bufsize byte_offset;
     } *line_marks;
     size_t line_mark_count;
     size_t line_mark_capacity;
@@ -126,6 +131,35 @@ bool markdown_core_parser_match_list_item_prefix(
     markdown_core_parser *parser,
     markdown_core_chunk *input,
     markdown_core_node *container
+);
+
+/** Captures one concrete marker record on the node whose ownership region
+ * the marker belongs to (11.1). `column` and `length` are byte extents in
+ * the current normalized line; the record's line is derived here as the
+ * offset from the node's still-absolute start_line. The one capture
+ * funnel for block-phase marker material, core and extensions alike: a
+ * lost record sets parser->capture_lost, which S_process_line folds into
+ * `oom` at the line boundary rather than mid-line (see the field's
+ * comment above). */
+void markdown_core_parser_capture_marker(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    uint8_t kind,
+    markdown_core_bufsize column,
+    markdown_core_bufsize length
+);
+
+/** The look-back variant: identical, but the marker was spelled on
+ * `line` (absolute, same numbering as the live parse) rather than the
+ * line being processed — the table extension recovers a header row from
+ * the paragraph's accumulated content one line after buffering it. */
+void markdown_core_parser_capture_marker_at(
+    markdown_core_parser *parser,
+    markdown_core_node *node,
+    uint8_t kind,
+    int line,
+    markdown_core_bufsize column,
+    markdown_core_bufsize length
 );
 
 #ifdef __cplusplus

@@ -88,7 +88,42 @@ typedef enum markdown_core_concrete_record_kind {
      * (internal spacing included, trailing whitespace not). */
     MARKDOWN_CORE_CONCRETE_THEMATIC_BREAK,
     /** A footnote definition's `[^label]:` opener. */
-    MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER
+    MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER,
+    /** A table's full delimiter row (`| :-: | - |`), first marker byte
+     * through last, on the Table node itself: 11.1 names the delimiter
+     * row the Table's own marker material. Alignments are its decoded
+     * scalars; this is their spelling. */
+    MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW,
+    /** One `|` cell separator of a header or data row, one record per
+     * pipe, on the TableRow that owns the row's marker material. The
+     * delimiter row's pipes live inside TABLE_DELIMITER_ROW instead. */
+    MARKDOWN_CORE_CONCRETE_TABLE_PIPE,
+    /** The backslash of a `\|` escape the table layer collapses while
+     * rebuilding a cell's content buffer. It belongs to the TableCell —
+     * the cell owns the source backing its inline sequence — and it is
+     * block-side because the rebuilt buffer no longer contains the
+     * backslash for an inline record to cover. The surviving `|` is
+     * content, exactly like the escaped character of an inline ESCAPE. */
+    MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE,
+    /** A task item's `[x]`/`[ ]` checkbox trio, on the ListItem whose
+     * checked state it sets. The scanner consumes it wherever it fires —
+     * every firing records, later lines included; trailing spacing is
+     * trivia. */
+    MARKDOWN_CORE_CONCRETE_TASK_MARKER,
+    /** A block directive's name as spelled after its fence colons;
+     * the decoded scalar is the directive name field. */
+    MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME,
+    /** The `[` opening a block directive's label. The label's interior
+     * belongs to the DirectiveLabel child region, so the brackets are
+     * two one-byte records rather than one spanning record. */
+    MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_OPEN,
+    /** The `]` closing a block directive's label. */
+    MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_CLOSE,
+    /** A block directive's `{...}` attribute block, braces included; the
+     * normalized attributes JSON is the decoded scalar, this is its one
+     * source spelling. Absent when the attributes fail to parse, because
+     * the braces then stay literal text. */
+    MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES
 } markdown_core_concrete_record_kind;
 
 typedef struct markdown_core_concrete_record {
@@ -230,7 +265,17 @@ typedef enum markdown_core_inline_concrete_kind {
      * spelling already decide the outcome. Without the option the node
      * keeps the exact source bytes and, like all raw HTML, records
      * nothing. */
-    MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT
+    MARKDOWN_CORE_INLINE_CONCRETE_STRIPPED_COMMENT,
+    /** An inline directive's `:name` spelling, colon included, consumed
+     * at scan time outside the delimiter engine (the engine records only
+     * the label's bracket delimiters). Fully consumed: the name lives on
+     * as the node's scalar, never as text. */
+    MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME,
+    /** An inline directive's `{...}` attribute block, braces included,
+     * when it parses and is consumed in the same scan as the name (the
+     * labeled form's attributes ride the closer's DELIMITER_RUN instead).
+     * Braces that fail to parse stay literal text and get no record. */
+    MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_ATTRIBUTES
 } markdown_core_inline_concrete_kind;
 
 typedef struct markdown_core_inline_concrete_record {

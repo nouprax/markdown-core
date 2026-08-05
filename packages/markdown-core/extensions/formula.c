@@ -333,6 +333,15 @@ static markdown_core_node *try_opening_formula_block(
 
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     formula->block_delim = block_delim;
+    /* `$$` spells two bytes, `\\[` three; the CodeBlock fence precedent,
+     * minus the info record the scanners accept no text for. */
+    markdown_core_parser_capture_marker(
+        parser,
+        node,
+        MARKDOWN_CORE_CONCRETE_FENCE_OPEN,
+        first_nonspace,
+        block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH ? 3 : 2
+    );
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
     return node;
 }
@@ -358,6 +367,13 @@ static int formula_block_matches(
             formula->block_delim
         )) {
         formula->closed = 1;
+        markdown_core_parser_capture_marker(
+            parser,
+            container,
+            MARKDOWN_CORE_CONCRETE_FENCE_CLOSE,
+            first_nonspace,
+            formula->block_delim == FORMULA_BLOCK_DELIM_LATEX_BACKSLASH ? 3 : 2
+        );
         markdown_core_parser_advance_offset(
             parser,
             (char *)input,

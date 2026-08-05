@@ -2538,3 +2538,12 @@ void markdown_core_inline_parser_concrete_reinterpret(
         parser->oom = 1;
     }
 }
+
+void markdown_core_inline_parser_concrete_capture_spelling(
+    markdown_core_inline_parser *parser,
+    uint8_t kind,
+    markdown_core_bufsize start,
+    markdown_core_bufsize end
+) {
+    capture_token(parser, kind, start, end - start, end - start);
+}

@@ -49,6 +49,12 @@ typedef struct {
     int has_label;
     int has_attributes;
     directive_attribute *attributes;
+    /* The raw interior of the `{...}` block when has_attributes — the one
+     * source spelling of the normalized attributes, kept for the concrete
+     * DIRECTIVE_ATTRIBUTES record (braces sit at attr_start-1 and
+     * attr_start+attr_len). */
+    markdown_core_bufsize attr_start;
+    markdown_core_bufsize attr_len;
     markdown_core_bufsize end;
     /* Set when attribute parsing failed from allocation loss rather than
      * invalid syntax; the caller flags the parser instead of silently
@@ -1178,6 +1184,8 @@ static int parse_directive_suffix(
         if (scan_attributes_raw(data, len, pos, &attr_start, &attr_len, &after_attributes) &&
             parse_attributes(mem, data + attr_start, attr_len, &parsed->attributes, &parsed->oom)) {
             parsed->has_attributes = 1;
+            parsed->attr_start = attr_start;
+            parsed->attr_len = attr_len;
             pos = after_attributes;
         } else if (parsed->oom) {
             return 0;
@@ -1343,6 +1351,7 @@ static markdown_core_node *make_name_only_directive(
 ) {
     markdown_core_node *node;
     markdown_core_inline_source_span span;
+    markdown_core_bufsize spelling_start = (markdown_core_bufsize)markdown_core_inline_parser_get_offset(inline_parser);
 
     node = make_directive_node(extension, parser, name, name_len, 0, 0, 0, 0);
     if (!node) {
@@ -1352,6 +1361,16 @@ static markdown_core_node *make_name_only_directive(
         markdown_core_node_free(node);
         return NULL;
     }
+    /* The `:name` spelling this consume just advanced past — the one
+     * sanctioned capture outside the engine funnel; the colon that
+     * triggered the match is an unconditional special char and therefore
+     * already a seam barrier. */
+    markdown_core_inline_parser_concrete_capture_spelling(
+        inline_parser,
+        MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME,
+        spelling_start,
+        end_offset
+    );
 
     node->start_line = span.start_line;
     node->start_column = span.start_column;
@@ -1481,6 +1500,20 @@ static markdown_core_node *match_colon_directive(
             markdown_core_node_free(node);
             return NULL;
         }
+        /* One consume, two spellings: the `:name` through the byte before
+         * `{`, then the whole attribute block braces included. */
+        markdown_core_inline_parser_concrete_capture_spelling(
+            inline_parser,
+            MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_NAME,
+            offset,
+            pos
+        );
+        markdown_core_inline_parser_concrete_capture_spelling(
+            inline_parser,
+            MARKDOWN_CORE_INLINE_CONCRETE_DIRECTIVE_ATTRIBUTES,
+            pos,
+            end
+        );
         node->start_line = span.start_line;
         node->start_column = span.start_column;
         node->end_line = span.end_line;
@@ -1609,6 +1642,45 @@ static markdown_core_node *open_directive_block(
     directive->closed = (colon_count == 2);
     directive->consume_line = 1;
 
+    /* Concrete capture, in the open line's spelled order: the colon run,
+     * the name, the label's two brackets (the label's interior is the
+     * DirectiveLabel child's own region), and the attribute block braces
+     * included. Attributes that failed to parse never get here — the
+     * leftover braces fail the blank-rest-of-line check above. */
+    markdown_core_parser_capture_marker(parser, node, MARKDOWN_CORE_CONCRETE_FENCE_OPEN, first_nonspace, colon_count);
+    markdown_core_parser_capture_marker(
+        parser,
+        node,
+        MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME,
+        parsed.name_start,
+        parsed.name_len
+    );
+    if (parsed.has_label) {
+        markdown_core_parser_capture_marker(
+            parser,
+            node,
+            MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_OPEN,
+            parsed.label_start - 1,
+            1
+        );
+        markdown_core_parser_capture_marker(
+            parser,
+            node,
+            MARKDOWN_CORE_CONCRETE_DIRECTIVE_LABEL_CLOSE,
+            parsed.label_start + parsed.label_len,
+            1
+        );
+    }
+    if (parsed.has_attributes) {
+        markdown_core_parser_capture_marker(
+            parser,
+            node,
+            MARKDOWN_CORE_CONCRETE_DIRECTIVE_ATTRIBUTES,
+            parsed.attr_start - 1,
+            parsed.attr_len + 2
+        );
+    }
+
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
     free_parsed_directive(parser->mem, &parsed);
@@ -1645,6 +1717,13 @@ static int directive_block_matches(
         )) {
         directive->closed = 1;
         directive->consume_line = 1;
+        markdown_core_parser_capture_marker(
+            parser,
+            container,
+            MARKDOWN_CORE_CONCRETE_FENCE_CLOSE,
+            first_nonspace,
+            colon_count
+        );
         markdown_core_parser_advance_offset(
             parser,
             (char *)input,
