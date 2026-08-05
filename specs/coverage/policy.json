@@ -28,9 +28,9 @@
             "minimumMeasuredFiles": 46,
             "unpinned": {
                 "packages/markdown-core/core/blocks.c": {
-                    "lines": 64,
+                    "lines": 60,
                     "functions": 2,
-                    "branches": 87
+                    "branches": 86
                 },
                 "packages/markdown-core/core/buffer.c": {
                     "lines": 10,

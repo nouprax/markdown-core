@@ -49,10 +49,26 @@ void markdown_core_parse_inlines_from(
     markdown_core_bufsize start
 );
 
+/** Where a parsed reference definition's spellings sit in the input chunk,
+ * so the caller can capture them as concrete records: [0, label_end)
+ * spells `[label]:`, [url_start, url_end) the destination exactly as
+ * written (angle brackets included), and [title_start, title_end) the
+ * title with its delimiters — both zero when the definition carries none,
+ * including when a trailing title candidate was rewound back into the
+ * paragraph. Meaningful only when the parse returns nonzero. */
+typedef struct markdown_core_reference_spans {
+    markdown_core_bufsize label_end;
+    markdown_core_bufsize url_start;
+    markdown_core_bufsize url_end;
+    markdown_core_bufsize title_start;
+    markdown_core_bufsize title_end;
+} markdown_core_reference_spans;
+
 markdown_core_bufsize markdown_core_parse_reference_inline(
     markdown_core_mem *mem,
     markdown_core_chunk *input,
-    markdown_core_map *refmap
+    markdown_core_map *refmap,
+    markdown_core_reference_spans *spans
 );
 
 #ifdef __cplusplus

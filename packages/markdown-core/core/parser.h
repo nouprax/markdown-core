@@ -113,10 +113,33 @@ struct markdown_core_parser {
          * extension's look-back header capture maps buffer offsets to
          * normalized-line record columns through this. */
         markdown_core_bufsize byte_offset;
+        /* Stand-in spaces the append wrote before the line's own bytes: a
+         * lazy continuation whose matched prefixes stopped inside a tab
+         * buffers the tab's remaining columns as spaces, so the buffer
+         * holds `pad` spaces where the normalized line holds the one tab
+         * byte at `byte_offset`. Zero everywhere else — the non-lazy
+         * paragraph paths advance byte-wise to first_nonspace, which
+         * clears the partial-tab state before the append. */
+        int pad;
     } *line_marks;
     size_t line_mark_count;
     size_t line_mark_capacity;
 };
+
+/** Maps the content-buffer extent [x0, x1) of the line `mark` records onto
+ * that normalized source line: `*column` receives the record column and the
+ * return value the record length. The map is affine at slope one except for
+ * the mark's stand-in pad: an extent that begins inside the pad begins on
+ * the tab byte itself, and every offset past the pad sits one tab byte —
+ * not `pad` spaces — after `byte_offset`. `x1` never lands inside the pad,
+ * because every extent a caller maps ends on a marker or spelling byte and
+ * the pad holds only the append's stand-in spaces. */
+markdown_core_bufsize markdown_core_line_mark_extent(
+    const struct markdown_core_line_mark *mark,
+    markdown_core_bufsize x0,
+    markdown_core_bufsize x1,
+    markdown_core_bufsize *column
+);
 
 /** Returns a parser whose parse ended (root handed off or freed) to its
  * post-construction state for another parse, keeping the line buffers'

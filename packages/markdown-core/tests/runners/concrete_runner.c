@@ -2713,7 +2713,12 @@ static void sweep_free(markdown_core_mem *mem, void *pointer) {
     free(pointer);
 }
 
-static const char SWEEP_TEXT[] = "# head *em* ##\n"
+/* The opening definition is the document's first paragraph line on purpose:
+ * its line mark is the parse's first mark allocation, so one sweep ordinal
+ * lands on it and drives the harvest's marks-lost capture skip. */
+static const char SWEEP_TEXT[] = "[sw]: /s \"sq\"\n"
+                                 "\n"
+                                 "# head *em* ##\n"
                                  "\n"
                                  "> one\n"
                                  "> two\n"
