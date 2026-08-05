@@ -1,4 +1,4 @@
-Document scope=1:1..10:15 children=5
+Document scope=1:1..14:9 children=7
 ├── Paragraph scope=1:1..1:33 children=4
 │   ├── Text scope=1:1..1:7 literal="before " children=0
 │   ├── HTML scope=1:8..1:22 comment=true literal="<!-- inline -->" children=0
@@ -7,4 +7,6 @@ Document scope=1:1..10:15 children=5
 ├── HTMLBlock scope=3:1..3:10 comment=true literal="<!-- block\ncomment -->\n" children=0
 ├── HTMLBlock scope=6:1..5:0 comment=false literal="<!-- lead --> tail text\n" children=0
 ├── HTMLBlock scope=8:1..7:0 comment=false literal="<!-- a --> mid <!-- b -->\n" children=0
-└── HTMLBlock scope=10:1..10:15 comment=false literal="<div>html</div>\n" children=0
+├── HTMLBlock scope=10:1..10:15 comment=false literal="<div>html</div>\n" children=0
+├── HTMLBlock scope=12:3..11:0 comment=true literal="  <!-- pad -->  \t\n" children=0
+└── HTMLBlock scope=14:1..14:9 comment=false literal="<!-- open\n" children=0

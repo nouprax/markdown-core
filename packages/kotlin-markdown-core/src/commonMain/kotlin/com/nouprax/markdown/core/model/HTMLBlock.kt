@@ -1,4 +1,9 @@
+@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmMultifileClass
+
 package com.nouprax.markdown.core
+
+import kotlin.jvm.JvmSynthetic
 
 public class HTMLBlock internal constructor(
     override val id: MarkupID,
@@ -21,6 +26,7 @@ public class HTMLBlock internal constructor(
  * `-->` is the terminal bytes. Comment-prefixed HTML with a same-line tail is
  * not a comment. Derived purely from the literal, matching the C facade's
  * markdown_core_node_html_comment. */
+@JvmSynthetic
 internal fun htmlLiteralIsComment(literal: String): Boolean {
     var end = literal.length
     while (end > 0 && (literal[end - 1] == '\n' || literal[end - 1] == ' ' || literal[end - 1] == '\t')) end--

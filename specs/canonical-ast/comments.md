@@ -8,3 +8,7 @@ comment -->
 <!-- a --> mid <!-- b -->
 
 <div>html</div>
+
+  <!-- pad -->  	
+
+<!-- open
