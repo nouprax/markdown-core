@@ -1510,7 +1510,7 @@ static const capture_source SHAPE_SOURCES[] = {
      0},
     {"table_lazy_tab",
      "> > x\n"
-     ">\t| a |\n"
+     ">\t| a\\|b |\n"
      "> > | - | - |\n",
      0},
 };
@@ -2248,16 +2248,18 @@ static int case_capture_shape(void) {
         markdown_core_document_free(document);
     }
     /* The same mid-tab lazy line as a look-back table header: the pipes'
-     * columns must land on the source line's own bytes — the buffered
-     * stand-in spaces are two bytes where the source holds one tab — and
-     * the split-off lead paragraph stays recordless (its records are the
-     * recovery slice's deferred problem, stated in the plan). */
+     * and the cell escape's columns must land on the source line's own
+     * bytes — the buffered stand-in spaces are two bytes where the source
+     * holds one tab — and the split-off lead paragraph stays recordless
+     * (its records are the recovery slice's deferred problem, stated in
+     * the plan). */
     {
         static const expected_record LAZYTAB_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 4, 9}};
         static const expected_record LAZYTAB_PIPES[] = {
             {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 6, 1}
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 9, 1}
         };
+        static const expected_record LAZYTAB_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 1, 5, 1}};
         const capture_source *lazy = &SHAPE_SOURCES[24];
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
@@ -2275,6 +2277,12 @@ static int case_capture_shape(void) {
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZYTAB_PIPES,
             2
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header cell escape",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            LAZYTAB_ESCAPE,
+            1
         );
         failed |= expect_records(
             "capture_shape: mid-tab split-off lead paragraph",
