@@ -118,9 +118,9 @@
                     "branches": 2
                 },
                 "packages/markdown-core/core/scanners.c": {
-                    "lines": 6084,
+                    "lines": 6053,
                     "functions": 0,
-                    "branches": 6170
+                    "branches": 6157
                 },
                 "packages/markdown-core/core/text.c": {
                     "lines": 9,

@@ -46,6 +46,15 @@
  *                        silently thinner tree: under single-shot
  *                        allocation failure at every ordinal, the parse
  *                        either fails cleanly or captures everything.
+ *
+ * The recovery gates hold 14.1.10's boundary: unmatched core Markdown and
+ * unmatched island openers stay literal (recovery_literal_fallback — no
+ * guessed structure, byte-exact Text reconstruction, every surviving
+ * inline record an unconsumed candidate), while a committed bounded
+ * island recovers only inside its own termination rule or closing parent,
+ * preserves its authored source, and never consumes the unrelated region
+ * that follows (recovery_island_boundary — eligibility bound to each
+ * form's commit point, never its node kind).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -4116,6 +4125,374 @@ typedef struct concrete_case {
     int (*run)(void);
 } concrete_case;
 
+/* --- recovery gates (14.1.10) ------------------------------------------- */
+
+/* Nodes of `type` in the subtree rooted at `node`, the node included. */
+static size_t count_kind(const markdown_core_node *node, uint16_t type) {
+    const markdown_core_node *child;
+    size_t total = node->type == type ? 1 : 0;
+    for (child = node->first_child; child; child = child->next) {
+        total += count_kind(child, type);
+    }
+    return total;
+}
+
+/* Concatenates the subtree's Text literals, a newline per SoftBreak — the
+ * literal-content observable: when nothing may be guessed, every authored
+ * byte reappears here in order. */
+static void concat_inline_text(const markdown_core_node *node, markdown_core_strbuf *out) {
+    const markdown_core_node *child;
+    if (node->type == MARKDOWN_CORE_NODE_TEXT) {
+        markdown_core_strbuf_put(out, node->as.literal.data, node->as.literal.len);
+    } else if (node->type == MARKDOWN_CORE_NODE_SOFT_BREAK) {
+        markdown_core_strbuf_putc(out, '\n');
+    }
+    for (child = node->first_child; child; child = child->next) {
+        concat_inline_text(child, out);
+    }
+}
+
+/* Every inline record in the subtree must be an unconsumed candidate: a
+ * delimiter run or bracket opener whose head and tail are still zero. Any
+ * other kind, or any consumed byte, means the parse turned an unmatched
+ * candidate into structure. */
+static int expect_unconsumed_runs(const char *context, const markdown_core_node *node) {
+    const markdown_core_node *child;
+    size_t count = 0;
+    const markdown_core_inline_concrete_record *records = markdown_core_node_inline_concrete_records(node, &count);
+    size_t i;
+    int failed = 0;
+    for (i = 0; i < count; i++) {
+        if ((records[i].kind != MARKDOWN_CORE_INLINE_CONCRETE_DELIMITER_RUN &&
+             records[i].kind != MARKDOWN_CORE_INLINE_CONCRETE_BRACKET_OPEN) ||
+            records[i].head != 0 || records[i].tail != 0) {
+            fprintf(
+                stderr,
+                "%s: record %zu {kind %u head %u tail %u} is consumed markup in literal fallback\n",
+                context,
+                i,
+                records[i].kind,
+                records[i].head,
+                records[i].tail
+            );
+            failed = 1;
+        }
+    }
+    for (child = node->first_child; child; child = child->next) {
+        failed |= expect_unconsumed_runs(context, child);
+    }
+    return failed;
+}
+
+/* 14.1.10 clause (a): unmatched core Markdown and unmatched island openers
+ * become literal content — no recovery structure, no guessed pairing, no
+ * consumed markup, every authored byte in the Text spine. The engine has no
+ * MissingToken/UnexpectedToken/ErrorRegion kinds to count, so the gate pins
+ * the observables that adding any of them (or any structure-guessing) would
+ * move: forbidden node kinds at zero, byte-exact literal reconstruction,
+ * and every surviving inline record an unconsumed candidate. */
+static int case_recovery_literal_fallback(void) {
+    typedef struct literal_fixture {
+        const char *name;
+        const char *text;
+        const char *expected;
+        uint16_t forbidden[4];
+    } literal_fixture;
+    static const literal_fixture FIXTURES[] = {
+        {"emphasis",
+         "*a and **b and __c\n",
+         "*a and **b and __c",
+         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG, 0, 0}},
+        {"brackets",
+         "[foo and ![bar and a] end\n",
+         "[foo and ![bar and a] end",
+         {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_IMAGE, 0, 0}},
+        {"code_span", "`tick and ``run\n", "`tick and ``run", {MARKDOWN_CORE_NODE_CODE, 0, 0, 0}},
+        {"angle", "<notag and < loose\n", "<notag and < loose", {MARKDOWN_CORE_NODE_HTML, 0, 0, 0}},
+        {"formula_inline",
+         "$x and $$y and \\\\(z end\n",
+         "$x and $$y and \\\\(z end",
+         {MARKDOWN_CORE_NODE_FORMULA, 0, 0, 0}},
+        {"cross_link",
+         "[[target and ![[embed end\n",
+         "[[target and ![[embed end",
+         {MARKDOWN_CORE_NODE_CROSS_LINK, MARKDOWN_CORE_NODE_EMBED, 0, 0}},
+        {"footnote_ref",
+         "[^x unclosed and [^y] undefined\n",
+         "[^x unclosed and [^y] undefined",
+         {MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE, MARKDOWN_CORE_NODE_LINK, 0, 0}},
+        {"strikethrough", "~~open and ~odd\n", "~~open and ~odd", {MARKDOWN_CORE_NODE_STRIKETHROUGH, 0, 0, 0}},
+        {"across_lines",
+         "*a\nstill *b\n",
+         "*a\nstill *b",
+         {MARKDOWN_CORE_NODE_EMPHASIS, MARKDOWN_CORE_NODE_STRONG, 0, 0}},
+    };
+    markdown_core_parse_options options = capture_options();
+    int failed = 0;
+    size_t f;
+    for (f = 0; f < sizeof(FIXTURES) / sizeof(FIXTURES[0]); f++) {
+        const literal_fixture *fixture = &FIXTURES[f];
+        capture_source source = {fixture->name, fixture->text, strlen(fixture->text), false};
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        size_t k;
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)fixture->text, strlen(fixture->text), &options, NULL);
+        if (!document) {
+            markdown_core_strbuf_free(&text);
+            return -1;
+        }
+        for (k = 0; k < 4 && fixture->forbidden[k]; k++) {
+            if (count_kind(markdown_core_document_root(document), fixture->forbidden[k]) != 0) {
+                fprintf(stderr, "%s: literal fallback produced a %u node\n", fixture->name, fixture->forbidden[k]);
+                failed = 1;
+            }
+        }
+        concat_inline_text(markdown_core_document_root(document), &text);
+        if (text.size != strlen(fixture->expected) || memcmp(text.ptr, fixture->expected, text.size) != 0) {
+            fprintf(
+                stderr,
+                "%s: literal reconstruction is \"%.*s\", expected \"%s\"\n",
+                fixture->name,
+                (int)text.size,
+                text.ptr,
+                fixture->expected
+            );
+            failed = 1;
+        }
+        failed |= expect_unconsumed_runs(fixture->name, markdown_core_document_root(document));
+        if (tree_record_total(markdown_core_document_root(document)) != 0) {
+            fprintf(stderr, "%s: literal fallback captured block records\n", fixture->name);
+            failed = 1;
+        }
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    return failed ? -1 : 0;
+}
+
+/* 14.1.10 clause (b): a committed bounded island recovers only inside its
+ * own boundary — its grammar's termination rule, or the parent container
+ * that closes it — preserves all authored source, and never consumes an
+ * unrelated following region. Eligibility binds to the form's commit
+ * point: a malformed opener line never commits and stays a paragraph; the
+ * inline directive's name form commits at scan and stands while its
+ * unclosed label falls back around it. */
+static int case_recovery_island_boundary(void) {
+    markdown_core_parse_options options = capture_options();
+    int failed = 0;
+
+    /* An unclosed fence absorbs every later line — headings, quotes — as
+     * its own literal, to EOF. That is its termination rule, and every
+     * authored byte is in the literal. */
+    {
+        static const char TEXT[] = "```\n# h\n> q\n";
+        static const char BODY[] = "# h\n> q\n";
+        static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3}};
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *code;
+        if (!document) {
+            return -1;
+        }
+        code = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
+        if (!code || code->as.code.fence_closed || code->as.code.literal.len != sizeof(BODY) - 1 ||
+            memcmp(code->as.code.literal.data, BODY, sizeof(BODY) - 1) != 0) {
+            fprintf(stderr, "island_boundary: unclosed fence did not keep its authored body\n");
+            failed = 1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE) != 0) {
+            fprintf(stderr, "island_boundary: unclosed fence let a later construct escape\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed fence records", code, OPEN_ONLY, 1);
+        markdown_core_document_free(document);
+    }
+    /* Same rule for the $$ island, with the leading paragraph untouched. */
+    {
+        static const char TEXT[] = "before\n\n$$\nx + y\n# not a heading\n";
+        static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *formula;
+        const char *literal;
+        if (!document) {
+            return -1;
+        }
+        formula = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0);
+        literal = formula ? markdown_core_extensions_get_formula_literal((markdown_core_node *)formula) : NULL;
+        if (!literal || strcmp(literal, "x + y\n# not a heading") != 0) {
+            fprintf(stderr, "island_boundary: unclosed formula block did not keep its authored body\n");
+            failed = 1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING) != 0) {
+            fprintf(stderr, "island_boundary: unclosed formula let a heading escape\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed formula records", formula, OPEN_ONLY, 1);
+        markdown_core_document_free(document);
+    }
+    /* The island's boundary is also its parent's: a quote-nested unclosed
+     * $$ ends where the quote ends, and the following unrelated region is
+     * not consumed — same node, same literal, same sibling. */
+    {
+        static const char TEXT[] = "> $$\n> a\n\nafter\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        const markdown_core_node *quote;
+        const markdown_core_node *formula;
+        const char *literal;
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        quote = root->first_child;
+        formula = quote ? quote->first_child : NULL;
+        literal = formula && formula->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK
+                      ? markdown_core_extensions_get_formula_literal((markdown_core_node *)formula)
+                      : NULL;
+        if (!quote || quote->type != MARKDOWN_CORE_NODE_BLOCK_QUOTE || !literal || strcmp(literal, "a") != 0 ||
+            formula->next != NULL) {
+            fprintf(stderr, "island_boundary: quote-bounded formula did not stop at its container\n");
+            failed = 1;
+        }
+        if (!quote || !quote->next || quote->next->type != MARKDOWN_CORE_NODE_PARAGRAPH || quote->next->next) {
+            fprintf(stderr, "island_boundary: the region after the bounded island changed\n");
+            failed = 1;
+        } else {
+            concat_inline_text(quote->next, &text);
+            if (text.size != 5 || memcmp(text.ptr, "after", 5) != 0) {
+                fprintf(stderr, "island_boundary: the following region's content changed\n");
+                failed = 1;
+            }
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* An unclosed ::: container re-parents parsed blocks — recovery keeps
+     * the children structured, unlike the raw-absorbing fences — and the
+     * close-fence record exists exactly when the source spells one. */
+    {
+        static const char TEXT_UNCLOSED[] = ":::note\nchild para\n## child heading\n";
+        static const char TEXT_CLOSED[] = ":::note\nchild para\n## child heading\n:::\nafter\n";
+        static const expected_record DIR_UNCLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4}
+        };
+        static const expected_record DIR_CLOSED[] = {
+            {MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3},
+            {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4},
+            {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 3}
+        };
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1, &options, NULL);
+        const markdown_core_node *directive;
+        if (!document) {
+            return -1;
+        }
+        directive = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, 0);
+        if (!directive || count_kind(directive, MARKDOWN_CORE_NODE_PARAGRAPH) != 1 ||
+            count_kind(directive, MARKDOWN_CORE_NODE_HEADING) != 1) {
+            fprintf(stderr, "island_boundary: unclosed directive did not re-parent parsed children\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: unclosed directive records", directive, DIR_UNCLOSED, 2);
+        markdown_core_document_free(document);
+
+        document = markdown_core_document_parse((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1, &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        directive = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, 0);
+        failed |= expect_records("island_boundary: closed directive records", directive, DIR_CLOSED, 3);
+        if (!directive || !directive->next || directive->next->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            fprintf(stderr, "island_boundary: the closed directive did not release the following region\n");
+            failed = 1;
+        }
+        markdown_core_document_free(document);
+    }
+    /* Commit-point eligibility, block side: a malformed opener line never
+     * commits — no island, no recovery, the line is paragraph text. */
+    {
+        static const char TEXT[] = ":::note[unclosed\n$$ trailing\n";
+        static const char EXPECTED[] = ":::note[unclosed\n$$ trailing";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        if (count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE) != 0 ||
+            count_kind(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA) != 0) {
+            fprintf(stderr, "island_boundary: an uncommitted opener line produced an island\n");
+            failed = 1;
+        }
+        concat_inline_text(markdown_core_document_root(document), &text);
+        if (text.size != sizeof(EXPECTED) - 1 || memcmp(text.ptr, EXPECTED, text.size) != 0) {
+            fprintf(stderr, "island_boundary: the uncommitted opener lines lost bytes\n");
+            failed = 1;
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* Commit-point eligibility, inline side: the directive's name form is
+     * the one inline commit before a closer. The committed name stands,
+     * the unclosed label falls back to a literal `[`, and the label text
+     * parses as ordinary inlines around it. */
+    {
+        static const char TEXT[] = ":name[unclosed rest *em*\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        if (count_kind(root, MARKDOWN_CORE_NODE_DIRECTIVE) != 1 ||
+            count_kind(root, MARKDOWN_CORE_NODE_DIRECTIVE_LABEL) != 0 ||
+            count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS) != 1) {
+            fprintf(stderr, "island_boundary: the inline name commit did not hold its boundary\n");
+            failed = 1;
+        }
+        concat_inline_text(root, &text);
+        if (text.size != 17 || memcmp(text.ptr, "[unclosed rest em", 17) != 0) {
+            fprintf(stderr, "island_boundary: the fallen-back label text changed\n");
+            failed = 1;
+        }
+        markdown_core_strbuf_free(&text);
+        markdown_core_document_free(document);
+    }
+    /* A footnote definition's boundary is the dedent rule: the blank line
+     * plus unindented text ends it, and the following region is a sibling
+     * paragraph, not a child. */
+    {
+        static const char TEXT[] = "[^l]: def\n\nout\n";
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *root;
+        const markdown_core_node *definition;
+        if (!document) {
+            return -1;
+        }
+        root = markdown_core_document_root(document);
+        definition = root->first_child;
+        if (!definition || definition->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION ||
+            count_kind(definition, MARKDOWN_CORE_NODE_PARAGRAPH) != 1 || !definition->next ||
+            definition->next->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            fprintf(stderr, "island_boundary: the footnote definition's dedent boundary moved\n");
+            failed = 1;
+        }
+        markdown_core_document_free(document);
+    }
+    return failed ? -1 : 0;
+}
+
 static const concrete_case CASES[] = {
     {"region_partition", case_region_partition},
     {"region_of_walk", case_region_of_walk},
@@ -4130,6 +4507,8 @@ static const concrete_case CASES[] = {
     {"inline_seam_barrier", case_inline_seam_barrier},
     {"inline_equivalence", case_inline_equivalence},
     {"inline_growth_ceiling", case_inline_growth_ceiling},
+    {"recovery_literal_fallback", case_recovery_literal_fallback},
+    {"recovery_island_boundary", case_recovery_island_boundary},
 };
 
 int main(int argc, char **argv) {
