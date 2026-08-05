@@ -546,7 +546,7 @@ Document scope=1:1..5:16 children=2
             ├── Text scope=3:3..3:3 literal="b" children=0
             ├── SoftBreak scope=0:0..0:0 children=0
             ├── Text scope=4:3..4:9 literal="*(*foo)" children=0
-            ├── HTML scope=4:10..4:21 literal="<!-- foo -->" children=0
+            ├── HTML scope=4:10..4:21 comment=true literal="<!-- foo -->" children=0
             ├── Emphasis scope=4:22..4:26 children=1
             │   └── Text scope=4:23..4:25 literal="bar" children=0
             ├── SoftBreak scope=0:0..0:0 children=0
