@@ -69,7 +69,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     }
     options->smart_punctuation = true;
     options->footnotes = true;
-    options->strip_html_comments = true;
     options->tables = true;
     options->strikethrough = true;
     options->autolinks = true;
@@ -775,10 +774,15 @@ bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comme
     }
     data = node->as.literal.data;
     length = node->as.literal.len;
-    while (length > offset && (data[length - 1] == '\n' || data[length - 1] == ' ' || data[length - 1] == '\t')) {
+    /* Neither trim can run off the literal: an HTML literal always holds
+     * the non-whitespace `<` that opened it, so both walks stop there at
+     * the latest. Leading trim is spaces only — a block whose first line
+     * leads with a tab sits at column four and parses as indented code,
+     * never an HTML block, and an inline literal starts at its `<`. */
+    while (data[length - 1] == '\n' || data[length - 1] == ' ' || data[length - 1] == '\t') {
         length--;
     }
-    while (offset < length && (data[offset] == ' ' || data[offset] == '\t')) {
+    while (data[offset] == ' ') {
         offset++;
     }
     *comment = false;

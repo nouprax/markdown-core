@@ -26,7 +26,6 @@ class ConcurrencyJvmTest {
                 ParseOptions(
                     smartPunctuation = false,
                     footnotes = false,
-                    stripHTMLComments = false,
                     tables = false,
                     strikethrough = false,
                     autolinks = false,

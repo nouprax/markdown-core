@@ -61,7 +61,6 @@ const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((fiel
 const optionNames = [
     "smartPunctuation",
     "footnotes",
-    "stripHTMLComments",
     "tables",
     "strikethrough",
     "autolinks",
@@ -117,7 +116,9 @@ const stateValidators = {
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    "escaping.json": (tree) => /attributes="\{\\"/.test(tree)
+    "escaping.json": (tree) => /attributes="\{\\"/.test(tree),
+    "htmlComment.true": (tree) => / comment=true literal=/.test(tree),
+    "htmlComment.false": (tree) => / comment=false literal=/.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),

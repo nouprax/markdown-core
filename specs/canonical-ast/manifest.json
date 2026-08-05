@@ -88,7 +88,9 @@
             "children.populated",
             "escaping.empty-string",
             "escaping.newline",
-            "escaping.json"
+            "escaping.json",
+            "htmlComment.true",
+            "htmlComment.false"
         ],
         "orders": [
             "document.source-order",
@@ -105,7 +107,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -157,7 +158,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -225,7 +225,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -254,7 +253,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -312,7 +310,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -335,7 +332,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -381,7 +377,6 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
-                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
@@ -394,6 +389,34 @@
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Code", "HTML", "Emphasis"],
                 "states": ["placement.embedded", "scope.positive", "children.empty", "children.populated"],
+                "orders": ["document.source-order"]
+            }
+        },
+        {
+            "name": "comments",
+            "input": "comments.md",
+            "expected": "comments.ast",
+            "parseOptions": {
+                "smartPunctuation": true,
+                "footnotes": true,
+                "tables": true,
+                "strikethrough": true,
+                "autolinks": true,
+                "taskLists": true,
+                "formulas": true,
+                "directives": true,
+                "crossLinks": true,
+                "embeds": true
+            },
+            "coverage": {
+                "kinds": ["Document", "Paragraph", "Text", "HTML", "HTMLBlock"],
+                "states": [
+                    "htmlComment.true",
+                    "htmlComment.false",
+                    "scope.positive",
+                    "children.empty",
+                    "children.populated"
+                ],
                 "orders": ["document.source-order"]
             }
         }

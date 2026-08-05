@@ -544,7 +544,6 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
     bool *fields[] = {
         &options.smart_punctuation,
         &options.footnotes,
-        &options.strip_html_comments,
         &options.tables,
         &options.strikethrough,
         &options.autolinks,

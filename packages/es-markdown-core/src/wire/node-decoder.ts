@@ -1,4 +1,5 @@
 import type { Document } from "../model/document.js";
+import { htmlLiteralIsComment } from "../model/html-comment.js";
 import type { Markup } from "../model/markup.js";
 import type { MarkupID } from "../model/markup-id.js";
 import type { TableCell, TableRow } from "../model/table.js";
@@ -265,8 +266,10 @@ export class NodeDecoder {
                 };
             case "codeBlock":
                 return this.copyCodeBlock(node, id, revision);
-            case "htmlBlock":
-                return { kind, id, revision, literal: this.requiredString(node, stringField.literal) };
+            case "htmlBlock": {
+                const literal = this.requiredString(node, stringField.literal);
+                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+            }
             case "formulaBlock": {
                 const mode = this.placement(this.native.es_node_formula_mode(node));
                 if (mode !== "standalone") throw new Error("native parser returned an embedded formula block");
@@ -303,8 +306,10 @@ export class NodeDecoder {
                     mode: "embedded",
                     literal: this.requiredString(node, stringField.literal)
                 };
-            case "html":
-                return { kind, id, revision, literal: this.requiredString(node, stringField.literal) };
+            case "html": {
+                const literal = this.requiredString(node, stringField.literal);
+                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+            }
             case "formula":
                 return {
                     kind,

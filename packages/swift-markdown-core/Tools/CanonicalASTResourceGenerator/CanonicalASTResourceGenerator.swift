@@ -119,7 +119,6 @@ private struct CanonicalCoverage: Decodable {
 private struct CanonicalParseOptions: Codable {
     let smartPunctuation: Bool
     let footnotes: Bool
-    let stripHTMLComments: Bool
     let tables: Bool
     let strikethrough: Bool
     let autolinks: Bool
@@ -132,7 +131,6 @@ private struct CanonicalParseOptions: Codable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case smartPunctuation
         case footnotes
-        case stripHTMLComments
         case tables
         case strikethrough
         case autolinks
@@ -158,7 +156,6 @@ private struct CanonicalParseOptions: Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         smartPunctuation = try values.decode(Bool.self, forKey: .smartPunctuation)
         footnotes = try values.decode(Bool.self, forKey: .footnotes)
-        stripHTMLComments = try values.decode(Bool.self, forKey: .stripHTMLComments)
         tables = try values.decode(Bool.self, forKey: .tables)
         strikethrough = try values.decode(Bool.self, forKey: .strikethrough)
         autolinks = try values.decode(Bool.self, forKey: .autolinks)

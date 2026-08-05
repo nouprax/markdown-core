@@ -66,15 +66,14 @@ markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **err
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = (flags & (1u << 0)) != 0;
     options.footnotes = (flags & (1u << 1)) != 0;
-    options.strip_html_comments = (flags & (1u << 2)) != 0;
-    options.tables = (flags & (1u << 3)) != 0;
-    options.strikethrough = (flags & (1u << 4)) != 0;
-    options.autolinks = (flags & (1u << 5)) != 0;
-    options.task_lists = (flags & (1u << 6)) != 0;
-    options.formulas = (flags & (1u << 7)) != 0;
-    options.directives = (flags & (1u << 8)) != 0;
-    options.cross_links = (flags & (1u << 9)) != 0;
-    options.embeds = (flags & (1u << 10)) != 0;
+    options.tables = (flags & (1u << 2)) != 0;
+    options.strikethrough = (flags & (1u << 3)) != 0;
+    options.autolinks = (flags & (1u << 4)) != 0;
+    options.task_lists = (flags & (1u << 5)) != 0;
+    options.formulas = (flags & (1u << 6)) != 0;
+    options.directives = (flags & (1u << 7)) != 0;
+    options.cross_links = (flags & (1u << 8)) != 0;
+    options.embeds = (flags & (1u << 9)) != 0;
     return markdown_core_session_open(&options, error);
 }
 

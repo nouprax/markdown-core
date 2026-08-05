@@ -448,7 +448,6 @@ booleans:
 | --- | --- |
 | `smartPunctuation` | `true` |
 | `footnotes` | `true` |
-| `stripHTMLComments` | `true` |
 | `tables` | `true` |
 | `strikethrough` | `true` |
 | `autolinks` | `true` |

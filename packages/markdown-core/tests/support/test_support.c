@@ -308,8 +308,6 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
         options->smart_punctuation = true;
     } else if (strcmp(name, "footnotes") == 0) {
         options->footnotes = true;
-    } else if (strcmp(name, "strip-html-comments") == 0) {
-        options->strip_html_comments = true;
     } else if (strcmp(name, "table") == 0 || strcmp(name, "tables") == 0) {
         options->tables = true;
     } else if (strcmp(name, "strikethrough") == 0) {

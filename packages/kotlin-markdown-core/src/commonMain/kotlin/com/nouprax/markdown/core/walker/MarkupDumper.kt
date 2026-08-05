@@ -115,7 +115,7 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
         )
 
     override fun visit(node: HTMLBlock): DumpRecord =
-        record("HTMLBlock", fields = listOf("literal=${jsonString(node.literal)}"))
+        record("HTMLBlock", fields = listOf("comment=${node.comment}", "literal=${jsonString(node.literal)}"))
 
     override fun visit(node: FormulaBlock): DumpRecord =
         record(
@@ -167,7 +167,8 @@ private class DumpVisitor : MarkupVisitor<DumpRecord> {
             fields = listOf("mode=${node.mode.token()}", "literal=${jsonString(node.literal)}"),
         )
 
-    override fun visit(node: HTML): DumpRecord = record("HTML", fields = listOf("literal=${jsonString(node.literal)}"))
+    override fun visit(node: HTML): DumpRecord =
+        record("HTML", fields = listOf("comment=${node.comment}", "literal=${jsonString(node.literal)}"))
 
     override fun visit(node: Formula): DumpRecord =
         record(

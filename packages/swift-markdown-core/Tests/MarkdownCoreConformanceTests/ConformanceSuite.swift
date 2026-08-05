@@ -200,7 +200,6 @@ private struct CanonicalCase: Decodable {
 private struct CanonicalParseOptions: Decodable {
     let smartPunctuation: Bool
     let footnotes: Bool
-    let stripHTMLComments: Bool
     let tables: Bool
     let strikethrough: Bool
     let autolinks: Bool
@@ -214,7 +213,6 @@ private struct CanonicalParseOptions: Decodable {
         ParseOptions(
             smartPunctuation: smartPunctuation,
             footnotes: footnotes,
-            stripHTMLComments: stripHTMLComments,
             tables: tables,
             strikethrough: strikethrough,
             autolinks: autolinks,

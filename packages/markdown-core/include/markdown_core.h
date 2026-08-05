@@ -129,7 +129,6 @@ typedef struct markdown_core_delta_entry {
 typedef struct markdown_core_parse_options {
     bool smart_punctuation;
     bool footnotes;
-    bool strip_html_comments;
     bool tables;
     bool strikethrough;
     bool autolinks;

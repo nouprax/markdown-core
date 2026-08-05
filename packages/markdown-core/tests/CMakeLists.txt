@@ -32,7 +32,6 @@ set(MARKDOWN_CORE_CANONICAL_FACADE_ARGUMENTS "")
 set(MARKDOWN_CORE_CANONICAL_OPTION_NAMES
     smartPunctuation
     footnotes
-    stripHTMLComments
     tables
     strikethrough
     autolinks

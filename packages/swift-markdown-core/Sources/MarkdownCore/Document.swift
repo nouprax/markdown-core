@@ -8,8 +8,6 @@ public struct ParseOptions: Sendable, Hashable {
     public let smartPunctuation: Bool
     /// Parses footnote definitions and references.
     public let footnotes: Bool
-    /// Removes HTML comments instead of passing them through.
-    public let stripHTMLComments: Bool
     /// Parses pipe tables.
     public let tables: Bool
     /// Parses `~~strikethrough~~` spans.
@@ -32,7 +30,6 @@ public struct ParseOptions: Sendable, Hashable {
     public init(
         smartPunctuation: Bool = true,
         footnotes: Bool = true,
-        stripHTMLComments: Bool = true,
         tables: Bool = true,
         strikethrough: Bool = true,
         autolinks: Bool = true,
@@ -44,7 +41,6 @@ public struct ParseOptions: Sendable, Hashable {
     ) {
         self.smartPunctuation = smartPunctuation
         self.footnotes = footnotes
-        self.stripHTMLComments = stripHTMLComments
         self.tables = tables
         self.strikethrough = strikethrough
         self.autolinks = autolinks
@@ -128,7 +124,6 @@ extension ParseOptions {
         markdown_core_parse_options(
             smart_punctuation: smartPunctuation,
             footnotes: footnotes,
-            strip_html_comments: stripHTMLComments,
             tables: tables,
             strikethrough: strikethrough,
             autolinks: autolinks,

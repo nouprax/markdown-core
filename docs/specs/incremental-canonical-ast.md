@@ -872,8 +872,7 @@ holds decoded text, the source holds what was authored, and they diverge
 wherever Markdown transforms bytes. `&amp;` is five source bytes and one
 canonical byte; `\*` is two and one; `&#x1F600;` is nine and four; with smart
 punctuation `--` is two and three. Source bytes that produce no canonical
-output at all, such as an escape's backslash or a stripped comment, fall
-between pairs.
+output at all, such as an escape's backslash, fall between pairs.
 
 Both spans are therefore stored, rather than one span and a shared length.
 Neither side's length derives from the other, and neither derives from the
