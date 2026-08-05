@@ -952,6 +952,113 @@ static int check_node_records(const capture_source *source, const markdown_core_
                 failed = 1;
             }
             break;
+        case MARKDOWN_CORE_CONCRETE_REFDEF_LABEL: {
+            /* Bracket-through-colon segments: the first starts the node's
+             * spelling with `[` on its own first line, the one before the
+             * destination ends `]:`, and a single-segment label's interior
+             * is byte-for-byte the raw label the node keeps. */
+            bool first = i == 0;
+            bool last = i + 1 >= count || records[i + 1].kind != MARKDOWN_CORE_CONCRETE_REFDEF_LABEL;
+            if (node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                (first && (record->line != 0 || line[record->column] != '[')) ||
+                (last && (record->length < 2 || line[record->column + record->length - 1] != ':' ||
+                          line[record->column + record->length - 2] != ']')) ||
+                (first && last && node->as.definition.label.data &&
+                 ((markdown_core_bufsize)record->length != node->as.definition.label.len + 3 ||
+                  memcmp(line + record->column + 1, node->as.definition.label.data, node->as.definition.label.len) !=
+                      0))) {
+                fprintf(stderr, "%s: refdef label record does not spell its `[label]:` segment\n", source->name);
+                failed = 1;
+            }
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION: {
+            /* The spelling; as.definition.url is the decoded scalar. Decode
+             * the spelled bytes the way clean_url does — the angle form
+             * loses its brackets (the scanner returns only the interior),
+             * surrounding spaces trim, entities decode, backslash escapes
+             * drop — and the scalar must reproduce exactly. */
+            const char *bytes = line + record->column;
+            size_t len = record->length;
+            markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+            if (len >= 2 && bytes[0] == '<' && bytes[len - 1] == '>') {
+                bytes++;
+                len -= 2;
+            }
+            while (len && markdown_core_isspace((unsigned char)bytes[0])) {
+                bytes++;
+                len--;
+            }
+            while (len && markdown_core_isspace((unsigned char)bytes[len - 1])) {
+                len--;
+            }
+            markdown_core_houdini_unescape_html_f(&decoded, (const uint8_t *)bytes, (markdown_core_bufsize)len);
+            markdown_core_strbuf_unescape(&decoded);
+            if (node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION ||
+                (node->as.definition.url.data &&
+                 (decoded.size != (markdown_core_bufsize)node->as.definition.url.len ||
+                  memcmp(decoded.ptr, node->as.definition.url.data, decoded.size) != 0))) {
+                fprintf(stderr, "%s: refdef destination record does not decode to the url\n", source->name);
+                failed = 1;
+            }
+            markdown_core_strbuf_free(&decoded);
+            break;
+        }
+        case MARKDOWN_CORE_CONCRETE_REFDEF_TITLE: {
+            /* The first segment opens with a quote or paren, the last
+             * closes with its counterpart, and a single-segment title also
+             * decodes to the definition's title the way clean_title does. */
+            bool first = i == 0 || records[i - 1].kind != MARKDOWN_CORE_CONCRETE_REFDEF_TITLE;
+            bool last = i + 1 == count;
+            int title_failed = node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION;
+            if (!title_failed && first &&
+                (line[record->column] != '"' && line[record->column] != '\'' && line[record->column] != '(')) {
+                title_failed = 1;
+            }
+            if (!title_failed && last) {
+                size_t j = i;
+                char opener_buffer[4096];
+                size_t opener_length = 0;
+                while (j > 0 && records[j - 1].kind == MARKDOWN_CORE_CONCRETE_REFDEF_TITLE) {
+                    j--;
+                }
+                if (!normalized_line(
+                        source->text,
+                        source->length,
+                        (uint32_t)resolved + records[j].line,
+                        opener_buffer,
+                        sizeof(opener_buffer),
+                        &opener_length
+                    )) {
+                    title_failed = 1;
+                } else {
+                    char opener = opener_buffer[records[j].column];
+                    char closer = opener == '(' ? ')' : opener;
+                    if (line[record->column + record->length - 1] != closer) {
+                        title_failed = 1;
+                    }
+                }
+            }
+            if (!title_failed && first && last && record->length >= 2 && node->as.definition.title.data) {
+                markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                markdown_core_houdini_unescape_html_f(
+                    &decoded,
+                    (const uint8_t *)line + record->column + 1,
+                    (markdown_core_bufsize)record->length - 2
+                );
+                markdown_core_strbuf_unescape(&decoded);
+                if (decoded.size != (markdown_core_bufsize)node->as.definition.title.len ||
+                    memcmp(decoded.ptr, node->as.definition.title.data, decoded.size) != 0) {
+                    title_failed = 1;
+                }
+                markdown_core_strbuf_free(&decoded);
+            }
+            if (title_failed) {
+                fprintf(stderr, "%s: refdef title record does not spell its title segment\n", source->name);
+                failed = 1;
+            }
+            break;
+        }
         default:
             fprintf(stderr, "%s: unknown record kind %u on %s\n", source->name, record->kind, type_name(node->type));
             failed = 1;
@@ -961,8 +1068,8 @@ static int check_node_records(const capture_source *source, const markdown_core_
 
     /* Ownership: records appear on exactly the owners 11.1 names, in the
      * multiplicity the grammar admits. A kind with no marker bytes — every
-     * inline, Paragraph, HTMLBlock, ReferenceDefinition, indented code,
-     * List, Document — must hold none. */
+     * inline, Paragraph, HTMLBlock, indented code, List, Document — must
+     * hold none. */
     switch (node->type) {
     case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
         if (count < 1) {
@@ -1091,6 +1198,25 @@ static int check_node_records(const capture_source *source, const markdown_core_
             failed = 1;
         }
         break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION: {
+        /* The `[label]:` segments (one per line the label spans), then the
+         * one destination the grammar requires, then the title's segments
+         * when one was written. */
+        size_t at = 0;
+        bool wrong;
+        while (at < count && records[at].kind == MARKDOWN_CORE_CONCRETE_REFDEF_LABEL) {
+            at++;
+        }
+        wrong = at == 0 || at >= count || records[at].kind != MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION;
+        for (at++; !wrong && at < count; at++) {
+            wrong = records[at].kind != MARKDOWN_CORE_CONCRETE_REFDEF_TITLE;
+        }
+        if (wrong) {
+            fprintf(stderr, "%s: ReferenceDefinition holds a wrong record set (%zu)\n", source->name, count);
+            failed = 1;
+        }
+        break;
+    }
     default:
         if (count != 0) {
             fprintf(
@@ -1126,11 +1252,16 @@ static int expect_records(
     size_t expected_count
 ) {
     size_t count = 0;
-    const markdown_core_concrete_record *records = markdown_core_node_concrete_records(node, &count);
+    const markdown_core_concrete_record *records;
     size_t i;
     int failed = 0;
-    if (!node || count != expected_count) {
-        fprintf(stderr, "%s: expected %zu records, found %zu\n", context, expected_count, node ? count : 0);
+    if (!node) {
+        fprintf(stderr, "%s: expected node is missing from the tree\n", context);
+        return 1;
+    }
+    records = markdown_core_node_concrete_records(node, &count);
+    if (count != expected_count) {
+        fprintf(stderr, "%s: expected %zu records, found %zu\n", context, expected_count, count);
         return 1;
     }
     for (i = 0; i < expected_count; i++) {
@@ -1196,8 +1327,10 @@ static size_t tree_record_total(const markdown_core_node *root) {
  * close fence longer than its open, BOM-prefixed line 1, NUL replacement
  * inside an info string, CRLF, tabs after markers, the extension marker
  * material (table delimiter row, row pipes, cell `\|` escapes, task
- * checkboxes, directive and formula fences), and the constructs that must
- * stay recordless (indented code, HTML blocks, reference definitions). */
+ * checkboxes, directive and formula fences), reference-definition
+ * spellings (multi-line labels and titles included, and the mid-tab lazy
+ * continuation whose buffered spaces stand in for one tab byte), and the
+ * constructs that must stay recordless (indented code, HTML blocks). */
 static const capture_source SHAPE_SOURCES[] = {
     {"nested_quotes",
      "> # h1 ##\n"
@@ -1284,9 +1417,7 @@ static const capture_source SHAPE_SOURCES[] = {
      "\n"
      "<div>\n"
      "html\n"
-     "</div>\n"
-     "\n"
-     "[rd]: /u \"t\"\n",
+     "</div>\n",
      0,
      true},
     {"interrupts",
@@ -1362,6 +1493,25 @@ static const capture_source SHAPE_SOURCES[] = {
      "| a | b |\r\n"
      "| - | - |\t\r\n"
      "| c | d |\r\n",
+     0},
+    {"refdefs",
+     "[a]: /one \"t1\"\n"
+     "[b]: </two three> (t2)\n"
+     "[multi\n"
+     "label]: /three\n"
+     "'long\n"
+     "title'\n"
+     "[d]: /four\n"
+     "\"not title\" tail\n",
+     0},
+    {"refdef_lazy_tab",
+     "> > [l]: /u \"a\n"
+     ">\tb\"\n",
+     0},
+    {"table_lazy_tab",
+     "> > x\n"
+     ">\t| a |\n"
+     "> > | - | - |\n",
      0},
 };
 
@@ -2020,6 +2170,117 @@ static int case_capture_shape(void) {
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             CRLF_PIPES,
             3
+        );
+        markdown_core_document_free(document);
+    }
+    /* Reference definitions: `[label]:` bracket-through-colon, the raw
+     * destination (angle brackets kept), the raw title (delimiters kept) —
+     * one segment record per line a label or title spans, and the
+     * title-rewind definition keeps no title record because the grammar
+     * rewound it back into the paragraph. */
+    {
+        static const expected_record RD_A[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 10, 4}
+        };
+        static const expected_record RD_B[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 12},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 18, 4}
+        };
+        static const expected_record RD_MULTI[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 6},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 1, 0, 7},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 1, 8, 6},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 2, 0, 5},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 3, 0, 6}
+        };
+        static const expected_record RD_D[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 0, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 5, 5}
+        };
+        const expected_record *expected[4] = {RD_A, RD_B, RD_MULTI, RD_D};
+        const size_t expected_counts[4] = {3, 3, 5, 2};
+        const capture_source *refdefs = &SHAPE_SOURCES[22];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)refdefs->text, strlen(refdefs->text), &options, NULL);
+        size_t d;
+        if (!document) {
+            return -1;
+        }
+        for (d = 0; d < 4; d++) {
+            char context[64];
+            snprintf(context, sizeof(context), "capture_shape: reference definition %zu", d);
+            failed |= expect_records(
+                context,
+                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
+                expected[d],
+                expected_counts[d]
+            );
+        }
+        markdown_core_document_free(document);
+    }
+    /* A definition whose title continues onto a lazy line that began
+     * mid-tab: the buffered line holds two spaces standing in for the tab
+     * byte's remaining columns, so the continuation segment's extent must
+     * come out one tab byte wide where the buffer holds two spaces —
+     * anything else dereferences into the wrong source bytes. */
+    {
+        static const expected_record RD_LAZY[] = {
+            {MARKDOWN_CORE_CONCRETE_REFDEF_LABEL, 0, 4, 4},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_DESTINATION, 0, 9, 2},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 0, 12, 2},
+            {MARKDOWN_CORE_CONCRETE_REFDEF_TITLE, 1, 1, 3}
+        };
+        const capture_source *lazy = &SHAPE_SOURCES[23];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy title continuation",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
+            RD_LAZY,
+            4
+        );
+        markdown_core_document_free(document);
+    }
+    /* The same mid-tab lazy line as a look-back table header: the pipes'
+     * columns must land on the source line's own bytes — the buffered
+     * stand-in spaces are two bytes where the source holds one tab — and
+     * the split-off lead paragraph stays recordless (its records are the
+     * recovery slice's deferred problem, stated in the plan). */
+    {
+        static const expected_record LAZYTAB_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 4, 9}};
+        static const expected_record LAZYTAB_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 6, 1}
+        };
+        const capture_source *lazy = &SHAPE_SOURCES[24];
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header delimiter row",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            LAZYTAB_DELIM,
+            1
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab lazy-header pipes",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            LAZYTAB_PIPES,
+            2
+        );
+        failed |= expect_records(
+            "capture_shape: mid-tab split-off lead paragraph",
+            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
+            NULL,
+            0
         );
         markdown_core_document_free(document);
     }
