@@ -84,7 +84,7 @@ const ORACLES = {
         // is the corpus's one title-then-junk line: recombined under any
         // definition line it reproduces `refdef-title-rewind` wherever that
         // label is also referenced.
-        excludeFragments: ["[x]", "[X]", "\"title\" ok"]
+        excludeFragments: ["[x]", "[X]", '"title" ok']
     },
     mdast: {
         policy: "specs/mdast-parity/deltas.json",
