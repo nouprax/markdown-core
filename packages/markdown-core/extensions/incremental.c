@@ -2452,11 +2452,14 @@ static void incremental_arm_inline_seam(incremental_pipeline *pipeline) {
 
     // A sentinel restart that resolves to the boundary node is never
     // replaced, so its reserved prefix children could not be transplanted.
+    // Committed document children are always sealed and staged children
+    // always positioned — the only position-free nodes are soft and hard
+    // breaks, never a root's child — so neither side needs a guard here
+    // (a table's split-off lead, once the exception on both sides, is
+    // positioned at its source now).
     if (restart_node && restart_node != plan->boundary_node && restart_node->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
-        !restart_node->extension && restart_node->first_child &&
-        (restart_node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) && parser->root && parser->root->first_child &&
+        !restart_node->extension && restart_node->first_child && parser->root && parser->root->first_child &&
         parser->root->first_child->type == MARKDOWN_CORE_NODE_PARAGRAPH && !parser->root->first_child->extension &&
-        parser->root->first_child->start_line != 0 &&
         parser->root->first_child->start_column == restart_node->start_column &&
         parser->root->first_child->internal_offset == restart_node->internal_offset &&
         markdown_core_node_owns_inlines(parser->root->first_child)) {
@@ -2937,10 +2940,12 @@ static void incremental_finalize_geometry(incremental_pipeline *pipeline) {
         plan->last_line_length = pipeline->session->last_line_length;
         if (splice->delta_lines != 0) {
             for (sibling = splice->suffix_head; sibling; sibling = sibling->next) {
-                // Position-free roots keep their raw zeros (see the seal).
-                if (sibling->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-                    sibling->start_line += splice->delta_lines;
-                }
+                // Every document child is positioned and sealed: the only
+                // position-free nodes are soft and hard breaks, which are
+                // never document children (a table's split-off lead, once
+                // the last member of that class, is positioned at its
+                // source now).
+                sibling->start_line += splice->delta_lines;
             }
         }
 

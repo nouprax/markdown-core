@@ -1296,6 +1296,25 @@ static int expect_records(
     return failed;
 }
 
+/* An expected inline record, matched field-for-field; defined here so the
+ * block-phase shape case can pin the inline spelling of a construct it
+ * repositions (the split-off lead's escape). Checker defined with the
+ * inline cases below. */
+typedef struct expected_inline_record {
+    uint8_t kind;
+    uint32_t start;
+    uint32_t length;
+    uint32_t head;
+    uint32_t tail;
+} expected_inline_record;
+
+static int expect_inline_records(
+    const char *context,
+    const markdown_core_node *node,
+    const expected_inline_record *expected,
+    size_t expected_count
+);
+
 /* The n'th node of `type` in preorder, or NULL. */
 static const markdown_core_node *nth_node_of_type(const markdown_core_node *root, uint16_t type, size_t n) {
     walk_state walk;
@@ -1443,7 +1462,7 @@ static const capture_source SHAPE_SOURCES[] = {
      "x | y\\|z\n",
      0},
     {"table_lookback",
-     "lead para\n"
+     "lead \\| para \t\n"
      "| a | b |\n"
      "| - | - |\n"
      "x | y |\n",
@@ -1900,34 +1919,37 @@ static int case_capture_shape(void) {
         markdown_core_document_free(document);
     }
     /* The look-back header: the row the table layer recovers from the
-     * paragraph's buffered content records at its true line and columns —
-     * line delta 1 on a row node whose start_line is the retyped
-     * paragraph's first line — and the split-off lead paragraph stays
-     * recordless (its `\|` coordinates are the recovery slice's problem,
-     * stated in the plan). */
+     * paragraph's buffered content records at its true line and columns.
+     * The retyped Table starts on the header row's own line — the
+     * split-off lead owns the prefix — so the header pipes sit at delta 0
+     * and the delimiter row at delta 1. The lead is an ordinary
+     * positioned paragraph: block-recordless, its authored `\|` spelled
+     * by the inline pass's ESCAPE record over its raw (not
+     * pipe-unescaped) content. */
     {
-        static const expected_record LOOKBACK_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 0, 9}};
+        static const expected_record LOOKBACK_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 0, 9}};
         static const expected_record LOOKBACK_HEADER[] = {
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 0, 1},
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 4, 1},
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 8, 1}
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 8, 1}
         };
         static const expected_record LOOKBACK_DATA[] = {
             {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1},
             {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 6, 1}
         };
+        static const expected_inline_record LOOKBACK_LEAD_ESCAPE[] = {
+            {MARKDOWN_CORE_INLINE_CONCRETE_ESCAPE, 5, 1, 1, 0}
+        };
         const capture_source *lookback = &SHAPE_SOURCES[15];
+        const markdown_core_node *lead;
+        const markdown_core_node *table;
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)lookback->text, strlen(lookback->text), &options, NULL);
         if (!document) {
             return -1;
         }
-        failed |= expect_records(
-            "capture_shape: lookback delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
-            LOOKBACK_DELIM,
-            1
-        );
+        table = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0);
+        failed |= expect_records("capture_shape: lookback delimiter row", table, LOOKBACK_DELIM, 1);
         failed |= expect_records(
             "capture_shape: lookback header pipes",
             nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
@@ -1940,12 +1962,33 @@ static int case_capture_shape(void) {
             LOOKBACK_DATA,
             2
         );
-        failed |= expect_records(
-            "capture_shape: split-off lead paragraph",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
-            NULL,
-            0
-        );
+        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        failed |= expect_records("capture_shape: split-off lead paragraph", lead, NULL, 0);
+        failed |= expect_inline_records("capture_shape: split-off lead escape", lead, LOOKBACK_LEAD_ESCAPE, 1);
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 1 || lead_end != 1 || lead->end_column != 12) {
+                fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
+                failed = 1;
+            }
+            /* The record indexes the content buffer, so the buffer itself
+             * is pinned through the parsed text: the escape consumed, the
+             * pipe literal, nothing pipe-collapsed away. */
+            if (!lead || !lead->first_child || lead->first_child->type != MARKDOWN_CORE_NODE_TEXT ||
+                lead->first_child->as.literal.len != 11 ||
+                memcmp(lead->first_child->as.literal.data, "lead | para", 11) != 0) {
+                fprintf(stderr, "capture_shape: the split-off lead's text is not its authored reading\n");
+                failed = 1;
+            }
+            if (!table || resolved_start_line(table, root_resolved) != 2) {
+                fprintf(stderr, "capture_shape: the split table does not start on its header row's line\n");
+                failed = 1;
+            }
+        }
         markdown_core_document_free(document);
     }
     /* Indented table: every column in these records is a normalized-line
@@ -2123,10 +2166,10 @@ static int case_capture_shape(void) {
      * sits after the quote's own consumed prefix. */
     {
         static const expected_record LAZY_HEADER[] = {
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 6, 1}
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 6, 1}
         };
-        static const expected_record LAZY_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 2, 9}};
+        static const expected_record LAZY_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 2, 9}};
         const capture_source *lazy = &SHAPE_SOURCES[20];
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
@@ -2273,17 +2316,17 @@ static int case_capture_shape(void) {
     /* The same mid-tab lazy line as a look-back table header: the pipes'
      * and the cell escape's columns must land on the source line's own
      * bytes — the buffered stand-in spaces are two bytes where the source
-     * holds one tab — and the split-off lead paragraph stays recordless
-     * (its records are the recovery slice's deferred problem, stated in
-     * the plan). */
+     * holds one tab — the Table starts on the header row's line, and the
+     * split-off lead paragraph is positioned and block-recordless. */
     {
-        static const expected_record LAZYTAB_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 2, 4, 9}};
+        static const expected_record LAZYTAB_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 4, 9}};
         static const expected_record LAZYTAB_PIPES[] = {
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 2, 1},
-            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 1, 9, 1}
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 2, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 9, 1}
         };
-        static const expected_record LAZYTAB_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 1, 5, 1}};
+        static const expected_record LAZYTAB_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 0, 5, 1}};
         const capture_source *lazy = &SHAPE_SOURCES[24];
+        const markdown_core_node *lead;
         markdown_core_document *document =
             markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
         if (!document) {
@@ -2307,12 +2350,54 @@ static int case_capture_shape(void) {
             LAZYTAB_ESCAPE,
             1
         );
-        failed |= expect_records(
-            "capture_shape: mid-tab split-off lead paragraph",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0),
-            NULL,
-            0
-        );
+        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        failed |= expect_records("capture_shape: mid-tab split-off lead paragraph", lead, NULL, 0);
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int quote_resolved = lead && lead->parent && lead->parent->parent
+                                     ? resolved_start_line(lead->parent->parent, root_resolved)
+                                     : root_resolved;
+            int inner_resolved = lead && lead->parent ? resolved_start_line(lead->parent, quote_resolved) : 0;
+            int lead_start = lead ? resolved_start_line(lead, inner_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 5 || lead_end != 1 || lead->end_column != 5) {
+                fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
+                failed = 1;
+            }
+        }
+        markdown_core_document_free(document);
+    }
+    /* A tab before the lead: node columns are byte-based (start_column is
+     * first_nonspace + 1, end_column is the last line's byte length), so
+     * the split-off lead's end must match what the same paragraph reports
+     * unsplit — not the tab-expanded column the content-buffer marks
+     * carry. */
+    {
+        static const char TEXT[] = ">\tlead para\n"
+                                   "> | a | b |\n"
+                                   "> | - | - |\n";
+        const markdown_core_node *lead;
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        if (!document) {
+            return -1;
+        }
+        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        {
+            int root_resolved = resolved_start_line(document->root, 0);
+            int quote_resolved =
+                lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
+            int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;
+            int lead_end = lead ? lead_start + lead->end_line -
+                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                : 0;
+            if (!lead || lead_start != 1 || lead->start_column != 3 || lead_end != 1 || lead->end_column != 11) {
+                fprintf(stderr, "capture_shape: the tab-led split-off lead's columns left the byte convention\n");
+                failed = 1;
+            }
+        }
         markdown_core_document_free(document);
     }
     return failed ? -1 : 0;
@@ -2782,6 +2867,7 @@ static const char SWEEP_TEXT[] = "[sw]: /s \"sq\"\n"
                                  "\n"
                                  "cm <!-- s --> here and $f<!--t-->g$\n"
                                  "\n"
+                                 "tbl lead\n"
                                  "| h | i |\n"
                                  "| - | - |\n"
                                  "| *c* | d |\n"
@@ -2938,14 +3024,6 @@ static size_t tree_inline_record_total(const markdown_core_node *root) {
     }
     return total;
 }
-
-typedef struct expected_inline_record {
-    uint8_t kind;
-    uint32_t start;
-    uint32_t length;
-    uint32_t head;
-    uint32_t tail;
-} expected_inline_record;
 
 static int expect_inline_records(
     const char *context,
@@ -4500,6 +4578,39 @@ static int case_recovery_island_boundary(void) {
             count_kind(definition, MARKDOWN_CORE_NODE_PARAGRAPH) != 1 || !definition->next ||
             definition->next->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
             fprintf(stderr, "island_boundary: the footnote definition's dedent boundary moved\n");
+            failed = 1;
+        }
+        markdown_core_document_free(document);
+    }
+    /* GFM-mandated truncation is the grammar's own rule, not recovery:
+     * "If there are greater [cells than the header row], the excess is
+     * ignored" (GFM tables, example 204). The excess cells' text gets no
+     * node — the spec forbids one — but the island keeps the material
+     * addressable: the row's extent spans every authored byte of the
+     * line, and every pipe, the excess cells' separators included,
+     * records on the row. */
+    {
+        static const char TEXT[] = "| a | b |\n| - | - |\n| 1 | 2 | 3 |\n";
+        static const expected_record WIDE_ROW_PIPES[] = {
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 0, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 4, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 8, 1},
+            {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 12, 1}
+        };
+        markdown_core_document *document =
+            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+        const markdown_core_node *row;
+        if (!document) {
+            return -1;
+        }
+        row = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1);
+        if (!row || count_kind(row, MARKDOWN_CORE_NODE_TABLE_CELL) != 2) {
+            fprintf(stderr, "island_boundary: the wide row's excess cells were not truncated per spec\n");
+            failed = 1;
+        }
+        failed |= expect_records("island_boundary: wide-row pipes span the authored line", row, WIDE_ROW_PIPES, 4);
+        if (!row || row->end_column != 13) {
+            fprintf(stderr, "island_boundary: the wide row's extent no longer spans its authored bytes\n");
             failed = 1;
         }
         markdown_core_document_free(document);

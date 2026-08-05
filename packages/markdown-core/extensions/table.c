@@ -408,6 +408,16 @@ static table_row *row_from_string(markdown_core_parser *parser, unsigned char *s
     return row;
 }
 
+/* Re-emits the paragraph lines that preceded the header row. The prefix is
+ * ordinary paragraph text, so it keeps its authored spelling — its escapes
+ * belong to the inline pass, which records them; pipe collapsing is cell
+ * treatment. Upstream cmark-gfm pipe-unescapes this prefix too, so its
+ * double processing renders a lead's \\| as `|` where a plain paragraph
+ * renders `\|` — a registered deliberate divergence (micromark reads the
+ * prefix as a plain paragraph, as this does now). The node is positioned
+ * from the paragraph's line marks exactly the way a harvested reference
+ * definition is: first byte at the original paragraph's start, last
+ * surviving byte mapped through the mark of the line that produced it. */
 static void try_inserting_table_header_paragraph(
     markdown_core_parser *parser,
     markdown_core_node *parent_container,
@@ -415,23 +425,68 @@ static void try_inserting_table_header_paragraph(
     int paragraph_offset
 ) {
     markdown_core_node *paragraph;
-    markdown_core_strbuf *paragraph_content;
+    markdown_core_strbuf raw;
+    markdown_core_bufsize last = (markdown_core_bufsize)paragraph_offset;
+    size_t cursor = 0;
 
     paragraph = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    if (!paragraph) {
+        parser->oom = true;
+        return;
+    }
 
-    paragraph_content = unescape_pipes(parser->mem, parent_string, paragraph_offset);
-    if (!paragraph_content) {
+    markdown_core_strbuf_init(parser->mem, &raw, (markdown_core_bufsize)paragraph_offset + 1);
+    markdown_core_strbuf_put(&raw, parent_string, (markdown_core_bufsize)paragraph_offset);
+    markdown_core_strbuf_trim(&raw);
+    markdown_core_strbuf_putc(&raw, '\0');
+    if (raw.oom) {
+        parser->oom = true;
+        markdown_core_strbuf_free(&raw);
         markdown_core_node_free(paragraph);
         return;
     }
-    markdown_core_strbuf_trim(paragraph_content);
-    markdown_core_node_set_string_content(paragraph, (char *)paragraph_content->ptr);
-    markdown_core_strbuf_free(paragraph_content);
-    parser->mem->free(parser->mem, paragraph_content);
-
-    if (!markdown_core_node_insert_before(parent_container, paragraph)) {
-        parser->mem->free(parser->mem, paragraph);
+    markdown_core_node_set_string_content(paragraph, (char *)raw.ptr);
+    markdown_core_strbuf_free(&raw);
+    /* set_string_content reports nothing; its strbuf carries the loss. A
+     * silently empty lead would commit a thinner tree than the same input
+     * parses without the failure — exactly what the OOM sweep compares. */
+    if (paragraph->content.oom) {
+        parser->oom = true;
+        markdown_core_node_free(paragraph);
+        return;
     }
+
+    /* The prefix holds at least one non-blank line (a blank line would have
+     * closed the paragraph before the header ever buffered), so the
+     * walk-back stops at that line's last real byte before it can run off
+     * the front, and the header line's mark — whose content_offset is
+     * paragraph_offset, past every prefix byte — bounds the cursor walk
+     * before the mark count can. Content positions are in tab-expanded
+     * column space, which is what node positions carry. */
+    while (parent_string[last - 1] == '\n' || parent_string[last - 1] == ' ' || parent_string[last - 1] == '\t') {
+        last--;
+    }
+    while (parser->line_marks[cursor + 1].content_offset <= last - 1) {
+        cursor++;
+    }
+    paragraph->start_line = parent_container->start_line;
+    paragraph->start_column = parent_container->start_column;
+    paragraph->end_line = parser->line_marks[cursor].line;
+    /* Node columns are byte-based (start_column is first_nonspace + 1, a
+     * finalized end_column is the line's byte length), while the marks'
+     * `column` tab-expands — so the last byte maps back through the
+     * byte-exact extent helper, pad included, not through the expanded
+     * column. */
+    {
+        markdown_core_bufsize end_byte;
+        markdown_core_line_mark_extent(&parser->line_marks[cursor], last - 1, last, &end_byte);
+        paragraph->end_column = (int)end_byte + 1;
+    }
+
+    /* The retyped table sits in a container that holds paragraphs — it was
+     * one — so the checked insert's refusal arms are unreachable here; the
+     * unchecked variant asserts exactly that in debug builds. */
+    markdown_core_node_insert_before_unchecked(parent_container, paragraph);
 }
 
 static markdown_core_node *try_opening_table_header(
@@ -494,10 +549,14 @@ static markdown_core_node *try_opening_table_header(
             (unsigned char *)parent_string,
             header_row->paragraph_offset
         );
-        /* The split-off paragraph shares the retyped node's original span, so
-         * the table's first line no longer begins a document child: it must
-         * not remain an incremental restart point, sealing qualifier
-         * included. */
+        /* The prefix lines belong to the split-off paragraph now, so the
+         * retyped node's span starts where its header row was spelled —
+         * the buffer's last line, whose mark carries the tab-expanded
+         * column node positions use. The table's first line still does not
+         * begin a document child on a clean line: it must not remain an
+         * incremental restart point, sealing qualifier included. */
+        parent_container->start_line = parser->line_marks[parser->line_mark_count - 1].line;
+        parent_container->start_column = parser->line_marks[parser->line_mark_count - 1].column;
         parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 
@@ -550,7 +609,13 @@ static markdown_core_node *try_opening_table_header(
         return NULL;
     }
     markdown_core_node_set_extension(table_header, self);
-    table_header->end_column = parent_container->start_column + (int)strlen(parent_string) - 2;
+    /* Buffer offsets are content-absolute; the header row's own bytes begin
+     * at its mark's content_offset, which is 0 exactly when the paragraph
+     * was single-line. Subtracting it keeps the direct case byte-identical
+     * and puts the split case's columns on the header line. */
+    table_header->end_column =
+        parent_container->start_column +
+        (int)(strlen(parent_string) - parser->line_marks[parser->line_mark_count - 1].content_offset) - 2;
     table_header->start_line = table_header->end_line = parent_container->start_line;
 
     table_header->as.opaque = ntr = (node_table_row *)parser->mem->calloc(parser->mem, 1, sizeof(node_table_row));
@@ -596,14 +661,14 @@ static markdown_core_node *try_opening_table_header(
                 parser,
                 table_header,
                 MARKDOWN_CORE_NODE_TABLE_CELL,
-                parent_container->start_column + cell->start_offset
+                parent_container->start_column + cell->start_offset - (int)mark->content_offset
             );
             if (!header_cell) {
                 break;
             }
             header_cell->start_line = header_cell->end_line = parent_container->start_line;
             header_cell->internal_offset = cell->internal_offset;
-            header_cell->end_column = parent_container->start_column + cell->end_offset;
+            header_cell->end_column = parent_container->start_column + cell->end_offset - (int)mark->content_offset;
             markdown_core_node_set_string_content(header_cell, (char *)cell->buf->ptr);
             markdown_core_node_set_extension(header_cell, self);
             set_cell_index(header_cell, i);

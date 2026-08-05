@@ -271,8 +271,8 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
 // still reads its parent's absolute start; pointer-walk iterative, because
 // adversarial inputs nest too deep for native recursion.
 //
-// Position-free nodes (start_line 0: soft/hard breaks and synthesized blocks
-// like a table's split-off header paragraph) stay raw and unsealed. Their
+// Position-free nodes (start_line 0: soft and hard breaks) stay raw and
+// unsealed. Their
 // zeros are markers, not places: relativizing them would make them move when
 // an incremental commit line-shifts a transplanted ancestor. Resolution
 // treats an unsealed node's fields as final, so the markers stay zero and

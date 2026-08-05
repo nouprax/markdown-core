@@ -83,8 +83,15 @@ const ORACLES = {
         // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
         // is the corpus's one title-then-junk line: recombined under any
         // definition line it reproduces `refdef-title-rewind` wherever that
-        // label is also referenced.
-        excludeFragments: ["[x]", "[X]", '"title" ok']
+        // the corpus gate, which reads the fixtures unrecombined. `"title" ok`
+        // is the corpus's one title-then-junk line: recombined under any
+        // definition line it reproduces `refdef-title-rewind` wherever that
+        // label is also referenced. `\\|` is the same shape for
+        // `table-split-lead-spelling`: any fragment carrying an escaped
+        // backslash before a pipe diverges the moment recombination parks it
+        // above a header and delimiter row. A single `\|` decodes identically
+        // on both sides and stays in the pool.
+        excludeFragments: ["[x]", "[X]", '"title" ok', "\\\\|"]
     },
     mdast: {
         policy: "specs/mdast-parity/deltas.json",

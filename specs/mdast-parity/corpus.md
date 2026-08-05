@@ -180,6 +180,46 @@ Document scope=1:1..3:12 children=1
             └── Text scope=3:1..3:2 literal="b." children=0
 ````````````````````````````````
 
+A multi-line paragraph whose last line is a table header row: the split-off
+lead is an ordinary paragraph, so its `\|` is CommonMark's escape and its `\\|`
+is an escaped backslash plus a literal pipe. micromark reads the lead exactly
+this way; these two inputs keep the split, the spelling, and the paragraph's
+position under the remark authority. (cmark-gfm pipe-unescapes the lead a
+second time — the `table-split-lead-spelling` entry in
+specs/upstream-parity/deltas.json.)
+
+```````````````````````````````` example
+lead \| text
+| a | b |
+| - | - |
+.
+Document scope=1:1..3:9 children=2
+├── Paragraph scope=1:1..1:12 children=1
+│   └── Text scope=1:1..1:12 literal="lead | text" children=0
+└── Table scope=2:1..3:9 alignments=[none,none] children=1
+    └── TableRow scope=2:1..2:9 isHeader=true children=2
+        ├── TableCell scope=2:2..2:4 children=1
+        │   └── Text scope=2:3..2:3 literal="a" children=0
+        └── TableCell scope=2:6..2:8 children=1
+            └── Text scope=2:7..2:7 literal="b" children=0
+````````````````````````````````
+
+```````````````````````````````` example
+pre \\| lead
+| a | b |
+| - | - |
+.
+Document scope=1:1..3:9 children=2
+├── Paragraph scope=1:1..1:12 children=1
+│   └── Text scope=1:1..1:12 literal="pre \\| lead" children=0
+└── Table scope=2:1..3:9 alignments=[none,none] children=1
+    └── TableRow scope=2:1..2:9 isHeader=true children=2
+        ├── TableCell scope=2:2..2:4 children=1
+        │   └── Text scope=2:3..2:3 literal="a" children=0
+        └── TableCell scope=2:6..2:8 children=1
+            └── Text scope=2:7..2:7 literal="b" children=0
+````````````````````````````````
+
 A code span whose content spans a line. CommonMark treats the line ending as a
 space; cmark applies that when it builds the node and mdast leaves it to the
 renderer, which is the `code-span-line-ending` shape delta.
