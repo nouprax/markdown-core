@@ -741,6 +741,13 @@ markdown_core_session *markdown_core_session_open_with_mem(
         session->source =
             markdown_core_source_new(mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &scratch, &status);
         if (!session->source) {
+            // Unwound here rather than through markdown_core_session_free:
+            // that path releases session->source unconditionally, and it is
+            // the thing that just failed to exist.
+            if (session->arena) {
+                markdown_core_arena_release(session->arena);
+            }
+            free(session);
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
             return NULL;
         }
