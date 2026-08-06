@@ -2173,7 +2173,7 @@ void markdown_core_parse_inlines_from(
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
         ;
 
-    process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0});
+    process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0, 0});
     // free bracket stack
     while (subj.last_bracket) {
         pop_bracket(&subj);

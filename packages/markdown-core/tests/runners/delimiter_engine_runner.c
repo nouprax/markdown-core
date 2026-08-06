@@ -227,7 +227,7 @@ static int case_balanced_nearest_ranges(void) {
     }
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "pre-process topology is invalid");
 
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "post-process topology is invalid");
     DR_REQUIRE(engine.count == 0 && engine.tail == 0, "full process did not reclaim the arena");
@@ -281,7 +281,7 @@ static int dr_commonmark_case(
     }
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "pre-process topology is invalid");
 
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "post-process topology is invalid");
     DR_REQUIRE(
@@ -341,7 +341,7 @@ static int case_per_rule_isolation(void) {
     }
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "pre-process topology is invalid");
 
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "post-process topology is invalid");
     DR_REQUIRE(diagnostics->opener_candidate_visits == 0, "a closer searched delimiter records owned by another rule");
@@ -380,8 +380,10 @@ static int case_mark_restore_and_reuse(void) {
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 1, 1), "suffix opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 2, 1), "suffix closer push failed");
     DR_REQUIRE(
-        markdown_core_delimiter_engine_truncate(&engine, (markdown_core_delimiter_mark){mark.count + 1, mark.tail}) ==
-            MARKDOWN_CORE_DELIMITER_INVALID,
+        markdown_core_delimiter_engine_truncate(
+            &engine,
+            (markdown_core_delimiter_mark){mark.count + 1, mark.tail, mark.generation}
+        ) == MARKDOWN_CORE_DELIMITER_INVALID,
         "forged mark was accepted"
     );
     DR_REQUIRE(
@@ -395,7 +397,7 @@ static int case_mark_restore_and_reuse(void) {
     DR_REQUIRE(log.calls == 1 && log.last.opener_start == 1, "suffix pair selected the wrong opener");
 
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 3, 1), "reused closer push failed");
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "reused arena left invalid topology");
     DR_REQUIRE(
@@ -539,8 +541,10 @@ static int case_stale_mark_is_refused(void) {
         "a stale mark was accepted by process"
     );
     DR_REQUIRE(
-        markdown_core_delimiter_engine_truncate(&engine, (markdown_core_delimiter_mark){0, stale.tail}) ==
-            MARKDOWN_CORE_DELIMITER_INVALID,
+        markdown_core_delimiter_engine_truncate(
+            &engine,
+            (markdown_core_delimiter_mark){0, stale.tail, stale.generation}
+        ) == MARKDOWN_CORE_DELIMITER_INVALID,
         "an empty-count mark carrying a tail was accepted"
     );
     DR_REQUIRE(
@@ -878,7 +882,7 @@ static int case_randomized_operation_soak(void) {
                 marks[depth++] = markdown_core_delimiter_engine_mark(&engine);
             } else if (roll < 85) {
                 size_t index = depth ? dr_xorshift(&state) % depth : 0;
-                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0};
+                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0, 0};
                 DR_REQUIRE(
                     markdown_core_delimiter_engine_process(&engine, NULL, NULL, mark) == MARKDOWN_CORE_DELIMITER_OK,
                     "soak process failed"
@@ -888,7 +892,7 @@ static int case_randomized_operation_soak(void) {
             } else {
                 markdown_core_delimiter_mark before = markdown_core_delimiter_engine_mark(&engine);
                 size_t index = depth ? dr_xorshift(&state) % depth : 0;
-                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0};
+                markdown_core_delimiter_mark mark = depth ? marks[index] : (markdown_core_delimiter_mark){0, 0, 0};
                 DR_REQUIRE(
                     markdown_core_delimiter_engine_truncate(&engine, mark) == MARKDOWN_CORE_DELIMITER_OK,
                     "soak truncate failed"
@@ -903,7 +907,7 @@ static int case_randomized_operation_soak(void) {
             }
         }
         DR_REQUIRE(
-            markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0}) ==
+            markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0}) ==
                 MARKDOWN_CORE_DELIMITER_OK,
             "soak drain failed"
         );
@@ -942,7 +946,7 @@ static int case_residual_run_progress(void) {
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, DR_RUN_LENGTH), "run opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, DR_RUN_LENGTH, DR_RUN_LENGTH), "run closer push failed");
 
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(markdown_core_delimiter_engine_validate(&engine), "run process left invalid topology");
     DR_REQUIRE(
@@ -1004,7 +1008,7 @@ static int case_geometric_arena_growth(void) {
     );
     DR_REQUIRE(diagnostics->peak_live_records == record_count, "peak live-record accounting changed");
 
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(
         diagnostics->truncate_visits == record_count && diagnostics->reclaimed_records == record_count,
         "grown arena was not reclaimed in one reverse pass"
@@ -1078,7 +1082,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     dr_allocator_init(&allocator);
     DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
     DR_REQUIRE(dr_push(&engine, &first, 1, 0, 0, 1), "first-unit push failed");
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(
         engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 1 && engine.capacity == 16,
         "first unit did not leave reusable storage"
@@ -1104,7 +1108,7 @@ static int case_unit_lane_growth_and_reuse(void) {
         "second unit did not accept the expanded rule set"
     );
     DR_REQUIRE(dr_push(&engine, &added, 1, 0, 1, 1), "expanded-lane push failed");
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(
         engine.count == 0 && engine.tail == 0 && engine.lane_capacity == 2 && engine.capacity == 16,
         "expanded unit did not retain the grown lane table"
@@ -1116,7 +1120,7 @@ static int case_unit_lane_growth_and_reuse(void) {
     );
     allocations_after_first_unit = allocator.allocation_attempts;
     DR_REQUIRE(dr_push(&engine, &first, 1, 0, 2, 1), "third-unit push failed");
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(
         allocator.allocation_attempts == allocations_after_first_unit,
         "retained lane/record capacity allocated again"
@@ -1133,7 +1137,7 @@ static int case_unit_lane_growth_and_reuse(void) {
         "reactivated lane retained stale search floors"
     );
     DR_REQUIRE(dr_push(&engine, &added, 1, 0, 3, 1), "reactivated-lane push failed");
-    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(
         allocator.allocation_attempts == allocations_after_first_unit,
         "reactivated retained lane allocated again"
@@ -1171,7 +1175,8 @@ static int case_reducer_failure_is_terminal(void) {
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 2, 1), "second opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 3, 1), "second closer push failed");
 
-    process_result = markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    process_result =
+        markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(process_result == MARKDOWN_CORE_DELIMITER_OOM, "reducer failure was not propagated");
     DR_REQUIRE(log.calls == 1, "engine invoked another reducer after a terminal failure");
@@ -1185,7 +1190,8 @@ static int case_reducer_failure_is_terminal(void) {
     dr_reduction_result = MARKDOWN_CORE_DELIMITER_INVALID;
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "invalid-result opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 1, 1), "invalid-result closer push failed");
-    process_result = markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    process_result =
+        markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     DR_REQUIRE(process_result == MARKDOWN_CORE_DELIMITER_INVALID, "invalid reducer result was not propagated");
     DR_REQUIRE(
         log.calls == 2 && engine.count == 0 && engine.tail == 0,
@@ -1195,7 +1201,8 @@ static int case_reducer_failure_is_terminal(void) {
     dr_reduction_result = (markdown_core_delimiter_result)99;
     DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "unknown-result opener push failed");
     DR_REQUIRE(dr_push(&engine, &binding, 0, 1, 1, 1), "unknown-result closer push failed");
-    process_result = markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0});
+    process_result =
+        markdown_core_delimiter_engine_process(&engine, NULL, NULL, (markdown_core_delimiter_mark){0, 0, 0});
     diagnostics = markdown_core_delimiter_engine_diagnostics(&engine);
     DR_REQUIRE(process_result == MARKDOWN_CORE_DELIMITER_INVALID, "unknown reducer result was not normalized");
     DR_REQUIRE(log.calls == 3, "engine retried after an unknown reducer result");
