@@ -11,8 +11,31 @@
  * Delimiter records live in a relocatable arena. Every relationship is an
  * integer id (zero is null), so growing the arena never invalidates a stack
  * edge or leaks an address into an extension callback.
+ *
+ * An id packs the record's 1-based slot ordinal above a small slot
+ * generation: ((ordinal) << GENERATION_BITS) | generation. Truncation
+ * reclaims slots and bumps their generation, so an id that outlives its
+ * record resolves to NULL instead of aliasing whatever reused the slot.
+ * The ordinal sits in the high bits because ids are ordered: every ordered
+ * id comparison in the engine compares ids of distinct slots, and there
+ * the ordinal dominates. Zero stays the null id (the minimum live id is
+ * 1 << GENERATION_BITS). An id carries only the generation's low nibble,
+ * which wraps after sixteen reclaims of one slot — ids are transient
+ * handles, consumed within the operation that obtained them, and the
+ * nibble is a hardening net over the chain clamps and the diagnostics
+ * validator. Marks, the reference callers retain across churn, carry the
+ * slot's full generation and never wrap back into validity.
  */
 typedef uint32_t markdown_core_delimiter_id;
+
+#define MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS 4u
+#define MARKDOWN_CORE_DELIMITER_ID_GENERATION_MASK 0xFu
+/* The last slot ordinal an id can encode, minus one so the search floor
+ * sentinel (count + 1) always packs without wrapping. A push past this
+ * refuses with OOM — the same fail-closed shape as an unallocatable
+ * arena — instead of minting an id whose ordinal aliases another slot. */
+#define MARKDOWN_CORE_DELIMITER_MAX_RECORDS                                                                            \
+    ((size_t)(((markdown_core_delimiter_id)1 << (32u - MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS)) - 2))
 
 typedef struct markdown_core_delimiter_binding {
     markdown_core_extension *extension;
@@ -71,6 +94,14 @@ typedef struct {
     markdown_core_delimiter_id push_previous_rule;
     markdown_core_delimiter_id open_top_before;
     markdown_core_delimiter_id previous_open;
+    /* The SLOT's generation, not the record's: it survives the record
+     * wipe on push and bumps when truncation reclaims the slot. Ids carry
+     * its low nibble; marks — the one reference type callers retain —
+     * carry it whole, so a stale mark can never wrap back into validity.
+     * Full width sits in what was alignment padding before `binding`, so
+     * the record's size is unchanged, and it shares the cache line the
+     * generation check in record_at is about to return. */
+    uint32_t generation;
     const markdown_core_delimiter_binding *binding;
     markdown_core_node *marker;
     markdown_core_bufsize source_start;
@@ -78,17 +109,26 @@ typedef struct {
     markdown_core_bufsize original_length;
     markdown_core_bufsize remaining_length;
     uint64_t claim_order;
-    /* 1-based index into the unit's concrete capture, 0 when the engine
-     * runs without one. The patch key for reduce-time consumption. */
+    /* 1-based index into the unit's concrete capture — every push appends
+     * a record through the capture required at begin, so this is never 0
+     * on a live record. The patch key for reduce-time consumption. */
     uint32_t capture_index;
     unsigned char can_open;
     unsigned char can_close;
     unsigned char active;
 } markdown_core_delimiter_record;
 
+/* `count` is a raw record count; `tail` is a packed id; `generation` is
+ * the tail slot's full generation at the moment the mark was taken. The
+ * spaces meet in mark validation: the tail's decoded ordinal must equal
+ * the count, and the slot's whole generation must still equal the
+ * mark's — the id's nibble alone would wrap back into validity after
+ * sixteen reclaims of the slot, and marks are the reference callers
+ * retain across exactly such churn. */
 typedef struct {
     uint32_t count;
     markdown_core_delimiter_id tail;
+    uint32_t generation;
 } markdown_core_delimiter_mark;
 
 #ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
@@ -116,8 +156,8 @@ typedef struct {
     markdown_core_delimiter_lane *lanes;
     /* The current inline unit's concrete capture: every push appends one
      * delimiter-run record through it, and the RUN/ENDPOINTS reductions
-     * patch their consumption back. NULL for engines driven without a
-     * subject (the standalone invariant suite). */
+     * patch their consumption back. Required at begin, so NULL only
+     * before the engine's first unit. */
     markdown_core_concrete_capture *capture;
     size_t count;
     size_t capacity;
@@ -156,16 +196,14 @@ markdown_core_inline_attachment *markdown_core_inline_config_find_attachment(
     const markdown_core_extension *extension
 );
 
-void markdown_core_delimiter_engine_init(
-    markdown_core_delimiter_engine *engine,
-    markdown_core_mem *mem,
-    size_t lane_count
-);
+void markdown_core_delimiter_engine_init(markdown_core_delimiter_engine *engine, markdown_core_mem *mem);
 /* Starts an independent inline unit while retaining arena allocations.
- * Returns INVALID unless the previous unit has been fully processed back to
- * the empty mark. Lane storage grows lazily if the parser gained rules
- * between documents. `capture` is the unit's concrete capture (NULL only
- * for the standalone engine suite, which has no unit to record). */
+ * Returns INVALID unless the previous unit has been fully processed back
+ * to the empty mark and a concrete capture is supplied. Lane storage is
+ * allocated (or grown, if the parser gained rules between documents)
+ * here, never later: OOM leaves the engine on its previous unit's lane
+ * table, and a successful begin is the one writer of `lane_count`, so
+ * lane_count > 0 implies lanes != NULL on every downstream path. */
 markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     markdown_core_delimiter_engine *engine,
     size_t lane_count,
@@ -186,8 +224,12 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     uint64_t claim_order
 );
 
+/* The newest live opener on the binding's open stack, 0 when none. The
+ * stack tolerates tombstones (records a reduction removed while they were
+ * stacked); this pops them lazily with path compression, which is why the
+ * engine is not const. */
 markdown_core_delimiter_id markdown_core_delimiter_engine_last_open(
-    const markdown_core_delimiter_engine *engine,
+    markdown_core_delimiter_engine *engine,
     const markdown_core_delimiter_binding *binding
 );
 uint64_t markdown_core_delimiter_engine_claim_order(
@@ -211,6 +253,13 @@ const markdown_core_delimiter_diagnostics *markdown_core_delimiter_engine_diagno
     const markdown_core_delimiter_engine *engine
 );
 int markdown_core_delimiter_engine_validate(const markdown_core_delimiter_engine *engine);
+/* Provided by the diagnostics driver (the invariant suite), not by the
+ * engine: every mutating operation re-validates the engine in diagnostics
+ * builds and reports a violation here with a tag naming the mutation, so
+ * a broken chain fails deterministically at the mutation site instead of
+ * as a distant dereference. Linking delimiter.c with the diagnostics
+ * define means supplying this symbol. */
+void markdown_core_delimiter_engine_invariant_failed(const char *site);
 #endif
 
 #endif

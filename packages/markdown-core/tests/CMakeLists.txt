@@ -534,6 +534,11 @@ set(MARKDOWN_CORE_DELIMITER_ENGINE_CASES
     commonmark_modulo_zero_pairs
     per_rule_isolation
     mark_restore_and_reuse
+    stale_id_is_refused
+    stale_mark_is_refused
+    generation_wrap_is_refused
+    validator_rejects_corruption
+    randomized_operation_soak
     residual_run_progress
     geometric_arena_growth
     arena_growth_oom_transaction

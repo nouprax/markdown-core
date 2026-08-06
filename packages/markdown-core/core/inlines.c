@@ -187,6 +187,7 @@ static void subject_from_buf(
     markdown_core_map *refmap
 );
 static markdown_core_bufsize subject_find_special_char(subject *subj, int options);
+static void subject_set_delimiter_failure(subject *subj, markdown_core_delimiter_result result);
 
 // Create an inline with a literal string value.
 static MARKDOWN_CORE_INLINE markdown_core_node *make_literal(
@@ -324,12 +325,18 @@ static void subject_from_buf(
     e->internal_error = 0;
     markdown_core_concrete_capture_init(&e->capture, parser ? mem : NULL);
     e->delimiters = parser ? &parser->inline_delimiters : NULL;
-    if (e->delimiters && markdown_core_delimiter_engine_begin(
-                             e->delimiters,
-                             MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count,
-                             &e->capture
-                         ) != MARKDOWN_CORE_DELIMITER_OK) {
-        e->internal_error = 1;
+    if (e->delimiters) {
+        /* begin allocates the unit's lane table, so its failure can be an
+         * allocation loss: classify through the one delimiter-result
+         * funnel rather than reporting OOM as a broken invariant. */
+        subject_set_delimiter_failure(
+            e,
+            markdown_core_delimiter_engine_begin(
+                e->delimiters,
+                MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT + extension_rule_count,
+                &e->capture
+            )
+        );
     }
     e->active_attachment = NULL;
     e->phase = INLINE_PHASE_SCAN;
@@ -2166,7 +2173,7 @@ void markdown_core_parse_inlines_from(
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
         ;
 
-    process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0});
+    process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0, 0});
     // free bracket stack
     while (subj.last_bracket) {
         pop_bracket(&subj);
