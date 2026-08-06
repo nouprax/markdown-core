@@ -441,6 +441,40 @@ stops colliding. `specs/scope-sanity/ledger.json` holds the 216 as an
 only-shrink budget until M3.4 drives it to zero, at which point the ledger and
 its audit are deleted rather than kept at zero.
 
+**Ledger movement recorded for M3.1**, per the rule that an entry may grow
+only with its cause written down here.
+
+- `packages/markdown-core/core/text.c {9, 0, 5}` is **removed**: the file is
+  deleted. The measured-file floor drops 46 → 44 rather than 45, because
+  `core/text.h` carried two `static MARKDOWN_CORE_INLINE` functions and
+  llvm-cov therefore measured the header as a file of its own.
+- `packages/markdown-core/extensions/session.c` grows **55 → 56 lines**
+  (functions and branches unchanged). Investigated before being recorded, on
+  the principle that paying a budget down beats booking it: the genuinely new
+  logic — the session's first fallible allocation at open, `source_new` and
+  its failure arm, where `markdown_core_text_init` could not fail — **is
+  covered**, by the existing OOM sweeps. Every uncovered line in the file is a
+  null-argument guard or a `? :` false arm reachable only from the `api`
+  suite, which the coverage preset excludes by design because it asserts
+  nothing about parse output. So this is one line of accounting, not one line
+  of untested logic.
+
+Two entries measure **looser** than they are recorded and are deliberately
+left alone. `core/delimiter.c` (53/0/111 against 79/0/163) and
+`core/inlines.c` (127/2/140 against 129/2/141) were already loose at this
+slice's base, so the slack is not this change's to claim — it is the state
+#94's review arrived at when it restored those budgets under the rule that a
+test raising coverage without asserting parse output does not pay one down.
+`core/blocks.c` measures 2 lines and 1 branch better than its entry and is
+also left alone, for a different and more interesting reason: the plausible
+cause is that feeding the parser in rope leaf runs now exercises
+`S_parser_feed`'s partial-line accumulation, which a single whole-text feed
+never reached. That would be a legitimate paydown — behaviour the pinning
+corpus asserts, newly reached. It is not tightened here because it was not
+*proven*: `S_parser_feed` still holds 15 uncovered regions and the gain was
+not attributed region by region. An unproven paydown is exactly the claim
+that review has caught before.
+
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
 at all. The dominant violator of it today is the suffix document-children line

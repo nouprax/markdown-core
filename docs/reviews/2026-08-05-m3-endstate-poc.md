@@ -334,3 +334,38 @@ unreachable code in the ledger.
 M7 absorbs nothing new. It loses the substrate adoption that only a comment ever
 assigned to it, and with it the risk of changing the byte store inside the one
 milestone the plan says cannot be split.
+
+## Verified in delivery, and what it changed
+
+M3.1 shipped the adoption. Three things the PoC could not settle were settled by
+building it, and are recorded here so they are not re-derived:
+
+1. **The overflow guard is per replacement, not per batch.** The first version
+   accumulated a running total, reasoning that two individually representable
+   replacements can sum past `SIZE_MAX`. Mutation testing refuted it: replacing
+   the accumulation with a per-edit check left the batch case passing, because
+   a total cannot approach `SIZE_MAX` until the buffers it counts have been
+   allocated, and those allocations fail first. The batch arm was a branch no
+   input can reach — the defect `extensions/source.h` already warns about — so
+   the guard is now exactly the condition under which `buffer_new` would wrap.
+   Deleting it turns `regression_source_span_validation` into a bus error.
+2. **The read primitives carry no out-of-range arm.** `run_at` and `byte_at`
+   shipped with one, and the coverage gate refused `extensions/source.c` at
+   553/556 lines. No caller has such an arm to exercise: the scans loop below
+   `markdown_core_source_length` and every probe tests its index first. Removed,
+   with the precondition stated where callers read it.
+3. **The backward walk is the one reverse scan in the engine**
+   (`extensions/incremental.c`, the restart boundary). Without a reverse cursor
+   it costs `O(log n)` per byte instead of `O(1)`, and it is bounded by one
+   line, so it sits on no asymptotic path. A cursor is deferred until a
+   measurement asks for it rather than added on suspicion.
+
+Two open items are deliberately still open. `STRICT_UTF8` loses its only
+production caller when the session takes `PERMISSIVE_BYTES`, but the contract
+defines both profiles (§7.1) and gates the strict boundary from both sides
+(§14.3.6), so it has a declared consumer and is not the dead code
+`specs/coverage/policy.json` rule 6 is about; that reading should be written
+into `source.h` rather than left implicit. And the paired benchmark for the
+substrate swap is not yet run — the edit-cost figures above are from the PoC
+harness, not from the repository's benchmark suite on all four platforms as
+§14.7 requires.
