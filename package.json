@@ -12,6 +12,7 @@
         "audit:packages": "scripts/audit-package-contents.sh",
         "audit:repository": "scripts/audit-repository.sh",
         "audit:repository:clean": "scripts/audit-repository.sh --clean",
+        "audit:scope-sanity": "node scripts/audit-scope-sanity.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "benchmark:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark",
@@ -70,7 +71,7 @@
         "test:es-node": "node packages/es-markdown-core/scripts/run-tests.mjs --target node",
         "test:es-browser": "node packages/es-markdown-core/scripts/run-tests.mjs --target browser",
         "verify": "pnpm run verify:core && pnpm run verify:macos",
-        "verify:core": "pnpm run format:c:check && pnpm run format:cmake:check && pnpm run format:kotlin:check && pnpm run format:es:check && pnpm run lint:c && pnpm run lint:kotlin && pnpm run lint:es && pnpm run check:contracts && pnpm run check:gradle-model && node scripts/check-release-version.mjs --skip-swift && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:packages",
+        "verify:core": "pnpm run format:c:check && pnpm run format:cmake:check && pnpm run format:kotlin:check && pnpm run format:es:check && pnpm run lint:c && pnpm run lint:kotlin && pnpm run lint:es && pnpm run check:contracts && pnpm run check:gradle-model && node scripts/check-release-version.mjs --skip-swift && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:packages && pnpm run audit:scope-sanity",
         "verify:macos": "pnpm run format:swift:check && pnpm run lint:swift && pnpm run release:check-version && pnpm run audit:surface"
     },
     "devDependencies": {

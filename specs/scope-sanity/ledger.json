@@ -1,0 +1,43 @@
+{
+    "schemaVersion": 1,
+    "rule": "docs/reviews/2026-08-05-m3-endstate-poc.md",
+    "purpose": "A dumped scope is a place in the source. Two classes of row are not: the sentinel 0:0..0:0, written when a node is recorded as having no position, and a negative range, written when a closed (line, column) interval is asked to express an empty one. Both are symptoms of the same representation defect and both are eliminated by M3's extents, which express length zero natively. Until then the counts may only shrink. When every count reaches zero this ledger and scripts/audit-scope-sanity.mjs are deleted, not kept at zero.",
+    "budget": {
+        "packages/markdown-core/tests/fixtures/extensions-cross-link-embed.txt": {
+            "sentinel": 7,
+            "negative": 0
+        },
+        "packages/markdown-core/tests/fixtures/extensions-directive.txt": {
+            "sentinel": 7,
+            "negative": 0
+        },
+        "packages/markdown-core/tests/fixtures/extensions-formula-option-gates.txt": {
+            "sentinel": 2,
+            "negative": 0
+        },
+        "packages/markdown-core/tests/fixtures/extensions.txt": {
+            "sentinel": 36,
+            "negative": 7
+        },
+        "packages/markdown-core/tests/fixtures/regression.txt": {
+            "sentinel": 18,
+            "negative": 1
+        },
+        "packages/markdown-core/tests/fixtures/smart_punct.txt": {
+            "sentinel": 17,
+            "negative": 0
+        },
+        "packages/markdown-core/tests/fixtures/spec.txt": {
+            "sentinel": 110,
+            "negative": 6
+        },
+        "specs/canonical-ast/comments.ast": {
+            "sentinel": 0,
+            "negative": 3
+        },
+        "specs/canonical-ast/inlines.ast": {
+            "sentinel": 2,
+            "negative": 0
+        }
+    }
+}
