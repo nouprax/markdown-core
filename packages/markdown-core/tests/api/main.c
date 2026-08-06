@@ -2062,6 +2062,20 @@ static void session_edit_errors(test_batch_runner *runner) {
     markdown_core_error_free(error);
     error = NULL;
 
+    /* The same absurd length against an *empty* session, which is the state
+     * every session opens in: there are no retained bytes for the length to
+     * overflow, so a check phrased only against the resulting length lets it
+     * through and the store sizes one buffer as a header plus the payload.
+     * This is the first call a caller can make, with no edit history in front
+     * of it, which is what makes it worth pinning separately from the case
+     * below. */
+    OK(runner,
+       !markdown_core_session_edit(session, 0, 0, (const uint8_t *)"y", (size_t)-1, &error),
+       "overflowing edit length on an empty session is rejected");
+    markdown_core_error_free(error);
+    error = NULL;
+    OK(runner, markdown_core_session_length(session) == 0, "rejected edit leaves the empty text unchanged");
+
     /* An edit whose total length would overflow size_t must fail cleanly
      * before any byte of the (impossible) source buffer is read. */
     markdown_core_session_edit(session, 0, 0, (const uint8_t *)"x", 1, &error);
@@ -2071,6 +2085,15 @@ static void session_edit_errors(test_batch_runner *runner) {
     markdown_core_error_free(error);
     error = NULL;
     OK(runner, markdown_core_session_length(session) == 1, "rejected edit leaves the text unchanged");
+
+    /* And with the whole document named for deletion, so nothing is retained
+     * and the replacement alone would become the new source. */
+    OK(runner,
+       !markdown_core_session_edit(session, 0, 1, (const uint8_t *)"y", (size_t)-1, &error),
+       "overflowing edit length replacing the whole document is rejected");
+    markdown_core_error_free(error);
+    error = NULL;
+    OK(runner, markdown_core_session_length(session) == 1, "rejected whole-document edit leaves the text unchanged");
 
     markdown_core_session_free(session);
 }

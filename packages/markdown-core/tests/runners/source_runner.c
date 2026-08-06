@@ -1229,6 +1229,12 @@ static int case_utf8_matrix(void) {
 
 /* --- span validation ---------------------------------------------------- */
 
+/* Wider than any plausible buffer header, so that a replacement length can sit
+ * strictly between "the header can be added to it" and "the retained bytes can
+ * be added to it" — the window in which only the resulting-length check
+ * refuses the edit. */
+#define SPAN_WIDE_SOURCE 4096
+
 static int case_span_validation(void) {
     counting_mem counting;
     markdown_core_source_stats stats = {0, 0, 0, 0};
@@ -1286,6 +1292,59 @@ static int case_span_validation(void) {
         failed = 1;
     }
 
+    /* The same absurd length where the *result* is the replacement alone: the
+     * edit deletes the whole document, so nothing is retained and a check
+     * phrased only against the resulting length has nothing to overflow. The
+     * replacement still becomes one buffer sized as a header plus a payload,
+     * and that sum is what wraps — leaving a byte-sized allocation to receive
+     * a SIZE_MAX memcpy. Whole-document replacement and the empty-source case
+     * below are the two ways to reach it. */
+    edits[0].span.start = 0;
+    edits[0].span.end = sizeof(text) - 1;
+    edits[0].replacement = text;
+    edits[0].replacement_length = SIZE_MAX;
+    result = markdown_core_source_apply(base, edits, 1, &stats, &status);
+    if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+        fprintf(stderr, "span_validation: whole-document replacement of unrepresentable length accepted\n");
+        failed = 1;
+    }
+
+    /* Between the two: a length the buffer header can be added to, but not to
+     * the bytes this edit keeps. Only the resulting-length arm refuses it, so
+     * the two checks are each other's complement rather than one subsuming
+     * the other. It needs a source wider than the buffer header for the gap
+     * between the two thresholds to exist at all. */
+    {
+        uint8_t wide[SPAN_WIDE_SOURCE];
+        markdown_core_source *wide_base;
+        size_t i;
+        for (i = 0; i < sizeof(wide); i++) {
+            wide[i] = (uint8_t)('a' + (i % 26));
+        }
+        wide_base = markdown_core_source_new(
+            &counting.mem,
+            MARKDOWN_CORE_SOURCE_STRICT_UTF8,
+            wide,
+            sizeof(wide),
+            &stats,
+            &status
+        );
+        if (!wide_base) {
+            markdown_core_source_release(base);
+            return -1;
+        }
+        edits[0].span.start = 1;
+        edits[0].span.end = 1;
+        edits[0].replacement = wide;
+        edits[0].replacement_length = SIZE_MAX - (SPAN_WIDE_SOURCE - 1);
+        result = markdown_core_source_apply(wide_base, edits, 1, &stats, &status);
+        if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+            fprintf(stderr, "span_validation: unrepresentable resulting length accepted (header-representable)\n");
+            failed = 1;
+        }
+        markdown_core_source_release(wide_base);
+    }
+
     edits[0].replacement = NULL;
     edits[0].replacement_length = 0;
 
@@ -1316,6 +1375,30 @@ static int case_span_validation(void) {
     /* Nothing was published by any failure. */
     if (expect_bytes("span_validation", base, text, sizeof(text) - 1) != 0) {
         failed = 1;
+    }
+
+    /* The empty source is the same hole reached without deleting anything, and
+     * it is the state every session opens in — so this is one public
+     * markdown_core_session_edit away, with no edit history in front of it. */
+    {
+        markdown_core_source *empty =
+            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &stats, &status);
+        if (!empty) {
+            markdown_core_source_release(base);
+            return -1;
+        }
+        edits[0].span.start = 0;
+        edits[0].span.end = 0;
+        edits[0].replacement = text;
+        edits[0].replacement_length = SIZE_MAX;
+        result = markdown_core_source_apply(empty, edits, 1, &stats, &status);
+        if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+            fprintf(stderr, "span_validation: unrepresentable insertion into an empty source accepted\n");
+            failed = 1;
+        }
+        markdown_core_source_release(empty);
+        edits[0].replacement = NULL;
+        edits[0].replacement_length = 0;
     }
 
     /* Adjacent spans are legal and deterministic. */

@@ -120,6 +120,51 @@ static void *fb_sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size
 
 static markdown_core_mem fb_sweep_mem = {fb_sweep_calloc, fb_sweep_realloc, fb_free};
 
+/* Unwind allocator: the sweep allocator plus a live-block count, so a refused
+ * construction can be asked whether it gave everything back. The sweep
+ * allocator deliberately does not track this — its subject is convergence
+ * after a failed commit, and it runs tens of thousands of ordinals — so this
+ * is a second, narrower instrument rather than a change to that one. */
+static unsigned long fb_unwind_count;
+static unsigned long fb_unwind_fail_at; /* 0 = count only */
+static long fb_unwind_live;
+
+static void *fb_unwind_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    void *block;
+    (void)mem;
+    if (++fb_unwind_count == fb_unwind_fail_at) {
+        return NULL;
+    }
+    block = calloc(nmemb, size);
+    if (block) {
+        fb_unwind_live++;
+    }
+    return block;
+}
+
+static void *fb_unwind_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    void *block;
+    (void)mem;
+    if (++fb_unwind_count == fb_unwind_fail_at) {
+        return NULL;
+    }
+    block = realloc(pointer, size);
+    if (block && !pointer) {
+        fb_unwind_live++;
+    }
+    return block;
+}
+
+static void fb_unwind_free(markdown_core_mem *mem, void *pointer) {
+    (void)mem;
+    if (pointer) {
+        fb_unwind_live--;
+    }
+    free(pointer);
+}
+
+static markdown_core_mem fb_unwind_mem = {fb_unwind_calloc, fb_unwind_realloc, fb_unwind_free};
+
 static markdown_core_chunk fb_chunk(const char *text) {
     markdown_core_chunk chunk;
     chunk.data = (unsigned char *)text;
@@ -1767,6 +1812,80 @@ static int case_session_oom_sweep_delta(void) { return fb_session_sweep(false, t
  * hold exactly as they do against direct allocation. */
 static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, false); }
 
+/* A constructor that refuses returns everything it took, or it is a leak with
+ * no handle left to free it by. markdown_core_session_open_with_mem builds in
+ * stages — the session record, then the arena, then the first source — and
+ * each new stage adds a return that has to unwind the stages before it. The
+ * sweeps above cannot see this: they measure convergence after a failed
+ * commit, and a session that never opened has no state to converge.
+ *
+ * Scope, stated because it is narrower than the rule: this counts blocks from
+ * the injected allocator, and the session record itself is a system
+ * allocation made before any allocator is chosen. So the arena — every pooled
+ * session's largest single object — is pinned here, and the session record is
+ * covered by the sanitizer suites instead. */
+static int fb_open_unwind(bool pooled) {
+    unsigned long total;
+    unsigned long k;
+    markdown_core_session *session;
+    int failed = 0;
+
+    fb_unwind_count = 0;
+    fb_unwind_fail_at = 0;
+    fb_unwind_live = 0;
+    session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, NULL);
+    if (!session) {
+        fprintf(stderr, "open_unwind: control open failed (pooled=%d)\n", (int)pooled);
+        return -1;
+    }
+    total = fb_unwind_count;
+    markdown_core_session_free(session);
+    if (fb_unwind_live != 0) {
+        fprintf(stderr, "open_unwind: a successful open/free left %ld blocks live\n", fb_unwind_live);
+        return -1;
+    }
+    if (total == 0 || total > 4096) {
+        fprintf(stderr, "open_unwind: implausible open allocation count %lu\n", total);
+        return -1;
+    }
+
+    for (k = 1; k <= total; k++) {
+        markdown_core_error *error = NULL;
+        fb_unwind_count = 0;
+        fb_unwind_fail_at = k;
+        fb_unwind_live = 0;
+        session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, &error);
+        if (session) {
+            markdown_core_session_free(session);
+        }
+        markdown_core_error_free(error);
+        if (fb_unwind_live != 0) {
+            fprintf(
+                stderr,
+                "FAILED: open_unwind: allocation %lu / %lu (pooled=%d) refused the open and leaked %ld block(s)\n",
+                k,
+                total,
+                (int)pooled,
+                fb_unwind_live
+            );
+            failed = 1;
+        }
+    }
+    fb_unwind_fail_at = 0;
+    return failed ? -1 : 0;
+}
+
+static int case_session_open_unwind(void) {
+    int failed = 0;
+    if (fb_open_unwind(false) != 0) {
+        failed = 1;
+    }
+    if (fb_open_unwind(true) != 0) {
+        failed = 1;
+    }
+    return failed ? -1 : 0;
+}
+
 static const markdown_core_node *fb_child_of_type(const markdown_core_node *parent, markdown_core_node_type type) {
     const markdown_core_node *child;
 
@@ -2896,6 +3015,7 @@ static const fb_case_entry FB_CASES[] = {
     {"session_oom_sweep", case_session_oom_sweep},
     {"session_oom_sweep_delta", case_session_oom_sweep_delta},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
+    {"session_open_unwind", case_session_open_unwind},
     {"block_directive_label_lookup_locality", case_block_directive_label_lookup_locality},
     {"reference_fanout_uniform_routing", case_reference_fanout_uniform_routing},
     {"restart_locality_counters", case_restart_locality_counters},
