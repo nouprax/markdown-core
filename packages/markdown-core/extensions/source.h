@@ -160,16 +160,18 @@ markdown_core_source *markdown_core_source_apply(
  * undefined; every caller here materializes ranges it just measured. */
 void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t offset, size_t length, uint8_t *out);
 
-/** POC-1 SPIKE: random-access and streaming reads.
+/** Random-access and streaming reads.
  *
  * `run_at` returns a pointer to the contiguous run of stored bytes that
- * begins at `offset` and `*run_length` its length, or NULL at/after the end.
+ * begins at `offset`, and `*run_length` its length. `offset` must be inside
+ * the source; there is no out-of-range arm, because no caller has one to
+ * exercise and an unreachable branch is a defect here rather than caution.
  * A run never spans two leaves, so a caller that needs more bytes calls
  * again at offset + *run_length. O(log n) per call: there are no parent
  * pointers, so successive runs re-descend from the root. */
 const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length);
 
-/** POC-1 SPIKE: the stored byte at `offset`; offset must be in range. */
+/** The stored byte at `offset`, which must be inside the source. */
 uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset);
 
 /** Sums the capacities of the distinct buffers the source retains — the

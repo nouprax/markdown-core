@@ -396,7 +396,7 @@ static bool commit_full(
         watch_definition_lookups(parser, &recording);
     }
 
-    // POC-1 SPIKE: feed leaf run by leaf run. markdown_core_parser_feed is a
+    // Fed leaf run by leaf run. markdown_core_parser_feed is a
     // streaming interface (core/blocks.c S_parser_feed buffers a partial line
     // in parser->linebuf), so the chunking is free to follow the rope.
     size_t length = markdown_core_source_length(session->source);

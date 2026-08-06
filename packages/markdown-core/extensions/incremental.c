@@ -78,8 +78,8 @@
  * `length` for an unterminated final line. NUL bytes never end a line: the
  * feed machinery replaces them inline and keeps accumulating. */
 static size_t line_end(const markdown_core_source *src, size_t length, size_t start) {
-    // POC-1 SPIKE: run-walk instead of a flat index. Same scan, one extra
-    // O(log n) descent per leaf crossed.
+    // A run walk, not a flat index: the same byte scan, plus one O(log n)
+    // descent each time it crosses a leaf boundary.
     size_t i = start;
     while (i < length) {
         size_t run = 0;
@@ -2050,7 +2050,7 @@ typedef struct {
 typedef struct {
     markdown_core_session *session;
     markdown_core_mem *mem;
-    const markdown_core_source *bytes; // POC-1 SPIKE
+    const markdown_core_source *bytes; // borrowed from the session
     size_t length;
     markdown_core_node *doc;
     markdown_core_edit_summary pending;
@@ -2251,8 +2251,11 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
             prev_end--;
         }
         prev_start = prev_end;
-        // POC-1 SPIKE: BACKWARD scan. The rope has no reverse cursor, so this
-        // is O(log n) per byte instead of O(1) per byte.
+        // The one backward scan in the engine, walking to the previous line
+        // start so the staged parser inherits last_line_length. The rope has
+        // no reverse cursor, so this costs O(log n) per byte rather than
+        // O(1); it is bounded by one line, so it stays off every asymptotic
+        // path, and a cursor is worth adding only if a measurement asks.
         while (prev_start > 0) {
             uint8_t c = markdown_core_source_byte_at(pipeline->bytes, prev_start - 1);
             if (c == '\n' || c == '\r') {
@@ -2269,8 +2272,8 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
         if (!offset_push(pipeline->mem, &pipeline->line_offsets, feed_pos)) {
             return false;
         }
-        // POC-1 SPIKE: one line, fed as its leaf runs. feed's linebuf makes
-        // the split invisible: the run carrying the terminator processes it.
+        // One line, fed as its leaf runs. The feed's linebuf makes the split
+        // invisible: whichever run carries the terminator processes the line.
         {
             size_t p = feed_pos;
             while (p < next) {

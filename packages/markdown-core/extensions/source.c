@@ -699,14 +699,16 @@ void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t 
     }
 }
 
-// --- POC-1 SPIKE: reads ----------------------------------------------------
+// --- reads ------------------------------------------------------------------
 
+// `offset` is inside the source, which every caller establishes before
+// asking: the scans loop while `offset < markdown_core_source_length`, and
+// the single-byte probes test their index against the same length or against
+// a line start they just found. There is deliberately no out-of-range arm —
+// it would be a branch no input can reach, and the coverage gate treats one
+// of those as a defect rather than as caution.
 const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length) {
     const source_node *node = source->root;
-    if (!node || offset >= node->length) {
-        *run_length = 0;
-        return NULL;
-    }
     while (node->left) {
         if (offset < node->left->length) {
             node = node->left;
@@ -721,8 +723,7 @@ const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, s
 
 uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset) {
     size_t run = 0;
-    const uint8_t *p = markdown_core_source_run_at(source, offset, &run);
-    return p ? *p : 0;
+    return *markdown_core_source_run_at(source, offset, &run);
 }
 
 // --- diagnostics -----------------------------------------------------------
