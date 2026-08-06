@@ -30,6 +30,38 @@ const canonicalDir = path.join(root, "specs/canonical-ast");
 const update = process.argv.includes("--update");
 
 const scopePattern = /scope=(\d+):(\d+)\.\.(\d+):(\d+)/;
+// The opener carries the example's extension set (`example table`,
+// `example footnotes autolink strikethrough table`, `example disabled`), so
+// the name is a prefix and not the whole line. Requiring the whole line drops
+// 39 of the 860 blocks, and a ratchet that silently stops watching part of
+// its subject is worse than no ratchet.
+const exampleOpen = /^`{20,}\s*example\b/;
+const exampleClose = /^`{20,}\s*$/;
+
+// A `.txt` fixture is Markdown prose wrapping example blocks, and an example
+// block is an input, a `.` separator, and the expected dump. Only the dump is
+// this audit's subject: the input is arbitrary Markdown, so a fixture is free
+// to contain the literal text `scope=0:0..0:0` as content, and counting that
+// would fail verify:core on an innocent fixture. A `.ast` file is a dump with
+// no wrapper, so it is read whole.
+const dumpLines = (text, isFixture) => {
+    if (!isFixture) return text.split("\n");
+    const lines = [];
+    let state = "prose";
+    for (const line of text.split("\n")) {
+        if (state === "prose") {
+            if (exampleOpen.test(line)) state = "input";
+            continue;
+        }
+        if (state === "input") {
+            if (line === ".") state = "expected";
+            continue;
+        }
+        if (exampleClose.test(line)) state = "prose";
+        else lines.push(line);
+    }
+    return lines;
+};
 
 const sources = [
     ...(await readdir(fixturesDir))
@@ -47,7 +79,7 @@ for (const [dir, entry] of sources) {
     const text = await readFile(path.join(root, relative), "utf8");
     let sentinel = 0;
     let negative = 0;
-    for (const line of text.split("\n")) {
+    for (const line of dumpLines(text, relative.endsWith(".txt"))) {
         const scope = line.match(scopePattern);
         if (scope === null) continue;
         scanned += 1;

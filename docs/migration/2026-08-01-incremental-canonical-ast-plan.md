@@ -377,10 +377,14 @@ The slices, in a hard order:
 
 1. **M3.1 substrate unification** — session on the rope, `core/text.c` deleted.
    The gate is a link failure: a build with the file removed must link and pass.
-2. **M3.2 the coordinate decision and the fused sequence** — no coordinate is
-   stored in any form, not absolute, not parent-relative. An extent is
-   (identity, length). Breaks become first-class units, which is what makes the
-   byte partition total and therefore what makes its gate writable.
+2. **M3.2 the coordinate decision and the fused sequence** — the decision is
+   that an extent is (identity, length) and that **the sequence** stores no
+   coordinate in any form, neither absolute nor relative to anything. It binds
+   the structure this slice builds, not yet the tree: `core/node.h` keeps its
+   five fields until M3.4, and until then the two coexist, which is what makes
+   M3.4 a migration with something to migrate onto rather than a rewrite.
+   Breaks become first-class units here, because that is what makes the byte
+   partition total and therefore what makes its gate writable at all.
 3. **M3.3 index subsumption** — the clean index, the definition index, the
    suffix line shift, and `line_offsets` become queries or disappear.
 4. **M3.4 position deletion** — the five `int`s leave `core/node.h`, and every
