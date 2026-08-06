@@ -33,9 +33,9 @@ static void delimiter_invariant_check(const markdown_core_delimiter_engine *engi
 #define DELIMITER_CHECK_PUSH(engine, site) ((void)0)
 #endif
 
-static markdown_core_delimiter_id delimiter_id_pack(uint32_t ordinal, unsigned char generation) {
+static markdown_core_delimiter_id delimiter_id_pack(uint32_t ordinal, uint32_t generation) {
     return ((markdown_core_delimiter_id)ordinal << MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS) |
-           ((markdown_core_delimiter_id)generation & MARKDOWN_CORE_DELIMITER_ID_GENERATION_MASK);
+           (generation & MARKDOWN_CORE_DELIMITER_ID_GENERATION_MASK);
 }
 
 static uint32_t delimiter_id_ordinal(markdown_core_delimiter_id id) {
@@ -435,6 +435,7 @@ markdown_core_delimiter_mark markdown_core_delimiter_engine_mark(const markdown_
     markdown_core_delimiter_mark mark;
     mark.count = (uint32_t)engine->count;
     mark.tail = engine->tail;
+    mark.generation = engine->count ? engine->records[engine->count - 1].generation : 0;
     return mark;
 }
 
@@ -488,7 +489,7 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
         /* The wipe spares the slot's generation: truncation bumped it when
          * the slot was reclaimed, and the id minted below must carry it or
          * the ids retired by that truncation come back to life. */
-        unsigned char generation = record->generation;
+        uint32_t generation = record->generation;
         memset(record, 0, sizeof(*record));
         record->generation = generation;
     }
@@ -801,9 +802,12 @@ static int mark_is_valid(const markdown_core_delimiter_engine *engine, markdown_
     }
     /* record_at resolves NULL for a stale tail — a mark held across a
      * truncation that reclaimed its record names nothing, even when later
-     * pushes have regrown the count to the mark's shape. */
+     * pushes have regrown the count to the mark's shape. The id's nibble
+     * wraps after sixteen reclaims of the slot, so the mark's full
+     * generation is compared as well: a retained mark never wraps back
+     * into validity. */
     tail = record_at(engine, mark.tail);
-    return tail && delimiter_id_ordinal(mark.tail) == mark.count && tail->active;
+    return tail && delimiter_id_ordinal(mark.tail) == mark.count && tail->generation == mark.generation && tail->active;
 }
 
 markdown_core_delimiter_result markdown_core_delimiter_engine_truncate(

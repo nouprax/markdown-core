@@ -560,6 +560,59 @@ cleanup:
     return result;
 }
 
+static int case_generation_wrap_is_refused(void) {
+    static const char case_name[] = "generation_wrap_is_refused";
+    static const markdown_core_delimiter_rule rule = {
+        MARKDOWN_CORE_DELIMITER_PAIR_NEAREST,
+        MARKDOWN_CORE_DELIMITER_REDUCE_RANGE,
+        0,
+        NULL,
+    };
+    dr_allocator allocator;
+    markdown_core_delimiter_engine engine;
+    markdown_core_delimiter_binding binding = dr_binding(&rule, 0);
+    markdown_core_delimiter_mark prefix;
+    markdown_core_delimiter_mark stale;
+    markdown_core_bufsize position = 2;
+    size_t cycle;
+    int result = 0;
+
+    dr_allocator_init(&allocator);
+    dr_active_log = NULL;
+    DR_REQUIRE(dr_engine_start(&engine, &allocator.mem, 1), "engine start failed");
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 0, 1), "prefix opener push failed");
+    prefix = markdown_core_delimiter_engine_mark(&engine);
+    DR_REQUIRE(dr_push(&engine, &binding, 1, 0, 1, 1), "reclaimed opener push failed");
+    stale = markdown_core_delimiter_engine_mark(&engine);
+    /* Sixteen reclaim/reuse cycles of the stale mark's slot wrap the id's
+     * generation nibble back to its original value; only the mark's full
+     * generation still tells the two records apart. */
+    for (cycle = 0; cycle < 16; cycle++) {
+        DR_REQUIRE(
+            markdown_core_delimiter_engine_truncate(&engine, prefix) == MARKDOWN_CORE_DELIMITER_OK,
+            "wrap-cycle restore failed"
+        );
+        DR_REQUIRE(dr_push(&engine, &binding, 1, 0, position++, 1), "wrap-cycle push failed");
+    }
+    DR_REQUIRE(engine.tail == stale.tail, "sixteen reclaims did not wrap the id nibble");
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_truncate(&engine, stale) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a wrapped stale mark was accepted by truncate"
+    );
+    DR_REQUIRE(
+        markdown_core_delimiter_engine_process(&engine, NULL, NULL, stale) == MARKDOWN_CORE_DELIMITER_INVALID,
+        "a wrapped stale mark was accepted by process"
+    );
+    DR_REQUIRE(
+        engine.count == 2 && markdown_core_delimiter_engine_validate(&engine),
+        "a refused wrapped mark changed engine state"
+    );
+
+cleanup:
+    markdown_core_delimiter_engine_free(&engine);
+    return result;
+}
+
 static markdown_core_delimiter_id dr_id_at(const markdown_core_delimiter_engine *engine, uint32_t ordinal) {
     return (markdown_core_delimiter_id)(((markdown_core_delimiter_id)ordinal
                                          << MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS) |
@@ -1305,6 +1358,7 @@ static const dr_case DR_CASES[] = {
     {"mark_restore_and_reuse", case_mark_restore_and_reuse},
     {"stale_id_is_refused", case_stale_id_is_refused},
     {"stale_mark_is_refused", case_stale_mark_is_refused},
+    {"generation_wrap_is_refused", case_generation_wrap_is_refused},
     {"validator_rejects_corruption", case_validator_rejects_corruption},
     {"randomized_operation_soak", case_randomized_operation_soak},
     {"residual_run_progress", case_residual_run_progress},

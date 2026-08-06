@@ -19,10 +19,12 @@
  * The ordinal sits in the high bits because ids are ordered: every ordered
  * id comparison in the engine compares ids of distinct slots, and there
  * the ordinal dominates. Zero stays the null id (the minimum live id is
- * 1 << GENERATION_BITS). The generation is a nibble and wraps: sixteen
- * reclaim cycles of one slot re-issue a generation, so the check is a
- * hardening net over the chain clamps and the diagnostics validator, not
- * a replacement for either.
+ * 1 << GENERATION_BITS). An id carries only the generation's low nibble,
+ * which wraps after sixteen reclaims of one slot — ids are transient
+ * handles, consumed within the operation that obtained them, and the
+ * nibble is a hardening net over the chain clamps and the diagnostics
+ * validator. Marks, the reference callers retain across churn, carry the
+ * slot's full generation and never wrap back into validity.
  */
 typedef uint32_t markdown_core_delimiter_id;
 
@@ -92,6 +94,14 @@ typedef struct {
     markdown_core_delimiter_id push_previous_rule;
     markdown_core_delimiter_id open_top_before;
     markdown_core_delimiter_id previous_open;
+    /* The SLOT's generation, not the record's: it survives the record
+     * wipe on push and bumps when truncation reclaims the slot. Ids carry
+     * its low nibble; marks — the one reference type callers retain —
+     * carry it whole, so a stale mark can never wrap back into validity.
+     * Full width sits in what was alignment padding before `binding`, so
+     * the record's size is unchanged, and it shares the cache line the
+     * generation check in record_at is about to return. */
+    uint32_t generation;
     const markdown_core_delimiter_binding *binding;
     markdown_core_node *marker;
     markdown_core_bufsize source_start;
@@ -106,20 +116,19 @@ typedef struct {
     unsigned char can_open;
     unsigned char can_close;
     unsigned char active;
-    /* The SLOT's generation, not the record's: it survives the record
-     * wipe on push, bumps when truncation reclaims the slot, and is the
-     * low nibble of every id minted for the slot. Slot state carried
-     * in-record so the generation check in record_at touches the cache
-     * line it is about to return. */
-    unsigned char generation;
 } markdown_core_delimiter_record;
 
-/* `count` is a raw record count; `tail` is a packed id. The two spaces
- * meet in mark validation, which requires the tail's decoded ordinal to
- * equal the count and the tail's generation to still match its slot. */
+/* `count` is a raw record count; `tail` is a packed id; `generation` is
+ * the tail slot's full generation at the moment the mark was taken. The
+ * spaces meet in mark validation: the tail's decoded ordinal must equal
+ * the count, and the slot's whole generation must still equal the
+ * mark's — the id's nibble alone would wrap back into validity after
+ * sixteen reclaims of the slot, and marks are the reference callers
+ * retain across exactly such churn. */
 typedef struct {
     uint32_t count;
     markdown_core_delimiter_id tail;
+    uint32_t generation;
 } markdown_core_delimiter_mark;
 
 #ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
