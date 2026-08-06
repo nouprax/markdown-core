@@ -352,11 +352,41 @@ islands recover only inside their boundary), and a definition-flip gate — with
 converts exactly those occurrences, reparses only their regions, and does work
 independent of document size.
 
-### M3 — Extents and coordinates
+### M3 — Substrate, extents, and coordinates
 
 `SourceExtent` as identity, the order-maintenance aggregate sequence carrying
 subtree byte sums, and `Document.scope(extent, profile)` across all five
-coordinate profiles.
+coordinate profiles — **over a single byte substrate this milestone adopts.**
+
+**M3 absorbs the substrate adoption.** `extensions/source.c` — the persistent
+rope M2 delivered, at 100% coverage and referenced today only by its own runner
+— becomes the session's byte store, and the flat `core/text.c` is deleted. Only
+a comment (`extensions/source.h:22-24`) ever assigned that to M7; the M7 section
+below describes the public header, the delta engine, and the four-binding move,
+and never mentions the byte store. The reordering is not a scheduling
+preference. A persistent sequence over source is what makes the four ordered
+side indices reduce to queries, and three of those four then reduce to nothing
+at all — so deferring the substrate defers the milestone rather than its cost.
+It was PoC-verified before being written here: the flip is 153 insertions and 34
+deletions across five files, `ctest --preset correctness` 164/164 and ASan
+green, with edit cost at 2.75 MB falling from 19.1 µs to 0.39 µs because the
+flat store memmoves. Evidence and the full invariant scoring:
+`../reviews/2026-08-05-m3-endstate-poc.md`.
+
+The slices, in a hard order:
+
+1. **M3.1 substrate unification** — session on the rope, `core/text.c` deleted.
+   The gate is a link failure: a build with the file removed must link and pass.
+2. **M3.2 the coordinate decision and the fused sequence** — no coordinate is
+   stored in any form, not absolute, not parent-relative. An extent is
+   (identity, length). Breaks become first-class units, which is what makes the
+   byte partition total and therefore what makes its gate writable.
+3. **M3.3 index subsumption** — the clean index, the definition index, the
+   suffix line shift, and `line_offsets` become queries or disappear.
+4. **M3.4 position deletion** — the five `int`s leave `core/node.h`, and every
+   non-node coordinate carrier moves in the same slice or the work is done twice.
+5. **M3.5 resolution path** — `Document.scope` resolves per node in `O(log n)`;
+   the bulk scope table is demoted to an opt-in API.
 
 **One document-wide sequence of leaf source-bearing units, not one sequence
 per container.** §7.2 was tightened on 2026-08-03 to say so, because the
@@ -386,11 +416,33 @@ table's re-dated header (`extensions/table.c:558-559`) — close together.
 Tab-expanded columns remain legal only in the block
 scanner's processing of the current line, where CommonMark defines
 indentation in columns. The milestone is held to this deletion, not only to
-adding extents.
+adding extents. It lands in M3.4, and the review that follows fixes the
+achievable statement: not "no coordinate anywhere", because CommonMark defines
+indentation in columns and list tightness against the line being scanned
+(`core/blocks.c:2140`), but **no coordinate outlives the scan of its region.**
+
+**M3 also retires the sentinel that stands in for a position.** A closed
+`(line, column)` interval cannot express an empty range, so a zero-width node
+has no honest spelling: the engine either zeroes it — 199 golden rows read
+`0:0..0:0`, on `SoftBreak`, `LineBreak`, and any `Text` emptied by
+`markdown_core_node_unput` — or emits the arithmetic, and 17 more rows have
+`end < start`, including `HTMLBlock scope=1:1..0:0` on a one-line document.
+216 of 5,385 position rows, 4.0%, are therefore not positions. The same defect
+leaves the newline a `SoftBreak` consumes owned by no node, and charges a hard
+break's two markup bytes to the preceding `Text` — both incompatible with a
+sequence whose byte sums must equal `Source.length`. An extent is (identity,
+length), so length zero is expressible and the sentinel is unnecessary; the
+`line == 0` reading that today carries four distinct meanings across two structs
+stops colliding. `specs/scope-sanity/ledger.json` holds the 216 as an
+only-shrink budget until M3.4 drives it to zero, at which point the ledger and
+its audit are deleted rather than kept at zero.
 
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
-at all.
+at all. The dominant violator of it today is the suffix document-children line
+shift (`extensions/incremental.c:2942-2949`): 98.4% of a 16,676 µs commit on a
+4 MB head insert, against roughly 0.6 µs for a same-length edit. M3.3 deletes
+that loop.
 
 ### M4 — Canonical text
 
