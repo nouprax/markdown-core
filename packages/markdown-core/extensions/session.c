@@ -396,9 +396,18 @@ static bool commit_full(
         watch_definition_lookups(parser, &recording);
     }
 
-    size_t length = markdown_core_text_length(&session->text);
-    if (length) {
-        markdown_core_parser_feed(parser, (const char *)markdown_core_text_bytes(&session->text), length);
+    // POC-1 SPIKE: feed leaf run by leaf run. markdown_core_parser_feed is a
+    // streaming interface (core/blocks.c S_parser_feed buffers a partial line
+    // in parser->linebuf), so the chunking is free to follow the rope.
+    size_t length = markdown_core_source_length(session->source);
+    {
+        size_t pos = 0;
+        while (pos < length) {
+            size_t run = 0;
+            const uint8_t *bytes = markdown_core_source_run_at(session->source, pos, &run);
+            markdown_core_parser_feed(parser, (const char *)bytes, run);
+            pos += run;
+        }
     }
     markdown_core_parser_finalize_blocks(parser);
     total_lines = parser->line_number;
@@ -719,7 +728,23 @@ markdown_core_session *markdown_core_session_open_with_mem(
         mem = markdown_core_arena_mem(session->arena);
     }
     session->mem = mem;
-    markdown_core_text_init(&session->text, mem);
+    {
+        // PERMISSIVE_BYTES, and not as a default: the store must hold NUL and
+        // invalid UTF-8 verbatim, because the parser replaces them per line
+        // exactly as the one-shot path does, and because a streamed append
+        // completes a multi-byte character whose first bytes arrived earlier.
+        // A validating profile would reject those intermediate states at the
+        // substrate, which is the wrong layer to decide them.
+        markdown_core_source_stats scratch;
+        markdown_core_source_status status;
+        memset(&scratch, 0, sizeof(scratch));
+        session->source =
+            markdown_core_source_new(mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &scratch, &status);
+        if (!session->source) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
+            return NULL;
+        }
+    }
     session->next_id = 1;
     session->revision = 0;
     session->record_lookups = true;
@@ -768,7 +793,7 @@ void markdown_core_session_free(markdown_core_session *session) {
     if (session->view.root) {
         markdown_core_node_free(session->view.root);
     }
-    markdown_core_text_release(&session->text);
+    markdown_core_source_release(session->source);
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
     release_lookup_tables(session->mem, session->lookups);
@@ -796,7 +821,7 @@ bool markdown_core_session_edit(
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "session must not be null");
         return false;
     }
-    if (byte_start > byte_end || byte_end > markdown_core_text_length(&session->text)) {
+    if (byte_start > byte_end || byte_end > markdown_core_source_length(session->source)) {
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
@@ -813,12 +838,32 @@ bool markdown_core_session_edit(
         return false;
     }
     {
-        size_t moved = 0;
-        if (!markdown_core_text_edit(&session->text, byte_start, byte_end, bytes, length, &moved)) {
+        // One edit per call, because that is what the convenience API takes.
+        // The substrate accepts a batch, so a caller with several edits pays
+        // one path copy for all of them; a keystroke pays one for itself.
+        markdown_core_source_edit edit;
+        markdown_core_source_stats stats;
+        markdown_core_source_status status;
+        markdown_core_source *next;
+
+        edit.span.start = byte_start;
+        edit.span.end = byte_end;
+        edit.replacement = bytes;
+        edit.replacement_length = length;
+        memset(&stats, 0, sizeof(stats));
+        next = markdown_core_source_apply(session->source, &edit, 1, &stats, &status);
+        if (!next) {
+            // The span was validated above and the profile is permissive, so
+            // the substrate's remaining refusals are all "this edit cannot be
+            // stored" — a failed allocation or a length that size_t cannot
+            // represent. Both are the allocation failure this call has always
+            // reported, and both leave the previous source retained.
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
             return false;
         }
-        session->edit_bytes_moved += moved;
+        markdown_core_source_release(session->source);
+        session->source = next;
+        session->edit_bytes_moved += stats.bytes_copied;
     }
 
     // Coalesce into the pending summary. The stored range lives in
@@ -873,7 +918,7 @@ uint64_t markdown_core_session_revision(const markdown_core_session *session) {
 uint64_t markdown_core_session_lineage(const markdown_core_session *session) { return session ? session->lineage : 0; }
 
 size_t markdown_core_session_length(const markdown_core_session *session) {
-    return session ? markdown_core_text_length(&session->text) : 0;
+    return session ? markdown_core_source_length(session->source) : 0;
 }
 
 const markdown_core_node *markdown_core_session_node_by_id(

@@ -18,9 +18,12 @@ extern "C" {
  * windows into refcounted immutable buffers. Applying an edit batch builds a
  * new source that shares every unedited subtree with its predecessor; the
  * old source stays valid and readable until released, however many
- * successors exist. Nothing here is public API: the session adopts this
- * substrate at the M7 flip, and until then it is exercised by its own unit
- * gates only.
+ * successors exist. Nothing here is public API, but it is no longer dark:
+ * the session owns its bytes here, and the contiguous store this replaced is
+ * gone. (An earlier revision of this comment scheduled that adoption for the
+ * M7 flip. Nothing else did — no gate, no contract clause, and not the
+ * delivery plan's M7 section — and M3 needs it, because the ordered indices
+ * only reduce to queries over a sequence that is persistent.)
  *
  * Two bounds are declared here because acceptance gates assert them:
  *
@@ -50,12 +53,22 @@ extern "C" {
  * as NULL with MARKDOWN_CORE_SOURCE_NO_MEMORY and never publishes a partial
  * source (8.1).
  *
- * Arithmetic note: byte lengths here are sums of at most two lengths of
- * simultaneously live allocations (the stored tree and a caller-owned
- * replacement buffer), so their sum cannot wrap size_t on any platform where
- * both objects fit in the address space. There are deliberately no
- * unreachable overflow guards: a branch no input can take is untestable, and
- * the coverage gate treats untestable branches as defects.
+ * Arithmetic note: interior lengths are sums over simultaneously live
+ * allocations, so their sum cannot wrap size_t on any platform where those
+ * objects fit in the address space, and they carry no overflow guards — a
+ * branch no input can take is untestable, and the coverage gate treats
+ * untestable branches as defects.
+ *
+ * A replacement length is not such a sum. It is a caller's number, and the
+ * session hands it straight through from public API, so a caller may name a
+ * length no allocation could ever have produced — and it becomes one buffer,
+ * sized as a header plus that payload. `markdown_core_source_apply` therefore
+ * refuses a replacement the buffer header cannot be added to, before reading
+ * any byte, reporting NO_MEMORY because no allocator can satisfy the request
+ * and leaving the predecessor retained and readable. It is checked per
+ * replacement and not over the batch: a running total cannot reach SIZE_MAX
+ * without the buffers it counts having been allocated first. This is the one
+ * guard here that is reachable, and the pinning corpus reaches it.
  */
 
 /** Which byte sequences a source may store (7.1). Frozen at creation. */
@@ -146,6 +159,18 @@ markdown_core_source *markdown_core_source_apply(
  * must lie inside the source, like memcpy the behaviour is otherwise
  * undefined; every caller here materializes ranges it just measured. */
 void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t offset, size_t length, uint8_t *out);
+
+/** POC-1 SPIKE: random-access and streaming reads.
+ *
+ * `run_at` returns a pointer to the contiguous run of stored bytes that
+ * begins at `offset` and `*run_length` its length, or NULL at/after the end.
+ * A run never spans two leaves, so a caller that needs more bytes calls
+ * again at offset + *run_length. O(log n) per call: there are no parent
+ * pointers, so successive runs re-descend from the root. */
+const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length);
+
+/** POC-1 SPIKE: the stored byte at `offset`; offset must be in range. */
+uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset);
 
 /** Sums the capacities of the distinct buffers the source retains — the
  * physical bytes the amplification bound above is stated over. Diagnostic

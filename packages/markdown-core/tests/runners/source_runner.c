@@ -1271,6 +1271,24 @@ static int case_span_validation(void) {
         failed = 1;
     }
 
+    /* A replacement length that no allocation could have produced. The span is
+     * valid, so this is refused for the resulting length rather than the
+     * range, and refused before a byte of the (impossible) buffer is read. The
+     * session hands this number straight through from public API, which is why
+     * the guard is reachable at all. */
+    edits[0].span.start = 1;
+    edits[0].span.end = 1;
+    edits[0].replacement = text;
+    edits[0].replacement_length = SIZE_MAX;
+    result = markdown_core_source_apply(base, edits, 1, &stats, &status);
+    if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+        fprintf(stderr, "span_validation: unrepresentable resulting length accepted\n");
+        failed = 1;
+    }
+
+    edits[0].replacement = NULL;
+    edits[0].replacement_length = 0;
+
     /* overlapping pair */
     edits[0].span.start = 2;
     edits[0].span.end = 6;

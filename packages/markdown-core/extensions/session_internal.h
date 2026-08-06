@@ -7,7 +7,8 @@
 
 #include <map.h>
 #include <markdown-core.h>
-#include <text.h>
+
+#include "source.h"
 
 // AddressSanitizer detection: session pooling is bypassed under ASan so the
 // sanitizer keeps seeing individual allocations (see session_open_with_mem).
@@ -290,7 +291,11 @@ typedef struct {
 struct markdown_core_session {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    markdown_core_text text;
+    // The session's bytes. A persistent rope, so an edit path-copies
+    // O(log n) nodes and copies a bounded neighbourhood instead of shifting
+    // the untouched suffix, and so a predecessor stays readable at zero cost
+    // for as long as anything holds it (source.h).
+    markdown_core_source *source;
     markdown_core_document view; // view.root is the committed tree, owned
     uint64_t next_id;            // monotonic, starts at 1, never reused
     uint64_t lineage;

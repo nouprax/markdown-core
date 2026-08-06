@@ -580,11 +580,29 @@ markdown_core_source *markdown_core_source_apply(
     size_t consumed = 0; // old bytes already placed into the candidate
     size_t i;
     *status = MARKDOWN_CORE_SOURCE_OK;
-    for (i = 0; i < edit_count; i++) {
-        size_t floor = i > 0 ? edits[i - 1].span.end : 0;
-        if (edits[i].span.start < floor || edits[i].span.end < edits[i].span.start || edits[i].span.end > length) {
-            *status = MARKDOWN_CORE_SOURCE_INVALID_SPAN;
-            return NULL;
+    {
+        // The resulting length must be representable. The replacement lengths
+        // come from the caller, not from a live allocation, so the header's
+        // "their sum cannot wrap size_t" reasoning does not cover them: a
+        // caller may name a length no allocation could ever have produced, and
+        // buffer_new would then size a header plus a wrapped payload. Reported
+        // as NO_MEMORY because it is one — no allocator can satisfy the
+        // request — and reported before any byte is read.
+        size_t kept = length;
+        for (i = 0; i < edit_count; i++) {
+            size_t floor = i > 0 ? edits[i - 1].span.end : 0;
+            if (edits[i].span.start < floor || edits[i].span.end < edits[i].span.start || edits[i].span.end > length) {
+                *status = MARKDOWN_CORE_SOURCE_INVALID_SPAN;
+                return NULL;
+            }
+            kept -= edits[i].span.end - edits[i].span.start;
+        }
+        for (i = 0; i < edit_count; i++) {
+            if (edits[i].replacement_length > SIZE_MAX - kept) {
+                *status = MARKDOWN_CORE_SOURCE_NO_MEMORY;
+                return NULL;
+            }
+            kept += edits[i].replacement_length;
         }
     }
     for (i = 0; i < edit_count; i++) {
@@ -679,6 +697,32 @@ void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t 
     if (length > 0) {
         node_copy_bytes(source->root, offset, offset + length, out);
     }
+}
+
+// --- POC-1 SPIKE: reads ----------------------------------------------------
+
+const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length) {
+    const source_node *node = source->root;
+    if (!node || offset >= node->length) {
+        *run_length = 0;
+        return NULL;
+    }
+    while (node->left) {
+        if (offset < node->left->length) {
+            node = node->left;
+        } else {
+            offset -= node->left->length;
+            node = node->right;
+        }
+    }
+    *run_length = node->length - offset;
+    return node->buffer->bytes + node->offset + offset;
+}
+
+uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset) {
+    size_t run = 0;
+    const uint8_t *p = markdown_core_source_run_at(source, offset, &run);
+    return p ? *p : 0;
 }
 
 // --- diagnostics -----------------------------------------------------------
