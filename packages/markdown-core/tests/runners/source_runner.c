@@ -1309,11 +1309,13 @@ static int case_span_validation(void) {
         failed = 1;
     }
 
-    /* Between the two: a length the buffer header can be added to, but not to
-     * the bytes this edit keeps. Only the resulting-length arm refuses it, so
-     * the two checks are each other's complement rather than one subsuming
-     * the other. It needs a source wider than the buffer header for the gap
-     * between the two thresholds to exist at all. */
+    /* A length the buffer header can be added to, so the guard above lets it
+     * past, but which no allocator can satisfy: the refusal comes from the
+     * failed buffer allocation instead, and must be the same clean NULL and
+     * NO_MEMORY with nothing published. This is the case that shows why the
+     * resulting document length needs no guard of its own — reaching it
+     * requires a replacement this large, and a replacement this large cannot
+     * be allocated. */
     {
         uint8_t wide[SPAN_WIDE_SOURCE];
         markdown_core_source *wide_base;

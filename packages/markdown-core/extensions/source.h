@@ -80,10 +80,17 @@ extern "C" {
  * sized as a header plus that payload. `markdown_core_source_apply` therefore
  * refuses a replacement the buffer header cannot be added to, before reading
  * any byte, reporting NO_MEMORY because no allocator can satisfy the request
- * and leaving the predecessor retained and readable. It is checked per
- * replacement and not over the batch: a running total cannot reach SIZE_MAX
- * without the buffers it counts having been allocated first. This is the one
- * guard here that is reachable, and the pinning corpus reaches it.
+ * and leaving the predecessor retained and readable.
+ *
+ * That one condition is the whole guard, and the boundary is worth stating
+ * because it has been drawn wrongly twice. It is checked per replacement and
+ * not over the batch, and it is checked against the buffer header rather than
+ * against the resulting document length: both of those alternatives need a
+ * replacement larger than SIZE_MAX minus an address space before they bind,
+ * and a buffer that large fails to allocate, producing the same NULL and the
+ * same NO_MEMORY one step later. Guarding them would add branches no input
+ * can observe. Guarding the header sum is different in kind — that sum wraps
+ * to a *small* number, the allocation succeeds, and the copy runs.
  */
 
 /** Which byte sequences a source may store (7.1). Frozen at creation. */

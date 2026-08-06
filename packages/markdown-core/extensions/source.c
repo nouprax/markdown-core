@@ -581,43 +581,36 @@ markdown_core_source *markdown_core_source_apply(
     size_t i;
     *status = MARKDOWN_CORE_SOURCE_OK;
     {
-        // Replacement lengths come from the caller, not from a live
+        // A replacement length comes from the caller, not from a live
         // allocation, so the header's "their sum cannot wrap size_t"
-        // reasoning does not cover them: a caller may name a length no
-        // allocation could ever have produced. Two distinct sums can wrap on
-        // such a number, and neither implies the other.
+        // reasoning does not cover it: a caller may name a length no
+        // allocation could ever have produced. That number becomes one
+        // buffer, sized as a header plus the payload, and it is that sum —
+        // not the resulting document length — that has to be guarded. When it
+        // wraps, buffer_new asks for a few bytes, gets them, and
+        // leaf_from_bytes memcpys the caller's declared payload into them.
         //
-        // One is the buffer this replacement becomes: buffer_new sizes a
-        // header plus the payload, and a length that wraps that sum yields a
-        // tiny allocation which then receives the caller-declared memcpy.
-        // The other is the resulting document length. The first is the
-        // binding one exactly when little or nothing is retained — an empty
-        // source, or an edit that deletes everything — which is where a check
-        // written only against the retained bytes has nothing to overflow.
-        // The second binds once the retained bytes exceed the header.
+        // The resulting document length carries no guard, for the reason the
+        // batch total carries none: to make it wrap, a replacement must
+        // exceed SIZE_MAX minus the bytes already stored, so it must exceed
+        // SIZE_MAX minus an address space — and a buffer that large fails to
+        // allocate, returning the same NULL and the same NO_MEMORY one step
+        // later. A guard whose removal no input can observe is not a guard.
         //
-        // Both are reported as NO_MEMORY because that is what they are — no
-        // allocator can satisfy the request — and both are reported before
-        // any byte is read.
-        size_t kept = length;
+        // Reported as NO_MEMORY because that is what it is — no allocator can
+        // satisfy the request — and reported before any byte is read.
         for (i = 0; i < edit_count; i++) {
             size_t floor = i > 0 ? edits[i - 1].span.end : 0;
             if (edits[i].span.start < floor || edits[i].span.end < edits[i].span.start || edits[i].span.end > length) {
                 *status = MARKDOWN_CORE_SOURCE_INVALID_SPAN;
                 return NULL;
             }
-            kept -= edits[i].span.end - edits[i].span.start;
         }
         for (i = 0; i < edit_count; i++) {
             if (edits[i].replacement_length > SIZE_MAX - sizeof(source_buffer)) {
                 *status = MARKDOWN_CORE_SOURCE_NO_MEMORY;
                 return NULL;
             }
-            if (edits[i].replacement_length > SIZE_MAX - kept) {
-                *status = MARKDOWN_CORE_SOURCE_NO_MEMORY;
-                return NULL;
-            }
-            kept += edits[i].replacement_length;
         }
     }
     for (i = 0; i < edit_count; i++) {
