@@ -47,6 +47,21 @@ extern "C" {
  * neighbourhood of its junctions, never the whole document, and reports the
  * bytes it examined so a gate can hold it to that.
  *
+ * No production caller selects that profile. The session stores
+ * PERMISSIVE_BYTES for the reasons stated at its constructor, and no public
+ * entry point exposes a profile argument, so every source outside the test
+ * runners is permissive. That is a deliberate keep and not the dead code
+ * specs/coverage/policy.json rule 6 forbids parking: 7.1 defines the profile
+ * as a frozen member of Source, 8.1 makes a violation a commit failure, and
+ * 14.3 gate 6 requires the asymmetric boundary be observable from both sides
+ * — four rows, of which the fourth is "the same three inputs under
+ * PERMISSIVE_BYTES all succeed", which is only a statement if the strict side
+ * exists to differ from. The validator therefore has a declared consumer and
+ * a gate that fails when it is removed; rule 6 is about code no input can
+ * reach, and every line of this one is reached by the gate the contract asks
+ * for. What is still owed is the public profile argument (8.1), which belongs
+ * with the session-facing work, not with the substrate.
+ *
  * Ownership: sources are refcounted values confined to one thread, like the
  * session state they will serve. All allocation goes through the
  * markdown_core_mem the source was created with; allocation failure surfaces
