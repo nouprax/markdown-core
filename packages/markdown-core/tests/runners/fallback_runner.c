@@ -1819,11 +1819,14 @@ static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, f
  * sweeps above cannot see this: they measure convergence after a failed
  * commit, and a session that never opened has no state to converge.
  *
- * Scope, stated because it is narrower than the rule: this counts blocks from
- * the injected allocator, and the session record itself is a system
- * allocation made before any allocator is chosen. So the arena — every pooled
- * session's largest single object — is pinned here, and the session record is
- * covered by the sanitizer suites instead. */
+ * Scope, stated because it is narrower than the rule and was measured rather
+ * than assumed: this counts blocks from the injected allocator, and the
+ * session record itself is a system allocation made before any allocator is
+ * chosen. Deleting the arena release from the unwind fails this case;
+ * deleting only the free of the session record does not. That half is held by
+ * LeakSanitizer instead — the CI sanitizer job runs with detect_leaks=1, and
+ * ASan builds force the unpooled path, which is the path whose only leak is
+ * the record. Between the two, both halves are pinned; neither alone. */
 static int fb_open_unwind(bool pooled) {
     unsigned long total;
     unsigned long k;
