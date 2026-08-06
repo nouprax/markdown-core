@@ -458,6 +458,19 @@ only with its cause written down here.
   suite, which the coverage preset excludes by design because it asserts
   nothing about parse output. So this is one line of accounting, not one line
   of untested logic.
+- `packages/markdown-core/core/blocks.c` **shrinks 58 → 56 lines and 83 → 82
+  branches**, and the paydown is attributed rather than assumed. `blocks.c` is
+  byte-identical between this slice's base and its head, so a region's span
+  names the same code in both coverage exports; diffing the two reports leaves
+  exactly three regions that go from count 0 to count 7, all in
+  `S_parser_feed`, all at `core/blocks.c:1246` — the arm that drops a `\n`
+  opening a feed whose predecessor ended in `\r`. Nothing regressed to zero.
+  That arm is unreachable when the whole document arrives in one feed, and
+  reachable now that a leaf boundary may fall between the `CR` and the `LF`.
+  It is behaviour the pinning corpus asserts: delete the arm and the orphaned
+  `\n` closes a second, empty line, which a golden dump reports. Two line
+  regions plus one branch arm is exactly the two lines and one branch the gate
+  measures, so the accounting closes with nothing unexplained.
 
 Two entries measure **looser** than they are recorded and are deliberately
 left alone. `core/delimiter.c` (53/0/111 against 79/0/163) and
@@ -465,15 +478,6 @@ left alone. `core/delimiter.c` (53/0/111 against 79/0/163) and
 slice's base, so the slack is not this change's to claim — it is the state
 #94's review arrived at when it restored those budgets under the rule that a
 test raising coverage without asserting parse output does not pay one down.
-`core/blocks.c` measures 2 lines and 1 branch better than its entry and is
-also left alone, for a different and more interesting reason: the plausible
-cause is that feeding the parser in rope leaf runs now exercises
-`S_parser_feed`'s partial-line accumulation, which a single whole-text feed
-never reached. That would be a legitimate paydown — behaviour the pinning
-corpus asserts, newly reached. It is not tightened here because it was not
-*proven*: `S_parser_feed` still holds 15 uncovered regions and the gain was
-not attributed region by region. An unproven paydown is exactly the claim
-that review has caught before.
 
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
