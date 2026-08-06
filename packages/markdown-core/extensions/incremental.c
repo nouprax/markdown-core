@@ -77,20 +77,27 @@
 /* Returns the offset one past the line's terminator (\n, \r, or \r\n), or
  * `length` for an unterminated final line. NUL bytes never end a line: the
  * feed machinery replaces them inline and keeps accumulating. */
-static size_t line_end(const unsigned char *bytes, size_t length, size_t start) {
+static size_t line_end(const markdown_core_source *src, size_t length, size_t start) {
+    // A run walk, not a flat index: the same byte scan, plus one O(log n)
+    // descent each time it crosses a leaf boundary.
     size_t i = start;
     while (i < length) {
-        if (bytes[i] == '\n') {
-            return i + 1;
-        }
-        if (bytes[i] == '\r') {
-            i++;
-            if (i < length && bytes[i] == '\n') {
-                i++;
+        size_t run = 0;
+        const uint8_t *p = markdown_core_source_run_at(src, i, &run);
+        size_t k;
+        for (k = 0; k < run; k++) {
+            if (p[k] == '\n') {
+                return i + k + 1;
             }
-            return i;
+            if (p[k] == '\r') {
+                size_t next = i + k + 1;
+                if (next < length && markdown_core_source_byte_at(src, next) == '\n') {
+                    next++;
+                }
+                return next;
+            }
         }
-        i++;
+        i += run;
     }
     return length;
 }
@@ -105,11 +112,18 @@ static bool parser_is_clean(const markdown_core_parser *parser) {
  * indent (column 4, tabs advancing to the next stop). Blank and indented
  * lines keep such a chain open, so they can neither validate a sealing
  * restart anchor nor close a staged boundary. */
-static bool line_seals(const unsigned char *bytes, size_t length, size_t offset) {
+static bool line_seals(const markdown_core_source *src, size_t length, size_t offset) {
     int column = 0;
     size_t i;
+    size_t run = 0;
+    const uint8_t *p = NULL;
     for (i = offset; i < length; i++) {
-        unsigned char c = bytes[i];
+        unsigned char c;
+        if (run == 0) {
+            p = markdown_core_source_run_at(src, i, &run);
+        }
+        c = *p++;
+        run--;
         if (c == ' ') {
             column++;
         } else if (c == '\t') {
@@ -175,8 +189,8 @@ bool markdown_core_session_index_clean_children(
     const markdown_core_map *map,
     markdown_core_clean_index *out
 ) {
-    const unsigned char *bytes = markdown_core_text_bytes(&session->text);
-    size_t length = markdown_core_text_length(&session->text);
+    const markdown_core_source *bytes = session->source;
+    size_t length = markdown_core_source_length(session->source);
     const markdown_core_map_entry *entry;
     markdown_core_node *child;
     int *sentinel_lines = NULL;
@@ -2036,7 +2050,7 @@ typedef struct {
 typedef struct {
     markdown_core_session *session;
     markdown_core_mem *mem;
-    const unsigned char *bytes;
+    const markdown_core_source *bytes; // borrowed from the session
     size_t length;
     markdown_core_node *doc;
     markdown_core_edit_summary pending;
@@ -2094,8 +2108,8 @@ static void incremental_pipeline_init(
     memset(pipeline, 0, sizeof(*pipeline));
     pipeline->session = session;
     pipeline->mem = session->mem;
-    pipeline->bytes = markdown_core_text_bytes(&session->text);
-    pipeline->length = markdown_core_text_length(&session->text);
+    pipeline->bytes = session->source;
+    pipeline->length = markdown_core_source_length(session->source);
     pipeline->doc = session->view.root;
     pipeline->pending = session->pending;
     pipeline->budget = pipeline->length > MARKDOWN_CORE_SESSION_REF_BUDGET_FLOOR
@@ -2149,7 +2163,7 @@ static bool definitions_all_equal(const incremental_pipeline *pipeline) {
 
 static bool incremental_plan_restart(incremental_pipeline *pipeline) {
     incremental_restart_plan *plan = &pipeline->plan;
-    const unsigned char *bytes = pipeline->bytes;
+    const markdown_core_source *bytes = pipeline->bytes;
     size_t length = pipeline->length;
     markdown_core_session *session = pipeline->session;
 
@@ -2164,7 +2178,8 @@ static bool incremental_plan_restart(incremental_pipeline *pipeline) {
     // survive verbatim.
     if (plan->restart_pos >= 0) {
         size_t byte = session->clean.items[plan->restart_pos].start_byte;
-        if (byte > 0 && byte < length && bytes[byte - 1] == '\r' && bytes[byte] == '\n') {
+        if (byte > 0 && byte < length && markdown_core_source_byte_at(bytes, byte - 1) == '\r' &&
+            markdown_core_source_byte_at(bytes, byte) == '\n') {
             plan->restart_pos--;
         }
     }
@@ -2229,14 +2244,23 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
     if (plan->restart_byte > 0) {
         size_t prev_end = plan->restart_byte;
         size_t prev_start;
-        if (pipeline->bytes[prev_end - 1] == '\n') {
+        if (markdown_core_source_byte_at(pipeline->bytes, prev_end - 1) == '\n') {
             prev_end--;
         }
-        if (prev_end > 0 && pipeline->bytes[prev_end - 1] == '\r') {
+        if (prev_end > 0 && markdown_core_source_byte_at(pipeline->bytes, prev_end - 1) == '\r') {
             prev_end--;
         }
         prev_start = prev_end;
-        while (prev_start > 0 && pipeline->bytes[prev_start - 1] != '\n' && pipeline->bytes[prev_start - 1] != '\r') {
+        // The one backward scan in the engine, walking to the previous line
+        // start so the staged parser inherits last_line_length. The rope has
+        // no reverse cursor, so this costs O(log n) per byte rather than
+        // O(1); it is bounded by one line, so it stays off every asymptotic
+        // path, and a cursor is worth adding only if a measurement asks.
+        while (prev_start > 0) {
+            uint8_t c = markdown_core_source_byte_at(pipeline->bytes, prev_start - 1);
+            if (c == '\n' || c == '\r') {
+                break;
+            }
             prev_start--;
         }
         parser->last_line_length = (int)(prev_end - prev_start);
@@ -2248,7 +2272,20 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
         if (!offset_push(pipeline->mem, &pipeline->line_offsets, feed_pos)) {
             return false;
         }
-        markdown_core_parser_feed(parser, (const char *)pipeline->bytes + feed_pos, next - feed_pos);
+        // One line, fed as its leaf runs. The feed's linebuf makes the split
+        // invisible: whichever run carries the terminator processes the line.
+        {
+            size_t p = feed_pos;
+            while (p < next) {
+                size_t run = 0;
+                const uint8_t *chunk = markdown_core_source_run_at(pipeline->bytes, p, &run);
+                if (run > next - p) {
+                    run = next - p;
+                }
+                markdown_core_parser_feed(parser, (const char *)chunk, run);
+                p += run;
+            }
+        }
         plan->fed_lines++;
         if (parser->oom || definitions_lost(pipeline)) {
             return false;

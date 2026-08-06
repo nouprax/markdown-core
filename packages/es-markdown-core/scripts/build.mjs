@@ -21,13 +21,13 @@ const core = [
     "map.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c",
-    "linked_list.c",
-    "text.c"
+    "linked_list.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const extensions = [
     "core-extensions.c",
     "ast.c",
     "session.c",
+    "source.c",
     "arena.c",
     "adopt.c",
     "incremental.c",

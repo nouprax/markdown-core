@@ -1271,6 +1271,53 @@ static int case_span_validation(void) {
         failed = 1;
     }
 
+    /* A replacement length that no allocation could have produced. The span is
+     * valid, so this is refused for the resulting length rather than the
+     * range, and refused before a byte of the (impossible) buffer is read. The
+     * session hands this number straight through from public API, which is why
+     * the guard is reachable at all. */
+    edits[0].span.start = 1;
+    edits[0].span.end = 1;
+    edits[0].replacement = text;
+    edits[0].replacement_length = SIZE_MAX;
+    result = markdown_core_source_apply(base, edits, 1, &stats, &status);
+    if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+        fprintf(stderr, "span_validation: unrepresentable resulting length accepted\n");
+        failed = 1;
+    }
+
+    /* The same absurd length where the *result* is the replacement alone: the
+     * edit deletes the whole document, so nothing is retained and a check
+     * phrased only against the resulting length has nothing to overflow. The
+     * replacement still becomes one buffer sized as a header plus a payload,
+     * and that sum is what wraps — leaving a byte-sized allocation to receive
+     * a SIZE_MAX memcpy. Whole-document replacement and the empty-source case
+     * below are the two ways to reach it. */
+    edits[0].span.start = 0;
+    edits[0].span.end = sizeof(text) - 1;
+    edits[0].replacement = text;
+    edits[0].replacement_length = SIZE_MAX;
+    result = markdown_core_source_apply(base, edits, 1, &stats, &status);
+    if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+        fprintf(stderr, "span_validation: whole-document replacement of unrepresentable length accepted\n");
+        failed = 1;
+    }
+
+    /* Not pinned here: a length the buffer header can be added to but no
+     * allocator can satisfy. It is the case that would show why the resulting
+     * document length needs no guard of its own, and it cannot be written as
+     * a test, because reaching it means actually asking the allocator for
+     * something near SIZE_MAX. libc answers NULL and the apply reports
+     * NO_MEMORY, which is the behaviour claimed; AddressSanitizer answers by
+     * aborting the process, since allocator_may_return_null defaults off and a
+     * request that size is a program defect by its lights. Ordinary allocation
+     * failure is what the OOM sweeps drive, through an allocator that refuses
+     * on demand instead of by magnitude, so nothing is lost by leaving it to
+     * them. */
+
+    edits[0].replacement = NULL;
+    edits[0].replacement_length = 0;
+
     /* overlapping pair */
     edits[0].span.start = 2;
     edits[0].span.end = 6;
@@ -1298,6 +1345,30 @@ static int case_span_validation(void) {
     /* Nothing was published by any failure. */
     if (expect_bytes("span_validation", base, text, sizeof(text) - 1) != 0) {
         failed = 1;
+    }
+
+    /* The empty source is the same hole reached without deleting anything, and
+     * it is the state every session opens in — so this is one public
+     * markdown_core_session_edit away, with no edit history in front of it. */
+    {
+        markdown_core_source *empty =
+            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &stats, &status);
+        if (!empty) {
+            markdown_core_source_release(base);
+            return -1;
+        }
+        edits[0].span.start = 0;
+        edits[0].span.end = 0;
+        edits[0].replacement = text;
+        edits[0].replacement_length = SIZE_MAX;
+        result = markdown_core_source_apply(empty, edits, 1, &stats, &status);
+        if (result || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+            fprintf(stderr, "span_validation: unrepresentable insertion into an empty source accepted\n");
+            failed = 1;
+        }
+        markdown_core_source_release(empty);
+        edits[0].replacement = NULL;
+        edits[0].replacement_length = 0;
     }
 
     /* Adjacent spans are legal and deterministic. */

@@ -18,9 +18,12 @@ extern "C" {
  * windows into refcounted immutable buffers. Applying an edit batch builds a
  * new source that shares every unedited subtree with its predecessor; the
  * old source stays valid and readable until released, however many
- * successors exist. Nothing here is public API: the session adopts this
- * substrate at the M7 flip, and until then it is exercised by its own unit
- * gates only.
+ * successors exist. Nothing here is public API, but it is no longer dark:
+ * the session owns its bytes here, and the contiguous store this replaced is
+ * gone. (An earlier revision of this comment scheduled that adoption for the
+ * M7 flip. Nothing else did — no gate, no contract clause, and not the
+ * delivery plan's M7 section — and M3 needs it, because the ordered indices
+ * only reduce to queries over a sequence that is persistent.)
  *
  * Two bounds are declared here because acceptance gates assert them:
  *
@@ -44,18 +47,50 @@ extern "C" {
  * neighbourhood of its junctions, never the whole document, and reports the
  * bytes it examined so a gate can hold it to that.
  *
+ * No production caller selects that profile. The session stores
+ * PERMISSIVE_BYTES for the reasons stated at its constructor, and no public
+ * entry point exposes a profile argument, so every source outside the test
+ * runners is permissive. That is a deliberate keep and not the dead code
+ * specs/coverage/policy.json rule 6 forbids parking: 7.1 defines the profile
+ * as a frozen member of Source, 8.1 makes a violation a commit failure, and
+ * 14.3 gate 6 requires the asymmetric boundary be observable from both sides
+ * — four rows, of which the fourth is "the same three inputs under
+ * PERMISSIVE_BYTES all succeed", which is only a statement if the strict side
+ * exists to differ from. The validator therefore has a declared consumer and
+ * a gate that fails when it is removed; rule 6 is about code no input can
+ * reach, and every line of this one is reached by the gate the contract asks
+ * for. What is still owed is the public profile argument (8.1), which belongs
+ * with the session-facing work, not with the substrate.
+ *
  * Ownership: sources are refcounted values confined to one thread, like the
  * session state they will serve. All allocation goes through the
  * markdown_core_mem the source was created with; allocation failure surfaces
  * as NULL with MARKDOWN_CORE_SOURCE_NO_MEMORY and never publishes a partial
  * source (8.1).
  *
- * Arithmetic note: byte lengths here are sums of at most two lengths of
- * simultaneously live allocations (the stored tree and a caller-owned
- * replacement buffer), so their sum cannot wrap size_t on any platform where
- * both objects fit in the address space. There are deliberately no
- * unreachable overflow guards: a branch no input can take is untestable, and
- * the coverage gate treats untestable branches as defects.
+ * Arithmetic note: interior lengths are sums over simultaneously live
+ * allocations, so their sum cannot wrap size_t on any platform where those
+ * objects fit in the address space, and they carry no overflow guards — a
+ * branch no input can take is untestable, and the coverage gate treats
+ * untestable branches as defects.
+ *
+ * A replacement length is not such a sum. It is a caller's number, and the
+ * session hands it straight through from public API, so a caller may name a
+ * length no allocation could ever have produced — and it becomes one buffer,
+ * sized as a header plus that payload. `markdown_core_source_apply` therefore
+ * refuses a replacement the buffer header cannot be added to, before reading
+ * any byte, reporting NO_MEMORY because no allocator can satisfy the request
+ * and leaving the predecessor retained and readable.
+ *
+ * That one condition is the whole guard, and the boundary is worth stating
+ * because it has been drawn wrongly twice. It is checked per replacement and
+ * not over the batch, and it is checked against the buffer header rather than
+ * against the resulting document length: both of those alternatives need a
+ * replacement larger than SIZE_MAX minus an address space before they bind,
+ * and a buffer that large fails to allocate, producing the same NULL and the
+ * same NO_MEMORY one step later. Guarding them would add branches no input
+ * can observe. Guarding the header sum is different in kind — that sum wraps
+ * to a *small* number, the allocation succeeds, and the copy runs.
  */
 
 /** Which byte sequences a source may store (7.1). Frozen at creation. */
@@ -146,6 +181,20 @@ markdown_core_source *markdown_core_source_apply(
  * must lie inside the source, like memcpy the behaviour is otherwise
  * undefined; every caller here materializes ranges it just measured. */
 void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t offset, size_t length, uint8_t *out);
+
+/** Random-access and streaming reads.
+ *
+ * `run_at` returns a pointer to the contiguous run of stored bytes that
+ * begins at `offset`, and `*run_length` its length. `offset` must be inside
+ * the source; there is no out-of-range arm, because no caller has one to
+ * exercise and an unreachable branch is a defect here rather than caution.
+ * A run never spans two leaves, so a caller that needs more bytes calls
+ * again at offset + *run_length. O(log n) per call: there are no parent
+ * pointers, so successive runs re-descend from the root. */
+const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length);
+
+/** The stored byte at `offset`, which must be inside the source. */
+uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset);
 
 /** Sums the capacities of the distinct buffers the source retains — the
  * physical bytes the amplification bound above is stated over. Diagnostic

@@ -23,7 +23,6 @@ set(HEADERS
     houdini.h
     markdown_core_ctype.h
     extension.h
-    text.h
     concrete_records.h)
 set(LIBRARY_SOURCES
     markdown_core.c
@@ -42,7 +41,6 @@ set(LIBRARY_SOURCES
     houdini_html_u.c
     markdown_core_ctype.c
     linked_list.c
-    text.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

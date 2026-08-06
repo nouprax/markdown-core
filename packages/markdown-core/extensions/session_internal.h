@@ -7,7 +7,8 @@
 
 #include <map.h>
 #include <markdown-core.h>
-#include <text.h>
+
+#include "source.h"
 
 // AddressSanitizer detection: session pooling is bypassed under ASan so the
 // sanitizer keeps seeing individual allocations (see session_open_with_mem).
@@ -290,7 +291,11 @@ typedef struct {
 struct markdown_core_session {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    markdown_core_text text;
+    // The session's bytes. A persistent rope, so an edit path-copies
+    // O(log n) nodes and copies a bounded neighbourhood instead of shifting
+    // the untouched suffix, and so a predecessor stays readable at zero cost
+    // for as long as anything holds it (source.h).
+    markdown_core_source *source;
     markdown_core_document view; // view.root is the committed tree, owned
     uint64_t next_id;            // monotonic, starts at 1, never reused
     uint64_t lineage;
@@ -338,6 +343,14 @@ struct markdown_core_session {
     // commits. The definition-flip gate asserts this equals the mention
     // count of the flipped label's own kind, independent of document size.
     size_t dependent_reparses;
+    // Stored bytes the substrate copied to apply edits, summed over every
+    // successful edit (white-box, asserted by fallback_runner). An edit is
+    // an O(edit) operation or it is not, and this is the number that says
+    // which: the locality gate performs the same edit against documents of
+    // doubling size and requires the per-edit figure to stay flat. The
+    // contiguous store cannot satisfy that — it shifts the whole untouched
+    // suffix — so the gate fails until the substrate carries the bytes.
+    size_t edit_bytes_moved;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty
     // reference map, extension attachments) is commit-invariant, so

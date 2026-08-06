@@ -25,12 +25,12 @@
                 "packages/markdown-core/extensions/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 46,
+            "minimumMeasuredFiles": 44,
             "unpinned": {
                 "packages/markdown-core/core/blocks.c": {
-                    "lines": 58,
+                    "lines": 56,
                     "functions": 2,
-                    "branches": 83
+                    "branches": 82
                 },
                 "packages/markdown-core/core/buffer.c": {
                     "lines": 10,
@@ -122,11 +122,6 @@
                     "functions": 0,
                     "branches": 6155
                 },
-                "packages/markdown-core/core/text.c": {
-                    "lines": 9,
-                    "functions": 0,
-                    "branches": 5
-                },
                 "packages/markdown-core/core/utf8.c": {
                     "lines": 54,
                     "functions": 0,
@@ -213,7 +208,7 @@
                     "branches": 11
                 },
                 "packages/markdown-core/extensions/session.c": {
-                    "lines": 55,
+                    "lines": 56,
                     "functions": 1,
                     "branches": 47
                 },

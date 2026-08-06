@@ -120,6 +120,51 @@ static void *fb_sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size
 
 static markdown_core_mem fb_sweep_mem = {fb_sweep_calloc, fb_sweep_realloc, fb_free};
 
+/* Unwind allocator: the sweep allocator plus a live-block count, so a refused
+ * construction can be asked whether it gave everything back. The sweep
+ * allocator deliberately does not track this — its subject is convergence
+ * after a failed commit, and it runs tens of thousands of ordinals — so this
+ * is a second, narrower instrument rather than a change to that one. */
+static unsigned long fb_unwind_count;
+static unsigned long fb_unwind_fail_at; /* 0 = count only */
+static long fb_unwind_live;
+
+static void *fb_unwind_calloc(markdown_core_mem *mem, size_t nmemb, size_t size) {
+    void *block;
+    (void)mem;
+    if (++fb_unwind_count == fb_unwind_fail_at) {
+        return NULL;
+    }
+    block = calloc(nmemb, size);
+    if (block) {
+        fb_unwind_live++;
+    }
+    return block;
+}
+
+static void *fb_unwind_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
+    void *block;
+    (void)mem;
+    if (++fb_unwind_count == fb_unwind_fail_at) {
+        return NULL;
+    }
+    block = realloc(pointer, size);
+    if (block && !pointer) {
+        fb_unwind_live++;
+    }
+    return block;
+}
+
+static void fb_unwind_free(markdown_core_mem *mem, void *pointer) {
+    (void)mem;
+    if (pointer) {
+        fb_unwind_live--;
+    }
+    free(pointer);
+}
+
+static markdown_core_mem fb_unwind_mem = {fb_unwind_calloc, fb_unwind_realloc, fb_unwind_free};
+
 static markdown_core_chunk fb_chunk(const char *text) {
     markdown_core_chunk chunk;
     chunk.data = (unsigned char *)text;
@@ -1767,6 +1812,83 @@ static int case_session_oom_sweep_delta(void) { return fb_session_sweep(false, t
  * hold exactly as they do against direct allocation. */
 static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, false); }
 
+/* A constructor that refuses returns everything it took, or it is a leak with
+ * no handle left to free it by. markdown_core_session_open_with_mem builds in
+ * stages — the session record, then the arena, then the first source — and
+ * each new stage adds a return that has to unwind the stages before it. The
+ * sweeps above cannot see this: they measure convergence after a failed
+ * commit, and a session that never opened has no state to converge.
+ *
+ * Scope, stated because it is narrower than the rule and was measured rather
+ * than assumed: this counts blocks from the injected allocator, and the
+ * session record itself is a system allocation made before any allocator is
+ * chosen. Deleting the arena release from the unwind fails this case;
+ * deleting only the free of the session record does not. That half is held by
+ * LeakSanitizer instead — the CI sanitizer job runs with detect_leaks=1, and
+ * ASan builds force the unpooled path, which is the path whose only leak is
+ * the record. Between the two, both halves are pinned; neither alone. */
+static int fb_open_unwind(bool pooled) {
+    unsigned long total;
+    unsigned long k;
+    markdown_core_session *session;
+    int failed = 0;
+
+    fb_unwind_count = 0;
+    fb_unwind_fail_at = 0;
+    fb_unwind_live = 0;
+    session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, NULL);
+    if (!session) {
+        fprintf(stderr, "open_unwind: control open failed (pooled=%d)\n", (int)pooled);
+        return -1;
+    }
+    total = fb_unwind_count;
+    markdown_core_session_free(session);
+    if (fb_unwind_live != 0) {
+        fprintf(stderr, "open_unwind: a successful open/free left %ld blocks live\n", fb_unwind_live);
+        return -1;
+    }
+    if (total == 0 || total > 4096) {
+        fprintf(stderr, "open_unwind: implausible open allocation count %lu\n", total);
+        return -1;
+    }
+
+    for (k = 1; k <= total; k++) {
+        markdown_core_error *error = NULL;
+        fb_unwind_count = 0;
+        fb_unwind_fail_at = k;
+        fb_unwind_live = 0;
+        session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, &error);
+        if (session) {
+            markdown_core_session_free(session);
+        }
+        markdown_core_error_free(error);
+        if (fb_unwind_live != 0) {
+            fprintf(
+                stderr,
+                "FAILED: open_unwind: allocation %lu / %lu (pooled=%d) refused the open and leaked %ld block(s)\n",
+                k,
+                total,
+                (int)pooled,
+                fb_unwind_live
+            );
+            failed = 1;
+        }
+    }
+    fb_unwind_fail_at = 0;
+    return failed ? -1 : 0;
+}
+
+static int case_session_open_unwind(void) {
+    int failed = 0;
+    if (fb_open_unwind(false) != 0) {
+        failed = 1;
+    }
+    if (fb_open_unwind(true) != 0) {
+        failed = 1;
+    }
+    return failed ? -1 : 0;
+}
+
 static const markdown_core_node *fb_child_of_type(const markdown_core_node *parent, markdown_core_node_type type) {
     const markdown_core_node *child;
 
@@ -2774,6 +2896,107 @@ static int case_definition_flip_locality(void) {
     return fb_definition_flip_scenario(6, 3, 240);
 }
 
+/* An edit is an O(edit) operation or it is not. `session->edit_bytes_moved`
+ * counts the already-stored bytes the substrate copied to make room, so the
+ * question is decided by arithmetic rather than by a clock: perform the same
+ * one-byte insertion at the same relative offset against documents of
+ * doubling size, and the per-edit figure must not move.
+ *
+ * The bound is absolute, not a ratio, because a ratio would accept a store
+ * that copies a fixed fraction of a growing document. A substrate that owns
+ * its bytes copies a bounded neighbourhood of the edit — for the persistent
+ * rope, the leaf it lands in plus the merge limit — and never the untouched
+ * suffix. FB_EDIT_MOVED_BOUND is set an order of magnitude above that
+ * neighbourhood so the gate reports a change of algorithm and not a change of
+ * tuning.
+ *
+ * The initial whole-text insert legitimately copies its own bytes, so the
+ * counter is sampled after it. */
+#define FB_EDIT_LOCALITY_SIZES 4
+#define FB_EDIT_LOCALITY_EDITS 8
+static const size_t FB_EDIT_MOVED_BOUND = 4096;
+
+static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit) {
+    static const char PARAGRAPH[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do.\n\n";
+    const size_t paragraph_length = sizeof(PARAGRAPH) - 1;
+    markdown_core_parse_options options;
+    markdown_core_session *session;
+    size_t length = paragraphs * paragraph_length;
+    char *text = (char *)malloc(length + 1);
+    size_t baseline;
+    size_t midpoint;
+    size_t i;
+    int result = -1;
+
+    if (!text) {
+        fprintf(stderr, "FAILED: edit_locality: out of memory building %zu paragraphs\n", paragraphs);
+        return -1;
+    }
+    for (i = 0; i < paragraphs; i++) {
+        memcpy(text + i * paragraph_length, PARAGRAPH, paragraph_length);
+    }
+    text[length] = '\0';
+
+    markdown_core_parse_options_init(&options);
+    session = markdown_core_session_open(&options, NULL);
+    if (!session) {
+        fprintf(stderr, "FAILED: edit_locality: session open failed\n");
+        free(text);
+        return -1;
+    }
+    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL)) {
+        fprintf(stderr, "FAILED: edit_locality: initial insert failed\n");
+        goto done;
+    }
+    baseline = session->edit_bytes_moved;
+
+    /* Land every edit inside the same paragraph at the document's midpoint, so
+     * the untouched suffix grows with the document while the edit does not. */
+    midpoint = (paragraphs / 2) * paragraph_length + 8;
+    for (i = 0; i < FB_EDIT_LOCALITY_EDITS; i++) {
+        if (!markdown_core_session_edit(session, midpoint, midpoint, (const uint8_t *)"x", 1, NULL)) {
+            fprintf(stderr, "FAILED: edit_locality: edit %zu failed\n", i);
+            goto done;
+        }
+    }
+    *moved_per_edit = (session->edit_bytes_moved - baseline) / FB_EDIT_LOCALITY_EDITS;
+    result = 0;
+done:
+    markdown_core_session_free(session);
+    free(text);
+    return result;
+}
+
+static int case_edit_locality(void) {
+    static const size_t PARAGRAPHS[FB_EDIT_LOCALITY_SIZES] = {512, 1024, 2048, 4096};
+    size_t moved[FB_EDIT_LOCALITY_SIZES];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
+        if (fb_edit_locality_scenario(PARAGRAPHS[step], &moved[step]) != 0) {
+            return -1;
+        }
+        if (moved[step] > FB_EDIT_MOVED_BOUND) {
+            failed = 1;
+        }
+    }
+    if (failed) {
+        fprintf(stderr, "FAILED: edit_locality: a one-byte edit must copy a bounded neighbourhood, not the suffix\n");
+        for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
+            fprintf(
+                stderr,
+                "  %zu paragraphs: %zu bytes moved per edit (bound %zu)\n",
+                PARAGRAPHS[step],
+                moved[step],
+                FB_EDIT_MOVED_BOUND
+            );
+        }
+        return -1;
+    }
+    return 0;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -2795,10 +3018,12 @@ static const fb_case_entry FB_CASES[] = {
     {"session_oom_sweep", case_session_oom_sweep},
     {"session_oom_sweep_delta", case_session_oom_sweep_delta},
     {"session_oom_sweep_pooled", case_session_oom_sweep_pooled},
+    {"session_open_unwind", case_session_open_unwind},
     {"block_directive_label_lookup_locality", case_block_directive_label_lookup_locality},
     {"reference_fanout_uniform_routing", case_reference_fanout_uniform_routing},
     {"restart_locality_counters", case_restart_locality_counters},
     {"definition_flip_locality", case_definition_flip_locality},
+    {"edit_locality", case_edit_locality},
 };
 
 int main(int argc, char **argv) {

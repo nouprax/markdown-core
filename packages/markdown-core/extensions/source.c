@@ -580,11 +580,37 @@ markdown_core_source *markdown_core_source_apply(
     size_t consumed = 0; // old bytes already placed into the candidate
     size_t i;
     *status = MARKDOWN_CORE_SOURCE_OK;
-    for (i = 0; i < edit_count; i++) {
-        size_t floor = i > 0 ? edits[i - 1].span.end : 0;
-        if (edits[i].span.start < floor || edits[i].span.end < edits[i].span.start || edits[i].span.end > length) {
-            *status = MARKDOWN_CORE_SOURCE_INVALID_SPAN;
-            return NULL;
+    {
+        // A replacement length comes from the caller, not from a live
+        // allocation, so the header's "their sum cannot wrap size_t"
+        // reasoning does not cover it: a caller may name a length no
+        // allocation could ever have produced. That number becomes one
+        // buffer, sized as a header plus the payload, and it is that sum —
+        // not the resulting document length — that has to be guarded. When it
+        // wraps, buffer_new asks for a few bytes, gets them, and
+        // leaf_from_bytes memcpys the caller's declared payload into them.
+        //
+        // The resulting document length carries no guard, for the reason the
+        // batch total carries none: to make it wrap, a replacement must
+        // exceed SIZE_MAX minus the bytes already stored, so it must exceed
+        // SIZE_MAX minus an address space — and a buffer that large fails to
+        // allocate, returning the same NULL and the same NO_MEMORY one step
+        // later. A guard whose removal no input can observe is not a guard.
+        //
+        // Reported as NO_MEMORY because that is what it is — no allocator can
+        // satisfy the request — and reported before any byte is read.
+        for (i = 0; i < edit_count; i++) {
+            size_t floor = i > 0 ? edits[i - 1].span.end : 0;
+            if (edits[i].span.start < floor || edits[i].span.end < edits[i].span.start || edits[i].span.end > length) {
+                *status = MARKDOWN_CORE_SOURCE_INVALID_SPAN;
+                return NULL;
+            }
+        }
+        for (i = 0; i < edit_count; i++) {
+            if (edits[i].replacement_length > SIZE_MAX - sizeof(source_buffer)) {
+                *status = MARKDOWN_CORE_SOURCE_NO_MEMORY;
+                return NULL;
+            }
         }
     }
     for (i = 0; i < edit_count; i++) {
@@ -679,6 +705,33 @@ void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t 
     if (length > 0) {
         node_copy_bytes(source->root, offset, offset + length, out);
     }
+}
+
+// --- reads ------------------------------------------------------------------
+
+// `offset` is inside the source, which every caller establishes before
+// asking: the scans loop while `offset < markdown_core_source_length`, and
+// the single-byte probes test their index against the same length or against
+// a line start they just found. There is deliberately no out-of-range arm —
+// it would be a branch no input can reach, and the coverage gate treats one
+// of those as a defect rather than as caution.
+const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length) {
+    const source_node *node = source->root;
+    while (node->left) {
+        if (offset < node->left->length) {
+            node = node->left;
+        } else {
+            offset -= node->left->length;
+            node = node->right;
+        }
+    }
+    *run_length = node->length - offset;
+    return node->buffer->bytes + node->offset + offset;
+}
+
+uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset) {
+    size_t run = 0;
+    return *markdown_core_source_run_at(source, offset, &run);
 }
 
 // --- diagnostics -----------------------------------------------------------

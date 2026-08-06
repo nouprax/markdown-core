@@ -441,6 +441,44 @@ stops colliding. `specs/scope-sanity/ledger.json` holds the 216 as an
 only-shrink budget until M3.4 drives it to zero, at which point the ledger and
 its audit are deleted rather than kept at zero.
 
+**Ledger movement recorded for M3.1**, per the rule that an entry may grow
+only with its cause written down here.
+
+- `packages/markdown-core/core/text.c {9, 0, 5}` is **removed**: the file is
+  deleted. The measured-file floor drops 46 → 44 rather than 45, because
+  `core/text.h` carried two `static MARKDOWN_CORE_INLINE` functions and
+  llvm-cov therefore measured the header as a file of its own.
+- `packages/markdown-core/extensions/session.c` grows **55 → 56 lines**
+  (functions and branches unchanged). Investigated before being recorded, on
+  the principle that paying a budget down beats booking it: the genuinely new
+  logic — the session's first fallible allocation at open, `source_new` and
+  its failure arm, where `markdown_core_text_init` could not fail — **is
+  covered**, by the existing OOM sweeps. Every uncovered line in the file is a
+  null-argument guard or a `? :` false arm reachable only from the `api`
+  suite, which the coverage preset excludes by design because it asserts
+  nothing about parse output. So this is one line of accounting, not one line
+  of untested logic.
+- `packages/markdown-core/core/blocks.c` **shrinks 58 → 56 lines and 83 → 82
+  branches**, and the paydown is attributed rather than assumed. `blocks.c` is
+  byte-identical between this slice's base and its head, so a region's span
+  names the same code in both coverage exports; diffing the two reports leaves
+  exactly three regions that go from count 0 to count 7, all in
+  `S_parser_feed`, all at `core/blocks.c:1246` — the arm that drops a `\n`
+  opening a feed whose predecessor ended in `\r`. Nothing regressed to zero.
+  That arm is unreachable when the whole document arrives in one feed, and
+  reachable now that a leaf boundary may fall between the `CR` and the `LF`.
+  It is behaviour the pinning corpus asserts: delete the arm and the orphaned
+  `\n` closes a second, empty line, which a golden dump reports. Two line
+  regions plus one branch arm is exactly the two lines and one branch the gate
+  measures, so the accounting closes with nothing unexplained.
+
+Two entries measure **looser** than they are recorded and are deliberately
+left alone. `core/delimiter.c` (53/0/111 against 79/0/163) and
+`core/inlines.c` (127/2/140 against 129/2/141) were already loose at this
+slice's base, so the slack is not this change's to claim — it is the state
+#94's review arrived at when it restored those budgets under the rule that a
+test raising coverage without asserting parse output does not pay one down.
+
 Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
 insertion must not rewrite later nodes or extents, and must emit no diff entry
 at all. The dominant violator of it today is the suffix document-children line
