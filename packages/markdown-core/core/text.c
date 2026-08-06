@@ -23,8 +23,10 @@ bool markdown_core_text_edit(
     size_t start,
     size_t end,
     const unsigned char *bytes,
-    size_t length
+    size_t length,
+    size_t *bytes_moved
 ) {
+    *bytes_moved = 0;
     if (start > end || end > text->length) {
         return false;
     }
@@ -54,10 +56,13 @@ bool markdown_core_text_edit(
         }
         text->data = grown;
         text->alloc = new_alloc;
+        // realloc keeps the bytes, so growth copies everything already stored.
+        *bytes_moved += text->length;
     }
 
     if (end < text->length && removed != length) {
         memmove(text->data + start + length, text->data + end, text->length - end);
+        *bytes_moved += text->length - end;
     }
     if (length > 0) {
         memcpy(text->data + start, bytes, length);

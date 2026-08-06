@@ -338,6 +338,14 @@ struct markdown_core_session {
     // commits. The definition-flip gate asserts this equals the mention
     // count of the flipped label's own kind, independent of document size.
     size_t dependent_reparses;
+    // Stored bytes the substrate copied to apply edits, summed over every
+    // successful edit (white-box, asserted by fallback_runner). An edit is
+    // an O(edit) operation or it is not, and this is the number that says
+    // which: the locality gate performs the same edit against documents of
+    // doubling size and requires the per-edit figure to stay flat. The
+    // contiguous store cannot satisfy that — it shifts the whole untouched
+    // suffix — so the gate fails until the substrate carries the bytes.
+    size_t edit_bytes_moved;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty
     // reference map, extension attachments) is commit-invariant, so

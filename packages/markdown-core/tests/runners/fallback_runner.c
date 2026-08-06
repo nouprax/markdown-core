@@ -2774,6 +2774,107 @@ static int case_definition_flip_locality(void) {
     return fb_definition_flip_scenario(6, 3, 240);
 }
 
+/* An edit is an O(edit) operation or it is not. `session->edit_bytes_moved`
+ * counts the already-stored bytes the substrate copied to make room, so the
+ * question is decided by arithmetic rather than by a clock: perform the same
+ * one-byte insertion at the same relative offset against documents of
+ * doubling size, and the per-edit figure must not move.
+ *
+ * The bound is absolute, not a ratio, because a ratio would accept a store
+ * that copies a fixed fraction of a growing document. A substrate that owns
+ * its bytes copies a bounded neighbourhood of the edit — for the persistent
+ * rope, the leaf it lands in plus the merge limit — and never the untouched
+ * suffix. FB_EDIT_MOVED_BOUND is set an order of magnitude above that
+ * neighbourhood so the gate reports a change of algorithm and not a change of
+ * tuning.
+ *
+ * The initial whole-text insert legitimately copies its own bytes, so the
+ * counter is sampled after it. */
+#define FB_EDIT_LOCALITY_SIZES 4
+#define FB_EDIT_LOCALITY_EDITS 8
+static const size_t FB_EDIT_MOVED_BOUND = 4096;
+
+static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit) {
+    static const char PARAGRAPH[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do.\n\n";
+    const size_t paragraph_length = sizeof(PARAGRAPH) - 1;
+    markdown_core_parse_options options;
+    markdown_core_session *session;
+    size_t length = paragraphs * paragraph_length;
+    char *text = (char *)malloc(length + 1);
+    size_t baseline;
+    size_t midpoint;
+    size_t i;
+    int result = -1;
+
+    if (!text) {
+        fprintf(stderr, "FAILED: edit_locality: out of memory building %zu paragraphs\n", paragraphs);
+        return -1;
+    }
+    for (i = 0; i < paragraphs; i++) {
+        memcpy(text + i * paragraph_length, PARAGRAPH, paragraph_length);
+    }
+    text[length] = '\0';
+
+    markdown_core_parse_options_init(&options);
+    session = markdown_core_session_open(&options, NULL);
+    if (!session) {
+        fprintf(stderr, "FAILED: edit_locality: session open failed\n");
+        free(text);
+        return -1;
+    }
+    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL)) {
+        fprintf(stderr, "FAILED: edit_locality: initial insert failed\n");
+        goto done;
+    }
+    baseline = session->edit_bytes_moved;
+
+    /* Land every edit inside the same paragraph at the document's midpoint, so
+     * the untouched suffix grows with the document while the edit does not. */
+    midpoint = (paragraphs / 2) * paragraph_length + 8;
+    for (i = 0; i < FB_EDIT_LOCALITY_EDITS; i++) {
+        if (!markdown_core_session_edit(session, midpoint, midpoint, (const uint8_t *)"x", 1, NULL)) {
+            fprintf(stderr, "FAILED: edit_locality: edit %zu failed\n", i);
+            goto done;
+        }
+    }
+    *moved_per_edit = (session->edit_bytes_moved - baseline) / FB_EDIT_LOCALITY_EDITS;
+    result = 0;
+done:
+    markdown_core_session_free(session);
+    free(text);
+    return result;
+}
+
+static int case_edit_locality(void) {
+    static const size_t PARAGRAPHS[FB_EDIT_LOCALITY_SIZES] = {512, 1024, 2048, 4096};
+    size_t moved[FB_EDIT_LOCALITY_SIZES];
+    size_t step;
+    int failed = 0;
+
+    for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
+        if (fb_edit_locality_scenario(PARAGRAPHS[step], &moved[step]) != 0) {
+            return -1;
+        }
+        if (moved[step] > FB_EDIT_MOVED_BOUND) {
+            failed = 1;
+        }
+    }
+    if (failed) {
+        fprintf(stderr, "FAILED: edit_locality: a one-byte edit must copy a bounded neighbourhood, not the suffix\n");
+        for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
+            fprintf(
+                stderr,
+                "  %zu paragraphs: %zu bytes moved per edit (bound %zu)\n",
+                PARAGRAPHS[step],
+                moved[step],
+                FB_EDIT_MOVED_BOUND
+            );
+        }
+        return -1;
+    }
+    return 0;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -2799,6 +2900,7 @@ static const fb_case_entry FB_CASES[] = {
     {"reference_fanout_uniform_routing", case_reference_fanout_uniform_routing},
     {"restart_locality_counters", case_restart_locality_counters},
     {"definition_flip_locality", case_definition_flip_locality},
+    {"edit_locality", case_edit_locality},
 };
 
 int main(int argc, char **argv) {

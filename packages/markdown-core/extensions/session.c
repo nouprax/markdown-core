@@ -812,9 +812,13 @@ bool markdown_core_session_edit(
         );
         return false;
     }
-    if (!markdown_core_text_edit(&session->text, byte_start, byte_end, bytes, length)) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
-        return false;
+    {
+        size_t moved = 0;
+        if (!markdown_core_text_edit(&session->text, byte_start, byte_end, bytes, length, &moved)) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
+            return false;
+        }
+        session->edit_bytes_moved += moved;
     }
 
     // Coalesce into the pending summary. The stored range lives in
