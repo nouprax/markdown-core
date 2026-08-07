@@ -34,14 +34,17 @@ public API exactly once, in landing D. Nothing after that flip leaves a
 compatibility path behind.
 
 This paragraph used to add "nothing before M7 changes a public type". That was
-already false — unifying the reference model added three node kinds on
-2026-08-02, as landing D's own section records — and landing A makes it false
-a second time, because a shareable node cannot carry a `parent` pointer and
-`markdown_core_node_get_parent` therefore changes shape. The accurate rule is
-narrower and is the one §1 actually states: **no release ever exposes an old
-and a new surface at the same time.** A landing may move a public signature
-when the mechanism underneath it moves; what it may not do is ship both
-spellings.
+already false when written — unifying the reference model added three node
+kinds on 2026-08-02, as landing D's own section records. The first revision of
+this section then over-corrected in the other direction, claiming a landing
+may move a public signature whenever the mechanism under it moves. §1 does not
+allow that: it requires public headers, bindings, fixtures and examples to
+adopt **atomically**, so a landing that moves the surface is the flip. The
+operative rule is therefore the narrow one — **a landing before D must leave
+every public signature, lifetime and return shape exactly as it found them** —
+and where a mechanism cannot be built under that constraint, the mechanism
+goes to D rather than the constraint bending. That is why the persistent tree
+sits in D and the extent sequence does not.
 
 The practical consequence: every landing is individually reviewable and
 individually mergeable, and the repository stays green throughout. Landing D
@@ -104,8 +107,6 @@ surprise rather than as the same structural error:
 - M3.0 created a 216-row scope-sanity ledger whose only purpose is to survive
   until M3.4 pays it off. The ledger is an artifact of the cut, not of the
   system.
-- M3.4 cannot delete node coordinates while the session's indices hold
-  borrowed pointers into a tree M5 has not yet made persistent.
 - §4.2 sits in M5 while the extents that make it resolvable sit in M3, and the
   document must own the substrate — which took a PoC to establish.
 - Coverage ledger entries grow in one slice so that another can shrink them.
@@ -121,10 +122,10 @@ earlier review threads remain readable.
 
 | landing | supersedes | why it is one landing |
 | --- | --- | --- |
-| **A — the storage model** | M3.2–M3.5, M5 | every internal split needs a bridge: `core/node.h` keeps five `int`s alive so a later slice can delete them; the eight borrowed-pointer indices stay valid so a later slice can convert them; extents cannot resolve until the tree is persistent, and the tree cannot be persistent while nodes carry intrusive links |
+| **A — extents replace coordinates** | M3.2–M3.5 | three cuts through one mechanism: the sequence needs breaks as units, the coordinates need the sequence to resolve them, and each slice had to borrow from the next to finish |
 | **B — canonical text** | M4 | consumes A's extents (a `SpanPair`'s source span is relative to the owning node's extent); splitting is free |
 | **C — parser answers** | M6 | independent of B; splitting is free |
-| **D — the atomic flip** | M7 | forced by §1 and must be last |
+| **D — the atomic flip** | M7, M5 | §1 requires public headers, bindings, fixtures and examples to adopt atomically, so everything that moves the public surface lands together — including the persistent tree, because a shareable node cannot carry a `parent` pointer and `markdown_core_node_get_parent` is public |
 
 M8 and M9 are unchanged: they are gates and rollout over whatever landed.
 
@@ -545,129 +546,80 @@ test raising coverage without asserting parse output does not pay one down.
 Gates for the two delivered slices: §14.3.2, §14.3.3, §14.5.1. The
 load-bearing property is §7.3, and landing A carries it from here.
 
-### Landing A — the storage model (supersedes M3.2–M3.5 and M5)
+### Landing A — extents replace coordinates (supersedes M3.2–M3.5)
 
-One change, because every attempt to cut it produced a slice that could not
-finish alone. It was PoC-verified before being written here, and the figures
-below are measurements rather than estimates.
+One landing, because M3.2, M3.3 and M3.4 were three cuts through one
+mechanism: the extent sequence cannot be built without breaks as units, the
+coordinates cannot be deleted without the sequence to resolve them, and each
+slice needed the next one before it could finish.
 
-**The keystone is the persistent child sequence, and everything else waits on
-it.** `markdown_core_node` carries five intrusive pointers — `next`, `prev`,
-`parent`, `first_child`, `last_child`, 40 B of a 192 B node
-(`core/node.h:128-132`). Those belong to exactly one version of the tree, so
-no node can be shared between two documents. Measured consequence: retaining
-100 versions of a 138 KB document costs **6.95 MB per version, 5038% of the
-document**, because every version is a whole tree. With children held in a
-persistent aggregate sequence instead, the same trace costs **736 B per
-version at branching factor 8** — 9,400× smaller — with six allocations per
-version, ~1% base memory overhead, and full traversal of 18,001 nodes in
-0.6 µs. Branch 8 beat 16, 32 and 64 on both base and per-version cost with
-identical traversal.
+It stops at the public surface. `markdown_core_node_scope` keeps its
+signature and its meaning; only the implementation changes, from stored
+`int`s to a resolution through the sequence. Nothing here changes a public
+type, a lifetime, or a return shape, which is what makes it a landing rather
+than part of D.
 
-**`parent` becomes an identity, not a pointer.** §5.2 fixes that identity
-never crosses a parent, so a node's parent *identity* is stable for its
-lifetime and a shared subtree carries the same value in every version.
-`markdown_core_node_get_parent` is exported but has no production caller in
-this repository — only `tests/facade.c` and `tests/api/main.c` — and none of
-the four bindings use it; the ES binding already addresses parents by node id.
-The public signature change is therefore contained, and it is the one place
-this landing touches public surface ahead of D.
+**The sequence.** One document-wide sequence of leaf source-bearing units
+carrying subtree byte sums, persistent, keyed by private order-maintenance
+labels, storing no coordinate in any form. A unit is `(owning region, one
+contiguous byte run)`, so a `BlockQuote` contributes as many units as it has
+runs. Breaks become first-class units, which is what makes the byte partition
+total and therefore what makes its gate writable at all.
 
-**§7.3 then holds by construction rather than by effort.** A prefix insertion
-into a 2,000-wide root leaves **2,000 of 2,000 later siblings
-reference-identical**, copying six sequence nodes. That is §7.3's "emits no
-diff entry for any of them" and §14.4.3's "unchanged subtree, verified by
-reference at the C level", obtained structurally. It also makes §5.2's
-matcher rule — nothing outside a reparsed region is matched at all —
-enforceable by pointer equality, so persistence makes adoption *easier* than
-the in-place transplant it replaces, where the matcher reconciles against a
-tree being mutated underneath it.
+That the partition is not total today is measured rather than assumed: bytes
+claimed by no leaf region run from 1.8% of `lorem1.md` to 68.8% of
+`block-list-nested.md`, and the residue is terminators, indentation and
+container markup. The grain is measured too — at region granularity
+(`markdown_core_region_of`, §11.1) the tracked corpus is 24.1 bytes per unit
+over 477 units, which puts the sequence near 1.7× the document; list-dense
+input reaches 4.6 B/unit, which is the shape the retained-metadata bound has
+to be set against rather than discovered by.
 
-**Two sequences, one implementation.** The per-node child sequence and the
-document-wide unit sequence of §7.2 are different structures and neither
-replaces the other: measured, resolving a coordinate over the document-wide
-sequence costs 0.018 µs, enumerating a node's eight children through its own
-sequence costs 0.004 µs, and enumerating them by filtering the document-wide
-range costs 0.912 µs — 228× worse, and `O(range)` rather than `O(children)`.
-But one aggregate node carries both summaries, subtree unit count and subtree
-byte sum, in 96 B at branch 8. It is one generic persistent aggregate
-instantiated twice.
+**Two sequences, one implementation.** The document-wide unit sequence and a
+node's own child sequence answer different questions and neither replaces the
+other: resolving a coordinate over the document-wide sequence costs 0.018 µs,
+enumerating a node's eight children through its own sequence costs 0.004 µs,
+and enumerating them by filtering the document-wide range costs 0.912 µs —
+228× worse and `O(range)` rather than `O(children)`. One aggregate node
+carries both summaries, subtree unit count and subtree byte sum, in 96 B at
+branch 8. Landing A builds the document-wide one; D builds the per-node one
+on the same implementation.
 
-**The rewrite is guarded against silent semantic change.** With the
-incremental commit path disabled entirely, 155 of 166 correctness tests pass
-byte-identically; the 11 failures are three path-engagement proofs
-(`restart_locality_counters`, `definition_flip_locality`,
-`concrete_inline_equivalence`) and eight `pathological_complexity_session_*`
-timeouts. No test reports a different parse result. Correctness is defined by
-the full path, the incremental path is an optimization, and those 11 tests are
-exactly the ones that catch a persistent tree which stops sharing or stops
-being `O(edit)`.
+**The second coordinate space retires here.** The per-node `line`/`column`
+fields and the paragraph line marks' tab-expanded `column` are pre-extent
+residue, and the M2.5 review round traced three shipped defects and one
+standing inconsistency to that second space. The marks lose their `column`
+field, `S_content_position` produces byte positions, and the tree's
+expanded-space islands — the reference-definition harvest and the split
+table's re-dated header (`extensions/table.c:558-559`) — close together.
+Deleting the coordinates touches 324 sites across 15 files, of which roughly
+220 are assignments that disappear with the fields and roughly 104 are
+readers needing extents. The scope-sanity ledger reaches zero and is deleted
+rather than kept at zero.
 
-The rest of the landing follows from the keystone: the eight session-side
-fields holding borrowed pointers into the committed tree
-(`session_internal.h:76`, `:99-101`, `:202`, `:220`, `:230`) become queries
-over the sequence; the five `int`s leave `core/node.h` along with every
-non-node coordinate carrier; `Document.scope` resolves per node in `O(log n)`
-and the bulk scope table is demoted to an opt-in API; the scope-sanity ledger
-reaches zero and is deleted. Deleting the coordinates touches 324 sites across
-15 files, of which roughly 220 are assignments that disappear with the fields
-and roughly 104 are readers needing extents. The intrusive links account for a
-further 433 uses across 14 files, concentrated in `extensions/incremental.c`
-(144), `core/node.c` (103) and `core/blocks.c` (53).
-
-Also settled here, because it becomes load-bearing here: the document owns the
-substrate its extents resolve against. `session->source` advances at edit time
-while the committed tree advances at commit time — measured skew of 33 bytes
-after a single uncommitted prepend — so a committed node resolving against the
-session's bytes is wrong by the size of the pending edit, and
-`markdown_core.h:34-37` already promises that a borrowed view "and node scopes
-resolved through it" survive `markdown_core_session_edit`. A one-shot
+Also settled here, because it becomes load-bearing here: the document owns
+the substrate its extents resolve against. `session->source` advances at edit
+time while the committed tree advances at commit time — measured skew of 33
+bytes after a single uncommitted prepend — so a committed node resolving
+against the session's bytes is wrong by the size of the pending edit, and
+`markdown_core.h:34-37` already promises that a borrowed view "and node
+scopes resolved through it" survive `markdown_core_session_edit`. A one-shot
 `markdown_core_document_parse` frees its session, so under session ownership
-its result could not resolve anything at all.
+its result could not resolve anything at all. The publish point is
+`commit_internal`'s success returns and not `commit_full`: the incremental
+path transplants into the existing tree and never reassigns `view.root`, so
+publishing in `commit_full` alone leaves the substrate stale while every test
+still passes.
 
-Gates: §14.2 in full, §14.3.2, §14.3.3, §14.4.3, §14.4.5, §14.5.1. The
-load-bearing property is §7.3, and its dominant violator today is the suffix
+Gates: §14.3.2, §14.3.3, §14.5.1, plus three this landing adds — every splice
+cut is a unit boundary, the sequence agrees with the parse under a validator
+called after every mutation in the manner #94 established, and retained
+boundary metadata is bounded, which the byte-only
+`MARKDOWN_CORE_SOURCE_MAX_AMPLIFICATION` does not cover. The load-bearing
+property is §7.3, whose dominant violator today is the suffix
 document-children line shift (`extensions/incremental.c:2942-2949`): 98.4% of
-a 16,676 µs commit on a 4 MB head insert, against roughly 0.6 µs for a
+a 16,676 µs commit on a 4 MB head insert against roughly 0.6 µs for a
 same-length edit. This landing deletes that loop.
-
-#### What M5 said, retained because it is still the specification
-
-Landing A subsumes M5's scope, but not its content: the continuity rule, the
-`List.tight` aggregate and the §5.4 revision rules are requirements, not
-scheduling. They are kept verbatim below and are landing A's to satisfy.
-
-The persistent child sequence, structural sharing across adjacent documents,
-`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
-`MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
-
-**The continuity rule is now fixed, not left to the implementation.** §5.2
-previously said only "a language-specific continuity proof"; it now states the
-matcher: nothing outside a reparsed region is matched at all, identity never
-crosses a parent or a kind, children the edit does not overlap are matched by
-ordinal from the near end against stable old witnesses, and only the children
-the edit overlaps are matched by content LCS with the leftmost tie winning.
-The result must be a pure function of the old child sequence, the new child
-sequence, and the normalized edit span — no dependence on hash order, arena
-addresses, or traversal order.
-
-The positional step is not decoration. Given `[A, A, B]` and an insertion at
-the front producing `[A, A, A, B]`, content carries nothing that distinguishes
-the inserted `A` from the survivors, so a content-only match — including an
-order-preserving LCS — hands the first survivor's identity to the new node and
-reports the survivor created. That is the §5.2 failure 14.2.3 tests for, and
-the information needed to avoid it is in the edit span, not in the tree.
-
-**`List.tight` needs an aggregate here.** It is folded over the item sequence,
-so a grandchild edit that flips tightness emits `VALUE` on the `List` — the
-one documented exception to §14.5.11's `DESCENDANT`-only shape — and "some
-item is loose" must ride the persistent item sequence as a monoid. Refolding
-it per commit makes an `O(1)` edit cost `O(W)` and breaks the bound for every
-list in the document.
-
-Gates: §14.2 in full, §14.4.3, §14.4.5. This is where the self-contained
-document of §4.2 becomes real: no `materialize()` step, and retained documents
-readable after session close.
 
 ### Landing B — canonical text (was M4)
 
@@ -983,8 +935,90 @@ single postorder `diffs` list with six-flag parts, deletion of the four-array
 delta and the separate ordered-entry API, and all four bindings moved over
 together with their fixtures and examples.
 
-Gates: §14.1 in full, §14.5 in full. This is the only milestone that cannot be
-split.
+**The persistent tree lands here, not earlier, and §1 is why.** Structural
+sharing requires that a node stop carrying `parent`, `next` and `prev`, because
+those name one version of the tree and a shared node belongs to several. That
+makes `markdown_core_node_get_parent` unanswerable from a node alone — it has
+27 call sites, one of them production (`extensions/delta.c:218`) — so the
+change is a public signature change, and §1 requires public headers, bindings,
+fixtures and examples to adopt atomically. It also changes the public lifetime
+rule: `markdown_core.h:34-37` currently promises a view valid only until the
+next commit, and §4.2 promises a document that outlives it. Both belong to the
+one landing that is allowed to move the surface.
+
+So this landing absorbs what M5 held — the persistent child sequence,
+structural sharing, `MarkupID`/`DocumentVersion`, and the
+`MarkupRevision{self, subtree}` pair — together with the session-side indices
+that only need to become queries once a commit produces new nodes: the eight
+borrowed-pointer fields at `session_internal.h:76`, `:99-101`, `:202`, `:220`
+and `:230`.
+
+It was PoC-verified before being written here. `markdown_core_node` carries
+five intrusive pointers, 40 B of a 192 B node (`core/node.h:128-132`), and
+retaining 100 versions of a 138 KB document costs **6.95 MB per version**,
+5038% of the document, because without sharing every version is a whole tree.
+With children in a persistent aggregate sequence the same trace costs **736 B
+per version at branch 8** — 9,400× — with six allocations per version, ~1%
+base memory overhead, and 18,001 nodes traversed in 0.6 µs. A prefix insertion
+into a 2,000-wide root leaves **2,000 of 2,000 later siblings
+reference-identical**, copying six sequence nodes, so §7.3's "no diff entry
+for any of them" and §14.4.3's "unchanged subtree, verified by reference at
+the C level" hold by construction. §5.2 fixes that identity never crosses a
+parent, so a shared subtree carries the same parent identity in every version.
+
+The rewrite is guarded against silent semantic change: with the incremental
+commit path disabled entirely, 155 of 166 correctness tests pass
+byte-identically, and the 11 failures are three path-engagement proofs
+(`restart_locality_counters`, `definition_flip_locality`,
+`concrete_inline_equivalence`) and eight `pathological_complexity_session_*`
+timeouts. No test reports a different parse result. Correctness is defined by
+the full path; the incremental path is an optimization, and those 11 tests are
+exactly the ones that catch a persistent tree which stops sharing or stops
+being `O(edit)`. The intrusive links account for 433 uses across 14 files,
+concentrated in `extensions/incremental.c` (144), `core/node.c` (103) and
+`core/blocks.c` (53).
+
+Gates: §14.1 in full, §14.2 in full, §14.4.3, §14.4.5, §14.5 in full. This is
+the only landing that cannot be split.
+
+#### What M5 required, retained because it is still the specification
+
+Landing D subsumes M5's scope. Its content is not scheduling — the continuity
+rule, the `List.tight` aggregate and the §5.4 revision rules are requirements
+this landing must satisfy, and they are kept verbatim.
+
+The persistent child sequence, structural sharing across adjacent documents,
+`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
+`MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
+
+**The continuity rule is now fixed, not left to the implementation.** §5.2
+previously said only "a language-specific continuity proof"; it now states the
+matcher: nothing outside a reparsed region is matched at all, identity never
+crosses a parent or a kind, children the edit does not overlap are matched by
+ordinal from the near end against stable old witnesses, and only the children
+the edit overlaps are matched by content LCS with the leftmost tie winning.
+The result must be a pure function of the old child sequence, the new child
+sequence, and the normalized edit span — no dependence on hash order, arena
+addresses, or traversal order.
+
+The positional step is not decoration. Given `[A, A, B]` and an insertion at
+the front producing `[A, A, A, B]`, content carries nothing that distinguishes
+the inserted `A` from the survivors, so a content-only match — including an
+order-preserving LCS — hands the first survivor's identity to the new node and
+reports the survivor created. That is the §5.2 failure 14.2.3 tests for, and
+the information needed to avoid it is in the edit span, not in the tree.
+
+**`List.tight` needs an aggregate here.** It is folded over the item sequence,
+so a grandchild edit that flips tightness emits `VALUE` on the `List` — the
+one documented exception to §14.5.11's `DESCENDANT`-only shape — and "some
+item is loose" must ride the persistent item sequence as a monoid. Refolding
+it per commit makes an `O(1)` edit cost `O(W)` and breaks the bound for every
+list in the document.
+
+Gates: §14.2 in full, §14.4.3, §14.4.5. This is where the self-contained
+document of §4.2 becomes real: no `materialize()` step, and retained documents
+readable after session close.
+
 
 It was also described here as the only milestone that changes a public type.
 That stopped being true on 2026-08-02: unifying the reference model added three
