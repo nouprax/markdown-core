@@ -30,13 +30,23 @@ superseded four-array delta.
 That is a constraint on what is *released*, not on how the work is staged. So
 the plan builds the new model as internal subsystems with their own unit
 tests, keeps the current public surface working the whole time, and flips the
-public API exactly once, in M7. Nothing before M7 changes a public type, and
-nothing after M7 leaves a compatibility path behind.
+public API exactly once, in landing D. Nothing after that flip leaves a
+compatibility path behind.
 
-The practical consequence: M1–M6 are individually reviewable and individually
-mergeable, and the repository stays green throughout. M7 is by nature one
-large change, which is why every subsystem it depends on must already be at
-100% coverage before it starts.
+This paragraph used to add "nothing before M7 changes a public type". That was
+already false — unifying the reference model added three node kinds on
+2026-08-02, as landing D's own section records — and landing A makes it false
+a second time, because a shareable node cannot carry a `parent` pointer and
+`markdown_core_node_get_parent` therefore changes shape. The accurate rule is
+narrower and is the one §1 actually states: **no release ever exposes an old
+and a new surface at the same time.** A landing may move a public signature
+when the mechanism underneath it moves; what it may not do is ship both
+spellings.
+
+The practical consequence: every landing is individually reviewable and
+individually mergeable, and the repository stays green throughout. Landing D
+is by nature one large change, which is why every subsystem it depends on must
+already be at 100% coverage before it starts.
 
 ## Distance from today
 
@@ -65,6 +75,66 @@ Each milestone states what it delivers, what proves it, and which coverage
 ledger entries it is expected to clear. A milestone is done when its gates pass
 **and** its files are off the ledger — new code is at 100% by the gate's first
 rule, so only pre-existing files need clearing.
+
+### How this work is decomposed, and why it was decomposed wrongly
+
+**The rule: two pieces of work belong in one landing when splitting them
+requires coexistence scaffolding that the later one deletes.** When splitting
+is free — no dual maintenance, no bridge to build and remove — split, because
+smaller changes review better. When it is not free, the split does not reduce
+risk; it converts one change into two changes plus a bridge, and the bridge is
+work done twice.
+
+This plan's first decomposition did not follow that rule. It followed the
+contract's section order: the "Distance from today" table above is indexed by
+§ number, and the milestones inherited that indexing — M2 was §7.1, M3 §7.2,
+M4 §6.1, M5 §6.2 with §5.2, M6 §4.1 with §6.3. A contract is a *specification*
+decomposition. It separates concerns so each can be stated independently,
+which is exactly what a specification should do and exactly the wrong seam to
+cut code along, because one mechanism serves several sections.
+
+The symptoms were consistent, and each was read at the time as a local
+surprise rather than as the same structural error:
+
+- M2.5 deferred the deleted comment `HTMLBlock` and the split-off lead
+  paragraph to "a document-level answer" that no milestone owned. #92 had to
+  solve comments a different way entirely.
+- M3 had to be reshaped before it could start, because its own prerequisite —
+  the byte substrate — had been assigned to M7, after its consumer.
+- M3.0 created a 216-row scope-sanity ledger whose only purpose is to survive
+  until M3.4 pays it off. The ledger is an artifact of the cut, not of the
+  system.
+- M3.4 cannot delete node coordinates while the session's indices hold
+  borrowed pointers into a tree M5 has not yet made persistent.
+- §4.2 sits in M5 while the extents that make it resolvable sit in M3, and the
+  document must own the substrate — which took a PoC to establish.
+- Coverage ledger entries grow in one slice so that another can shrink them.
+
+Every one of those is one mechanism split across milestones, with scaffolding
+built to bridge the gap and deleted afterwards.
+
+### The decomposition by mechanism
+
+Applying the rule to what remains gives four landings rather than eight
+milestones. The mapping from the superseded numbering is stated so that
+earlier review threads remain readable.
+
+| landing | supersedes | why it is one landing |
+| --- | --- | --- |
+| **A — the storage model** | M3.2–M3.5, M5 | every internal split needs a bridge: `core/node.h` keeps five `int`s alive so a later slice can delete them; the eight borrowed-pointer indices stay valid so a later slice can convert them; extents cannot resolve until the tree is persistent, and the tree cannot be persistent while nodes carry intrusive links |
+| **B — canonical text** | M4 | consumes A's extents (a `SpanPair`'s source span is relative to the owning node's extent); splitting is free |
+| **C — parser answers** | M6 | independent of B; splitting is free |
+| **D — the atomic flip** | M7 | forced by §1 and must be last |
+
+M8 and M9 are unchanged: they are gates and rollout over whatever landed.
+
+Landing A is large, and largeness was the original reason for splitting it.
+That reason does not survive contact with the gates: `ctest --preset
+correctness`, the sanitizer presets, four-platform conformance, the coverage
+gate, fuzz parity and the mutation criterion are all indifferent to the size
+of a change. What review actually needs is bisectability, and that is served
+by commit structure *inside* one pull request — which is how every slice
+delivered so far has in fact been reviewed.
 
 ### The rule every milestone is held to
 
@@ -373,24 +443,17 @@ green, with edit cost at 2.75 MB falling from 19.1 µs to 0.39 µs because the
 flat store memmoves. Evidence and the full invariant scoring:
 `../reviews/2026-08-05-m3-endstate-poc.md`.
 
-The slices, in a hard order:
+Two slices of it have landed. The rest is superseded by **landing A**, below.
 
-1. **M3.1 substrate unification** — session on the rope, `core/text.c` deleted.
-   The gate is a link failure: a build with the file removed must link and pass.
-2. **M3.2 the coordinate decision and the fused sequence** — the decision is
-   that an extent is (identity, length) and that **the sequence** stores no
-   coordinate in any form, neither absolute nor relative to anything. It binds
-   the structure this slice builds, not yet the tree: `core/node.h` keeps its
-   five fields until M3.4, and until then the two coexist, which is what makes
-   M3.4 a migration with something to migrate onto rather than a rewrite.
-   Breaks become first-class units here, because that is what makes the byte
-   partition total and therefore what makes its gate writable at all.
-3. **M3.3 index subsumption** — the clean index, the definition index, the
-   suffix line shift, and `line_offsets` become queries or disappear.
-4. **M3.4 position deletion** — the five `int`s leave `core/node.h`, and every
-   non-node coordinate carrier moves in the same slice or the work is done twice.
-5. **M3.5 resolution path** — `Document.scope` resolves per node in `O(log n)`;
-   the bulk scope table is demoted to an opt-in API.
+1. **M3.0 the substrate fork and the scope-sanity ratchet** — merged as #95.
+2. **M3.1 substrate unification** — session on the rope, `core/text.c` deleted.
+   The gate was a link failure: a build with the file removed must link and
+   pass. Merged as #96; an edit now copies 3 bytes at every document size,
+   against 16,635–133,115 before.
+
+M3.2 through M3.5 were written as four slices in a hard order. They are one
+mechanism, and the order was hard precisely because each slice could not
+finish without the next one. They are folded into landing A.
 
 **One document-wide sequence of leaf source-bearing units, not one sequence
 per container.** §7.2 was tightened on 2026-08-03 to say so, because the
@@ -420,7 +483,7 @@ table's re-dated header (`extensions/table.c:558-559`) — close together.
 Tab-expanded columns remain legal only in the block
 scanner's processing of the current line, where CommonMark defines
 indentation in columns. The milestone is held to this deletion, not only to
-adding extents. It lands in M3.4, and the review that follows fixes the
+adding extents. It lands in landing A, and the review that follows fixes the
 achievable statement: not "no coordinate anywhere", because CommonMark defines
 indentation in columns and list tightness against the line being scanned
 (`core/blocks.c:2140`), but **no coordinate outlives the scan of its region.**
@@ -438,7 +501,7 @@ sequence whose byte sums must equal `Source.length`. An extent is (identity,
 length), so length zero is expressible and the sentinel is unnecessary; the
 `line == 0` reading that today carries four distinct meanings across two structs
 stops colliding. `specs/scope-sanity/ledger.json` holds the 216 as an
-only-shrink budget until M3.4 drives it to zero, at which point the ledger and
+only-shrink budget until landing A drives it to zero, at which point the ledger and
 its audit are deleted rather than kept at zero.
 
 **Ledger movement recorded for M3.1**, per the rule that an entry may grow
@@ -479,45 +542,100 @@ slice's base, so the slack is not this change's to claim — it is the state
 #94's review arrived at when it restored those budgets under the rule that a
 test raising coverage without asserting parse output does not pay one down.
 
-Gates: §14.3.2, §14.3.3, §14.5.1. The load-bearing property is §7.3: a prefix
-insertion must not rewrite later nodes or extents, and must emit no diff entry
-at all. The dominant violator of it today is the suffix document-children line
-shift (`extensions/incremental.c:2942-2949`): 98.4% of a 16,676 µs commit on a
-4 MB head insert, against roughly 0.6 µs for a same-length edit. M3.3 deletes
-that loop.
+Gates for the two delivered slices: §14.3.2, §14.3.3, §14.5.1. The
+load-bearing property is §7.3, and landing A carries it from here.
 
-### M4 — Canonical text
+### Landing A — the storage model (supersedes M3.2–M3.5 and M5)
 
-`CanonicalText{value, map}` and `TextMap` as ascending non-overlapping
-`SpanPair`s, including the cases where the two spaces diverge — entities,
-escapes, smart punctuation — and the equal-length-but-non-corresponding cases
-§6.1 calls out.
+One change, because every attempt to cut it produced a slice that could not
+finish alone. It was PoC-verified before being written here, and the figures
+below are measurements rather than estimates.
 
-**A `SpanPair`'s source span is relative to the owning node's extent, not to
-the document.** Absolute offsets would make a prefix insertion differ on every
-later text field — one diff entry per suffix node, which §7.3 and §14.5.1
-forbid. A consumer that wants the bytes resolves the node's extent once
-through `Document.scope` and adds the pair's offsets to it.
+**The keystone is the persistent child sequence, and everything else waits on
+it.** `markdown_core_node` carries five intrusive pointers — `next`, `prev`,
+`parent`, `first_child`, `last_child`, 40 B of a 192 B node
+(`core/node.h:128-132`). Those belong to exactly one version of the tree, so
+no node can be shared between two documents. Measured consequence: retaining
+100 versions of a 138 KB document costs **6.95 MB per version, 5038% of the
+document**, because every version is a whole tree. With children held in a
+persistent aggregate sequence instead, the same trace costs **736 B per
+version at branching factor 8** — 9,400× smaller — with six allocations per
+version, ~1% base memory overhead, and full traversal of 18,001 nodes in
+0.6 µs. Branch 8 beat 16, 32 and 64 on both base and per-version cost with
+identical traversal.
 
-**At most one field per kind is a `CanonicalText`.** Seven of the 34 kinds
-carry one (`CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
-`Formula`); the other 27 carry none and therefore never carry `TEXT` or
-`TEXT_MAP` at all. Every other string field — `Link.destination`,
-`Link.title`, `Image.source`, `CodeBlock.info`, every `label`, `name`,
-`attributes`, `reference` — is a plain scalar of decoded characters with no
-map, even though CommonMark resolves escapes and entities inside several of
-them. Naming their source spans is the sub-node extent §7.2 defers.
+**`parent` becomes an identity, not a pointer.** §5.2 fixes that identity
+never crosses a parent, so a node's parent *identity* is stable for its
+lifetime and a shared subtree carries the same value in every version.
+`markdown_core_node_get_parent` is exported but has no production caller in
+this repository — only `tests/facade.c` and `tests/api/main.c` — and none of
+the four bindings use it; the ES binding already addresses parents by node id.
+The public signature change is therefore contained, and it is the one place
+this landing touches public surface ahead of D.
 
-Gates: the `TEXT` versus `TEXT_MAP` distinction of §9.1, proven on
-`&amp;` → `&#x26;` rewriting with unchanged canonical text. **The example was
-`&#38;` until 2026-08-03, and it proved nothing**: both spellings are five
-source bytes producing one canonical byte, so the two maps are byte-identical
-and §9.1 correctly reports no part at all. The working example needs the two
-spans to differ in length, which `&#x26;` (six bytes) does. A test written
-against the old example would have asserted a false proposition and passed by
-accident only if `TEXT_MAP` were computed wrongly.
+**§7.3 then holds by construction rather than by effort.** A prefix insertion
+into a 2,000-wide root leaves **2,000 of 2,000 later siblings
+reference-identical**, copying six sequence nodes. That is §7.3's "emits no
+diff entry for any of them" and §14.4.3's "unchanged subtree, verified by
+reference at the C level", obtained structurally. It also makes §5.2's
+matcher rule — nothing outside a reparsed region is matched at all —
+enforceable by pointer equality, so persistence makes adoption *easier* than
+the in-place transplant it replaces, where the matcher reconciles against a
+tree being mutated underneath it.
 
-### M5 — Persistent tree, identity, and revisions
+**Two sequences, one implementation.** The per-node child sequence and the
+document-wide unit sequence of §7.2 are different structures and neither
+replaces the other: measured, resolving a coordinate over the document-wide
+sequence costs 0.018 µs, enumerating a node's eight children through its own
+sequence costs 0.004 µs, and enumerating them by filtering the document-wide
+range costs 0.912 µs — 228× worse, and `O(range)` rather than `O(children)`.
+But one aggregate node carries both summaries, subtree unit count and subtree
+byte sum, in 96 B at branch 8. It is one generic persistent aggregate
+instantiated twice.
+
+**The rewrite is guarded against silent semantic change.** With the
+incremental commit path disabled entirely, 155 of 166 correctness tests pass
+byte-identically; the 11 failures are three path-engagement proofs
+(`restart_locality_counters`, `definition_flip_locality`,
+`concrete_inline_equivalence`) and eight `pathological_complexity_session_*`
+timeouts. No test reports a different parse result. Correctness is defined by
+the full path, the incremental path is an optimization, and those 11 tests are
+exactly the ones that catch a persistent tree which stops sharing or stops
+being `O(edit)`.
+
+The rest of the landing follows from the keystone: the eight session-side
+fields holding borrowed pointers into the committed tree
+(`session_internal.h:76`, `:99-101`, `:202`, `:220`, `:230`) become queries
+over the sequence; the five `int`s leave `core/node.h` along with every
+non-node coordinate carrier; `Document.scope` resolves per node in `O(log n)`
+and the bulk scope table is demoted to an opt-in API; the scope-sanity ledger
+reaches zero and is deleted. Deleting the coordinates touches 324 sites across
+15 files, of which roughly 220 are assignments that disappear with the fields
+and roughly 104 are readers needing extents. The intrusive links account for a
+further 433 uses across 14 files, concentrated in `extensions/incremental.c`
+(144), `core/node.c` (103) and `core/blocks.c` (53).
+
+Also settled here, because it becomes load-bearing here: the document owns the
+substrate its extents resolve against. `session->source` advances at edit time
+while the committed tree advances at commit time — measured skew of 33 bytes
+after a single uncommitted prepend — so a committed node resolving against the
+session's bytes is wrong by the size of the pending edit, and
+`markdown_core.h:34-37` already promises that a borrowed view "and node scopes
+resolved through it" survive `markdown_core_session_edit`. A one-shot
+`markdown_core_document_parse` frees its session, so under session ownership
+its result could not resolve anything at all.
+
+Gates: §14.2 in full, §14.3.2, §14.3.3, §14.4.3, §14.4.5, §14.5.1. The
+load-bearing property is §7.3, and its dominant violator today is the suffix
+document-children line shift (`extensions/incremental.c:2942-2949`): 98.4% of
+a 16,676 µs commit on a 4 MB head insert, against roughly 0.6 µs for a
+same-length edit. This landing deletes that loop.
+
+#### What M5 said, retained because it is still the specification
+
+Landing A subsumes M5's scope, but not its content: the continuity rule, the
+`List.tight` aggregate and the §5.4 revision rules are requirements, not
+scheduling. They are kept verbatim below and are landing A's to satisfy.
 
 The persistent child sequence, structural sharing across adjacent documents,
 `MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
@@ -551,7 +669,38 @@ Gates: §14.2 in full, §14.4.3, §14.4.5. This is where the self-contained
 document of §4.2 becomes real: no `materialize()` step, and retained documents
 readable after session close.
 
-### M6 — Parser answers
+### Landing B — canonical text (was M4)
+
+`CanonicalText{value, map}` and `TextMap` as ascending non-overlapping
+`SpanPair`s, including the cases where the two spaces diverge — entities,
+escapes, smart punctuation — and the equal-length-but-non-corresponding cases
+§6.1 calls out.
+
+**A `SpanPair`'s source span is relative to the owning node's extent, not to
+the document.** Absolute offsets would make a prefix insertion differ on every
+later text field — one diff entry per suffix node, which §7.3 and §14.5.1
+forbid. A consumer that wants the bytes resolves the node's extent once
+through `Document.scope` and adds the pair's offsets to it.
+
+**At most one field per kind is a `CanonicalText`.** Seven of the 34 kinds
+carry one (`CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
+`Formula`); the other 27 carry none and therefore never carry `TEXT` or
+`TEXT_MAP` at all. Every other string field — `Link.destination`,
+`Link.title`, `Image.source`, `CodeBlock.info`, every `label`, `name`,
+`attributes`, `reference` — is a plain scalar of decoded characters with no
+map, even though CommonMark resolves escapes and entities inside several of
+them. Naming their source spans is the sub-node extent §7.2 defers.
+
+Gates: the `TEXT` versus `TEXT_MAP` distinction of §9.1, proven on
+`&amp;` → `&#x26;` rewriting with unchanged canonical text. **The example was
+`&#38;` until 2026-08-03, and it proved nothing**: both spellings are five
+source bytes producing one canonical byte, so the two maps are byte-identical
+and §9.1 correctly reports no part at all. The working example needs the two
+spans to differ in length, which `&#x26;` (six bytes) does. A test written
+against the old example would have asserted a false proposition and passed by
+accident only if `TEXT_MAP` were computed wrongly.
+
+### Landing C — parser answers (was M6)
 
 Parser answers moved into the document as immutable data behind the §4.1
 `Document` queries, with the parser-owned inverted index that makes an
@@ -827,7 +976,7 @@ a plan than in a review, and cheapest of all to notice while writing the rule.
 Clears: most of the `extensions/footnote.c`,
 `extensions/lookups.c`, and `extensions/cross_reference.c` ledger entries.
 
-### M7 — The atomic flip
+### Landing D — the atomic flip (was M7)
 
 One change: the new public C header of §15, the delta engine producing the
 single postorder `diffs` list with six-flag parts, deletion of the four-array
