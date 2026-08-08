@@ -1,5 +1,20 @@
 # Incremental canonical AST: delivery plan
 
+> **PARTLY SUPERSEDED — 2026-08-07.** Every milestone below that builds on a
+> persistent structure over source builds on two clauses that were removed from
+> the contract on that date: 11.1's requirement that a commit cost a bound
+> independent of document size, and 7.2's prescription of a persistent
+> aggregate sequence keyed by private order-maintenance labels. Neither was
+> ever traced to a consumer, and the sixty-commit landing that implemented them
+> was reverted. Read
+> [`../reviews/2026-08-07-requirement-audit.md`](../reviews/2026-08-07-requirement-audit.md)
+> before acting on M2's rope, M3's substrate unification, M3.2's extent
+> sequence, §6.2's persistent child sequence, or any acceptance criterion here
+> that measures bytes path-copied or asserts an amplification bound. The
+> milestones are left standing because their sequencing, their dependency
+> reasoning, and the defects they name are still worth reading — but the
+> structure they were sequencing is not the one the contract now asks for.
+
 Status: planning (2026-08-01; milestones resynced 2026-08-03). The design is
 frozen in
 [`../specs/incremental-canonical-ast.md`](../specs/incremental-canonical-ast.md)

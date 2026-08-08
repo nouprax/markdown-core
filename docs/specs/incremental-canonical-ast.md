@@ -907,10 +907,17 @@ twenty-seven kinds already do, and if that proves insufficient the answer is
 the sub-node extent 7.2 defers — one mechanism, for all thirty-four kinds,
 driven by a stated need.
 
-Text storage must support persistent slicing and localized replacement.
-Repeated tail appends must not copy the complete prefix each commit. A tiny
-retained slice must not accidentally retain an unbounded source buffer beyond
-the binding's documented amplification limit.
+Text storage must support localized replacement, and repeated tail appends
+must not copy the complete prefix each commit — a streaming feed is the whole
+reason the second sentence is here, and geometric growth is enough for it.
+
+**Two further requirements are removed: that the storage support PERSISTENT
+slicing, and that a tiny retained slice not retain an unbounded source buffer
+beyond a documented amplification limit.** The second is a hazard only of the
+first: it describes a slice that is a window into a shared immutable buffer,
+which is a thing only a persistent store has. And the first was written for
+the predecessor-reading document 4.2 removed. A store that owns its bytes
+outright has no slice to amplify.
 
 ### 6.2 Typed child edges
 
@@ -1762,14 +1769,14 @@ What remains genuinely required is that no commit be QUADRATIC in the document,
 and that the published frontier be bounded by the edit rather than by the
 document. `session.commit()` is measured independently of any consumer:
 
-- edited stored bytes and persistent source paths;
+- edited stored bytes;
 - reparsed grammar ownership regions;
 - concrete token/trivia records created, retained, and copied;
 - definition-set updates and mention-index probes (6.3, step 0);
 - identity-matching frontier;
 - changed canonical AST records and trace stamps;
 - semantic relation-index maintenance;
-- persistent relation-index records and bytes path-copied;
+- relation-index records and bytes copied;
 - persistent nodes/bytes copied; and
 - `Delta` construction.
 
