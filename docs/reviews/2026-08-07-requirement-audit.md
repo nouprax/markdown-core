@@ -145,18 +145,15 @@ back-derived from that binding, not from a consumer.
 | 7.2 | Resolution must be `O(log n)`; a persistent aggregate sequence satisfies it | The requirement is stated over the output; the mechanism is not prescribed |
 | 11.1 | Commit cost independent of document size | The requirement is the published frontier; a walk is permitted, quadratic is not |
 | 11.1 | Regions are defined "because that is what makes the bound hold" | Regions are defined for correctness: the smallest span that can be reparsed alone and give the same answer |
+| 14.7 | Complexity gates reporting persistent nodes/bytes copied and every term against an AST-only baseline "with the CST permitted to move only the records-created term" | Removed. What it REQUIRED rather than reported moved to 11.1: `\|diffs\|` and delta application independent of unrelated nodes, and zero allocations and zero CST walks on ordinary access |
+| 4.2 | A document is independent of later session commits and structurally shareable with adjacent revisions | Removed. A session hands out one reused view, so there is no predecessor to be independent of; sharing was there to make that unreachable clause cheap |
 
 ## What is owed
 
-1. `§14.7`'s complexity gates still measure the removed bound in places. They
-   should measure what remains: no quadratic term, and a published frontier
-   bounded by the edit.
-2. `§4.2`'s "remains readable after later commits" has no reachable consumer
-   and should say so or go.
-3. `SourceExtent` as an identity separate from `MarkupID` exists because
+1. `SourceExtent` as an identity separate from `MarkupID` exists because
    coordinates go stale. If a node carries a span that a commit maintains,
    that separation is worth re-examining.
-4. Concrete records are region-relative and their columns are
+2. Concrete records are region-relative and their columns are
    normalized-line byte offsets. Whether that survives belongs with the public
    concrete interface, which does not exist yet.
 
@@ -171,3 +168,35 @@ invalid:
   requirement, not from who happens to read it today.
 - **"Don't touch it if you are not in that code."** That is how an unexamined
   decision survives an audit whose purpose is to examine it.
+
+## The one place a consumer for the removed clause is named
+
+`§2.1`'s **path C** — "read the delta for location only" — says:
+
+> a side-by-side editor highlighting the preview region a keystroke affected …
+> It reads the entries and resolves `Document.scope` against the **retained old
+> document and the new one**.
+
+That is a stated consumer for holding a predecessor, and it is the
+diff-highlighting editor scenario. Two things about it:
+
+- **The C API does not deliver it today.** `markdown_core_session_document`
+  returns `&session->view`, reused in place, so a C caller has no predecessor
+  to resolve against. Path C is written for a capability that does not exist,
+  which is why removing the clause it rests on broke nothing.
+- **It may not need one.** `Delta.edits` (§9.2) already carries the byte-level
+  difference. An editor that wants to highlight what a keystroke affected has
+  the byte spans and the new document; what the OLD scope adds is the region to
+  un-highlight, and a consumer that keeps its own previous render already knows
+  that.
+
+The clauses still written against a retained predecessor are `14.1.13`
+("retained old documents keep their old answers after later commits and session
+close"), `14.2.7` ("old node views resolve only through their retained old
+document"), and `14.3.2` ("resolve exactly for old and new retained
+documents").
+
+**This is one decision, and it is not the parser's to make alone: does a
+consumer get to hold a previous document?** If yes, path C stands and the API
+owes it — and persistence comes back with it. If no, path C is restated on
+`Delta.edits` and those three gates go.

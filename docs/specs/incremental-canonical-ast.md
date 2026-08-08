@@ -92,8 +92,8 @@ both, and no complexity gate below survives it.
   CST existed.
 - **A container's typed semantic child edge stays separately addressable from
   its concrete child order.** Projecting that edge is proportional to the edge,
-  not to the container's token count, which is what 11.1 and 14.7 require of
-  ordinary traversal and what 9.4 requires of `Document.index`; a concrete
+  not to the container's token count, which is what 11.1 requires of ordinary
+  traversal and what 9.4 requires of `Document.index`; a concrete
   ordinal is not a `ChildOrdinal`. The persistent sequence 6.2 requires is that
   typed edge, not the concrete order. Recovering the concrete order by merging
   on those relative offsets — paid only by the `concrete` interface — is the
@@ -101,8 +101,7 @@ both, and no complexity gate below survives it.
 
 Under these two rules the CST is a memory trade and not a complexity one: it
 multiplies the record count inside a reparsed region by a small constant and
-enters no other term. 14.7 requires that constant to be reported rather than
-absorbed into a timing number.
+enters no other term.
 
 The CST is concrete syntax with exactly one document-wide input: the set of
 labels the document defines. `canonical-ast.md` makes an undefined `[^x]`
@@ -433,8 +432,9 @@ boundary would have to move, not be worked around.
 
 Composition is cheap to own because the parser hands it working primitives:
 stable `MarkupID`s to key its own structures by (5.2); immutable
-self-contained documents with structural sharing, so it can hold many units at
-once and no unit's commit can invalidate another's (4.2, 14.4.7); and
+self-contained documents, so it can hold many units at once and no unit's
+commit can invalidate another's (4.2, 14.4.7) — many separate documents, which
+needs no sharing between them; and
 per-document parser answers, so it knows exactly what remains unresolved
 (6.3).
 
@@ -669,24 +669,41 @@ unchanged ancestor's local record and child sequence. A persistent aggregate
 trace index may advance `revision.subtree` without copying all ancestor
 payloads.
 
-### 4.2 Self-contained document revisions
+### 4.2 Self-contained documents
 
 Every published `Document` must be:
 
 - immutable;
 - self-contained when returned;
 - safe for concurrent reads according to its binding's value contract;
-- independent of later session commits;
-- usable after the session closes;
+- usable after the session closes; and
 - able to resolve every live `MarkupID`, parser-owned site, extent, text,
-  child edge, parser answer, and absolute source coordinate it exposes; and
-- structurally shareable with adjacent immutable revisions.
+  child edge, parser answer, and absolute source coordinate it exposes.
 
 Lazy indexes are allowed only when their computation depends entirely on
-immutable values owned by that `Document`. A retained document must never
-call into the live session, consult its current source, or fail because the
-session advanced. There is no `materialize()` step and no window during which
-a retained snapshot is only conditionally usable.
+immutable values owned by that `Document`. It must never call into a live
+session, consult a session's current source, or fail because a session
+advanced. There is no `materialize()` step.
+
+**Two clauses are removed: that a document be independent of later session
+commits, and that it be structurally shareable with adjacent immutable
+revisions.**
+
+The first is unreachable and the second is what it was built for. A session
+hands out one document — `Document.current`, the view it reuses in place at
+every commit — so a caller cannot hold a predecessor to be independent OF.
+The one document a caller does own outright comes from a one-shot parse, which
+takes the substrate with it and whose session is already gone; that is the
+"usable after the session closes" bullet above, and it is exercised. Bindings
+that want a revision to outlive its commit take a value copy, which is what
+they do: a decoded snapshot answers from its own values and refuses a node
+from another revision.
+
+Structural sharing was there to make the unreachable clause cheap. It bought
+persistence in the source and in whatever index resolves 7.2, with the
+refcounting, path copying and retained-bytes bounds that go with it, for a
+predecessor no consumer can name. What survives is what a consumer can hold:
+one immutable document at a time, valid for as long as it is held.
 
 ## 5. Identity and revisions
 
@@ -1787,8 +1804,8 @@ no consumer traced to it anywhere in this contract, and every clause below
 that was justified by "what makes the bound hold" inherited the same standing.
 A commit that walks the document to re-derive what it must publish satisfies
 the frontier requirement exactly; it costs a walk. Whether a given walk is too
-slow is a measurement, and 14.7 measures — what it may no longer do is treat a
-size-dependent term as a contract violation on its own.
+slow is a measurement, and a measurement is not a clause — what this contract
+may no longer do is treat a size-dependent term as a violation on its own.
 
 What remains genuinely required is that no commit be QUADRATIC in the document,
 and that the published frontier be bounded by the edit rather than by the
@@ -1859,7 +1876,16 @@ not repeat a whole-document parse once per changed node.
 bounded by `O(changed * depth)` and independent of document width and size: a
 one-block insertion into a document of any size produces its own entry plus one
 per enclosing container. **That is the bound this section is about**, and it is
-about what is published.
+about what is published. `|diffs|` and delta application must be independent
+of unrelated document nodes.
+
+Two things are required of ORDINARY ACCESS rather than of a commit, and they
+are requirements because a consumer pays them on every read: projecting a
+`Document` or `Markup` value allocates nothing in the core and walks no CST,
+and a semantic traversal steps over no syntax-only token. Both are zero, not
+bounded — they are what §0's separately addressable typed child edge buys, and
+a projection that walks the concrete tree to answer a semantic question has
+given that away.
 
 A sentence here required structural edits to path-copy `O(log n)` persistent
 sequence nodes. It is removed with the rest: nothing in this contract reaches a
@@ -1891,25 +1917,20 @@ concrete offsets are region-relative (§0), a token is never a leaf of a
 document-wide structure and no edit elsewhere can reach one: regions reparsed
 and `|diffs|` are the same with the CST as without it, and the concrete
 material shows up only as a constant factor on the records created inside the
-reparsed region. 14.7 measures that
-factor against an AST-only baseline on the same trace; a design in which it
-also multiplies a size-dependent term fails this section, whatever its timing
-on a small fixture.
+reparsed region.
 
 A change that a concrete difference alone would have propagated — trivia,
 delimiter spelling — still costs its region's reparse, which is unavoidable
 and localized, and then publishes nothing (9.1). The projection comparison
 that discards it is proportional to the region, not to the document.
 
-Retaining an old document must not turn an answer-preserving localized commit
-into `O(total answers)` copying. No answer snapshot is copied at all. If an
-edit changes `k` relation sites, buckets, or ordered runs, publication copies
-their persistent paths and payloads in `O(k log n)` (or a tighter
-structure-specific bound), while sharing every unaffected relation structure.
-A truly global renumbering may still require `O(affected)` answer comparisons,
-trace updates, and diff entries because those observable query results
-genuinely changed; it does not require materializing those results in the
-document.
+A commit must not copy one answer value per semantic node. A truly global
+renumbering may still require `O(affected)` answer comparisons, trace updates,
+and diff entries, because those observable query results genuinely changed; it
+does not require materializing those results in the document. The paragraph
+that stood here stated this as a bound on copying persistent paths so that an
+old document could keep its answers, which is 4.2's removed clause wearing a
+cost.
 
 ### 11.2 Delta application cost
 
@@ -2093,8 +2114,8 @@ identity rules, or the diff list.
    inserted/removed content.
 5. Long append traces do not degrade quadratically.
 6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
-   is asymmetric and gates 1 and 14.8 pass without it — gate 1 exercises only
-   *legal* edits, and 14.8 compares only final outputs, so an implementation
+   is asymmetric and gates 1 and 14.7 pass without it — gate 1 exercises only
+   *legal* edits, and 14.7 compares only final outputs, so an implementation
    that rejected every incomplete chunk, or one that accepted every invalid
    sequence, would satisfy both. Under `STRICT_UTF8`:
    - a commit whose bytes end in a truncated final code point **succeeds**,
@@ -2205,40 +2226,17 @@ For randomized edit traces against a randomized consumer projection:
 6. A consumer that resolves coordinates on demand performs zero work for a
    pure prefix insertion elsewhere.
 
-### 14.7 Complexity gates
+**14.7 was the complexity gates, and it is removed.** It reported persistent
+nodes and bytes copied, persistent index bytes path-copied, and every term a
+second time against an AST-only baseline "with the CST permitted to move only
+the records-created term (11.1)" — measurements of a bound 11.1 no longer
+states, taken over a persistence 7.2 no longer prescribes. What it required
+rather than reported has moved to 11.1, beside the frontier it belongs to:
+`|diffs|` and delta application independent of unrelated nodes, and zero
+allocations and zero CST walks on ordinary access. Benchmarks stay; they are
+measurements, and a measurement that no clause reads is a number, not a gate.
 
-Pinned large-document traces report:
-
-- `|diffs|`, entries by kind, and parts by kind;
-- semantic-node and syntax-only-token counts, record bytes, and allocations;
-- persistent nodes/bytes copied by the parser;
-- reparsed regions and identity-matching frontier;
-- relation-index probes, affected units, and persistent index bytes
-  path-copied;
-- semantic-projection allocations and full-CST walks, both required to be
-  zero for ordinary node access and traversal, and syntax-only tokens stepped
-  over by a semantic traversal, required to be zero;
-- every term above measured a second time against an AST-only baseline that
-  captures no syntax-only record on the same trace, with the CST permitted to
-  move only the records-created term (11.1);
-- delta application work, separated into the `O(|diffs|)` term and the
-  consumer's own projection work; and
-- rebuild cost, labeled and measured separately.
-
-`|diffs|` and delta application must be independent of unrelated document
-nodes. Framework-diff traces are reported separately and measured against
-11.3, never against `|diffs|`.
-
-The migration pins the existing representative, large-document, extension,
-and adversarial parser benchmarks before the C-layer AST is extended. The
-same workloads then report one-shot parse time, localized commit time, peak
-memory, concrete-record bytes, zero-copy semantic traversal, and commits with
-an old document retained. A result that preserves asymptotic bounds by adding
-an unconditional second parse, full AST materialization, full relation-index
-copy, or full-sized node per punctuation token fails this gate regardless of
-its timing on a small fixture.
-
-### 14.8 Streaming gates
+### 14.7 Streaming gates
 
 1. Run human typing, paste, IME, remote, and LLM chunk traces through only
    ordinary byte edits and `commit`.
