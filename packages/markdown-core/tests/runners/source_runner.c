@@ -280,7 +280,7 @@ static int oracle_apply(uint8_t **bytes, size_t *length, const markdown_core_sou
 
 static int case_storage_sharing(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     size_t size = 512 * 1024;
     uint8_t *text = (uint8_t *)malloc(size);
@@ -299,7 +299,7 @@ static int case_storage_sharing(void) {
     for (i = 0; i < size; i++) {
         text[i] = (uint8_t)('a' + (i % 26));
     }
-    base = markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, size, &stats, &status);
+    base = markdown_core_source_new(&counting.mem, text, size, &stats, &status);
     if (!base) {
         fprintf(stderr, "storage_sharing: base creation failed\n");
         free(text);
@@ -369,7 +369,7 @@ static int case_storage_sharing(void) {
 
 static int case_append_no_prefix_copy(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     size_t base_size = 512 * 1024;
     uint8_t *text = (uint8_t *)malloc(base_size);
@@ -383,8 +383,7 @@ static int case_append_no_prefix_copy(void) {
     for (i = 0; i < base_size; i++) {
         text[i] = (uint8_t)('a' + (i % 26));
     }
-    current =
-        markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, base_size, &stats, &status);
+    current = markdown_core_source_new(&counting.mem, text, base_size, &stats, &status);
     free(text);
     if (!current) {
         return -1;
@@ -458,7 +457,7 @@ static int case_append_no_prefix_copy(void) {
 
 static int case_amplification_bound(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     size_t size = 1024 * 1024;
     uint8_t *text = (uint8_t *)malloc(size);
@@ -474,8 +473,7 @@ static int case_amplification_bound(void) {
     }
     for (i = 0; i < sizeof(offsets) / sizeof(offsets[0]) && !failed; i++) {
         /* Delete everything except a tiny slice at offsets[i]. */
-        markdown_core_source *base =
-            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, size, &stats, &status);
+        markdown_core_source *base = markdown_core_source_new(&counting.mem, text, size, &stats, &status);
         markdown_core_source *tiny;
         markdown_core_source_edit edits[2];
         size_t keep = 32;
@@ -521,8 +519,7 @@ static int case_amplification_bound(void) {
      * share it, the accounting counts its capacity once, and the bound
      * still holds. */
     if (!failed) {
-        markdown_core_source *base =
-            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, size, &stats, &status);
+        markdown_core_source *base = markdown_core_source_new(&counting.mem, text, size, &stats, &status);
         markdown_core_source *gapped;
         markdown_core_source_edit edit;
         size_t retained = 0;
@@ -559,8 +556,7 @@ static int case_amplification_bound(void) {
 
     /* A half split must share, not copy: both sides keep the one buffer. */
     if (!failed) {
-        markdown_core_source *base =
-            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, size, &stats, &status);
+        markdown_core_source *base = markdown_core_source_new(&counting.mem, text, size, &stats, &status);
         markdown_core_source *half;
         markdown_core_source_edit edit;
         size_t retained = 0;
@@ -594,274 +590,11 @@ static int case_amplification_bound(void) {
     return failed ? -1 : 0;
 }
 
-/* --- 14.3.6: the asymmetric STRICT_UTF8 boundary ------------------------ */
-
-static int case_strict_boundary(void) {
-    counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
-    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
-    static const uint8_t base_text[] = "paragraph one\n";
-    static const uint8_t truncated_tail[] = {0xF0, 0x9F, 0x92}; /* U+1F496 minus its last byte */
-    static const uint8_t invalid_complete[] = {0xC0, 0xAF};     /* overlong '/': always invalid */
-    static const uint8_t truncated_then_more[] = {0xC3, 0x78};  /* lead, then ASCII */
-    markdown_core_source *base;
-    markdown_core_source *published;
-    markdown_core_source_edit edit;
-    int failed = 0;
-    size_t row;
-    counting_init(&counting);
-
-    base = markdown_core_source_new(
-        &counting.mem,
-        MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-        base_text,
-        sizeof(base_text) - 1,
-        &stats,
-        &status
-    );
-    if (!base) {
-        return -1;
-    }
-
-    /* Row 1: a truncated final code point commits, decodes to U+FFFD, and
-     * needs no further commit to stay readable. */
-    edit.span.start = sizeof(base_text) - 1;
-    edit.span.end = sizeof(base_text) - 1;
-    edit.replacement = truncated_tail;
-    edit.replacement_length = sizeof(truncated_tail);
-    published = markdown_core_source_apply(base, &edit, 1, &stats, &status);
-    if (!published || status != MARKDOWN_CORE_SOURCE_OK) {
-        fprintf(stderr, "strict_boundary: truncated final code point rejected (14.3.6 row 1)\n");
-        failed = 1;
-    } else {
-        size_t published_length = 0;
-        uint8_t *bytes = materialize(published, &published_length);
-        markdown_core_document *document = bytes ? sr_parse(bytes, published_length) : NULL;
-        if (!document) {
-            fprintf(stderr, "strict_boundary: truncated-tail document failed to parse (14.3.6 row 1)\n");
-            failed = 1;
-        } else {
-            markdown_core_document_free(document);
-        }
-        /* What the tail DECODES to is no longer asserted here. It used to be
-         * U+FFFD, and that was the parser's per-line replacement answering — a
-         * lossy step this engine no longer takes. UTF-8 is assumed and never
-         * validated (7.1), so the bytes reach the document as authored. What
-         * this row still states is the property the boundary is about: a
-         * truncated final code point COMMITS, and the document stays readable
-         * without waiting for bytes that may never arrive. */
-        free(bytes);
-        markdown_core_source_release(published);
-    }
-
-    /* Rows 2 and 3: a complete invalid sequence, and a truncated code point
-     * with bytes after it, both fail publishing nothing — the base keeps
-     * its exact bytes. Probed at the tail and mid-document. */
-    for (row = 0; row < 4 && !failed; row++) {
-        const uint8_t *payload = (row < 2) ? invalid_complete : truncated_then_more;
-        size_t payload_length = (row < 2) ? sizeof(invalid_complete) : sizeof(truncated_then_more);
-        size_t at = (row % 2 == 0) ? sizeof(base_text) - 1 : 4;
-        edit.span.start = at;
-        edit.span.end = at;
-        edit.replacement = payload;
-        edit.replacement_length = payload_length;
-        published = markdown_core_source_apply(base, &edit, 1, &stats, &status);
-        if (published || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8) {
-            fprintf(stderr, "strict_boundary: invalid sequence accepted (14.3.6 rows 2-3, probe %zu)\n", row);
-            failed = 1;
-            if (published) {
-                markdown_core_source_release(published);
-            }
-        }
-        if (expect_bytes("strict_boundary (nothing published)", base, base_text, sizeof(base_text) - 1) != 0) {
-            failed = 1;
-        }
-    }
-
-    /* The positional exception, spelled as two commits: a truncated tail
-     * commit succeeds, and appending a non-continuation after it fails. */
-    if (!failed) {
-        static const uint8_t lead[] = {0xC3};
-        markdown_core_source *dangling;
-        edit.span.start = sizeof(base_text) - 1;
-        edit.span.end = sizeof(base_text) - 1;
-        edit.replacement = lead;
-        edit.replacement_length = 1;
-        dangling = markdown_core_source_apply(base, &edit, 1, &stats, &status);
-        if (!dangling) {
-            fprintf(stderr, "strict_boundary: dangling lead rejected at end-of-source\n");
-            failed = 1;
-        } else {
-            markdown_core_source *bad;
-            edit.span.start = markdown_core_source_length(dangling);
-            edit.span.end = edit.span.start;
-            edit.replacement = (const uint8_t *)"x";
-            edit.replacement_length = 1;
-            bad = markdown_core_source_apply(dangling, &edit, 1, &stats, &status);
-            if (bad || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8) {
-                fprintf(stderr, "strict_boundary: byte after truncated code point accepted (14.3.6 row 3)\n");
-                failed = 1;
-                if (bad) {
-                    markdown_core_source_release(bad);
-                }
-            }
-            markdown_core_source_release(dangling);
-        }
-    }
-
-    /* A replacement that destroys a character's lead strands its
-     * continuation bytes after the edit: the retained suffix no longer
-     * begins at a character boundary and the commit must reject, even
-     * though the replacement itself ends cleanly. The mirror rows, where
-     * the replacement supplies a compatible lead, must still commit. */
-    if (!failed) {
-        static const uint8_t two_byte_doc[] = {0x78, 0xC2, 0x80, 0x79};  /* x U+0080 y */
-        static const uint8_t four_byte_doc[] = {0xF0, 0x9F, 0x92, 0x96}; /* U+1F496 */
-        static const struct {
-            const uint8_t *doc;
-            size_t doc_length;
-            size_t start;
-            size_t end;
-            const char *replacement;
-            size_t replacement_length;
-            int accepted;
-        } stranded[] = {
-            {two_byte_doc, 4, 1, 2, "a", 1, 0},     /* lead replaced by ASCII */
-            {two_byte_doc, 4, 1, 2, "\xC3", 1, 1},  /* lead replaced by lead */
-            {four_byte_doc, 4, 0, 2, "ab", 2, 0},   /* two of four replaced by ASCII */
-            {four_byte_doc, 4, 0, 1, "\xF1", 1, 1}, /* four-byte lead swapped */
-            {two_byte_doc, 4, 1, 2, "", 0, 0},      /* lead deleted outright */
-        };
-        for (row = 0; row < sizeof(stranded) / sizeof(stranded[0]) && !failed; row++) {
-            markdown_core_source *doc = markdown_core_source_new(
-                &counting.mem,
-                MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-                stranded[row].doc,
-                stranded[row].doc_length,
-                &stats,
-                &status
-            );
-            if (!doc) {
-                failed = 1;
-                break;
-            }
-            edit.span.start = stranded[row].start;
-            edit.span.end = stranded[row].end;
-            edit.replacement = (const uint8_t *)stranded[row].replacement;
-            edit.replacement_length = stranded[row].replacement_length;
-            published = markdown_core_source_apply(doc, &edit, 1, &stats, &status);
-            if (stranded[row].accepted && !published) {
-                fprintf(stderr, "strict_boundary: compatible lead swap %zu rejected (%d)\n", row, (int)status);
-                failed = 1;
-            }
-            if (!stranded[row].accepted && (published || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8)) {
-                fprintf(stderr, "strict_boundary: stranded continuation published (row %zu, 14.3.6)\n", row);
-                failed = 1;
-            }
-            if (published) {
-                markdown_core_source_release(published);
-            }
-            if (expect_bytes(
-                    "strict_boundary (stranded, nothing published)",
-                    doc,
-                    stranded[row].doc,
-                    stranded[row].doc_length
-                ) != 0) {
-                failed = 1;
-            }
-            markdown_core_source_release(doc);
-        }
-        /* The same stranding through the far-apart multi-edit path, so the
-         * split-range flush validates its suffix too. */
-        if (!failed) {
-            uint8_t wide_doc[40];
-            markdown_core_source *doc;
-            size_t i;
-            for (i = 0; i < sizeof(wide_doc); i++) {
-                wide_doc[i] = (uint8_t)('0' + (i % 10));
-            }
-            wide_doc[20] = 0xC2;
-            wide_doc[21] = 0x80;
-            doc = markdown_core_source_new(
-                &counting.mem,
-                MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-                wide_doc,
-                sizeof(wide_doc),
-                &stats,
-                &status
-            );
-            if (!doc) {
-                failed = 1;
-            } else {
-                markdown_core_source_edit pair[2];
-                pair[0].span.start = 20;
-                pair[0].span.end = 21; /* destroys the C2 lead */
-                pair[0].replacement = (const uint8_t *)"a";
-                pair[0].replacement_length = 1;
-                pair[1].span.start = 35;
-                pair[1].span.end = 35;
-                pair[1].replacement = (const uint8_t *)"ok";
-                pair[1].replacement_length = 2;
-                published = markdown_core_source_apply(doc, pair, 2, &stats, &status);
-                if (published || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8) {
-                    fprintf(stderr, "strict_boundary: stranded continuation published via flush path (14.3.6)\n");
-                    failed = 1;
-                    if (published) {
-                        markdown_core_source_release(published);
-                    }
-                }
-                markdown_core_source_release(doc);
-            }
-        }
-    }
-
-    /* Row 4: the same three payloads under PERMISSIVE_BYTES all succeed —
-     * that acceptance is what keeps the profiles observably different. */
-    if (!failed) {
-        markdown_core_source *permissive = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES,
-            base_text,
-            sizeof(base_text) - 1,
-            &stats,
-            &status
-        );
-        const uint8_t *payloads[3] = {truncated_tail, invalid_complete, truncated_then_more};
-        const size_t payload_lengths[3] =
-            {sizeof(truncated_tail), sizeof(invalid_complete), sizeof(truncated_then_more)};
-        if (!permissive) {
-            failed = 1;
-        }
-        for (row = 0; row < 3 && !failed; row++) {
-            edit.span.start = 4;
-            edit.span.end = 4;
-            edit.replacement = payloads[row];
-            edit.replacement_length = payload_lengths[row];
-            published = markdown_core_source_apply(permissive, &edit, 1, &stats, &status);
-            if (!published || status != MARKDOWN_CORE_SOURCE_OK) {
-                fprintf(stderr, "strict_boundary: PERMISSIVE_BYTES rejected payload %zu (14.3.6 row 4)\n", row);
-                failed = 1;
-            } else {
-                markdown_core_source_release(published);
-            }
-        }
-        if (permissive) {
-            markdown_core_source_release(permissive);
-        }
-    }
-    markdown_core_source_release(base);
-    if (counting.live != 0) {
-        fprintf(stderr, "strict_boundary: %zu blocks leaked\n", counting.live);
-        failed = 1;
-    }
-    return failed ? -1 : 0;
-}
-
 /* --- 14.3.7: one character split across two commits --------------------- */
 
 static int case_split_character(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     static const struct {
         const char *bytes;
@@ -879,14 +612,8 @@ static int case_split_character(void) {
     for (character = 0; character < 3 && !failed; character++) {
         size_t split;
         for (split = 1; split < characters[character].length && !failed; split++) {
-            markdown_core_source *base = markdown_core_source_new(
-                &counting.mem,
-                MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-                prefix_text,
-                sizeof(prefix_text) - 1,
-                &stats,
-                &status
-            );
+            markdown_core_source *base =
+                markdown_core_source_new(&counting.mem, prefix_text, sizeof(prefix_text) - 1, &stats, &status);
             markdown_core_source *intermediate;
             markdown_core_source *final_source;
             markdown_core_source_edit edit;
@@ -1015,7 +742,7 @@ static void shape_edit(
  * every byte still reads back correctly. */
 static int case_tree_shapes(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     uint8_t block[200];
     uint8_t *oracle = NULL;
@@ -1027,14 +754,7 @@ static int case_tree_shapes(void) {
     for (i = 0; i < sizeof(block); i++) {
         block[i] = (uint8_t)('a' + (i % 26));
     }
-    current = markdown_core_source_new(
-        &counting.mem,
-        MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-        block,
-        sizeof(block),
-        &stats,
-        &status
-    );
+    current = markdown_core_source_new(&counting.mem, block, sizeof(block), &stats, &status);
     if (!current) {
         return -1;
     }
@@ -1086,149 +806,11 @@ static int case_tree_shapes(void) {
 
 /* --- the frozen UTF-8 acceptance matrix --------------------------------- */
 
-/* One row per boundary of RFC 3629: every lead class, every constrained
- * continuation range (overlongs, surrogates, above U+10FFFF), truncation at
- * end-of-source, and the same bytes accepted under PERMISSIVE_BYTES. This
- * pins the decode profile at construction time the way strict_boundary pins
- * it at edit time. */
-static int case_utf8_matrix(void) {
-    static const struct {
-        const char *bytes;
-        size_t length;
-        int accepted; /* under STRICT_UTF8 */
-    } rows[] = {
-        {"\x7F", 1, 1},             /* highest ASCII */
-        {"\xC2\x80", 2, 1},         /* lowest two-byte */
-        {"\xDF\xBF", 2, 1},         /* highest two-byte */
-        {"\xC0\xAF", 2, 0},         /* overlong two-byte lead */
-        {"\xC1\x80", 2, 0},         /* overlong two-byte lead */
-        {"\xC2\x41", 2, 0},         /* continuation out of range (low) */
-        {"\xC2\xC0", 2, 0},         /* continuation out of range (high) */
-        {"\xE0\xA0\x80", 3, 1},     /* lowest legal E0 */
-        {"\xE0\x9F\xBF", 3, 0},     /* E0 overlong */
-        {"\xED\x9F\xBF", 3, 1},     /* highest before surrogates */
-        {"\xED\xA0\x80", 3, 0},     /* surrogate */
-        {"\xE7\x88\x88", 3, 1},     /* ordinary three-byte */
-        {"\xF0\x90\x80\x80", 4, 1}, /* lowest legal F0 */
-        {"\xF0\x8F\xBF\xBF", 4, 0}, /* F0 overlong */
-        {"\xF4\x8F\xBF\xBF", 4, 1}, /* U+10FFFF */
-        {"\xF4\x90\x80\x80", 4, 0}, /* above U+10FFFF */
-        {"\xF5\x80\x80\x80", 4, 0}, /* lead out of range */
-        {"\xFF", 1, 0},             /* invalid everywhere */
-        {"\x80", 1, 0},             /* bare continuation */
-        {"\xE2\x82", 2, 1},         /* truncated final, two of three */
-        {"\xF0\x9F\x92", 3, 1},     /* truncated final, three of four */
-        {"a\xC3", 2, 1},            /* truncated after ASCII */
-        {"a\xC3 b", 4, 0},          /* truncated then more bytes */
-        {"long ascii run with \xC3\xA9 and \xE2\x82\xAC and \xF0\x9F\x92\x96 inside", 46, 1},
-    };
-    counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
-    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
-    size_t row;
-    int failed = 0;
-    counting_init(&counting);
-
-    for (row = 0; row < sizeof(rows) / sizeof(rows[0]) && !failed; row++) {
-        markdown_core_source *strict = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-            (const uint8_t *)rows[row].bytes,
-            rows[row].length,
-            &stats,
-            &status
-        );
-        markdown_core_source *permissive;
-        if (rows[row].accepted && !strict) {
-            fprintf(stderr, "utf8_matrix: row %zu rejected (%d)\n", row, (int)status);
-            failed = 1;
-        }
-        if (!rows[row].accepted && (strict || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8)) {
-            fprintf(stderr, "utf8_matrix: row %zu accepted\n", row);
-            failed = 1;
-        }
-        if (strict) {
-            if (expect_bytes("utf8_matrix", strict, (const uint8_t *)rows[row].bytes, rows[row].length) != 0) {
-                failed = 1;
-            }
-            markdown_core_source_release(strict);
-        }
-        /* Every row stores under PERMISSIVE_BYTES: acceptance there is what
-         * keeps the two profiles observably different (7.1). */
-        permissive = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES,
-            (const uint8_t *)rows[row].bytes,
-            rows[row].length,
-            &stats,
-            &status
-        );
-        if (!permissive) {
-            fprintf(stderr, "utf8_matrix: row %zu rejected under PERMISSIVE_BYTES\n", row);
-            failed = 1;
-        } else {
-            markdown_core_source_release(permissive);
-        }
-    }
-
-    /* A batch whose edits sit far apart validates as separate ranges; an
-     * invalid early range must reject even though the last range is clean. */
-    if (!failed) {
-        static const uint8_t clean[] = "0123456789012345678901234567890123456789";
-        markdown_core_source *base = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-            clean,
-            sizeof(clean) - 1,
-            &stats,
-            &status
-        );
-        markdown_core_source *result;
-        markdown_core_source_edit edits[2];
-        if (!base) {
-            failed = 1;
-        } else {
-            edits[0].span.start = 2;
-            edits[0].span.end = 2;
-            edits[0].replacement = (const uint8_t *)"\xFF";
-            edits[0].replacement_length = 1;
-            edits[1].span.start = 30;
-            edits[1].span.end = 30;
-            edits[1].replacement = (const uint8_t *)"ok";
-            edits[1].replacement_length = 2;
-            result = markdown_core_source_apply(base, edits, 2, &stats, &status);
-            if (result || status != MARKDOWN_CORE_SOURCE_INVALID_UTF8) {
-                fprintf(stderr, "utf8_matrix: invalid early range accepted\n");
-                failed = 1;
-                if (result) {
-                    markdown_core_source_release(result);
-                }
-            }
-            /* And the mirror image: both far-apart ranges clean commits. */
-            edits[0].replacement = (const uint8_t *)"\xC3\xA9";
-            edits[0].replacement_length = 2;
-            result = markdown_core_source_apply(base, edits, 2, &stats, &status);
-            if (!result) {
-                fprintf(stderr, "utf8_matrix: clean far-apart batch rejected (%d)\n", (int)status);
-                failed = 1;
-            } else {
-                markdown_core_source_release(result);
-            }
-            markdown_core_source_release(base);
-        }
-    }
-    if (counting.live != 0) {
-        fprintf(stderr, "utf8_matrix: %zu blocks leaked\n", counting.live);
-        failed = 1;
-    }
-    return failed ? -1 : 0;
-}
-
 /* --- span validation ---------------------------------------------------- */
 
 static int case_span_validation(void) {
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     static const uint8_t text[] = "0123456789";
     markdown_core_source *base;
@@ -1236,14 +818,7 @@ static int case_span_validation(void) {
     markdown_core_source_edit edits[2];
     int failed = 0;
     counting_init(&counting);
-    base = markdown_core_source_new(
-        &counting.mem,
-        MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-        text,
-        sizeof(text) - 1,
-        &stats,
-        &status
-    );
+    base = markdown_core_source_new(&counting.mem, text, sizeof(text) - 1, &stats, &status);
     if (!base) {
         return -1;
     }
@@ -1348,8 +923,7 @@ static int case_span_validation(void) {
      * it is the state every session opens in — so this is one public
      * markdown_core_session_edit away, with no edit history in front of it. */
     {
-        markdown_core_source *empty =
-            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &stats, &status);
+        markdown_core_source *empty = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
         if (!empty) {
             markdown_core_source_release(base);
             return -1;
@@ -1399,10 +973,8 @@ static int case_span_validation(void) {
 
     /* Empty source accepts an insertion at offset zero. */
     {
-        markdown_core_source *empty =
-            markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, NULL, 0, &stats, &status);
-        if (!empty || markdown_core_source_length(empty) != 0 ||
-            markdown_core_source_profile_of(empty) != MARKDOWN_CORE_SOURCE_STRICT_UTF8) {
+        markdown_core_source *empty = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
+        if (!empty || markdown_core_source_length(empty) != 0) {
             failed = 1;
         } else {
             markdown_core_source *seeded;
@@ -1466,56 +1038,6 @@ static int case_span_validation(void) {
     return failed ? -1 : 0;
 }
 
-/* --- validation locality ------------------------------------------------ */
-
-static int case_validation_locality(void) {
-    counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
-    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
-    size_t size = 8 * 1024 * 1024;
-    uint8_t *text = (uint8_t *)malloc(size);
-    markdown_core_source *base;
-    markdown_core_source *edited;
-    markdown_core_source_edit edit;
-    size_t i;
-    int failed = 0;
-    if (!text) {
-        return -1;
-    }
-    counting_init(&counting);
-    for (i = 0; i < size; i++) {
-        text[i] = (uint8_t)('a' + (i % 26));
-    }
-    base = markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, text, size, &stats, &status);
-    free(text);
-    if (!base) {
-        return -1;
-    }
-    /* One replaced byte in an 8 MiB document: STRICT validation may examine
-     * the edit and a bounded neighbourhood, never the document. */
-    memset(&stats, 0, sizeof(stats));
-    edit.span.start = size / 2;
-    edit.span.end = size / 2 + 1;
-    edit.replacement = (const uint8_t *)"Q";
-    edit.replacement_length = 1;
-    edited = markdown_core_source_apply(base, &edit, 1, &stats, &status);
-    if (!edited) {
-        failed = 1;
-    } else {
-        if (stats.validated_bytes > 16) {
-            fprintf(stderr, "validation_locality: %zu bytes validated for a 1-byte edit\n", stats.validated_bytes);
-            failed = 1;
-        }
-        markdown_core_source_release(edited);
-    }
-    markdown_core_source_release(base);
-    if (counting.live != 0) {
-        fprintf(stderr, "validation_locality: %zu blocks leaked\n", counting.live);
-        failed = 1;
-    }
-    return failed ? -1 : 0;
-}
-
 /* --- allocation-failure sweep ------------------------------------------- */
 
 static int case_oom_sweep(void) {
@@ -1526,7 +1048,7 @@ static int case_oom_sweep(void) {
     counting_init(&counting);
 
     for (fail_at = 1; !completed; fail_at++) {
-        markdown_core_source_stats stats = {0, 0, 0, 0};
+        markdown_core_source_stats stats = {0, 0, 0};
         markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
         markdown_core_source *base;
         markdown_core_source *next;
@@ -1536,14 +1058,7 @@ static int case_oom_sweep(void) {
         counting.fail_at = fail_at;
 
         /* The trace: create, edit twice in one batch, append, account. */
-        base = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-            text,
-            sizeof(text) - 1,
-            &stats,
-            &status
-        );
+        base = markdown_core_source_new(&counting.mem, text, sizeof(text) - 1, &stats, &status);
         if (!base) {
             if (status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
                 fprintf(stderr, "oom_sweep: constructor failure %zu misreported (%d)\n", fail_at, (int)status);
@@ -1592,12 +1107,12 @@ static int case_oom_sweep(void) {
     /* An empty source whose one allocation fails: nothing to release but
      * the failure still reports NO_MEMORY. */
     {
-        markdown_core_source_stats stats = {0, 0, 0, 0};
+        markdown_core_source_stats stats = {0, 0, 0};
         markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
         markdown_core_source *empty;
         counting.attempts = 0;
         counting.fail_at = 1;
-        empty = markdown_core_source_new(&counting.mem, MARKDOWN_CORE_SOURCE_STRICT_UTF8, NULL, 0, &stats, &status);
+        empty = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
         if (empty || status != MARKDOWN_CORE_SOURCE_NO_MEMORY || counting.live != 0) {
             fprintf(stderr, "oom_sweep: empty-source constructor failure mishandled\n");
             if (empty) {
@@ -1614,7 +1129,7 @@ static int case_oom_sweep(void) {
      * nothing and leak nothing, exactly like failure anywhere else. */
     completed = 0;
     for (fail_at = 1; !completed; fail_at++) {
-        markdown_core_source_stats stats = {0, 0, 0, 0};
+        markdown_core_source_stats stats = {0, 0, 0};
         markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
         uint8_t block[200]; /* the exact tree_shapes trajectory */
         markdown_core_source *current;
@@ -1627,14 +1142,7 @@ static int case_oom_sweep(void) {
         }
         counting.attempts = 0;
         counting.fail_at = fail_at;
-        current = markdown_core_source_new(
-            &counting.mem,
-            MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-            block,
-            sizeof(block),
-            &stats,
-            &status
-        );
+        current = markdown_core_source_new(&counting.mem, block, sizeof(block), &stats, &status);
         if (!current) {
             if (status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
                 fprintf(stderr, "oom_sweep(tree): constructor failure %zu misreported (%d)\n", fail_at, (int)status);
@@ -1709,15 +1217,15 @@ static size_t align_to_boundary(const uint8_t *bytes, size_t offset) {
 static int case_random_edits(void) {
     static const char *snippets[] = {"", "a", "text ", "é", "€", "💖", "*em*\n", "> q\n", "χ αβ"};
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     int profile_index;
     int failed = 0;
     counting_init(&counting);
 
-    for (profile_index = 0; profile_index < 2 && !failed; profile_index++) {
-        markdown_core_source_profile profile =
-            profile_index == 0 ? MARKDOWN_CORE_SOURCE_STRICT_UTF8 : MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES;
+    /* One run, not two. It looped over the two source profiles; there is one
+     * behaviour now, and 7.1 says so. */
+    for (profile_index = 0; profile_index < 1 && !failed; profile_index++) {
         sr_prng prng;
         uint8_t *oracle = (uint8_t *)malloc(1);
         size_t oracle_length = 0;
@@ -1728,7 +1236,7 @@ static int case_random_edits(void) {
         }
         oracle[0] = 0;
         sr_prng_seed(&prng, 0x5EEDF00D + (uint64_t)profile_index);
-        current = markdown_core_source_new(&counting.mem, profile, NULL, 0, &stats, &status);
+        current = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
         if (!current) {
             free(oracle);
             return -1;
@@ -1743,10 +1251,9 @@ static int case_random_edits(void) {
             for (i = 0; i < count; i++) {
                 size_t start = cursor + (size_t)(sr_prng_next(&prng) % (oracle_length - cursor + 1));
                 size_t end = start + (size_t)(sr_prng_next(&prng) % (oracle_length - start + 1));
-                if (profile == MARKDOWN_CORE_SOURCE_STRICT_UTF8) {
-                    /* Legal edits only: spans on character boundaries and
-                     * valid replacement text (14.3.1 covers legal edits;
-                     * the boundary rows live in strict_boundary). */
+                {
+                    /* Legal edits: spans on character boundaries and valid
+                     * replacement text (14.3.1). */
                     const char *snippet;
                     start = align_to_boundary(oracle, start);
                     if (start < cursor) {
@@ -1759,14 +1266,6 @@ static int case_random_edits(void) {
                     snippet = snippets[sr_prng_next(&prng) % (sizeof(snippets) / sizeof(snippets[0]))];
                     edits[i].replacement = (const uint8_t *)snippet;
                     edits[i].replacement_length = strlen(snippet);
-                } else {
-                    size_t byte_count = (size_t)(sr_prng_next(&prng) % sizeof(random_bytes[i]));
-                    size_t b;
-                    for (b = 0; b < byte_count; b++) {
-                        random_bytes[i][b] = (uint8_t)(sr_prng_next(&prng) & 0xFF);
-                    }
-                    edits[i].replacement = random_bytes[i];
-                    edits[i].replacement_length = byte_count;
                 }
                 edits[i].span.start = start;
                 edits[i].span.end = end;
@@ -1792,7 +1291,7 @@ static int case_random_edits(void) {
         }
         /* The committed bytes parse exactly as an independent buffer of the
          * same bytes does: the decode profile owes nothing to history. */
-        if (!failed && profile == MARKDOWN_CORE_SOURCE_STRICT_UTF8) {
+        if (!failed) {
             size_t bytes_length = 0;
             uint8_t *bytes = materialize(current, &bytes_length);
             if (!bytes || expect_same_parse("random_edits", bytes, bytes_length, oracle, oracle_length) != 0) {
@@ -1815,7 +1314,7 @@ static int case_random_edits(void) {
 static int case_chunk_partition(void) {
     static const char unit[] = "Héllo 💖 wörld €—βγ *em* [l](#u)\n\n> quß\n";
     counting_mem counting;
-    markdown_core_source_stats stats = {0, 0, 0, 0};
+    markdown_core_source_stats stats = {0, 0, 0};
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
     size_t text_length = 0;
     char *text = sr_repeat(unit, 40, &text_length);
@@ -1828,11 +1327,9 @@ static int case_chunk_partition(void) {
 
     for (seed = 1; seed <= 8 && !failed; seed++) {
         int profile_index;
-        for (profile_index = 0; profile_index < 2 && !failed; profile_index++) {
-            markdown_core_source_profile profile =
-                profile_index == 0 ? MARKDOWN_CORE_SOURCE_STRICT_UTF8 : MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES;
+        for (profile_index = 0; profile_index < 1 && !failed; profile_index++) {
             sr_prng prng;
-            markdown_core_source *current = markdown_core_source_new(&counting.mem, profile, NULL, 0, &stats, &status);
+            markdown_core_source *current = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
             size_t offset = 0;
             int stopped_short = 0;
             if (!current) {
@@ -1903,14 +1400,8 @@ static int case_chunk_partition(void) {
             size_t width = lead < 0x80 ? 1 : (lead < 0xE0 ? 2 : (lead < 0xF0 ? 3 : 4));
             size_t split;
             for (split = 1; split < width && !failed; split++) {
-                markdown_core_source *doc = markdown_core_source_new(
-                    &counting.mem,
-                    MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-                    (const uint8_t *)unit,
-                    position + split,
-                    &stats,
-                    &status
-                );
+                markdown_core_source *doc =
+                    markdown_core_source_new(&counting.mem, (const uint8_t *)unit, position + split, &stats, &status);
                 markdown_core_source *whole;
                 markdown_core_source_edit edit;
                 if (!doc) {
@@ -1966,12 +1457,9 @@ typedef struct source_case {
 static const source_case CASES[] = {
     {"span_validation", case_span_validation},
     {"tree_shapes", case_tree_shapes},
-    {"utf8_matrix", case_utf8_matrix},
     {"storage_sharing", case_storage_sharing},
     {"append_no_prefix_copy", case_append_no_prefix_copy},
     {"amplification_bound", case_amplification_bound},
-    {"strict_boundary", case_strict_boundary},
-    {"validation_locality", case_validation_locality},
     {"oom_sweep", case_oom_sweep},
     {"random_edits", case_random_edits},
     {"split_character", case_split_character},

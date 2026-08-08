@@ -1107,13 +1107,8 @@ parse the target.
 
 ```text
 Source {
-    SourceProfile profile
-    [byte]        content
+    [byte] content
 }
-
-SourceProfile =
-    STRICT_UTF8       // valid UTF-8, except for one truncated final code point
-  | PERMISSIVE_BYTES  // any byte sequence may be stored
 ```
 
 Whatever index makes 7.2 resolve is private storage, not a member of `Source`:
@@ -1127,9 +1122,8 @@ frozen profile.
 
 **UTF-8 IS ASSUMED AND NEVER VALIDATED.** It is an obligation of the caller,
 not a precondition this engine enforces. The engine does not scan the input,
-does not replace an invalid sequence, and does not reject one. A session
-selects `PERMISSIVE_BYTES`: the substrate stores what it is given, byte for
-byte, and hands the same bytes back.
+does not replace an invalid sequence, and does not reject one. The substrate
+stores what it is given, byte for byte, and hands the same bytes back.
 
 That is a decision about WHERE the question is answered, and the answer is
 "not here". Validating would mean rejecting, and rejecting a document because
@@ -1141,28 +1135,22 @@ that are accidentally well-formed and decode to a wrong character with nothing
 to report. Neither is the engine's call. What the engine owes is that the
 bytes it was handed survive it.
 
-The consequences follow from Markdown's own shape and are stated rather than
-hidden:
+**The guarantee is stated over legal input only: valid UTF-8 in, valid UTF-8
+out.** Input that is not UTF-8 has no defined behaviour here — not a
+guaranteed degradation, not a documented failure mode, not a supported
+encoding. It is out of scope, and every clause that tried to describe what
+happens to it is void.
 
-- **structure parses regardless of encoding**, because every syntax character
-  CommonMark defines is ASCII, and a non-ASCII byte is opaque payload the
-  engine carries and never interprets;
-- **the Unicode-dependent rules degrade rather than being correct.** Emphasis
-  flanking is defined over Unicode punctuation and whitespace classes and
-  label matching over Unicode case folding; on bytes that are not UTF-8 the
-  decoder fails and those rules fall back rather than answering. The tree is
-  well-formed; it is not the tree a correct decoding would have produced;
-- **an encoding whose trailing bytes are not ASCII-transparent may split
-  inside a character.** GBK, Shift-JIS and Big5 admit trailing bytes in
-  `0x40`–`0x7E`, so a `|`, a `]` or a `\` can be the second half of one. This
-  is a limit of not knowing the encoding, not a defect: deciding it would
-  require the caller to declare the encoding, which is the validation this
-  section declines.
-
-`STRICT_UTF8` stays in the enum with no production caller. It is what makes
-the boundary observable from both sides for the gate 14.3 asks for, and it is
-the profile a caller that wants the check gets when 8.1's public profile
-argument lands.
+**`SourceProfile` is removed with them.** A source stored bytes under one of
+two profiles, `STRICT_UTF8` or `PERMISSIVE_BYTES`, and the profile selected
+whether an edit's neighbourhood was validated and a violation failed the
+commit. With no validation there is one behaviour under two names, and the
+truncated-final-code-point exception it was built around — a well-formed
+prefix at end-of-source that a later chunk completes — needs no exception to
+state: a source stores what arrives, and a chunk boundary is not a fact about
+the document. 8.2's rule that streaming is ordinary editing with no separate
+path is now unconditional rather than conditional on a profile, which is what
+that section wanted in the first place.
 
 **U+0000 is unaffected.** A NUL is valid UTF-8; the replacement CommonMark
 requires of it is a rule about canonical text, not a statement about which
@@ -1173,42 +1161,6 @@ validates only on request and its default is to pass an invalid sequence
 through untouched; goldmark reads bytes and assumes UTF-8 without checking.
 Turning validation on unconditionally is what this project had done, without
 recording why, and `UPSTREAM.md` now records the return.
-
-`STRICT_UTF8` accepts exactly one deviation from validity: a **truncated final
-code point** — a well-formed UTF-8 prefix at end-of-source that some
-continuation byte would complete. Any other invalid sequence, including a
-truncated code point anywhere but at the end, is a profile violation and
-fails the commit under 8.1.
-
-The exception is load-bearing, not a courtesy. Edits name byte ranges, and a
-streamed chunk may carry the first half of a multi-byte character with the
-rest arriving in a later chunk (8.1, 8.2). Rejecting that intermediate state
-would make streaming legal only under `PERMISSIVE_BYTES`, and 8.2's rule that
-streaming is ordinary editing with no separate path would become conditional
-on the profile — which is exactly the special-casing that section forbids.
-Accepting a complete invalid sequence instead would erase the difference
-between the two profiles, since both would then store anything.
-
-A truncated final code point parses as `PERMISSIVE_BYTES` would parse it: the
-incomplete bytes decode to U+FFFD for that commit. A commit that completes the
-character reparses the whole character and produces the same AST as a fresh
-parse of the resulting bytes, which is what 13 already requires of every chunk
-partition.
-
-**Such a document is legal as a final document, not only as an intermediate
-one.** There is no finalize operation to reject it: 8.2 forbids one, a session
-may be closed at any commit, and a caller may simply parse `0xE2 0x82` and
-stop. So `STRICT_UTF8` guarantees "valid UTF-8, except that the last code
-point may be truncated" at every moment of a document's life, and never the
-stronger property its name suggests. A consumer that needs whole-character
-validity tests `Source.content` itself; the parser does not hold a document
-back waiting for bytes that may never arrive, because doing so would be the
-provisional state 8.2 forbids.
-
-That is the honest cost of the exception, and it is the smaller one. The
-alternative — rejecting the truncated tail — makes streaming legal only under
-`PERMISSIVE_BYTES` and makes 8.2's "streaming is ordinary editing" conditional
-on the profile, which is the special-casing that section exists to forbid.
 
 The source carries no revision of its own: every published document has
 different stored bytes from its predecessor, because a commit whose normalized
@@ -1380,15 +1332,14 @@ either (7.2).
 Byte granularity is also what lets a
 streamed chunk deliver the first half of a multi-byte character and a later
 chunk complete it (8.2), and it is the only space that stays well defined
-under a storage profile that permits bytes which are not valid UTF-8 (7.1).
+which is not valid UTF-8 (7.1).
 
 Edits name the current pending source coordinate space. A binding may expose
 single-edit and batch conveniences, but they normalize to one deterministic
-non-overlapping edit set before parsing. Overlap, overflow, stale source base,
-or a source-profile violation fails without publishing a partial source or
-AST. Under `STRICT_UTF8` a truncated final code point is not a violation
-(7.1); it is the one intermediate state streaming needs, and the next chunk
-resolves it.
+non-overlapping edit set before parsing. Overlap, overflow, or a stale source
+base fails without publishing a partial source or AST. Bytes ending in a
+truncated code point are not a failure at all: the substrate stores what it is
+given (7.1), and the next chunk continues it.
 
 Edits do not directly mutate a published `Document`. `commit` applies pending
 edits to a private source candidate, parses and validates one complete
@@ -1415,10 +1366,9 @@ finalize opcode, revision domain, cache class, invalidation branch, or parser
 algorithm. Chunk partition and commit scheduling may affect performance and
 intermediate valid ASTs, but not final canonical output.
 
-A chunk boundary that falls inside a multi-byte character is the one place
-this needs saying twice. Both profiles accept the truncated tail — under
-`STRICT_UTF8` by the single exception of 7.1 — and both decode it to U+FFFD
-for that commit. This is not a provisional AST: the document is an ordinary
+A chunk boundary that falls inside a multi-byte character needs no case. The
+substrate stores the truncated tail like any other bytes and the parse carries
+it through (7.1). This is not a provisional AST: the document is an ordinary
 complete document that happens to describe bytes ending mid-character, it is
 exactly what a fresh parse of those same bytes produces, and it stays valid
 and readable forever whether or not another chunk arrives. The completing
@@ -2113,22 +2063,7 @@ identity rules, or the diff list.
 4. Text and child collections change only their changed frontier plus
    inserted/removed content.
 5. Long append traces do not degrade quadratically.
-6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
-   is asymmetric and gates 1 and 14.7 pass without it — gate 1 exercises only
-   *legal* edits, and 14.7 compares only final outputs, so an implementation
-   that rejected every incomplete chunk, or one that accepted every invalid
-   sequence, would satisfy both. Under `STRICT_UTF8`:
-   - a commit whose bytes end in a truncated final code point **succeeds**,
-     publishes a document that decodes that tail to U+FFFD, and stays readable
-     with no further commit;
-   - a commit whose bytes contain a complete invalid sequence **fails**,
-     publishing neither source nor AST (8.1);
-   - a commit whose bytes contain a truncated code point followed by any
-     further byte **fails**, since the exception is positional and covers only
-     end-of-source; and
-   - the same three inputs under `PERMISSIVE_BYTES` all succeed, which is what
-     makes the two profiles observably different.
-7. Splitting one multi-byte character across two commits under `STRICT_UTF8`
+7. Splitting one multi-byte character across two commits
    produces, after the completing commit, the document a fresh parse of the
    final bytes produces (13), and the intermediate document remains valid and
    readable after the session closes.
@@ -2246,7 +2181,7 @@ measurements, and a measurement that no clause reads is a number, not a gate.
    completing chunk, since a stream may simply stop there (7.1).
 3. Compare every final document with a fresh parse — including a final
    document whose bytes end in a truncated code point, which is a legal
-   `STRICT_UTF8` document and must compare equal to a fresh parse of exactly
+   document and must compare equal to a fresh parse of exactly
    those bytes.
 4. Compare consumer state with a fresh projection under applied deltas,
    concatenated deltas, and discarded deltas.
@@ -2297,7 +2232,6 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Source` | a document's committed bytes and how they are read | 7.1 |
 | `SourceEdit` | one byte-level edit: a span to replace, and its replacement | 8.1 |
 | `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
-| `SourceProfile` | closed selector for which byte sequences may be stored | 7.1 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
 | `UnexpectedToken` | a token the grammar did not admit at that position | 0 |
 | `Utf8Text` | a node's text field: canonical UTF-8, and nothing beside it | 6.1 |

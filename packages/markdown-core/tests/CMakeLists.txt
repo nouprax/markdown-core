@@ -320,12 +320,9 @@ if(MARKDOWN_CORE_STATIC)
     set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES
         span_validation
         tree_shapes
-        utf8_matrix
         storage_sharing
         append_no_prefix_copy
         amplification_bound
-        strict_boundary
-        validation_locality
         oom_sweep)
     foreach(case IN LISTS MARKDOWN_CORE_SOURCE_REGRESSION_CASES)
         markdown_core_add_test(regression_source_${case} regression 240 source_runner --case ${case})

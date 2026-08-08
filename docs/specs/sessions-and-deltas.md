@@ -65,19 +65,18 @@ revisions are excluded — they are document history, not content.
   (`incremental-canonical-ast.md` §8.1). Byte granularity is what lets a
   streamed append complete a multi-byte character whose first bytes arrived in
   an earlier edit.
-- The store never normalizes its contents, under either profile. What the
-  profiles differ in is what they **accept**: `PERMISSIVE_BYTES` stores any
-  byte sequence, while `STRICT_UTF8` fails a commit whose bytes are not valid
-  UTF-8, with one exception — a truncated final code point at end-of-source,
-  which is the intermediate state a streamed chunk boundary produces
-  (`incremental-canonical-ast.md` §7.1). Whatever is stored, NUL and any byte
-  sequence that is not valid UTF-8 decode to U+FFFD during parsing, per line,
-  exactly as a one-shot parse does.
+- **The store never normalizes its contents and never rejects them.** It holds
+  any byte sequence, byte for byte, and hands the same bytes back; UTF-8 is
+  assumed and never validated (`incremental-canonical-ast.md` §7.1). A
+  truncated final code point at a streamed chunk boundary therefore needs no
+  exception to be legal — it is simply bytes. NUL is replaced with U+FFFD
+  during parsing because CommonMark requires it of canonical text, and nothing
+  else is.
 - Edits are cheap: they update the pending text and extend the pending edit
   script. No parsing happens until commit. Multiple edits may be queued per
   commit, and they normalize to one deterministic non-overlapping ascending
-  script before parsing. Overlap, overflow, a stale base, or a profile
-  violation fails the commit without publishing a partial source or AST.
+  script before parsing. Overlap, overflow, or a stale base fails the commit
+  without publishing a partial source or AST.
 - `commit(source)` is an optional convenience for a host that owns whole text
   rather than the edit — a two-way text binding, a reload from disk, a remote
   replacement. It normalizes the difference into the same script and must

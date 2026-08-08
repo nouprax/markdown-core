@@ -34,7 +34,6 @@ typedef struct source_node {
 struct markdown_core_source {
     size_t refcount;
     markdown_core_mem *mem;
-    markdown_core_source_profile profile;
     source_node *root; // NULL when the source is empty
 };
 
@@ -363,155 +362,8 @@ static void node_copy_bytes(const source_node *node, size_t start, size_t end, u
     memcpy(out, node->buffer->bytes + node->offset + start, end - start);
 }
 
-// --- profile validation ----------------------------------------------------
-
-// RFC 3629 acceptance, expressed as the continuation bytes still owed plus
-// the admissible range of the next one; the E0/ED/F0/F4 rows are what
-// reject overlongs, surrogates, and anything above U+10FFFF.
-typedef struct utf8_state {
-    size_t need;
-    uint8_t lo;
-    uint8_t hi;
-} utf8_state;
-
-// Returns false on a byte no UTF-8 document admits at this position.
-static bool utf8_step(utf8_state *state, uint8_t byte) {
-    if (state->need > 0) {
-        if (byte < state->lo || byte > state->hi) {
-            return false;
-        }
-        state->need--;
-        state->lo = 0x80;
-        state->hi = 0xBF;
-        return true;
-    }
-    if (byte < 0x80) {
-        return true;
-    }
-    if (byte >= 0xC2 && byte <= 0xDF) {
-        state->need = 1;
-        state->lo = 0x80;
-        state->hi = 0xBF;
-        return true;
-    }
-    if (byte >= 0xE0 && byte <= 0xEF) {
-        state->need = 2;
-        state->lo = byte == 0xE0 ? 0xA0 : 0x80;
-        state->hi = byte == 0xED ? 0x9F : 0xBF;
-        return true;
-    }
-    if (byte >= 0xF0 && byte <= 0xF4) {
-        state->need = 3;
-        state->lo = byte == 0xF0 ? 0x90 : 0x80;
-        state->hi = byte == 0xF4 ? 0x8F : 0xBF;
-        return true;
-    }
-    return false; // 0x80..0xC1 at a boundary, or 0xF5..0xFF anywhere
-}
-
-// Validates a contiguous run that starts at a character boundary and ends at
-// end-of-source. A trailing incomplete character is exactly the truncated
-// final code point 7.1 admits, so it is accepted; everything else invalid
-// is not.
-static bool utf8_valid_prefix_run(const uint8_t *bytes, size_t length, markdown_core_source_stats *stats) {
-    utf8_state state = {0, 0, 0};
-    size_t i;
-    stats->validated_bytes += length;
-    for (i = 0; i < length; i++) {
-        if (!utf8_step(&state, bytes[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool is_continuation(uint8_t byte) { return byte >= 0x80 && byte <= 0xBF; }
-
-typedef struct dirty_range {
-    size_t start;
-    size_t end;
-} dirty_range;
-
-// Validates one dirty range of the candidate tree under STRICT_UTF8. The
-// scan starts at the character boundary at or before `start` (backing up
-// over at most three continuation bytes plus their lead — a valid
-// predecessor guarantees a boundary that close) and runs until it is past
-// `end` on a boundary, hits end-of-source (where a dangling prefix is the
-// admitted truncated final code point), or rejects.
-//
-// Both junctions need a byte of context beyond the range. The left one is
-// the backup above. The right one is the stranding check at the stop: an
-// edit that destroys a character's lead leaves that character's
-// continuation bytes in the retained suffix, and the scan — having ended
-// cleanly on the replacement's own boundary — would otherwise never look
-// at them. A continuation byte at the stopping point can never be legal:
-// the scan is on a boundary, so no character is open to own it, and in
-// the predecessor a continuation there means the suffix no longer starts
-// where a character does.
-static bool validate_range(
-    const source_node *root,
-    size_t total,
-    size_t start,
-    size_t end,
-    markdown_core_source_stats *stats
-) {
-    utf8_state state = {0, 0, 0};
-    uint8_t window[8];
-    size_t back = 0;
-    size_t position;
-    while (back < 3 && start > 0) {
-        uint8_t byte;
-        node_copy_bytes(root, start - 1, start, &byte);
-        if (!is_continuation(byte)) {
-            break;
-        }
-        start--;
-        back++;
-    }
-    if (start > 0) {
-        uint8_t byte;
-        node_copy_bytes(root, start - 1, start, &byte);
-        if (byte >= 0xC0) {
-            start--;
-        }
-    }
-    position = start;
-    while (position < total) {
-        // Pull the window in small chunks; ranges are edit-sized, so the
-        // chunking only bounds the stack, not the asymptotics.
-        size_t chunk = total - position;
-        size_t i;
-        if (chunk > sizeof(window)) {
-            chunk = sizeof(window);
-        }
-        node_copy_bytes(root, position, position + chunk, window);
-        stats->validated_bytes += chunk;
-        for (i = 0; i < chunk; i++) {
-            if (!utf8_step(&state, window[i])) {
-                return false;
-            }
-            position++;
-            if (position >= end && state.need == 0) {
-                if (position < total) {
-                    uint8_t next;
-                    node_copy_bytes(root, position, position + 1, &next);
-                    stats->validated_bytes += 1;
-                    if (is_continuation(next)) {
-                        return false;
-                    }
-                }
-                return true;
-            }
-        }
-    }
-    return true; // end-of-source: any owed continuation is the truncated final
-}
-
-// --- public (internal-header) API ------------------------------------------
-
 markdown_core_source *markdown_core_source_new(
     markdown_core_mem *mem,
-    markdown_core_source_profile profile,
     const uint8_t *bytes,
     size_t length,
     markdown_core_source_stats *stats,
@@ -520,10 +372,6 @@ markdown_core_source *markdown_core_source_new(
     markdown_core_source *source;
     source_node *root = NULL;
     *status = MARKDOWN_CORE_SOURCE_OK;
-    if (profile == MARKDOWN_CORE_SOURCE_STRICT_UTF8 && !utf8_valid_prefix_run(bytes, length, stats)) {
-        *status = MARKDOWN_CORE_SOURCE_INVALID_UTF8;
-        return NULL;
-    }
     if (length > 0) {
         root = leaf_from_bytes(mem, bytes, length, stats);
         if (!root) {
@@ -541,7 +389,6 @@ markdown_core_source *markdown_core_source_new(
     }
     source->refcount = 1;
     source->mem = mem;
-    source->profile = profile;
     source->root = root;
     return source;
 }
@@ -556,10 +403,6 @@ void markdown_core_source_release(markdown_core_source *source) {
         }
         mem->free(mem, source);
     }
-}
-
-markdown_core_source_profile markdown_core_source_profile_of(const markdown_core_source *source) {
-    return source->profile;
 }
 
 size_t markdown_core_source_length(const markdown_core_source *source) {
@@ -646,52 +489,14 @@ markdown_core_source *markdown_core_source_apply(
             goto no_memory;
         }
     }
-    if (source->profile == MARKDOWN_CORE_SOURCE_STRICT_UTF8 && candidate) {
-        // Validate each edit's neighbourhood in candidate coordinates,
-        // merging ranges that sit close enough to interact (a character is
-        // at most four bytes, so six bytes of separation isolates them).
-        // Ascending non-overlapping spans keep the coordinate shift simple:
-        // every already-processed removal lies left of the next start.
-        size_t removed = 0;
-        size_t inserted = 0;
-        size_t open = 0;
-        size_t close = 0;
-        bool pending = false;
-        for (i = 0; i < edit_count; i++) {
-            size_t start = edits[i].span.start - removed + inserted;
-            size_t end = start + edits[i].replacement_length;
-            removed += edits[i].span.end - edits[i].span.start;
-            inserted += edits[i].replacement_length;
-            if (pending && start > close + 6) {
-                if (!validate_range(candidate, candidate->length, open, close, stats)) {
-                    goto invalid_utf8;
-                }
-                pending = false;
-            }
-            if (!pending) {
-                open = start;
-                pending = true;
-            }
-            close = end;
-        }
-        if (pending && !validate_range(candidate, candidate->length, open, close, stats)) {
-            goto invalid_utf8;
-        }
-    }
     result = (markdown_core_source *)mem->calloc(mem, 1, sizeof(markdown_core_source));
     if (!result) {
         goto no_memory;
     }
     result->refcount = 1;
     result->mem = mem;
-    result->profile = source->profile;
     result->root = candidate;
     return result;
-
-invalid_utf8:
-    node_release(mem, candidate);
-    *status = MARKDOWN_CORE_SOURCE_INVALID_UTF8;
-    return NULL;
 
 no_memory:
     if (candidate) {

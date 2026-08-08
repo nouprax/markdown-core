@@ -731,17 +731,15 @@ markdown_core_session *markdown_core_session_open_with_mem(
     }
     session->mem = mem;
     {
-        // PERMISSIVE_BYTES, and not as a default: the store must hold NUL and
-        // invalid UTF-8 verbatim, because the parser replaces them per line
-        // exactly as the one-shot path does, and because a streamed append
-        // completes a multi-byte character whose first bytes arrived earlier.
-        // A validating profile would reject those intermediate states at the
-        // substrate, which is the wrong layer to decide them.
+        // The store holds whatever bytes it is handed. UTF-8 is assumed and
+        // never validated (7.1), and a streamed append completes a multi-byte
+        // character whose first bytes arrived earlier — deciding that at the
+        // substrate was always the wrong layer, and there is no longer a
+        // profile that could.
         markdown_core_source_stats scratch;
         markdown_core_source_status status;
         memset(&scratch, 0, sizeof(scratch));
-        session->source =
-            markdown_core_source_new(mem, MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES, NULL, 0, &scratch, &status);
+        session->source = markdown_core_source_new(mem, NULL, 0, &scratch, &status);
         if (!session->source) {
             // Unwound here rather than through markdown_core_session_free:
             // that path releases session->source unconditionally, and it is

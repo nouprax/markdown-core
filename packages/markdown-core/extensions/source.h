@@ -93,17 +93,15 @@ extern "C" {
  * to a *small* number, the allocation succeeds, and the copy runs.
  */
 
-/** Which byte sequences a source may store (7.1). Frozen at creation. */
-typedef enum markdown_core_source_profile {
-    MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-    MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES
-} markdown_core_source_profile;
+/* A source stored any byte sequence under one of two profiles, and the
+ * profile selected whether it validated UTF-8. Both are gone: UTF-8 is
+ * assumed and never validated (incremental-canonical-ast.md 7.1), so there
+ * was one behaviour under two names and a validator no caller reached. */
 
 /** Why a constructor or apply returned NULL (or that it succeeded). */
 typedef enum markdown_core_source_status {
     MARKDOWN_CORE_SOURCE_OK,
     MARKDOWN_CORE_SOURCE_INVALID_SPAN,
-    MARKDOWN_CORE_SOURCE_INVALID_UTF8,
     MARKDOWN_CORE_SOURCE_NO_MEMORY
 } markdown_core_source_status;
 
@@ -131,20 +129,16 @@ typedef struct markdown_core_source_stats {
     size_t bytes_copied;    /* payload bytes memcpy'd into fresh buffers */
     size_t buffers_created; /* immutable buffers allocated */
     size_t nodes_created;   /* tree nodes allocated */
-    size_t validated_bytes; /* bytes examined by profile validation */
 } markdown_core_source_stats;
 
 typedef struct markdown_core_source markdown_core_source;
 
-/** Creates a source owning a copy of `bytes[0..length)`. Under STRICT_UTF8
- * the bytes must be valid UTF-8 except for an optional truncated final code
- * point; a violation returns NULL with MARKDOWN_CORE_SOURCE_INVALID_UTF8.
- * `bytes` may be NULL when `length` is 0. `stats` and `status` are required:
- * a caller that does not care passes a scratch struct, and the constructor
- * never branches on their presence. */
+/** Creates a source owning a copy of `bytes[0..length)`. `bytes` may be NULL
+ * when `length` is 0. `stats` and `status` are required: a caller that does
+ * not care passes a scratch struct, and the constructor never branches on
+ * their presence. */
 markdown_core_source *markdown_core_source_new(
     markdown_core_mem *mem,
-    markdown_core_source_profile profile,
     const uint8_t *bytes,
     size_t length,
     markdown_core_source_stats *stats,
@@ -154,7 +148,6 @@ markdown_core_source *markdown_core_source_new(
 void markdown_core_source_retain(markdown_core_source *source);
 void markdown_core_source_release(markdown_core_source *source);
 
-markdown_core_source_profile markdown_core_source_profile_of(const markdown_core_source *source);
 size_t markdown_core_source_length(const markdown_core_source *source);
 
 /** Applies `edits` to `source` and returns the successor source, sharing
