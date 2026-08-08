@@ -1106,6 +1106,55 @@ valid UTF-8 when the selected source profile permits them. Canonical Markdown
 decoding and recovery are deterministic functions of those bytes and the
 frozen profile.
 
+**UTF-8 IS ASSUMED AND NEVER VALIDATED.** It is an obligation of the caller,
+not a precondition this engine enforces. The engine does not scan the input,
+does not replace an invalid sequence, and does not reject one. A session
+selects `PERMISSIVE_BYTES`: the substrate stores what it is given, byte for
+byte, and hands the same bytes back.
+
+That is a decision about WHERE the question is answered, and the answer is
+"not here". Validating would mean rejecting, and rejecting a document because
+of one byte in it is a policy this engine has no standing to set. Replacing
+would mean a LOSSY PARSE, which is worse than either: the result is not a
+degraded document but a DIFFERENT one, and it can be a plausible one — a GBK
+document read as UTF-8 has pairs that are invalid, and pairs like `0xC4 0xA1`
+that are accidentally well-formed and decode to a wrong character with nothing
+to report. Neither is the engine's call. What the engine owes is that the
+bytes it was handed survive it.
+
+The consequences follow from Markdown's own shape and are stated rather than
+hidden:
+
+- **structure parses regardless of encoding**, because every syntax character
+  CommonMark defines is ASCII, and a non-ASCII byte is opaque payload the
+  engine carries and never interprets;
+- **the Unicode-dependent rules degrade rather than being correct.** Emphasis
+  flanking is defined over Unicode punctuation and whitespace classes and
+  label matching over Unicode case folding; on bytes that are not UTF-8 the
+  decoder fails and those rules fall back rather than answering. The tree is
+  well-formed; it is not the tree a correct decoding would have produced;
+- **an encoding whose trailing bytes are not ASCII-transparent may split
+  inside a character.** GBK, Shift-JIS and Big5 admit trailing bytes in
+  `0x40`–`0x7E`, so a `|`, a `]` or a `\` can be the second half of one. This
+  is a limit of not knowing the encoding, not a defect: deciding it would
+  require the caller to declare the encoding, which is the validation this
+  section declines.
+
+`STRICT_UTF8` stays in the enum with no production caller. It is what makes
+the boundary observable from both sides for the gate 14.3 asks for, and it is
+the profile a caller that wants the check gets when 8.1's public profile
+argument lands.
+
+**U+0000 is unaffected.** A NUL is valid UTF-8; the replacement CommonMark
+requires of it is a rule about canonical text, not a statement about which
+bytes may be stored, and it stays.
+
+This is not a deviation from the C engine's ancestry — it restores it. cmark
+validates only on request and its default is to pass an invalid sequence
+through untouched; goldmark reads bytes and assumes UTF-8 without checking.
+Turning validation on unconditionally is what this project had done, without
+recording why, and `UPSTREAM.md` now records the return.
+
 `STRICT_UTF8` accepts exactly one deviation from validity: a **truncated final
 code point** — a well-formed UTF-8 prefix at end-of-source that some
 continuation byte would complete. Any other invalid sequence, including a

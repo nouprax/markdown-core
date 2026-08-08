@@ -218,7 +218,11 @@ repeated in the table. No row has a stored scope, and no row has a stored
 absolute offset of any kind.
 
 At most one field per kind is the kind's content text, spelled `literal`, and
-it is a `Utf8Text`: decoded characters and nothing beside them. Seven kinds
+it is a `Utf8Text`: decoded characters and nothing beside them. UTF-8 there is
+the caller's obligation carried through, not a property the engine
+manufactures — `incremental-canonical-ast.md` §7.1 assumes the input encoding
+and never validates it, so bytes that were not UTF-8 going in are not UTF-8
+coming out. Seven kinds
 have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
 and `Formula`. The other twenty-seven have none; their content is a child
 sequence or nothing, and a kind with no textual value simply never carries the
