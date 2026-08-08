@@ -36,14 +36,18 @@ static bool reserve(markdown_core_source *source, size_t needed, markdown_core_s
     if (needed <= capacity) {
         return true;
     }
+    if (needed > (size_t)PTRDIFF_MAX) {
+        /* Not a C object, so not an allocation — refused here rather than in
+         * the doubling loop below, which is what makes that loop's overflow
+         * arm unreachable and lets it be deleted. `apply` rejects the same
+         * ceiling on its own before it moves a byte; this guard is what
+         * markdown_core_source_new reaches. */
+        return false;
+    }
     if (capacity == 0) {
         capacity = 64;
     }
     while (capacity < needed) {
-        if (capacity > SIZE_MAX / 2) {
-            capacity = needed;
-            break;
-        }
         capacity *= 2;
     }
     grown = (uint8_t *)source->mem->realloc(source->mem, source->bytes, capacity);

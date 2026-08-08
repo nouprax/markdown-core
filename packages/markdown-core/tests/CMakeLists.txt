@@ -319,6 +319,7 @@ if(MARKDOWN_CORE_STATIC)
     # (14.3.4-6), validation locality, and the allocation-failure sweep.
     set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES
         span_validation
+        batch_splice
         oom_sweep)
     foreach(case IN LISTS MARKDOWN_CORE_SOURCE_REGRESSION_CASES)
         markdown_core_add_test(regression_source_${case} regression 240 source_runner --case ${case})

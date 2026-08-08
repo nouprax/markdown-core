@@ -413,6 +413,81 @@ static void shape_edit(
 
 /* --- span validation ---------------------------------------------------- */
 
+/* The batch splice is a separate mechanism from the single-edit one — it
+ * builds beside the source instead of in place — and it has two states no
+ * other case reaches: a batch whose result is EMPTY, and a batch whose one
+ * allocation fails. Both are ordinary inputs, not corner-hunting: a select-all
+ * delete arrives as spans covering the document, and every allocation in this
+ * engine is allowed to fail. */
+static int case_batch_splice(void) {
+    static const uint8_t text[] = "alpha beta gamma";
+    counting_mem counting;
+    markdown_core_source_stats stats;
+    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
+    markdown_core_source_edit edits[2];
+    markdown_core_source *base;
+    int failed = 0;
+
+    counting_init(&counting);
+    memset(&stats, 0, sizeof(stats));
+
+    /* Two adjacent deletions covering everything: the result is zero bytes,
+     * so the batch has nothing to allocate. */
+    base = markdown_core_source_new(&counting.mem, text, sizeof(text) - 1, &stats, &status);
+    if (!base) {
+        return -1;
+    }
+    edits[0].span.start = 0;
+    edits[0].span.end = 6;
+    edits[0].replacement = NULL;
+    edits[0].replacement_length = 0;
+    edits[1].span.start = 6;
+    edits[1].span.end = sizeof(text) - 1;
+    edits[1].replacement = NULL;
+    edits[1].replacement_length = 0;
+    if (!markdown_core_source_apply(base, edits, 2, &stats, &status)) {
+        fprintf(stderr, "batch_splice: emptying batch rejected (%d)\n", (int)status);
+        failed = 1;
+    } else if (markdown_core_source_length(base) != 0) {
+        fprintf(
+            stderr,
+            "batch_splice: emptying batch left %zu bytes\n",
+            markdown_core_source_length(base)
+        );
+        failed = 1;
+    }
+    markdown_core_source_release(base);
+
+    /* And the same batch with a replacement, under an allocator that refuses
+     * the build. Nothing is published: the source still reads as it did. */
+    base = markdown_core_source_new(&counting.mem, text, sizeof(text) - 1, &stats, &status);
+    if (!base) {
+        return -1;
+    }
+    edits[0].replacement = (const uint8_t *)"A";
+    edits[0].replacement_length = 1;
+    edits[1].replacement = (const uint8_t *)"B";
+    edits[1].replacement_length = 1;
+    counting.attempts = 0;
+    counting.fail_at = 1;
+    if (markdown_core_source_apply(base, edits, 2, &stats, &status) ||
+        status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+        fprintf(stderr, "batch_splice: batch accepted with its allocation refused\n");
+        failed = 1;
+    }
+    counting.fail_at = 0;
+    if (expect_bytes("batch_splice", base, text, sizeof(text) - 1) != 0) {
+        failed = 1;
+    }
+    markdown_core_source_release(base);
+
+    if (counting.live != 0) {
+        fprintf(stderr, "batch_splice: %zu blocks leaked\n", counting.live);
+        failed = 1;
+    }
+    return failed ? -1 : 0;
+}
+
 static int case_span_validation(void) {
     counting_mem counting;
     markdown_core_source_stats stats = {0, 0};
@@ -476,17 +551,15 @@ static int case_span_validation(void) {
         failed = 1;
     }
 
-    /* Not pinned here: a length the buffer header can be added to but no
-     * allocator can satisfy. It is the case that would show why the resulting
-     * document length needs no guard of its own, and it cannot be written as
-     * a test, because reaching it means actually asking the allocator for
-     * something near SIZE_MAX. libc answers NULL and the apply reports
-     * NO_MEMORY, which is the behaviour claimed; AddressSanitizer answers by
-     * aborting the process, since allocator_may_return_null defaults off and a
-     * request that size is a program defect by its lights. Ordinary allocation
-     * failure is what the OOM sweeps drive, through an allocator that refuses
-     * on demand instead of by magnitude, so nothing is lost by leaving it to
-     * them. */
+    /* A length no allocator can satisfy used to be unpinnable here, because
+     * reaching it meant actually asking for something near SIZE_MAX: libc
+     * answers NULL and the apply reports NO_MEMORY, but AddressSanitizer
+     * aborts the process instead, since allocator_may_return_null defaults off
+     * and a request that size is a program defect by its lights. It is pinned
+     * now, at the bottom of this case, because the store refuses at PTRDIFF_MAX
+     * before an allocator is asked. Ordinary allocation failure is still the
+     * OOM sweeps' job, through an allocator that refuses on demand rather than
+     * by magnitude. */
 
     edits[0].replacement = NULL;
     edits[0].replacement_length = 0;
@@ -539,6 +612,24 @@ static int case_span_validation(void) {
         edits[0].replacement = NULL;
         edits[0].replacement_length = 0;
     }
+
+    /* A construction whose length is not a C object. The two guards are
+     * different: `apply` rejects the SUM before it moves a byte, and this one
+     * sits in the store's own reserve, which is what a construction reaches.
+     * Both refuse at PTRDIFF_MAX rather than SIZE_MAX, because a size between
+     * the two is arithmetically fine and still cannot be allocated. */
+    {
+        markdown_core_source *absurd = markdown_core_source_new(&counting.mem, text, SIZE_MAX, &stats, &status);
+        if (absurd || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+            fprintf(stderr, "span_validation: construction of unrepresentable length accepted\n");
+            markdown_core_source_release(absurd);
+            failed = 1;
+        }
+    }
+
+    /* Releasing nothing is not an error: every unwind path in the session
+     * reaches this with a store it may or may not have built. */
+    markdown_core_source_release(NULL);
 
     /* Adjacent spans are legal and deterministic. A splice is in place, so
      * each row below starts from a source of its own rather than reading a
@@ -1004,6 +1095,7 @@ typedef struct source_case {
 
 static const source_case CASES[] = {
     {"span_validation", case_span_validation},
+    {"batch_splice", case_batch_splice},
     {"oom_sweep", case_oom_sweep},
     {"random_edits", case_random_edits},
     {"split_character", case_split_character},
