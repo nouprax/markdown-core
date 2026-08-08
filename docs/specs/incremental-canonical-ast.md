@@ -87,9 +87,9 @@ both, and no complexity gate below survives it.
 - **Concrete offsets are relative to the grammar-owned region that gets
   reparsed as a unit, never to the document.** A token, trivia run, or
   recovery record therefore never becomes a leaf of a document-wide structure,
-  and an edit elsewhere can never touch one. This is what keeps the `O(log n)`
-  extent resolution of 7.2 counting the same units it counted before the CST
-  existed.
+  and an edit elsewhere can never touch one. This is what keeps extent
+  resolution (7.2) answering over the same material it answered over before the
+  CST existed.
 - **A container's typed semantic child edge stays separately addressable from
   its concrete child order.** Projecting that edge is proportional to the edge,
   not to the container's token count, which is what 11.1 and 14.7 require of
@@ -210,7 +210,7 @@ surfaces.
 | One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
-| Absolute source position is a whole-snapshot materialization | Absolute position is an `O(log n)` query against stable extents; a position-only shift produces no diff entry at all |
+| Absolute source position is a whole-snapshot materialization | Absolute position is a query against stable extents; a position-only shift produces no diff entry at all |
 | Footnote and reference indexes are live-session queries | One `Document` pins persistent semantic relation indexes and derives every answer by `MarkupID` |
 | The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
 
@@ -1007,8 +1007,8 @@ insertion can be discovered without pretending "nothing was read."
 
 The public surface names no type for these indexes. The queries of 4.1 are the
 capability, and how the immutable owner accelerates them is private
-structure (2) — the same split 7.1 makes when it keeps the `O(log n)`
-coordinate index out of `Source`. The `concrete` interface exposes neither
+structure (2) — the same split 7.1 makes when it keeps the coordinate index
+out of `Source`. The `concrete` interface exposes neither
 the relation indexes nor their storage. A public store member would be readable
 by no one in any case: every answer is reached by semantic identity, and
 nothing can be projected from the store itself. It carries no separate public
@@ -1098,8 +1098,9 @@ SourceProfile =
   | PERMISSIVE_BYTES  // any byte sequence may be stored
 ```
 
-The index that makes 7.2 resolve in `O(log n)` is private storage, not a
-member of `Source`: the capability is public, the structure is not (2).
+Whatever index makes 7.2 resolve is private storage, not a member of `Source`:
+the capability is public, the structure is not (2). 7.2 no longer names one,
+and no longer states a bound over it.
 
 The source owns the exact committed stored bytes, including bytes that are not
 valid UTF-8 when the selected source profile permits them. Canonical Markdown
@@ -1274,20 +1275,30 @@ of it. A `MarkupID` names a `Markup` that exists separately; there is no
 An extent that no longer exists resolves to `none`; the parser never silently
 retargets it by current dense ordinal.
 
-Resolution must be `O(log n)` in the number of source-bearing units and must
-not require a whole-document materialization pass. A persistent aggregate
-sequence keyed by private order-maintenance labels, carrying subtree byte
-sums, satisfies this: an edit path-copies `O(log n)` nodes, and every other
-node's absolute coordinate is recomputed on demand from the same tree.
+**What resolution must satisfy is stated over the OUTPUT, and the mechanism is
+not prescribed.** An extent resolves to the place its bytes are at, and a
+change anywhere else in the document does not change what any other extent
+resolves to. A node therefore holds no coordinate, which is the whole of 7.3
+and the whole of what a consumer can observe.
 
-That sequence is one document-wide sequence of leaf source-bearing units, and
-a container addresses a range of it. It must not be one sequence per
-container. The distinction is the whole bound: Markdown nesting has no depth
-limit — `>` repeated a thousand times is a legal thousand-deep `BlockQuote`
-chain — so resolving a node by summing a prefix at every level of its spine
-costs `O(depth * log width)`, which is `O(log n)` only when depth happens to
-be. A thousand-deep spine measures a thousand steps where the document-wide
-sequence measures ten.
+An earlier revision of this section prescribed the mechanism as well: it
+required resolution in `O(log n)` over the source-bearing units, and named a
+persistent aggregate sequence keyed by private order-maintenance labels and
+carrying subtree byte sums as the structure that satisfies it. That
+requirement is removed, and the reason is that **it was never traced to a
+consumer.** The property a consumer asks for is that an edit affect only the
+nodes the edit relates to, and that is delivered by 9.1 — position is not a
+component of `proj`, so a positional shift emits nothing whatever work
+produced it. An implementation that walks the document to re-derive positions
+after an edit satisfies every observable requirement in this contract; it is
+merely slower, and how much slower is a question of measured milliseconds
+rather than of contract.
+
+What the prescription cost, when it was followed, is recorded in
+`docs/reviews/2026-08-07-requirement-audit.md`: a document-wide per-byte
+ownership partition, the sequence over it, an aggregate tree over that, the
+persistence of that tree, and the label space that keys it — none of which any
+stated requirement reaches.
 
 Every `CoordinateProfile` is deterministic and schema-versioned. `NATIVE` is
 data, never a callback or platform object.
@@ -1762,7 +1773,26 @@ parser is not told.
 
 ### 11.1 Parser commit cost
 
-`session.commit()` is measured independently of any consumer:
+**The requirement is about the FRONTIER, not the work.** A commit must leave
+unchanged every node the edit does not relate to: the nodes whose projection
+differs are the ones `Delta` reports (9.1), and a consumer comparing values —
+a pull-style UI diffing its own component tree — sees exactly those. That is
+what "an edit affects only the edited part" means, and it is a statement about
+what a commit PUBLISHES.
+
+**It is not a statement about what a commit DOES.** An earlier revision of this
+section required `session.commit()` to cost a bound independent of document
+size, and that requirement is removed: it appeared here as an assertion, with
+no consumer traced to it anywhere in this contract, and every clause below
+that was justified by "what makes the bound hold" inherited the same standing.
+A commit that walks the document to re-derive what it must publish satisfies
+the frontier requirement exactly; it costs a walk. Whether a given walk is too
+slow is a measurement, and 14.7 measures — what it may no longer do is treat a
+size-dependent term as a contract violation on its own.
+
+What remains genuinely required is that no commit be QUADRATIC in the document,
+and that the published frontier be bounded by the edit rather than by the
+document. `session.commit()` is measured independently of any consumer:
 
 - edited stored bytes and persistent source paths;
 - reparsed grammar ownership regions;
@@ -1776,8 +1806,13 @@ parser is not told.
 - `Delta` construction.
 
 The unit a localized edit reparses is the **ownership region**, and it is
-defined rather than left to taste, because §0's rule that concrete offsets are
-region-relative is parameterized on it and so is every constant below.
+defined rather than left to taste — but the reason is CORRECTNESS and not
+cost. Inline syntax is non-local within a leaf, so a leaf cannot be reparsed
+in fragments and still produce the tree a fresh parse would; a container's
+marker material is what decides whether its children are its children at all.
+The region is the smallest span that can be reparsed alone and give the same
+answer. That it is also the smallest span a commit needs to touch is a
+consequence, not the definition.
 
 A region is one of:
 
@@ -1806,11 +1841,13 @@ Inline containers are never regions. `Emphasis`, `Strong`, `Strikethrough`,
 label are materialized during the surrounding leaf's parse, so they stay inside
 it rather than copying and reparsing the same bytes.
 
-Regions nest, and a region's concrete offsets are relative to that region.
-That is what makes the bound hold: an edit inside a paragraph rewrites the
-paragraph's concrete records and nothing else, and every enclosing `ListItem`,
-`List`, and `BlockQuote` keeps its marker records untouched however deep the
-nesting runs.
+Regions nest, and a region's concrete offsets are relative to that region, so
+an edit inside a paragraph rewrites the paragraph's concrete records and
+nothing else while every enclosing `ListItem`, `List`, and `BlockQuote` keeps
+its marker records untouched however deep the nesting runs. This is worth
+having and it is not what makes anything hold: records that were rewritten
+would still be correct, because a record is not part of `proj` (9.1) and
+rewriting one publishes nothing.
 
 An edit may legitimately widen from its innermost region to an enclosing one —
 an edit inside an unclosed fence, a raw HTML block, or a directive region
@@ -1818,11 +1855,16 @@ reparses forward to the end of that construct, and an edit that changes a
 block boundary reparses the neighbours that boundary joins or splits. It must
 not repeat a whole-document parse once per changed node.
 
-Structural edits path-copy `O(log n)` persistent sequence nodes plus the
-inserted or removed members. `|diffs|` is the changed frontier plus its
-deduplicated ancestor spine (9.1), bounded by `O(changed * depth)` and
-independent of document width and size: a one-block insertion into a document
-of any size produces its own entry plus one per enclosing container.
+`|diffs|` is the changed frontier plus its deduplicated ancestor spine (9.1),
+bounded by `O(changed * depth)` and independent of document width and size: a
+one-block insertion into a document of any size produces its own entry plus one
+per enclosing container. **That is the bound this section is about**, and it is
+about what is published.
+
+A sentence here required structural edits to path-copy `O(log n)` persistent
+sequence nodes. It is removed with the rest: nothing in this contract reaches a
+consumer that can observe how a commit stores what it publishes, and 7.2 no
+longer prescribes a persistent sequence to path-copy.
 
 Two implementation constraints follow from that bound and are easy to violate.
 `DESCENDANT` must be discovered by walking **up** from the changed frontier,
@@ -1844,12 +1886,12 @@ addressable typed child edge of §0 buys. CST capture adds work only where the
 existing parse recognizes or preserves concrete material; it must not add a
 second whole-document AST-construction pass.
 
-Introducing the CST must not move any bound in this section. Because concrete
-offsets are region-relative (§0), a token is never a leaf of a document-wide
-structure and no edit elsewhere can reach one: regions reparsed, persistent
-nodes copied, extent-resolution descents, and `|diffs|` are the same with the
-CST as without it, and the concrete material shows up only as a constant
-factor on the records created inside the reparsed region. 14.7 measures that
+Introducing the CST must not move the FRONTIER this section bounds. Because
+concrete offsets are region-relative (§0), a token is never a leaf of a
+document-wide structure and no edit elsewhere can reach one: regions reparsed
+and `|diffs|` are the same with the CST as without it, and the concrete
+material shows up only as a constant factor on the records created inside the
+reparsed region. 14.7 measures that
 factor against an AST-only baseline on the same trace; a design in which it
 also multiplies a size-dependent term fails this section, whatever its timing
 on a small fixture.
@@ -2044,13 +2086,12 @@ identity rules, or the diff list.
    frozen decode/recovery profile.
 2. Stored-byte, scalar, UTF-16, line/column, and binding-native projections
    resolve exactly for old and new retained documents.
-3. `Document.scope` is `O(log n)` on a pinned large document and requires no
-   whole-document pass; prefix insertion does not rewrite later nodes or
-   extents.
-4. Text and child collections path-copy only their changed persistent
-   frontier plus inserted/removed content.
-5. Long append traces avoid prefix-sum copying; tiny retained slices respect
-   the declared memory amplification bound.
+3. `Document.scope` answers exactly on a pinned large document, and a prefix
+   insertion changes what no later node PUBLISHES — no diff entry, no changed
+   projection. What it costs to answer is measured, not bounded here.
+4. Text and child collections change only their changed frontier plus
+   inserted/removed content.
+5. Long append traces do not degrade quadratically.
 6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
    is asymmetric and gates 1 and 14.8 pass without it — gate 1 exercises only
    *legal* edits, and 14.8 compares only final outputs, so an implementation
