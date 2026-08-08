@@ -549,7 +549,7 @@ Markup {
     MarkupKind kind
     MarkupTrack track
     typed Scalar fields
-    typed CanonicalText fields
+    typed Utf8Text fields
     typed optional/singular child fields
     at most one typed [Markup] child list
 }
@@ -833,78 +833,59 @@ these stamps are how it cheaply confirms that something did not.
 
 ### 6.1 Scalar and text fields
 
-```text
-CanonicalText {
-    Utf8Text value
-    TextMap  map
-}
-
-TextMap = [SpanPair]       // ascending, non-overlapping, covers `value`
-
-SpanPair {
-    Span canonical         // into this field's `value`
-    Span source            // relative to the owning node's SourceExtent
-}
-```
+A node's text field is a `Utf8Text`: canonical UTF-8, and nothing beside it.
 
 Scalar fields are plain typed values. Optional `none` is a real field value,
 not an absent node; a presence change is an ordinary field change.
 
-`CanonicalText.value` is canonical UTF-8 text. `CanonicalText.map` relates
-each stretch of it to the source bytes that produced it, one `Span` (8.1) per
-side. An entry carries no text of its own: unlike a run in a text-layout or
-attributed-string API, it is a correspondence, not a slice of content.
+**A text field carries no map back to the source bytes that produced it.**
+An earlier revision of this section paired every text field with a
+`TextMap` — ascending span pairs relating each stretch of canonical text to
+the source it was decoded from — and spent this section justifying the
+node-relative spans, the "equal length is not the test" rule for interior
+addressing, and the ban on storing content in an entry. All of it is removed,
+and the reason is that no consumer ever asked to see the bytes behind decoded
+text.
 
-The source side is measured from the owning node's `SourceExtent`, not from
-the document. It has to be. `TEXT_MAP` is a projection part compared by value
-(9.1), so absolute offsets would make a prefix insertion differ on every later
-text field in the document — one entry per suffix node, which is exactly what
-7.3 forbids and what 14.5.1 tests for. Node-relative spans put the shift where
-7.3 already puts every other coordinate: in the `O(log n)` resolution of a
-stable extent, and in no projection value at all. A consumer that wants the
-source bytes resolves the node's extent once through `Document.scope` and adds
-the pair's offsets to it; a consumer that only wants the correspondence — the
-common case, since the canonical side is what it is mapping from — needs no
-resolution.
+What consumers do ask for is the reverse lookup: from a node, the input row
+and column it was written at. That is `Document.scope` (7.2), it is a
+projection from the stored-byte substrate, and it needs no correspondence
+between a decoded character and the bytes that produced it. The requirement
+that put a CST under this contract at all is LOCAL DIAGNOSTICS on the
+constructs that can be malformed — a directive's header, an embed's
+reference — and a diagnostic names a source span. It never names a decoded
+character's provenance.
 
-The two spaces are not the same and do not advance at the same rate: `value`
-holds decoded text, the source holds what was authored, and they diverge
-wherever Markdown transforms bytes. `&amp;` is five source bytes and one
-canonical byte; `\*` is two and one; `&#x1F600;` is nine and four; with smart
-punctuation `--` is two and three. Source bytes that produce no canonical
-output at all, such as an escape's backslash, fall between pairs.
+Three facts make the map vacuous where it would have been read:
 
-Both spans are therefore stored, rather than one span and a shared length.
-Neither side's length derives from the other, and neither derives from the
-neighbouring entries, because the canonical side is contiguous while the
-source side may have gaps. When a pair's two spans hold *identical bytes* the
-correspondence inside it is byte for byte and a consumer may address any
-interior position; otherwise the pair corresponds only as a unit.
+- `CrossLink.reference` and `Embed.reference` are source-faithful by
+  `canonical-ast.md`, and `FootnoteReference.label` is written as in source.
+  For the constructs the diagnostics requirement names, the map is the
+  identity;
+- of the kinds that carried a text field, all but `Text` hold their bytes
+  verbatim or reassembled without decoding — a code block, a raw HTML node
+  and a formula reproduce what was authored. Only `Text` resolves entities,
+  escapes and smart punctuation, and a diagnostic never points at a `Text`;
+- twenty-seven of the thirty-four kinds already live with no map at all.
+  `Link.destination`, `CodeBlock.info`, every `label` and `name` and
+  `attributes` are decoded scalars whose source span is the sub-node extent
+  7.2 defers, and the answer there has always been that a consumer resolves
+  the owning node's extent and searches within it. The map drew a line
+  between seven kinds and twenty-seven that no requirement drew.
 
-Equal length is not the test, and using it would be unsound. With smart
-punctuation `...` is three source bytes and `…` is three UTF-8 bytes, and
-`---` and `—` are three and three: the lengths agree while no interior position
-corresponds, so a consumer addressing into one would land inside a UTF-8
-scalar. Comparing the bytes costs `O(len)` on two slices the consumer already
-holds, and is paid only when interior addressing is actually wanted.
+The cost of keeping it was not the storage. `TEXT_MAP` was a projection part
+compared by value (9.1), so it entered every revision computation, and its
+spans had to be node-relative for the sole reason that absolute ones would
+make a prefix insertion differ on every later text field in the document —
+the shape 7.3 exists to forbid. That is a second coordinate space, maintained
+per node, tied to a first. This contract removed exactly that shape from node
+positions; it does not reintroduce it one layer down for a reader that does
+not exist.
 
-No entry carries the text it maps, and none may be added. A consumer that
-wants the bytes takes them itself: `value` for the canonical side, and the
-document's `Source.content` for the source side, sliced by the pair's span
-offset by the node's resolved extent. `O(1)` persistent slicing is required of
-both (7.1 and below), so the slice is a view, not a copy. Storing the content
-in the map instead would keep a second copy of every text field in the
-document and defeat the structural sharing the rest of this contract rests
-on — and what to do with those slices, including composing them with anything
-else, is consumer work (3).
-
-Equal canonical text with a changed escape/entity mapping — `&amp;` rewritten
-as `&#x26;`, five source bytes becoming six for the same one canonical byte —
-is a `TEXT_MAP` change, not a `TEXT` change (9.1). The rewrite has to change a
-span for the part to fire: `&amp;` to `&#38;` is five bytes for five, so both
-maps are identical and 9.1 reports nothing, which is correct. A pair records a
-correspondence and not how it arose, so provenance that leaves both spans
-unchanged is not observable and no field may be added to make it so.
+A consumer that one day needs the correspondence gets it the way the other
+twenty-seven kinds already do, and if that proves insufficient the answer is
+the sub-node extent 7.2 defers — one mechanism, for all thirty-four kinds,
+driven by a stated need.
 
 Text storage must support persistent slicing and localized replacement.
 Repeated tail appends must not copy the complete prefix each commit. A tiny
@@ -1386,7 +1367,7 @@ Diff {
 }
 
 DiffPart =
-    VALUE | TEXT | TEXT_MAP | CHILDREN | ANSWERS | DESCENDANT
+    VALUE | TEXT | CHILDREN | ANSWERS | DESCENDANT
 ```
 
 9.1 gives each part its meaning and 9.3 the rule that closes the set.
@@ -1418,11 +1399,10 @@ changes it. What a path-B consumer mutates is its own state, addressed by
 Write `proj(n)` for a node's observable projection, split into parts:
 
 ```text
-proj(n) = (VALUE, TEXT, TEXT_MAP, CHILDREN, ANSWERS, DESCENDANT)
+proj(n) = (VALUE, TEXT, CHILDREN, ANSWERS, DESCENDANT)
 
 VALUE       kind, scalar fields, singular child edges, source shape
 TEXT        canonical text bytes
-TEXT_MAP    raw-source to canonical-text segment mapping, node-relative (6.1)
 CHILDREN    the list-valued child edge: membership and order
 ANSWERS     this node's parser answers, asked of the document (4.1)
 DESCENDANT  the projections of everything below it
@@ -1460,9 +1440,9 @@ materializes a parent-linked structure needs precisely that; a consumer that
 keys a flat map skips a `DESCENDANT`-only entry with one flag test.
 
 **A node whose only change is its absolute source position emits nothing**,
-because position is not in `proj` at all. `TEXT_MAP` is the one part that
-could have smuggled it in, and 6.1 keeps its source spans node-relative for
-exactly this reason.
+because position is not in `proj` at all. Nothing in `proj` is measured in
+source coordinates, which is what makes that statement structural rather than
+a property to be maintained: 6.1 removed the one part that had been.
 
 **A node whose CST changed but whose projection did not emits nothing**, for
 the same reason a compaction does: `proj` is the whole membership test, and a
@@ -1533,7 +1513,7 @@ taxonomy:
 > a part exists if and only if a consumer that ignored it would either be
 > wrong, or pay more than `O(1)`.
 
-`TEXT` and `TEXT_MAP` are `O(length)`. `CHILDREN` is `O(width)`. `ANSWERS`
+`TEXT` is `O(length)`. `CHILDREN` is `O(width)`. `ANSWERS`
 is the cost of a parser answer query (4.1). A consumer that ignored `DESCENDANT`
 while materializing a parent-linked structure would be *wrong*: it would
 retain an ancestor holding a stale child, and a value-diffing UI below it
@@ -1545,18 +1525,18 @@ vocabulary in every binding forever.
 
 Two facts about the canonical node inventory remove the parameters:
 
-- no canonical node has two text-valued fields, so `TEXT` and `TEXT_MAP` need
-  no field address. This is a rule about the inventory, not an accident of it:
-  **at most one field per kind is a `CanonicalText`** — the kind's content
-  text, spelled `literal` — and every other string field is a plain scalar
-  carrying decoded characters and no `TextMap`. Seven kinds carry one; the
-  rest carry none and therefore never carry these two parts. Without that rule
-  the claim is false, because `Link` and `Image` each pair a destination with
-  a title and `ReferenceDefinition` carries both beside its label, and
-  CommonMark resolves escapes and entities inside all of them. Naming the
-  source span of one of those scalars is the sub-node extent 7.2 defers; until
-  it exists, a consumer that needs it resolves the owning node's extent and
-  searches within it; and
+- no canonical node has two text-valued fields, so `TEXT` needs no field
+  address. This is a rule about the inventory, not an accident of it: **at
+  most one field per kind is a `Utf8Text`** — the kind's content text, spelled
+  `literal` — and every other string field is a plain scalar carrying decoded
+  characters. Seven kinds carry one; the rest carry none and therefore never
+  carry this part. Without that rule the claim is false, because `Link` and
+  `Image` each pair a destination with a title and `ReferenceDefinition`
+  carries both beside its label, and CommonMark resolves escapes and entities
+  inside all of them. Naming the source span of any decoded field — the
+  content text included — is the sub-node extent 7.2 defers; until it exists,
+  a consumer that needs it resolves the owning node's extent and searches
+  within it; and
 - no canonical node has two list-valued child edges — `Table` pairs one
   singular `header` with one list `rows`, `DirectiveBlock` pairs one singular
   `label` with one list `content`, and every other kind has at most one of
@@ -2110,8 +2090,10 @@ For a pinned large document:
 13. A concrete-only edit publishes an empty `diffs`: trailing whitespace, and
     a delimiter respelled from `*x*` to `_x_`. Both reparse their region and
     neither emits an entry or a spine.
-14. A prefix insertion leaves every later `TEXT_MAP` equal, and the later
-    nodes' `Document.scope` results move by exactly the inserted length.
+14. A prefix insertion emits no entry for any later node, and the later
+    nodes' `Document.scope` results move by exactly the inserted length. No
+    projection part is measured in source coordinates, so there is nothing a
+    prefix insertion could make differ.
 15. Inserting a definition emits `ANSWERS` on exactly the identities whose
     answers changed and converts exactly the bracketed forms that now resolve;
     the blocks reparsed and `|diffs|` are the same for a document of any size.
@@ -2191,7 +2173,6 @@ section says otherwise. `byte` and `integer` are primitives.
 
 | Type | What it is | Defined |
 | --- | --- | --- |
-| `CanonicalText` | a node's text field: canonical UTF-8 plus its map back to source | 6.1 |
 | `ChildOrdinal` | zero-based position within one child list; a non-negative integer | here |
 | `Commit` | what `Session.commit()` returns: `{document, delta}` | 2 |
 | `ConcreteID` | stable identity of one concrete node or token: `(domain, ordinal)` | 0 |
@@ -2230,10 +2211,8 @@ section says otherwise. `byte` and `integer` are primitives.
 | `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
 | `SourceProfile` | closed selector for which byte sequences may be stored | 7.1 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
-| `SpanPair` | one entry of a `TextMap`: a canonical span and its node-relative source span | 6.1 |
-| `TextMap` | relates a field's canonical text to the source bytes that produced it | 6.1 |
 | `UnexpectedToken` | a token the grammar did not admit at that position | 0 |
-| `Utf8Text` | canonical UTF-8 text; the value half of `CanonicalText` | here |
+| `Utf8Text` | a node's text field: canonical UTF-8, and nothing beside it | 6.1 |
 
 Every scalar above, in one place. These are the definitions; they get no
 section of their own because there is nothing more to say about them.

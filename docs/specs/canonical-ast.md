@@ -17,7 +17,9 @@ all three reference forms answer "no definition" the same way; adopted the
 unified-CST ownership model on 2026-08-03, replacing the single `revision`
 scalar with `MarkupTrack`, moving parser answers from session scope to the
 immutable published document, and pinning which string fields carry a
-`TextMap` (`incremental-canonical-ast.md`).
+`TextMap` (`incremental-canonical-ast.md`) — a map since removed, on
+2026-08-07, because no consumer ever asked to see the bytes behind decoded
+text and the reverse lookup they do ask for is `document.scope(of:)`.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -215,20 +217,29 @@ Every row above also carries the inherited `track: MarkupTrack`; it is not
 repeated in the table. No row has a stored scope, and no row has a stored
 absolute offset of any kind.
 
-At most one field per kind is a `CanonicalText` — the kind's content text,
-spelled `literal` — and it carries the map back to the source bytes that
-produced it. Seven kinds have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`,
-`Text`, `Code`, `HTML`, and `Formula`. The other twenty-seven have none;
-their content is a child sequence or nothing, and a kind with no textual
-value simply never carries the `TEXT` or `TEXT_MAP` parts of
-`incremental-canonical-ast.md` §9.1. Every other string field above
-is a plain scalar holding decoded characters with no map: `Link.destination`
-and `Link.title`, `Image.source` and `Image.title`,
-`ReferenceDefinition.destination` and `.title`, `CodeBlock.info` and
-`.language`, every `label`, `name`, `attributes`, and `reference`. Naming the
-source span of one of those scalars is a sub-node extent that does not exist
-yet (`incremental-canonical-ast.md` §7.2); a consumer that needs one today
-resolves the owning node's extent and searches within it.
+At most one field per kind is the kind's content text, spelled `literal`, and
+it is a `Utf8Text`: decoded characters and nothing beside them. Seven kinds
+have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
+and `Formula`. The other twenty-seven have none; their content is a child
+sequence or nothing, and a kind with no textual value simply never carries the
+`TEXT` part of `incremental-canonical-ast.md` §9.1.
+
+**No text field carries a map back to the bytes that produced it**, and
+neither does any other string field: `Link.destination` and `Link.title`,
+`Image.source` and `Image.title`, `ReferenceDefinition.destination` and
+`.title`, `CodeBlock.info` and `.language`, every `label`, `name`,
+`attributes`, and `reference` are plain scalars holding decoded characters.
+Naming the source span of any of them is a sub-node extent that does not exist
+yet (`incremental-canonical-ast.md` §7.2); a consumer that needs one resolves
+the owning node's extent and searches within it.
+
+The seven text fields used to be the exception, paired with a span map back to
+source. `incremental-canonical-ast.md` §6.1 removes it: no consumer asked to
+see the bytes behind decoded text, the two kinds whose reverse lookup the
+design was for — `CrossLink.reference` and `Embed.reference` — are
+source-faithful and so map identically, and a local diagnostic names a source
+span rather than a decoded character's provenance. What consumers do ask for
+is the reverse lookup itself, and that is `document.scope(of:)`.
 
 ### Identity and equality
 

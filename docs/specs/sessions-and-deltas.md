@@ -103,7 +103,7 @@ Diff {
     DiffParts parts
 }
 
-DiffPart = VALUE | TEXT | TEXT_MAP | CHILDREN | ANSWERS | DESCENDANT
+DiffPart = VALUE | TEXT | CHILDREN | ANSWERS | DESCENDANT
 ```
 
 `diffs` is one postorder list and is the only form: retired entries first in
