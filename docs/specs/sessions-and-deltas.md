@@ -221,10 +221,8 @@ identity, and coordinates are resolved against the owning document:
 Document.scope(SourceExtent, CoordinateProfile) -> Optional<Scope>
 ```
 
-Resolution is `O(log n)` and requires no whole-document pass, in every
-document, including a retained old one. A commit that only shifts later
-content therefore publishes an empty `diffs`, and a consumer that resolves on
-demand pays nothing for the shift. A consumer that has chosen to materialize
+A commit that only shifts later content publishes an empty `diffs`, and a
+consumer that resolves on demand pays nothing for the shift. A consumer that has chosen to materialize
 absolute coordinates remaps them from `Delta.edits`; there is no coordinate
 event, remap channel, or scope table.
 

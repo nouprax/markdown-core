@@ -314,8 +314,11 @@ and edits its own structure. Cost: 11.2; shapes: section 10.
 **C — read the delta for location only.** The consumer keeps no mirror and
 only needs to know *where* the document changed: a side-by-side editor
 highlighting the preview region a keystroke affected, a telemetry probe, a
-test assertion. It reads the entries and resolves `Document.scope` against the
-retained old document and the new one.
+test assertion. It reads the entries, resolves `Document.scope` against the
+document it was handed, and takes the replaced byte spans from `Delta.edits`
+(9.2). It is not handed a predecessor to resolve against: a session publishes
+one document, and a consumer that wants to compare against what it rendered
+last keeps what it rendered last (4.2).
 
 B is why `Delta` is public, and it is the ordinary path below the C API, where
 there is no framework to diff on the consumer's behalf. A is why `Delta` is
@@ -613,9 +616,9 @@ that exact AST revision. These concepts are distinct:
 - selected-value equality: `(MarkupID, revision.self)` for the node's local
   projection, `(MarkupID, revision.subtree)` for its whole subtree.
 
-An old node view resolves only through its retained old `Document`. It cannot
-be passed to a new document as an exact view merely because its `MarkupID`
-survived. A caller resolves logical continuity explicitly:
+A node view belongs to the exact `Document` it came from and cannot be passed
+to a later one as an exact view merely because its `MarkupID` survived. A
+caller resolves logical continuity explicitly:
 
 ```text
 Document.version          -> DocumentVersion
@@ -979,9 +982,7 @@ by reparsing. A sequence-preserving commit whose relations do not change
 shares the exact persistent index roots even when the session patches its
 private site pointers. When relations do change, the new generation
 path-copies only the affected sites, buckets, and ordered runs. It must never
-copy or persist one answer value per semantic node merely to keep the old
-document readable; the old document remains valid because it retains its old
-index roots and derives its old answers from them.
+copy or persist one answer value per semantic node.
 
 Only projected semantic nodes participate. Public answer keys and values use
 `MarkupID`; concrete token identities, trivia, `MissingToken`,
@@ -1578,9 +1579,9 @@ only because the session normalized this script before parsing, so producing
 it costs nothing.
 
 `edits` carries the replacing bytes, not the replaced ones, so it is not an
-inverse: a consumer that needs the old bytes reads them from the retained old
-document, which still owns them exactly (7.1). It carries no node identity and
-describes no consumer state.
+inverse: a consumer that needs the replaced bytes kept them, from the document
+it was handed before this commit. It carries no node identity and describes no
+consumer state.
 
 ### 9.3 Why these six parts and no more
 
@@ -2081,9 +2082,8 @@ identity rules, or the diff list.
     type, value, cache, revision, or update surface in Markdown Core.
 13. One-shot, incremental, cache-disabled, and lazily indexed one-shot
     documents expose equal parser answers for equal semantic projections.
-    Retained old documents keep their old answers after later commits and
-    session close. A document a session commits from carries a prepared
-    relation index at publication (6.3).
+    A document a session commits from carries a prepared relation index at
+    publication (6.3).
 14. Public answer APIs accept and return semantic identities only. Concrete
     tokens and recovery nodes have no parser answers, and syntax diagnostics
     are unchanged when semantic relation indexes are disabled or rebuilt.
@@ -2098,7 +2098,7 @@ identity rules, or the diff list.
    answer-only changes advance exactly their specified stamps.
 5. A -> B -> A advances the affected stamps strictly without identity reuse.
 6. Canonical no-op reuses the exact document and revisions.
-7. Old node views resolve only through their retained old document; a
+7. A node view resolves only through the document it came from; a
    foreign-domain identity traps.
 
 ### 14.3 Source and storage gates
@@ -2106,7 +2106,7 @@ identity rules, or the diff list.
 1. Arbitrary legal stored-byte edits remain fresh-parse equivalent under the
    frozen decode/recovery profile.
 2. Stored-byte, scalar, UTF-16, line/column, and binding-native projections
-   resolve exactly for old and new retained documents.
+   resolve exactly on the published document.
 3. `Document.scope` answers exactly on a pinned large document, and a prefix
    insertion changes what no later node PUBLISHES — no diff entry, no changed
    projection. What it costs to answer is measured, not bounded here.

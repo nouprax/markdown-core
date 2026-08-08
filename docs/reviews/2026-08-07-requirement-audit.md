@@ -169,34 +169,46 @@ invalid:
 - **"Don't touch it if you are not in that code."** That is how an unexamined
   decision survives an audit whose purpose is to examine it.
 
-## The one place a consumer for the removed clause is named
+## The one place a consumer was named, and how it was settled
 
-`§2.1`'s **path C** — "read the delta for location only" — says:
+`§2.1`'s **path C** — "read the delta for location only" — used to say it
+resolves `Document.scope` against "the retained old document and the new one".
+That was the only stated consumer for holding a predecessor, and it is the
+diff-highlighting editor.
 
-> a side-by-side editor highlighting the preview region a keystroke affected …
-> It reads the entries and resolves `Document.scope` against the **retained old
-> document and the new one**.
+It is settled as **no**, and on evidence rather than preference:
 
-That is a stated consumer for holding a predecessor, and it is the
-diff-highlighting editor scenario. Two things about it:
+- **the C API never delivered it.** `markdown_core_session_document` returns
+  `&session->view`, reused in place at every commit. Path C was written for a
+  capability that does not exist, which is why removing the clause under it
+  broke nothing;
+- **it does not need one.** `Delta.edits` (§9.2) already carries the replaced
+  byte spans. What a predecessor adds is the region to stop highlighting, and a
+  consumer that rendered the previous revision has what it rendered;
+- **bindings already do it themselves.** The ES snapshot is a decoded value
+  tree and refuses a node from another revision, which is a value copy by
+  another name.
 
-- **The C API does not deliver it today.** `markdown_core_session_document`
-  returns `&session->view`, reused in place, so a C caller has no predecessor
-  to resolve against. Path C is written for a capability that does not exist,
-  which is why removing the clause it rests on broke nothing.
-- **It may not need one.** `Delta.edits` (§9.2) already carries the byte-level
-  difference. An editor that wants to highlight what a keystroke affected has
-  the byte spans and the new document; what the OLD scope adds is the region to
-  un-highlight, and a consumer that keeps its own previous render already knows
-  that.
+So path C reads against the document it was handed plus `Delta.edits`; `§4.1`
+says a node view belongs to the document it came from rather than to "its
+retained old `Document`"; `§6.3`, `§9.2` and `sessions-and-deltas.md` lose the
+same phrasing; and gates `14.1.13`, `14.2.7` and `14.3.2` are restated on the
+published document.
 
-The clauses still written against a retained predecessor are `14.1.13`
-("retained old documents keep their old answers after later commits and session
-close"), `14.2.7` ("old node views resolve only through their retained old
-document"), and `14.3.2` ("resolve exactly for old and new retained
-documents").
+Nothing in the contracts now asks the parser to keep a predecessor alive, and
+nothing in them asks for the persistence that was built to do it cheaply.
 
-**This is one decision, and it is not the parser's to make alone: does a
-consumer get to hold a previous document?** If yes, path C stands and the API
-owes it — and persistence comes back with it. If no, path C is restated on
-`Delta.edits` and those three gates go.
+## The method note
+
+Three arguments were used in the first draft of this audit and all three are
+invalid:
+
+- **"It has an implementation and a gate."** Gates are ours. A gate proves we
+  built it, not that it was needed.
+- **"Only a test reads it, so it has no consumer."** Purpose comes from the
+  requirement, not from who happens to read it today.
+- **"Don't touch it if you are not in that code."** That is how an unexamined
+  decision survives an audit whose purpose is to examine it.
+
+A fourth belongs with them: **asking which of two options to take, when the
+evidence already decides it.** That is not caution, it is handing back the work.
