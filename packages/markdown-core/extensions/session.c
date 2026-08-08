@@ -846,30 +846,26 @@ bool markdown_core_session_edit(
     }
     {
         // One edit per call, because that is what the convenience API takes.
-        // The substrate accepts a batch, so a caller with several edits pays
-        // one path copy for all of them; a keystroke pays one for itself.
+        // The substrate accepts a batch, so a caller with several edits
+        // splices once for all of them; a keystroke splices for itself.
         markdown_core_source_edit edit;
         markdown_core_source_stats stats;
         markdown_core_source_status status;
-        markdown_core_source *next;
 
         edit.span.start = byte_start;
         edit.span.end = byte_end;
         edit.replacement = bytes;
         edit.replacement_length = length;
         memset(&stats, 0, sizeof(stats));
-        next = markdown_core_source_apply(session->source, &edit, 1, &stats, &status);
-        if (!next) {
-            // The span was validated above and the profile is permissive, so
-            // the substrate's remaining refusals are all "this edit cannot be
-            // stored" — a failed allocation or a length that size_t cannot
-            // represent. Both are the allocation failure this call has always
-            // reported, and both leave the previous source retained.
+        if (!markdown_core_source_apply(session->source, &edit, 1, &stats, &status)) {
+            // The span was validated above, so the substrate's remaining
+            // refusals are all "this edit cannot be stored" — a failed
+            // allocation or a length size_t cannot represent. Both are the
+            // allocation failure this call has always reported, and both
+            // leave the source untouched.
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
             return false;
         }
-        markdown_core_source_release(session->source);
-        session->source = next;
         session->edit_bytes_moved += stats.bytes_copied;
     }
 

@@ -2896,33 +2896,52 @@ static int case_definition_flip_locality(void) {
     return fb_definition_flip_scenario(6, 3, 240);
 }
 
-/* An edit is an O(edit) operation or it is not. `session->edit_bytes_moved`
+/* A COMMIT MUST NOT BE QUADRATIC IN THE DOCUMENT. `session->edit_bytes_moved`
  * counts the already-stored bytes the substrate copied to make room, so the
  * question is decided by arithmetic rather than by a clock: perform the same
  * one-byte insertion at the same relative offset against documents of
- * doubling size, and the per-edit figure must not move.
+ * doubling size, and the bytes moved must stay a bounded FRACTION of the
+ * document rather than a growing one.
  *
- * The bound is absolute, not a ratio, because a ratio would accept a store
- * that copies a fixed fraction of a growing document. A substrate that owns
- * its bytes copies a bounded neighbourhood of the edit — for the persistent
- * rope, the leaf it lands in plus the merge limit — and never the untouched
- * suffix. FB_EDIT_MOVED_BOUND is set an order of magnitude above that
- * neighbourhood so the gate reports a change of algorithm and not a change of
- * tuning.
+ * This gate used to assert an absolute bound — 4096 bytes moved per edit,
+ * whatever the document's size — with the reason that "a substrate that owns
+ * its bytes copies a bounded neighbourhood of the edit, for the persistent
+ * rope the leaf it lands in plus the merge limit". THAT REQUIREMENT IS GONE
+ * (incremental-canonical-ast.md 11.1, and 2026-08-07-requirement-audit.md).
+ * It said the WORK a commit does is bounded independently of document size;
+ * what the contract requires is about the OUTPUT — that the published frontier
+ * be bounded by the edit — and no consumer was ever traced to the other. The
+ * absolute bound is what a rope was built to satisfy, and it is the only thing
+ * that ever asked for one.
+ *
+ * What survives, and what this now measures, is that no commit be quadratic.
+ * A flat store splices in place and moves the suffix: linear in the document,
+ * and a constant fraction of it at a fixed relative offset. A commit that
+ * copied the document once per affected node, or re-spliced per edit inside a
+ * loop, would show that fraction growing with size — which is exactly what
+ * doubling the document four times detects.
  *
  * The initial whole-text insert legitimately copies its own bytes, so the
  * counter is sampled after it. */
 #define FB_EDIT_LOCALITY_SIZES 4
 #define FB_EDIT_LOCALITY_EDITS 8
-static const size_t FB_EDIT_MOVED_BOUND = 4096;
+/* Per edit, in units of one document. One suffix from the midpoint is 0.5;
+ * the ceiling is set at four so the gate reports a change of algorithm and
+ * not a change of where the edit lands. */
+static const double FB_EDIT_MOVED_RATIO_BOUND = 4.0;
+/* And the fraction itself must not grow as the document doubles. Slack of a
+ * quarter absorbs the paragraph-count rounding of the edit offset; anything
+ * super-linear multiplies it by two per step. */
+static const double FB_EDIT_RATIO_DRIFT_BOUND = 1.25;
 
-static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit) {
+static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit, size_t *document_length) {
     static const char PARAGRAPH[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do.\n\n";
     const size_t paragraph_length = sizeof(PARAGRAPH) - 1;
     markdown_core_parse_options options;
     markdown_core_session *session;
     size_t length = paragraphs * paragraph_length;
     char *text = (char *)malloc(length + 1);
+    *document_length = length;
     size_t baseline;
     size_t midpoint;
     size_t i;
@@ -2970,28 +2989,41 @@ done:
 static int case_edit_locality(void) {
     static const size_t PARAGRAPHS[FB_EDIT_LOCALITY_SIZES] = {512, 1024, 2048, 4096};
     size_t moved[FB_EDIT_LOCALITY_SIZES];
+    size_t length[FB_EDIT_LOCALITY_SIZES];
+    double ratio[FB_EDIT_LOCALITY_SIZES];
     size_t step;
     int failed = 0;
 
     for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
-        if (fb_edit_locality_scenario(PARAGRAPHS[step], &moved[step]) != 0) {
+        if (fb_edit_locality_scenario(PARAGRAPHS[step], &moved[step], &length[step]) != 0) {
             return -1;
         }
-        if (moved[step] > FB_EDIT_MOVED_BOUND) {
+        ratio[step] = (double)moved[step] / (double)length[step];
+        if (ratio[step] > FB_EDIT_MOVED_RATIO_BOUND) {
+            failed = 1;
+        }
+        if (step && ratio[step] > ratio[0] * FB_EDIT_RATIO_DRIFT_BOUND) {
             failed = 1;
         }
     }
     if (failed) {
-        fprintf(stderr, "FAILED: edit_locality: a one-byte edit must copy a bounded neighbourhood, not the suffix\n");
+        fprintf(stderr, "FAILED: edit_locality: a commit must not be quadratic in the document\n");
         for (step = 0; step < FB_EDIT_LOCALITY_SIZES; step++) {
             fprintf(
                 stderr,
-                "  %zu paragraphs: %zu bytes moved per edit (bound %zu)\n",
+                "  %zu paragraphs: %zu bytes moved per edit over %zu stored (%.3f documents)\n",
                 PARAGRAPHS[step],
                 moved[step],
-                FB_EDIT_MOVED_BOUND
+                length[step],
+                ratio[step]
             );
         }
+        fprintf(
+            stderr,
+            "  ceiling %.1f documents per edit, drift ceiling %.2fx of the smallest\n",
+            FB_EDIT_MOVED_RATIO_BOUND,
+            FB_EDIT_RATIO_DRIFT_BOUND
+        );
         return -1;
     }
     return 0;
