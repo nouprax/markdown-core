@@ -157,18 +157,6 @@ back-derived from that binding, not from a consumer.
    normalized-line byte offsets. Whether that survives belongs with the public
    concrete interface, which does not exist yet.
 
-## The method note
-
-Three arguments were used in the first draft of this audit and all three are
-invalid:
-
-- **"It has an implementation and a gate."** Gates are ours. A gate proves we
-  built it, not that it was needed.
-- **"Only a test reads it, so it has no consumer."** Purpose comes from the
-  requirement, not from who happens to read it today.
-- **"Don't touch it if you are not in that code."** That is how an unexamined
-  decision survives an audit whose purpose is to examine it.
-
 ## The one place a consumer was named, and how it was settled
 
 `§2.1`'s **path C** — "read the delta for location only" — used to say it

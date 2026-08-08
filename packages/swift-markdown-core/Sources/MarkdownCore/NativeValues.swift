@@ -32,8 +32,12 @@ extension Scope {
 extension markdown_core_string_view {
     var requiredString: String {
         guard let data else { return "" }
-        // The native facade has already validated UTF-8 and this initializer also
-        // gives deterministic replacement semantics if that contract regresses.
+        // Well-formed by construction, not by validation: every entry point
+        // into this package takes a Swift `String`, so the bytes the facade
+        // hands back are the ones it was given. The facade itself neither
+        // validates nor replaces (incremental-canonical-ast.md 7.1), so this
+        // initializer's replacement semantics are a decoder default that
+        // nothing is expected to reach, not a backstop for a facade contract.
         // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }

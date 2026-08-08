@@ -1,12 +1,16 @@
 # Incremental canonical AST: delivery plan
 
-> **PARTLY SUPERSEDED — 2026-08-07.** Every milestone below that builds on a
-> persistent structure over source builds on two clauses that were removed from
-> the contract on that date: 11.1's requirement that a commit cost a bound
-> independent of document size, and 7.2's prescription of a persistent
-> aggregate sequence keyed by private order-maintenance labels. Neither was
-> ever traced to a consumer, and the sixty-commit landing that implemented them
-> was reverted. Read
+> **PARTLY SUPERSEDED — 2026-08-07.** Four things this plan builds on were
+> removed from the contract on that date. Two are the clauses the whole
+> persistent-structure line rests on: 11.1's requirement that a commit cost a
+> bound independent of document size, and 7.2's prescription of a persistent
+> aggregate sequence keyed by private order-maintenance labels — neither ever
+> traced to a consumer, and the sixty-commit landing that implemented them was
+> reverted. The other two are 4.2's clauses that a document be independent of
+> later session commits and structurally shareable with adjacent revisions,
+> which is what any milestone here justifying persistence by "the old document
+> stays readable" was appealing to; and `SourceProfile` with the whole
+> validation boundary (see M2, superseded in place). Read
 > [`../reviews/2026-08-07-requirement-audit.md`](../reviews/2026-08-07-requirement-audit.md)
 > before acting on M2's rope, M3's substrate unification, M3.2's extent
 > sequence, §6.2's persistent child sequence, or any acceptance criterion here
@@ -364,41 +368,28 @@ not be written.
 
 ### M2 — Source substrate
 
-`Source{profile, content}` with `STRICT_UTF8` and `PERMISSIVE_BYTES`, the
-persistent byte storage behind it, and the `SourceEdit`/`Span` primitive in
-stored-byte coordinates.
-
-**`STRICT_UTF8` is not "valid UTF-8 only", and this is the milestone's main
-trap.** It admits exactly one deviation: a truncated final code point — a
-well-formed prefix at end-of-source that a continuation byte would complete.
-Edits are byte-addressed, so a streamed chunk may split a multi-byte
-character; rejecting that intermediate commit would make streaming legal only
-under `PERMISSIVE_BYTES` and turn §8.2's "streaming is ordinary editing" into
-a profile-conditional rule, which is the special-casing that section exists to
-forbid. The boundary is asymmetric and all four cases are separate behaviour:
-
-| Input, `STRICT_UTF8` | Result |
-| --- | --- |
-| truncated final code point | accepted; that tail decodes to U+FFFD |
-| complete invalid sequence | rejected; neither source nor AST published |
-| truncated code point with further bytes after it | rejected — the exception is positional |
-| all three under `PERMISSIVE_BYTES` | accepted |
-
-A document ending in a truncated tail is legal as a **final** document, not
-only as an intermediate one: §8.2 forbids a finalize operation, a session may
-close at any commit, and a caller may parse two bytes and stop. Do not build a
-pending or awaiting-continuation state; there is none.
-
-Gates: §14.3.1, §14.3.4, §14.3.5, §14.3.6, §14.3.7, and the multi-byte
-boundary clauses of §14.8.2–3. §14.3.6 and §14.3.7 were added on 2026-08-03
-because the boundary above had no gate at all: §14.3.1 exercises only *legal*
-edits and §14.8 compares only final outputs, so an implementation rejecting
-every incomplete chunk and one accepting every invalid sequence both passed.
-
-Requirements that are easy to lose: repeated tail appends must not copy the
-prefix; a tiny retained slice must respect the declared amplification bound;
-and `Span` is built from `Offset`, never `EncodedOffset`, so a projected
-coordinate cannot be fed back in as an edit.
+> **SUPERSEDED 2026-08-07.** This milestone specified `Source{profile, content}`
+> with `STRICT_UTF8` and `PERMISSIVE_BYTES`, an asymmetric four-row acceptance
+> boundary around a truncated final code point, and persistent byte storage
+> with an amplification bound. **All of it is gone.** UTF-8 is assumed and
+> never validated (§7.1), so there is no boundary to be asymmetric about and
+> no profile to select; `SourceProfile`, the validator, §14.3.6 and the three
+> gates over them were deleted, and the persistent rope is one growable buffer
+> spliced in place. See [`../reviews/2026-08-07-requirement-audit.md`](../reviews/2026-08-07-requirement-audit.md).
+>
+> What the milestone actually shipped and what still holds: one store for the
+> session's bytes; the `SourceEdit`/`Span` primitive in stored-byte
+> coordinates; `Span` built from `Offset` and never `EncodedOffset`, so a
+> projected coordinate cannot be fed back in as an edit; repeated tail appends
+> that do not copy the prefix (geometric growth); and — for the reason the
+> deleted trap paragraph got right even though its mechanism was wrong — a
+> document ending in a truncated tail is legal as a FINAL document, not only
+> as an intermediate one. §8.2 forbids a finalize operation, a session may
+> close at any commit, and a caller may parse two bytes and stop. There is no
+> pending or awaiting-continuation state.
+>
+> Live gates: §14.3.1, §14.3.7, and the multi-byte boundary clauses of
+> §14.8.2–3.
 
 ### M2.5 — Unified CST substrate and definition sets
 

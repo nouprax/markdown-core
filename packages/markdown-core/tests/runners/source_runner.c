@@ -1,31 +1,30 @@
-/* Acceptance gates for the persistent stored-byte substrate (M2).
+/* Acceptance gates for the stored bytes (7.1, 8.1).
+ *
+ * This file used to gate a PERSISTENT substrate: an edit that path-copied
+ * O(log n) tree nodes, predecessors that stayed readable, a declared
+ * amplification bound, and the asymmetric STRICT_UTF8 acceptance boundary.
+ * All four are gone with the clauses they came from (14.3.4, 14.3.5, 14.3.6,
+ * and `SourceProfile`; see docs/reviews/2026-08-07-requirement-audit.md), and
+ * the store is one growable buffer spliced in place.
  *
  * Contract clauses under test, from incremental-canonical-ast.md:
  *   14.3.1  arbitrary legal stored-byte edits stay byte- and parse-equal to
  *           an independently maintained oracle          (random_edits)
- *   14.3.4  an edit path-copies O(log n) tree nodes, and predecessors stay
- *           readable unchanged                          (storage_sharing)
- *   14.3.5  long append traces never copy the retained prefix; tiny
- *           retained slices respect the declared amplification bound
- *                                (append_no_prefix_copy, amplification)
- *   14.3.6  the asymmetric STRICT_UTF8 acceptance boundary, all four rows,
- *           including the U+FFFD decode of a truncated final code point
- *                                                       (strict_boundary)
  *   14.3.7  splitting one character across two commits: the intermediate
- *           document is legal, final output equals a fresh parse, and the
- *           intermediate stays readable after its successor is gone
+ *           document is legal and the final output equals a fresh parse
  *                                                       (split_character)
  *   14.8.2-3 randomized chunk partitions, including boundaries inside a
- *           multi-byte character, commit successfully under both profiles,
- *           with and without the completing chunk, and every final document
- *           parses identically to a fresh parse         (chunk_partition)
+ *           multi-byte character, commit successfully with and without the
+ *           completing chunk, and every final document parses identically
+ *           to a fresh parse                            (chunk_partition)
  *
- * Two locality rules have no numbered clause of their own and are gated
- * here because prose without a failing check is not a rule (delivery plan,
- * "the rule every milestone is held to"): STRICT_UTF8 validation examines
- * only edit-proportional byte counts (validation_locality), and allocation
- * failure at every allocation site publishes nothing and leaks nothing
- * (oom_sweep).
+ * Three rules have no numbered clause of their own and are gated here
+ * because prose without a failing check is not a rule: a span the store
+ * cannot represent is refused before a byte moves and publishes nothing
+ * (span_validation), the batch splice builds beside the source and so has
+ * an empty-result state and a failed-allocation state of its own
+ * (batch_splice), and allocation failure at every allocation site publishes
+ * nothing and leaks nothing (oom_sweep).
  */
 #include <stdio.h>
 #include <stdlib.h>

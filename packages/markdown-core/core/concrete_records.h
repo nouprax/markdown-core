@@ -45,8 +45,7 @@ extern "C" {
  *   parent-relative line encoding gives node positions.
  * - `column` and `length` are byte extents within that line as the
  *   parser scanned it: the normalized line (each NUL replaced by the
- *   3-byte U+FFFD, invalid UTF-8 replaced under
- *   EOL excluded). A normalized-line
+ *   3-byte U+FFFD, EOL excluded). A normalized-line
  *   offset equals the stored-source offset only until the line's first
  *   replacement. A replaced byte is a non-space byte no marker scanner
  *   accepts, so it never sits inside or before a marker recognized at

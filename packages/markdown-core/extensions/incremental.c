@@ -2252,10 +2252,9 @@ static bool incremental_reparse_blocks(incremental_pipeline *pipeline) {
         }
         prev_start = prev_end;
         // The one backward scan in the engine, walking to the previous line
-        // start so the staged parser inherits last_line_length. The rope has
-        // no reverse cursor, so this costs O(log n) per byte rather than
-        // O(1); it is bounded by one line, so it stays off every asymptotic
-        // path, and a cursor is worth adding only if a measurement asks.
+        // start so the staged parser inherits last_line_length. It used to
+        // cost O(log n) per byte, because the rope it read had no reverse
+        // cursor; the store is a flat buffer now and each step is an index.
         while (prev_start > 0) {
             uint8_t c = markdown_core_source_byte_at(pipeline->bytes, prev_start - 1);
             if (c == '\n' || c == '\r') {

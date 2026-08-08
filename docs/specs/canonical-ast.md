@@ -261,7 +261,7 @@ and stable across incremental commits while the node remains the same logical
 node. Nodes from different domains never compare equal, and passing an
 identity from another domain is a programmer error that traps rather than a
 result value. A one-shot parse gets its own domain, as does any change to the
-schema, parse options, or source profile.
+schema or the parse options.
 
 `revision` is a pair, never a single number. `revision.self` is the revision
 at which the node's own local projection last changed — its kind, scalar and
@@ -397,8 +397,7 @@ not AST content. They are parser answers: queries over the relation indexes
 the immutable published document pins, addressed by `MarkupID`
 (`incremental-canonical-ast.md` §4.1 and §6.3), with the answer record types
 defined in `sessions-and-deltas.md`. They are not a live-session feature, and
-a retained document keeps answering them after later commits and session
-close. Renderers that need the GFM presentation
+a retained document keeps answering them after session close. Renderers that need the GFM presentation
 (definitions gathered at the tail in first-use order, numbered markers)
 derive it from those queries. This aligns the tree with the mdast model and
 keeps edits from rewriting unrelated parts of the document.

@@ -291,10 +291,12 @@ typedef struct {
 struct markdown_core_session {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    // The session's bytes. A persistent rope, so an edit path-copies
-    // O(log n) nodes and copies a bounded neighbourhood instead of shifting
-    // the untouched suffix, and so a predecessor stays readable at zero cost
-    // for as long as anything holds it (source.h).
+    // The session's bytes: one growable buffer, mutable and singly owned, and
+    // an edit splices it in place (source.h). It was a persistent rope, and
+    // both reasons it gave for being one are gone — the bounded-neighbourhood
+    // copy was 11.1's removed work bound, and the readable predecessor was
+    // 4.2's removed clause. A session hands out one document, reused in place,
+    // so nothing can hold a predecessor to read.
     markdown_core_source *source;
     markdown_core_document view; // view.root is the committed tree, owned
     uint64_t next_id;            // monotonic, starts at 1, never reused
@@ -344,12 +346,15 @@ struct markdown_core_session {
     // count of the flipped label's own kind, independent of document size.
     size_t dependent_reparses;
     // Stored bytes the substrate copied to apply edits, summed over every
-    // successful edit (white-box, asserted by fallback_runner). An edit is
-    // an O(edit) operation or it is not, and this is the number that says
-    // which: the locality gate performs the same edit against documents of
-    // doubling size and requires the per-edit figure to stay flat. The
-    // contiguous store cannot satisfy that — it shifts the whole untouched
-    // suffix — so the gate fails until the substrate carries the bytes.
+    // successful edit (white-box, asserted by fallback_runner). It used to
+    // answer "is an edit O(edit)?", and the gate over it required the
+    // per-edit figure to stay FLAT as the document doubled — 11.1's removed
+    // work bound, and the one thing a persistent rope was here to satisfy.
+    // fallback_runner's edit_locality gate now divides by the document: a
+    // splice in place moves a suffix, which is a constant FRACTION of the
+    // document (0.500 from the midpoint) and must stay one. That is 11.1's
+    // surviving requirement — no commit may be quadratic — measured in bytes
+    // rather than in seconds.
     size_t edit_bytes_moved;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty

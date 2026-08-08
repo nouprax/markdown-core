@@ -372,10 +372,12 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * changed. After any sequence of edits and commits the document is
  * semantically identical to a one-shot parse of the same final text.
  *
- * The stored text is the raw bytes exactly as edited; NUL and invalid UTF-8
- * are replaced with U+FFFD during parsing, per line, exactly as
- * markdown_core_document_parse does. A streamed append may therefore
- * complete a multi-byte character whose first bytes arrived earlier.
+ * The stored text is the raw bytes exactly as edited. UTF-8 is ASSUMED AND
+ * NEVER VALIDATED: nothing is scanned, nothing is replaced, and nothing is
+ * rejected, exactly as markdown_core_document_parse does. NUL is replaced
+ * with U+FFFD during parsing because CommonMark requires it of canonical
+ * text, and nothing else is. A streamed append may therefore complete a
+ * multi-byte character whose first bytes arrived earlier.
  *
  * Commits are transactional: on failure the session stays valid at its
  * previous revision and the commit may be retried (applied edits are

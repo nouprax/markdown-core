@@ -313,10 +313,11 @@ if(MARKDOWN_CORE_STATIC)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()
 
-    # regression: the stored-byte substrate's storage and profile gates —
-    # span canonicalization, path-copy and no-prefix-copy bounds, the
-    # declared amplification bound, the asymmetric STRICT_UTF8 boundary
-    # (14.3.4-6), validation locality, and the allocation-failure sweep.
+    # regression: the stored bytes' own gates — a span or resulting length the
+    # store cannot represent, refused before a byte moves; the batch splice's
+    # empty-result and refused-allocation states; and the allocation-failure
+    # sweep. The path-copy, no-prefix-copy, amplification, STRICT_UTF8 and
+    # validation-locality gates that stood here are gone with their clauses.
     set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES
         span_validation
         batch_splice

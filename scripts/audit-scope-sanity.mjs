@@ -15,13 +15,26 @@ import process from "node:process";
 //   negative  `end < start` — the same arithmetic, emitted rather than zeroed.
 //               `HTMLBlock scope=1:1..0:0` ends on a line that does not exist.
 //
-// Neither survives M3: an extent is (identity, length) and expresses length
-// zero natively, so both classes resolve to a real place. Until then this
-// audit is a ratchet — the counts may shrink and may never grow, exactly as
-// specs/coverage/policy.json holds the unpinned surface. When both reach zero
-// the ledger, and this script, are deleted rather than kept at zero.
+// THE SUBJECT SURVIVES; THE CURE THIS FILE NAMED DOES NOT. It used to say
+// "neither survives M3: an extent is (identity, length) and expresses length
+// zero natively", and cited docs/reviews/2026-08-05-m3-endstate-poc.md as the
+// elimination path. That design was reverted on 2026-08-07 — see
+// docs/reviews/2026-08-07-requirement-audit.md — and no extent sequence is
+// coming to fix this.
 //
-// Evidence and the elimination path: docs/reviews/2026-08-05-m3-endstate-poc.md
+// What is still true is why the ratchet exists: a source position is the
+// input's row and column and nothing else, so a row that reads like a
+// position and is not one is a defect in the REPRESENTATION, not in the
+// substrate. `0:0..0:0` means "no position" and is spelled as though it were
+// line zero; `end < start` means "empty" and is spelled as though it ran
+// backwards. Neither needs a different way of storing bytes to fix — it needs
+// a dump spelling that can say "no position" and "empty" without borrowing a
+// coordinate, which is a canonical-dump question (docs/specs/canonical-ast-dump.md).
+//
+// Until it has one this audit is a ratchet: the counts may shrink and may
+// never grow, exactly as specs/coverage/policy.json holds the unpinned
+// surface. When both reach zero the ledger, and this script, are deleted
+// rather than kept at zero.
 
 const root = process.cwd();
 const ledgerPath = path.join(root, "specs/scope-sanity/ledger.json");

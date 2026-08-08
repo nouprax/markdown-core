@@ -398,13 +398,20 @@ static const cc_case_entry CC_CASES[] = {
 
 /* --- session commit-cost cases -------------------------------------------
  *
- * Incremental commits must cost O(damaged region), independent of document
- * size.  Every case compares seconds-per-commit between a small and a large
- * session (1024x more text): streaming appends at the tail, an edit storm of
- * byte replacements spread across the document, and definition retargeting
- * that re-refines a fixed set of dependent units.  A per-commit cost that
- * scales with the document (the full-reparse behavior) shows up as a ~1024x
- * ratio against the same 4.0x bound the parse-scaling cases use. */
+ * NO COMMIT MAY BE SUPER-LINEAR IN THE DOCUMENT.  This header used to open
+ * "incremental commits must cost O(damaged region), independent of document
+ * size", which is 11.1's removed work bound — it was asserted with no
+ * consumer traced to it, and 11.1 now says a commit that walks the document
+ * to re-derive what it must publish satisfies the frontier requirement
+ * exactly (docs/reviews/2026-08-07-requirement-audit.md).
+ *
+ * Every case compares seconds-per-commit between a small and a large session
+ * (1024x more text): streaming appends at the tail, an edit storm of byte
+ * replacements spread across the document, and definition retargeting that
+ * re-refines a fixed set of dependent units.  The comparison is NORMALIZED by
+ * that 1024x, as the parse-scaling cases beside it already were, so a linear
+ * per-commit term passes and a full reparse per commit — which would cost
+ * ~1024x — fails against the same 4.0x bound. */
 
 #define CC_SESSION_STANZA "para *text* [ref] line\n\n### head\n\n- item one\n- item two\n\n"
 /* The retarget corpus keeps its bracket-free bulk out of the lookup records
@@ -703,7 +710,7 @@ static int cc_run_session(const char *name, int mode) {
         if (normalized_slowdown > MAX_NORMALIZED_SLOWDOWN) {
             failed = 1;
         }
-        printf("%s ... %s (", name, failed ? "[FAILED per-commit cost scales with document]" : "[PASSED]");
+        printf("%s ... %s (", name, failed ? "[FAILED per-commit cost is super-linear in the document]" : "[PASSED]");
         for (step = 0; step < SCALING_STEPS; step++) {
             printf("%s%zu bytes: %.9fs/commit", step ? ", " : "", CC_SESSION_SIZES[step], timings[step]);
         }

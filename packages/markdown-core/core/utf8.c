@@ -46,7 +46,9 @@ static int utf8proc_charlen(const uint8_t *str, markdown_core_bufsize str_len) {
     return length;
 }
 
-// Validate a single UTF-8 character according to RFC 3629.
+// Decodes one UTF-8 character and returns its length. It does not validate:
+// UTF-8 is assumed (incremental-canonical-ast.md 7.1), and the function that
+// did validate, utf8proc_valid, is deleted.
 int markdown_core_utf8proc_iterate(const uint8_t *str, markdown_core_bufsize str_len, int32_t *dst) {
     int length;
     int32_t uc = -1;

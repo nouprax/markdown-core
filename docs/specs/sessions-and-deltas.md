@@ -33,8 +33,8 @@ Commit {
 ```
 
 `Commit.document` is the complete correctness result and is immediately
-self-contained: it stays readable after later commits and after the session
-closes, with no materialization step. `Commit.delta` describes what changed
+self-contained: it stays readable after the session closes, with no
+materialization step. `Commit.delta` describes what changed
 between the session's previously published document and this one. A consumer
 may discard every delta and re-derive from `Commit.document`; the three
 integration paths are `incremental-canonical-ast.md` §2.1, and a binding must
@@ -135,7 +135,7 @@ Document.references(MarkupID) -> [MarkupID]
 ```
 
 They are members of the document and not of the session, because a retained
-document must answer them after later commits and after the session closes.
+document must answer them after the session closes.
 The query resolves through that document's own immutable relation indexes; it
 never consults a newer session revision.
 

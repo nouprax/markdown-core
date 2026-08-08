@@ -205,7 +205,7 @@ surfaces.
 | --- | --- |
 | The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, and unchanged subtrees the core reuses rather than rebuilds — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
-| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after later commits and session close |
+| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after session close |
 | One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
@@ -339,8 +339,9 @@ inherits and must not throw away.
   false negatives.
 - **Instance reuse.** The core reuses an unchanged subtree rather than
   rebuilding it, so the next document holds the same node, not merely an equal
-  one. This is what makes the structural sharing below a memory fact rather
-  than a hope, and it is stated of the core because that is where it is true.
+  one. It is stated of the core because that is where it is true, and it is
+  here because path B reads it: a consumer walking `diffs` skips an unchanged
+  subtree on the two-word comparison of 11.3 alone.
 
   It is deliberately *not* required of a binding's node views. In Swift an
   idiomatic view is a `struct`, and a value type has no identity to compare —
@@ -354,13 +355,12 @@ inherits and must not throw away.
   which behaves identically for a `struct`, a `data class`, and a JavaScript
   object. A binding whose views are references may offer identity as an extra
   one-word check; none is obliged to.
-- **Structural sharing.** Adjacent documents share every unchanged node, so
-  retaining the previous document to diff against costs the changed frontier,
-  not a second tree.
-
-The last two also serve path B: a consumer walking `diffs` can skip an
-unchanged subtree on the two-word comparison alone, and retaining the old
-document to compare against is cheap.
+A fourth property stood here — **structural sharing**, that adjacent documents
+share every unchanged node so retaining the previous one costs the changed
+frontier and not a second tree — and it is removed. Instance reuse above states
+the same fact of the core; what structural sharing added was its payoff, and
+that payoff was the cheap retained predecessor 4.2 removed. A session hands out
+one document, reused in place, so there is no predecessor to hold.
 
 The cost of the path-A diff is stated in 11.3. It is not `O(changed)` — no
 top-down value diff can be — but every comparison it performs is `O(1)`, and a
@@ -720,10 +720,10 @@ DocumentVersion {
 ```
 
 A `DocumentDomain` is the scope that node identities and revisions live in. It
-is unique to one document lineage and includes the schema, source profile,
-parse options, and source profile that can affect AST truth. Changing
-one of those inputs starts a fresh domain; it is not an ordinary same-lineage
-update.
+is unique to one document lineage and includes the schema and the parse
+options that can affect AST truth. Changing one of those inputs starts a fresh
+domain; it is not an ordinary same-lineage update. `SourceProfile` used to be
+named here — twice, by an old typo — and it is gone with the type (7.1).
 
 A domain is opaque and is only ever compared for equality. A consumer never
 constructs or inspects one.
@@ -1025,8 +1025,7 @@ Their record types and answer types are defined in `sessions-and-deltas.md`,
 which section 16 requires to move from the current session scope to this
 contract's immutable published-document ownership. A one-shot document and an
 incrementally committed document must expose the same answers, and a retained
-old `Document` must keep answering its old values after later commits and
-session close (4.2). Each parser-owned site has a stable typed identity.
+`Document` must keep answering its own values after its session closes (4.2). Each parser-owned site has a stable typed identity.
 Negative results are explicit immutable values so a later definition
 insertion can be discovered without pretending "nothing was read."
 
@@ -1122,10 +1121,8 @@ Whatever index makes 7.2 resolve is private storage, not a member of `Source`:
 the capability is public, the structure is not (2). 7.2 no longer names one,
 and no longer states a bound over it.
 
-The source owns the exact committed stored bytes, including bytes that are not
-valid UTF-8 when the selected source profile permits them. Canonical Markdown
-decoding and recovery are deterministic functions of those bytes and the
-frozen profile.
+The source owns the exact committed stored bytes. Canonical Markdown decoding
+and recovery are deterministic functions of those bytes and nothing else.
 
 **UTF-8 IS ASSUMED AND NEVER VALIDATED.** It is an obligation of the caller,
 not a precondition this engine enforces. The engine does not scan the input,
@@ -1176,7 +1173,7 @@ edits leave the bytes unchanged is a no-op that reuses the current document
 
 An edit that changes bytes without changing the canonical AST — trailing
 whitespace, for instance — therefore advances `DocumentVersion` and produces
-an empty `diffs`. Old documents retain their exact old bytes.
+an empty `diffs`.
 
 ### 7.2 Stable extents and lazy coordinates
 
@@ -1294,9 +1291,18 @@ A prefix insertion:
   and
 - **emits no diff entry for any of them**.
 
-The parser must not rewrite every later node, field, or extent merely to store
-new absolute offsets, and must not manufacture diff entries to describe a
-shift. Old documents continue to resolve their old positions exactly.
+The parser must not manufacture diff entries to describe a shift.
+
+A stronger sentence stood here: that the parser must not rewrite every later
+node, field, or extent merely to store new absolute offsets. **That half is
+removed**, because it is a requirement on the WORK and 11.1 now permits the
+work by name — "a commit that walks the document to re-derive what it must
+publish satisfies the frontier requirement exactly; it costs a walk". A
+suffix walk that re-derives every later node's stored offsets satisfies every
+bullet above it, because position is not a component of `proj` (9.1) and the
+shift therefore emits nothing. Whether such a walk is fast enough is a
+measurement. What survives is the list above and the second must-not: what a
+consumer OBSERVES.
 
 A consumer that has chosen to materialize absolute coordinates into its own
 state remaps them from `Delta.edits` (section 9.2) — the normalized form
@@ -1329,17 +1335,16 @@ Session {
 ```
 
 `span` is a half-open run of *stored bytes* in the session's current pending
-source. It is not a `Scope`: a scope is a revision-relative,
-profile-dependent query result resolved against a published document, and an
-edit must name storage in the pending one. The two stay distinct types so a
+source. It is not a `Scope`: a scope is a revision-relative query result resolved
+against a published document, and an edit must name storage in the pending
+one. The two stay distinct types so a
 resolved scope cannot be fed back in as an edit, and `Span` is built from
 `Offset` rather than `EncodedOffset` so a projected coordinate cannot be
 either (7.2).
 
-Byte granularity is also what lets a
-streamed chunk deliver the first half of a multi-byte character and a later
-chunk complete it (8.2), and it is the only space that stays well defined
-which is not valid UTF-8 (7.1).
+Byte granularity is also what lets a streamed chunk deliver the first half of
+a multi-byte character and a later chunk complete it (8.2) — a boundary a
+coordinate space counted in scalars cannot name at all.
 
 Edits name the current pending source coordinate space. A binding may expose
 single-edit and batch conveniences, but they normalize to one deterministic
@@ -1955,8 +1960,8 @@ slice, or `Delta`.
 
 Routine private storage compaction preserves every public identity, revision,
 and AST value, and emits no diff entry. It is not a semantic commit.
-Cross-domain import or profile/schema change produces a fresh document
-stream; a consumer detects it by the `before` comparison of section 9.6 and
+Cross-domain import or a schema or parse-option change produces a fresh
+document stream; a consumer detects it by the `before` comparison of section 9.6 and
 rebuilds.
 
 ## 13. Fresh-parse and chunk equivalence
@@ -2001,8 +2006,8 @@ identity rules, or the diff list.
    route/interest/target/contract/acknowledgement types, and compatibility
    accessors.
 4. There is no reactive/mirror AST, alternate root, or second field truth.
-5. Retained documents remain readable after later commits and session close,
-   with no materialization step.
+5. Retained documents remain readable after session close, with no
+   materialization step.
 6. `Delta` has exactly the four members of section 9, `Diff` has exactly
    two, and `DiffPart` has exactly six variants. Audits reject a lifecycle
    tag, a parent member, a position member, a per-field address, a schema
@@ -2060,8 +2065,7 @@ identity rules, or the diff list.
 
 ### 14.3 Source and storage gates
 
-1. Arbitrary legal stored-byte edits remain fresh-parse equivalent under the
-   frozen decode/recovery profile.
+1. Arbitrary legal stored-byte edits remain fresh-parse equivalent.
 2. Stored-byte, scalar, UTF-16, line/column, and binding-native projections
    resolve exactly on the published document.
 3. `Document.scope` answers exactly on a pinned large document, and a prefix
@@ -2090,11 +2094,9 @@ For each binding, against a pinned document and an adjacent commit:
 4. A top-down value diff of the two documents reports exactly the nodes whose
    subtree projection differs — no false negatives against a fresh comparison,
    and no descent into a subtree whose root compared equal.
-5. Retaining the previous document to diff against costs the changed frontier
-   in additional live memory, not a second tree.
-6. A virtualized container holding `V` visible rows performs `O(V)`
+5. A virtualized container holding `V` visible rows performs `O(V)`
    comparisons per commit, independent of document size.
-7. A commit on one session produces no commit, no delta, and no changed value
+6. A commit on one session produces no commit, no delta, and no changed value
    in any other session's document. A host document holding an `Embed`
    occurrence is reference-identical across any number of target commits, so
    nothing in the host can invalidate a view (3.1).
@@ -2178,12 +2180,12 @@ rather than reported has moved to 11.1, beside the frontier it belongs to:
 allocations and zero CST walks on ordinary access. Benchmarks stay; they are
 measurements, and a measurement that no clause reads is a number, not a gate.
 
-### 14.7 Streaming gates
+### 14.8 Streaming gates
 
 1. Run human typing, paste, IME, remote, and LLM chunk traces through only
    ordinary byte edits and `commit`.
 2. Randomize chunk boundaries and commit cadence, including boundaries that
-   fall inside a multi-byte character, under both source profiles. Every such
+   fall inside a multi-byte character. Every such
    commit succeeds, and the trace is also run to completion *without* the
    completing chunk, since a stream may simply stop there (7.1).
 3. Compare every final document with a fresh parse — including a final

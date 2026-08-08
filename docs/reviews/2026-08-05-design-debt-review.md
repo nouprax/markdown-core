@@ -1,5 +1,16 @@
 # Design-debt review — coordinate spaces and the delimiter engine's chains
 
+> **PARTLY SUPERSEDED — 2026-08-07.** This review's cure for the dual
+> coordinate space is "M3 therefore eliminates the dual space from everything
+> that persists: extent identities become the stored truth", and it quotes
+> §7.2's "a domain-qualified ordinal over the aggregate sequence" — a phrase
+> the contract no longer contains. §7.2's mechanism prescription was removed
+> on 2026-08-07 and the landing that implemented it was reverted; see
+> [`2026-08-07-requirement-audit.md`](2026-08-07-requirement-audit.md). The
+> DIAGNOSIS — that two coordinate spaces are maintained per node and that this
+> is where the fix friction came from — is not superseded, and neither is the
+> delimiter-chain half. Only the cure and its action register are.
+
 Date: 2026-08-05. Base: `main` at `9af16c9` (the merge of #92, closing M2.5).
 
 Provenance: this review was triggered by the review round of the #90–#92
