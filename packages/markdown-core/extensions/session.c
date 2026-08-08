@@ -181,7 +181,9 @@ static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, mar
 // --- parsing ----------------------------------------------------------------
 
 static int native_options_from(const markdown_core_parse_options *options) {
-    int native_options = MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    /* UTF-8 is assumed and never validated (7.1); nothing is switched on
+     * here to check it. */
+    int native_options = 0;
     if (options->smart_punctuation) {
         native_options |= MARKDOWN_CORE_OPT_SMART;
     }

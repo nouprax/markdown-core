@@ -501,10 +501,12 @@ markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t
  * ### Options affecting parsing
  */
 
-/** Validate UTF-8 in the input before parsing, replacing illegal
- * sequences with the replacement character U+FFFD.
- */
-#define MARKDOWN_CORE_OPT_VALIDATE_UTF8 (1 << 9)
+/* (1 << 9) was MARKDOWN_CORE_OPT_VALIDATE_UTF8, which replaced every byte
+ * sequence that was not valid UTF-8 with U+FFFD. UTF-8 is assumed and never
+ * validated (incremental-canonical-ast.md 7.1): validating means rejecting,
+ * which is not this engine's policy to set, and replacing means a lossy parse,
+ * which produces a different document rather than a degraded one. The bit is
+ * left unused rather than reassigned, because callers pass these by value. */
 
 /** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
  */

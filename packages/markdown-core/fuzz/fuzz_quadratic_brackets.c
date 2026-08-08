@@ -32,8 +32,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
 
         /* Test options that are used by GitHub. */
-        fuzz_config.options =
-            MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+        fuzz_config.options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES;
         fuzz_config.openlen = fuzz_config.openlen & 0x7;
         fuzz_config.middlelen = fuzz_config.middlelen & 0x7;
         fuzz_config.closelen = fuzz_config.closelen & 0x7;

@@ -641,18 +641,15 @@ static int case_strict_boundary(void) {
             fprintf(stderr, "strict_boundary: truncated-tail document failed to parse (14.3.6 row 1)\n");
             failed = 1;
         } else {
-            /* The canonical dump prints text content verbatim, so the
-             * replacement character shows up in it byte-for-byte. */
-            uint8_t *dump = NULL;
-            size_t dump_length = 0;
-            if (!markdown_core_document_dump(document, &dump, &dump_length, NULL) || dump_length == 0 ||
-                !sr_contains(dump, dump_length, "\xEF\xBF\xBD", 3)) {
-                fprintf(stderr, "strict_boundary: truncated tail did not decode to U+FFFD (14.3.6 row 1)\n");
-                failed = 1;
-            }
-            markdown_core_dump_free(dump);
             markdown_core_document_free(document);
         }
+        /* What the tail DECODES to is no longer asserted here. It used to be
+         * U+FFFD, and that was the parser's per-line replacement answering — a
+         * lossy step this engine no longer takes. UTF-8 is assumed and never
+         * validated (7.1), so the bytes reach the document as authored. What
+         * this row still states is the property the boundary is about: a
+         * truncated final code point COMMITS, and the document stays readable
+         * without waiting for bytes that may never arrive. */
         free(bytes);
         markdown_core_source_release(published);
     }

@@ -2250,11 +2250,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     markdown_core_strbuf_clear(&parser->curline);
 
-    if (parser->options & MARKDOWN_CORE_OPT_VALIDATE_UTF8) {
-        markdown_core_utf8proc_check(&parser->curline, buffer, bytes);
-    } else {
-        markdown_core_strbuf_put(&parser->curline, buffer, bytes);
-    }
+    /* The line's bytes, as authored. UTF-8 is ASSUMED AND NEVER VALIDATED
+     * (incremental-canonical-ast.md 7.1): there is no scan here, nothing is
+     * replaced, and a sequence that is not UTF-8 is opaque payload this engine
+     * carries and never interprets. The pass that used to sit here rewrote
+     * such a sequence as U+FFFD, which is a lossy parse — it produces not a
+     * degraded document but a different one. */
+    markdown_core_strbuf_put(&parser->curline, buffer, bytes);
 
     bytes = parser->curline.size;
 

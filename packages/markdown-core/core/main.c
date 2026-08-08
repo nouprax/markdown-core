@@ -93,8 +93,7 @@ int main(int argc, char *argv[]) {
     markdown_core_parser *parser = NULL;
     size_t bytes;
     markdown_core_node *document = NULL;
-    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE |
-                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
     bool gfm_profile = false;
     int res = 1;
 
@@ -127,12 +126,12 @@ int main(int argc, char *argv[]) {
             i++;
             if (strcmp(argv[i], "gfm") == 0) {
                 gfm_profile = true;
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "gfm-smart") == 0) {
                 gfm_profile = true;
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_SMART;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
             } else if (strcmp(argv[i], "gfm-extended") == 0) {
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_DIRECTIVE;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
             } else if (strcmp(argv[i], "default") != 0) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;

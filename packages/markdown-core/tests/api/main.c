@@ -81,7 +81,7 @@ static markdown_core_node *parse_with_directive_extension(const char *markdown);
 
 static void test_content(test_batch_runner *runner, markdown_core_node_type type, unsigned int *allowed_content);
 
-static void test_char(test_batch_runner *runner, int valid, const char *utf8, const char *msg);
+static void test_char(test_batch_runner *runner, const char *utf8, const char *msg);
 
 static void test_incomplete_char(test_batch_runner *runner, const char *utf8, const char *msg);
 
@@ -1101,28 +1101,28 @@ static void parser(test_batch_runner *runner) {
 
 static void utf8(test_batch_runner *runner) {
     // Ranges
-    test_char(runner, 1, "\x01", "valid utf8 01");
-    test_char(runner, 1, "\x7F", "valid utf8 7F");
-    test_char(runner, 0, "\x80", "invalid utf8 80");
-    test_char(runner, 0, "\xBF", "invalid utf8 BF");
-    test_char(runner, 0, "\xC0\x80", "invalid utf8 C080");
-    test_char(runner, 0, "\xC1\xBF", "invalid utf8 C1BF");
-    test_char(runner, 1, "\xC2\x80", "valid utf8 C280");
-    test_char(runner, 1, "\xDF\xBF", "valid utf8 DFBF");
-    test_char(runner, 0, "\xE0\x80\x80", "invalid utf8 E08080");
-    test_char(runner, 0, "\xE0\x9F\xBF", "invalid utf8 E09FBF");
-    test_char(runner, 1, "\xE0\xA0\x80", "valid utf8 E0A080");
-    test_char(runner, 1, "\xED\x9F\xBF", "valid utf8 ED9FBF");
-    test_char(runner, 0, "\xED\xA0\x80", "invalid utf8 EDA080");
-    test_char(runner, 0, "\xED\xBF\xBF", "invalid utf8 EDBFBF");
-    test_char(runner, 0, "\xF0\x80\x80\x80", "invalid utf8 F0808080");
-    test_char(runner, 0, "\xF0\x8F\xBF\xBF", "invalid utf8 F08FBFBF");
-    test_char(runner, 1, "\xF0\x90\x80\x80", "valid utf8 F0908080");
-    test_char(runner, 1, "\xF4\x8F\xBF\xBF", "valid utf8 F48FBFBF");
-    test_char(runner, 0, "\xF4\x90\x80\x80", "invalid utf8 F4908080");
-    test_char(runner, 0, "\xF7\xBF\xBF\xBF", "invalid utf8 F7BFBFBF");
-    test_char(runner, 0, "\xF8", "invalid utf8 F8");
-    test_char(runner, 0, "\xFF", "invalid utf8 FF");
+    test_char(runner, "\x01", "valid utf8 01");
+    test_char(runner, "\x7F", "valid utf8 7F");
+    test_char(runner, "\x80", "invalid utf8 80");
+    test_char(runner, "\xBF", "invalid utf8 BF");
+    test_char(runner, "\xC0\x80", "invalid utf8 C080");
+    test_char(runner, "\xC1\xBF", "invalid utf8 C1BF");
+    test_char(runner, "\xC2\x80", "valid utf8 C280");
+    test_char(runner, "\xDF\xBF", "valid utf8 DFBF");
+    test_char(runner, "\xE0\x80\x80", "invalid utf8 E08080");
+    test_char(runner, "\xE0\x9F\xBF", "invalid utf8 E09FBF");
+    test_char(runner, "\xE0\xA0\x80", "valid utf8 E0A080");
+    test_char(runner, "\xED\x9F\xBF", "valid utf8 ED9FBF");
+    test_char(runner, "\xED\xA0\x80", "invalid utf8 EDA080");
+    test_char(runner, "\xED\xBF\xBF", "invalid utf8 EDBFBF");
+    test_char(runner, "\xF0\x80\x80\x80", "invalid utf8 F0808080");
+    test_char(runner, "\xF0\x8F\xBF\xBF", "invalid utf8 F08FBFBF");
+    test_char(runner, "\xF0\x90\x80\x80", "valid utf8 F0908080");
+    test_char(runner, "\xF4\x8F\xBF\xBF", "valid utf8 F48FBFBF");
+    test_char(runner, "\xF4\x90\x80\x80", "invalid utf8 F4908080");
+    test_char(runner, "\xF7\xBF\xBF\xBF", "invalid utf8 F7BFBFBF");
+    test_char(runner, "\xF8", "invalid utf8 F8");
+    test_char(runner, "\xFF", "invalid utf8 FF");
 
     // Incomplete byte sequences at end of input
     test_incomplete_char(runner, "\xE0\xA0", "invalid utf8 E0A0");
@@ -1170,23 +1170,28 @@ static void utf8(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-static void test_char(test_batch_runner *runner, int valid, const char *utf8, const char *msg) {
+/* THE BYTES SURVIVE, whatever they are.
+ *
+ * These three used to assert the opposite: that a sequence which is not valid
+ * UTF-8 comes back as U+FFFD. UTF-8 is assumed and never validated
+ * (incremental-canonical-ast.md 7.1) — validating would mean rejecting, which
+ * is not this engine's policy to set, and replacing means a lossy parse, which
+ * produces a different document rather than a degraded one. So the assertion
+ * inverts: the input is what comes back, byte for byte, and there is no longer
+ * a valid case and an invalid case to tell apart.
+ *
+ * This is the losslessness gate. Nothing else in the suite states it, and
+ * neither external parity oracle can: both feed UTF-8 only. */
+static void test_char(test_batch_runner *runner, const char *utf8, const char *msg) {
     char buf[20];
     snprintf(buf, sizeof(buf), "((((%s))))", utf8);
-
-    if (valid) {
-        char expected[30];
-        snprintf(expected, sizeof(expected), "((((%s))))", utf8);
-        test_md_paragraph_text(runner, buf, expected, msg);
-    } else {
-        test_md_paragraph_text(runner, buf, "((((" UTF8_REPL "))))", msg);
-    }
+    test_md_paragraph_text(runner, buf, buf, msg);
 }
 
 static void test_incomplete_char(test_batch_runner *runner, const char *utf8, const char *msg) {
     char buf[20];
     snprintf(buf, sizeof(buf), "----%s", utf8);
-    test_md_paragraph_text(runner, buf, "----" UTF8_REPL, msg);
+    test_md_paragraph_text(runner, buf, buf, msg);
 }
 
 static void test_continuation_byte(test_batch_runner *runner, const char *utf8) {
@@ -1194,19 +1199,11 @@ static void test_continuation_byte(test_batch_runner *runner, const char *utf8) 
 
     for (size_t pos = 1; pos < len; ++pos) {
         char buf[20];
+        char msg[80];
         snprintf(buf, sizeof(buf), "((((%s))))", utf8);
         buf[4 + pos] = '\x20';
-
-        char expected[50];
-        strcpy(expected, "((((" UTF8_REPL "\x20");
-        for (size_t i = pos + 1; i < len; ++i) {
-            strcat(expected, UTF8_REPL);
-        }
-        strcat(expected, "))))");
-
-        char msg[80];
-        snprintf(msg, sizeof(msg), "invalid utf8 continuation byte %zu/%zu", pos, len);
-        test_md_paragraph_text(runner, buf, expected, msg);
+        snprintf(msg, sizeof(msg), "utf8 continuation byte %zu/%zu survives", pos, len);
+        test_md_paragraph_text(runner, buf, buf, msg);
     }
 }
 
@@ -1424,14 +1421,7 @@ static void test_md_paragraph_text(
     const char *expected_text,
     const char *msg
 ) {
-    test_md_paragraph_text_options(
-        runner,
-        markdown,
-        strlen(markdown),
-        MARKDOWN_CORE_OPT_VALIDATE_UTF8,
-        expected_text,
-        msg
-    );
+    test_md_paragraph_text_options(runner, markdown, strlen(markdown), 0, expected_text, msg);
 }
 
 static void test_feed_across_line_ending(test_batch_runner *runner) {
@@ -1474,8 +1464,7 @@ static void test_pathological_regressions(test_batch_runner *runner) {
         }
 
         START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+        markdown_core_node *doc = markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, 0);
         END_TIMING();
         markdown_core_node_free(doc);
         free(input);
@@ -1491,8 +1480,7 @@ static void test_pathological_regressions(test_batch_runner *runner) {
         }
 
         START_TIMING();
-        markdown_core_node *doc =
-            markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+        markdown_core_node *doc = markdown_core_node_parse_document(input, (sizeof(path) - 1) * 50000, 0);
         END_TIMING();
         markdown_core_node_free(doc);
         free(input);

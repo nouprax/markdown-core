@@ -72,7 +72,7 @@ static int dump_permutation(const size_t order[DELIMITER_EXTENSION_COUNT], uint8
     size_t i;
     int ok;
 
-    parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_VALIDATE_UTF8);
+    parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DIRECTIVE);
     if (!parser) {
         fputs("could not allocate parser\n", stderr);
         return 0;
