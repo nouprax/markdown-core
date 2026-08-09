@@ -2961,6 +2961,25 @@ static bool incremental_install_and_refresh(incremental_pipeline *pipeline) {
         incremental_rollback_splice(pipeline);
         return false;
     }
+
+    // Re-reserve the adopt-time bubble ids. incremental_adopt reserved room
+    // for `bubble_count` before the footnote diff ran, but a reservation is
+    // relative to the array's count at the time it is made, and
+    // footnote_refresh has since pushed its OWN bubbled ids into the same
+    // array — consuming exactly the headroom adopt paid for. The push loop in
+    // incremental_finalize_identity_indexes sits after the point of no return
+    // and asserts the room is there; measured, it is not, on ordinary input.
+    //
+    // This is the last place a failure can still roll back, and the rollback
+    // is the one footnote_refresh's own failure already takes. The call is a
+    // no-op whenever the array is already large enough, which is the common
+    // case; it allocates only where the old code would have overrun.
+    if (pipeline->changes && pipeline->bubble_count &&
+        !markdown_core_id_array_reserve(&pipeline->changes->bubbled, pipeline->bubble_count)) {
+        pipeline->result = MARKDOWN_CORE_INCREMENTAL_FAILED;
+        incremental_rollback_splice(pipeline);
+        return false;
+    }
     return true;
 }
 
