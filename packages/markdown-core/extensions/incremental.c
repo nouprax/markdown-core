@@ -1559,6 +1559,7 @@ static markdown_core_incremental_result footnote_refresh(
     size_t dependent_count,
     uint64_t new_rev,
     markdown_core_delta *changes,
+    size_t owed_bubbled,
     markdown_core_footnote_index *out_index,
     bool *out_built
 ) {
@@ -1774,7 +1775,7 @@ static markdown_core_incremental_result footnote_refresh(
     if (result == MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
         result = MARKDOWN_CORE_INCREMENTAL_FAILED;
         if (markdown_core_footnote_index_build_sites(mem, &def_sites, &ref_sites, out_index)) {
-            if (markdown_core_footnote_index_diff(mem, fn, out_index, new_rev, changes)) {
+            if (markdown_core_footnote_index_diff(mem, fn, out_index, new_rev, changes, owed_bubbled)) {
                 *out_built = true;
                 result = MARKDOWN_CORE_INCREMENTAL_COMMITTED;
             } else {
@@ -2953,30 +2954,12 @@ static bool incremental_install_and_refresh(incremental_pipeline *pipeline) {
         pipeline->dependent_count,
         pipeline->new_rev,
         pipeline->changes,
+        pipeline->bubble_count,
         &pipeline->footnotes,
         &pipeline->footnotes_built
     );
     if (refreshed != MARKDOWN_CORE_INCREMENTAL_COMMITTED) {
         pipeline->result = refreshed;
-        incremental_rollback_splice(pipeline);
-        return false;
-    }
-
-    // Re-reserve the adopt-time bubble ids. incremental_adopt reserved room
-    // for `bubble_count` before the footnote diff ran, but a reservation is
-    // relative to the array's count at the time it is made, and
-    // footnote_refresh has since pushed its OWN bubbled ids into the same
-    // array — consuming exactly the headroom adopt paid for. The push loop in
-    // incremental_finalize_identity_indexes sits after the point of no return
-    // and asserts the room is there; measured, it is not, on ordinary input.
-    //
-    // This is the last place a failure can still roll back, and the rollback
-    // is the one footnote_refresh's own failure already takes. The call is a
-    // no-op whenever the array is already large enough, which is the common
-    // case; it allocates only where the old code would have overrun.
-    if (pipeline->changes && pipeline->bubble_count &&
-        !markdown_core_id_array_reserve(&pipeline->changes->bubbled, pipeline->bubble_count)) {
-        pipeline->result = MARKDOWN_CORE_INCREMENTAL_FAILED;
         incremental_rollback_splice(pipeline);
         return false;
     }

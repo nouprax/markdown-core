@@ -639,7 +639,8 @@ bool markdown_core_footnote_index_diff(
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
     uint64_t new_rev,
-    markdown_core_delta *changes
+    markdown_core_delta *changes,
+    size_t owed_bubbled
 ) {
     // Two phases so the diff can run against a session's live tree: phase 1
     // collects the affected nodes without touching them (every allocation
@@ -688,8 +689,16 @@ bool markdown_core_footnote_index_diff(
         }
     }
 
+    // `bubbled` is reserved for this pass PLUS `owed_bubbled` — ids the caller
+    // reserved before calling and has not pushed yet. A reservation is
+    // relative to the array's count when it is made, so pushing here would
+    // otherwise consume exactly the headroom the caller already paid for, and
+    // the caller's push runs after its point of no return, where failing is
+    // not allowed. Covering both here keeps the allocation on this function's
+    // existing failure arm rather than creating a second one somewhere that
+    // has no way to report it.
     if (changes && (!markdown_core_id_array_reserve(&changes->changed, changed.count) ||
-                    !markdown_core_id_array_reserve(&changes->bubbled, bubbled.count))) {
+                    !markdown_core_id_array_reserve(&changes->bubbled, bubbled.count + owed_bubbled))) {
         goto done;
     }
 

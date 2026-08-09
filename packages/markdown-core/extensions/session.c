@@ -523,7 +523,7 @@ static bool commit_full(
     memset(&footnotes, 0, sizeof(footnotes));
     if (!session->one_shot && session->options.footnotes &&
         (!markdown_core_footnote_index_build(session, root, &footnotes) ||
-         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes))) {
+         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes, 0))) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
         release_lookup_tables(session->mem, lookups);
         release_definition_tables(session->mem, staged);

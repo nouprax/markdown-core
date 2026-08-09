@@ -525,7 +525,8 @@ bool markdown_core_footnote_index_diff(
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
     uint64_t new_rev,
-    markdown_core_delta *changes
+    markdown_core_delta *changes,
+    size_t owed_bubbled
 );
 
 /** Creates a parser configured with the session's options and extensions.
