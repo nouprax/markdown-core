@@ -308,7 +308,8 @@ if(MARKDOWN_CORE_STATIC)
         reference_fanout_uniform_routing
         restart_locality_counters
         definition_flip_locality
-        edit_locality)
+        edit_locality
+        feed_chunk_seam)
     foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
         markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
     endforeach()

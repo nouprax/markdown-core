@@ -902,10 +902,11 @@ static markdown_core_bufsize scan_attr_name(
     while (pos < len) {
         int32_t code = 0;
         markdown_core_bufsize width = markdown_core_utf8proc_iterate(data + pos, len - pos, &code);
-        /* Bounds guard, not a grammar rule: with UTF-8 validation on — which
-         * every parse path here enables — the buffer holds no invalid
-         * sequence and this cannot fire. It stays because advancing by a
-         * non-positive width would not terminate. */
+        /* Bounds, not validity. `iterate` reports a non-positive width when
+         * the buffer stops inside a character — a truncated final code point,
+         * which 8.2 makes a legal final document — and advancing by it would
+         * not terminate. This is not a guard against input that is not UTF-8;
+         * input is UTF-8 (7.1) and nothing here checks. */
         if (width <= 0) {
             break;
         }

@@ -1163,15 +1163,24 @@ guaranteed degradation, not a documented failure mode, not a supported
 encoding. It is out of scope, and every clause that tried to describe what
 happens to it is void.
 
-**A GATE OVER IT IS VOID FOR THE SAME REASON.** Twenty-two assertions in the
-API suite fed overlong encodings, surrogates and bare continuation bytes and
-pinned what came back; when validation was deleted they were inverted to pin
-byte-for-byte survival instead, and their own comment defended them with
-"nothing else in the suite states it, and neither external parity oracle can."
-That is the argument against them: a gate no requirement states does not
-protect a requirement, it mints one. They are removed. What the engine does
-with arbitrary bytes without CRASHING is a separate, safety-shaped question
-and it belongs to the fuzzers.
+**AND NOTHING IS DONE ABOUT IT — no check, no guard, no gate.** The engine is
+written as though input that is not UTF-8 does not exist, because within this
+contract it does not. Proving it and disproving it are the same mistake: both
+are work spent on a case the contract declines to have. A gate over it is the
+sharpest form — twenty-two API assertions used to pin what an overlong
+encoding came back as, and when validation was deleted they were inverted to
+pin byte-for-byte survival, defended in their own comment by "nothing else in
+the suite states it, and neither external parity oracle can." That is the
+argument against them, not for them: a gate no requirement states does not
+protect a requirement, it mints one. They are removed, and so is the last code
+that branched on validity.
+
+**A truncated final code point is not that case.** A lead byte announcing more
+bytes than the buffer holds is a legal final document (8.2) — a stream may stop
+there — and the code that handles it is handling BUFFER EXHAUSTION, not
+policing UTF-8. The distinction matters in both directions: removing that
+handling on the grounds that "input is UTF-8" would loop forever on input that
+is.
 
 **`SourceProfile` is removed with them.** A source stored bytes under one of
 two profiles, `STRICT_UTF8` or `PERMISSIVE_BYTES`, and the profile selected

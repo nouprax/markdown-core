@@ -3029,6 +3029,112 @@ static int case_edit_locality(void) {
     return 0;
 }
 
+/* A CHUNK BOUNDARY MUST NOT CHANGE THE DOCUMENT (8.2: streaming is ordinary
+ * editing, and there is no finalize step). The feed interface buffers a
+ * partial line across calls, so every split point is a state the parser can
+ * legitimately be handed — including the one that lands BETWEEN a CR and its
+ * LF, where the parser must remember that the previous buffer ended with a
+ * carriage return and not open a second line.
+ *
+ * That seam is not hypothetical. This branch has already been bitten by it
+ * once, in the substrate work, where a cross-run CR completion patched a
+ * unit's length and not its terminator bits.
+ *
+ * `test_feed_across_line_ending` in the api suite asserts the paragraph count
+ * for one such split. This gates the general property — every split of a
+ * CRLF-bearing document reproduces the single-feed tree exactly — and it lives
+ * here rather than there because the api label is not in the coverage preset,
+ * so a gate written there is invisible to the ratchet that is supposed to keep
+ * this path covered. */
+static char *fb_feed_shape(const char *text, size_t length, size_t split) {
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
+    markdown_core_node *document;
+    markdown_core_iter *iter;
+    markdown_core_event_type event;
+    char shape[4096];
+    size_t used = 0;
+    if (!parser) {
+        return NULL;
+    }
+    shape[0] = 0;
+    if (split) {
+        markdown_core_parser_feed(parser, text, split);
+    }
+    if (split < length) {
+        markdown_core_parser_feed(parser, text + split, length - split);
+    }
+    document = markdown_core_parser_finish(parser);
+    markdown_core_parser_free(parser);
+    if (!document) {
+        return NULL;
+    }
+    iter = markdown_core_iter_new(document);
+    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        char line[128];
+        const char *literal;
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        literal = markdown_core_node_get_literal(node);
+        snprintf(
+            line,
+            sizeof(line),
+            "%s|%s\n",
+            markdown_core_node_get_type_string(node),
+            literal ? literal : ""
+        );
+        if (used + strlen(line) + 1 >= sizeof(shape)) {
+            /* The corpus is fixed and small; a truncated shape would compare
+             * equal for the wrong reason, so fail loudly instead. */
+            markdown_core_iter_free(iter);
+            markdown_core_node_free(document);
+            fprintf(stderr, "feed_chunk_seam: shape buffer too small\n");
+            return NULL;
+        }
+        memcpy(shape + used, line, strlen(line) + 1);
+        used += strlen(line);
+    }
+    markdown_core_iter_free(iter);
+    markdown_core_node_free(document);
+    return fb_strdup(shape);
+}
+
+static int case_feed_chunk_seam(void) {
+    static const char TEXT[] = "# head\r\n\r\npara one\r\nlazy two\r\n\r\n- a\r\n- b\r\n\r\n```\r\ncode\r\n```\r\n";
+    const size_t length = sizeof(TEXT) - 1;
+    char *whole = fb_feed_shape(TEXT, length, length);
+    size_t split;
+    int failed = 0;
+
+    if (!whole) {
+        fprintf(stderr, "FAILED: feed_chunk_seam: single-feed parse failed\n");
+        return -1;
+    }
+    for (split = 0; split <= length && !failed; split++) {
+        char *part = fb_feed_shape(TEXT, length, split);
+        if (!part) {
+            fprintf(stderr, "FAILED: feed_chunk_seam: parse failed at split %zu\n", split);
+            failed = 1;
+            break;
+        }
+        if (strcmp(part, whole) != 0) {
+            fprintf(
+                stderr,
+                "FAILED: feed_chunk_seam: split %zu of %zu changes the document\n  one feed: %s  two feeds: %s",
+                split,
+                length,
+                whole,
+                part
+            );
+            failed = 1;
+        }
+        free(part);
+    }
+    free(whole);
+    return failed ? -1 : 0;
+}
+
 typedef struct fb_case_entry {
     const char *name;
     int (*run)(void);
@@ -3056,6 +3162,7 @@ static const fb_case_entry FB_CASES[] = {
     {"restart_locality_counters", case_restart_locality_counters},
     {"definition_flip_locality", case_definition_flip_locality},
     {"edit_locality", case_edit_locality},
+    {"feed_chunk_seam", case_feed_chunk_seam},
 };
 
 int main(int argc, char **argv) {

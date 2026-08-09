@@ -104,19 +104,12 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
         dst[1] = 0x80 + ((uc >> 6) & 0x3F);
         dst[2] = 0x80 + (uc & 0x3F);
         len = 3;
-    } else if (uc < 0x110000) {
+    } else {
         dst[0] = (uint8_t)(0xF0 + (uc >> 18));
         dst[1] = 0x80 + ((uc >> 12) & 0x3F);
         dst[2] = 0x80 + ((uc >> 6) & 0x3F);
         dst[3] = 0x80 + (uc & 0x3F);
         len = 4;
-    } else {
-        /* Not a Unicode scalar. Unreachable from valid input — iterate never
-         * yields one and the fold tables hold only assigned scalars — and
-         * nothing is written rather than a replacement character, because the
-         * contract makes no promise about input that is not UTF-8 (7.1) and a
-         * replacement here would be inventing one. */
-        return;
     }
 
     markdown_core_strbuf_put(buf, dst, len);
@@ -130,18 +123,19 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
     while (len > 0) {
         markdown_core_bufsize char_len = markdown_core_utf8proc_iterate(str, len, &c);
 
-        if (char_len >= 0) {
-#include "case_fold_switch.inc"
-        } else {
-            /* Not UTF-8, so there is nothing to fold and nothing promised
-             * (7.1). The byte passes through and the cursor advances by one:
-             * what this produces is unspecified, but it TERMINATES, which is
-             * the only thing still owed on input the contract does not cover.
-             * Advancing by -char_len instead would trust a length derived from
-             * a sequence that has already been rejected. */
-            markdown_core_strbuf_put(dest, str, 1);
-            char_len = 1;
+        if (char_len <= 0) {
+            /* THE BUFFER STOPS INSIDE A CHARACTER, which is not a statement
+             * about validity: a lead byte announcing more bytes than remain is
+             * a TRUNCATED FINAL CODE POINT, and 8.2 makes that a legal final
+             * document — a stream may simply stop there. There is no complete
+             * character left to fold, so the remainder passes through as it
+             * was written. Nothing here guards against input that is not
+             * UTF-8; input is UTF-8 (7.1). */
+            markdown_core_strbuf_put(dest, str, len);
+            break;
         }
+
+#include "case_fold_switch.inc"
 
         str += char_len;
         len -= char_len;
