@@ -94,8 +94,8 @@ both, and no complexity gate below survives it.
   its concrete child order.** Projecting that edge is proportional to the edge,
   not to the container's token count, which is what 11.1 requires of ordinary
   traversal and what 9.4 requires of `Document.index`; a concrete
-  ordinal is not a `ChildOrdinal`. The persistent sequence 6.2 requires is that
-  typed edge, not the concrete order. Recovering the concrete order by merging
+  ordinal is not a `ChildOrdinal`. The sequence 6.2 names is that typed edge,
+  not the concrete order. Recovering the concrete order by merging
   on those relative offsets — paid only by the `concrete` interface — is the
   expected way to keep both.
 
@@ -203,14 +203,14 @@ surfaces.
 
 | Superseded contract | This contract |
 | --- | --- |
-| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, and unchanged subtrees the core reuses rather than rebuilds — so no binding API may require a delta |
+| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys and `O(1)` equality — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
 | A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after session close |
 | One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
-| The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
+| The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a five-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is a query against stable extents; a position-only shift produces no diff entry at all |
-| Footnote and reference indexes are live-session queries | One `Document` pins persistent semantic relation indexes and derives every answer by `MarkupID` |
+| Footnote and reference indexes are live-session queries | One `Document` owns the semantic relation indexes and derives every answer by `MarkupID` |
 | The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
 
 `canonical-ast.md`, `sessions-and-deltas.md`, public headers, bindings,
@@ -1628,14 +1628,16 @@ is separated from its neighbour by a blank line, so it is a fold over the item
 sequence rather than a reading of the list's own bytes. Two things follow, and
 both are normative. A grandchild edit that flips tightness emits `VALUE` on
 the `List` and not only `DESCENDANT`, which is the one exception to the shape
-14.5.11 otherwise describes. And the fold must be maintained as an aggregate
-on the persistent item sequence — "some item is loose" is a monoid, so it
-rides the `O(log W)` path copy 6.2 already pays — because recomputing it by
-walking the items would make an `O(1)` edit cost `O(W)` and break 14.5.11's
-bound for every list in the document. No other field in the inventory has this
+14.5.11 otherwise describes. An earlier revision also required the fold to be
+maintained as an aggregate on a persistent item sequence, "riding the
+`O(log W)` path copy 6.2 already pays" — **that requirement is removed with
+the path copy it named** (6.2). What the contract requires is the published
+answer: `tight` is correct, and 14.5.11's bound is on what a commit PUBLISHES.
+How the answer is derived is private storage (2), and whether a given
+derivation is fast enough is a measurement (11.1). No other field in the inventory has this
 shape; a future one that does inherits both rules.
 
-`parts` is consequently a six-flag bitmask, a `Diff` is a `MarkupID` plus one
+`parts` is consequently a five-flag bitmask, a `Diff` is a `MarkupID` plus one
 byte, and `diffs` is a flat array with no variable-size records and no
 pointer chasing. The parser always reports every part that differs; filtering
 is a local predicate on data the consumer is already iterating, so there is no
@@ -2046,7 +2048,7 @@ identity rules, or the diff list.
 5. Retained documents remain readable after session close, with no
    materialization step.
 6. `Delta` has exactly the four members of section 9, `Diff` has exactly
-   two, and `DiffPart` has exactly six variants. Audits reject a lifecycle
+   two, and `DiffPart` has exactly five variants. Audits reject a lifecycle
    tag, a parent member, a position member, a per-field address, a schema
    member, a separate ordered-entry API, and any parameterized `DiffPart`.
 7. A document containing embed and cross-link occurrences parses identically
@@ -2258,7 +2260,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Delta` | the difference between two documents, at both of a document's levels | 9 |
 | `Diff` | one node whose projection differs, plus which parts differ | 9 |
 | `DiffPart` | closed vocabulary of which part of a node differs | 9.1 |
-| `DiffParts` | a set of `DiffPart`; a six-flag bitmask | 9.1 |
+| `DiffParts` | a set of `DiffPart`; a five-flag bitmask | 9.1 |
 | `Document` | one immutable parsed unit; the semantic projection's public root | 4 |
 | `DocumentDomain` | the opaque scope that identities and revisions live in | 5.1 |
 | `DocumentVersion` | which published document: `(domain, revision)` | 5.1 |
@@ -2291,7 +2293,7 @@ section of their own because there is nothing more to say about them.
 
 ```text
 ChildOrdinal     = non-negative integer  // position within one child list
-DiffParts        = set of DiffPart       // a six-flag bitmask
+DiffParts        = set of DiffPart       // a five-flag bitmask
 DocumentDomain   = opaque token          // compared for equality, never read
 EncodedOffset    = non-negative integer  // in a projected coordinate space
 ExtentOrdinal    = positive integer      // unique within one domain

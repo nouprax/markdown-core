@@ -303,7 +303,7 @@ Shared platform types, named identically on all three platforms:
 - `Commit` — `{ document, delta }`.
 - `Delta` — `{ before, after, diffs, edits }`. Always present on a platform
   `Commit`; the C-level nullable out-parameter is a C-consumer knob only.
-- `Diff` / `DiffParts` — one identity plus the six-flag bitmask. No registry,
+- `Diff` / `DiffParts` — one identity plus the five-flag bitmask. No registry,
   subscription, interest, route, target, or acknowledgement type may be
   layered around them.
 - `FootnoteAnswer` / `Resolution` — the records above; absent answers are
