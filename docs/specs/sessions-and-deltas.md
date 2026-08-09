@@ -250,12 +250,19 @@ supported boundary.
 
 ## Failure and memory
 
-- Commits are transactional. On allocation failure the session remains valid
-  at the previous committed revision, the error is reported, and `commit()`
-  may be retried from the still-current committed source. An aborted identity
-  or revision is burned, never reused.
-- Pending edits already applied to the pending text are retained: text
-  advances, the tree does not. This is observable and documented.
+- **On allocation failure the commit reports an error and the document it was
+  called on is done.** There is no restoration and no retry: the caller holds
+  the text, so recovery is building a document from it again. An aborted
+  identity or revision is burned, never reused.
+
+  What replaced a transactional-and-retryable promise, and why, is
+  [`../reviews/2026-08-09-api-model-and-allocation-failure.md`](../reviews/2026-08-09-api-model-and-allocation-failure.md).
+  In short: the clause was asserted in one commit with an empty PR body and no
+  consumer ever named; it is not inherited from cmark, which aborts; and it is
+  unreachable through the shipped public surface, because the default allocator
+  aborts and the injecting one is not public. What survives is what the v1
+  contract already required — do not crash, do not leak, report the error, and
+  never let a truncated document masquerade as success.
 - Closing a session invalidates no published document, node view, byte slice,
   or delta.
 - Routine private storage compaction preserves every public identity,

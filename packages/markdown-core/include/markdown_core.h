@@ -379,9 +379,10 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * text, and nothing else is. A streamed append may therefore complete a
  * multi-byte character whose first bytes arrived earlier.
  *
- * Commits are transactional: on failure the session stays valid at its
- * previous revision and the commit may be retried (applied edits are
- * retained — the text advances, the tree does not).
+ * A commit that fails reports the error and ENDS the document it was called
+ * on: it must not be queried, walked, or committed again, only released. The
+ * caller holds the text, so recovery is building a document from it again.
+ * There is no restoration and no retry.
  */
 
 /** Opens an empty session at revision 0. `options == NULL` selects the
