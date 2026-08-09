@@ -639,7 +639,7 @@ typedef enum {
  * Transactional: on FAILED or FALLBACK the committed tree, id table, refmap,
  * footnote index, and geometry are exactly as before the call. Defined in
  * incremental.c. */
-markdown_core_incremental_result markdown_core_document_commit_incremental(
+markdown_core_incremental_result markdown_core_document_edit_incremental(
     markdown_core_document *session,
     uint64_t new_rev,
     markdown_core_delta *changes,

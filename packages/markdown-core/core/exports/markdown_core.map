@@ -40,8 +40,8 @@ MARKDOWN_CORE_1.0 {
     markdown_core_dump_free;
     markdown_core_document_open;
     markdown_core_document_release;
+    markdown_core_document_splice;
     markdown_core_document_edit;
-    markdown_core_document_commit;
     markdown_core_document_revision;
     markdown_core_document_lineage;
     markdown_core_document_length;

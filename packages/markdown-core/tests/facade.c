@@ -291,7 +291,7 @@ static void check_scope_table(void) {
     if (!session) {
         goto done;
     }
-    if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
+    if (!markdown_core_document_splice(session, 0, 0, source, sizeof(source) - 1, &error) ||
         !mc_commit_compat(&session, NULL, &error)) {
         check(0, "scope table session commits");
         goto done;
@@ -398,7 +398,7 @@ static void check_ordered_delta_entries(void) {
     if (!session) {
         goto done;
     }
-    if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
+    if (!markdown_core_document_splice(session, 0, 0, source, sizeof(source) - 1, &error) ||
         !mc_commit_compat(&session, &changes, &error)) {
         check(0, "ordered delta session commits");
         goto done;
@@ -463,7 +463,7 @@ static void check_ordered_delta_entries(void) {
     first = entries[0];
 
     other = markdown_core_document_open(NULL, &error);
-    if (!other || !markdown_core_document_edit(other, 0, 0, source, sizeof(source) - 1, &error) ||
+    if (!other || !markdown_core_document_splice(other, 0, 0, source, sizeof(source) - 1, &error) ||
         !mc_commit_compat(&other, &other_changes, &error)) {
         check(0, "second ordered delta session reaches the same revision");
         goto done;

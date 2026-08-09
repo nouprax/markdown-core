@@ -119,7 +119,7 @@ void sr_replay_close(sr_replay *replay) {
 
 int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
     markdown_core_error *error = NULL;
-    if (!markdown_core_document_edit(replay->session, start, end, bytes, length, &error)) {
+    if (!markdown_core_document_splice(replay->session, start, end, bytes, length, &error)) {
         markdown_core_error_free(error);
         return sr_fail(replay, "session edit failed");
     }
@@ -295,7 +295,7 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     size_t i;
 
     fresh = markdown_core_document_open(replay->options, &error);
-    if (!fresh || !markdown_core_document_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
+    if (!fresh || !markdown_core_document_splice(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
         !mc_commit_compat(&fresh, NULL, &error)) {
         markdown_core_error_free(error);
         sr_fail(replay, "fresh footnote reference session failed");
@@ -656,7 +656,7 @@ bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_
 bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error) {
     markdown_core_commit commit;
     memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_commit(&doc->document, mc_sv(doc->text, doc->length), &commit, error)) {
+    if (!markdown_core_document_edit(&doc->document, mc_sv(doc->text, doc->length), &commit, error)) {
         return false;
     }
     doc->document = commit.document;

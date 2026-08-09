@@ -449,7 +449,7 @@ static int session_stream_once(
     size_t existing = markdown_core_document_length((*session_ref));
 
     if (existing) {
-        if (!markdown_core_document_edit((*session_ref), 0, existing, NULL, 0, &error) ||
+        if (!markdown_core_document_splice((*session_ref), 0, existing, NULL, 0, &error) ||
             !mc_commit_compat(session_ref, NULL, &error)) {
             markdown_core_error_free(error);
             return 1;
@@ -459,7 +459,7 @@ static int session_stream_once(
     size_t length = strlen(input);
     for (size_t offset = 0; offset < length; offset++) {
         markdown_core_delta *changes = NULL;
-        if (!markdown_core_document_edit((*session_ref), offset, offset, (const uint8_t *)input + offset, 1, &error) ||
+        if (!markdown_core_document_splice((*session_ref), offset, offset, (const uint8_t *)input + offset, 1, &error) ||
             !mc_commit_compat(session_ref, &changes, &error)) {
             markdown_core_error_free(error);
             return 1;
@@ -643,7 +643,7 @@ static int case_sessions(void) {
     const char *shared_input = INPUTS[0];
     uint8_t *reference = NULL;
     size_t reference_length = 0;
-    if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
+    if (!markdown_core_document_splice(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
         !mc_commit_compat(&session, NULL, &error) ||
         !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
@@ -684,7 +684,7 @@ static int case_sessions(void) {
     if (!failures) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
+        if (!markdown_core_document_splice(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
             !mc_commit_compat(&session, NULL, &error) ||
             !markdown_core_document_dump(session, &dump, &length, &error)) {
             markdown_core_error_free(error);

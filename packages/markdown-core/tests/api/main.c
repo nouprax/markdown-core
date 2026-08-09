@@ -1764,7 +1764,7 @@ static void session_streaming_equivalence(test_batch_runner *runner) {
 
     /* Byte-at-a-time token stream with a commit after every byte. */
     for (offset = 0; offset < length; offset++) {
-        if (!markdown_core_document_edit(
+        if (!markdown_core_document_splice(
                 session,
                 offset,
                 offset,
@@ -1812,7 +1812,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
         return;
     }
 
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)part_one, strlen(part_one), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)part_one, strlen(part_one), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "first commit succeeds");
 
     {
@@ -1830,7 +1830,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
         OK(runner, markdown_core_node_get_parent(heading) == root, "node_get_parent reaches the root");
     }
 
-    markdown_core_document_edit(
+    markdown_core_document_splice(
         session,
         markdown_core_document_length(session),
         markdown_core_document_length(session),
@@ -1934,7 +1934,7 @@ static void session_suffix_id_stability(test_batch_runner *runner) {
     if (!session) {
         return;
     }
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "suffix baseline commit succeeds");
 
     {
@@ -1949,7 +1949,7 @@ static void session_suffix_id_stability(test_batch_runner *runner) {
     }
 
     /* Replace "one" (bytes 5..8) with "1!" — only the first paragraph. */
-    markdown_core_document_edit(session, 5, 8, (const uint8_t *)"1!", 2, &error);
+    markdown_core_document_splice(session, 5, 8, (const uint8_t *)"1!", 2, &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "mid-document edit commit succeeds");
 
     {
@@ -1983,9 +1983,9 @@ static void session_utf8_split_append(test_batch_runner *runner) {
     OK(runner, session != NULL && expected != NULL, "utf8-split session and reference exist");
     if (session && expected) {
         char *streamed;
-        markdown_core_document_edit(session, 0, 0, euro_doc, 3, &error); /* 'p', ' ', 0xE2 */
+        markdown_core_document_splice(session, 0, 0, euro_doc, 3, &error); /* 'p', ' ', 0xE2 */
         OK(runner, mc_commit_compat(&session, NULL, &error), "commit with a dangling lead byte succeeds");
-        markdown_core_document_edit(session, 3, 3, euro_doc + 3, 3, &error);
+        markdown_core_document_splice(session, 3, 3, euro_doc + 3, 3, &error);
         OK(runner, mc_commit_compat(&session, NULL, &error), "completing commit succeeds");
         streamed = dump_document_cstr(session);
         if (streamed) {
@@ -2016,7 +2016,7 @@ static void session_edit_errors(test_batch_runner *runner) {
         OK(runner, markdown_core_node_get_id(root) != 0, "fresh root already has an id");
     }
 
-    OK(runner, !markdown_core_document_edit(session, 5, 2, NULL, 0, &error), "inverted range is rejected");
+    OK(runner, !markdown_core_document_splice(session, 5, 2, NULL, 0, &error), "inverted range is rejected");
     INT_EQ(
         runner,
         (int)markdown_core_error_get_code(error),
@@ -2026,11 +2026,11 @@ static void session_edit_errors(test_batch_runner *runner) {
     markdown_core_error_free(error);
     error = NULL;
 
-    OK(runner, !markdown_core_document_edit(session, 0, 1, NULL, 0, &error), "out-of-range end is rejected");
+    OK(runner, !markdown_core_document_splice(session, 0, 1, NULL, 0, &error), "out-of-range end is rejected");
     markdown_core_error_free(error);
     error = NULL;
 
-    OK(runner, !markdown_core_document_edit(session, 0, 0, NULL, 3, &error), "null bytes with length are rejected");
+    OK(runner, !markdown_core_document_splice(session, 0, 0, NULL, 3, &error), "null bytes with length are rejected");
     markdown_core_error_free(error);
     error = NULL;
 
@@ -2042,7 +2042,7 @@ static void session_edit_errors(test_batch_runner *runner) {
      * of it, which is what makes it worth pinning separately from the case
      * below. */
     OK(runner,
-       !markdown_core_document_edit(session, 0, 0, (const uint8_t *)"y", (size_t)-1, &error),
+       !markdown_core_document_splice(session, 0, 0, (const uint8_t *)"y", (size_t)-1, &error),
        "overflowing edit length on an empty session is rejected");
     markdown_core_error_free(error);
     error = NULL;
@@ -2050,9 +2050,9 @@ static void session_edit_errors(test_batch_runner *runner) {
 
     /* An edit whose total length would overflow size_t must fail cleanly
      * before any byte of the (impossible) source buffer is read. */
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)"x", 1, &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)"x", 1, &error);
     OK(runner,
-       !markdown_core_document_edit(session, 1, 1, (const uint8_t *)"y", (size_t)-1, &error),
+       !markdown_core_document_splice(session, 1, 1, (const uint8_t *)"y", (size_t)-1, &error),
        "overflowing edit length is rejected");
     markdown_core_error_free(error);
     error = NULL;
@@ -2061,7 +2061,7 @@ static void session_edit_errors(test_batch_runner *runner) {
     /* And with the whole document named for deletion, so nothing is retained
      * and the replacement alone would become the new source. */
     OK(runner,
-       !markdown_core_document_edit(session, 0, 1, (const uint8_t *)"y", (size_t)-1, &error),
+       !markdown_core_document_splice(session, 0, 1, (const uint8_t *)"y", (size_t)-1, &error),
        "overflowing edit length replacing the whole document is rejected");
     markdown_core_error_free(error);
     error = NULL;
@@ -2135,7 +2135,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
         return;
     }
     OK(runner,
-       markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) &&
+       markdown_core_document_splice(session, 0, 0, source, sizeof(source) - 1, &error) &&
            mc_commit_compat(&session, NULL, &error),
        "directive delta baseline commits");
     {
@@ -2152,7 +2152,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
     }
 
     OK(runner,
-       markdown_core_document_edit(session, 4, 5, &replacement, 1, &error) &&
+       markdown_core_document_splice(session, 4, 5, &replacement, 1, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "directive label literal edit commits");
     count = markdown_core_delta_changed(changes, &ids);
@@ -2168,7 +2168,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
     changes = NULL;
 
     OK(runner,
-       markdown_core_document_edit(session, 0, sizeof(source) - 1, reshaped, sizeof(reshaped) - 1, &error) &&
+       markdown_core_document_splice(session, 0, sizeof(source) - 1, reshaped, sizeof(reshaped) - 1, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "directive label topology edit commits");
     OK(runner,
@@ -2203,7 +2203,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
         return;
     }
     OK(runner,
-       markdown_core_document_edit(session, 0, 0, inline_source, sizeof(inline_source) - 1, &error) &&
+       markdown_core_document_splice(session, 0, 0, inline_source, sizeof(inline_source) - 1, &error) &&
            mc_commit_compat(&session, NULL, &error),
        "inline absent-label baseline commits");
     {
@@ -2217,7 +2217,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     }
 
     OK(runner,
-       markdown_core_document_edit(session, 2, 2, empty_label, sizeof(empty_label) - 1, &error) &&
+       markdown_core_document_splice(session, 2, 2, empty_label, sizeof(empty_label) - 1, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "inline absent-to-empty label edit commits");
     {
@@ -2237,7 +2237,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     changes = NULL;
 
     OK(runner,
-       markdown_core_document_edit(session, 2, 4, NULL, 0, &error) &&
+       markdown_core_document_splice(session, 2, 4, NULL, 0, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "inline empty-to-absent label edit commits");
     {
@@ -2261,7 +2261,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
         return;
     }
     OK(runner,
-       markdown_core_document_edit(session, 0, 0, block_source, sizeof(block_source) - 1, &error) &&
+       markdown_core_document_splice(session, 0, 0, block_source, sizeof(block_source) - 1, &error) &&
            mc_commit_compat(&session, NULL, &error),
        "block absent-label baseline commits");
     {
@@ -2274,7 +2274,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     }
 
     OK(runner,
-       markdown_core_document_edit(session, 3, 3, empty_label, sizeof(empty_label) - 1, &error) &&
+       markdown_core_document_splice(session, 3, 3, empty_label, sizeof(empty_label) - 1, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "block absent-to-empty label edit commits");
     {
@@ -2294,7 +2294,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     changes = NULL;
 
     OK(runner,
-       markdown_core_document_edit(session, 3, 5, NULL, 0, &error) &&
+       markdown_core_document_splice(session, 3, 5, NULL, 0, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "block empty-to-absent label edit commits");
     {
@@ -2348,7 +2348,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         return;
     }
     OK(runner,
-       markdown_core_document_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error) &&
+       markdown_core_document_splice(session, 0, 0, (const uint8_t *)source, strlen(source), &error) &&
            mc_commit_compat(&session, NULL, &error),
        "block-label lookup baseline commits");
     {
@@ -2439,7 +2439,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
     {
         size_t offset = (size_t)(destination_at - source);
         OK(runner,
-           markdown_core_document_edit(session, offset, offset + 2, replacement, sizeof(replacement) - 1, &error) &&
+           markdown_core_document_splice(session, offset, offset + 2, replacement, sizeof(replacement) - 1, &error) &&
                mc_commit_compat(&session, &changes, &error),
            "block-label reference definition edit commits");
     }
@@ -2510,7 +2510,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
     changes = NULL;
 
     OK(runner,
-       markdown_core_document_edit(session, 0, 0, prefix, sizeof(prefix) - 1, &error) &&
+       markdown_core_document_splice(session, 0, 0, prefix, sizeof(prefix) - 1, &error) &&
            mc_commit_compat(&session, &changes, &error),
        "head insertion before a block directive commits");
     {
@@ -2588,7 +2588,7 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
     if (!session) {
         return;
     }
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "scope baseline commit succeeds");
 
     {
@@ -2609,7 +2609,7 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
 
     /* Insert a paragraph above: every downstream scope shifts by two lines
      * while ids and revisions stay put (shift-invariant equality). */
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)prefix, strlen(prefix), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)prefix, strlen(prefix), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "scope shift commit succeeds");
 
     {
@@ -2679,7 +2679,7 @@ static void session_footnote_queries(test_batch_runner *runner) {
     if (!session) {
         return;
     }
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "footnote query commit succeeds");
 
     {
@@ -2781,7 +2781,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     if (!session) {
         return;
     }
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)source, strlen(source), &error);
     OK(runner, mc_commit_compat(&session, NULL, &error), "footnote revision baseline commit succeeds");
 
     {
@@ -2807,7 +2807,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
 
     /* A new heading on top references [^y] first: [^y] becomes number 1 and
      * [^x] shifts to number 2. The paragraph's bytes never change. */
-    markdown_core_document_edit(session, 0, 0, (const uint8_t *)"# zero[^y]\n\n", 12, &error);
+    markdown_core_document_splice(session, 0, 0, (const uint8_t *)"# zero[^y]\n\n", 12, &error);
     OK(runner, mc_commit_compat(&session, &changes, &error), "ordinal shift commit succeeds");
 
     OK(runner,
@@ -2852,7 +2852,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     {
         uint64_t paragraph_rev_before =
             markdown_core_node_get_revision(markdown_core_document_node_by_id(session, paragraph_id));
-        markdown_core_document_edit(session, 31, 32, (const uint8_t *)"z", 1, &error);
+        markdown_core_document_splice(session, 31, 32, (const uint8_t *)"z", 1, &error);
         OK(runner, mc_commit_compat(&session, &changes, &error), "resolution flip commit succeeds");
         {
             const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);

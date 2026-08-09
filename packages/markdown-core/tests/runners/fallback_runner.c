@@ -1533,7 +1533,7 @@ static int fb_session_run(
 
     for (stage = 0; stage < 3; stage++) {
         size_t length = strlen(stages[stage]);
-        if (!markdown_core_document_edit(
+        if (!markdown_core_document_splice(
                 session,
                 inserts[stage],
                 inserts[stage],
@@ -1541,7 +1541,7 @@ static int fb_session_run(
                 length,
                 NULL
             ) &&
-            !markdown_core_document_edit(
+            !markdown_core_document_splice(
                 session,
                 inserts[stage],
                 inserts[stage],
@@ -1767,13 +1767,13 @@ static int case_seam_static_literal(void) {
     options.smart_punctuation = false;
 
     session = markdown_core_document_open(&options, NULL);
-    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
         !mc_commit_compat(&session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
         goto done;
     }
     /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
-    if (!markdown_core_document_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
+    if (!markdown_core_document_splice(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
         !mc_commit_compat(&session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
         goto done;
@@ -1782,7 +1782,7 @@ static int case_seam_static_literal(void) {
 
     fresh = markdown_core_document_open(&options, NULL);
     if (!fresh ||
-        !markdown_core_document_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
+        !markdown_core_document_splice(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
         !mc_commit_compat(&fresh, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
         goto done;

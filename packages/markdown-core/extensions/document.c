@@ -708,7 +708,7 @@ void markdown_core_document_release(markdown_core_document *session) {
     free(session);
 }
 
-bool markdown_core_document_edit(
+bool markdown_core_document_splice(
     markdown_core_document *session,
     size_t byte_start,
     size_t byte_end,
@@ -786,13 +786,19 @@ bool markdown_core_document_edit(
     return true;
 }
 
-/* let new   = Document(markdown, document.options)
- * let delta = diff(document, new)
- * return Commit(new, delta)
+/* EDIT: hand the document new text.
  *
- * The receiver is SUPERSEDED: it is released here and `*document` is cleared,
- * on every path, so a caller cannot hold both. */
-bool markdown_core_document_commit(
+ *     let new   = Document(markdown, document.options)
+ *     let delta = diff(document, new)
+ *     return Commit(new, delta)
+ *
+ * It is `edit` and not `commit` because there is nothing pending to commit.
+ * A commit is what you do to changes a session has been accumulating, and
+ * there is no session and no accumulation: you hand over text and get back
+ * the document it describes, plus what changed. The receiver is SUPERSEDED —
+ * released here and `*document` cleared on every path — so a caller cannot
+ * hold both. */
+bool markdown_core_document_edit(
     markdown_core_document **document,
     markdown_core_string markdown,
     markdown_core_commit *out,
@@ -850,7 +856,7 @@ bool markdown_core_document_commit(
 /* TRANSITIONAL, test-only: the document's stored text. The engine's own
  * operation takes text in; this exists so an edit-shaped test can still ask
  * "what does it hold now" while those tests migrate to owning their own
- * string. It goes with markdown_core_document_edit. */
+ * string. It goes with markdown_core_document_splice. */
 const uint8_t *markdown_core_document_text(const markdown_core_document *document, size_t *length) {
     size_t n = document ? markdown_core_source_length(document->source) : 0;
     size_t run = 0;

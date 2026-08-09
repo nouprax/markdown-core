@@ -30,7 +30,7 @@ static inline bool mc_commit_compat(
         return false;
     }
     text.data = markdown_core_document_text(*document, &text.length);
-    if (!markdown_core_document_commit(document, text, &commit, error)) {
+    if (!markdown_core_document_edit(document, text, &commit, error)) {
         return false;
     }
     *document = commit.document;

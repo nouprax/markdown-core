@@ -35,7 +35,7 @@
  * until the session's next commit or free: edits only advance the stored
  * text and never touch the committed tree, so the borrowed view (and node
  * scopes resolved through it) stays valid across
- * markdown_core_document_edit. Deltas and ordered delta-entry tables are
+ * markdown_core_document_splice. Deltas and ordered delta-entry tables are
  * caller-owned plain data: they survive the session and are released with
  * markdown_core_delta_free and markdown_core_delta_entries_free,
  * respectively.
@@ -397,7 +397,7 @@ MARKDOWN_CORE_API void markdown_core_document_release(markdown_core_document *se
  * `bytes[0..length)`. Append passes byte_start == byte_end ==
  * markdown_core_document_length. Edits only update the text; parsing happens
  * at commit. */
-MARKDOWN_CORE_API bool markdown_core_document_edit(
+MARKDOWN_CORE_API bool markdown_core_document_splice(
     markdown_core_document *session,
     size_t byte_start,
     size_t byte_end,
@@ -411,7 +411,7 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
  * markdown_core_delta_free). */
 /** `Document(markdown, options)`. Options are fixed for the document's whole
  * lineage; a commit takes text and not options. */
-/** TRANSITIONAL, test-only; goes with markdown_core_document_edit. */
+/** TRANSITIONAL, test-only; goes with markdown_core_document_splice. */
 MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(
     const markdown_core_document *document,
     size_t *length
@@ -430,7 +430,13 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     markdown_core_error **error
 );
 
-MARKDOWN_CORE_API bool markdown_core_document_commit(
+/** `document.edit(markdown)` — hand the document new text and get back the
+ * document that text describes, plus what changed. There is nothing pending to
+ * commit, so the operation is an edit, not a commit.
+ *
+ * SUPERSEDES the receiver: `*document` is cleared on every path and must not
+ * be used again. The caller owns `out->document` and `out->delta`. */
+MARKDOWN_CORE_API bool markdown_core_document_edit(
     markdown_core_document **document,
     markdown_core_string markdown,
     markdown_core_commit *out,

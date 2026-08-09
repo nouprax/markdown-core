@@ -560,7 +560,7 @@ static markdown_core_document *cc_session_build(size_t size, int mode, size_t *s
         options.footnotes = true;
     }
     session = markdown_core_document_open(&options, NULL);
-    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
+    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
         !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
@@ -585,7 +585,7 @@ static int cc_session_block(markdown_core_document *session, int mode, size_t st
         if (mode == CC_SESSION_STORM) {
             size_t index = (size_t)((*op_counter * UINT64_C(2654435761)) % stanza_count);
             uint8_t byte = (*op_counter & 1) ? 'x' : 'y';
-            ok = markdown_core_document_edit(
+            ok = markdown_core_document_splice(
                 session,
                 index * stanza_length + 1,
                 index * stanza_length + 2,
@@ -595,29 +595,29 @@ static int cc_session_block(markdown_core_document *session, int mode, size_t st
             );
         } else if (mode == CC_SESSION_RETARGET) {
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_document_edit(session, 6, 10, url, 4, NULL);
+            ok = markdown_core_document_splice(session, 6, 10, url, 4, NULL);
         } else if (mode == CC_SESSION_FOOTNOTE) {
             size_t base = stanza_count * strlen(CC_SESSION_PLAIN_STANZA);
             uint8_t label = (*op_counter & 1) ? 'b' : 'a';
-            ok = markdown_core_document_edit(session, base + 7, base + 8, &label, 1, NULL);
+            ok = markdown_core_document_splice(session, base + 7, base + 8, &label, 1, NULL);
         } else if (mode == CC_SESSION_HEAD_DEFS) {
             size_t base = (stanza_count - 1) * CC_SESSION_DEF_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_document_edit(session, base, base + 4, url, 4, NULL);
+            ok = markdown_core_document_splice(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_FOOTNOTE_DEFS) {
             size_t base = (stanza_count - 1) * CC_SESSION_FOOTNOTE_DEF_WIDTH + CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET;
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_document_edit(session, base, base + 4, body, 4, NULL);
+            ok = markdown_core_document_splice(session, base, base + 4, body, 4, NULL);
         } else if (mode == CC_SESSION_DEF_SPREAD) {
             // The LAST pair: editing the first definition would measure the
             // def-index splice (a known O(defs) memmove) instead of the
             // dependent collection this case pins.
             size_t base = (stanza_count - 1) * CC_SESSION_DEF_SPREAD_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_document_edit(session, base, base + 4, url, 4, NULL);
+            ok = markdown_core_document_splice(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_QUOTE_SUFFIX) {
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_document_edit(
+            ok = markdown_core_document_splice(
                 session,
                 CC_SESSION_QUOTE_BODY_OFFSET,
                 CC_SESSION_QUOTE_BODY_OFFSET + 4,
@@ -628,7 +628,7 @@ static int cc_session_block(markdown_core_document *session, int mode, size_t st
         } else {
             static const uint8_t line[] = "appended stream line\n";
             size_t length = markdown_core_document_length(session);
-            ok = markdown_core_document_edit(session, length, length, line, sizeof(line) - 1, NULL);
+            ok = markdown_core_document_splice(session, length, length, line, sizeof(line) - 1, NULL);
         }
         if (!ok || !mc_commit_compat(&session, NULL, NULL)) {
             return -1;
@@ -762,7 +762,7 @@ static markdown_core_document *cc_footnote_renumber_build(size_t count) {
     ts_ast_options_none(&options);
     options.footnotes = true;
     session = markdown_core_document_open(&options, NULL);
-    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)text, length, NULL) ||
         !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
@@ -788,7 +788,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
             const uint8_t label = (op_counter & 1) ? '0' : '1';
             markdown_core_delta *changes = NULL;
             size_t changed;
-            if (!markdown_core_document_edit(
+            if (!markdown_core_document_splice(
                     session,
                     CC_FOOTNOTE_RENUMBER_LABEL_OFFSET,
                     CC_FOOTNOTE_RENUMBER_LABEL_OFFSET + 1,
@@ -877,7 +877,7 @@ static markdown_core_document *cc_scope_build(size_t depth) {
     memcpy(text + depth * 2, "leaf\n", 5);
     text[length] = '\0';
     session = markdown_core_document_open(NULL, NULL);
-    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)text, length, NULL) ||
         !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
@@ -996,9 +996,9 @@ static int cc_delta_order_build(
     text[length] = '\0';
 
     session = markdown_core_document_open(NULL, NULL);
-    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)text, length, NULL) ||
         !mc_commit_compat(&session, NULL, NULL) ||
-        !markdown_core_document_edit(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
+        !markdown_core_document_splice(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
         !mc_commit_compat(&session, &changes, NULL)) {
         free(text);
         markdown_core_delta_free(changes);
