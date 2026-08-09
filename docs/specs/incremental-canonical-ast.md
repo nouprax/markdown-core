@@ -337,30 +337,36 @@ inherits and must not throw away.
   for local equality: two-word comparisons, allocation-free, safe in a render
   hot path. Equal means the values are identical; storage layout produces no
   false negatives.
-- **Instance reuse.** The core reuses an unchanged subtree rather than
-  rebuilding it, so the next document holds the same node, not merely an equal
-  one. It is stated of the core because that is where it is true, and it is
-  here because path B reads it: a consumer walking `diffs` skips an unchanged
-  subtree on the two-word comparison of 11.3 alone.
-
-  It is deliberately *not* required of a binding's node views. In Swift an
-  idiomatic view is a `struct`, and a value type has no identity to compare —
-  there the requirement would not be hard to meet, it would be meaningless. And
-  in a language whose views are references, a binding that constructs a fresh
-  wrapper on each `node(id)` call destroys the property regardless of what the
-  core did, so keeping it would oblige every binding to cache wrappers and
-  manage their lifetimes.
-
-  The short-circuit a framework actually runs is the `O(1)` equality above,
-  which behaves identically for a `struct`, a `data class`, and a JavaScript
-  object. A binding whose views are references may offer identity as an extra
-  one-word check; none is obliged to.
-A fourth property stood here — **structural sharing**, that adjacent documents
+A third property stood here — **instance reuse**, that the core reuses an
+unchanged subtree "so the next document holds the same node, not merely an
+equal one" — and a fourth, **structural sharing**, that adjacent documents
 share every unchanged node so retaining the previous one costs the changed
-frontier and not a second tree — and it is removed. Instance reuse above states
-the same fact of the core; what structural sharing added was its payoff, and
-that payoff was the cheap retained predecessor 4.2 removed. A session hands out
-one document, reused in place, so there is no predecessor to hold.
+frontier and not a second tree. **Both are removed, and the first was also
+false.**
+
+Nobody can tell. Every consumer that exists reads INTEGERS: the ES binding
+tests `!touched.has(rawId)` and then `existing.revision !== revision`, the
+Swift binding compares `lhs.id == rhs.id && lhs.revision == rhs.revision` over
+`struct`s where reference equality does not apply, and the Kotlin binding
+receives a serialized byte stream in which instance identity cannot survive by
+construction. `session.commit()` hands back one document, reused in place, so
+there is no predecessor to share with; and the engine's own full-commit path
+frees the committed tree and parses a fresh one, so on that path the core does
+NOT hold the same node — the clause was not merely unobservable, it did not
+describe the implementation.
+
+Instance reuse's own justification named the substitute: "a consumer walking
+`diffs` skips an unchanged subtree on the two-word comparison" — and a
+two-word comparison is a comparison of values.
+
+**The property underneath, which is real and which a consumer does observe, is
+5.2 rule 1: nothing outside a reparsed region is matched at all.** That is
+about the MATCHER'S SCOPE, and its consequence is the size of `diffs`: a
+one-paragraph insertion at the front of a thousand-paragraph document reports
+five nodes when the matcher's scope is the reparsed region and two thousand
+when it is the whole document. That difference is published, it is what a
+`ForEach(id:)` or a `key()` re-renders on, and it holds however the engine
+allocates.
 
 The cost of the path-A diff is stated in 11.3. It is not `O(changed)` — no
 top-down value diff can be — but every comparison it performs is `O(1)`, and a
@@ -929,12 +935,15 @@ already names the edge, and 9.3 depends on that to keep `CHILDREN`
 unparameterized. Child kind legality remains statically or dynamically
 checked by the canonical AST schema.
 
-The child sequence must be persistent: localized insert/remove/replace
-operations path-copy only the affected persistent frontier plus inserted or
-removed members. A copy-on-write array costs `O(width)` per commit and shares
-nothing, which neither the bounds of 9.1 nor the unchanged-ancestor sharing of
-4.1 survives. Dense positions and private order labels do not escape as stable
-identity.
+**A persistence requirement stood here** — that the child sequence path-copy
+only the affected frontier, with a copy-on-write array rejected as `O(width)`
+per commit. It is removed, for 11.2's own reason: nothing in this contract
+reaches a consumer that can observe how a commit stores what it publishes. It
+was also never built, and its dichotomy was false — the engine uses neither a
+persistent sequence nor a copy-on-write array but an `O(1)` splice into a
+mutable list, which meets the published requirement by a third route the
+clause did not contemplate. What is required is the published `CHILDREN`
+membership and order of 9.1; the storage is private (2).
 
 ### 6.3 Parser answers
 
@@ -1043,19 +1052,23 @@ names.
 Grouping the relation indexes behind one private handle on the
 published-document owner
 is the expected implementation, and this contract does not constrain the
-layout inside it. They share a lifetime, a refcount, and one share-or-copy
-decision per commit; the record kinds differ enough — a normalized label map
-with duplicate buckets and a deterministic winner, a first-use ordering with
+layout inside it. The record kinds differ enough — a normalized label map with
+duplicate buckets and a deterministic winner, a first-use ordering with
 per-reference ordinals, and ordered occurrence and reverse-reference lists —
 that each keeps its own structure within the bundle.
 
-Those structures must be persistent across adjacent revisions, for the reason
-6.1 and 6.2 give for text and child sequences. A commit that changes no
-relation structure of a given kind shares it with its predecessor outright;
-one that changes a relation path-copies only the affected part. Rebuilding an
-index per commit would make every commit `O(document)` in the relation
-population and defeat 11.1 — and a streamed document would pay that once per
-chunk.
+**A persistence requirement stood here** — that those structures be persistent
+across adjacent revisions, sharing outright with a predecessor when nothing
+changed and path-copying only the affected part when something did, "because
+rebuilding an index per commit would make every commit `O(document)` in the
+relation population and defeat 11.1". **It is removed, and both of its grounds
+were already gone when it was written down here**: it cited 6.1's persistence
+requirement, which is deleted above, and 11.1's bound, which is deleted with
+its section. This section states the disposing rule itself a few paragraphs
+below — enabling, disabling, filling, compacting, or rebalancing an index
+cannot change a `Document`, a revision, or a `Delta` — so no consumer can tell
+a shared index from a rebuilt one. The engine rebuilds them, and does so
+inside the cost the gates measure.
 
 A relation change may change one or more query results. The commit compares
 old and new answers only for identities reached through the affected relation
@@ -2088,9 +2101,13 @@ For each binding, against a pinned document and an adjacent commit:
 2. Node equality and hashing are the two-word tuples of 2.1, allocation-free,
    and equal implies value-identical with no false negative from storage
    layout or rebalancing.
-3. The core reuses every unchanged subtree in the next document, verified by
-   reference at the C level. At a binding, the equality of gate 2 reports that
-   subtree unchanged whether or not that binding's views carry identity at all.
+3. An edit reports a `diffs` list whose size follows the REPARSED REGION and
+   not the document: the same one-node insertion at the front of a document
+   and of one a thousand times larger names the same handful of nodes. This
+   is 5.2 rule 1 as a gate, and it replaces one that required the core to
+   reuse every unchanged subtree "verified by reference at the C level" — an
+   assertion no consumer could read, no test implemented, and the engine's own
+   full-commit path contradicts.
 4. A top-down value diff of the two documents reports exactly the nodes whose
    subtree projection differs — no false negatives against a fresh comparison,
    and no descent into a subtree whose root compared equal.

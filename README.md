@@ -147,8 +147,7 @@ streaming into one enormous paragraph reparses that paragraph's inlines
 each commit, an edit inside an unclosed fence, raw-HTML block, or directive
 reparses forward to end of input, and changing a link-reference definition
 re-resolves the references that used it. Every commit produces an immutable
-document snapshot that structurally shares unchanged nodes with the previous
-snapshot, plus a delta of four disjoint stable-id sets: nodes the commit
+document snapshot plus a delta of four disjoint stable-id sets: nodes the commit
 added, removed, or changed, and ancestors whose revision bubbled only
 because a descendant changed. Applying all four to a mirror of the previous
 revision (materialize added and changed, relink bubbled, evict removed)
