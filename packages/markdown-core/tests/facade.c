@@ -291,8 +291,13 @@ static void check_scope_table(void) {
     if (!session) {
         goto done;
     }
-    if (!markdown_core_document_splice(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !mc_commit_compat(&session, NULL, &error)) {
+    {
+        markdown_core_commit out;
+        memset(&out, 0, sizeof(out));
+        markdown_core_document_free(session);
+        session = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), NULL, &error);
+    }
+    if (!session) {
         check(0, "scope table session commits");
         goto done;
     }
@@ -398,8 +403,13 @@ static void check_ordered_delta_entries(void) {
     if (!session) {
         goto done;
     }
-    if (!markdown_core_document_splice(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !mc_commit_compat(&session, &changes, &error)) {
+    {
+        markdown_core_commit out;
+        memset(&out, 0, sizeof(out));
+        markdown_core_document_free(session);
+        session = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), NULL, &error);
+    }
+    if (!session) {
         check(0, "ordered delta session commits");
         goto done;
     }
@@ -463,8 +473,11 @@ static void check_ordered_delta_entries(void) {
     first = entries[0];
 
     other = markdown_core_document_open(NULL, &error);
-    if (!other || !markdown_core_document_splice(other, 0, 0, source, sizeof(source) - 1, &error) ||
-        !mc_commit_compat(&other, &other_changes, &error)) {
+    {
+        markdown_core_document_free(other);
+        other = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), NULL, &error);
+    }
+    if (!other) {
         check(0, "second ordered delta session reaches the same revision");
         goto done;
     }

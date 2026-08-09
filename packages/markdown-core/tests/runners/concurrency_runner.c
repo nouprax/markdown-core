@@ -446,25 +446,22 @@ static int session_stream_once(
     size_t *length_out
 ) {
     markdown_core_error *error = NULL;
-    size_t existing = markdown_core_document_length((*session_ref));
-
-    if (existing) {
-        if (!markdown_core_document_splice((*session_ref), 0, existing, NULL, 0, &error) ||
-            !mc_commit_compat(session_ref, NULL, &error)) {
-            markdown_core_error_free(error);
-            return 1;
-        }
-    }
-
     size_t length = strlen(input);
-    for (size_t offset = 0; offset < length; offset++) {
-        markdown_core_delta *changes = NULL;
-        if (!markdown_core_document_splice((*session_ref), offset, offset, (const uint8_t *)input + offset, 1, &error) ||
-            !mc_commit_compat(session_ref, &changes, &error)) {
+    size_t offset;
+
+    // The caller's text, one byte at a time: this test streams, so the text it
+    // hands over grows by one byte per edit. It owns that text; the document
+    // is handed the whole of it every time.
+    for (offset = 0; offset < length; offset++) {
+        markdown_core_commit out;
+        memset(&out, 0, sizeof(out));
+        if (!markdown_core_document_edit(session_ref, mc_sv(input, offset + 1), &out, &error)) {
+            *session_ref = NULL;
             markdown_core_error_free(error);
             return 1;
         }
-        markdown_core_delta_free(changes);
+        *session_ref = out.document;
+        markdown_core_delta_free(out.delta);
     }
 
     uint8_t *first = NULL;
@@ -643,7 +640,9 @@ static int case_sessions(void) {
     const char *shared_input = INPUTS[0];
     uint8_t *reference = NULL;
     size_t reference_length = 0;
-    if (!markdown_core_document_splice(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
+    markdown_core_document_free(session);
+    session = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
+    if (!session ||
         !mc_commit_compat(&session, NULL, &error) ||
         !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
@@ -684,7 +683,9 @@ static int case_sessions(void) {
     if (!failures) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (!markdown_core_document_splice(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
+        markdown_core_document_free(session);
+        session = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
+        if (!session ||
             !mc_commit_compat(&session, NULL, &error) ||
             !markdown_core_document_dump(session, &dump, &length, &error)) {
             markdown_core_error_free(error);

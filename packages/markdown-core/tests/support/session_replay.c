@@ -117,12 +117,9 @@ void sr_replay_close(sr_replay *replay) {
     memset(replay, 0, sizeof(*replay));
 }
 
+/* The shadow IS the text now. An edit splices the harness's own buffer and
+ * nothing else; the document only ever sees whole text, at commit. */
 int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
-    markdown_core_error *error = NULL;
-    if (!markdown_core_document_splice(replay->session, start, end, bytes, length, &error)) {
-        markdown_core_error_free(error);
-        return sr_fail(replay, "session edit failed");
-    }
     if (sr_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
         return sr_fail(replay, "shadow splice allocation failed");
     }
@@ -295,8 +292,9 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     size_t i;
 
     fresh = markdown_core_document_open(replay->options, &error);
-    if (!fresh || !markdown_core_document_splice(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
-        !mc_commit_compat(&fresh, NULL, &error)) {
+    markdown_core_document_free(fresh);
+    fresh = markdown_core_document_new(mc_sv(replay->shadow.bytes, replay->shadow.length), replay->options, &error);
+    if (!fresh) {
         markdown_core_error_free(error);
         sr_fail(replay, "fresh footnote reference session failed");
         goto done;
@@ -437,9 +435,21 @@ int sr_replay_commit(sr_replay *replay) {
     sr_walk_state state;
     int result = -1;
 
-    if (!mc_commit_compat(&replay->session, &changes, &error)) {
-        markdown_core_error_free(error);
-        return sr_fail(replay, "commit failed");
+    {
+        markdown_core_commit out;
+        memset(&out, 0, sizeof(out));
+        if (!markdown_core_document_edit(
+                &replay->session,
+                mc_sv(replay->shadow.bytes, replay->shadow.length),
+                &out,
+                &error
+            )) {
+            replay->session = NULL;
+            markdown_core_error_free(error);
+            return sr_fail(replay, "commit failed");
+        }
+        replay->session = out.document;
+        changes = out.delta;
     }
     if (!changes) {
         return sr_fail(replay, "commit produced no delta");
