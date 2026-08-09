@@ -315,44 +315,10 @@ struct markdown_core_document {
     // commit paths; skipped entirely for the one-shot convenience parse.
     markdown_core_lookup_table lookups[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     bool record_lookups;
-    // The incremental pipeline reconciled definitions in place and then could
-    // not finish: a table no longer matches the committed tree, so the next
-    // commit must take the full path (which rebuilds both tables and clears
-    // this). One flag for both, because the full path is wholesale either way.
-    bool definitions_stale;
     markdown_core_clean_index clean;
     markdown_core_edit_summary pending;
     int total_lines;      // parser line count of the committed text
     int last_line_length; // parser's final-line length of the committed text
-    // Upper bound on the reference expansion a one-shot parse of the current
-    // text would accumulate. While it stays within the one-shot budget,
-    // incremental inline phases can run unlimited and still match the
-    // one-shot dump byte for byte; beyond it commits fall back to a full
-    // reparse, which resets the bound to the measured value.
-    size_t expansion_estimate;
-    // Restart-locality inventory (white-box, asserted by fallback_runner):
-    // full-reparse commits, incremental restarts, and restarts that
-    // reflowed at a boundary. Degraded-to-full cases stay counted instead
-    // of accumulating silently.
-    size_t full_commits;
-    size_t restarted_commits;
-    size_t reflowed_commits;
-    // Dependent units reparsed because a definition flip selected them
-    // through the label postings, summed over successful incremental
-    // commits. The definition-flip gate asserts this equals the mention
-    // count of the flipped label's own kind, independent of document size.
-    size_t dependent_reparses;
-    // Stored bytes the substrate copied to apply edits, summed over every
-    // successful edit (white-box, asserted by fallback_runner). It used to
-    // answer "is an edit O(edit)?", and the gate over it required the
-    // per-edit figure to stay FLAT as the document doubled — 11.1's removed
-    // work bound, and the one thing a persistent rope was here to satisfy.
-    // fallback_runner's edit_locality gate now divides by the document: a
-    // splice in place moves a suffix, which is a constant FRACTION of the
-    // document (0.500 from the midpoint) and must stay one. That is 11.1's
-    // surviving requirement — no commit may be quadratic — measured in bytes
-    // rather than in seconds.
-    size_t edit_bytes_moved;
     // One warm parser held between commits: staged parses are
     // per-commit, but the parser shell (struct, line buffers, empty
     // reference map, extension attachments) is commit-invariant, so

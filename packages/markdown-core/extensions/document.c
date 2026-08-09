@@ -375,7 +375,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
     session->root = root;
     session->total_lines = total_lines;
     session->last_line_length = last_line_length;
-    session->expansion_estimate = map->ref_size;
     return true;
 }
 
@@ -755,7 +754,6 @@ bool markdown_core_document_edit(
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not apply the edit");
             return false;
         }
-        session->edit_bytes_moved += stats.bytes_copied;
     }
 
     // Coalesce into the pending summary. The stored range lives in
