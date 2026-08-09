@@ -573,12 +573,9 @@ static bool normalized_line(
     return true;
 }
 
-/* Absolute start line under the sealed parent-relative encoding — the same
- * resolution scope_with_parent_start applies for the dump. */
+/* Positions are absolute; the parent-relative encoding is gone. */
 static int resolved_start_line(const markdown_core_node *node, int parent_resolved) {
-    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        return parent_resolved + node->start_line;
-    }
+    (void)parent_resolved;
     return node->start_line;
 }
 
@@ -795,7 +792,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     !run_maximal(line, line_length, record) ||
                     (unsigned char)line[record->column] != node->as.code.fence_char ||
                     (int)(record->line) !=
-                        node->end_line - (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE ? 0 : node->start_line)) {
+                        node->end_line - node->start_line) {
                     fprintf(stderr, "%s: fence-close record disagrees with code block\n", source->name);
                     failed = 1;
                 }
@@ -1971,7 +1968,7 @@ static int case_capture_shape(void) {
             int root_resolved = resolved_start_line(document->root, 0);
             int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
             int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                      lead->start_line
                                 : 0;
             if (!lead || lead_start != 1 || lead->start_column != 1 || lead_end != 1 || lead->end_column != 12) {
                 fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
@@ -2362,7 +2359,7 @@ static int case_capture_shape(void) {
             int inner_resolved = lead && lead->parent ? resolved_start_line(lead->parent, quote_resolved) : 0;
             int lead_start = lead ? resolved_start_line(lead, inner_resolved) : 0;
             int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                      lead->start_line
                                 : 0;
             if (!lead || lead_start != 1 || lead->start_column != 5 || lead_end != 1 || lead->end_column != 5) {
                 fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
@@ -2393,7 +2390,7 @@ static int case_capture_shape(void) {
                 lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
             int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;
             int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
+                                      lead->start_line
                                 : 0;
             if (!lead || lead_start != 1 || lead->start_column != 3 || lead_end != 1 || lead->end_column != 11) {
                 fprintf(stderr, "capture_shape: the tab-led split-off lead's columns left the byte convention\n");

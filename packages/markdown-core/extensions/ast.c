@@ -293,27 +293,18 @@ const char *markdown_core_node_kind_name(markdown_core_node_kind kind) {
 
 markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     markdown_core_scope scope = {{0, 0}, {0, 0}};
-    const markdown_core_node *ancestor;
     int start_line, end_line;
     if (!node) {
         return scope;
     }
+    // Positions are absolute, as the parser wrote them. They used to be
+    // stored parent-relative and resolved here by summing the parent chain —
+    // an encoding whose whole purpose was that an INCREMENTAL commit could
+    // line-shift an ancestor and have every descendant follow for free. There
+    // is no incremental commit, nothing shifts, and a scope read no longer
+    // pays an ancestor walk.
     start_line = node->start_line;
     end_line = node->end_line;
-    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        // Sealed storage is parent-relative (see node.h); the root's start
-        // line stays absolute, so summing the parent chain resolves the
-        // absolute start. An unsealed ancestor (a position-free node keeping
-        // raw zeros) resolves to its own raw fields, so it contributes once
-        // and ends the walk — exactly how the dump's accumulator resolves.
-        for (ancestor = node->parent; ancestor; ancestor = ancestor->parent) {
-            start_line += ancestor->start_line;
-            if (!(ancestor->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE)) {
-                break;
-            }
-        }
-        end_line += start_line;
-    }
     scope.start.line = start_line;
     scope.start.column = node->start_column;
     scope.end.line = end_line;
@@ -321,24 +312,7 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-static markdown_core_scope scope_with_parent_start(const markdown_core_node *node, int32_t parent_resolved_start_line) {
-    markdown_core_scope scope = {{0, 0}, {0, 0}};
-    int start_line, end_line;
-    if (!node) {
-        return scope;
-    }
-    start_line = node->start_line;
-    end_line = node->end_line;
-    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        start_line += parent_resolved_start_line;
-        end_line += start_line;
-    }
-    scope.start.line = start_line;
-    scope.start.column = node->start_column;
-    scope.end.line = end_line;
-    scope.end.column = node->end_column;
-    return scope;
-}
+
 
 markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) { return node ? node->id : 0; }
 
@@ -480,8 +454,8 @@ static bool canonical_walk_next(
     if (!canonical_walk_reserve_current_depth(walk)) {
         return false;
     }
-    parent_start_line = walk->depth ? walk->frames[walk->depth - 1].resolved_start_line : 0;
-    *scope = scope_with_parent_start(current, parent_start_line);
+    (void)parent_start_line;
+    *scope = markdown_core_node_scope(current);
     sibling = current == walk->root ? NULL : markdown_core_node_get_next_sibling(current);
     frame = &walk->frames[walk->depth];
     frame->resolved_start_line = scope->start.line;

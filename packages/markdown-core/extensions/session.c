@@ -264,49 +264,6 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
     markdown_core_parser_free(parser);
 }
 
-// Seals a freshly parsed tree: line positions convert from absolute to
-// parent-relative deltas (columns are line-local already) and every node
-// gains MARKDOWN_CORE_NODE__SEALED_RELATIVE. Post-order, so each conversion
-// still reads its parent's absolute start; pointer-walk iterative, because
-// adversarial inputs nest too deep for native recursion.
-//
-// Position-free nodes (start_line 0: soft and hard breaks) stay raw and
-// unsealed. Their
-// zeros are markers, not places: relativizing them would make them move when
-// an incremental commit line-shifts a transplanted ancestor. Resolution
-// treats an unsealed node's fields as final, so the markers stay zero and
-// their descendants' deltas (computed against the raw zero here) still
-// resolve exactly as a fresh parse would.
-size_t markdown_core_session_seal_positions(markdown_core_node *root) {
-    markdown_core_node *node = root;
-    size_t sealed = 0;
-    for (;;) {
-        if (node->first_child) {
-            node = node->first_child;
-            continue;
-        }
-        for (;;) {
-            int start_line = node->start_line;
-            sealed++;
-            if (start_line != 0) {
-                if (node->parent) {
-                    node->start_line = start_line - node->parent->start_line;
-                }
-                node->end_line -= start_line;
-                node->flags |= MARKDOWN_CORE_NODE__SEALED_RELATIVE;
-            }
-            if (node == root) {
-                return sealed;
-            }
-            if (node->next) {
-                node = node->next;
-                break;
-            }
-            node = node->parent;
-        }
-    }
-}
-
 void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
     markdown_core_map_entry *entry;
     for (entry = map->refs; entry; entry = entry->next) {
@@ -416,7 +373,6 @@ static bool commit_full(
         return false;
     }
 
-    markdown_core_session_seal_positions(root);
 
     if (changes) {
         changes->before = session->revision;

@@ -79,7 +79,6 @@ enum markdown_core_node__internal_flags {
      * container that closed at its fence sets the flag instead, because the
      * property is about how the block ended and not about what kind it is. */
     MARKDOWN_CORE_NODE__ENDS_ON_CURRENT_LINE = (1 << 6),
-    MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
 
     // The node currently owns raw inline source that the core refine pipeline
     // must parse into its complete child list. This is parser lifecycle
