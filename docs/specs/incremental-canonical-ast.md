@@ -1444,9 +1444,8 @@ equivalence covers it.
 
 ## 9. Delta
 
-A document has exactly two authored levels: its bytes, and the nodes parsed
-from them. A delta is the difference between two documents at both levels, and
-nothing else.
+A delta is the difference between two documents' NODES, and nothing else. The
+byte level is the caller's: it handed over both texts (9.2).
 
 ```text
 Delta {
@@ -1521,6 +1520,31 @@ parts(n)     =  { p : proj_before(n).p ≠ proj_after(n).p }
 That is the entire definition of `diffs`. Everything below is a consequence
 of it, not an additional rule.
 
+**`diffs` IS ORDERED, AND THE ORDER IS PART OF THE ANSWER: every node appears
+after all of its own children.** A path-B consumer building immutable values
+bottom-up therefore reads the list once, front to back, and every child it
+needs is already built. That is the whole reason the order is specified; it is
+not a stability convention.
+
+The order is the `after` tree's postorder, with one rule for nodes that are not
+in it: **a retired node is emitted where it was found**, inside its former
+parent's run and so before that parent. A consumer holding a map from
+`MarkupID` to its own state therefore deletes before it re-reads the parent's
+children, and never re-reads a parent whose retired children it has not yet
+dropped.
+
+A retired node needs no position of its own — deletion is addressed by id — so
+this rule is chosen for the ONE property it does buy: a single list, in a
+single pass, with no second index.
+
+**This is why there is no separate ordered-entry table and no id-to-node
+index.** Both existed because `diffs` used to be four unordered id sets, so
+tree position had to be reconstructed after the fact: the entries were
+allocated on demand, keyed through a hash of the delta's ids, topologically
+sorted, and each id resolved back to its node through a document-wide table
+built on every commit. A list that is already in order carries its own
+position, so all of that is answering a question the shape no longer asks.
+
 **A retired node has no parts in `after`, so `parts` is empty.** That is why
 there is no lifecycle tag: a consumer distinguishes the case with
 `Document.node`, which returns `none` for exactly those nodes. A created node
@@ -1585,7 +1609,7 @@ code.
 
 A `Delta` reports what changed in the AST. Bytes are the caller's.
 
-### 9.3 Why these six parts and no more
+### 9.3 Why these five parts and no more
 
 `DiffPart` is closed, and the rule that closes it is a cost rule, not a
 taxonomy:
