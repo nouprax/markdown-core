@@ -6,8 +6,8 @@ recorded together because the second follows from the first.
 ## The model
 
 ```
-Document(markdown, options)            -> Document
-document.commit(markdown, options)     -> Commit { Document, Delta }
+Document(markdown, options)   -> Document
+document.commit(markdown)     -> Commit { Document, Delta }
 ```
 
 **There is no `Session` in the public model.** A document is created from text
@@ -45,13 +45,20 @@ commit. For a 100 KB document delivered in 1000 chunks that is roughly 50 MB of
 `memcmp` in total, milliseconds, against a parse that is orders of magnitude
 dearer. It does not justify a second entry point.
 
-### What it leaves open
+### `commit` takes text, not options
 
-`commit(markdown, options)` accepts options, and §5.1 says a parse-option change
-starts a fresh `DocumentDomain`. Identities are not stable across a domain, so a
-commit that changes options cannot produce a meaningful delta. Either `commit`
-does not take options, or a domain change is defined to produce a delta that
-replaces everything. Not decided here.
+Options are fixed when the document is created and are immutable for its whole
+lineage. **A `DocumentDomain` therefore never changes within a lineage.** §5.1
+makes a parse-option change start a fresh domain, and under this model that is
+not a commit at all — it is a new `Document(...)`, whose identities compare
+equal to nothing that came before. Which is what a consumer expects when it
+changes what the parser means: there is no delta to be had across it, and none
+is offered.
+
+This also collapses the two entry points into one. `Document.parse(source,
+options)` was the one-shot path and `session.open(options)` the incremental
+one; they are now the same call, and "a one-shot parse gets its own domain" is
+just the general rule.
 
 ## Allocation failure
 
