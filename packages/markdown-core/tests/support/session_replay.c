@@ -126,83 +126,81 @@ int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *b
     return 0;
 }
 
-static int sr_delta_disjoint(sr_replay *replay, markdown_core_delta *changes) {
-    const markdown_core_node_id *arrays[4];
-    size_t counts[4];
-    size_t a;
-    size_t b;
-    size_t i;
-    size_t k;
-
-    counts[0] = markdown_core_delta_added(changes, &arrays[0]);
-    counts[1] = markdown_core_delta_removed(changes, &arrays[1]);
-    counts[2] = markdown_core_delta_changed(changes, &arrays[2]);
-    counts[3] = markdown_core_delta_bubbled(changes, &arrays[3]);
-    for (a = 0; a < 4; a++) {
-        for (i = 0; i < counts[a]; i++) {
-            for (b = a; b < 4; b++) {
-                for (k = b == a ? i + 1 : 0; k < counts[b]; k++) {
-                    if (arrays[a][i] == arrays[b][k]) {
-                        return sr_fail(replay, "delta arrays repeat an id");
-                    }
-                }
-            }
-        }
-    }
-    return 0;
-}
-
+/* THE PATH-B CONSUMER, and therefore the gate on what `diffs` promises: a
+ * mirror keyed by MarkupID, maintained in ONE forward pass over the list.
+ *
+ * Everything it checks is a clause of 9.1 rather than a property of this
+ * implementation: each node is named once; the retired rows (parts zero) come
+ * first, so the mirror can drop dead state before it touches anything else;
+ * and a surviving node always follows its own children, so a consumer that
+ * builds values bottom-up never reaches a parent early. */
 static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
-    const markdown_core_node_id *ids;
+    const markdown_core_diff *diffs = NULL;
     size_t count;
     size_t i;
+    size_t k;
     uint64_t before;
     uint64_t after;
+    int seen_surviving = 0;
 
     markdown_core_delta_revisions(changes, &before, &after);
     if (after != expected_after) {
         return sr_fail(replay, "delta revisions disagree with the session");
     }
 
-    if (sr_delta_disjoint(replay, changes) != 0) {
-        return -1;
+    count = markdown_core_delta_diffs(changes, &diffs);
+    for (i = 0; i < count; i++) {
+        for (k = i + 1; k < count; k++) {
+            if (diffs[i].markup == diffs[k].markup) {
+                return sr_fail(replay, "diffs name one node twice");
+            }
+        }
     }
 
-    count = markdown_core_delta_removed(changes, &ids);
     for (i = 0; i < count; i++) {
-        sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            return sr_fail(replay, "delta removed an id the mirror never saw");
+        sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, diffs[i].markup);
+        if (diffs[i].parts == 0) {
+            if (seen_surviving) {
+                return sr_fail(replay, "a retired row followed a surviving one");
+            }
+            if (!entry) {
+                return sr_fail(replay, "delta retired an id the mirror never saw");
+            }
+            sr_mirror_remove(&replay->mirror, entry);
+            continue;
         }
-        sr_mirror_remove(&replay->mirror, entry);
-    }
-
-    count = markdown_core_delta_added(changes, &ids);
-    for (i = 0; i < count; i++) {
-        if (sr_mirror_find(&replay->mirror, ids[i])) {
-            return sr_fail(replay, "delta added an id that already exists");
-        }
-        if (sr_mirror_insert(&replay->mirror, ids[i], after) != 0) {
+        seen_surviving = 1;
+        if (entry) {
+            entry->revision = after;
+        } else if (sr_mirror_insert(&replay->mirror, diffs[i].markup, after) != 0) {
             return sr_fail(replay, "mirror allocation failed");
         }
     }
 
-    count = markdown_core_delta_changed(changes, &ids);
+    /* Children before parents: a surviving row whose canonical parent is also
+     * in the list must come first. Checked against the committed tree, which
+     * is the only place the parent relation lives. */
     for (i = 0; i < count; i++) {
-        sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            return sr_fail(replay, "delta changed an id the mirror never saw");
+        const markdown_core_node *node;
+        const markdown_core_node *parent;
+        markdown_core_node_id parent_id;
+        if (diffs[i].parts == 0) {
+            continue;
         }
-        entry->revision = after;
-    }
-
-    count = markdown_core_delta_bubbled(changes, &ids);
-    for (i = 0; i < count; i++) {
-        sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, ids[i]);
-        if (!entry) {
-            return sr_fail(replay, "delta bubbled an id the mirror never saw");
+        node = markdown_core_document_node_by_id(replay->session, diffs[i].markup);
+        if (!node) {
+            return sr_fail(replay, "diffs name a surviving id the document does not have");
         }
-        entry->revision = after;
+        parent = markdown_core_node_get_parent(node);
+        if (!parent) {
+            continue;
+        }
+        parent_id = markdown_core_node_get_id(parent);
+        for (k = 0; k < i; k++) {
+            if (diffs[k].markup == parent_id) {
+                return sr_fail(replay, "a parent was emitted before its own child");
+            }
+        }
     }
 
     return 0;

@@ -1710,14 +1710,53 @@ static char *dump_document_cstr(const markdown_core_document *document) {
     return copy;
 }
 
-static int delta_contains(const markdown_core_node_id *ids, size_t count, markdown_core_node_id id) {
+/* `diffs` names every node once, and carries NO LIFECYCLE TAG (9.1). A
+ * retired node is the one with no parts; a node whose own projection moved
+ * carries at least one part other than DESCENDANT; a node that merely has a
+ * changed descendant carries DESCENDANT alone. A created node differs from
+ * absence in every part it has, which always includes VALUE -- so "created"
+ * and "changed" are the same query here, and a consumer that needs to tell
+ * them apart does it from its own state, not from the delta. */
+#define DELTA_OWN_PARTS                                                                                                \
+    ((long)(MARKDOWN_CORE_DIFF_VALUE | MARKDOWN_CORE_DIFF_TEXT | MARKDOWN_CORE_DIFF_CHILDREN |                          \
+            MARKDOWN_CORE_DIFF_ANSWERS))
+
+static long delta_parts(const markdown_core_delta *changes, markdown_core_node_id id) {
+    const markdown_core_diff *diffs = NULL;
+    size_t count = markdown_core_delta_diffs(changes, &diffs);
     size_t i;
     for (i = 0; i < count; i++) {
-        if (ids[i] == id) {
-            return 1;
+        if (diffs[i].markup == id) {
+            return (long)diffs[i].parts;
         }
     }
-    return 0;
+    return -1;
+}
+
+static int delta_touched(const markdown_core_delta *changes, markdown_core_node_id id) {
+    long parts = delta_parts(changes, id);
+    return parts > 0 && (parts & DELTA_OWN_PARTS) != 0;
+}
+
+static int delta_bubbled_only(const markdown_core_delta *changes, markdown_core_node_id id) {
+    return delta_parts(changes, id) == (long)MARKDOWN_CORE_DIFF_DESCENDANT;
+}
+
+static int delta_retired(const markdown_core_delta *changes, markdown_core_node_id id) {
+    return delta_parts(changes, id) == 0;
+}
+
+static size_t delta_retired_count(const markdown_core_delta *changes) {
+    const markdown_core_diff *diffs = NULL;
+    size_t count = markdown_core_delta_diffs(changes, &diffs);
+    size_t retired = 0;
+    size_t i;
+    for (i = 0; i < count; i++) {
+        if (diffs[i].parts == 0) {
+            retired++;
+        }
+    }
+    return retired;
 }
 
 static const char SESSION_RICH_SOURCE[] = "# Title\n"
@@ -1845,8 +1884,6 @@ static void session_append_id_stability(test_batch_runner *runner) {
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *strong = markdown_core_node_get_next_sibling(text);
         uint64_t before = 0, after = 0;
-        const markdown_core_node_id *ids;
-        size_t count;
 
         OK(runner, markdown_core_node_get_id(heading) == heading_id, "frontier append keeps the heading id");
         OK(runner, markdown_core_node_get_revision(heading) == heading_rev, "untouched heading keeps its revision");
@@ -1860,16 +1897,12 @@ static void session_append_id_stability(test_batch_runner *runner) {
         OK(runner, before + 1 == after, "delta revisions are consecutive");
         OK(runner, markdown_core_document_revision(session) == after, "session revision matches the delta");
 
-        count = markdown_core_delta_changed(changes, &ids);
-        OK(runner, delta_contains(ids, count, paragraph_id), "paragraph is reported changed");
-        OK(runner, delta_contains(ids, count, text_id), "grown text is reported changed");
-        OK(runner, !delta_contains(ids, count, heading_id), "heading is not reported changed");
-        count = markdown_core_delta_added(changes, &ids);
-        OK(runner, delta_contains(ids, count, markdown_core_node_get_id(strong)), "strong is reported added");
-        count = markdown_core_delta_bubbled(changes, &ids);
-        OK(runner, delta_contains(ids, count, root_id), "root revision bubbles");
-        count = markdown_core_delta_removed(changes, &ids);
-        INT_EQ(runner, (int)count, 0, "append removes nothing");
+        OK(runner, delta_touched(changes, paragraph_id), "paragraph is reported changed");
+        OK(runner, delta_touched(changes, text_id), "grown text is reported changed");
+        OK(runner, !delta_touched(changes, heading_id), "heading is not reported changed");
+        OK(runner, delta_touched(changes, markdown_core_node_get_id(strong)), "strong is reported added");
+        OK(runner, delta_bubbled_only(changes, root_id), "root revision bubbles");
+        INT_EQ(runner, (int)delta_retired_count(changes), 0, "append removes nothing");
 
         OK(runner,
            markdown_core_node_get_revision(root) == after && root_rev_before < after,
@@ -2061,8 +2094,6 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
     markdown_core_node_id directive_id = 0;
     markdown_core_node_id label_id = 0;
     markdown_core_node_id text_id = 0;
-    const markdown_core_node_id *ids = NULL;
-    size_t count;
 
     OK(runner, session != NULL, "directive delta session opens");
     if (!session) {
@@ -2090,15 +2121,13 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
        mc_text_splice(&mctext, 4, 5, &replacement, 1) &&
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "directive label literal edit commits");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, text_id), "edited label Text is changed");
-    OK(runner, !delta_contains(ids, count, label_id), "literal edit does not change the label's child list");
-    OK(runner, !delta_contains(ids, count, directive_id), "label literal edit does not change directive fields");
-    count = markdown_core_delta_bubbled(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "label literal edit bubbles through DirectiveLabel");
-    OK(runner, delta_contains(ids, count, directive_id), "label literal edit bubbles through the directive");
-    OK(runner, delta_contains(ids, count, paragraph_id), "label literal edit bubbles through the paragraph");
-    OK(runner, delta_contains(ids, count, root_id), "label literal edit bubbles through the document");
+    OK(runner, delta_touched(changes, text_id), "edited label Text is changed");
+    OK(runner, !delta_touched(changes, label_id), "literal edit does not change the label's child list");
+    OK(runner, !delta_touched(changes, directive_id), "label literal edit does not change directive fields");
+    OK(runner, delta_bubbled_only(changes, label_id), "label literal edit bubbles through DirectiveLabel");
+    OK(runner, delta_bubbled_only(changes, directive_id), "label literal edit bubbles through the directive");
+    OK(runner, delta_bubbled_only(changes, paragraph_id), "label literal edit bubbles through the paragraph");
+    OK(runner, delta_bubbled_only(changes, root_id), "label literal edit bubbles through the document");
     markdown_core_delta_free(changes);
     changes = NULL;
 
@@ -2109,11 +2138,9 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
     OK(runner,
        markdown_core_document_node_by_id(session, label_id) != NULL,
        "label topology edit preserves DirectiveLabel identity");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "label child topology change marks DirectiveLabel changed");
-    OK(runner, !delta_contains(ids, count, directive_id), "label topology does not change directive fields");
-    count = markdown_core_delta_bubbled(changes, &ids);
-    OK(runner, delta_contains(ids, count, directive_id), "label topology change bubbles through the directive");
+    OK(runner, delta_touched(changes, label_id), "label child topology change marks DirectiveLabel changed");
+    OK(runner, !delta_touched(changes, directive_id), "label topology does not change directive fields");
+    OK(runner, delta_bubbled_only(changes, directive_id), "label topology change bubbles through the directive");
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
@@ -2131,8 +2158,6 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     markdown_core_delta *changes = NULL;
     markdown_core_node_id directive_id = 0;
     markdown_core_node_id label_id = 0;
-    const markdown_core_node_id *ids = NULL;
-    size_t count;
 
     OK(runner, session != NULL, "inline empty-label delta session opens");
     if (!session) {
@@ -2166,10 +2191,8 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
                markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
            "inline absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
     }
-    count = markdown_core_delta_added(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "inline absent-to-empty adds the DirectiveLabel");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, directive_id), "inline absent-to-empty marks the directive changed");
+    OK(runner, delta_touched(changes, label_id), "inline absent-to-empty adds the DirectiveLabel");
+    OK(runner, delta_touched(changes, directive_id), "inline absent-to-empty marks the directive changed");
     markdown_core_delta_free(changes);
     changes = NULL;
 
@@ -2183,10 +2206,8 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            directive && markdown_core_node_directive_label(directive) == NULL,
            "inline empty-to-absent preserves directive identity and removes its label child");
     }
-    count = markdown_core_delta_removed(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "inline empty-to-absent removes the DirectiveLabel");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, directive_id), "inline empty-to-absent marks the directive changed");
+    OK(runner, delta_retired(changes, label_id), "inline empty-to-absent removes the DirectiveLabel");
+    OK(runner, delta_touched(changes, directive_id), "inline empty-to-absent marks the directive changed");
     markdown_core_delta_free(changes);
     changes = NULL;
     mc_text_free(&mctext);
@@ -2224,10 +2245,8 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
                markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
            "block absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
     }
-    count = markdown_core_delta_added(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "block absent-to-empty adds the DirectiveLabel");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, directive_id), "block absent-to-empty marks the directive changed");
+    OK(runner, delta_touched(changes, label_id), "block absent-to-empty adds the DirectiveLabel");
+    OK(runner, delta_touched(changes, directive_id), "block absent-to-empty marks the directive changed");
     markdown_core_delta_free(changes);
     changes = NULL;
 
@@ -2241,10 +2260,8 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            directive && markdown_core_node_directive_label(directive) == NULL,
            "block empty-to-absent preserves directive identity and removes its label child");
     }
-    count = markdown_core_delta_removed(changes, &ids);
-    OK(runner, delta_contains(ids, count, label_id), "block empty-to-absent removes the DirectiveLabel");
-    count = markdown_core_delta_changed(changes, &ids);
-    OK(runner, delta_contains(ids, count, directive_id), "block empty-to-absent marks the directive changed");
+    OK(runner, delta_retired(changes, label_id), "block empty-to-absent removes the DirectiveLabel");
+    OK(runner, delta_touched(changes, directive_id), "block empty-to-absent marks the directive changed");
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
@@ -2391,7 +2408,6 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         const markdown_core_node *link = markdown_core_document_node_by_id(session, link_id);
         const markdown_core_node *footnote_reference = markdown_core_document_node_by_id(session, footnote_reference_id);
         const markdown_core_node *body = markdown_core_document_node_by_id(session, body_id);
-        const markdown_core_node_id *ids = NULL;
         const markdown_core_node_id *footnote_ids = NULL;
         markdown_core_footnote_info footnote_info;
         size_t count;
@@ -2435,15 +2451,13 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            directive && label && body && markdown_core_node_get_next_sibling(label) == body &&
                markdown_core_node_get_revision(body) == body_revision,
            "block-label reparse preserves the block body's identity and revision");
-        count = markdown_core_delta_changed(changes, &ids);
-        OK(runner, !delta_contains(ids, count, link_id), "the reference is not classified as changed");
-        OK(runner, !delta_contains(ids, count, label_id), "stable DirectiveLabel is not classified as changed");
+        OK(runner, !delta_touched(changes, link_id), "the reference is not classified as changed");
+        OK(runner, !delta_touched(changes, label_id), "stable DirectiveLabel is not classified as changed");
         OK(runner,
-           !delta_contains(ids, count, footnote_reference_id),
+           !delta_touched(changes, footnote_reference_id),
            "unmodified block-label footnote is absent from changed delta");
-        count = markdown_core_delta_bubbled(changes, &ids);
-        OK(runner, !delta_contains(ids, count, label_id), "nothing bubbles through the DirectiveLabel");
-        OK(runner, !delta_contains(ids, count, directive_id), "nothing bubbles through the directive");
+        OK(runner, !delta_bubbled_only(changes, label_id), "nothing bubbles through the DirectiveLabel");
+        OK(runner, !delta_bubbled_only(changes, directive_id), "nothing bubbles through the directive");
         label_revision = markdown_core_node_get_revision(label);
     }
 
@@ -2773,10 +2787,8 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         OK(runner,
            ref != NULL && markdown_core_node_get_revision(ref) > ref_x_rev,
            "the shifted reference keeps its id with a revision bump");
-        count = markdown_core_delta_changed(changes, &ids);
-        OK(runner, delta_contains(ids, count, ref_x), "the shifted reference is reported changed");
-        count = markdown_core_delta_bubbled(changes, &ids);
-        OK(runner, delta_contains(ids, count, paragraph_id), "its untouched paragraph bubbles");
+        OK(runner, delta_touched(changes, ref_x), "the shifted reference is reported changed");
+        OK(runner, delta_bubbled_only(changes, paragraph_id), "its untouched paragraph bubbles");
         {
             const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);
             OK(runner,

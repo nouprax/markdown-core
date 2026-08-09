@@ -137,6 +137,12 @@ struct markdown_core_node {
     // parses that never pass through a session's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
+    // Which parts of this node's projection changed at `last_changed_rev`
+    // (markdown_core_diff_part, 9.1); meaningless at any other revision. The
+    // diff walk writes the structural parts and the footnote pass ORs its
+    // answer parts in, so the delta's emission walk reads them off in one
+    // postorder pass instead of merging two out-of-order id lists.
+    uint32_t diff_parts;
 
 
     // The concrete marker records of this node's own ownership region

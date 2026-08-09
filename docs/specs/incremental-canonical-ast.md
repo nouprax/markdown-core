@@ -1526,24 +1526,31 @@ bottom-up therefore reads the list once, front to back, and every child it
 needs is already built. That is the whole reason the order is specified; it is
 not a stability convention.
 
-The order is the `after` tree's postorder, with one rule for nodes that are not
-in it: **a retired node is emitted where it was found**, inside its former
-parent's run and so before that parent. A consumer holding a map from
-`MarkupID` to its own state therefore deletes before it re-reads the parent's
-children, and never re-reads a parent whose retired children it has not yet
-dropped.
+The order is: **the retired nodes first, then the `after` tree's postorder.**
+A retired node needs no position of its own, because deletion is addressed by
+id, and putting them all in front is what a consumer wants anyway — it drops
+every piece of dead state before it touches anything it is keeping.
 
-A retired node needs no position of its own — deletion is addressed by id — so
-this rule is chosen for the ONE property it does buy: a single list, in a
-single pass, with no second index.
+*An earlier revision of this section put a retired node "where it was found",
+inside its former parent's run. That rule was chosen to buy a single pass, and
+the single pass is not available: `ANSWERS` cannot be computed until node
+identities exist, because the footnote index is keyed by `MarkupID` and
+identities are minted by the diff walk itself. So the delta is emitted by a
+separate walk no matter what, and given a separate walk the prefix run is both
+simpler and strictly better for the consumer.*
 
-**This is why there is no separate ordered-entry table and no id-to-node
-index.** Both existed because `diffs` used to be four unordered id sets, so
-tree position had to be reconstructed after the fact: the entries were
-allocated on demand, keyed through a hash of the delta's ids, topologically
-sorted, and each id resolved back to its node through a document-wide table
-built on every commit. A list that is already in order carries its own
-position, so all of that is answering a question the shape no longer asks.
+**This is why there is no separate ordered-entry table.** It existed because
+`diffs` used to be four unordered id sets, so tree position had to be
+reconstructed after the fact: entries allocated on demand, keyed through a hash
+over all four arrays, parent-linked, and topologically sorted. A list that is
+already in order carries its own position.
+
+**The `MarkupID` → node index is a different question and it survives.** The
+ordered-entry reconstruction used it, and that use is gone; the public query
+does not go through a delta at all. A node-addressed answer (4.1) takes an id
+because that is what a consumer holds — a binding's snapshot is a decoded
+value tree keyed by `MarkupID` with no engine pointer anywhere in it, and
+`reference_info` is id-in, id-out.
 
 **A retired node has no parts in `after`, so `parts` is empty.** That is why
 there is no lifecycle tag: a consumer distinguishes the case with

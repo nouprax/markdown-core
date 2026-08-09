@@ -1157,17 +1157,69 @@ static bool view_optional_equal(markdown_core_string a, markdown_core_string b) 
     return (a.data == NULL) == (b.data == NULL) && view_content_equal(a, b);
 }
 
-bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_core_node *b) {
+// Kinds whose canonical text bytes are the TEXT part of their projection
+// (9.1). Everything else a node carries -- levels, flavors, urls, labels,
+// alignments -- is a scalar field, and scalar fields are VALUE.
+static bool kind_has_text(markdown_core_node_kind kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_CODE_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA:
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Kinds a parser answer is addressed to (4.1). The document root carries the
+// document-wide ordered answers; a footnote definition and reference carry
+// their number, resolution and back-reference ordinal.
+static bool kind_has_answers(markdown_core_node_kind kind) {
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_DOCUMENT:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+uint32_t markdown_core_ast_parts_present(const markdown_core_node *node) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    uint32_t parts = MARKDOWN_CORE_DIFF_VALUE;
+    if (kind_has_text(kind)) {
+        parts |= MARKDOWN_CORE_DIFF_TEXT;
+    }
+    if (kind_has_answers(kind)) {
+        parts |= MARKDOWN_CORE_DIFF_ANSWERS;
+    }
+    // An empty child list and no child list are indistinguishable to every
+    // consumer, so a childless node is not given the two list-valued parts.
+    if (node->first_child) {
+        parts |= MARKDOWN_CORE_DIFF_CHILDREN | MARKDOWN_CORE_DIFF_DESCENDANT;
+    }
+    return parts;
+}
+
+uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const markdown_core_node *b) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
     markdown_core_string a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
     markdown_core_string b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
+    bool value = false;
+    bool text = false;
     // Callers pair nodes by raw type, so the facade kinds already match.
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING: {
         int32_t level_a, level_b;
         markdown_core_node_heading_level(a, &level_a);
         markdown_core_node_heading_level(b, &level_b);
-        return level_a == level_b;
+        value = level_a != level_b;
+        break;
     }
     case MARKDOWN_CORE_KIND_LIST: {
         markdown_core_list_flavor flavor_a, flavor_b;
@@ -1175,22 +1227,26 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         bool tight_a, tight_b;
         markdown_core_node_list_properties(a, &flavor_a, &start_a, &tight_a);
         markdown_core_node_list_properties(b, &flavor_b, &start_b, &tight_b);
-        return flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
-               (!start_a.has_value || start_a.value == start_b.value);
+        value = !(flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
+                  (!start_a.has_value || start_a.value == start_b.value));
+        break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_bool checked_a, checked_b;
         markdown_core_node_list_item_checked(a, &checked_a);
         markdown_core_node_list_item_checked(b, &checked_b);
-        return checked_a.has_value == checked_b.has_value &&
-               (!checked_a.has_value || checked_a.value == checked_b.value);
+        value = !(checked_a.has_value == checked_b.has_value &&
+                  (!checked_a.has_value || checked_a.value == checked_b.value));
+        break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced_a, closed_a, fenced_b, closed_b;
         markdown_core_node_code_block_properties(a, &a1, &a2, &a3, &fenced_a, &closed_a);
         markdown_core_node_code_block_properties(b, &b1, &b2, &b3, &fenced_b, &closed_b);
-        return fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
-               view_optional_equal(a2, b2) && view_content_equal(a3, b3);
+        value = !(fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
+                  view_optional_equal(a2, b2));
+        text = !view_content_equal(a3, b3);
+        break;
     }
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
     case MARKDOWN_CORE_KIND_TEXT:
@@ -1198,48 +1254,53 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
     case MARKDOWN_CORE_KIND_CODE:
         markdown_core_node_literal(a, &a1);
         markdown_core_node_literal(b, &b1);
-        return view_content_equal(a1, b1);
+        text = !view_content_equal(a1, b1);
+        break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
         markdown_core_node_reference_definition_properties(a, &a1, &a2, &a3);
         markdown_core_node_reference_definition_properties(b, &b1, &b2, &b3);
-        return view_content_equal(a1, b1) && view_content_equal(a2, b2) && view_content_equal(a3, b3);
+        value = !(view_content_equal(a1, b1) && view_content_equal(a2, b2) && view_content_equal(a3, b3));
+        break;
     }
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
         markdown_core_reference_form form_a, form_b;
         markdown_core_node_reference_properties(a, &a1, &form_a);
         markdown_core_node_reference_properties(b, &b1, &form_b);
-        return form_a == form_b && view_content_equal(a1, b1);
+        value = !(form_a == form_b && view_content_equal(a1, b1));
+        break;
     }
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
     case MARKDOWN_CORE_KIND_FORMULA: {
         markdown_core_placement_mode mode_a, mode_b;
         markdown_core_node_formula_properties(a, &mode_a, &a1);
         markdown_core_node_formula_properties(b, &mode_b, &b1);
-        return mode_a == mode_b && view_content_equal(a1, b1);
+        value = mode_a != mode_b;
+        text = !view_content_equal(a1, b1);
+        break;
     }
     case MARKDOWN_CORE_KIND_TABLE: {
         size_t count_a, count_b, i;
         markdown_core_node_table_column_count(a, &count_a);
         markdown_core_node_table_column_count(b, &count_b);
         if (count_a != count_b) {
-            return false;
+            value = true;
+            break;
         }
-        for (i = 0; i < count_a; i++) {
+        for (i = 0; i < count_a && !value; i++) {
             markdown_core_table_alignment alignment_a, alignment_b;
             markdown_core_node_table_alignment_at(a, i, &alignment_a);
             markdown_core_node_table_alignment_at(b, i, &alignment_b);
-            if (alignment_a != alignment_b) {
-                return false;
-            }
+            value = alignment_a != alignment_b;
         }
-        return true;
+        break;
     }
     case MARKDOWN_CORE_KIND_TABLE_ROW: {
         bool header_a, header_b;
         markdown_core_node_table_row_is_header(a, &header_a);
         markdown_core_node_table_row_is_header(b, &header_b);
-        return header_a == header_b;
+        value = header_a != header_b;
+        break;
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
@@ -1255,32 +1316,39 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
         a2.length = attributes_a ? strlen(attributes_a) : 0;
         b2.data = (const uint8_t *)attributes_b;
         b2.length = attributes_b ? strlen(attributes_b) : 0;
-        return view_content_equal(a1, b1) && view_optional_equal(a2, b2);
+        value = !(view_content_equal(a1, b1) && view_optional_equal(a2, b2));
+        break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
         markdown_core_node_footnote_id(a, &a1);
         markdown_core_node_footnote_id(b, &b1);
-        return view_content_equal(a1, b1);
+        value = !view_content_equal(a1, b1);
+        break;
     case MARKDOWN_CORE_KIND_CROSS_LINK:
         markdown_core_node_cross_link_reference(a, &a1);
         markdown_core_node_cross_link_reference(b, &b1);
-        return view_content_equal(a1, b1);
+        value = !view_content_equal(a1, b1);
+        break;
     case MARKDOWN_CORE_KIND_EMBED:
         markdown_core_node_embed_reference(a, &a1);
         markdown_core_node_embed_reference(b, &b1);
-        return view_content_equal(a1, b1);
+        value = !view_content_equal(a1, b1);
+        break;
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(a, &a1, &a2);
         markdown_core_node_link_properties(b, &b1, &b2);
-        return view_optional_equal(a1, b1) && view_optional_equal(a2, b2);
+        value = !(view_optional_equal(a1, b1) && view_optional_equal(a2, b2));
+        break;
     case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_image_properties(a, &a1, &a2);
         markdown_core_node_image_properties(b, &b1, &b2);
-        return view_optional_equal(a1, b1) && view_optional_equal(a2, b2);
+        value = !(view_optional_equal(a1, b1) && view_optional_equal(a2, b2));
+        break;
     default:
-        return true;
+        break;
     }
+    return (value ? MARKDOWN_CORE_DIFF_VALUE : 0u) | (text ? MARKDOWN_CORE_DIFF_TEXT : 0u);
 }
 
 // Depth is input-controlled (nested block quotes nest one node per two input

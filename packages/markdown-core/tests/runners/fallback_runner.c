@@ -1287,15 +1287,14 @@ typedef struct {
 typedef struct {
     size_t ordinal;
     markdown_core_node_type type;
+    uint32_t parts;
 } fb_delta_mark;
-
-enum { FB_DELTA_ADDED, FB_DELTA_REMOVED, FB_DELTA_CHANGED, FB_DELTA_BUBBLED, FB_DELTA_ARRAY_COUNT };
 
 typedef struct {
     uint64_t before;
     uint64_t after;
-    fb_delta_mark *marks[FB_DELTA_ARRAY_COUNT];
-    size_t counts[FB_DELTA_ARRAY_COUNT];
+    fb_delta_mark *marks;
+    size_t count;
 } fb_delta_snapshot;
 
 static void fb_tree_snapshot_release(fb_tree_snapshot *snapshot) {
@@ -1353,37 +1352,8 @@ static const fb_tree_entry *fb_tree_snapshot_find(const fb_tree_snapshot *snapsh
     return NULL;
 }
 
-static size_t fb_delta_array(const markdown_core_delta *changes, size_t index, const markdown_core_node_id **ids) {
-    switch (index) {
-    case FB_DELTA_ADDED:
-        return markdown_core_delta_added(changes, ids);
-    case FB_DELTA_REMOVED:
-        return markdown_core_delta_removed(changes, ids);
-    case FB_DELTA_CHANGED:
-        return markdown_core_delta_changed(changes, ids);
-    default:
-        return markdown_core_delta_bubbled(changes, ids);
-    }
-}
-
-static int fb_delta_contains(const markdown_core_delta *changes, size_t index, markdown_core_node_id expected) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = fb_delta_array(changes, index, &ids);
-    size_t i;
-
-    for (i = 0; i < count; i++) {
-        if (ids[i] == expected) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static void fb_delta_snapshot_release(fb_delta_snapshot *snapshot) {
-    size_t i;
-    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
-        free(snapshot->marks[i]);
-    }
+    free(snapshot->marks);
     memset(snapshot, 0, sizeof(*snapshot));
 }
 
@@ -1395,6 +1365,9 @@ static int fb_delta_mark_compare(const void *lhs, const void *rhs) {
     }
     if (a->type != b->type) {
         return a->type < b->type ? -1 : 1;
+    }
+    if (a->parts != b->parts) {
+        return a->parts < b->parts ? -1 : 1;
     }
     return 0;
 }
@@ -1412,34 +1385,38 @@ static int fb_delta_snapshot_capture(
         return -1;
     }
     markdown_core_delta_revisions(changes, &snapshot->before, &snapshot->after);
-    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
-        const markdown_core_node_id *ids = NULL;
-        size_t count = fb_delta_array(changes, i, &ids);
-        const fb_tree_snapshot *tree = i == FB_DELTA_REMOVED ? before_tree : &after_tree;
+    {
+        const markdown_core_diff *diffs = NULL;
+        size_t count = markdown_core_delta_diffs(changes, &diffs);
         size_t k;
         if (count) {
-            snapshot->marks[i] = (fb_delta_mark *)malloc(count * sizeof(*snapshot->marks[i]));
-            if (!snapshot->marks[i]) {
+            snapshot->marks = (fb_delta_mark *)malloc(count * sizeof(*snapshot->marks));
+            if (!snapshot->marks) {
                 fb_tree_snapshot_release(&after_tree);
                 fb_delta_snapshot_release(snapshot);
                 return -1;
             }
             for (k = 0; k < count; k++) {
-                const fb_tree_entry *entry = fb_tree_snapshot_find(tree, ids[k]);
+                // A retired row names a node of the PREVIOUS tree; every other
+                // row names one of this tree.
+                const fb_tree_snapshot *tree = diffs[k].parts == 0 ? before_tree : &after_tree;
+                const fb_tree_entry *entry = fb_tree_snapshot_find(tree, diffs[k].markup);
                 if (!entry) {
                     fb_tree_snapshot_release(&after_tree);
                     fb_delta_snapshot_release(snapshot);
                     return -1;
                 }
-                snapshot->marks[i][k].ordinal = entry->ordinal;
-                snapshot->marks[i][k].type = entry->type;
+                snapshot->marks[k].ordinal = entry->ordinal;
+                snapshot->marks[k].type = entry->type;
+                snapshot->marks[k].parts = diffs[k].parts;
             }
-            // Delta arrays are semantic sets. Raw ids are session-local, and
-            // an OOM retry may consume (but never reuse) ids or alter emission
-            // order, so compare their structural effects in canonical order.
-            qsort(snapshot->marks[i], count, sizeof(*snapshot->marks[i]), fb_delta_mark_compare);
+            // Raw ids are session-local and an OOM retry may consume (but
+            // never reuse) them, so compare structural effects in canonical
+            // order rather than ids. The list's own order is gated by the
+            // replay mirror, which walks it forward.
+            qsort(snapshot->marks, count, sizeof(*snapshot->marks), fb_delta_mark_compare);
         }
-        snapshot->counts[i] = count;
+        snapshot->count = count;
     }
     fb_tree_snapshot_release(&after_tree);
     return 0;
@@ -1469,32 +1446,25 @@ static int fb_delta_matches(
             (unsigned long long)expected->after
         );
     }
-    for (i = 0; i < FB_DELTA_ARRAY_COUNT; i++) {
-        size_t k;
-        if (actual.counts[i] != expected->counts[i]) {
-            fprintf(stderr, "delta array %zu count %zu != control %zu\n", i, actual.counts[i], expected->counts[i]);
+    if (matches && actual.count != expected->count) {
+        fprintf(stderr, "diffs count %zu != control %zu\n", actual.count, expected->count);
+        matches = 0;
+    }
+    for (i = 0; matches && i < actual.count; i++) {
+        if (actual.marks[i].ordinal != expected->marks[i].ordinal ||
+            actual.marks[i].type != expected->marks[i].type || actual.marks[i].parts != expected->marks[i].parts) {
+            fprintf(
+                stderr,
+                "diffs item %zu mark (%zu,%d,%u) != control (%zu,%d,%u)\n",
+                i,
+                actual.marks[i].ordinal,
+                (int)actual.marks[i].type,
+                actual.marks[i].parts,
+                expected->marks[i].ordinal,
+                (int)expected->marks[i].type,
+                expected->marks[i].parts
+            );
             matches = 0;
-            break;
-        }
-        for (k = 0; k < actual.counts[i]; k++) {
-            if (actual.marks[i][k].ordinal != expected->marks[i][k].ordinal ||
-                actual.marks[i][k].type != expected->marks[i][k].type) {
-                fprintf(
-                    stderr,
-                    "delta array %zu item %zu mark (%zu,%d) != control (%zu,%d)\n",
-                    i,
-                    k,
-                    actual.marks[i][k].ordinal,
-                    (int)actual.marks[i][k].type,
-                    expected->marks[i][k].ordinal,
-                    (int)expected->marks[i][k].type
-                );
-                matches = 0;
-                break;
-            }
-        }
-        if (!matches) {
-            break;
         }
     }
     fb_delta_snapshot_release(&actual);

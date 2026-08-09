@@ -46,38 +46,22 @@ typedef struct {
     bool failed;
 } diff_ctx;
 
-typedef enum { REC_ADDED, REC_REMOVED, REC_CHANGED, REC_BUBBLED } rec_kind;
-
-static void record(diff_ctx *ctx, rec_kind kind, const markdown_core_node *node) {
-    markdown_core_id_array *array;
-    if (!ctx->changes) {
-        return;
-    }
-    switch (kind) {
-    case REC_ADDED:
-        array = &ctx->changes->added;
-        break;
-    case REC_REMOVED:
-        array = &ctx->changes->removed;
-        break;
-    case REC_CHANGED:
-        array = &ctx->changes->changed;
-        break;
-    default:
-        array = &ctx->changes->bubbled;
-        break;
-    }
-    if (!markdown_core_id_array_push(array, node->id)) {
-        ctx->failed = true;
-    }
+// ANNOTATE, DO NOT RECORD. A node's changed parts are written onto the node
+// and the delta is emitted from one postorder walk afterwards (document.c).
+// That is what lets two independently-computed answers -- this walk's
+// structural verdict and the footnote pass's ANSWERS -- land in one ordered
+// list without either of them knowing the other's positions.
+static void mark(markdown_core_node *node, uint64_t rev, uint32_t parts) {
+    node->last_changed_rev = rev;
+    node->diff_parts |= parts;
 }
 
 static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
     markdown_core_node *node = root;
     for (;;) {
         node->id = ctx->session->next_id++;
-        node->last_changed_rev = ctx->new_rev;
-        record(ctx, REC_ADDED, node);
+        // A created node differs from absence in every part it has (9.1).
+        mark(node, ctx->new_rev, markdown_core_ast_parts_present(node));
         if (node->first_child) {
             node = node->first_child;
             continue;
@@ -92,10 +76,17 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
     }
 }
 
+// Retired nodes are the only rows this walk pushes itself, and they go in
+// BEFORE any surviving node -- deletion is addressed by id, so a retired row
+// needs no position, and a consumer that drops all dead state first can then
+// rebuild bottom-up in one forward pass.
 static void record_removed_subtree(diff_ctx *ctx, const markdown_core_node *root) {
     const markdown_core_node *node = root;
     for (;;) {
-        record(ctx, REC_REMOVED, node);
+        if (ctx->changes && !markdown_core_delta_push(ctx->changes, node->id, 0)) {
+            ctx->failed = true;
+            return;
+        }
         if (node->first_child) {
             node = node->first_child;
             continue;
@@ -145,7 +136,6 @@ typedef struct diff_frame {
     size_t middle_new;
     size_t suffix_left;
     bool middle_done;
-    bool direct_changed;
     bool descendant_changed;
     bool child_list_changed;
 } diff_frame;
@@ -217,7 +207,6 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     frame->middle_new = n_new - prefix - suffix;
     frame->suffix_left = suffix;
     frame->middle_done = false;
-    frame->direct_changed = false;
     frame->descendant_changed = false;
     frame->child_list_changed = (n_old != n_new) || (prefix + suffix < pairable);
 
@@ -271,18 +260,20 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
 
         // Exit: every child is resolved; classify this pair. Field equality
         // is checked here (once) since node fields never change mid-walk.
-        bool direct = top->direct_changed || !markdown_core_ast_fields_equal(top->old, top->nw);
-        if (direct || top->child_list_changed) {
-            top->nw->last_changed_rev = ctx->new_rev;
-            record(ctx, REC_CHANGED, top->nw);
-        } else if (top->descendant_changed) {
-            top->nw->last_changed_rev = ctx->new_rev;
-            record(ctx, REC_BUBBLED, top->nw);
+        uint32_t parts = markdown_core_ast_parts_changed(top->old, top->nw);
+        if (top->child_list_changed) {
+            parts |= MARKDOWN_CORE_DIFF_CHILDREN;
+        }
+        if (top->descendant_changed) {
+            parts |= MARKDOWN_CORE_DIFF_DESCENDANT;
+        }
+        if (parts) {
+            mark(top->nw, ctx->new_rev, parts);
         } else {
             top->nw->last_changed_rev = top->old->last_changed_rev;
         }
 
-        child_result = direct || top->child_list_changed || top->descendant_changed;
+        child_result = parts != 0;
         have_result = true;
         stack->length--;
     }

@@ -383,6 +383,33 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
  * old `adopt` name hid, and keeping parse and diff apart is what makes it
  * statable: a tree is a pure function of (bytes, options), and a delta is a
  * pure function of two trees. */
+/* Appends every node the two diff passes marked at `rev`, in postorder, so a
+ * node always follows its own children. Iterative with parent pointers: depth
+ * is input-controlled and native recursion does not survive it. */
+static bool delta_emit(markdown_core_delta *changes, markdown_core_node *root, uint64_t rev) {
+    markdown_core_node *node = root;
+
+    while (node->first_child) {
+        node = node->first_child;
+    }
+    for (;;) {
+        if (node->last_changed_rev == rev && !markdown_core_delta_push(changes, node->id, node->diff_parts)) {
+            return false;
+        }
+        if (node == root) {
+            return true;
+        }
+        if (node->next) {
+            node = node->next;
+            while (node->first_child) {
+                node = node->first_child;
+            }
+        } else {
+            node = node->parent;
+        }
+    }
+}
+
 bool markdown_core_document_diff(
     const markdown_core_document *old,
     markdown_core_document *nw,
@@ -413,9 +440,7 @@ bool markdown_core_document_diff(
                 nw->mem,
                 old ? &old->footnotes : &footnotes,
                 &footnotes,
-                nw->revision,
-                changes,
-                0
+                nw->revision
             )) {
             markdown_core_footnote_index_release(nw->mem, &footnotes);
             markdown_core_ast_set_error(
@@ -427,20 +452,35 @@ bool markdown_core_document_diff(
         }
     }
 
-    // THE ID TABLE EXISTS TO RESOLVE A DELTA'S IDS, so it is built when there
-    // is a delta. Every consumer of markdown_core_document_node_by_id is
-    // holding delta entries and looking up the nodes they name — delta.c's
-    // ordered-entry reconstruction and the three bindings that consume it —
-    // and a document created from text names nothing.
+    // EMIT THE DELTA, now that both passes have had their say. The tree diff
+    // wrote the structural parts onto the nodes and the footnote pass ORed its
+    // ANSWERS in; neither knows the other's positions, and neither needs to,
+    // because position is decided here and only here.
+    //
+    // The retired rows are already at the front: the tree diff pushed them as
+    // it discovered them, and a retired node needs no position because
+    // deletion is addressed by id. This appends every surviving changed node
+    // in postorder, so a node always follows its own children (9.1).
+    if (changes && !delta_emit(changes, nw->root, nw->revision)) {
+        markdown_core_footnote_index_release(nw->mem, &footnotes);
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
+        return false;
+    }
+
+    // THE ID TABLE ANSWERS `MarkupID -> node`, which is a public capability in
+    // its own right: a delta names nodes by id, and the node-addressed queries
+    // (4.1) take an id because the bindings hold a decoded value tree keyed by
+    // id and no C node pointer at all — markdown_core_document_reference_info
+    // is id-in, id-out.
+    //
+    // An earlier note here said this table's only consumers were resolving
+    // delta ids and that a postorder `diffs` list would therefore delete it.
+    // The postorder list did delete delta.c's own 321-line reconstruction,
+    // which used it; it does not delete the public query, which does not go
+    // through the delta at all.
     //
     // It is built here, inside the mutating call, rather than on first use, so
-    // the query stays a pure concurrent-safe read.
-    //
-    // It goes entirely when the delta becomes one postorder `diffs` list (9):
-    // a consumer already walks the new document to decode it, and a postorder
-    // list aligns with that walk, so the random lookup never happens. Measured
-    // on the many_duplicate_references corpus at 41 MB, this build was 0.8 s of
-    // a 3.3 s parse and it was super-linear.
+    // the query stays a pure concurrent-safe read of a published document.
     if (changes && !id_table_build(nw->mem, nw->root, nw->next_id > 1 ? (size_t)(nw->next_id - 1) : 1, &ids)) {
         id_table_release(nw->mem, &ids);
         markdown_core_footnote_index_release(nw->mem, &footnotes);

@@ -52,20 +52,13 @@ typedef struct {
     size_t count;
 } markdown_core_id_table;
 
-typedef struct {
-    markdown_core_node_id *ids;
-    size_t count;
-    size_t capacity;
-} markdown_core_id_array;
-
 struct markdown_core_delta {
     uint64_t lineage;
     uint64_t before;
     uint64_t after;
-    markdown_core_id_array added;
-    markdown_core_id_array removed;
-    markdown_core_id_array changed;
-    markdown_core_id_array bubbled;
+    markdown_core_diff *diffs;
+    size_t count;
+    size_t capacity;
 };
 
 // One record per footnote node (reference or definition) of the committed
@@ -344,10 +337,17 @@ markdown_core_document *markdown_core_document_open_with_mem(
     markdown_core_error **error
 );
 
-/** Compares the canonical dump fields of two nodes of the same raw type,
- * excluding scope. Allocation failure reports "not equal" so a revision bump
- * can never be missed. Defined in ast.c next to the dump implementation. */
-bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_core_node *b);
+/** Which parts of two same-raw-type nodes' projections differ: VALUE for
+ * kind and scalar fields, TEXT for canonical text bytes (9.1). Allocation
+ * failure reports "differs" so a revision bump can never be missed. Defined
+ * in ast.c next to the dump implementation, which reads the same fields. */
+uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const markdown_core_node *b);
+
+/** Which parts a node HAS, which is what a created node carries: every node
+ * has VALUE; TEXT belongs to the kinds with canonical text bytes; CHILDREN
+ * and DESCENDANT to a node that has children; ANSWERS to the kinds that are
+ * addressed by a parser answer (4.1). */
+uint32_t markdown_core_ast_parts_present(const markdown_core_node *node);
 
 /** Adopts ids from `old_root` (may be NULL) onto `new_root`, assigns
  * last_changed_rev = new_rev to every added/changed/bubbled node, carries the
@@ -373,11 +373,8 @@ bool markdown_core_diff_trees(
     markdown_core_delta *changes
 );
 
-/** Appends an id to a delta array; plain-malloc grow. */
-bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
-
-/** Grows a delta array so the next `extra` pushes cannot fail. */
-bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra);
+/** Appends one row to a delta's `diffs`; plain-malloc grow. */
+bool markdown_core_delta_push(markdown_core_delta *changes, markdown_core_node_id id, uint32_t parts);
 
 /** Builds the footnote index for `root` into `index` (zeroed on entry by the
  * caller), interning labels into the session's persistent table. Returns
@@ -466,7 +463,10 @@ void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_
 
 /** Diffs `next` against `previous` by node id and bumps the revision of
  * every node whose query answers changed but whose dump content did not:
- * the node is recorded as `changed`, untouched ancestors as `bubbled`.
+ * the node takes the ANSWERS part, untouched ancestors take DESCENDANT.
+ * It annotates nodes and records nothing in the delta -- the delta's own
+ * emission walk reads the annotations off in postorder afterwards, which is
+ * what lets one ordered list carry two independently-computed answers.
  * Two-phase and transactional: on false (an allocation could not grow) no
  * node has been touched, so the diff may run against the live committed
  * tree. */
@@ -474,9 +474,7 @@ bool markdown_core_footnote_index_diff(
     markdown_core_mem *mem,
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
-    uint64_t new_rev,
-    markdown_core_delta *changes,
-    size_t owed_bubbled
+    uint64_t new_rev
 );
 
 /** Creates a parser configured with the session's options and extensions.

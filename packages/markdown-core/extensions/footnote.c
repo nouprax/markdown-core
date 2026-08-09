@@ -638,15 +638,12 @@ bool markdown_core_footnote_index_diff(
     markdown_core_mem *mem,
     const markdown_core_footnote_index *previous,
     const markdown_core_footnote_index *next,
-    uint64_t new_rev,
-    markdown_core_delta *changes,
-    size_t owed_bubbled
+    uint64_t new_rev
 ) {
     // Two phases so the diff can run against a session's live tree: phase 1
     // collects the affected nodes without touching them (every allocation
-    // happens here or in the reserve step), phase 2 applies revision bumps
-    // and records ids infallibly. A failed diff therefore leaves every
-    // committed node exactly as it was.
+    // happens here), phase 2 writes the parts onto them infallibly. A failed
+    // diff therefore leaves every committed node exactly as it was.
     node_list changed = {NULL, 0, 0};
     node_list bubbled = {NULL, 0, 0};
     node_set affected = {NULL, 0, 0};
@@ -689,30 +686,18 @@ bool markdown_core_footnote_index_diff(
         }
     }
 
-    // `bubbled` is reserved for this pass PLUS `owed_bubbled` — ids the caller
-    // reserved before calling and has not pushed yet. A reservation is
-    // relative to the array's count when it is made, so pushing here would
-    // otherwise consume exactly the headroom the caller already paid for, and
-    // the caller's push runs after its point of no return, where failing is
-    // not allowed. Covering both here keeps the allocation on this function's
-    // existing failure arm rather than creating a second one somewhere that
-    // has no way to report it.
-    if (changes && (!markdown_core_id_array_reserve(&changes->changed, changed.count) ||
-                    !markdown_core_id_array_reserve(&changes->bubbled, bubbled.count + owed_bubbled))) {
-        goto done;
-    }
-
+    // Phase 2 writes fields on nodes, which cannot fail. The delta-array
+    // reservation this used to need -- and the `owed_bubbled` headroom the
+    // caller had to declare, because a reservation is relative to the array's
+    // count when it is made and the caller's own push ran after its point of
+    // no return -- is gone with the arrays it protected.
     for (i = 0; i < changed.count; i++) {
         changed.items[i]->last_changed_rev = new_rev;
-        if (changes) {
-            markdown_core_id_array_push(&changes->changed, changed.items[i]->id);
-        }
+        changed.items[i]->diff_parts |= MARKDOWN_CORE_DIFF_ANSWERS;
     }
     for (i = 0; i < bubbled.count; i++) {
         bubbled.items[i]->last_changed_rev = new_rev;
-        if (changes) {
-            markdown_core_id_array_push(&changes->bubbled, bubbled.items[i]->id);
-        }
+        bubbled.items[i]->diff_parts |= MARKDOWN_CORE_DIFF_DESCENDANT;
     }
     ok = true;
 

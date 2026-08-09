@@ -122,20 +122,27 @@ typedef struct markdown_core_scope_entry {
     markdown_core_scope scope;
 } markdown_core_scope_entry;
 
-typedef enum markdown_core_delta_change_kind {
-    MARKDOWN_CORE_DELTA_CHANGE_ADDED = 0,
-    MARKDOWN_CORE_DELTA_CHANGE_CHANGED = 1,
-    MARKDOWN_CORE_DELTA_CHANGE_BUBBLED = 2
-} markdown_core_delta_change_kind;
+/** Which components of a node's observable projection differ (9.1).
+ *
+ * There is no lifecycle tag. A retired node has no parts in `after`, so its
+ * `parts` is ZERO, and that is how a consumer tells a deletion from a change.
+ * A created node differs from absence in every part it has, so it carries all
+ * of them. */
+typedef enum markdown_core_diff_part {
+    MARKDOWN_CORE_DIFF_VALUE = 1u << 0,
+    MARKDOWN_CORE_DIFF_TEXT = 1u << 1,
+    MARKDOWN_CORE_DIFF_CHILDREN = 1u << 2,
+    MARKDOWN_CORE_DIFF_ANSWERS = 1u << 3,
+    MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 4
+} markdown_core_diff_part;
 
-/** One surviving delta node in children-before-parents materialization
- * order. */
-typedef struct markdown_core_delta_entry {
-    markdown_core_node_id id;
-    markdown_core_node_id parent;
-    /** One of markdown_core_delta_change_kind, stored at a fixed ABI width. */
-    uint32_t change;
-} markdown_core_delta_entry;
+/** One node whose projection differs between the delta's two documents. */
+typedef struct markdown_core_diff {
+    markdown_core_node_id markup;
+    /** A bitwise OR of markdown_core_diff_part at a fixed ABI width; zero
+     * means the node is retired. */
+    uint32_t parts;
+} markdown_core_diff;
 
 typedef struct markdown_core_parse_options {
     bool smart_punctuation;
@@ -547,44 +554,29 @@ MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_n
 /** Canonical parent, or NULL for the root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
 
-/** Delta accessors. The four arrays are disjoint: `added` and `removed`
- * list nodes that appeared/disappeared, `changed` lists nodes whose own
- * fields or direct child list changed, and `bubbled` lists ancestors whose
- * revision advanced only because a descendant changed. Ids of removed nodes
- * are retired and never reused. */
+/** Delta accessors. */
 MARKDOWN_CORE_API void markdown_core_delta_revisions(
     const markdown_core_delta *changes,
     uint64_t *before,
     uint64_t *after
 );
-MARKDOWN_CORE_API size_t
-markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_removed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_changed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-
 /**
- * Allocates the `added ∪ changed ∪ bubbled` entries in deterministic
- * children-before-parents order, so an immutable mirror can rebuild every
- * row in one pass. `parent` is the row's canonical parent id, or 0 for the
- * document root; every non-root parent is itself present later in the table.
- * `session` must be the delta's originating session and must still be at its
- * `after` revision. The table is independent of both inputs after return and
- * is built in O(k) expected time and O(k) temporary space for k delta ids,
- * without walking unaffected nodes. On every failure, each non-null output
- * is reset (`*output` to NULL and `*count` to zero).
+ * Every node whose projection differs, IN ORDER: the retired nodes first
+ * (`parts` zero), then every surviving node in the new document's postorder,
+ * so a node always appears after all of its own children.
+ *
+ * That order is the answer, not a convention. A consumer materializing
+ * immutable values bottom-up reads the list once, front to back: it drops the
+ * dead state first, and every child it needs is already built by the time it
+ * reaches a parent. There is no separate ordered-entry table and no
+ * id-to-node index, because a list that is already in order carries its own
+ * position (9.1).
+ *
+ * The rows belong to the delta and live as long as it does.
  */
-MARKDOWN_CORE_API bool markdown_core_document_ordered_delta_entries(
-    const markdown_core_document *session,
-    const markdown_core_delta *changes,
-    markdown_core_delta_entry **output,
-    size_t *count,
-    markdown_core_error **error
-);
-MARKDOWN_CORE_API void markdown_core_delta_entries_free(markdown_core_delta_entry *output);
+MARKDOWN_CORE_API size_t
+markdown_core_delta_diffs(const markdown_core_delta *changes, const markdown_core_diff **diffs);
+
 MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus
