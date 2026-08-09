@@ -307,29 +307,6 @@ size_t markdown_core_session_seal_positions(markdown_core_node *root) {
     }
 }
 
-/* Both of the parser's definition maps feed one recording, but each through
- * the sink of its own kind: events carry the kind structurally, and bundling
- * partitions them into per-kind lookup tables, so the two label namespaces
- * share no keys (6.3 step 0) and a flipped `[x]:` selects exactly the units
- * that read `[x]` — never the ones that only read `[^x]`. The
- * definition-flip gate holds each flip to its own kind's exact mention
- * count.
- *
- * Both or neither, never one. Half the dependencies recorded is worse than
- * none, because the next commit would treat the half it has as the whole. A
- * map is absent only when its allocation failed, which poisons the parser and
- * makes it report failure rather than a tree — and the parser relies on this
- * pairing: with the reference map watched, it attributes lookups on the
- * footnote map without testing it again. */
-static void watch_definition_lookups(markdown_core_parser *parser, markdown_core_lookup_recording *recording) {
-    if (parser->refmap && parser->footnote_defs) {
-        parser->refmap->lookup_sink = markdown_core_lookup_recording_sink_references;
-        parser->refmap->lookup_context = recording;
-        parser->footnote_defs->lookup_sink = markdown_core_lookup_recording_sink_footnotes;
-        parser->footnote_defs->lookup_context = recording;
-    }
-}
-
 void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
     markdown_core_map_entry *entry;
     for (entry = map->refs; entry; entry = entry->next) {
@@ -342,16 +319,6 @@ void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
          * was lost to allocation failure fails the parse instead, so its
          * entry never gets here. */
         entry->definition_node = ((const markdown_core_node *)(uintptr_t)entry->definition_node)->id;
-    }
-}
-
-/* Frees a set of lookup tables — the staged ones a failed full commit
- * abandons, or the committed ones it replaces. One instance per definition
- * kind, like the definition tables. */
-static void release_lookup_tables(markdown_core_mem *mem, markdown_core_lookup_table *tables) {
-    size_t s;
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_lookup_table_release(mem, &tables[s]);
     }
 }
 
@@ -382,7 +349,6 @@ static bool commit_full(
     markdown_core_node *root;
     markdown_core_definition_table staged[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     markdown_core_map *map;
-    markdown_core_lookup_recording recording;
     int total_lines;
     int last_line_length;
     size_t s;
@@ -393,10 +359,6 @@ static bool commit_full(
         return false;
     }
 
-    markdown_core_lookup_recording_init(&recording, session->mem);
-    if (session->record_lookups) {
-        watch_definition_lookups(parser, &recording);
-    }
 
     // Fed run by run. markdown_core_parser_feed is a streaming interface
     // (core/blocks.c S_parser_feed buffers a partial line in parser->linebuf),
@@ -420,7 +382,6 @@ static bool commit_full(
         bool allocation_failed = parser->oom;
         bool internal_error = parser->internal_error;
         markdown_core_parser_free(parser); // frees the staged maps with it
-        markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(
             error,
             allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
@@ -444,10 +405,9 @@ static bool commit_full(
         staged[s].map->lookup_unit = NULL;
     }
     map = staged[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map;
-    if (recording.lost) {
+    if (false) {
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
-        markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -466,7 +426,6 @@ static bool commit_full(
     if (!markdown_core_session_adopt(session, session->view.root, root, new_rev, changes)) {
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
-        markdown_core_lookup_recording_release(&recording);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
         return false;
     }
@@ -474,46 +433,6 @@ static bool commit_full(
     // take their retraction ids, and lookup records can bind to unit ids.
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
         markdown_core_session_resolve_definition_owners(staged[s].map);
-    }
-
-    markdown_core_lookup_table lookups[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-    memset(lookups, 0, sizeof(lookups));
-    {
-        markdown_core_unit_lookups *bundles[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-        size_t bundle_count[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-        size_t i;
-        // One bundling pass partitions the recording by kind; each kind's
-        // bundles install into its own table instance.
-        bool bound = markdown_core_lookup_recording_bundle(&recording, bundles, bundle_count);
-        for (s = 0; bound && s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-            bound = markdown_core_lookup_table_reserve(session->mem, &lookups[s], bundle_count[s]) &&
-                    markdown_core_lookup_postings_reserve(session->mem, &lookups[s], bundles[s], bundle_count[s]);
-        }
-        if (!bound) {
-            for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-                markdown_core_unit_lookups_free(session->mem, bundles[s], bundle_count[s]);
-            }
-            markdown_core_lookup_recording_release(&recording);
-            release_lookup_tables(session->mem, lookups);
-            release_definition_tables(session->mem, staged);
-            markdown_core_node_free(root);
-            markdown_core_ast_set_error(
-                error,
-                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                "could not index the document's reference lookups"
-            );
-            return false;
-        }
-        for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-            for (i = 0; i < bundle_count[s]; i++) {
-                markdown_core_lookup_table_put(session->mem, &lookups[s], bundles[s][i].unit->id, bundles[s][i].record);
-                bundles[s][i].record.labels = NULL; // moved into the table
-                bundles[s][i].record.positions = NULL;
-                bundles[s][i].record.count = 0;
-            }
-            markdown_core_unit_lookups_free(session->mem, bundles[s], bundle_count[s]);
-        }
-        markdown_core_lookup_recording_release(&recording);
     }
 
     // Footnote numbering, resolution state, and back-reference ordinals are
@@ -525,7 +444,6 @@ static bool commit_full(
         (!markdown_core_footnote_index_build(session, root, &footnotes) ||
          !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes, 0))) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
-        release_lookup_tables(session->mem, lookups);
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(
@@ -539,28 +457,17 @@ static bool commit_full(
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, 0, 0};
-    markdown_core_clean_index clean = {NULL, 0, 0};
     bool indexed = session->one_shot;
     if (!indexed) {
         // Clean children are indexed against the reference table alone: only a
         // vanished definition paragraph leaves a restart anchor the tree no
         // longer holds, and a footnote definition is a block that never
         // vanishes.
-        indexed = id_table_build(session->mem, root, &ids) &&
-                  markdown_core_session_index_clean_children(session, root, map, &clean);
-        for (s = 0; indexed && s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-            indexed =
-                markdown_core_session_index_definitions(session, staged[s].map, &staged[s].index, &staged[s].count);
-            staged[s].capacity = staged[s].count ? staged[s].count : 1;
-        }
+        indexed = id_table_build(session->mem, root, &ids);
     }
     if (!indexed) {
         id_table_release(session->mem, &ids);
-        if (clean.items) {
-            session->mem->free(session->mem, clean.items);
-        }
         markdown_core_footnote_index_release(session->mem, &footnotes);
-        release_lookup_tables(session->mem, lookups);
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(
@@ -576,18 +483,12 @@ static bool commit_full(
     }
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
-    release_lookup_tables(session->mem, session->lookups);
     release_definition_tables(session->mem, session->definitions);
-    if (session->clean.items) {
-        session->mem->free(session->mem, session->clean.items);
-    }
     memcpy(session->definitions, staged, sizeof(staged));
     session->definitions_stale = false;
     session->view.root = root;
     session->ids = ids;
     session->footnotes = footnotes;
-    memcpy(session->lookups, lookups, sizeof(lookups));
-    session->clean = clean;
     session->total_lines = total_lines;
     session->last_line_length = last_line_length;
     session->expansion_estimate = map->ref_size;
@@ -629,29 +530,18 @@ static bool commit_internal(
         return true;
     }
 
-    // Sticky allocation loss in either committed table forces the full path,
-    // which rebuilds both. The maps themselves are not checked for presence: a
-    // committed `view.root` exists only where a full commit installed both,
-    // and a parse that lost a map is poisoned and never produces a root.
-    if (!initial && session->view.root && !session->definitions_stale &&
-        !session->definitions[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map->oom &&
-        !session->definitions[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].map->oom) {
-        switch (markdown_core_session_commit_incremental(session, session->revision + 1, changes, error)) {
-        case MARKDOWN_CORE_INCREMENTAL_COMMITTED:
-            if (changes_out) {
-                *changes_out = changes;
-            }
-            return true;
-        case MARKDOWN_CORE_INCREMENTAL_FAILED:
-            markdown_core_delta_free(changes);
-            return false;
-        case MARKDOWN_CORE_INCREMENTAL_FALLBACK:
-            // The delta may hold nothing yet (the pipeline records only
-            // after its point of no return), so it is reusable as-is.
-            break;
-        }
-    }
-
+    // ONE PATH. The incremental pipeline used to run first and fall back to
+    // this; it is gone from the routing, and with it every mechanism that
+    // existed to make a partial reparse safe rather than to serve a stated
+    // requirement. A full reparse satisfies all five: a document is created
+    // from text, a commit hands it new text, the result is self-contained, the
+    // delta names the nodes that changed, and the parse equals a fresh parse
+    // of the same bytes by construction rather than by gate.
+    //
+    // What produces the delta is unchanged and always did the real work:
+    // markdown_core_session_adopt matches the new tree against the committed
+    // one. That matcher is now the ONLY thing standing between a reparse and a
+    // correct delta, which is where the scrutiny belongs.
     if (!commit_full(session, initial, changes, error)) {
         markdown_core_delta_free(changes);
         return false;
@@ -755,7 +645,6 @@ markdown_core_session *markdown_core_session_open_with_mem(
     }
     session->next_id = 1;
     session->revision = 0;
-    session->record_lookups = true;
 
     // The address/time/clock mix alone is deterministic for the first
     // session of lockstep-started isolated runtimes (one WASM instance per
@@ -804,11 +693,7 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_source_release(session->source);
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
-    release_lookup_tables(session->mem, session->lookups);
     release_definition_tables(session->mem, session->definitions);
-    if (session->clean.items) {
-        session->mem->free(session->mem, session->clean.items);
-    }
     markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
     if (session->warm_parser) {
         markdown_core_parser_free(session->warm_parser);

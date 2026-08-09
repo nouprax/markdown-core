@@ -10,8 +10,6 @@ set(LIBRARY_SOURCES
     concrete.c
     concrete.h
     adopt.c
-    incremental.c
-    lookups.c
     footnote.c
     reference.c
     delta.c

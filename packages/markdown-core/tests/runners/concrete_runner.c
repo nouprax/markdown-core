@@ -3877,17 +3877,17 @@ static int case_inline_seam_barrier(void) {
 
 /* --- inline_equivalence ------------------------------------------------- */
 
-/* The two incremental paths the inline vectors must survive, each proven to
- * have actually run before its records are compared:
+/* Inline concrete records must equal a fresh parse's after a commit, on the
+ * two shapes that used to be the incremental engine's hardest: an edit inside
+ * a paragraph whose prefix is inert, and a definition flip that changes what
+ * a unit the edit never touched resolves to.
  *
- * - the seam fast-forward: the staged leaf never rescans its inert prefix,
- *   the old prefix children move over physically (pointer identity), and
- *   the staged vector is already complete because the prefix owns no
- *   records;
- * - the dependent rebuild: a definition flip rebuilds a unit the edit never
- *   touched, the stable owner keeps its node (pointer identity) while
- *   {content, children, inline records} swap in — a vector left behind by
- *   the swap is exactly what the fresh-parse comparison catches. */
+ * This case used to ALSO assert, by pointer identity, that the seam
+ * fast-forward and the dependent rebuild had actually engaged. Those
+ * assertions are gone with the mechanism they described — a commit is a full
+ * reparse now, so no node survives one and pointer identity across a commit
+ * is not a property this engine has. What is asserted is what a consumer can
+ * observe: the records equal a fresh parse's. */
 static int case_inline_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
@@ -3931,16 +3931,6 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         view = markdown_core_session_document(session);
-        if (!markdown_core_document_root(view)->first_child ||
-            markdown_core_document_root(view)->first_child->first_child != prefix_text) {
-            fprintf(stderr, "inline_equivalence: seam transplant did not engage (prefix child was reparsed)\n");
-            failed = 1;
-        }
-        if (markdown_core_document_root(view)->first_child &&
-            markdown_core_document_root(view)->first_child->user_data != NULL) {
-            fprintf(stderr, "inline_equivalence: committed leaf retained its seam user_data\n");
-            failed = 1;
-        }
         fresh = markdown_core_document_parse((const uint8_t *)final_text, sizeof(final_text) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_session_free(session);
@@ -4000,10 +3990,6 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         view = markdown_core_session_document(session);
-        if (markdown_core_document_root(view)->first_child != unit) {
-            fprintf(stderr, "inline_equivalence: dependent rebuild replaced its stable owner\n");
-            failed = 1;
-        }
         fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_session_free(session);
@@ -4026,10 +4012,6 @@ static int case_inline_equivalence(void) {
                 return -1;
             }
             view = markdown_core_session_document(session);
-            if (markdown_core_document_root(view)->first_child != unit) {
-                fprintf(stderr, "inline_equivalence: restore rebuild replaced its stable owner\n");
-                failed = 1;
-            }
             fresh = markdown_core_document_parse((const uint8_t *)initial, sizeof(initial) - 1, &options, NULL);
             if (!fresh) {
                 markdown_core_session_free(session);
@@ -4108,11 +4090,6 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         view = markdown_core_session_document(session);
-        if (markdown_core_document_root(view)->first_child != table ||
-            nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0) != cell) {
-            fprintf(stderr, "inline_equivalence: cell dependent rebuild replaced its stable owner\n");
-            failed = 1;
-        }
         fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_session_free(session);
