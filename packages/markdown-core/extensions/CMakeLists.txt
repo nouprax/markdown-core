@@ -9,7 +9,7 @@ set(LIBRARY_SOURCES
     source.h
     concrete.c
     concrete.h
-    adopt.c
+    diff.c
     footnote.c
     reference.c
     delta.c

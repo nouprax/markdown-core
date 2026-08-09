@@ -392,7 +392,7 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
  * into `changes` when non-NULL. Returns false on allocation failure while
  * recording (the trees are left consistent; the caller discards `new_root`).
  */
-bool markdown_core_session_adopt(
+bool markdown_core_document_diff(
     markdown_core_session *session,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
@@ -406,7 +406,7 @@ bool markdown_core_session_adopt(
  * success the staged owner and descendants carry their final ids/revisions,
  * and `owner_revision` reports the stable owner's
  * changed/bubbled/unchanged verdict. */
-bool markdown_core_session_adopt_inline_domain(
+bool markdown_core_document_diff_inline_domain(
     markdown_core_session *session,
     markdown_core_node *old_owner,
     markdown_core_node *staged_owner,

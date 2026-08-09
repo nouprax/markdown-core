@@ -379,7 +379,7 @@ static bool commit_full(
         changes->after = new_rev;
     }
 
-    if (!markdown_core_session_adopt(session, session->view.root, root, new_rev, changes)) {
+    if (!markdown_core_document_diff(session, session->view.root, root, new_rev, changes)) {
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
@@ -495,7 +495,7 @@ static bool commit_internal(
     // of the same bytes by construction rather than by gate.
     //
     // What produces the delta is unchanged and always did the real work:
-    // markdown_core_session_adopt matches the new tree against the committed
+    // markdown_core_document_diff matches the new tree against the committed
     // one. That matcher is now the ONLY thing standing between a reparse and a
     // correct delta, which is where the scrutiny belongs.
     if (!commit_full(session, initial, changes, error)) {
