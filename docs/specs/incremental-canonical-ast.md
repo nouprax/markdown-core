@@ -205,17 +205,34 @@ surfaces.
 | --- | --- |
 | The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys and `O(1)` equality — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
-| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after session close |
+| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained, with no materialization step; `commit` supersedes the document it was called on, and there is no session |
 | One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a five-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is a query against stable extents; a position-only shift produces no diff entry at all |
-| Footnote and reference indexes are live-session queries | One `Document` owns the semantic relation indexes and derives every answer by `MarkupID` |
-| The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
+| Footnote and reference indexes are live-session queries | One `Document` owns the semantic relation indexes and derives every answer by `MarkupID`; there is no session to query |
+| The initial empty session may use revision zero | There is no empty document and no open step: `Document(markdown, options)` publishes the first one, and every public identity and revision is positive; zero is invalid |
 
 `canonical-ast.md`, `sessions-and-deltas.md`, public headers, bindings,
 fixtures, and examples must adopt this contract atomically. A package cannot
 advertise this capability while exposing the superseded four-array API.
+
+**"Atomically" binds the COMMIT, not the release.** The rule is that no state
+exists in which one artifact speaks this contract and another speaks the old
+one — which is a statement about what a single change contains, and it is
+satisfied by one commit that moves all six together. It is NOT a statement
+about ordering, and nothing in this contract or in 16 places the surface
+change anywhere in particular. An earlier reading took it the other way and
+scheduled the public surface last, on the ground that it could not move until
+everything under it was built. That inference does not follow: a capability
+this contract requires but the engine cannot yet answer is absent, not
+mis-shaped, and the surface it will one day occupy is not a reason to keep the
+wrong one in the meantime.
+
+Two flips are needed and they have different blast radii, which is the
+practical reason to keep them apart: moving ownership — identity, revisions,
+the delta shape, and where a parser answer is asked — leaves the goldens
+untouched, while moving coordinates rewrites them. Each is one commit.
 
 ## 2. One parser model, two public interfaces
 
