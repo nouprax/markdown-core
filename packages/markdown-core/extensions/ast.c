@@ -79,23 +79,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->embeds = true;
 }
 
-markdown_core_document *markdown_core_document_parse(
-    const uint8_t *source,
-    size_t length,
-    const markdown_core_parse_options *options,
-    markdown_core_error **error
-) {
-    clear_error(error);
-    if (!source && length != 0) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
-        return NULL;
-    }
-    // `Document(markdown, options)`. A commit is this same call with a
-    // predecessor to diff against, which is why there is one entry point and
-    // not a one-shot path beside an incremental one.
-    return markdown_core_document_new(source, length, options, error);
-}
-
 void markdown_core_document_free(markdown_core_document *document) {
     // One owner, one teardown. This used to free a detached root and a small
     // wrapper; the wrapper is gone.

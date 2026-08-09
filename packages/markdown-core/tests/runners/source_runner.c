@@ -85,7 +85,7 @@ static int sr_contains(const uint8_t *haystack, size_t haystack_length, const ch
 
 static markdown_core_document *sr_parse(const uint8_t *bytes, size_t length) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(bytes, length, NULL, &error);
+    markdown_core_document *document = markdown_core_document_new(bytes, length, NULL, &error);
     if (!document) {
         markdown_core_string_view message = markdown_core_error_get_message(error);
         fprintf(stderr, "parse failed: %.*s\n", (int)message.length, message.data);

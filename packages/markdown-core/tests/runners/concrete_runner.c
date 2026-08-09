@@ -203,7 +203,7 @@ static markdown_core_parse_options capture_options(void) {
 
 static markdown_core_document *parse_fixture(void) {
     markdown_core_parse_options options = capture_options();
-    return markdown_core_document_parse((const uint8_t *)FIXTURE, sizeof(FIXTURE) - 1, &options, NULL);
+    return markdown_core_document_new((const uint8_t *)FIXTURE, sizeof(FIXTURE) - 1, &options, NULL);
 }
 
 static bool is_block(const markdown_core_node *node) {
@@ -499,7 +499,7 @@ static int case_region_of_walk(void) {
         text[depth * 2] = 'a';
         text[depth * 2 + 1] = '\n';
         text[text_length] = 0;
-        deep = markdown_core_document_parse((const uint8_t *)text, text_length, NULL, NULL);
+        deep = markdown_core_document_new((const uint8_t *)text, text_length, NULL, NULL);
         free(text);
         if (!deep) {
             return -1;
@@ -1553,7 +1553,7 @@ static int case_capture_shape(void) {
         if (source.length == 0) {
             source.length = strlen(source.text);
         }
-        document = markdown_core_document_parse((const uint8_t *)source.text, source.length, &options, NULL);
+        document = markdown_core_document_new((const uint8_t *)source.text, source.length, &options, NULL);
         if (!document) {
             fprintf(stderr, "capture_shape: %s failed to parse\n", source.name);
             return -1;
@@ -1588,7 +1588,7 @@ static int case_capture_shape(void) {
     /* Exact multiplicities where the grammar's edges hide: a lazy line and
      * a blank `>` line inside quotes, and one marker per prefix depth. */
     {
-        markdown_core_document *document = markdown_core_document_parse(
+        markdown_core_document *document = markdown_core_document_new(
             (const uint8_t *)SHAPE_SOURCES[0].text,
             strlen(SHAPE_SOURCES[0].text),
             &options,
@@ -1630,7 +1630,7 @@ static int case_capture_shape(void) {
             {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 1, 2, 1}
         };
         static const expected_record QUOTE_DEPTH_2[] = {{MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 4, 1}};
-        markdown_core_document *document = markdown_core_document_parse(
+        markdown_core_document *document = markdown_core_document_new(
             (const uint8_t *)SHAPE_SOURCES[1].text,
             strlen(SHAPE_SOURCES[1].text),
             &options,
@@ -1686,7 +1686,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[7] = {1, 1, 2, 2, 2, 1, 2};
         const capture_source *atx = &SHAPE_SOURCES[5];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)atx->text, strlen(atx->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)atx->text, strlen(atx->text), &options, NULL);
         size_t h;
         if (!document) {
             return -1;
@@ -1727,7 +1727,7 @@ static int case_capture_shape(void) {
         };
         const capture_source *fences = &SHAPE_SOURCES[2];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)fences->text, strlen(fences->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)fences->text, strlen(fences->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -1763,7 +1763,7 @@ static int case_capture_shape(void) {
         static const expected_record SETEXT_ONE[] = {{MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE, 1, 0, 1}};
         const capture_source *setext = &SHAPE_SOURCES[3];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)setext->text, strlen(setext->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)setext->text, strlen(setext->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -1793,7 +1793,7 @@ static int case_capture_shape(void) {
         static const expected_record NUL_FOOTNOTE[] = {{MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER, 0, 0, 9}};
         const capture_source *nul = &SHAPE_SOURCES[9];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)nul->text, nul->length, &options, NULL);
+            markdown_core_document_new((const uint8_t *)nul->text, nul->length, &options, NULL);
         if (!document) {
             return -1;
         }
@@ -1830,7 +1830,7 @@ static int case_capture_shape(void) {
         pos += 300;
         text[pos++] = '\n';
         source.length = pos;
-        document = markdown_core_document_parse((const uint8_t *)text, pos, &options, NULL);
+        document = markdown_core_document_new((const uint8_t *)text, pos, &options, NULL);
         if (!document) {
             return -1;
         }
@@ -1870,7 +1870,7 @@ static int case_capture_shape(void) {
         static const expected_record DATA_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 0, 5, 1}};
         const capture_source *table = &SHAPE_SOURCES[14];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)table->text, strlen(table->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)table->text, strlen(table->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -1944,7 +1944,7 @@ static int case_capture_shape(void) {
         const markdown_core_node *lead;
         const markdown_core_node *table;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lookback->text, strlen(lookback->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)lookback->text, strlen(lookback->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2002,7 +2002,7 @@ static int case_capture_shape(void) {
         };
         const capture_source *indent = &SHAPE_SOURCES[16];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)indent->text, strlen(indent->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)indent->text, strlen(indent->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2050,7 +2050,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[6] = {2, 2, 2, 1, 2, 3};
         const capture_source *tasks = &SHAPE_SOURCES[17];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)tasks->text, strlen(tasks->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)tasks->text, strlen(tasks->text), &options, NULL);
         size_t t;
         if (!document) {
             return -1;
@@ -2102,7 +2102,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[5] = {6, 2, 3, 3, 2};
         const capture_source *directives = &SHAPE_SOURCES[18];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)directives->text, strlen(directives->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)directives->text, strlen(directives->text), &options, NULL);
         size_t d;
         if (!document) {
             return -1;
@@ -2134,7 +2134,7 @@ static int case_capture_shape(void) {
         static const expected_record FORMULA_UNCLOSED[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
         const capture_source *formulas = &SHAPE_SOURCES[19];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)formulas->text, strlen(formulas->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)formulas->text, strlen(formulas->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2172,7 +2172,7 @@ static int case_capture_shape(void) {
         static const expected_record LAZY_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 2, 9}};
         const capture_source *lazy = &SHAPE_SOURCES[20];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2201,7 +2201,7 @@ static int case_capture_shape(void) {
         };
         const capture_source *crlf = &SHAPE_SOURCES[21];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)crlf->text, strlen(crlf->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)crlf->text, strlen(crlf->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2256,7 +2256,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[4] = {3, 3, 5, 2};
         const capture_source *refdefs = &SHAPE_SOURCES[22];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)refdefs->text, strlen(refdefs->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)refdefs->text, strlen(refdefs->text), &options, NULL);
         size_t d;
         if (!document) {
             return -1;
@@ -2301,7 +2301,7 @@ static int case_capture_shape(void) {
         };
         const capture_source *lazy = &SHAPE_SOURCES[23];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2328,7 +2328,7 @@ static int case_capture_shape(void) {
         const capture_source *lazy = &SHAPE_SOURCES[24];
         const markdown_core_node *lead;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2380,7 +2380,7 @@ static int case_capture_shape(void) {
                                    "> | - | - |\n";
         const markdown_core_node *lead;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         if (!document) {
             return -1;
         }
@@ -2447,7 +2447,7 @@ static int case_capture_document(void) {
             fprintf(stderr, "capture_document: first commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
+        view = session;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0 ||
             tree_inline_record_total(markdown_core_document_concrete(view)) == 0) {
@@ -2467,7 +2467,7 @@ static int case_capture_document(void) {
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
+        view = session;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0) {
             fprintf(stderr, "capture_document: concrete owner lost across commits\n");
@@ -2772,8 +2772,8 @@ static int case_capture_equivalence(void) {
             failed = 1;
             break;
         }
-        view = markdown_core_document_view(session);
-        fresh = markdown_core_document_parse((const uint8_t *)shadow.bytes, shadow.length, &options, NULL);
+        view = session;
+        fresh = markdown_core_document_new((const uint8_t *)shadow.bytes, shadow.length, &options, NULL);
         if (!fresh) {
             fprintf(stderr, "capture_equivalence: fresh parse %zu failed\n", step);
             failed = 1;
@@ -3288,7 +3288,7 @@ static int case_inline_shape(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
     markdown_core_document *document =
-        markdown_core_document_parse((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1, &options, NULL);
+        markdown_core_document_new((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1, &options, NULL);
     const markdown_core_node *root;
 
     static const expected_inline_record EMPH_TRIPLE[] = {
@@ -3596,7 +3596,7 @@ static int case_inline_smart(void) {
 
     options.smart_punctuation = true;
     document =
-        markdown_core_document_parse((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1, &options, NULL);
+        markdown_core_document_new((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1, &options, NULL);
     if (!document) {
         fprintf(stderr, "inline_smart: fixture failed to parse\n");
         return -1;
@@ -3686,7 +3686,7 @@ static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
 static int case_inline_extension_funnel(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *document = markdown_core_document_parse(
+    markdown_core_document *document = markdown_core_document_new(
         (const uint8_t *)INLINE_FUNNEL_TEXT,
         sizeof(INLINE_FUNNEL_TEXT) - 1,
         &options,
@@ -3910,7 +3910,7 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
+        view = session;
         paragraph = markdown_core_document_root(view)->first_child;
         prefix_text = paragraph ? paragraph->first_child : NULL;
         if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
@@ -3928,8 +3928,8 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
-        fresh = markdown_core_document_parse((const uint8_t *)final_text, sizeof(final_text) - 1, &options, NULL);
+        view = session;
+        fresh = markdown_core_document_new((const uint8_t *)final_text, sizeof(final_text) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_document_release(session);
             return -1;
@@ -3974,7 +3974,7 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
+        view = session;
         unit = markdown_core_document_root(view)->first_child;
         if (!unit || inline_record_count_of(unit) == 0) {
             fprintf(stderr, "inline_equivalence: dependent unit captured nothing to compare\n");
@@ -3987,8 +3987,8 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
-        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        view = session;
+        fresh = markdown_core_document_new((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_document_release(session);
             return -1;
@@ -4009,8 +4009,8 @@ static int case_inline_equivalence(void) {
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
                 return -1;
             }
-            view = markdown_core_document_view(session);
-            fresh = markdown_core_document_parse((const uint8_t *)initial, sizeof(initial) - 1, &options, NULL);
+            view = session;
+            fresh = markdown_core_document_new((const uint8_t *)initial, sizeof(initial) - 1, &options, NULL);
             if (!fresh) {
                 markdown_core_document_release(session);
                 return -1;
@@ -4068,7 +4068,7 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
+        view = session;
         table = markdown_core_document_root(view)->first_child;
         cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
         if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
@@ -4087,8 +4087,8 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;
         }
-        view = markdown_core_document_view(session);
-        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        view = session;
+        fresh = markdown_core_document_new((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
         if (!fresh) {
             markdown_core_document_release(session);
             return -1;
@@ -4269,7 +4269,7 @@ static int case_recovery_literal_fallback(void) {
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         size_t k;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)fixture->text, strlen(fixture->text), &options, NULL);
+            markdown_core_document_new((const uint8_t *)fixture->text, strlen(fixture->text), &options, NULL);
         if (!document) {
             markdown_core_strbuf_free(&text);
             return -1;
@@ -4323,7 +4323,7 @@ static int case_recovery_island_boundary(void) {
         static const char BODY[] = "# h\n> q\n";
         static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3}};
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *code;
         if (!document) {
             return -1;
@@ -4347,7 +4347,7 @@ static int case_recovery_island_boundary(void) {
         static const char TEXT[] = "before\n\n$$\nx + y\n# not a heading\n";
         static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *formula;
         const char *literal;
         if (!document) {
@@ -4372,7 +4372,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = "> $$\n> a\n\nafter\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *root;
         const markdown_core_node *quote;
         const markdown_core_node *formula;
@@ -4421,7 +4421,7 @@ static int case_recovery_island_boundary(void) {
             {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 3}
         };
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1, &options, NULL);
         const markdown_core_node *directive;
         if (!document) {
             return -1;
@@ -4435,7 +4435,7 @@ static int case_recovery_island_boundary(void) {
         failed |= expect_records("island_boundary: unclosed directive records", directive, DIR_UNCLOSED, 2);
         markdown_core_document_free(document);
 
-        document = markdown_core_document_parse((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1, &options, NULL);
+        document = markdown_core_document_new((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1, &options, NULL);
         if (!document) {
             return -1;
         }
@@ -4453,7 +4453,7 @@ static int case_recovery_island_boundary(void) {
         static const char TEXT[] = ":::note[unclosed\n$$ trailing\n";
         static const char EXPECTED[] = ":::note[unclosed\n$$ trailing";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         if (!document) {
             return -1;
@@ -4480,7 +4480,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = ":name[unclosed rest *em*\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *root;
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         if (!document) {
@@ -4507,7 +4507,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = "[^l]: def\n\nout\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *root;
         const markdown_core_node *definition;
         if (!document) {
@@ -4539,7 +4539,7 @@ static int case_recovery_island_boundary(void) {
             {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 12, 1}
         };
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
         const markdown_core_node *row;
         if (!document) {
             return -1;

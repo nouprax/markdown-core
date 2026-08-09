@@ -98,7 +98,7 @@ static int bench_parse_once(const char *input, size_t length, uint64_t *nanoseco
     markdown_core_document *document;
     markdown_core_error *error = NULL;
     uint64_t started = ts_monotonic_ns();
-    document = markdown_core_document_parse((const uint8_t *)input, length, NULL, &error);
+    document = markdown_core_document_new((const uint8_t *)input, length, NULL, &error);
     *nanoseconds = ts_monotonic_ns() - started;
     if (!document) {
         markdown_core_error_free(error);

@@ -63,7 +63,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     size_t second_length = 0;
     int result = -1;
 
-    document = markdown_core_document_parse(bytes, length, NULL, &error);
+    document = markdown_core_document_new(bytes, length, NULL, &error);
     if (!document) {
         /* Parse failures must still produce a well-formed error object. */
         if (!error) {

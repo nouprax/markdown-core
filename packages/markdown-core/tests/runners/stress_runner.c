@@ -8,7 +8,7 @@
 
 static int parse_and_release(const uint8_t *source, size_t length) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(source, length, NULL, &error);
+    markdown_core_document *document = markdown_core_document_new(source, length, NULL, &error);
     if (!document) {
         markdown_core_string_view message = markdown_core_error_get_message(error);
         fprintf(

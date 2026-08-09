@@ -1491,7 +1491,7 @@ static void test_facade_dump(
 
     memset(&options, 0, sizeof(options)); /* pure CommonMark; no smart punctuation */
     options.autolinks = autolinks != 0;
-    document = markdown_core_document_parse((const uint8_t *)markdown, strlen(markdown), &options, &error);
+    document = markdown_core_document_new((const uint8_t *)markdown, strlen(markdown), &options, &error);
     if (!document) {
         OK(runner, 0, "%s (facade parse succeeds)", msg);
         markdown_core_error_free(error);
@@ -1749,7 +1749,7 @@ static const char SESSION_RICH_SOURCE[] = "# Title\n"
 static void session_streaming_equivalence(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *reference =
-        markdown_core_document_parse((const uint8_t *)SESSION_RICH_SOURCE, strlen(SESSION_RICH_SOURCE), NULL, &error);
+        markdown_core_document_new((const uint8_t *)SESSION_RICH_SOURCE, strlen(SESSION_RICH_SOURCE), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *session = markdown_core_document_open(NULL, &error);
     size_t length = strlen(SESSION_RICH_SOURCE);
@@ -1783,7 +1783,7 @@ static void session_streaming_equivalence(test_batch_runner *runner) {
     INT_EQ(runner, (int)markdown_core_document_length(session), (int)length, "session_length tracks the text");
 
     {
-        char *streamed = dump_document_cstr(markdown_core_document_view(session));
+        char *streamed = dump_document_cstr(session);
         OK(runner, streamed != NULL, "session dump succeeds");
         if (streamed) {
             STR_EQ(runner, streamed, expected, "byte-streamed session dump equals one-shot dump");
@@ -1816,7 +1816,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "first commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *heading = markdown_core_node_get_first_child(root);
         const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
@@ -1842,7 +1842,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
     OK(runner, changes != NULL, "delta is produced on request");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *heading = markdown_core_node_get_first_child(root);
         const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
@@ -1938,7 +1938,7 @@ static void session_suffix_id_stability(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "suffix baseline commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *child = markdown_core_node_get_first_child(root);
         int i;
         for (i = 0; i < 3 && child; i++) {
@@ -1953,7 +1953,7 @@ static void session_suffix_id_stability(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "mid-document edit commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *first = markdown_core_node_get_first_child(root);
         const markdown_core_node *second = markdown_core_node_get_next_sibling(first);
         const markdown_core_node *third = markdown_core_node_get_next_sibling(second);
@@ -1976,7 +1976,7 @@ static void session_utf8_split_append(test_batch_runner *runner) {
      * append must yield the same tree as a one-shot parse. */
     static const uint8_t euro_doc[] = {'p', ' ', 0xE2, 0x82, 0xAC, '\n'};
     markdown_core_error *error = NULL;
-    markdown_core_document *reference = markdown_core_document_parse(euro_doc, sizeof(euro_doc), NULL, &error);
+    markdown_core_document *reference = markdown_core_document_new(euro_doc, sizeof(euro_doc), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *session = markdown_core_document_open(NULL, &error);
 
@@ -1987,7 +1987,7 @@ static void session_utf8_split_append(test_batch_runner *runner) {
         OK(runner, mc_commit_compat(&session, NULL, &error), "commit with a dangling lead byte succeeds");
         markdown_core_document_edit(session, 3, 3, euro_doc + 3, 3, &error);
         OK(runner, mc_commit_compat(&session, NULL, &error), "completing commit succeeds");
-        streamed = dump_document_cstr(markdown_core_document_view(session));
+        streamed = dump_document_cstr(session);
         if (streamed) {
             STR_EQ(runner, streamed, expected, "split multi-byte character parses whole");
         }
@@ -2010,7 +2010,7 @@ static void session_edit_errors(test_batch_runner *runner) {
 
     OK(runner, markdown_core_document_revision(session) == 0, "fresh session is at revision 0");
     {
-        const markdown_core_document *view = markdown_core_document_view(session);
+        const markdown_core_document *view = session;
         const markdown_core_node *root = markdown_core_document_root(view);
         OK(runner, root != NULL && markdown_core_node_child_count(root) == 0, "fresh session document is empty");
         OK(runner, markdown_core_node_get_id(root) != 0, "fresh root already has an id");
@@ -2072,7 +2072,7 @@ static void session_edit_errors(test_batch_runner *runner) {
 
 static void session_directive_label_parent(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(
+    markdown_core_document *document = markdown_core_document_new(
         (const uint8_t *)":video[watch me]{k=v}\n",
         strlen(":video[watch me]{k=v}\n"),
         NULL,
@@ -2141,7 +2141,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
            mc_commit_compat(&session, NULL, &error),
        "directive delta baseline commits");
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *label = markdown_core_node_directive_label(directive);
@@ -2209,7 +2209,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_commit_compat(&session, NULL, &error),
        "inline absent-label baseline commits");
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
         directive_id = markdown_core_node_get_id(directive);
@@ -2267,7 +2267,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_commit_compat(&session, NULL, &error),
        "block absent-label baseline commits");
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *directive = markdown_core_node_get_first_child(root);
         directive_id = markdown_core_node_get_id(directive);
         OK(runner,
@@ -2354,7 +2354,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            mc_commit_compat(&session, NULL, &error),
        "block-label lookup baseline commits");
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         // The leading reference definition is a node now, so it is the
         // document's first child and the directive follows it.
         const markdown_core_node *directive = markdown_core_node_get_first_child(root);
@@ -2594,7 +2594,7 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "scope baseline commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *heading = markdown_core_node_get_first_child(root);
         const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
         const markdown_core_node *emphasis =
@@ -2685,7 +2685,7 @@ static void session_footnote_queries(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "footnote query commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *child = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *tail;
@@ -2787,7 +2787,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     OK(runner, mc_commit_compat(&session, NULL, &error), "footnote revision baseline commit succeeds");
 
     {
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *child = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *ref;

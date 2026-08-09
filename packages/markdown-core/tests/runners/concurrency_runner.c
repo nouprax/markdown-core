@@ -3,7 +3,7 @@
 // Cases (all exit 0 on success, 1 on any contract violation):
 //
 //   first_parse  In a fresh process, a barrier releases every thread into its
-//                very first markdown_core_document_parse simultaneously — no
+//                very first markdown_core_document_new simultaneously — no
 //                warmup, no external lock.  Each thread parses, attaches the
 //                full extension set via default options, traverses every
 //                node, dumps twice, and frees.  All dumps must match the
@@ -266,7 +266,7 @@ static int parse_and_dump(const char *input, option_variant variant, uint8_t **d
 
     markdown_core_error *error = NULL;
     markdown_core_document *document =
-        markdown_core_document_parse((const uint8_t *)input, strlen(input), &options, &error);
+        markdown_core_document_new((const uint8_t *)input, strlen(input), &options, &error);
     if (!document || error) {
         markdown_core_error_free(error);
         return 1;
@@ -471,8 +471,8 @@ static int session_stream_once(
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump(markdown_core_document_view((*session_ref)), &first, &first_length, &error) ||
-        !markdown_core_document_dump(markdown_core_document_view((*session_ref)), &second, &second_length, &error)) {
+    if (!markdown_core_document_dump((*session_ref), &first, &first_length, &error) ||
+        !markdown_core_document_dump((*session_ref), &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_dump_free(first);
         return 1;
@@ -513,7 +513,7 @@ static THREAD_RETURN session_worker_main(void *argument) {
             break;
         }
 
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
+        const markdown_core_node *root = markdown_core_document_root(session);
         uint64_t id = markdown_core_node_get_id(root);
         uint64_t revision = markdown_core_document_revision(session);
         if (id == 0 || (root_id != 0 && id != root_id) || revision <= last_revision || !traverse(root)) {
@@ -645,7 +645,7 @@ static int case_sessions(void) {
     size_t reference_length = 0;
     if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
         !mc_commit_compat(&session, NULL, &error) ||
-        !markdown_core_document_dump(markdown_core_document_view(session), &reference, &reference_length, &error)) {
+        !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_release(session);
         fprintf(stderr, "sessions: shared session setup failed\n");
@@ -659,7 +659,7 @@ static int case_sessions(void) {
         memset(&readers[index], 0, sizeof(readers[index]));
         readers[index].start = &read_start;
         readers[index].session = session;
-        readers[index].view = markdown_core_document_view(session);
+        readers[index].view = session;
         readers[index].reference = reference;
         readers[index].reference_length = reference_length;
         if (thread_spawn(&handles[index], session_reader_main, &readers[index])) {
@@ -686,7 +686,7 @@ static int case_sessions(void) {
         size_t length = 0;
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
             !mc_commit_compat(&session, NULL, &error) ||
-            !markdown_core_document_dump(markdown_core_document_view(session), &dump, &length, &error)) {
+            !markdown_core_document_dump(session, &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "sessions: post-read commit failed\n");
             failures += 1;
@@ -737,7 +737,7 @@ static int case_lifecycle(void) {
 
         // Failure paths must not disturb the registry or later parses.
         markdown_core_error *error = NULL;
-        if (markdown_core_document_parse(NULL, 1, NULL, &error) != NULL ||
+        if (markdown_core_document_new(NULL, 1, NULL, &error) != NULL ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
             failed = 1;
         }
@@ -791,7 +791,7 @@ static THREAD_RETURN dump_small_stack_worker(void *user) {
     context->input[input_length - 1] = '\n';
     context->input[input_length] = '\0';
     markdown_core_parse_options_init(&options);
-    context->document = markdown_core_document_parse((const uint8_t *)context->input, input_length, &options, &error);
+    context->document = markdown_core_document_new((const uint8_t *)context->input, input_length, &options, &error);
     if (context->document && !error) {
         uint8_t *dump = NULL;
         size_t dump_length = 0;

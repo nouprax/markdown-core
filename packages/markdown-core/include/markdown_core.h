@@ -40,7 +40,7 @@
  * markdown_core_delta_free and markdown_core_delta_entries_free,
  * respectively.
  *
- * A single document: after markdown_core_document_parse returns, the document
+ * A single document: after markdown_core_document_new returns, the document
  * and its nodes are logically immutable through this API. Concurrent
  * read-only access (traversal, accessors, dump) to the same document from
  * multiple threads is safe. markdown_core_document_free is the only mutating
@@ -238,7 +238,7 @@ MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_opti
  * The returned document owns all nodes and borrowed string views. On failure,
  * NULL is returned and `*error` is set when `error` is non-NULL.
  */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     const uint8_t *source,
     size_t length,
     const markdown_core_parse_options *options,
@@ -381,7 +381,7 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  *
  * The stored text is the raw bytes exactly as edited. UTF-8 is ASSUMED AND
  * NEVER VALIDATED: nothing is scanned, nothing is replaced, and nothing is
- * rejected, exactly as markdown_core_document_parse does. NUL is replaced
+ * rejected, exactly as markdown_core_document_new does. NUL is replaced
  * with U+FFFD during parsing because CommonMark requires it of canonical
  * text, and nothing else is. A streamed append may therefore complete a
  * multi-byte character whose first bytes arrived earlier.
@@ -439,9 +439,7 @@ MARKDOWN_CORE_API bool markdown_core_document_commit(
     markdown_core_error **error
 );
 
-/** Borrowed view of the last committed document; valid until the session's
- * next commit or free (edits never touch the committed tree). */
-MARKDOWN_CORE_API const markdown_core_document *markdown_core_document_view(const markdown_core_document *session);
+
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *session);
 
 /** Per-session random salt; nodes from different sessions never share

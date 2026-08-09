@@ -99,7 +99,7 @@ int sr_replay_open(
     }
     /* Revision 0 (empty document) seeds the mirror. */
     {
-        const markdown_core_document *document = markdown_core_document_view(replay->session);
+        const markdown_core_document *document = replay->session;
         const markdown_core_node *root = markdown_core_document_root(document);
         if (!root ||
             sr_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
@@ -302,12 +302,12 @@ static int sr_check_footnote_queries(sr_replay *replay) {
         goto done;
     }
     if (ts_ast_walk(
-            markdown_core_document_root(markdown_core_document_view(replay->session)),
+            markdown_core_document_root(replay->session),
             sr_id_collect_visit,
             &mine
         ) < 0 ||
         mine.failed ||
-        ts_ast_walk(markdown_core_document_root(markdown_core_document_view(fresh)), sr_id_collect_visit, &theirs) <
+        ts_ast_walk(markdown_core_document_root(fresh), sr_id_collect_visit, &theirs) <
             0 ||
         theirs.failed) {
         sr_fail(replay, "footnote walk failed to allocate");
@@ -448,7 +448,7 @@ int sr_replay_commit(sr_replay *replay) {
         goto done;
     }
 
-    document = markdown_core_document_view(replay->session);
+    document = replay->session;
     root = markdown_core_document_root(document);
     state.replay = replay;
     state.seen = 0;
@@ -470,7 +470,7 @@ int sr_replay_commit(sr_replay *replay) {
         sr_fail(replay, "session dump failed");
         goto done;
     }
-    reference = markdown_core_document_parse(replay->shadow.bytes, replay->shadow.length, replay->options, &error);
+    reference = markdown_core_document_new(replay->shadow.bytes, replay->shadow.length, replay->options, &error);
     if (!reference) {
         markdown_core_error_free(error);
         error = NULL;

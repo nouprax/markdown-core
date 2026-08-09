@@ -335,7 +335,7 @@ int ts_ast_enable(markdown_core_parse_options *options, const char *name) {
 
 markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const markdown_core_parse_options *options) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_parse(bytes, length, options, &error);
+    markdown_core_document *document = markdown_core_document_new(bytes, length, options, &error);
     if (!document) {
         markdown_core_string_view message =
             error ? markdown_core_error_get_message(error) : (markdown_core_string_view){NULL, 0};

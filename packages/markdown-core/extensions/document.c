@@ -303,7 +303,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_definition_table staged[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-    markdown_core_map *map;
     int total_lines;
     int last_line_length;
     size_t s;
@@ -358,7 +357,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
         staged[s].map->lookup_context = NULL;
         staged[s].map->lookup_unit = NULL;
     }
-    map = staged[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map;
     if (false) {
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
@@ -667,6 +665,15 @@ markdown_core_document *markdown_core_document_new(
     const markdown_core_parse_options *options,
     markdown_core_error **error
 ) {
+    clear_error(error);
+    if (!markdown && length != 0) {
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "markdown must not be null when length is nonzero"
+        );
+        return NULL;
+    }
     return document_build(options, markdown, length, NULL, markdown_core_mem_default(), true, NULL, error);
 }
 
@@ -855,10 +862,6 @@ const uint8_t *markdown_core_document_text(const markdown_core_document *documen
         *length = n;
     }
     return n ? markdown_core_source_run_at(document->source, 0, &run) : (const uint8_t *)"";
-}
-
-const markdown_core_document *markdown_core_document_view(const markdown_core_document *session) {
-    return session;
 }
 
 uint64_t markdown_core_document_revision(const markdown_core_document *session) {

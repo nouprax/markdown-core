@@ -1266,7 +1266,7 @@ static const char FB_SESSION_STAGE3[] = "[x]: /url\n\n";
 static uint8_t *fb_session_dump(markdown_core_document *session, size_t *length) {
     uint8_t *dump = NULL;
     markdown_core_error *error = NULL;
-    if (!markdown_core_document_dump(markdown_core_document_view(session), &dump, length, &error)) {
+    if (!markdown_core_document_dump(session, &dump, length, &error)) {
         markdown_core_error_free(error);
         return NULL;
     }

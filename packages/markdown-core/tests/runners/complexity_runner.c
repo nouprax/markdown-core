@@ -910,7 +910,7 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
     if (!session) {
         return -1;
     }
-    document = markdown_core_document_view(session);
+    document = session;
     if (!document) {
         markdown_core_document_release(session);
         return -1;

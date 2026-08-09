@@ -1,10 +1,9 @@
 MARKDOWN_CORE_1.0 {
   global:
     markdown_core_parse_options_init;
-    markdown_core_document_parse;
+    markdown_core_document_new;
     markdown_core_document_free;
     markdown_core_document_text;
-    markdown_core_document_new;
     markdown_core_document_root;
     markdown_core_error_get_code;
     markdown_core_error_get_message;
@@ -43,7 +42,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_release;
     markdown_core_document_edit;
     markdown_core_document_commit;
-    markdown_core_document_view;
     markdown_core_document_revision;
     markdown_core_document_lineage;
     markdown_core_document_length;

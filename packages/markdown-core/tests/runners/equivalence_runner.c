@@ -5,7 +5,7 @@
  * Every replay drives the public facade only, through the shared session
  * replay harness (support/session_replay.h): a shadow text buffer receives
  * the same edits as the session, so each commit can be checked against
- * markdown_core_document_parse of the shadow bytes; a shadow id->revision
+ * markdown_core_document_new of the shadow bytes; a shadow id->revision
  * mirror is maintained purely from deltas and compared against a fresh
  * walk after every commit, which catches adoption bugs that dumps cannot
  * see.

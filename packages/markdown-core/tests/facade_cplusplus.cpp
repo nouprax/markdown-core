@@ -9,7 +9,7 @@ int main() {
     markdown_core_parse_options options{};
     markdown_core_parse_options_init(&options);
     markdown_core_error *error = nullptr;
-    const auto *document = markdown_core_document_parse(nullptr, 0, &options, &error);
+    const auto *document = markdown_core_document_new(nullptr, 0, &options, &error);
     if (!document || error) {
         return 1;
     }
