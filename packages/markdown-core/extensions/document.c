@@ -296,12 +296,10 @@ static void release_definition_tables(markdown_core_mem *mem, markdown_core_defi
 // fresh definition maps, adopts ids from the previous tree, and replaces every
 // piece of session state at once. The staging never touches the committed
 // state, so any failure leaves the session valid at its previous revision.
-static bool commit_full(
-    markdown_core_document *session,
-    bool initial,
-    markdown_core_delta *changes,
-    markdown_core_error **error
-) {
+/* PARSE. A pure function of (bytes, options): it fills this document's tree,
+ * definition maps and footnote index from its own stored text and reads
+ * nothing else. No predecessor, no ids — identity is the diff's to assign. */
+static bool document_parse_text(markdown_core_document *session, markdown_core_error **error) {
     markdown_core_parser *parser;
     markdown_core_node *root;
     markdown_core_definition_table staged[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
@@ -309,7 +307,6 @@ static bool commit_full(
     int total_lines;
     int last_line_length;
     size_t s;
-    uint64_t new_rev = initial ? 0 : session->revision + 1;
 
     parser = markdown_core_document_acquire_parser(session, error);
     if (!parser) {
@@ -374,58 +371,71 @@ static bool commit_full(
     }
 
 
-    if (changes) {
-        changes->before = session->revision;
-        changes->after = new_rev;
-    }
+    memcpy(session->definitions, staged, sizeof(staged));
+    session->root = root;
+    session->total_lines = total_lines;
+    session->last_line_length = last_line_length;
+    session->expansion_estimate = map->ref_size;
+    return true;
+}
 
-    if (!markdown_core_document_diff(session, session->root, root, new_rev, changes)) {
-        release_definition_tables(session->mem, staged);
-        markdown_core_node_free(root);
+/* DIFF. `new` has a tree and no identities; `old` may be NULL. This assigns
+ * `new`'s identities from `old` — the one decision both requirements rest on
+ * — and reports what changed. It reads no text and reparses nothing.
+ *
+ * A diff of the same two trees is the same diff. That is the invariant the
+ * old `adopt` name hid, and keeping parse and diff apart is what makes it
+ * statable: a tree is a pure function of (bytes, options), and a delta is a
+ * pure function of two trees. */
+bool markdown_core_document_diff(
+    const markdown_core_document *old,
+    markdown_core_document *nw,
+    markdown_core_delta *changes,
+    markdown_core_error **error
+) {
+    markdown_core_footnote_index footnotes;
+    markdown_core_id_table ids = {NULL, 0, 0};
+    size_t s;
+
+    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision, changes)) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
         return false;
     }
-    // Ids exist now; definitions recorded against anchor node pointers can
-    // take their retraction ids, and lookup records can bind to unit ids.
+    // Ids exist now, so definitions recorded against anchor node pointers can
+    // take their ids.
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_document_resolve_definition_owners(staged[s].map);
+        markdown_core_document_resolve_definition_owners(nw->definitions[s].map);
     }
 
-    // Footnote numbering, resolution state, and back-reference ordinals are
-    // index-backed queries; a commit that changes only those answers bumps
-    // the affected revisions without any dump-visible change.
-    markdown_core_footnote_index footnotes;
+    // Footnote numbering, resolution and back-reference ordinals are
+    // index-backed answers; a commit that changes only those bumps the
+    // affected revisions with no dump-visible change.
     memset(&footnotes, 0, sizeof(footnotes));
-    if (session->options.footnotes &&
-        (!markdown_core_footnote_index_build(session, root, &footnotes) ||
-         !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes, 0))) {
-        markdown_core_footnote_index_release(session->mem, &footnotes);
-        release_definition_tables(session->mem, staged);
-        markdown_core_node_free(root);
-        markdown_core_ast_set_error(
-            error,
-            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-            "could not index the document's footnotes"
-        );
-        return false;
+    if (nw->options.footnotes) {
+        if (!markdown_core_footnote_index_build(nw, nw->root, &footnotes) ||
+            !markdown_core_footnote_index_diff(
+                nw->mem,
+                old ? &old->footnotes : &footnotes,
+                &footnotes,
+                nw->revision,
+                changes,
+                0
+            )) {
+            markdown_core_footnote_index_release(nw->mem, &footnotes);
+            markdown_core_ast_set_error(
+                error,
+                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                "could not index the document's footnotes"
+            );
+            return false;
+        }
     }
 
-    // The lookup table is maintained here, inside the mutating call, so
-    // markdown_core_document_node_by_id stays a pure concurrent-safe read.
-    markdown_core_id_table ids = {NULL, 0, 0};
-    bool indexed = false;
-    {
-        // Clean children are indexed against the reference table alone: only a
-        // vanished definition paragraph leaves a restart anchor the tree no
-        // longer holds, and a footnote definition is a block that never
-        // vanishes.
-        indexed = id_table_build(session->mem, root, &ids);
-    }
-    if (!indexed) {
-        id_table_release(session->mem, &ids);
-        markdown_core_footnote_index_release(session->mem, &footnotes);
-        release_definition_tables(session->mem, staged);
-        markdown_core_node_free(root);
+    // Built inside this mutating call so markdown_core_document_node_by_id
+    // stays a pure concurrent-safe read.
+    if (!id_table_build(nw->mem, nw->root, &ids)) {
+        id_table_release(nw->mem, &ids);
+        markdown_core_footnote_index_release(nw->mem, &footnotes);
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -433,79 +443,100 @@ static bool commit_full(
         );
         return false;
     }
-
-    if (session->root) {
-        markdown_core_node_free(session->root);
-    }
-    id_table_release(session->mem, &session->ids);
-    markdown_core_footnote_index_release(session->mem, &session->footnotes);
-    release_definition_tables(session->mem, session->definitions);
-    memcpy(session->definitions, staged, sizeof(staged));
-    session->definitions_stale = false;
-    session->root = root;
-    session->ids = ids;
-    session->footnotes = footnotes;
-    session->total_lines = total_lines;
-    session->last_line_length = last_line_length;
-    session->expansion_estimate = map->ref_size;
-    session->revision = new_rev;
-    session->full_commits++;
-    session->pending.dirty = false;
-    session->pending.new_lo = 0;
-    session->pending.new_hi = 0;
-    session->pending.delta = 0;
+    nw->footnotes = footnotes;
+    nw->ids = ids;
     return true;
 }
 
-static bool commit_internal(
-    markdown_core_document *session,
-    bool initial,
+static markdown_core_document *markdown_core_document_alloc(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    bool pooled,
+    markdown_core_error **error
+);
+
+/* Replaces the document's whole text. The source starts empty, so this is one
+ * insertion at the origin. */
+static bool document_set_text(
+    markdown_core_document *doc,
+    const uint8_t *markdown,
+    size_t length,
+    markdown_core_error **error
+) {
+    markdown_core_source_edit edit;
+    markdown_core_source_stats stats;
+    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
+    memset(&stats, 0, sizeof(stats));
+    edit.span.start = 0;
+    edit.span.end = 0;
+    edit.replacement = markdown;
+    edit.replacement_length = length;
+    if (!markdown_core_source_apply(doc->source, &edit, 1, &stats, &status)) {
+        markdown_core_ast_set_error(
+            error,
+            status == MARKDOWN_CORE_SOURCE_NO_MEMORY ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
+                                                     : MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "could not store the document text"
+        );
+        return false;
+    }
+    return true;
+}
+
+/* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
+ *
+ *     new   = Document(markdown, options)
+ *     delta = diff(prev, new)
+ *
+ * That is the whole of a commit. There is no incremental path, no pending
+ * edit, no reuse of the previous tree: the previous document is INPUT to the
+ * diff and nothing else, and it is untouched by this call. */
+static markdown_core_document *document_build(
+    const markdown_core_parse_options *options,
+    const uint8_t *markdown,
+    size_t length,
+    const markdown_core_document *prev,
+    markdown_core_mem *mem,
+    bool pooled,
     markdown_core_delta **changes_out,
     markdown_core_error **error
 ) {
+    markdown_core_document *doc;
     markdown_core_delta *changes = NULL;
 
+    doc = markdown_core_document_alloc(options, mem, pooled, error);
+    if (!doc) {
+        return NULL;
+    }
+    if (prev) {
+        doc->lineage = prev->lineage;
+        doc->next_id = prev->next_id;
+        doc->revision = prev->revision + 1;
+    }
+    if (length && !document_set_text(doc, markdown, length, error)) {
+        markdown_core_document_release(doc);
+        return NULL;
+    }
     if (changes_out) {
         changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
         if (!changes) {
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
-            return false;
+            markdown_core_document_release(doc);
+            return NULL;
         }
-        changes->lineage = session->lineage;
-        changes->before = session->revision;
-        changes->after = initial ? 0 : session->revision + 1;
+        changes->lineage = doc->lineage;
+        changes->before = prev ? prev->revision : 0;
+        changes->after = doc->revision;
     }
-
-    // A commit with no pending edits advances the revision with an empty
-    // delta; nothing else can have changed.
-    if (!initial && session->root && !session->pending.dirty) {
-        session->revision++;
-        if (changes_out) {
-            *changes_out = changes;
-        }
-        return true;
-    }
-
-    // ONE PATH. The incremental pipeline used to run first and fall back to
-    // this; it is gone from the routing, and with it every mechanism that
-    // existed to make a partial reparse safe rather than to serve a stated
-    // requirement. A full reparse satisfies all five: a document is created
-    // from text, a commit hands it new text, the result is self-contained, the
-    // delta names the nodes that changed, and the parse equals a fresh parse
-    // of the same bytes by construction rather than by gate.
-    //
-    // What produces the delta is unchanged and always did the real work:
-    // markdown_core_document_diff matches the new tree against the committed
-    // one. That matcher is now the ONLY thing standing between a reparse and a
-    // correct delta, which is where the scrutiny belongs.
-    if (!commit_full(session, initial, changes, error)) {
+    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, changes, error)) {
         markdown_core_delta_free(changes);
-        return false;
+        markdown_core_document_release(doc);
+        return NULL;
     }
     if (changes_out) {
         *changes_out = changes;
     }
-    return true;
+    return doc;
 }
 
 // One 64-bit read from the host CSPRNG. Sessions stay free of any library-
@@ -540,7 +571,9 @@ static bool session_host_entropy(uint64_t *value) {
 
 // --- public API -------------------------------------------------------------
 
-markdown_core_document *markdown_core_document_open_with_mem(
+/* Allocates a document and its empty source. No parse; document_build does
+ * that once, with the text in hand. */
+static markdown_core_document *markdown_core_document_alloc(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
     bool pooled,
@@ -616,12 +649,26 @@ markdown_core_document *markdown_core_document_open_with_mem(
         entropy ^= host_entropy;
     }
     session->lineage = markdown_core_mix64(entropy);
-
-    if (!commit_internal(session, true, NULL, error)) {
-        markdown_core_document_release(session);
-        return NULL;
-    }
     return session;
+}
+
+markdown_core_document *markdown_core_document_open_with_mem(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    bool pooled,
+    markdown_core_error **error
+) {
+    return document_build(options, NULL, 0, NULL, mem, pooled, NULL, error);
+}
+
+/* `Document(markdown, options)` — the one entry point. */
+markdown_core_document *markdown_core_document_new(
+    const uint8_t *markdown,
+    size_t length,
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+) {
+    return document_build(options, markdown, length, NULL, markdown_core_mem_default(), true, NULL, error);
 }
 
 markdown_core_document *markdown_core_document_open(
@@ -736,20 +783,80 @@ bool markdown_core_document_edit(
     return true;
 }
 
+/* let new   = Document(markdown, document.options)
+ * let delta = diff(document, new)
+ * return Commit(new, delta)
+ *
+ * The receiver is SUPERSEDED: it is released here and `*document` is cleared,
+ * on every path, so a caller cannot hold both. */
 bool markdown_core_document_commit(
-    markdown_core_document *session,
-    markdown_core_delta **changes,
+    markdown_core_document **document,
+    const uint8_t *markdown,
+    size_t length,
+    markdown_core_commit *out,
     markdown_core_error **error
 ) {
+    markdown_core_document *old;
+    markdown_core_document *nw;
+    markdown_core_delta *delta = NULL;
+
     clear_error(error);
-    if (changes) {
-        *changes = NULL;
+    if (out) {
+        out->document = NULL;
+        out->delta = NULL;
     }
-    if (!session) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "session must not be null");
+    if (!document || !*document) {
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
         return false;
     }
-    return commit_internal(session, false, changes, error);
+    if (!markdown && length != 0) {
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "markdown must not be null when length is nonzero"
+        );
+        return false;
+    }
+    old = *document;
+    // The successor gets its OWN allocator. `old->mem` is the arena's own
+    // face when the predecessor is pooled, and releasing the predecessor
+    // releases that arena — so building into it and then releasing would free
+    // the document this call returns.
+    nw = document_build(
+        &old->options,
+        markdown,
+        length,
+        old,
+        markdown_core_mem_default(),
+        old->arena != NULL,
+        out ? &delta : NULL,
+        error
+    );
+    if (!nw) {
+        return false;
+    }
+    markdown_core_document_release(old);
+    *document = NULL;
+    if (out) {
+        out->document = nw;
+        out->delta = delta;
+    } else {
+        markdown_core_document_release(nw);
+    }
+    return true;
+}
+
+/* TRANSITIONAL, test-only: the document's stored text. The engine's own
+ * operation takes text in; this exists so an edit-shaped test can still ask
+ * "what does it hold now" while those tests migrate to owning their own
+ * string. It goes with markdown_core_document_edit. */
+const uint8_t *markdown_core_document_text(const markdown_core_document *document, size_t *length) {
+    size_t n = document ? markdown_core_source_length(document->source) : 0;
+    size_t run = 0;
+    if (length) {
+        *length = n;
+    }
+    return n ? markdown_core_source_run_at(document->source, 0, &run) : (const uint8_t *)"";
 }
 
 const markdown_core_document *markdown_core_document_view(const markdown_core_document *session) {

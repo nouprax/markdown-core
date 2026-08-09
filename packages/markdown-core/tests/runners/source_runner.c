@@ -33,6 +33,7 @@
 #include <markdown_core.h>
 
 #include "source.h"
+#include "commit_compat.h"
 
 /* Standalone like fallback_runner: linked against the static archives so
  * the internal source symbols resolve, without markdown-core-test-support

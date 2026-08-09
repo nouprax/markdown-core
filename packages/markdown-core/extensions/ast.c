@@ -85,32 +85,15 @@ markdown_core_document *markdown_core_document_parse(
     const markdown_core_parse_options *options,
     markdown_core_error **error
 ) {
-    markdown_core_document *session;
-    markdown_core_document *document;
-
     clear_error(error);
     if (!source && length != 0) {
         set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
         return NULL;
     }
-    // THE DOCUMENT IS THE OWNER, so this returns it rather than detaching a
-    // root into a second, emptier handle. It used to do that, and set
-    // `one_shot` to skip the footnote index and the id table on the ground
-    // that a document which never commits again does not need them — which was
-    // true of a handle that could not answer a query. A self-contained
-    // document must answer all of them (4.1), so the skip is gone with the
-    // detach.
-    session = markdown_core_document_open_with_mem(options, markdown_core_mem_default(), false, error);
-    if (!session) {
-        return NULL;
-    }
-    if (length && (!markdown_core_document_edit(session, 0, 0, source, length, error) ||
-                   !markdown_core_document_commit(session, NULL, error))) {
-        markdown_core_document_release(session);
-        return NULL;
-    }
-    document = session;
-    return document;
+    // `Document(markdown, options)`. A commit is this same call with a
+    // predecessor to diff against, which is why there is one entry point and
+    // not a one-shot path beside an incremental one.
+    return markdown_core_document_new(source, length, options, error);
 }
 
 void markdown_core_document_free(markdown_core_document *document) {

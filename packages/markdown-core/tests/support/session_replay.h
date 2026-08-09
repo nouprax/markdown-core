@@ -99,3 +99,24 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
 #endif
 
 #endif
+
+/* --- edit-shaped test harness over a whole-text engine -----------------
+ *
+ * The engine has one operation: `Document(markdown, options)` and
+ * `commit(markdown)`, both taking whole text. A great many tests are written
+ * as a sequence of byte-range edits, which is what an editor produces and
+ * what they are meant to exercise. `mc_doc` keeps that shape where it belongs
+ * — in the test — by holding the text itself and handing the WHOLE of it to
+ * the engine on every commit. */
+typedef struct mc_doc {
+    markdown_core_document *document;
+    char *text;
+    size_t length;
+    size_t capacity;
+} mc_doc;
+
+bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdown_core_error **error);
+bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_t length);
+bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error);
+void mc_doc_close(mc_doc *doc);
+

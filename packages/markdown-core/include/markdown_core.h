@@ -81,10 +81,15 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
-/* One owner. `markdown_core_document` is the same struct under its old name
- * while the public surface moves to the document model. */
-typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_delta markdown_core_delta;
+
+/** What a commit returns: the successor document and the delta between the
+ * document it was called on and that successor. A value, not a handle —
+ * release the two members, there is nothing else to free. */
+typedef struct markdown_core_commit {
+    markdown_core_document *document;
+    markdown_core_delta *delta;
+} markdown_core_commit;
 
 /** Session-assigned node identity: unique within a session, never reused,
  * stable across incremental commits while the node remains the same kind of
@@ -411,9 +416,26 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
 /** Reparses the pending text and advances the revision. When `changes` is
  * non-NULL it receives a caller-owned delta (release with
  * markdown_core_delta_free). */
+/** `Document(markdown, options)`. Options are fixed for the document's whole
+ * lineage; a commit takes text and not options. */
+/** TRANSITIONAL, test-only; goes with markdown_core_document_edit. */
+MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(
+    const markdown_core_document *document,
+    size_t *length
+);
+
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
+    const uint8_t *markdown,
+    size_t length,
+    const markdown_core_parse_options *options,
+    markdown_core_error **error
+);
+
 MARKDOWN_CORE_API bool markdown_core_document_commit(
-    markdown_core_document *session,
-    markdown_core_delta **changes,
+    markdown_core_document **document,
+    const uint8_t *markdown,
+    size_t length,
+    markdown_core_commit *out,
     markdown_core_error **error
 );
 

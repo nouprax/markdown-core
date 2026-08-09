@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <markdown_core.h>
+#include "commit_compat.h"
 
 static int failures = 0;
 
@@ -291,7 +292,7 @@ static void check_scope_table(void) {
         goto done;
     }
     if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_document_commit(session, NULL, &error)) {
+        !mc_commit_compat(&session, NULL, &error)) {
         check(0, "scope table session commits");
         goto done;
     }
@@ -398,7 +399,7 @@ static void check_ordered_delta_entries(void) {
         goto done;
     }
     if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_document_commit(session, &changes, &error)) {
+        !mc_commit_compat(&session, &changes, &error)) {
         check(0, "ordered delta session commits");
         goto done;
     }
@@ -463,7 +464,7 @@ static void check_ordered_delta_entries(void) {
 
     other = markdown_core_document_open(NULL, &error);
     if (!other || !markdown_core_document_edit(other, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_document_commit(other, &other_changes, &error)) {
+        !mc_commit_compat(&other, &other_changes, &error)) {
         check(0, "second ordered delta session reaches the same revision");
         goto done;
     }
@@ -479,7 +480,7 @@ static void check_ordered_delta_entries(void) {
         markdown_core_error_free(error);
         error = NULL;
     }
-    check(markdown_core_document_commit(session, &empty_changes, &error), "ordered delta session advances");
+    check(mc_commit_compat(&session, &empty_changes, &error), "ordered delta session advances");
     {
         markdown_core_delta_entry *stale = (markdown_core_delta_entry *)(uintptr_t)1;
         size_t stale_count = 99;

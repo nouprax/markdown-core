@@ -105,6 +105,7 @@ static void thread_join(thread_handle handle) {
 #define THREAD_RESULT 0u
 #else
 #include <pthread.h>
+#include "commit_compat.h"
 typedef pthread_t thread_handle;
 typedef struct barrier {
     pthread_mutex_t lock;
@@ -439,17 +440,17 @@ typedef struct session_worker {
 // Clears the session text, then streams `input` byte-by-byte with a commit
 // (and discarded delta) per byte. Hands back a determinism-checked dump.
 static int session_stream_once(
-    markdown_core_document *session,
+    markdown_core_document **session_ref,
     const char *input,
     uint8_t **dump_out,
     size_t *length_out
 ) {
     markdown_core_error *error = NULL;
-    size_t existing = markdown_core_document_length(session);
+    size_t existing = markdown_core_document_length((*session_ref));
 
     if (existing) {
-        if (!markdown_core_document_edit(session, 0, existing, NULL, 0, &error) ||
-            !markdown_core_document_commit(session, NULL, &error)) {
+        if (!markdown_core_document_edit((*session_ref), 0, existing, NULL, 0, &error) ||
+            !mc_commit_compat(session_ref, NULL, &error)) {
             markdown_core_error_free(error);
             return 1;
         }
@@ -458,8 +459,8 @@ static int session_stream_once(
     size_t length = strlen(input);
     for (size_t offset = 0; offset < length; offset++) {
         markdown_core_delta *changes = NULL;
-        if (!markdown_core_document_edit(session, offset, offset, (const uint8_t *)input + offset, 1, &error) ||
-            !markdown_core_document_commit(session, &changes, &error)) {
+        if (!markdown_core_document_edit((*session_ref), offset, offset, (const uint8_t *)input + offset, 1, &error) ||
+            !mc_commit_compat(session_ref, &changes, &error)) {
             markdown_core_error_free(error);
             return 1;
         }
@@ -470,8 +471,8 @@ static int session_stream_once(
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump(markdown_core_document_view(session), &first, &first_length, &error) ||
-        !markdown_core_document_dump(markdown_core_document_view(session), &second, &second_length, &error)) {
+    if (!markdown_core_document_dump(markdown_core_document_view((*session_ref)), &first, &first_length, &error) ||
+        !markdown_core_document_dump(markdown_core_document_view((*session_ref)), &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_dump_free(first);
         return 1;
@@ -507,7 +508,7 @@ static THREAD_RETURN session_worker_main(void *argument) {
     for (int iteration = 0; iteration < self->iterations; iteration++) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (session_stream_once(session, self->input, &dump, &length)) {
+        if (session_stream_once(&session, self->input, &dump, &length)) {
             self->failed = 1;
             break;
         }
@@ -643,7 +644,7 @@ static int case_sessions(void) {
     uint8_t *reference = NULL;
     size_t reference_length = 0;
     if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
-        !markdown_core_document_commit(session, NULL, &error) ||
+        !mc_commit_compat(&session, NULL, &error) ||
         !markdown_core_document_dump(markdown_core_document_view(session), &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_release(session);
@@ -684,7 +685,7 @@ static int case_sessions(void) {
         uint8_t *dump = NULL;
         size_t length = 0;
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
-            !markdown_core_document_commit(session, NULL, &error) ||
+            !mc_commit_compat(&session, NULL, &error) ||
             !markdown_core_document_dump(markdown_core_document_view(session), &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "sessions: post-read commit failed\n");

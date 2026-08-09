@@ -341,7 +341,7 @@ static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core
     }
 }
 
-bool markdown_core_document_diff_inline_domain(
+bool markdown_core_diff_trees_inline_domain(
     markdown_core_document *session,
     markdown_core_node *old_owner,
     markdown_core_node *staged_owner,
@@ -359,7 +359,7 @@ bool markdown_core_document_diff_inline_domain(
     return true;
 }
 
-bool markdown_core_document_diff(
+bool markdown_core_diff_trees(
     markdown_core_document *session,
     markdown_core_node *old_root,
     markdown_core_node *new_root,

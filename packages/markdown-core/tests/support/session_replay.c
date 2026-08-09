@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "test_support.h"
+#include "commit_compat.h"
 
 static int sr_fail(sr_replay *replay, const char *message) {
     replay->report(replay->user, replay->context, message);
@@ -295,7 +296,7 @@ static int sr_check_footnote_queries(sr_replay *replay) {
 
     fresh = markdown_core_document_open(replay->options, &error);
     if (!fresh || !markdown_core_document_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
-        !markdown_core_document_commit(fresh, NULL, &error)) {
+        !mc_commit_compat(&fresh, NULL, &error)) {
         markdown_core_error_free(error);
         sr_fail(replay, "fresh footnote reference session failed");
         goto done;
@@ -436,7 +437,7 @@ int sr_replay_commit(sr_replay *replay) {
     sr_walk_state state;
     int result = -1;
 
-    if (!markdown_core_document_commit(replay->session, &changes, &error)) {
+    if (!mc_commit_compat(&replay->session, &changes, &error)) {
         markdown_core_error_free(error);
         return sr_fail(replay, "commit failed");
     }
@@ -621,3 +622,61 @@ done:
     sr_replay_close(&replay);
     return result;
 }
+
+bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdown_core_error **error) {
+    memset(doc, 0, sizeof(*doc));
+    doc->document = markdown_core_document_new(NULL, 0, options, error);
+    return doc->document != NULL;
+}
+
+bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_t length) {
+    size_t tail;
+    if (start > end || end > doc->length) {
+        return false;
+    }
+    if (doc->length - (end - start) + length + 1 > doc->capacity) {
+        size_t want = (doc->length - (end - start) + length + 1) * 2;
+        char *grown = (char *)realloc(doc->text, want);
+        if (!grown) {
+            return false;
+        }
+        doc->text = grown;
+        doc->capacity = want;
+    }
+    tail = doc->length - end;
+    memmove(doc->text + start + length, doc->text + end, tail);
+    if (length) {
+        memcpy(doc->text + start, bytes, length);
+    }
+    doc->length = start + length + tail;
+    doc->text[doc->length] = 0;
+    return true;
+}
+
+bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error) {
+    markdown_core_commit commit;
+    memset(&commit, 0, sizeof(commit));
+    if (!markdown_core_document_commit(
+            &doc->document,
+            (const uint8_t *)doc->text,
+            doc->length,
+            &commit,
+            error
+        )) {
+        return false;
+    }
+    doc->document = commit.document;
+    if (delta) {
+        *delta = commit.delta;
+    } else {
+        markdown_core_delta_free(commit.delta);
+    }
+    return true;
+}
+
+void mc_doc_close(mc_doc *doc) {
+    markdown_core_document_free(doc->document);
+    free(doc->text);
+    memset(doc, 0, sizeof(*doc));
+}
+

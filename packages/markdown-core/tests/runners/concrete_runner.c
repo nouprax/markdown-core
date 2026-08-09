@@ -76,6 +76,7 @@
 #include "parser.h"
 #include "strikethrough.h"
 #include "table.h"
+#include "commit_compat.h"
 
 /* The complete engine node inventory with each kind's expected region
  * class, verbatim from 11.1 — the gate asserts the exact class, not a
@@ -2441,7 +2442,7 @@ static int case_capture_document(void) {
             return -1;
         }
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)first, sizeof(first) - 1, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "capture_document: first commit failed\n");
             return -1;
@@ -2461,7 +2462,7 @@ static int case_capture_document(void) {
                 sizeof(tail) - 1,
                 NULL
             ) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
@@ -2766,7 +2767,7 @@ static int case_capture_equivalence(void) {
                 break;
             }
         }
-        if (!markdown_core_document_commit(session, NULL, NULL)) {
+        if (!mc_commit_compat(&session, NULL, NULL)) {
             fprintf(stderr, "capture_equivalence: commit %zu failed\n", step);
             failed = 1;
             break;
@@ -3904,7 +3905,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
             return -1;
@@ -3922,7 +3923,7 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         if (!markdown_core_document_edit(session, 25, 36, (const uint8_t *)replaced, sizeof(replaced) - 1, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
             return -1;
@@ -3968,7 +3969,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
@@ -3981,7 +3982,7 @@ static int case_inline_equivalence(void) {
         }
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
         if (!markdown_core_document_edit(session, 43, 51, (const uint8_t *)"", 0, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
@@ -4003,7 +4004,7 @@ static int case_inline_equivalence(void) {
         /* Flip it back: the same unit swaps again to the resolved shape. */
         if (!failed) {
             if (!markdown_core_document_edit(session, 43, 43, (const uint8_t *)"[x]: /u\n", 8, NULL) ||
-                !markdown_core_document_commit(session, NULL, NULL)) {
+                !mc_commit_compat(&session, NULL, NULL)) {
                 markdown_core_document_release(session);
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
                 return -1;
@@ -4062,7 +4063,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
             return -1;
@@ -4081,7 +4082,7 @@ static int case_inline_equivalence(void) {
         }
         /* Delete the `[x]: /u\n` definition line. */
         if (!markdown_core_document_edit(session, 46, 54, (const uint8_t *)"", 0, NULL) ||
-            !markdown_core_document_commit(session, NULL, NULL)) {
+            !mc_commit_compat(&session, NULL, NULL)) {
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;

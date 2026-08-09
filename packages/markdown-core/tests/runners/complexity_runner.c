@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "test_support.h"
+#include "commit_compat.h"
 
 static const size_t SCALING_SIZES[] = {4096, 134217728};
 static const size_t DELIMITER_SCALING_SIZES[] = {4096, 65536};
@@ -560,7 +561,7 @@ static markdown_core_document *cc_session_build(size_t size, int mode, size_t *s
     }
     session = markdown_core_document_open(&options, NULL);
     if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL)) {
+        !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
     }
@@ -629,7 +630,7 @@ static int cc_session_block(markdown_core_document *session, int mode, size_t st
             size_t length = markdown_core_document_length(session);
             ok = markdown_core_document_edit(session, length, length, line, sizeof(line) - 1, NULL);
         }
-        if (!ok || !markdown_core_document_commit(session, NULL, NULL)) {
+        if (!ok || !mc_commit_compat(&session, NULL, NULL)) {
             return -1;
         }
         (*op_counter)++;
@@ -762,7 +763,7 @@ static markdown_core_document *cc_footnote_renumber_build(size_t count) {
     options.footnotes = true;
     session = markdown_core_document_open(&options, NULL);
     if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL)) {
+        !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
     }
@@ -795,7 +796,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
                     1,
                     NULL
                 ) ||
-                !markdown_core_document_commit(session, &changes, NULL)) {
+                !mc_commit_compat(&session, &changes, NULL)) {
                 markdown_core_delta_free(changes);
                 markdown_core_document_release(session);
                 return -1;
@@ -877,7 +878,7 @@ static markdown_core_document *cc_scope_build(size_t depth) {
     text[length] = '\0';
     session = markdown_core_document_open(NULL, NULL);
     if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL)) {
+        !mc_commit_compat(&session, NULL, NULL)) {
         markdown_core_document_release(session);
         session = NULL;
     }
@@ -996,9 +997,9 @@ static int cc_delta_order_build(
 
     session = markdown_core_document_open(NULL, NULL);
     if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL) ||
+        !mc_commit_compat(&session, NULL, NULL) ||
         !markdown_core_document_edit(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
-        !markdown_core_document_commit(session, &changes, NULL)) {
+        !mc_commit_compat(&session, &changes, NULL)) {
         free(text);
         markdown_core_delta_free(changes);
         markdown_core_document_release(session);

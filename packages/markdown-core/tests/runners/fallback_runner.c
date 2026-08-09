@@ -26,6 +26,7 @@
 
 #include "cross_reference.h"
 #include "document_internal.h"
+#include "commit_compat.h"
 
 /* Injected allocator.  Only the targeted shapes fail: key-index slot tables
  * are calloc(capacity >= 16, sizeof(slot)) and the sorted-fallback pointer
@@ -1559,7 +1560,7 @@ static int fb_session_run(
                 fputs("could not capture pre-commit tree\n", stderr);
                 goto done;
             }
-            if (!markdown_core_document_commit(session, delta_aware ? &changes : NULL, NULL)) {
+            if (!mc_commit_compat(&session, delta_aware ? &changes : NULL, NULL)) {
                 uint8_t *view = NULL;
                 size_t view_length = 0;
                 if (changes) {
@@ -1581,7 +1582,7 @@ static int fb_session_run(
                     goto done;
                 }
                 free(view);
-                if (!markdown_core_document_commit(session, delta_aware ? &changes : NULL, NULL)) {
+                if (!mc_commit_compat(&session, delta_aware ? &changes : NULL, NULL)) {
                     if (changes) {
                         fputs("failed commit retry exposed a partial delta\n", stderr);
                         markdown_core_delta_free(changes);
@@ -1767,13 +1768,13 @@ static int case_seam_static_literal(void) {
 
     session = markdown_core_document_open(&options, NULL);
     if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL)) {
+        !mc_commit_compat(&session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
         goto done;
     }
     /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
     if (!markdown_core_document_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
-        !markdown_core_document_commit(session, NULL, NULL)) {
+        !mc_commit_compat(&session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
         goto done;
     }
@@ -1782,7 +1783,7 @@ static int case_seam_static_literal(void) {
     fresh = markdown_core_document_open(&options, NULL);
     if (!fresh ||
         !markdown_core_document_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
-        !markdown_core_document_commit(fresh, NULL, NULL)) {
+        !mc_commit_compat(&fresh, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
         goto done;
     }

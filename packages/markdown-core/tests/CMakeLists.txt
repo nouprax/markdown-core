@@ -139,11 +139,11 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(fallback_runner runners/fallback_runner.c)
     add_executable(extension_order_runner runners/extension_order_runner.c)
     target_include_directories(
-        fallback_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+        fallback_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_include_directories(
         extension_order_runner
-        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     target_link_libraries(extension_order_runner libmarkdown-core-extensions_static libmarkdown-core_static)
@@ -152,7 +152,7 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(source_runner runners/source_runner.c)
     target_include_directories(
         source_runner
-        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
@@ -160,7 +160,7 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(concrete_runner runners/concrete_runner.c)
     target_include_directories(
         concrete_runner
-        PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
                 "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(concrete_runner libmarkdown-core-extensions_static libmarkdown-core_static)
@@ -185,7 +185,7 @@ endif()
 
 # Facade tests exercise the read-only markdown_core C API directly.
 add_executable(facade_test facade.c)
-target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
