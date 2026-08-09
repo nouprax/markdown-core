@@ -262,8 +262,8 @@ Commit {
 AST type returned by one-shot parsing. Its retained concrete owner is exposed
 through the `concrete` interface; it is not a third `Commit` member or a
 separately published tree. `Commit.delta` is an immutable exact-base
-description of what changed between the session's immediately preceding
-published document and `Commit.document`.
+description of what changed between the document `commit` was called on and
+`Commit.document`.
 
 A consumer may ignore or discard `Delta` and derive all of its state from
 `Commit.document`. Doing so cannot change parser output, identity, revisions,
@@ -1381,15 +1381,17 @@ Span {
     Offset end
 }
 
-Session {
-    edit(SourceEdit)
-    commit()       -> Commit
-    commit([byte]) -> Commit    // optional binding convenience, below
+Document {
+    commit([byte]) -> Commit
 }
 ```
 
-`span` is a half-open run of *stored bytes* in the session's current pending
-source. It is not a `Scope`: a scope is a revision-relative query result resolved
+There is no session and no `edit`. A document is created from text and options,
+and `commit` hands it new text and SUPERSEDES it (4.2, and
+`sessions-and-deltas.md`). `SourceEdit` survives as an OUTPUT type only: it is
+what `Delta.edits` reports, not what a caller submits.
+
+`span` is a half-open run of *stored bytes*. It is not a `Scope`: a scope is a revision-relative query result resolved
 against a published document, and an edit must name storage in the pending
 one. The two stay distinct types so a
 resolved scope cannot be fed back in as an edit, and `Span` is built from
@@ -1407,18 +1409,20 @@ base fails without publishing a partial source or AST. Bytes ending in a
 truncated code point are not a failure at all: the substrate stores what it is
 given (7.1), and the next chunk continues it.
 
-Edits do not directly mutate a published `Document`. `commit` applies pending
-edits to a private source candidate, parses and validates one complete
-candidate AST, computes its `Delta`, and publishes both atomically.
+A commit does not mutate a published `Document`; it supersedes one. `commit`
+takes whole text, determines the difference between it and the document's own
+stored bytes, parses and validates one complete candidate AST, and publishes
+the successor and its `Delta` atomically.
 
-A binding may additionally offer `commit(source)`, which normalizes the
-difference between the given bytes and the session's stored bytes into the
-same deterministic edit set. It is a convenience over the same primitive, for
-a host that owns the whole text rather than the edit — a two-way text binding,
-a document reloaded from disk, a remote replacement. It must produce the
-identical document, identity, and delta as the equivalent explicit edits, and
-it costs one byte-level diff of the two buffers, so a host that already knows
-its edit should submit that edit instead.
+`commit(source)` used to be described here as an optional binding convenience
+over an explicit-edit primitive, "for a host that owns the whole text rather
+than the edit", with the note that a host which already knows its edit should
+submit that edit instead. **It is now the only form**, and the note is
+inverted: a host that knows its edit applies it to the string it already holds.
+What that costs is one byte-level scan of two buffers, which is linear in the
+document and negligible beside the parse — and what it buys is that 8.2's ban
+on a streaming-only path holds by construction, because there is one operation
+and streaming is calling it again.
 
 ### 8.2 Streaming is ordinary editing
 
@@ -1567,12 +1571,16 @@ differs or it does not.
 
 `edits` is a normalized, non-overlapping, ascending edit script from `before`'s
 stored bytes to `after`'s stored bytes, expressed in `before`'s coordinate
-space. The session uses the caller's own edits, normalized.
+space. **The engine determines it.** A commit is handed whole text, so there is
+no caller script to normalize; what `edits` reports is the difference the
+engine found between the two byte strings.
 
-Unlike `diffs` it is not required to be minimal, and it is not a pure
-function of the two byte strings: two routes to the same document may carry
-different but equally valid `edits`. A consumer must treat it as *an* edit
-script, not *the* edit script.
+An earlier revision said "the session uses the caller's own edits, normalized",
+and that was never true of any implementation here: edits were coalesced into
+one dirty range and a net length before the commit ran, so the script was gone
+by the time a delta could carry it. It is a pure function of the two byte
+strings now, and a consumer may treat it as *the* difference rather than *an*
+edit script.
 
 It is here for the consumers that do not already know it. An editor that
 submitted the edit does; these do not:
