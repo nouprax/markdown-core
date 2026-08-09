@@ -85,8 +85,6 @@ static void test_char(test_batch_runner *runner, const char *utf8, const char *m
 
 static void test_incomplete_char(test_batch_runner *runner, const char *utf8, const char *msg);
 
-static void test_continuation_byte(test_batch_runner *runner, const char *utf8);
-
 static void version(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_version(), MARKDOWN_CORE_VERSION, "markdown_core_version");
     STR_EQ(runner, markdown_core_version_string(), MARKDOWN_CORE_VERSION_STRING, "markdown_core_version_string");
@@ -1100,38 +1098,20 @@ static void parser(test_batch_runner *runner) {
 }
 
 static void utf8(test_batch_runner *runner) {
-    // Ranges
+    // Ranges: every legal sequence length round-trips.
     test_char(runner, "\x01", "valid utf8 01");
     test_char(runner, "\x7F", "valid utf8 7F");
-    test_char(runner, "\x80", "invalid utf8 80");
-    test_char(runner, "\xBF", "invalid utf8 BF");
-    test_char(runner, "\xC0\x80", "invalid utf8 C080");
-    test_char(runner, "\xC1\xBF", "invalid utf8 C1BF");
     test_char(runner, "\xC2\x80", "valid utf8 C280");
     test_char(runner, "\xDF\xBF", "valid utf8 DFBF");
-    test_char(runner, "\xE0\x80\x80", "invalid utf8 E08080");
-    test_char(runner, "\xE0\x9F\xBF", "invalid utf8 E09FBF");
     test_char(runner, "\xE0\xA0\x80", "valid utf8 E0A080");
     test_char(runner, "\xED\x9F\xBF", "valid utf8 ED9FBF");
-    test_char(runner, "\xED\xA0\x80", "invalid utf8 EDA080");
-    test_char(runner, "\xED\xBF\xBF", "invalid utf8 EDBFBF");
-    test_char(runner, "\xF0\x80\x80\x80", "invalid utf8 F0808080");
-    test_char(runner, "\xF0\x8F\xBF\xBF", "invalid utf8 F08FBFBF");
     test_char(runner, "\xF0\x90\x80\x80", "valid utf8 F0908080");
     test_char(runner, "\xF4\x8F\xBF\xBF", "valid utf8 F48FBFBF");
-    test_char(runner, "\xF4\x90\x80\x80", "invalid utf8 F4908080");
-    test_char(runner, "\xF7\xBF\xBF\xBF", "invalid utf8 F7BFBFBF");
-    test_char(runner, "\xF8", "invalid utf8 F8");
-    test_char(runner, "\xFF", "invalid utf8 FF");
 
-    // Incomplete byte sequences at end of input
-    test_incomplete_char(runner, "\xE0\xA0", "invalid utf8 E0A0");
-    test_incomplete_char(runner, "\xF0\x90\x80", "invalid utf8 F09080");
-
-    // Invalid continuation bytes
-    test_continuation_byte(runner, "\xC2\x80");
-    test_continuation_byte(runner, "\xE0\xA0\x80");
-    test_continuation_byte(runner, "\xF0\x90\x80\x80");
+    // A truncated final code point: a legal final document (8.2), not an
+    // invalid one — a stream may simply stop here.
+    test_incomplete_char(runner, "\xE0\xA0", "truncated final code point E0A0");
+    test_incomplete_char(runner, "\xF0\x90\x80", "truncated final code point F09080");
 
     // Test string containing null character
     static const char string_with_null[] = "((((\0))))";
@@ -1170,18 +1150,34 @@ static void utf8(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* THE BYTES SURVIVE, whatever they are.
+/* VALID UTF-8 IN, VALID UTF-8 OUT — and nothing here says more than that.
  *
- * These three used to assert the opposite: that a sequence which is not valid
- * UTF-8 comes back as U+FFFD. UTF-8 is assumed and never validated
- * (incremental-canonical-ast.md 7.1) — validating would mean rejecting, which
- * is not this engine's policy to set, and replacing means a lossy parse, which
- * produces a different document rather than a degraded one. So the assertion
- * inverts: the input is what comes back, byte for byte, and there is no longer
- * a valid case and an invalid case to tell apart.
+ * These rows used to feed overlong encodings, surrogates, out-of-range lead
+ * bytes and bare continuation bytes, and assert each came back as U+FFFD. When
+ * validation was deleted (7.1: UTF-8 is assumed and never validated) they were
+ * inverted to assert the bytes survive instead — and that was the same mistake
+ * one step further on. **The contract makes no promise about input that is not
+ * UTF-8**; its guarantee is stated over legal input only, and "anything else is
+ * out of scope" is a decision, not an omission. A gate over out-of-scope input
+ * does not protect a requirement, it MINTS one — the comment that stood here
+ * said as much in its own defence: "nothing else in the suite states it, and
+ * neither external parity oracle can."
  *
- * This is the losslessness gate. Nothing else in the suite states it, and
- * neither external parity oracle can: both feed UTF-8 only. */
+ * So the out-of-scope rows are gone. What remains is in scope and each row
+ * says which part:
+ *   - a valid sequence of every length round-trips (the whole promise, of
+ *     which the 860 spec examples and both parity oracles are the rest of the
+ *     gate);
+ *   - a TRUNCATED FINAL CODE POINT round-trips, because that is a legal final
+ *     document, not an invalid one: a stream may stop mid-character and 8.2
+ *     forbids a finalize step (14.8.2-3);
+ *   - U+0000 becomes U+FFFD, because CommonMark requires it of canonical text
+ *     and it is the one replacement this engine performs
+ *     (sessions-and-deltas.md).
+ *
+ * That the engine does not CRASH on arbitrary bytes is a separate requirement,
+ * it is a safety one rather than a semantic one, and it belongs to the fuzzers
+ * — which is where the only two non-UTF-8 files in this repository live. */
 static void test_char(test_batch_runner *runner, const char *utf8, const char *msg) {
     char buf[20];
     snprintf(buf, sizeof(buf), "((((%s))))", utf8);
@@ -1192,19 +1188,6 @@ static void test_incomplete_char(test_batch_runner *runner, const char *utf8, co
     char buf[20];
     snprintf(buf, sizeof(buf), "----%s", utf8);
     test_md_paragraph_text(runner, buf, buf, msg);
-}
-
-static void test_continuation_byte(test_batch_runner *runner, const char *utf8) {
-    size_t len = strlen(utf8);
-
-    for (size_t pos = 1; pos < len; ++pos) {
-        char buf[20];
-        char msg[80];
-        snprintf(buf, sizeof(buf), "((((%s))))", utf8);
-        buf[4 + pos] = '\x20';
-        snprintf(msg, sizeof(msg), "utf8 continuation byte %zu/%zu survives", pos, len);
-        test_md_paragraph_text(runner, buf, buf, msg);
-    }
 }
 
 static void line_endings(test_batch_runner *runner) {

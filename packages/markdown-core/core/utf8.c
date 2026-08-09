@@ -15,11 +15,6 @@ static const int8_t utf8proc_utf8class[256] = {
     2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static void encode_unknown(markdown_core_strbuf *buf) {
-    static const uint8_t repl[] = {239, 191, 189};
-    markdown_core_strbuf_put(buf, repl, 3);
-}
-
 static int utf8proc_charlen(const uint8_t *str, markdown_core_bufsize str_len) {
     int length, i;
 
@@ -116,7 +111,11 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
         dst[3] = 0x80 + (uc & 0x3F);
         len = 4;
     } else {
-        encode_unknown(buf);
+        /* Not a Unicode scalar. Unreachable from valid input — iterate never
+         * yields one and the fold tables hold only assigned scalars — and
+         * nothing is written rather than a replacement character, because the
+         * contract makes no promise about input that is not UTF-8 (7.1) and a
+         * replacement here would be inventing one. */
         return;
     }
 
@@ -134,8 +133,14 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
         if (char_len >= 0) {
 #include "case_fold_switch.inc"
         } else {
-            encode_unknown(dest);
-            char_len = -char_len;
+            /* Not UTF-8, so there is nothing to fold and nothing promised
+             * (7.1). The byte passes through and the cursor advances by one:
+             * what this produces is unspecified, but it TERMINATES, which is
+             * the only thing still owed on input the contract does not cover.
+             * Advancing by -char_len instead would trust a length derived from
+             * a sequence that has already been rejected. */
+            markdown_core_strbuf_put(dest, str, 1);
+            char_len = 1;
         }
 
         str += char_len;

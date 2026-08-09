@@ -1139,8 +1139,13 @@ and recovery are deterministic functions of those bytes and nothing else.
 
 **UTF-8 IS ASSUMED AND NEVER VALIDATED.** It is an obligation of the caller,
 not a precondition this engine enforces. The engine does not scan the input,
-does not replace an invalid sequence, and does not reject one. The substrate
-stores what it is given, byte for byte, and hands the same bytes back.
+does not replace an invalid sequence, and does not reject one.
+
+The store is byte-exact, and that much IS required of it: it holds what it is
+given and hands the same bytes back, which is what 8.1's byte coordinates
+address, what 14.3.1 compares against a fresh parse, and what lets a streamed
+chunk end mid-character (8.2). That is a property of the STORE. It is not a
+promise about what the PARSE does with bytes that are not UTF-8 — see below.
 
 That is a decision about WHERE the question is answered, and the answer is
 "not here". Validating would mean rejecting, and rejecting a document because
@@ -1149,14 +1154,24 @@ would mean a LOSSY PARSE, which is worse than either: the result is not a
 degraded document but a DIFFERENT one, and it can be a plausible one — a GBK
 document read as UTF-8 has pairs that are invalid, and pairs like `0xC4 0xA1`
 that are accidentally well-formed and decode to a wrong character with nothing
-to report. Neither is the engine's call. What the engine owes is that the
-bytes it was handed survive it.
+to report. Neither is the engine's call, and declining to make it is
+the whole of the decision.
 
 **The guarantee is stated over legal input only: valid UTF-8 in, valid UTF-8
 out.** Input that is not UTF-8 has no defined behaviour here — not a
 guaranteed degradation, not a documented failure mode, not a supported
 encoding. It is out of scope, and every clause that tried to describe what
 happens to it is void.
+
+**A GATE OVER IT IS VOID FOR THE SAME REASON.** Twenty-two assertions in the
+API suite fed overlong encodings, surrogates and bare continuation bytes and
+pinned what came back; when validation was deleted they were inverted to pin
+byte-for-byte survival instead, and their own comment defended them with
+"nothing else in the suite states it, and neither external parity oracle can."
+That is the argument against them: a gate no requirement states does not
+protect a requirement, it mints one. They are removed. What the engine does
+with arbitrary bytes without CRASHING is a separate, safety-shaped question
+and it belongs to the fuzzers.
 
 **`SourceProfile` is removed with them.** A source stored bytes under one of
 two profiles, `STRICT_UTF8` or `PERMISSIVE_BYTES`, and the profile selected
