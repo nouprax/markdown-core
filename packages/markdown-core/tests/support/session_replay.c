@@ -86,7 +86,7 @@ int sr_replay_open(
     replay->options = options;
     replay->report = report;
     replay->user = user;
-    replay->session = markdown_core_session_open(options, &error);
+    replay->session = markdown_core_document_open(options, &error);
     if (!replay->session) {
         markdown_core_error_free(error);
         return sr_fail(replay, "session open failed");
@@ -98,7 +98,7 @@ int sr_replay_open(
     }
     /* Revision 0 (empty document) seeds the mirror. */
     {
-        const markdown_core_document *document = markdown_core_session_document(replay->session);
+        const markdown_core_document *document = markdown_core_document_view(replay->session);
         const markdown_core_node *root = markdown_core_document_root(document);
         if (!root ||
             sr_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
@@ -110,7 +110,7 @@ int sr_replay_open(
 }
 
 void sr_replay_close(sr_replay *replay) {
-    markdown_core_session_free(replay->session);
+    markdown_core_document_release(replay->session);
     free(replay->shadow.bytes);
     free(replay->mirror.entries);
     memset(replay, 0, sizeof(*replay));
@@ -118,7 +118,7 @@ void sr_replay_close(sr_replay *replay) {
 
 int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
     markdown_core_error *error = NULL;
-    if (!markdown_core_session_edit(replay->session, start, end, bytes, length, &error)) {
+    if (!markdown_core_document_edit(replay->session, start, end, bytes, length, &error)) {
         markdown_core_error_free(error);
         return sr_fail(replay, "session edit failed");
     }
@@ -284,7 +284,7 @@ static sr_ordinal *sr_ordinals_build(const sr_id_list *list) {
  * trees walk the same shape and the i-th node of one corresponds to the i-th
  * node of the other. */
 static int sr_check_footnote_queries(sr_replay *replay) {
-    markdown_core_session *fresh = NULL;
+    markdown_core_document *fresh = NULL;
     markdown_core_error *error = NULL;
     sr_id_list mine = {NULL, 0, 0, 0};
     sr_id_list theirs = {NULL, 0, 0, 0};
@@ -293,20 +293,20 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     int result = -1;
     size_t i;
 
-    fresh = markdown_core_session_open(replay->options, &error);
-    if (!fresh || !markdown_core_session_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
-        !markdown_core_session_commit(fresh, NULL, &error)) {
+    fresh = markdown_core_document_open(replay->options, &error);
+    if (!fresh || !markdown_core_document_edit(fresh, 0, 0, replay->shadow.bytes, replay->shadow.length, &error) ||
+        !markdown_core_document_commit(fresh, NULL, &error)) {
         markdown_core_error_free(error);
         sr_fail(replay, "fresh footnote reference session failed");
         goto done;
     }
     if (ts_ast_walk(
-            markdown_core_document_root(markdown_core_session_document(replay->session)),
+            markdown_core_document_root(markdown_core_document_view(replay->session)),
             sr_id_collect_visit,
             &mine
         ) < 0 ||
         mine.failed ||
-        ts_ast_walk(markdown_core_document_root(markdown_core_session_document(fresh)), sr_id_collect_visit, &theirs) <
+        ts_ast_walk(markdown_core_document_root(markdown_core_document_view(fresh)), sr_id_collect_visit, &theirs) <
             0 ||
         theirs.failed) {
         sr_fail(replay, "footnote walk failed to allocate");
@@ -326,8 +326,8 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     for (i = 0; i < mine.count; i++) {
         markdown_core_footnote_info a;
         markdown_core_footnote_info b;
-        bool found_a = markdown_core_session_footnote_info(replay->session, mine.ids[i], &a);
-        bool found_b = markdown_core_session_footnote_info(fresh, theirs.ids[i], &b);
+        bool found_a = markdown_core_document_footnote_info(replay->session, mine.ids[i], &a);
+        bool found_b = markdown_core_document_footnote_info(fresh, theirs.ids[i], &b);
         if (found_a != found_b) {
             sr_fail(replay, "footnote info presence diverged from a fresh session");
             goto done;
@@ -347,8 +347,8 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     {
         const markdown_core_node_id *a_ids;
         const markdown_core_node_id *b_ids;
-        size_t a_count = markdown_core_session_footnotes(replay->session, &a_ids);
-        size_t b_count = markdown_core_session_footnotes(fresh, &b_ids);
+        size_t a_count = markdown_core_document_footnotes(replay->session, &a_ids);
+        size_t b_count = markdown_core_document_footnotes(fresh, &b_ids);
         if (a_count != b_count) {
             sr_fail(replay, "footnote first-use list length diverged from a fresh session");
             goto done;
@@ -364,8 +364,8 @@ static int sr_check_footnote_queries(sr_replay *replay) {
                 sr_fail(replay, "footnote first-use order diverged from a fresh session");
                 goto done;
             }
-            a_refs_count = markdown_core_session_footnote_references(replay->session, a_ids[i], &a_refs);
-            b_refs_count = markdown_core_session_footnote_references(fresh, b_ids[i], &b_refs);
+            a_refs_count = markdown_core_document_footnote_references(replay->session, a_ids[i], &a_refs);
+            b_refs_count = markdown_core_document_footnote_references(fresh, b_ids[i], &b_refs);
             if (a_refs_count != b_refs_count) {
                 sr_fail(replay, "footnote back-reference count diverged from a fresh session");
                 goto done;
@@ -382,7 +382,7 @@ static int sr_check_footnote_queries(sr_replay *replay) {
 
     result = 0;
 done:
-    markdown_core_session_free(fresh);
+    markdown_core_document_release(fresh);
     free(mine.ids);
     free(theirs.ids);
     free(mine_ordinals);
@@ -415,7 +415,7 @@ static int sr_walk_visit(const markdown_core_node *node, void *context) {
         state->failed = 1;
         return 1;
     }
-    if (markdown_core_session_node_by_id(replay->session, id) != node) {
+    if (markdown_core_document_node_by_id(replay->session, id) != node) {
         sr_fail(replay, "node_by_id disagrees with the committed tree");
         state->failed = 1;
         return 1;
@@ -436,18 +436,18 @@ int sr_replay_commit(sr_replay *replay) {
     sr_walk_state state;
     int result = -1;
 
-    if (!markdown_core_session_commit(replay->session, &changes, &error)) {
+    if (!markdown_core_document_commit(replay->session, &changes, &error)) {
         markdown_core_error_free(error);
         return sr_fail(replay, "commit failed");
     }
     if (!changes) {
         return sr_fail(replay, "commit produced no delta");
     }
-    if (sr_apply_delta(replay, changes, markdown_core_session_revision(replay->session)) != 0) {
+    if (sr_apply_delta(replay, changes, markdown_core_document_revision(replay->session)) != 0) {
         goto done;
     }
 
-    document = markdown_core_session_document(replay->session);
+    document = markdown_core_document_view(replay->session);
     root = markdown_core_document_root(document);
     state.replay = replay;
     state.seen = 0;

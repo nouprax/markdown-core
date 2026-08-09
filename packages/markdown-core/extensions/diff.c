@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "session_internal.h"
+#include "document_internal.h"
 
 #include <node.h>
 
@@ -40,7 +40,7 @@
 // not survive (especially under sanitizer instrumentation).
 
 typedef struct {
-    markdown_core_session *session;
+    markdown_core_document *session;
     markdown_core_delta *changes;
     uint64_t new_rev;
     bool failed;
@@ -342,7 +342,7 @@ static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core
 }
 
 bool markdown_core_document_diff_inline_domain(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *old_owner,
     markdown_core_node *staged_owner,
     uint64_t new_rev,
@@ -360,7 +360,7 @@ bool markdown_core_document_diff_inline_domain(
 }
 
 bool markdown_core_document_diff(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
@@ -378,8 +378,8 @@ bool markdown_core_document_diff(
     return !ctx.failed;
 }
 
-bool markdown_core_session_record_removed(
-    markdown_core_session *session,
+bool markdown_core_document_record_removed(
+    markdown_core_document *session,
     const markdown_core_node *root,
     markdown_core_delta *changes
 ) {

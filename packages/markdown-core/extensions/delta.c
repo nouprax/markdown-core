@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "session_internal.h"
+#include "document_internal.h"
 
 // Deltas are caller-owned plain data: they stay valid after the session
 // advances or is freed, so they use the system allocator like the facade's
@@ -176,7 +176,7 @@ static bool ordered_collect_touched(
     size_t capacity,
     ordered_delta_work *work,
     size_t *cursor,
-    const markdown_core_session *session,
+    const markdown_core_document *session,
     const markdown_core_node_id *ids,
     size_t count,
     markdown_core_delta_change_kind change,
@@ -194,7 +194,7 @@ static bool ordered_collect_touched(
             return false;
         }
         slot->id = ids[index];
-        node = markdown_core_session_node_by_id(session, ids[index]);
+        node = markdown_core_document_node_by_id(session, ids[index]);
         if (!node || markdown_core_node_get_id(node) != ids[index] ||
             markdown_core_node_get_revision(node) != revision) {
             return false;
@@ -283,8 +283,8 @@ static bool ordered_emit(ordered_delta_work *work, size_t count, markdown_core_d
     return written == count;
 }
 
-bool markdown_core_session_ordered_delta_entries(
-    const markdown_core_session *session,
+bool markdown_core_document_ordered_delta_entries(
+    const markdown_core_document *session,
     const markdown_core_delta *changes,
     markdown_core_delta_entry **output,
     size_t *count,

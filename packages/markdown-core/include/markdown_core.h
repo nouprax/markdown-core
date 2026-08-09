@@ -35,7 +35,7 @@
  * until the session's next commit or free: edits only advance the stored
  * text and never touch the committed tree, so the borrowed view (and node
  * scopes resolved through it) stays valid across
- * markdown_core_session_edit. Deltas and ordered delta-entry tables are
+ * markdown_core_document_edit. Deltas and ordered delta-entry tables are
  * caller-owned plain data: they survive the session and are released with
  * markdown_core_delta_free and markdown_core_delta_entries_free,
  * respectively.
@@ -81,9 +81,9 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
-/* One owner. `markdown_core_session` is the same struct under its old name
+/* One owner. `markdown_core_document` is the same struct under its old name
  * while the public surface moves to the document model. */
-typedef struct markdown_core_document markdown_core_session;
+typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_delta markdown_core_delta;
 
 /** Session-assigned node identity: unique within a session, never reused,
@@ -389,18 +389,18 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /** Opens an empty session at revision 0. `options == NULL` selects the
  * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_open(
     const markdown_core_parse_options *options,
     markdown_core_error **error
 );
-MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
+MARKDOWN_CORE_API void markdown_core_document_release(markdown_core_document *session);
 
 /** Replaces bytes [byte_start, byte_end) of the stored text with
  * `bytes[0..length)`. Append passes byte_start == byte_end ==
- * markdown_core_session_length. Edits only update the text; parsing happens
+ * markdown_core_document_length. Edits only update the text; parsing happens
  * at commit. */
-MARKDOWN_CORE_API bool markdown_core_session_edit(
-    markdown_core_session *session,
+MARKDOWN_CORE_API bool markdown_core_document_edit(
+    markdown_core_document *session,
     size_t byte_start,
     size_t byte_end,
     const uint8_t *bytes,
@@ -411,23 +411,23 @@ MARKDOWN_CORE_API bool markdown_core_session_edit(
 /** Reparses the pending text and advances the revision. When `changes` is
  * non-NULL it receives a caller-owned delta (release with
  * markdown_core_delta_free). */
-MARKDOWN_CORE_API bool markdown_core_session_commit(
-    markdown_core_session *session,
+MARKDOWN_CORE_API bool markdown_core_document_commit(
+    markdown_core_document *session,
     markdown_core_delta **changes,
     markdown_core_error **error
 );
 
 /** Borrowed view of the last committed document; valid until the session's
  * next commit or free (edits never touch the committed tree). */
-MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
-MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_session *session);
+MARKDOWN_CORE_API const markdown_core_document *markdown_core_document_view(const markdown_core_document *session);
+MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *session);
 
 /** Per-session random salt; nodes from different sessions never share
  * identity even when ids collide numerically. */
-MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
-MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(
-    const markdown_core_session *session,
+MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *session);
+MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *session);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_node_by_id(
+    const markdown_core_document *session,
     markdown_core_node_id id
 );
 
@@ -481,8 +481,8 @@ typedef struct markdown_core_reference_info {
 /** Fills `info` for the reference node with the given id at the current
  * revision. Returns false (with `info` zeroed) when the id does not name a
  * reference or reference definition of this session. */
-MARKDOWN_CORE_API bool markdown_core_session_reference_info(
-    const markdown_core_session *session,
+MARKDOWN_CORE_API bool markdown_core_document_reference_info(
+    const markdown_core_document *session,
     markdown_core_node_id id,
     markdown_core_reference_info *info
 );
@@ -490,8 +490,8 @@ MARKDOWN_CORE_API bool markdown_core_session_reference_info(
 /** Fills `info` for the footnote node with the given id at the current
  * revision. Returns false (with `info` zeroed) when the id does not name a
  * footnote reference or definition of this session. */
-MARKDOWN_CORE_API bool markdown_core_session_footnote_info(
-    const markdown_core_session *session,
+MARKDOWN_CORE_API bool markdown_core_document_footnote_info(
+    const markdown_core_document *session,
     markdown_core_node_id id,
     markdown_core_footnote_info *info
 );
@@ -500,14 +500,14 @@ MARKDOWN_CORE_API bool markdown_core_session_footnote_info(
  * order — the order a renderer lists them in. Valid until the next mutating
  * call on the session. */
 MARKDOWN_CORE_API size_t
-markdown_core_session_footnotes(const markdown_core_session *session, const markdown_core_node_id **ids);
+markdown_core_document_footnotes(const markdown_core_document *session, const markdown_core_node_id **ids);
 
 /** Borrows the ids of the references that resolve to `definition`, in
  * document order — the renderer's back-reference targets. Empty unless
  * `definition` is a referenced winning definition. Valid until the next
  * mutating call on the session. */
-MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(
-    const markdown_core_session *session,
+MARKDOWN_CORE_API size_t markdown_core_document_footnote_references(
+    const markdown_core_document *session,
     markdown_core_node_id definition,
     const markdown_core_node_id **ids
 );
@@ -553,8 +553,8 @@ markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_c
  * without walking unaffected nodes. On every failure, each non-null output
  * is reset (`*output` to NULL and `*count` to zero).
  */
-MARKDOWN_CORE_API bool markdown_core_session_ordered_delta_entries(
-    const markdown_core_session *session,
+MARKDOWN_CORE_API bool markdown_core_document_ordered_delta_entries(
+    const markdown_core_document *session,
     const markdown_core_delta *changes,
     markdown_core_delta_entry **output,
     size_t *count,

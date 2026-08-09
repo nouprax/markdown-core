@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "session_internal.h"
+#include "document_internal.h"
 
 #include <iterator.h>
 #include <map.h>
@@ -232,8 +232,8 @@ void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core
     memset(labels, 0, sizeof(*labels));
 }
 
-size_t markdown_core_session_footnote_label(
-    markdown_core_session *session,
+size_t markdown_core_document_footnote_label(
+    markdown_core_document *session,
     const markdown_core_chunk *label,
     bool *failed
 ) {
@@ -293,15 +293,15 @@ size_t markdown_core_session_footnote_label(
     return labels->count++;
 }
 
-bool markdown_core_session_footnote_label_sites(
-    markdown_core_session *session,
+bool markdown_core_document_footnote_label_sites(
+    markdown_core_document *session,
     markdown_core_footnote_site_list *defs,
     markdown_core_footnote_site_list *refs
 ) {
     size_t i;
     for (i = 0; i < defs->count; i++) {
         bool failed = false;
-        defs->items[i].label = markdown_core_session_footnote_label(session, &defs->items[i].node->as.literal, &failed);
+        defs->items[i].label = markdown_core_document_footnote_label(session, &defs->items[i].node->as.literal, &failed);
         if (failed) {
             return false;
         }
@@ -311,7 +311,7 @@ bool markdown_core_session_footnote_label_sites(
         bool failed = false;
         refs->items[i].label = SIZE_MAX;
         if (ref->as.literal.len >= 1 && ref->as.literal.len <= MAX_LINK_LABEL_LENGTH) {
-            refs->items[i].label = markdown_core_session_footnote_label(session, &ref->as.literal, &failed);
+            refs->items[i].label = markdown_core_document_footnote_label(session, &ref->as.literal, &failed);
         }
         if (failed) {
             return false;
@@ -604,7 +604,7 @@ done:
 }
 
 bool markdown_core_footnote_index_build(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *root,
     markdown_core_footnote_index *index
 ) {
@@ -614,7 +614,7 @@ bool markdown_core_footnote_index_build(
 
     memset(index, 0, sizeof(*index));
     if (!markdown_core_footnote_collect_sites(mem, root, NULL, &defs, &refs) ||
-        !markdown_core_session_footnote_label_sites(session, &defs, &refs)) {
+        !markdown_core_document_footnote_label_sites(session, &defs, &refs)) {
         markdown_core_footnote_site_list_release(mem, &defs);
         markdown_core_footnote_site_list_release(mem, &refs);
         return false;
@@ -729,8 +729,8 @@ done:
 
 // --- public queries ----------------------------------------------------------
 
-bool markdown_core_session_footnote_info(
-    const markdown_core_session *session,
+bool markdown_core_document_footnote_info(
+    const markdown_core_document *session,
     markdown_core_node_id id,
     markdown_core_footnote_info *info
 ) {
@@ -749,15 +749,15 @@ bool markdown_core_session_footnote_info(
     return true;
 }
 
-size_t markdown_core_session_footnotes(const markdown_core_session *session, const markdown_core_node_id **ids) {
+size_t markdown_core_document_footnotes(const markdown_core_document *session, const markdown_core_node_id **ids) {
     if (ids) {
         *ids = session ? session->footnotes.in_use : NULL;
     }
     return session ? session->footnotes.in_use_count : 0;
 }
 
-size_t markdown_core_session_footnote_references(
-    const markdown_core_session *session,
+size_t markdown_core_document_footnote_references(
+    const markdown_core_document *session,
     markdown_core_node_id definition,
     const markdown_core_node_id **ids
 ) {

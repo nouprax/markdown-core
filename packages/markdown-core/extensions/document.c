@@ -18,7 +18,7 @@
 #include <stdio.h>
 #endif
 
-#include "session_internal.h"
+#include "document_internal.h"
 
 #include <iterator.h>
 #include <node.h>
@@ -78,7 +78,7 @@ static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core
     return true;
 }
 
-bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra) {
+bool markdown_core_document_ids_reserve(markdown_core_document *session, size_t extra) {
     markdown_core_id_table *table = &session->ids;
     markdown_core_id_table grown = {NULL, 0, 0};
     size_t i;
@@ -99,11 +99,11 @@ bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t ex
     return true;
 }
 
-void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node) {
+void markdown_core_document_ids_put(markdown_core_document *session, markdown_core_node_id id, markdown_core_node *node) {
     id_table_insert(&session->ids, id, node);
 }
 
-void markdown_core_session_ids_remove(markdown_core_session *session, markdown_core_node_id id) {
+void markdown_core_document_ids_remove(markdown_core_document *session, markdown_core_node_id id) {
     markdown_core_id_table *table = &session->ids;
     size_t mask;
     size_t slot;
@@ -201,7 +201,7 @@ static bool attach_extension_named(markdown_core_parser *parser, const char *nam
     return extension && markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
-markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *session, markdown_core_error **error) {
+markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *session, markdown_core_error **error) {
     markdown_core_parser *parser =
         markdown_core_parser_new_with_mem(native_options_from(&session->options), session->mem);
     if (!parser) {
@@ -238,8 +238,8 @@ markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *se
     return parser;
 }
 
-markdown_core_parser *markdown_core_session_acquire_parser(
-    markdown_core_session *session,
+markdown_core_parser *markdown_core_document_acquire_parser(
+    markdown_core_document *session,
     markdown_core_error **error
 ) {
     markdown_core_parser *parser = session->warm_parser;
@@ -247,10 +247,10 @@ markdown_core_parser *markdown_core_session_acquire_parser(
         session->warm_parser = NULL;
         return parser;
     }
-    return markdown_core_session_new_parser(session, error);
+    return markdown_core_document_new_parser(session, error);
 }
 
-void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser) {
+void markdown_core_document_release_parser(markdown_core_document *session, markdown_core_parser *parser) {
     if (!parser) {
         return;
     }
@@ -264,7 +264,7 @@ void markdown_core_session_release_parser(markdown_core_session *session, markdo
     markdown_core_parser_free(parser);
 }
 
-void markdown_core_session_resolve_definition_owners(markdown_core_map *map) {
+void markdown_core_document_resolve_definition_owners(markdown_core_map *map) {
     markdown_core_map_entry *entry;
     for (entry = map->refs; entry; entry = entry->next) {
         if (entry->owner != 0) {
@@ -297,7 +297,7 @@ static void release_definition_tables(markdown_core_mem *mem, markdown_core_defi
 // piece of session state at once. The staging never touches the committed
 // state, so any failure leaves the session valid at its previous revision.
 static bool commit_full(
-    markdown_core_session *session,
+    markdown_core_document *session,
     bool initial,
     markdown_core_delta *changes,
     markdown_core_error **error
@@ -311,7 +311,7 @@ static bool commit_full(
     size_t s;
     uint64_t new_rev = initial ? 0 : session->revision + 1;
 
-    parser = markdown_core_session_acquire_parser(session, error);
+    parser = markdown_core_document_acquire_parser(session, error);
     if (!parser) {
         return false;
     }
@@ -352,7 +352,7 @@ static bool commit_full(
     staged[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].map = parser->footnote_defs;
     parser->refmap = NULL;
     parser->footnote_defs = NULL;
-    markdown_core_session_release_parser(session, parser);
+    markdown_core_document_release_parser(session, parser);
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
         // The sink's context is this call's stack frame; the maps outlive it.
         // Both are present: a parse that lost one is poisoned and returns no
@@ -388,7 +388,7 @@ static bool commit_full(
     // Ids exist now; definitions recorded against anchor node pointers can
     // take their retraction ids, and lookup records can bind to unit ids.
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_session_resolve_definition_owners(staged[s].map);
+        markdown_core_document_resolve_definition_owners(staged[s].map);
     }
 
     // Footnote numbering, resolution state, and back-reference ordinals are
@@ -411,7 +411,7 @@ static bool commit_full(
     }
 
     // The lookup table is maintained here, inside the mutating call, so
-    // markdown_core_session_node_by_id stays a pure concurrent-safe read.
+    // markdown_core_document_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, 0, 0};
     bool indexed = false;
     {
@@ -458,7 +458,7 @@ static bool commit_full(
 }
 
 static bool commit_internal(
-    markdown_core_session *session,
+    markdown_core_document *session,
     bool initial,
     markdown_core_delta **changes_out,
     markdown_core_error **error
@@ -540,7 +540,7 @@ static bool session_host_entropy(uint64_t *value) {
 
 // --- public API -------------------------------------------------------------
 
-markdown_core_session *markdown_core_session_open_with_mem(
+markdown_core_document *markdown_core_document_open_with_mem(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
     bool pooled,
@@ -548,7 +548,7 @@ markdown_core_session *markdown_core_session_open_with_mem(
 ) {
     clear_error(error);
 
-    markdown_core_session *session = (markdown_core_session *)calloc(1, sizeof(*session));
+    markdown_core_document *session = (markdown_core_document *)calloc(1, sizeof(*session));
     if (!session) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate session");
         return NULL;
@@ -588,7 +588,7 @@ markdown_core_session *markdown_core_session_open_with_mem(
         memset(&scratch, 0, sizeof(scratch));
         session->source = markdown_core_source_new(mem, NULL, 0, &scratch, &status);
         if (!session->source) {
-            // Unwound here rather than through markdown_core_session_free:
+            // Unwound here rather than through markdown_core_document_release:
             // that path releases session->source unconditionally, and it is
             // the thing that just failed to exist.
             if (session->arena) {
@@ -618,20 +618,20 @@ markdown_core_session *markdown_core_session_open_with_mem(
     session->lineage = markdown_core_mix64(entropy);
 
     if (!commit_internal(session, true, NULL, error)) {
-        markdown_core_session_free(session);
+        markdown_core_document_release(session);
         return NULL;
     }
     return session;
 }
 
-markdown_core_session *markdown_core_session_open(
+markdown_core_document *markdown_core_document_open(
     const markdown_core_parse_options *options,
     markdown_core_error **error
 ) {
-    return markdown_core_session_open_with_mem(options, markdown_core_mem_default(), true, error);
+    return markdown_core_document_open_with_mem(options, markdown_core_mem_default(), true, error);
 }
 
-void markdown_core_session_free(markdown_core_session *session) {
+void markdown_core_document_release(markdown_core_document *session) {
     if (!session) {
         return;
     }
@@ -657,8 +657,8 @@ void markdown_core_session_free(markdown_core_session *session) {
     free(session);
 }
 
-bool markdown_core_session_edit(
-    markdown_core_session *session,
+bool markdown_core_document_edit(
+    markdown_core_document *session,
     size_t byte_start,
     size_t byte_end,
     const uint8_t *bytes,
@@ -736,8 +736,8 @@ bool markdown_core_session_edit(
     return true;
 }
 
-bool markdown_core_session_commit(
-    markdown_core_session *session,
+bool markdown_core_document_commit(
+    markdown_core_document *session,
     markdown_core_delta **changes,
     markdown_core_error **error
 ) {
@@ -752,22 +752,22 @@ bool markdown_core_session_commit(
     return commit_internal(session, false, changes, error);
 }
 
-const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {
+const markdown_core_document *markdown_core_document_view(const markdown_core_document *session) {
     return session;
 }
 
-uint64_t markdown_core_session_revision(const markdown_core_session *session) {
+uint64_t markdown_core_document_revision(const markdown_core_document *session) {
     return session ? session->revision : 0;
 }
 
-uint64_t markdown_core_session_lineage(const markdown_core_session *session) { return session ? session->lineage : 0; }
+uint64_t markdown_core_document_lineage(const markdown_core_document *session) { return session ? session->lineage : 0; }
 
-size_t markdown_core_session_length(const markdown_core_session *session) {
+size_t markdown_core_document_length(const markdown_core_document *session) {
     return session ? markdown_core_source_length(session->source) : 0;
 }
 
-const markdown_core_node *markdown_core_session_node_by_id(
-    const markdown_core_session *session,
+const markdown_core_node *markdown_core_document_node_by_id(
+    const markdown_core_document *session,
     markdown_core_node_id id
 ) {
     if (!session || id == 0) {

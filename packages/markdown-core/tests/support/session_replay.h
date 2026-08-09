@@ -44,7 +44,7 @@ typedef struct sr_mirror {
 
 typedef struct sr_replay {
     const char *context;
-    markdown_core_session *session;
+    markdown_core_document *session;
     sr_text shadow;
     sr_mirror mirror;
     const markdown_core_parse_options *options;

@@ -25,7 +25,7 @@
 #include "references.h"
 
 #include "cross_reference.h"
-#include "session_internal.h"
+#include "document_internal.h"
 
 /* Injected allocator.  Only the targeted shapes fail: key-index slot tables
  * are calloc(capacity >= 16, sizeof(slot)) and the sorted-fallback pointer
@@ -1262,10 +1262,10 @@ static const char FB_SESSION_STAGE3[] = "[x]: /url\n\n";
 
 /* Dumps through the facade (plain malloc, uncounted by the sweep). Returns
  * NULL only on dump failure. */
-static uint8_t *fb_session_dump(markdown_core_session *session, size_t *length) {
+static uint8_t *fb_session_dump(markdown_core_document *session, size_t *length) {
     uint8_t *dump = NULL;
     markdown_core_error *error = NULL;
-    if (!markdown_core_document_dump(markdown_core_session_document(session), &dump, length, &error)) {
+    if (!markdown_core_document_dump(markdown_core_document_view(session), &dump, length, &error)) {
         markdown_core_error_free(error);
         return NULL;
     }
@@ -1302,7 +1302,7 @@ static void fb_tree_snapshot_release(fb_tree_snapshot *snapshot) {
     memset(snapshot, 0, sizeof(*snapshot));
 }
 
-static int fb_tree_snapshot_capture(const markdown_core_session *session, fb_tree_snapshot *snapshot) {
+static int fb_tree_snapshot_capture(const markdown_core_document *session, fb_tree_snapshot *snapshot) {
     const markdown_core_node *root = session->root;
     const markdown_core_node *node = root;
     size_t count = 0;
@@ -1400,7 +1400,7 @@ static int fb_delta_mark_compare(const void *lhs, const void *rhs) {
 
 static int fb_delta_snapshot_capture(
     fb_delta_snapshot *snapshot,
-    const markdown_core_session *session,
+    const markdown_core_document *session,
     const fb_tree_snapshot *before_tree,
     const markdown_core_delta *changes
 ) {
@@ -1446,7 +1446,7 @@ static int fb_delta_snapshot_capture(
 
 static int fb_delta_matches(
     const markdown_core_delta *changes,
-    const markdown_core_session *session,
+    const markdown_core_document *session,
     const fb_tree_snapshot *before_tree,
     const fb_delta_snapshot *expected
 ) {
@@ -1513,7 +1513,7 @@ static int fb_session_run(
     fb_delta_snapshot *captured_deltas,
     const fb_delta_snapshot *expected_deltas
 ) {
-    markdown_core_session *session = markdown_core_session_open_with_mem(NULL, mem, pooled, NULL);
+    markdown_core_document *session = markdown_core_document_open_with_mem(NULL, mem, pooled, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
     uint8_t *committed_dump = NULL;
@@ -1532,7 +1532,7 @@ static int fb_session_run(
 
     for (stage = 0; stage < 3; stage++) {
         size_t length = strlen(stages[stage]);
-        if (!markdown_core_session_edit(
+        if (!markdown_core_document_edit(
                 session,
                 inserts[stage],
                 inserts[stage],
@@ -1540,7 +1540,7 @@ static int fb_session_run(
                 length,
                 NULL
             ) &&
-            !markdown_core_session_edit(
+            !markdown_core_document_edit(
                 session,
                 inserts[stage],
                 inserts[stage],
@@ -1552,14 +1552,14 @@ static int fb_session_run(
             goto done;
         }
         {
-            uint64_t revision_before = markdown_core_session_revision(session);
+            uint64_t revision_before = markdown_core_document_revision(session);
             fb_tree_snapshot before_tree = {0};
             markdown_core_delta *changes = NULL;
             if (delta_aware && fb_tree_snapshot_capture(session, &before_tree) != 0) {
                 fputs("could not capture pre-commit tree\n", stderr);
                 goto done;
             }
-            if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
+            if (!markdown_core_document_commit(session, delta_aware ? &changes : NULL, NULL)) {
                 uint8_t *view = NULL;
                 size_t view_length = 0;
                 if (changes) {
@@ -1568,7 +1568,7 @@ static int fb_session_run(
                     fb_tree_snapshot_release(&before_tree);
                     goto done;
                 }
-                if (markdown_core_session_revision(session) != revision_before) {
+                if (markdown_core_document_revision(session) != revision_before) {
                     fputs("failed commit advanced the revision\n", stderr);
                     fb_tree_snapshot_release(&before_tree);
                     goto done;
@@ -1581,7 +1581,7 @@ static int fb_session_run(
                     goto done;
                 }
                 free(view);
-                if (!markdown_core_session_commit(session, delta_aware ? &changes : NULL, NULL)) {
+                if (!markdown_core_document_commit(session, delta_aware ? &changes : NULL, NULL)) {
                     if (changes) {
                         fputs("failed commit retry exposed a partial delta\n", stderr);
                         markdown_core_delta_free(changes);
@@ -1591,7 +1591,7 @@ static int fb_session_run(
                     goto done;
                 }
             }
-            if (markdown_core_session_revision(session) != revision_before + 1) {
+            if (markdown_core_document_revision(session) != revision_before + 1) {
                 fputs("commit did not advance the revision by one\n", stderr);
                 markdown_core_delta_free(changes);
                 fb_tree_snapshot_release(&before_tree);
@@ -1640,7 +1640,7 @@ static int fb_session_run(
      * (number 1) and [^a] resolves after stage 2. */
     {
         const markdown_core_node_id *ids = NULL;
-        if (markdown_core_session_footnotes(session, &ids) != 2) {
+        if (markdown_core_document_footnotes(session, &ids) != 2) {
             fputs("footnote index diverged after retries\n", stderr);
             goto done;
         }
@@ -1649,7 +1649,7 @@ static int fb_session_run(
     result = 0;
 done:
     free(committed_dump);
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     return result;
 }
 
@@ -1754,8 +1754,8 @@ done:
 static int case_seam_static_literal(void) {
     static const char initial[] = "\n.\nold\n\nnext\n";
     markdown_core_parse_options options;
-    markdown_core_session *session = NULL;
-    markdown_core_session *fresh = NULL;
+    markdown_core_document *session = NULL;
+    markdown_core_document *fresh = NULL;
     uint8_t *incremental_dump = NULL;
     size_t incremental_length = 0;
     uint8_t *fresh_dump = NULL;
@@ -1765,24 +1765,24 @@ static int case_seam_static_literal(void) {
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = false;
 
-    session = markdown_core_session_open(&options, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL)) {
+    session = markdown_core_document_open(&options, NULL);
+    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
         goto done;
     }
     /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
-    if (!markdown_core_session_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL)) {
+    if (!markdown_core_document_edit(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
         goto done;
     }
     incremental_dump = fb_session_dump(session, &incremental_length);
 
-    fresh = markdown_core_session_open(&options, NULL);
+    fresh = markdown_core_document_open(&options, NULL);
     if (!fresh ||
-        !markdown_core_session_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
-        !markdown_core_session_commit(fresh, NULL, NULL)) {
+        !markdown_core_document_edit(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
+        !markdown_core_document_commit(fresh, NULL, NULL)) {
         fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
         goto done;
     }
@@ -1797,8 +1797,8 @@ static int case_seam_static_literal(void) {
 done:
     free(incremental_dump);
     free(fresh_dump);
-    markdown_core_session_free(session);
-    markdown_core_session_free(fresh);
+    markdown_core_document_release(session);
+    markdown_core_document_release(fresh);
     return result;
 }
 
@@ -1813,7 +1813,7 @@ static int case_session_oom_sweep_delta(void) { return fb_session_sweep(false, t
 static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, false); }
 
 /* A constructor that refuses returns everything it took, or it is a leak with
- * no handle left to free it by. markdown_core_session_open_with_mem builds in
+ * no handle left to free it by. markdown_core_document_open_with_mem builds in
  * stages — the session record, then the arena, then the first source — and
  * each new stage adds a return that has to unwind the stages before it. The
  * sweeps above cannot see this: they measure convergence after a failed
@@ -1830,19 +1830,19 @@ static int case_session_oom_sweep_pooled(void) { return fb_session_sweep(true, f
 static int fb_open_unwind(bool pooled) {
     unsigned long total;
     unsigned long k;
-    markdown_core_session *session;
+    markdown_core_document *session;
     int failed = 0;
 
     fb_unwind_count = 0;
     fb_unwind_fail_at = 0;
     fb_unwind_live = 0;
-    session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, NULL);
+    session = markdown_core_document_open_with_mem(NULL, &fb_unwind_mem, pooled, NULL);
     if (!session) {
         fprintf(stderr, "open_unwind: control open failed (pooled=%d)\n", (int)pooled);
         return -1;
     }
     total = fb_unwind_count;
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     if (fb_unwind_live != 0) {
         fprintf(stderr, "open_unwind: a successful open/free left %ld blocks live\n", fb_unwind_live);
         return -1;
@@ -1857,9 +1857,9 @@ static int fb_open_unwind(bool pooled) {
         fb_unwind_count = 0;
         fb_unwind_fail_at = k;
         fb_unwind_live = 0;
-        session = markdown_core_session_open_with_mem(NULL, &fb_unwind_mem, pooled, &error);
+        session = markdown_core_document_open_with_mem(NULL, &fb_unwind_mem, pooled, &error);
         if (session) {
-            markdown_core_session_free(session);
+            markdown_core_document_release(session);
         }
         markdown_core_error_free(error);
         if (fb_unwind_live != 0) {
@@ -1906,7 +1906,7 @@ static const markdown_core_node *fb_child_of_type(const markdown_core_node *pare
  * reads the winning definition second — which is also why retargeting a
  * definition leaves every reference node untouched. */
 static int fb_reference_destination_is(
-    const markdown_core_session *session,
+    const markdown_core_document *session,
     const markdown_core_node *node,
     const char *expected
 ) {
@@ -1917,11 +1917,11 @@ static int fb_reference_destination_is(
     markdown_core_string_view title;
     size_t length = strlen(expected);
 
-    if (!node || !markdown_core_session_reference_info(session, markdown_core_node_get_id(node), &info) ||
+    if (!node || !markdown_core_document_reference_info(session, markdown_core_node_get_id(node), &info) ||
         info.definition == 0) {
         return 0;
     }
-    definition = markdown_core_session_node_by_id(session, info.definition);
+    definition = markdown_core_document_node_by_id(session, info.definition);
     return definition && markdown_core_node_reference_definition_properties(definition, &label, &destination, &title) &&
            destination.length == length && memcmp(destination.data, expected, length) == 0;
 }
@@ -1968,7 +1968,7 @@ static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit, 
     static const char PARAGRAPH[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit sed do.\n\n";
     const size_t paragraph_length = sizeof(PARAGRAPH) - 1;
     markdown_core_parse_options options;
-    markdown_core_session *session;
+    markdown_core_document *session;
     size_t length = paragraphs * paragraph_length;
     char *text = (char *)malloc(length + 1);
     *document_length = length;
@@ -1987,13 +1987,13 @@ static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit, 
     text[length] = '\0';
 
     markdown_core_parse_options_init(&options);
-    session = markdown_core_session_open(&options, NULL);
+    session = markdown_core_document_open(&options, NULL);
     if (!session) {
         fprintf(stderr, "FAILED: edit_locality: session open failed\n");
         free(text);
         return -1;
     }
-    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL)) {
+    if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL)) {
         fprintf(stderr, "FAILED: edit_locality: initial insert failed\n");
         goto done;
     }
@@ -2003,7 +2003,7 @@ static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit, 
      * the untouched suffix grows with the document while the edit does not. */
     midpoint = (paragraphs / 2) * paragraph_length + 8;
     for (i = 0; i < FB_EDIT_LOCALITY_EDITS; i++) {
-        if (!markdown_core_session_edit(session, midpoint, midpoint, (const uint8_t *)"x", 1, NULL)) {
+        if (!markdown_core_document_edit(session, midpoint, midpoint, (const uint8_t *)"x", 1, NULL)) {
             fprintf(stderr, "FAILED: edit_locality: edit %zu failed\n", i);
             goto done;
         }
@@ -2011,7 +2011,7 @@ static int fb_edit_locality_scenario(size_t paragraphs, size_t *moved_per_edit, 
     *moved_per_edit = (session->edit_bytes_moved - baseline) / FB_EDIT_LOCALITY_EDITS;
     result = 0;
 done:
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     free(text);
     return result;
 }

@@ -192,11 +192,6 @@
                     "functions": 0,
                     "branches": 11
                 },
-                "packages/markdown-core/extensions/session.c": {
-                    "lines": 56,
-                    "functions": 1,
-                    "branches": 47
-                },
                 "packages/markdown-core/extensions/strikethrough.c": {
                     "lines": 12,
                     "functions": 1,
@@ -216,6 +211,11 @@
                     "lines": 16,
                     "functions": 1,
                     "branches": 10
+                },
+                "packages/markdown-core/extensions/document.c": {
+                    "lines": 56,
+                    "functions": 1,
+                    "branches": 47
                 }
             }
         },

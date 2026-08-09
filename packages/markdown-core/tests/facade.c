@@ -269,7 +269,7 @@ static void check_scope_rows(
 static void check_scope_table(void) {
     static const uint8_t source[] = ":badge[first *second*]{k=v}\n\n> alpha\n> beta\n";
     markdown_core_error *error = NULL;
-    markdown_core_session *session = NULL;
+    markdown_core_document *session = NULL;
     const markdown_core_document *document;
     markdown_core_scope_entry *entries = (markdown_core_scope_entry *)(uintptr_t)1;
     markdown_core_scope_entry first = {0};
@@ -285,17 +285,17 @@ static void check_scope_table(void) {
     error = NULL;
     markdown_core_scope_table_free(NULL);
 
-    session = markdown_core_session_open(NULL, &error);
+    session = markdown_core_document_open(NULL, &error);
     check(session != NULL && error == NULL, "scope table session opens");
     if (!session) {
         goto done;
     }
-    if (!markdown_core_session_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(session, NULL, &error)) {
+    if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
+        !markdown_core_document_commit(session, NULL, &error)) {
         check(0, "scope table session commits");
         goto done;
     }
-    document = markdown_core_session_document(session);
+    document = markdown_core_document_view(session);
 
     count = 99;
     check(
@@ -328,7 +328,7 @@ static void check_scope_table(void) {
     check_scope_rows(markdown_core_document_root(document), entries, count, &index);
     check(index == count, "scope table has no hidden or duplicate rows");
     first = entries[0];
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     session = NULL;
     check(
         entries[0].id == first.id && entries[0].revision == first.revision &&
@@ -338,7 +338,7 @@ static void check_scope_table(void) {
 
 done:
     markdown_core_scope_table_free(entries);
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     markdown_core_error_free(error);
 }
 
@@ -370,8 +370,8 @@ static int delta_array_contains(const markdown_core_delta *changes, uint32_t cha
 
 static void check_ordered_delta_entries(void) {
     static const uint8_t source[] = "> > alpha *beta*\n";
-    markdown_core_session *session = NULL;
-    markdown_core_session *other = NULL;
+    markdown_core_document *session = NULL;
+    markdown_core_document *other = NULL;
     markdown_core_delta *changes = NULL;
     markdown_core_delta *empty_changes = NULL;
     markdown_core_delta *other_changes = NULL;
@@ -384,7 +384,7 @@ static void check_ordered_delta_entries(void) {
     size_t roots = 0;
 
     check(
-        !markdown_core_session_ordered_delta_entries(NULL, NULL, &entries, &count, &error) && entries == NULL &&
+        !markdown_core_document_ordered_delta_entries(NULL, NULL, &entries, &count, &error) && entries == NULL &&
             count == 0 && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
         "ordered delta entries reject null inputs and clear outputs"
     );
@@ -392,20 +392,20 @@ static void check_ordered_delta_entries(void) {
     error = NULL;
     markdown_core_delta_entries_free(NULL);
 
-    session = markdown_core_session_open(NULL, &error);
+    session = markdown_core_document_open(NULL, &error);
     check(session != NULL && error == NULL, "ordered delta session opens");
     if (!session) {
         goto done;
     }
-    if (!markdown_core_session_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(session, &changes, &error)) {
+    if (!markdown_core_document_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
+        !markdown_core_document_commit(session, &changes, &error)) {
         check(0, "ordered delta session commits");
         goto done;
     }
 
     count = 99;
     check(
-        !markdown_core_session_ordered_delta_entries(session, changes, NULL, &count, &error) && count == 0 &&
+        !markdown_core_document_ordered_delta_entries(session, changes, NULL, &count, &error) && count == 0 &&
             markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
         "ordered delta entries reject a null output and clear the count"
     );
@@ -413,7 +413,7 @@ static void check_ordered_delta_entries(void) {
     error = NULL;
     entries = (markdown_core_delta_entry *)(uintptr_t)1;
     check(
-        !markdown_core_session_ordered_delta_entries(session, changes, &entries, NULL, &error) && entries == NULL &&
+        !markdown_core_document_ordered_delta_entries(session, changes, &entries, NULL, &error) && entries == NULL &&
             markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
         "ordered delta entries reject a null count and clear the output"
     );
@@ -422,7 +422,7 @@ static void check_ordered_delta_entries(void) {
 
     entries = NULL;
     count = 0;
-    if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, &error)) {
+    if (!markdown_core_document_ordered_delta_entries(session, changes, &entries, &count, &error)) {
         check(0, "ordered delta entries materialize");
         goto done;
     }
@@ -430,7 +430,7 @@ static void check_ordered_delta_entries(void) {
                      markdown_core_delta_bubbled(changes, NULL);
     check(count == expected_count && count != 0 && entries != NULL, "ordered delta entries cover every live verdict");
     for (index = 0; index < count; ++index) {
-        const markdown_core_node *node = markdown_core_session_node_by_id(session, entries[index].id);
+        const markdown_core_node *node = markdown_core_document_node_by_id(session, entries[index].id);
         const markdown_core_node *parent = markdown_core_node_get_parent(node);
         size_t other_index;
         int parent_seen_later = entries[index].parent == 0;
@@ -461,9 +461,9 @@ static void check_ordered_delta_entries(void) {
     check(roots == 1 && entries[count - 1].parent == 0, "the document root is the unique final delta entry");
     first = entries[0];
 
-    other = markdown_core_session_open(NULL, &error);
-    if (!other || !markdown_core_session_edit(other, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(other, &other_changes, &error)) {
+    other = markdown_core_document_open(NULL, &error);
+    if (!other || !markdown_core_document_edit(other, 0, 0, source, sizeof(source) - 1, &error) ||
+        !markdown_core_document_commit(other, &other_changes, &error)) {
         check(0, "second ordered delta session reaches the same revision");
         goto done;
     }
@@ -471,7 +471,7 @@ static void check_ordered_delta_entries(void) {
         markdown_core_delta_entry *foreign = (markdown_core_delta_entry *)(uintptr_t)1;
         size_t foreign_count = 99;
         check(
-            !markdown_core_session_ordered_delta_entries(other, changes, &foreign, &foreign_count, &error) &&
+            !markdown_core_document_ordered_delta_entries(other, changes, &foreign, &foreign_count, &error) &&
                 foreign == NULL && foreign_count == 0 &&
                 markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "ordered delta entries reject a same-revision delta from another lineage"
@@ -479,12 +479,12 @@ static void check_ordered_delta_entries(void) {
         markdown_core_error_free(error);
         error = NULL;
     }
-    check(markdown_core_session_commit(session, &empty_changes, &error), "ordered delta session advances");
+    check(markdown_core_document_commit(session, &empty_changes, &error), "ordered delta session advances");
     {
         markdown_core_delta_entry *stale = (markdown_core_delta_entry *)(uintptr_t)1;
         size_t stale_count = 99;
         check(
-            !markdown_core_session_ordered_delta_entries(session, changes, &stale, &stale_count, &error) &&
+            !markdown_core_document_ordered_delta_entries(session, changes, &stale, &stale_count, &error) &&
                 stale == NULL && stale_count == 0 &&
                 markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "ordered delta entries reject a stale session revision"
@@ -496,7 +496,7 @@ static void check_ordered_delta_entries(void) {
         markdown_core_delta_entry *empty = (markdown_core_delta_entry *)(uintptr_t)1;
         size_t empty_count = 99;
         check(
-            markdown_core_session_ordered_delta_entries(session, empty_changes, &empty, &empty_count, &error) &&
+            markdown_core_document_ordered_delta_entries(session, empty_changes, &empty, &empty_count, &error) &&
                 empty == NULL && empty_count == 0 && error == NULL,
             "an empty delta produces an empty owned table"
         );
@@ -505,7 +505,7 @@ static void check_ordered_delta_entries(void) {
 
     markdown_core_delta_free(changes);
     changes = NULL;
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     session = NULL;
     check(
         entries[0].id == first.id && entries[0].parent == first.parent && entries[0].change == first.change,
@@ -517,8 +517,8 @@ done:
     markdown_core_delta_free(changes);
     markdown_core_delta_free(empty_changes);
     markdown_core_delta_free(other_changes);
-    markdown_core_session_free(session);
-    markdown_core_session_free(other);
+    markdown_core_document_release(session);
+    markdown_core_document_release(other);
     markdown_core_error_free(error);
 }
 

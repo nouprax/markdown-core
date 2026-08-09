@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "session_internal.h"
+#include "document_internal.h"
 
 #include <map.h>
 #include <node.h>
@@ -21,8 +21,8 @@
 // rebuilding it per commit made the commit cost scale with the document, which
 // is exactly the bound the incremental contract exists to hold.
 
-bool markdown_core_session_reference_info(
-    const markdown_core_session *session,
+bool markdown_core_document_reference_info(
+    const markdown_core_document *session,
     markdown_core_node_id id,
     markdown_core_reference_info *info
 ) {
@@ -38,7 +38,7 @@ bool markdown_core_session_reference_info(
     if (!session || !info || id == 0 || !session->definitions[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map) {
         return false;
     }
-    node = markdown_core_session_node_by_id(session, id);
+    node = markdown_core_document_node_by_id(session, id);
     if (!node) {
         return false;
     }

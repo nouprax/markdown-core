@@ -24,7 +24,7 @@
 //                first.
 //
 //   sessions     Multi-session isolation: a barrier releases every thread
-//                into its very first markdown_core_session_open
+//                into its very first markdown_core_document_open
 //                simultaneously; each thread owns one session and streams
 //                its own input byte-by-byte with a commit per byte,
 //                repeatedly (clear + restream), asserting per-thread dump
@@ -439,17 +439,17 @@ typedef struct session_worker {
 // Clears the session text, then streams `input` byte-by-byte with a commit
 // (and discarded delta) per byte. Hands back a determinism-checked dump.
 static int session_stream_once(
-    markdown_core_session *session,
+    markdown_core_document *session,
     const char *input,
     uint8_t **dump_out,
     size_t *length_out
 ) {
     markdown_core_error *error = NULL;
-    size_t existing = markdown_core_session_length(session);
+    size_t existing = markdown_core_document_length(session);
 
     if (existing) {
-        if (!markdown_core_session_edit(session, 0, existing, NULL, 0, &error) ||
-            !markdown_core_session_commit(session, NULL, &error)) {
+        if (!markdown_core_document_edit(session, 0, existing, NULL, 0, &error) ||
+            !markdown_core_document_commit(session, NULL, &error)) {
             markdown_core_error_free(error);
             return 1;
         }
@@ -458,8 +458,8 @@ static int session_stream_once(
     size_t length = strlen(input);
     for (size_t offset = 0; offset < length; offset++) {
         markdown_core_delta *changes = NULL;
-        if (!markdown_core_session_edit(session, offset, offset, (const uint8_t *)input + offset, 1, &error) ||
-            !markdown_core_session_commit(session, &changes, &error)) {
+        if (!markdown_core_document_edit(session, offset, offset, (const uint8_t *)input + offset, 1, &error) ||
+            !markdown_core_document_commit(session, &changes, &error)) {
             markdown_core_error_free(error);
             return 1;
         }
@@ -470,8 +470,8 @@ static int session_stream_once(
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump(markdown_core_session_document(session), &first, &first_length, &error) ||
-        !markdown_core_document_dump(markdown_core_session_document(session), &second, &second_length, &error)) {
+    if (!markdown_core_document_dump(markdown_core_document_view(session), &first, &first_length, &error) ||
+        !markdown_core_document_dump(markdown_core_document_view(session), &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_dump_free(first);
         return 1;
@@ -495,7 +495,7 @@ static THREAD_RETURN session_worker_main(void *argument) {
     barrier_wait(self->start);
 
     markdown_core_error *error = NULL;
-    markdown_core_session *session = markdown_core_session_open(&options, &error);
+    markdown_core_document *session = markdown_core_document_open(&options, &error);
     if (!session) {
         markdown_core_error_free(error);
         self->failed = 1;
@@ -512,9 +512,9 @@ static THREAD_RETURN session_worker_main(void *argument) {
             break;
         }
 
-        const markdown_core_node *root = markdown_core_document_root(markdown_core_session_document(session));
+        const markdown_core_node *root = markdown_core_document_root(markdown_core_document_view(session));
         uint64_t id = markdown_core_node_get_id(root);
-        uint64_t revision = markdown_core_session_revision(session);
+        uint64_t revision = markdown_core_document_revision(session);
         if (id == 0 || (root_id != 0 && id != root_id) || revision <= last_revision || !traverse(root)) {
             markdown_core_dump_free(dump);
             self->failed = 1;
@@ -538,13 +538,13 @@ static THREAD_RETURN session_worker_main(void *argument) {
         }
     }
 
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     return THREAD_RESULT;
 }
 
 typedef struct session_reader {
     barrier *start;
-    const markdown_core_session *session;
+    const markdown_core_document *session;
     const markdown_core_document *view;
     const uint8_t *reference;
     size_t reference_length;
@@ -553,8 +553,8 @@ typedef struct session_reader {
 
 // An id must round-trip under the concurrent read contract: looking up a
 // node's own id resolves back to that node. NULL round-trips vacuously.
-static int id_round_trips(const markdown_core_session *session, const markdown_core_node *node) {
-    return !node || markdown_core_session_node_by_id(session, markdown_core_node_get_id(node)) == node;
+static int id_round_trips(const markdown_core_document *session, const markdown_core_node *node) {
+    return !node || markdown_core_document_node_by_id(session, markdown_core_node_get_id(node)) == node;
 }
 
 static THREAD_RETURN session_reader_main(void *argument) {
@@ -633,7 +633,7 @@ static int case_sessions(void) {
     // Phase 2: concurrent read-only access to a single session's document
     // between mutating calls.
     markdown_core_error *error = NULL;
-    markdown_core_session *session = markdown_core_session_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_open(NULL, &error);
     if (!session) {
         markdown_core_error_free(error);
         fprintf(stderr, "sessions: shared session open failed\n");
@@ -642,11 +642,11 @@ static int case_sessions(void) {
     const char *shared_input = INPUTS[0];
     uint8_t *reference = NULL;
     size_t reference_length = 0;
-    if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
-        !markdown_core_session_commit(session, NULL, &error) ||
-        !markdown_core_document_dump(markdown_core_session_document(session), &reference, &reference_length, &error)) {
+    if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)shared_input, strlen(shared_input), &error) ||
+        !markdown_core_document_commit(session, NULL, &error) ||
+        !markdown_core_document_dump(markdown_core_document_view(session), &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
-        markdown_core_session_free(session);
+        markdown_core_document_release(session);
         fprintf(stderr, "sessions: shared session setup failed\n");
         return 1;
     }
@@ -658,13 +658,13 @@ static int case_sessions(void) {
         memset(&readers[index], 0, sizeof(readers[index]));
         readers[index].start = &read_start;
         readers[index].session = session;
-        readers[index].view = markdown_core_session_document(session);
+        readers[index].view = markdown_core_document_view(session);
         readers[index].reference = reference;
         readers[index].reference_length = reference_length;
         if (thread_spawn(&handles[index], session_reader_main, &readers[index])) {
             fprintf(stderr, "sessions: failed to spawn reader %d\n", index);
             markdown_core_dump_free(reference);
-            markdown_core_session_free(session);
+            markdown_core_document_release(session);
             return 1;
         }
     }
@@ -683,9 +683,9 @@ static int case_sessions(void) {
     if (!failures) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
-            !markdown_core_session_commit(session, NULL, &error) ||
-            !markdown_core_document_dump(markdown_core_session_document(session), &dump, &length, &error)) {
+        if (!markdown_core_document_edit(session, 0, 0, (const uint8_t *)"tail\n\n", 6, &error) ||
+            !markdown_core_document_commit(session, NULL, &error) ||
+            !markdown_core_document_dump(markdown_core_document_view(session), &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "sessions: post-read commit failed\n");
             failures += 1;
@@ -693,7 +693,7 @@ static int case_sessions(void) {
         markdown_core_dump_free(dump);
     }
 
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     return failures ? 1 : 0;
 }
 

@@ -367,11 +367,11 @@ struct markdown_core_document {
 };
 
 /** Internal constructor used by allocation-injection tests and the one-shot
- * parse; the public markdown_core_session_open uses the default allocator
+ * parse; the public markdown_core_document_open uses the default allocator
  * with pooling. `pooled` routes every session-owned allocation through a
  * session arena over `mem` — pass false when detached nodes must outlive
  * the session or when injection needs to see individual allocations. */
-markdown_core_session *markdown_core_session_open_with_mem(
+markdown_core_document *markdown_core_document_open_with_mem(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
     bool pooled,
@@ -390,7 +390,7 @@ bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_
  * recording (the trees are left consistent; the caller discards `new_root`).
  */
 bool markdown_core_document_diff(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
@@ -404,7 +404,7 @@ bool markdown_core_document_diff(
  * and `owner_revision` reports the stable owner's
  * changed/bubbled/unchanged verdict. */
 bool markdown_core_document_diff_inline_domain(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *old_owner,
     markdown_core_node *staged_owner,
     uint64_t new_rev,
@@ -414,8 +414,8 @@ bool markdown_core_document_diff_inline_domain(
 
 /** Records every facade-visible node of `root`'s subtree as removed in
  * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
-bool markdown_core_session_record_removed(
-    markdown_core_session *session,
+bool markdown_core_document_record_removed(
+    markdown_core_document *session,
     const markdown_core_node *root,
     markdown_core_delta *changes
 );
@@ -430,7 +430,7 @@ bool markdown_core_id_array_reserve(markdown_core_id_array *array, size_t extra)
  * caller), interning labels into the session's persistent table. Returns
  * false on allocation failure with `index` fully released. */
 bool markdown_core_footnote_index_build(
-    markdown_core_session *session,
+    markdown_core_document *session,
     markdown_core_node *root,
     markdown_core_footnote_index *index
 );
@@ -439,8 +439,8 @@ bool markdown_core_footnote_index_build(
  * slot; SIZE_MAX with *failed clear when the label normalizes to nothing
  * (it can never participate), SIZE_MAX with *failed set on allocation
  * loss. Idempotent — a failed commit leaves at worst unused slots. */
-size_t markdown_core_session_footnote_label(
-    markdown_core_session *session,
+size_t markdown_core_document_footnote_label(
+    markdown_core_document *session,
     const markdown_core_chunk *label,
     bool *failed
 );
@@ -448,8 +448,8 @@ size_t markdown_core_session_footnote_label(
 /** Stamps interned label slots on every site of both lists (used for
  * freshly collected sites, whose labels are not yet resolved). Returns
  * false on allocation failure. */
-bool markdown_core_session_footnote_label_sites(
-    markdown_core_session *session,
+bool markdown_core_document_footnote_label_sites(
+    markdown_core_document *session,
     markdown_core_footnote_site_list *defs,
     markdown_core_footnote_site_list *refs
 );
@@ -529,30 +529,30 @@ bool markdown_core_footnote_index_diff(
 /** Creates a parser configured with the session's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
  * when non-NULL. Defined in session.c. */
-markdown_core_parser *markdown_core_session_new_parser(markdown_core_session *session, markdown_core_error **error);
+markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *session, markdown_core_error **error);
 
 /** Takes the session's warm parser when one is held, else creates one like
- * markdown_core_session_new_parser. Defined in session.c. */
-markdown_core_parser *markdown_core_session_acquire_parser(markdown_core_session *session, markdown_core_error **error);
+ * markdown_core_document_new_parser. Defined in session.c. */
+markdown_core_parser *markdown_core_document_acquire_parser(markdown_core_document *session, markdown_core_error **error);
 
 /** Hands a parser back after its parse ended: a healthy one is renewed and
  * held warm for the next commit, a poisoned one (or a second hand-back) is
  * freed. The parser's definition maps must be its own or NULL — never the
  * session's. Defined in session.c. */
-void markdown_core_session_release_parser(markdown_core_session *session, markdown_core_parser *parser);
+void markdown_core_document_release_parser(markdown_core_document *session, markdown_core_parser *parser);
 
 
-/** Grows the id table so the next `extra` markdown_core_session_ids_put
+/** Grows the id table so the next `extra` markdown_core_document_ids_put
  * calls cannot fail. */
-bool markdown_core_session_ids_reserve(markdown_core_session *session, size_t extra);
+bool markdown_core_document_ids_reserve(markdown_core_document *session, size_t extra);
 
 /** Points `id` at `node`, inserting or repointing. Never fails within a
  * reserved budget. */
-void markdown_core_session_ids_put(markdown_core_session *session, markdown_core_node_id id, markdown_core_node *node);
+void markdown_core_document_ids_put(markdown_core_document *session, markdown_core_node_id id, markdown_core_node *node);
 
 /** Drops `id` from the table (backward-shift deletion; missing ids are a
  * no-op). */
-void markdown_core_session_ids_remove(markdown_core_session *session, markdown_core_node_id id);
+void markdown_core_document_ids_remove(markdown_core_document *session, markdown_core_node_id id);
 
 /** Rewrites every definition owner stamped as a node pointer during the
  * just-adopted parse to that node's session id (owner 0 stays 0: the region
@@ -560,12 +560,12 @@ void markdown_core_session_ids_remove(markdown_core_session *session, markdown_c
  * present when this runs — full parses replace the whole map, incremental
  * commits remove pointer-stamped duplicates instead. Runs per definition
  * table. */
-void markdown_core_session_resolve_definition_owners(markdown_core_map *map);
+void markdown_core_document_resolve_definition_owners(markdown_core_map *map);
 
 /** Rebuilds the session's line-ordered at-rest definition index from `map`
  * into caller-provided storage (swapped in by the full commit path). */
-bool markdown_core_session_index_definitions(
-    markdown_core_session *session,
+bool markdown_core_document_index_definitions(
+    markdown_core_document *session,
     markdown_core_map *map,
     markdown_core_map_entry ***out_items,
     size_t *out_count
@@ -576,8 +576,8 @@ bool markdown_core_session_index_definitions(
  * O(text); used by full commits only — incremental commits update the index
  * from their own restart bookkeeping. Returns false on allocation failure
  * with `out` released. Defined in incremental.c. */
-bool markdown_core_session_index_clean_children(
-    markdown_core_session *session,
+bool markdown_core_document_index_clean_children(
+    markdown_core_document *session,
     markdown_core_node *root,
     const markdown_core_map *map,
     markdown_core_clean_index *out
@@ -663,8 +663,8 @@ typedef enum {
  * Transactional: on FAILED or FALLBACK the committed tree, id table, refmap,
  * footnote index, and geometry are exactly as before the call. Defined in
  * incremental.c. */
-markdown_core_incremental_result markdown_core_session_commit_incremental(
-    markdown_core_session *session,
+markdown_core_incremental_result markdown_core_document_commit_incremental(
+    markdown_core_document *session,
     uint64_t new_rev,
     markdown_core_delta *changes,
     markdown_core_error **error

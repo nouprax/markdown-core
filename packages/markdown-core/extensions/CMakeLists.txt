@@ -3,7 +3,7 @@ set(STATICLIBRARY "libmarkdown-core-extensions_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
 set(LIBRARY_SOURCES
     ast.c
-    session.c
+    document.c
     arena.c
     source.c
     source.h

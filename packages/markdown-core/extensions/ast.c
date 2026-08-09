@@ -6,7 +6,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
-#include "session_internal.h"
+#include "document_internal.h"
 #include "cross_reference.h"
 #include "directive.h"
 #include "formula.h"
@@ -85,7 +85,7 @@ markdown_core_document *markdown_core_document_parse(
     const markdown_core_parse_options *options,
     markdown_core_error **error
 ) {
-    markdown_core_session *session;
+    markdown_core_document *session;
     markdown_core_document *document;
 
     clear_error(error);
@@ -100,13 +100,13 @@ markdown_core_document *markdown_core_document_parse(
     // true of a handle that could not answer a query. A self-contained
     // document must answer all of them (4.1), so the skip is gone with the
     // detach.
-    session = markdown_core_session_open_with_mem(options, markdown_core_mem_default(), false, error);
+    session = markdown_core_document_open_with_mem(options, markdown_core_mem_default(), false, error);
     if (!session) {
         return NULL;
     }
-    if (length && (!markdown_core_session_edit(session, 0, 0, source, length, error) ||
-                   !markdown_core_session_commit(session, NULL, error))) {
-        markdown_core_session_free(session);
+    if (length && (!markdown_core_document_edit(session, 0, 0, source, length, error) ||
+                   !markdown_core_document_commit(session, NULL, error))) {
+        markdown_core_document_release(session);
         return NULL;
     }
     document = session;
@@ -116,7 +116,7 @@ markdown_core_document *markdown_core_document_parse(
 void markdown_core_document_free(markdown_core_document *document) {
     // One owner, one teardown. This used to free a detached root and a small
     // wrapper; the wrapper is gone.
-    markdown_core_session_free(document);
+    markdown_core_document_release(document);
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {

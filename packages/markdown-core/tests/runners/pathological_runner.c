@@ -865,7 +865,7 @@ static int ps_splice(sr_replay *replay, size_t start, size_t end, const char *te
 
 static int ps_expect_kind(const sr_replay *replay, markdown_core_node_kind kind, size_t expected, const char *what) {
     size_t counts[TS_KIND_COUNT];
-    const markdown_core_document *document = markdown_core_session_document(replay->session);
+    const markdown_core_document *document = markdown_core_document_view(replay->session);
     if (!document || ts_ast_count_kinds(markdown_core_document_root(document), counts) != 0) {
         fprintf(stderr, "cannot count node kinds in the session document\n");
         return -1;

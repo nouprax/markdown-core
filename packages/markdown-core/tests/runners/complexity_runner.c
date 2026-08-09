@@ -475,9 +475,9 @@ enum {
 
 static int cc_session_mode_footnote_defs(int mode) { return mode == CC_SESSION_FOOTNOTE_DEFS; }
 
-static markdown_core_session *cc_session_build(size_t size, int mode, size_t *stanza_count) {
+static markdown_core_document *cc_session_build(size_t size, int mode, size_t *stanza_count) {
     markdown_core_parse_options options;
-    markdown_core_session *session;
+    markdown_core_document *session;
     const char *stanza = mode == CC_SESSION_RETARGET || mode == CC_SESSION_FOOTNOTE
                              ? CC_SESSION_PLAIN_STANZA
                              : (mode == CC_SESSION_QUOTE_SUFFIX ? CC_SESSION_QUOTE_STANZA : CC_SESSION_STANZA);
@@ -558,10 +558,10 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
     if (mode == CC_SESSION_FOOTNOTE || cc_session_mode_footnote_defs(mode)) {
         options.footnotes = true;
     }
-    session = markdown_core_session_open(&options, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL)) {
-        markdown_core_session_free(session);
+    session = markdown_core_document_open(&options, NULL);
+    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, (size_t)(fill - text), NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL)) {
+        markdown_core_document_release(session);
         session = NULL;
     }
     free(text);
@@ -576,7 +576,7 @@ static markdown_core_session *cc_session_build(size_t size, int mode, size_t *st
  * destination (a winner-delta commit re-refining the dependent units), or a
  * flip of the first footnote reference's label (a first-use renumbering
  * across the fixed cluster). */
-static int cc_session_block(markdown_core_session *session, int mode, size_t stanza_count, size_t *op_counter) {
+static int cc_session_block(markdown_core_document *session, int mode, size_t stanza_count, size_t *op_counter) {
     size_t stanza_length = strlen(CC_SESSION_STANZA);
     int op;
     for (op = 0; op < CC_SESSION_OPS; op++) {
@@ -584,7 +584,7 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
         if (mode == CC_SESSION_STORM) {
             size_t index = (size_t)((*op_counter * UINT64_C(2654435761)) % stanza_count);
             uint8_t byte = (*op_counter & 1) ? 'x' : 'y';
-            ok = markdown_core_session_edit(
+            ok = markdown_core_document_edit(
                 session,
                 index * stanza_length + 1,
                 index * stanza_length + 2,
@@ -594,29 +594,29 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             );
         } else if (mode == CC_SESSION_RETARGET) {
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(session, 6, 10, url, 4, NULL);
+            ok = markdown_core_document_edit(session, 6, 10, url, 4, NULL);
         } else if (mode == CC_SESSION_FOOTNOTE) {
             size_t base = stanza_count * strlen(CC_SESSION_PLAIN_STANZA);
             uint8_t label = (*op_counter & 1) ? 'b' : 'a';
-            ok = markdown_core_session_edit(session, base + 7, base + 8, &label, 1, NULL);
+            ok = markdown_core_document_edit(session, base + 7, base + 8, &label, 1, NULL);
         } else if (mode == CC_SESSION_HEAD_DEFS) {
             size_t base = (stanza_count - 1) * CC_SESSION_DEF_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
+            ok = markdown_core_document_edit(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_FOOTNOTE_DEFS) {
             size_t base = (stanza_count - 1) * CC_SESSION_FOOTNOTE_DEF_WIDTH + CC_SESSION_FOOTNOTE_DEF_BODY_OFFSET;
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(session, base, base + 4, body, 4, NULL);
+            ok = markdown_core_document_edit(session, base, base + 4, body, 4, NULL);
         } else if (mode == CC_SESSION_DEF_SPREAD) {
             // The LAST pair: editing the first definition would measure the
             // def-index splice (a known O(defs) memmove) instead of the
             // dependent collection this case pins.
             size_t base = (stanza_count - 1) * CC_SESSION_DEF_SPREAD_WIDTH + CC_SESSION_DEF_URL_OFFSET;
             const uint8_t *url = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(session, base, base + 4, url, 4, NULL);
+            ok = markdown_core_document_edit(session, base, base + 4, url, 4, NULL);
         } else if (mode == CC_SESSION_QUOTE_SUFFIX) {
             const uint8_t *body = (const uint8_t *)((*op_counter & 1) ? "bbbb" : "aaaa");
-            ok = markdown_core_session_edit(
+            ok = markdown_core_document_edit(
                 session,
                 CC_SESSION_QUOTE_BODY_OFFSET,
                 CC_SESSION_QUOTE_BODY_OFFSET + 4,
@@ -626,10 +626,10 @@ static int cc_session_block(markdown_core_session *session, int mode, size_t sta
             );
         } else {
             static const uint8_t line[] = "appended stream line\n";
-            size_t length = markdown_core_session_length(session);
-            ok = markdown_core_session_edit(session, length, length, line, sizeof(line) - 1, NULL);
+            size_t length = markdown_core_document_length(session);
+            ok = markdown_core_document_edit(session, length, length, line, sizeof(line) - 1, NULL);
         }
-        if (!ok || !markdown_core_session_commit(session, NULL, NULL)) {
+        if (!ok || !markdown_core_document_commit(session, NULL, NULL)) {
             return -1;
         }
         (*op_counter)++;
@@ -649,7 +649,7 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
     double floor_seconds = 0.0;
     size_t stanza_count = 0;
     size_t op_counter = 0;
-    markdown_core_session *session = cc_session_build(size, mode, &stanza_count);
+    markdown_core_document *session = cc_session_build(size, mode, &stanza_count);
     int repeat;
 
     if (!session) {
@@ -662,7 +662,7 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
         double sample;
         do {
             if (cc_session_block(session, mode, stanza_count, &op_counter) != 0) {
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             commits += CC_SESSION_OPS;
@@ -673,7 +673,7 @@ static int cc_session_measure(size_t size, int mode, double *seconds_per_commit)
             floor_seconds = sample;
         }
     }
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     *seconds_per_commit = floor_seconds;
     return 0;
 }
@@ -735,9 +735,9 @@ static const size_t CC_FOOTNOTE_RENUMBER_COUNTS[] = {256, 512, 1024, 2048, 4096}
 #define CC_FOOTNOTE_RENUMBER_STEPS (sizeof(CC_FOOTNOTE_RENUMBER_COUNTS) / sizeof(CC_FOOTNOTE_RENUMBER_COUNTS[0]))
 #define CC_FOOTNOTE_RENUMBER_LABEL_OFFSET 10
 
-static markdown_core_session *cc_footnote_renumber_build(size_t count) {
+static markdown_core_document *cc_footnote_renumber_build(size_t count) {
     markdown_core_parse_options options;
-    markdown_core_session *session = NULL;
+    markdown_core_document *session = NULL;
     size_t capacity;
     size_t length = 0;
     size_t i;
@@ -760,10 +760,10 @@ static markdown_core_session *cc_footnote_renumber_build(size_t count) {
 
     ts_ast_options_none(&options);
     options.footnotes = true;
-    session = markdown_core_session_open(&options, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL)) {
-        markdown_core_session_free(session);
+    session = markdown_core_document_open(&options, NULL);
+    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL)) {
+        markdown_core_document_release(session);
         session = NULL;
     }
     free(text);
@@ -773,7 +773,7 @@ static markdown_core_session *cc_footnote_renumber_build(size_t count) {
 static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit) {
     double floor_seconds = 0.0;
     size_t op_counter = 0;
-    markdown_core_session *session = cc_footnote_renumber_build(count);
+    markdown_core_document *session = cc_footnote_renumber_build(count);
     int repeat;
 
     if (!session) {
@@ -787,7 +787,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
             const uint8_t label = (op_counter & 1) ? '0' : '1';
             markdown_core_delta *changes = NULL;
             size_t changed;
-            if (!markdown_core_session_edit(
+            if (!markdown_core_document_edit(
                     session,
                     CC_FOOTNOTE_RENUMBER_LABEL_OFFSET,
                     CC_FOOTNOTE_RENUMBER_LABEL_OFFSET + 1,
@@ -795,15 +795,15 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
                     1,
                     NULL
                 ) ||
-                !markdown_core_session_commit(session, &changes, NULL)) {
+                !markdown_core_document_commit(session, &changes, NULL)) {
                 markdown_core_delta_free(changes);
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             changed = markdown_core_delta_changed(changes, NULL);
             markdown_core_delta_free(changes);
             if (changed < count) {
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             op_counter++;
@@ -817,7 +817,7 @@ static int cc_footnote_renumber_measure(size_t count, double *seconds_per_commit
             }
         }
     }
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     *seconds_per_commit = floor_seconds;
     return 0;
 }
@@ -856,8 +856,8 @@ static const size_t CC_DEEP_DEPTHS[] = {2048, 16384};
 static const size_t CC_SCOPE_DEPTHS[] = {512, 1024, 2048, 4096, 8192, 16384, 32768};
 #define CC_SCOPE_STEPS (sizeof(CC_SCOPE_DEPTHS) / sizeof(CC_SCOPE_DEPTHS[0]))
 
-static markdown_core_session *cc_scope_build(size_t depth) {
-    markdown_core_session *session = NULL;
+static markdown_core_document *cc_scope_build(size_t depth) {
+    markdown_core_document *session = NULL;
     size_t length;
     size_t index;
     char *text;
@@ -875,10 +875,10 @@ static markdown_core_session *cc_scope_build(size_t depth) {
     }
     memcpy(text + depth * 2, "leaf\n", 5);
     text[length] = '\0';
-    session = markdown_core_session_open(NULL, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL)) {
-        markdown_core_session_free(session);
+    session = markdown_core_document_open(NULL, NULL);
+    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL)) {
+        markdown_core_document_release(session);
         session = NULL;
     }
     free(text);
@@ -902,20 +902,20 @@ static int cc_scope_materialize(const markdown_core_document *document) {
 }
 
 static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
-    markdown_core_session *session = cc_scope_build(depth);
+    markdown_core_document *session = cc_scope_build(depth);
     const markdown_core_document *document;
     double samples[SCALING_REPEATS];
     int repeat;
     if (!session) {
         return -1;
     }
-    document = markdown_core_session_document(session);
+    document = markdown_core_document_view(session);
     if (!document) {
-        markdown_core_session_free(session);
+        markdown_core_document_release(session);
         return -1;
     }
     if (cc_scope_materialize(document) != 0) {
-        markdown_core_session_free(session);
+        markdown_core_document_release(session);
         return -1;
     }
     for (repeat = 0; repeat < SCALING_REPEATS; repeat++) {
@@ -924,7 +924,7 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         size_t iterations = 0;
         do {
             if (cc_scope_materialize(document) != 0) {
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             iterations++;
@@ -932,7 +932,7 @@ static int cc_scope_measure(size_t depth, double *seconds_per_materialization) {
         } while (elapsed < MIN_SAMPLE_CPU_NS);
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     *seconds_per_materialization = cc_median(samples, SCALING_REPEATS);
     return 0;
 }
@@ -967,10 +967,10 @@ static int cc_run_scope_materialization(const char *name) {
 
 static int cc_delta_order_build(
     size_t depth,
-    markdown_core_session **session_output,
+    markdown_core_document **session_output,
     markdown_core_delta **changes_output
 ) {
-    markdown_core_session *session = NULL;
+    markdown_core_document *session = NULL;
     markdown_core_delta *changes = NULL;
     size_t length;
     size_t index;
@@ -994,14 +994,14 @@ static int cc_delta_order_build(
     memcpy(text + depth * 2, "a\n", 2);
     text[length] = '\0';
 
-    session = markdown_core_session_open(NULL, NULL);
-    if (!session || !markdown_core_session_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
-        !markdown_core_session_commit(session, NULL, NULL) ||
-        !markdown_core_session_edit(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
-        !markdown_core_session_commit(session, &changes, NULL)) {
+    session = markdown_core_document_open(NULL, NULL);
+    if (!session || !markdown_core_document_edit(session, 0, 0, (const uint8_t *)text, length, NULL) ||
+        !markdown_core_document_commit(session, NULL, NULL) ||
+        !markdown_core_document_edit(session, depth * 2, depth * 2 + 1, &replacement, 1, NULL) ||
+        !markdown_core_document_commit(session, &changes, NULL)) {
         free(text);
         markdown_core_delta_free(changes);
-        markdown_core_session_free(session);
+        markdown_core_document_release(session);
         return -1;
     }
     free(text);
@@ -1011,7 +1011,7 @@ static int cc_delta_order_build(
 }
 
 static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
-    markdown_core_session *session;
+    markdown_core_document *session;
     markdown_core_delta *changes;
     double samples[SCALING_REPEATS];
     int repeat;
@@ -1028,11 +1028,11 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
             size_t count = 0;
             size_t index;
             uint64_t checksum = 0;
-            if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, NULL) ||
+            if (!markdown_core_document_ordered_delta_entries(session, changes, &entries, &count, NULL) ||
                 count < depth) {
                 markdown_core_delta_entries_free(entries);
                 markdown_core_delta_free(changes);
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             for (index = 0; index < count; ++index) {
@@ -1041,7 +1041,7 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
             markdown_core_delta_entries_free(entries);
             if (checksum == 0) {
                 markdown_core_delta_free(changes);
-                markdown_core_session_free(session);
+                markdown_core_document_release(session);
                 return -1;
             }
             ++iterations;
@@ -1050,7 +1050,7 @@ static int cc_delta_order_measure(size_t depth, double *seconds_per_ordering) {
         samples[repeat] = (double)elapsed / (1e9 * (double)iterations);
     }
     markdown_core_delta_free(changes);
-    markdown_core_session_free(session);
+    markdown_core_document_release(session);
     *seconds_per_ordering = cc_median(samples, SCALING_REPEATS);
     return 0;
 }
