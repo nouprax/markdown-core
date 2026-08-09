@@ -17,6 +17,28 @@ static inline markdown_core_string mc_sv(const void *data, size_t length) {
     return view;
 }
 
+/* Hands `markdown` to the document and swaps the caller's handle. */
+static inline bool mc_edit(
+    markdown_core_document **document,
+    markdown_core_string markdown,
+    markdown_core_delta **delta,
+    markdown_core_error **error
+) {
+    markdown_core_commit out;
+    memset(&out, 0, sizeof(out));
+    if (!markdown_core_document_edit(document, markdown, &out, error)) {
+        *document = NULL;
+        return false;
+    }
+    *document = out.document;
+    if (delta) {
+        *delta = out.delta;
+    } else {
+        markdown_core_delta_free(out.delta);
+    }
+    return true;
+}
+
 static inline bool mc_commit_compat(
     markdown_core_document **document,
     markdown_core_delta **delta,

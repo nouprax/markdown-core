@@ -1517,6 +1517,8 @@ static int fb_session_run(
     markdown_core_document *session = markdown_core_document_open_with_mem(NULL, mem, pooled, NULL);
     const char *stages[3] = {FB_SESSION_STAGE1, FB_SESSION_STAGE2, FB_SESSION_STAGE3};
     size_t inserts[3] = {0, 0, 0};
+    char accumulated[sizeof(FB_SESSION_STAGE1) + sizeof(FB_SESSION_STAGE2) + sizeof(FB_SESSION_STAGE3)];
+    size_t accumulated_length = 0;
     uint8_t *committed_dump = NULL;
     size_t committed_length = 0;
     bool delta_aware = captured_deltas || expected_deltas;
@@ -1526,32 +1528,22 @@ static int fb_session_run(
     if (!session) {
         return 1; /* clean constructor failure */
     }
+    accumulated[0] = 0;
     committed_dump = fb_session_dump(session, &committed_length);
     if (!committed_dump) {
         goto done;
     }
 
     for (stage = 0; stage < 3; stage++) {
+        // The caller owns the text. Each stage prepends, so the accumulated
+        // string is stage3 + stage2 + stage1, and the document is handed the
+        // whole of it.
         size_t length = strlen(stages[stage]);
-        if (!markdown_core_document_splice(
-                session,
-                inserts[stage],
-                inserts[stage],
-                (const uint8_t *)stages[stage],
-                length,
-                NULL
-            ) &&
-            !markdown_core_document_splice(
-                session,
-                inserts[stage],
-                inserts[stage],
-                (const uint8_t *)stages[stage],
-                length,
-                NULL
-            )) {
-            fputs("session edit failed twice\n", stderr);
-            goto done;
-        }
+        (void)inserts;
+        memmove(accumulated + length, accumulated, accumulated_length);
+        memcpy(accumulated, stages[stage], length);
+        accumulated_length += length;
+        accumulated[accumulated_length] = 0;
         {
             uint64_t revision_before = markdown_core_document_revision(session);
             fb_tree_snapshot before_tree = {0};
@@ -1560,7 +1552,7 @@ static int fb_session_run(
                 fputs("could not capture pre-commit tree\n", stderr);
                 goto done;
             }
-            if (!mc_commit_compat(&session, delta_aware ? &changes : NULL, NULL)) {
+            if (!mc_edit(&session, mc_sv(accumulated, accumulated_length), delta_aware ? &changes : NULL, NULL)) {
                 uint8_t *view = NULL;
                 size_t view_length = 0;
                 if (changes) {
@@ -1582,7 +1574,7 @@ static int fb_session_run(
                     goto done;
                 }
                 free(view);
-                if (!mc_commit_compat(&session, delta_aware ? &changes : NULL, NULL)) {
+                if (!mc_edit(&session, mc_sv(accumulated, accumulated_length), delta_aware ? &changes : NULL, NULL)) {
                     if (changes) {
                         fputs("failed commit retry exposed a partial delta\n", stderr);
                         markdown_core_delta_free(changes);
@@ -1766,24 +1758,30 @@ static int case_seam_static_literal(void) {
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = false;
 
-    session = markdown_core_document_open(&options, NULL);
-    if (!session || !markdown_core_document_splice(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-        !mc_commit_compat(&session, NULL, NULL)) {
+    session = markdown_core_document_new(mc_sv(initial, sizeof(initial) - 1), &options, NULL);
+    if (!session) {
         fputs("FAILED: seam_static_literal: initial commit failed\n", stderr);
         goto done;
     }
-    /* Replace "old" (bytes 3..6) so the seam covers the '.' line. */
-    if (!markdown_core_document_splice(session, 3, 6, (const uint8_t *)"new", 3, NULL) ||
-        !mc_commit_compat(&session, NULL, NULL)) {
-        fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
-        goto done;
+    /* Replace "old" (bytes 3..6) so the seam covers the '.' line. The caller
+     * splices its own string; the document is handed the result. */
+    {
+        markdown_core_commit out;
+        char edited[sizeof(initial)];
+        memcpy(edited, initial, sizeof(initial) - 1);
+        memcpy(edited + 3, "new", 3);
+        memset(&out, 0, sizeof(out));
+        if (!markdown_core_document_edit(&session, mc_sv(edited, sizeof(initial) - 1), &out, NULL)) {
+            fputs("FAILED: seam_static_literal: edit commit failed\n", stderr);
+            goto done;
+        }
+        session = out.document;
+        markdown_core_delta_free(out.delta);
     }
     incremental_dump = fb_session_dump(session, &incremental_length);
 
-    fresh = markdown_core_document_open(&options, NULL);
-    if (!fresh ||
-        !markdown_core_document_splice(fresh, 0, 0, (const uint8_t *)"\n.\nnew\n\nnext\n", sizeof(initial) - 1, NULL) ||
-        !mc_commit_compat(&fresh, NULL, NULL)) {
+    fresh = markdown_core_document_new(mc_sv("\n.\nnew\n\nnext\n", sizeof(initial) - 1), &options, NULL);
+    if (!fresh) {
         fputs("FAILED: seam_static_literal: fresh commit failed\n", stderr);
         goto done;
     }
