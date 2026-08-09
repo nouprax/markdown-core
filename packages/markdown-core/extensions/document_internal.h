@@ -373,29 +373,6 @@ bool markdown_core_diff_trees(
     markdown_core_delta *changes
 );
 
-/** Runs the canonical adoption machine over one owner's complete inline
- * ownership domain while keeping the semantic owner stable. Every child of
- * `old_owner` and `staged_owner` belongs to the corresponding domain. On
- * success the staged owner and descendants carry their final ids/revisions,
- * and `owner_revision` reports the stable owner's
- * changed/bubbled/unchanged verdict. */
-bool markdown_core_diff_trees_inline_domain(
-    markdown_core_document *session,
-    markdown_core_node *old_owner,
-    markdown_core_node *staged_owner,
-    uint64_t new_rev,
-    markdown_core_delta *changes,
-    uint64_t *owner_revision
-);
-
-/** Records every facade-visible node of `root`'s subtree as removed in
- * `changes` (NULL changes: a no-op). Returns false on allocation failure. */
-bool markdown_core_document_record_removed(
-    markdown_core_document *session,
-    const markdown_core_node *root,
-    markdown_core_delta *changes
-);
-
 /** Appends an id to a delta array; plain-malloc grow. */
 bool markdown_core_id_array_push(markdown_core_id_array *array, markdown_core_node_id id);
 

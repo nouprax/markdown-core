@@ -157,20 +157,13 @@ typedef struct diff_stack {
     markdown_core_mem *mem;
 } diff_stack;
 
-// Pushes a pair whose child runs are already bounded and computes its
-// prefix/suffix pairing plan. Ordinary descendant pushes pass complete child
-// lists; the incremental inline seam may reserve an already-materialized
-// prefix before entering this machine.
-static bool diff_push_bounded(
-    diff_ctx *ctx,
-    diff_stack *stack,
-    markdown_core_node *old,
-    markdown_core_node *nw,
-    markdown_core_node *o_start,
-    size_t n_old,
-    markdown_core_node *w_start,
-    size_t n_new
-) {
+// Pushes a pair and computes its prefix/suffix pairing plan over the two
+// complete child lists.
+static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
+    markdown_core_node *o_start = old->first_child;
+    markdown_core_node *w_start = nw->first_child;
+    size_t n_old = child_count_raw(old);
+    size_t n_new = child_count_raw(nw);
     markdown_core_node *o = o_start;
     markdown_core_node *w = w_start;
     markdown_core_node *o_end;
@@ -232,42 +225,7 @@ static bool diff_push_bounded(
     return true;
 }
 
-// Complete-node entry: derives the full child domains, including the
-// incremental seam's reserved old prefix.
-static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
-    size_t n_old = child_count_raw(old);
-    size_t n_new = child_count_raw(nw);
-    markdown_core_node *o = old->first_child;
-
-    // An inline seam (user_data = offset + 1, set by the commit pipeline)
-    // reserves the old leaf's prefix children — one Text and one break per
-    // seam line — for transplant: they survive as-is, so pairing starts
-    // past them and they never enter the removal records. The count is
-    // derived from the seam bytes, which both contents share.
-    if (nw->user_data) {
-        markdown_core_bufsize seam = (markdown_core_bufsize)((uintptr_t)nw->user_data - 1);
-        markdown_core_bufsize i;
-        size_t reserved = 0;
-        for (i = 0; i < seam; i++) {
-            if (nw->content.ptr[i] == '\n') {
-                reserved += 2;
-            }
-        }
-        for (; reserved > 0; reserved--) {
-            if (!o) {
-                ctx->failed = true;
-                return false;
-            }
-            o = o->next;
-            n_old--;
-        }
-    }
-    return diff_push_bounded(ctx, stack, old, nw, o, n_old, nw->first_child, n_new);
-}
-
-// Runs the one matching machine after either a complete-node or bounded-root
-// initializer has pushed its first frame. Descendant pairs always enter
-// through diff_push and therefore keep complete-node semantics.
+// Runs the matching machine after diff_push has pushed the root pair.
 static void diff_run(diff_ctx *ctx, diff_stack *stack) {
     bool child_result = false;
     bool have_result = false;
@@ -341,24 +299,6 @@ static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core
     }
 }
 
-bool markdown_core_diff_trees_inline_domain(
-    markdown_core_document *session,
-    markdown_core_node *old_owner,
-    markdown_core_node *staged_owner,
-    uint64_t new_rev,
-    markdown_core_delta *changes,
-    uint64_t *owner_revision
-) {
-    diff_ctx ctx = {session, changes, new_rev, false};
-
-    diff_pair(&ctx, old_owner, staged_owner);
-    if (ctx.failed) {
-        return false;
-    }
-    *owner_revision = staged_owner->last_changed_rev;
-    return true;
-}
-
 bool markdown_core_diff_trees(
     markdown_core_document *session,
     markdown_core_node *old_root,
@@ -375,15 +315,5 @@ bool markdown_core_diff_trees(
 
     // Roots are both documents; pair them directly.
     diff_pair(&ctx, old_root, new_root);
-    return !ctx.failed;
-}
-
-bool markdown_core_document_record_removed(
-    markdown_core_document *session,
-    const markdown_core_node *root,
-    markdown_core_delta *changes
-) {
-    diff_ctx ctx = {session, changes, 0, false};
-    record_removed_subtree(&ctx, root);
     return !ctx.failed;
 }

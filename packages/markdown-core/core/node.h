@@ -138,7 +138,6 @@ struct markdown_core_node {
     uint64_t id;
     uint64_t last_changed_rev;
 
-    void *user_data;
 
     // The concrete marker records of this node's own ownership region
     // (concrete_records.h), lazily allocated by the block phase and owned by

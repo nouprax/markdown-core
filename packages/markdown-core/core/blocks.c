@@ -1038,20 +1038,6 @@ static void S_parse_node_inlines(
         refmap->lookup_unit = unit;
         parser->footnote_defs->lookup_unit = unit;
     }
-    /* A session-staged leaf may carry an inline seam in user_data (offset+1):
-     * bytes before it are an inert, already-materialized prefix whose nodes
-     * the commit transplants later, so inline parsing starts at the seam.
-     * One-shot parses never set user_data. */
-    if (cur->user_data) {
-        markdown_core_parse_inlines_from(
-            parser,
-            cur,
-            refmap,
-            options,
-            (markdown_core_bufsize)((uintptr_t)cur->user_data - 1)
-        );
-        return;
-    }
     markdown_core_parse_inlines(parser, cur, refmap, options);
 }
 
