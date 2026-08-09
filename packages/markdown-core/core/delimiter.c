@@ -79,7 +79,6 @@ markdown_core_inline_config *markdown_core_inline_config_new(
     }
     config->mem = mem;
     memcpy(config->special_chars, base_special_chars, sizeof(config->special_chars));
-    memcpy(config->seam_barrier_chars, base_special_chars, sizeof(config->seam_barrier_chars));
     memcpy(config->skip_chars, base_skip_chars, sizeof(config->skip_chars));
     return config;
 }
@@ -110,7 +109,6 @@ void markdown_core_inline_config_free(markdown_core_inline_config *config) {
     }
     for (i = 0; i < 256; i++) {
         config->mem->free(config->mem, config->dispatch[i].items);
-        config->mem->free(config->mem, config->seam_dispatch[i].items);
         config->mem->free(config->mem, config->close_dispatch[i].items);
     }
     config->mem->free(config->mem, config);
@@ -157,16 +155,6 @@ markdown_core_inline_attachment *markdown_core_inline_config_find_attachment(
     return NULL;
 }
 
-static int extension_uses_conditional_seam(const markdown_core_extension *extension, unsigned char character) {
-    size_t i;
-    for (i = 0; i < extension->inline_seam_probe_char_count; i++) {
-        if (extension->inline_seam_probe_chars[i] == character) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
     markdown_core_inline_config *config,
     markdown_core_extension *extension,
@@ -174,7 +162,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
 ) {
     markdown_core_inline_attachment *attachment;
     size_t dispatch_additions[256] = {0};
-    size_t seam_additions[256] = {0};
     size_t close_additions[256] = {0};
     size_t i;
     size_t j;
@@ -188,10 +175,7 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
     if ((extension->delimiter_rule_count && (!extension->delimiter_rules || !extension->insert_inline_from_delim)) ||
         (extension->special_inline_char_count && !extension->match_inline) ||
         (extension->special_inline_char_count && !extension->special_inline_chars) ||
-        (extension->flanking_skip_char_count && !extension->flanking_skip_chars) ||
-        (extension->inline_seam_barrier_char_count && !extension->inline_seam_barrier_chars) ||
-        (extension->inline_seam_probe_char_count &&
-         (!extension->inline_seam_probe_chars || !extension->inline_seam_probe))) {
+        (extension->flanking_skip_char_count && !extension->flanking_skip_chars)) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
     if (extension->delimiter_rule_count > UINT16_MAX ||
@@ -206,22 +190,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
                 return MARKDOWN_CORE_DELIMITER_INVALID;
             }
         }
-    }
-    for (i = 0; i < extension->inline_seam_probe_char_count; i++) {
-        int registered = 0;
-        unsigned char c = extension->inline_seam_probe_chars[i];
-        for (j = 0; j < extension->special_inline_char_count; j++) {
-            registered |= extension->special_inline_chars[j] == c;
-        }
-        for (j = 0; j < i; j++) {
-            if (extension->inline_seam_probe_chars[j] == c) {
-                return MARKDOWN_CORE_DELIMITER_INVALID;
-            }
-        }
-        if (!registered) {
-            return MARKDOWN_CORE_DELIMITER_INVALID;
-        }
-        seam_additions[c]++;
     }
     for (i = 0; i < extension->delimiter_rule_count; i++) {
         const markdown_core_delimiter_rule *rule = &extension->delimiter_rules[i];
@@ -271,16 +239,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
             }
             bucket->items = (markdown_core_inline_attachment **)grown;
         }
-        if (seam_additions[i]) {
-            markdown_core_inline_dispatch *bucket = &config->seam_dispatch[i];
-            void *grown =
-                reserve_pointer_slots(config->mem, bucket->items, &bucket->capacity, bucket->count + seam_additions[i]);
-            if (!grown) {
-                markdown_core_inline_attachment_discard(config, attachment);
-                return MARKDOWN_CORE_DELIMITER_OOM;
-            }
-            bucket->items = (markdown_core_inline_attachment **)grown;
-        }
         if (close_additions[i]) {
             markdown_core_inline_close_dispatch *bucket = &config->close_dispatch[i];
             void *grown = reserve_pointer_slots(
@@ -318,12 +276,6 @@ void markdown_core_inline_attachment_commit(
         markdown_core_inline_dispatch *bucket = &config->dispatch[c];
         bucket->items[bucket->count++] = attachment;
         config->special_chars[c] = 1;
-        if (extension_uses_conditional_seam(attachment->extension, c)) {
-            markdown_core_inline_dispatch *seam_bucket = &config->seam_dispatch[c];
-            seam_bucket->items[seam_bucket->count++] = attachment;
-        } else {
-            config->seam_barrier_chars[c] = 1;
-        }
     }
     for (i = 0; i < attachment->rule_count; i++) {
         markdown_core_delimiter_binding *binding = &attachment->rules[i];
@@ -332,14 +284,10 @@ void markdown_core_inline_attachment_commit(
             markdown_core_inline_close_dispatch *bucket = &config->close_dispatch[c];
             bucket->items[bucket->count++] = binding;
             config->special_chars[c] = 1;
-            config->seam_barrier_chars[c] = 1;
         }
     }
     for (i = 0; i < attachment->extension->flanking_skip_char_count; i++) {
         config->skip_chars[attachment->extension->flanking_skip_chars[i]] = 1;
-    }
-    for (i = 0; i < attachment->extension->inline_seam_barrier_char_count; i++) {
-        config->seam_barrier_chars[attachment->extension->inline_seam_barrier_chars[i]] = 1;
     }
 }
 

@@ -71,11 +71,9 @@ typedef struct markdown_core_inline_config {
     markdown_core_inline_attachment *attachments;
     markdown_core_inline_attachment *attachments_tail;
     markdown_core_inline_dispatch dispatch[256];
-    markdown_core_inline_dispatch seam_dispatch[256];
     markdown_core_inline_close_dispatch close_dispatch[256];
     size_t extension_rule_count;
     int8_t special_chars[256];
-    int8_t seam_barrier_chars[256];
     int8_t skip_chars[256];
 } markdown_core_inline_config;
 

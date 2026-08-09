@@ -3789,68 +3789,6 @@ static int case_inline_extension_funnel(void) {
     return failed ? -1 : 0;
 }
 
-/* --- inline_seam_barrier ------------------------------------------------ */
-
-/* The seam contract the capture leans on: every byte a capture site can
- * begin a record at is a seam barrier (or, for the tail records, sits
- * strictly after a barrier `]` of the same construct), so the inert prefix
- * an incremental reparse fast-forwards over holds zero records and no
- * record ever needs transplanting. SMART bytes are checked behaviorally
- * because the seam function owns their clause. */
-static int case_inline_seam_barrier(void) {
-    static const unsigned char RECORD_TRIGGER_BYTES[] = {'*', '_', '`', '\\', '&', '<', '[', ']', '!', '~', '$', ':'};
-    static const unsigned char SMART_TRIGGER_BYTES[] = {'-', '.', '\'', '"'};
-    int failed = 0;
-    markdown_core_parser *parser = sweep_parser_new(NULL);
-    size_t i;
-
-    if (!parser) {
-        return -1;
-    }
-    for (i = 0; i < sizeof(RECORD_TRIGGER_BYTES); i++) {
-        if (!parser->inline_config->seam_barrier_chars[RECORD_TRIGGER_BYTES[i]]) {
-            fprintf(
-                stderr,
-                "inline_seam_barrier: record trigger byte '%c' is not a seam barrier\n",
-                RECORD_TRIGGER_BYTES[i]
-            );
-            failed = 1;
-        }
-    }
-    for (i = 0; i < sizeof(SMART_TRIGGER_BYTES); i++) {
-        unsigned char line[8] = {'x', 'x', 0, '\n', 'y', 'y', 0, 0};
-        unsigned char other[8] = {'x', 'x', 0, '\n', 'z', 'z', 0, 0};
-        markdown_core_bufsize seam;
-        line[2] = SMART_TRIGGER_BYTES[i];
-        other[2] = SMART_TRIGGER_BYTES[i];
-        seam = markdown_core_inline_seam_prefix(parser, line, 6, other, 6, MARKDOWN_CORE_OPT_SMART);
-        if (seam != 0) {
-            fprintf(
-                stderr,
-                "inline_seam_barrier: smart byte '%c' fell inside a seam prefix (seam %d)\n",
-                SMART_TRIGGER_BYTES[i],
-                (int)seam
-            );
-            failed = 1;
-        }
-    }
-    /* The two-space hard break is seam-admissible, which is exactly why it
-     * must own no record: the prefix a reparse never rescans still equals
-     * the fresh parse record-for-record only if breaks stay implicit. */
-    {
-        static const unsigned char broken_a[] = "ab  \ncd";
-        static const unsigned char broken_b[] = "ab  \ncq";
-        markdown_core_bufsize seam =
-            markdown_core_inline_seam_prefix(parser, broken_a, 7, broken_b, 7, MARKDOWN_CORE_OPT_SMART);
-        if (seam != 5) {
-            fprintf(stderr, "inline_seam_barrier: hard-break prefix must stay seam-admissible (seam %d)\n", (int)seam);
-            failed = 1;
-        }
-    }
-    markdown_core_parser_free(parser);
-    return failed ? -1 : 0;
-}
-
 /* --- inline_equivalence ------------------------------------------------- */
 
 /* Inline concrete records must equal a fresh parse's after a commit, on the
@@ -4567,7 +4505,6 @@ static const concrete_case CASES[] = {
     {"inline_shape", case_inline_shape},
     {"inline_smart", case_inline_smart},
     {"inline_extension_funnel", case_inline_extension_funnel},
-    {"inline_seam_barrier", case_inline_seam_barrier},
     {"inline_equivalence", case_inline_equivalence},
     {"inline_growth_ceiling", case_inline_growth_ceiling},
     {"recovery_literal_fallback", case_recovery_literal_fallback},

@@ -433,12 +433,6 @@ static markdown_core_node *match(
     // inline was finished in inlines.c.
 }
 
-static int www_inline_seam_probe(const unsigned char *data, markdown_core_bufsize len, markdown_core_bufsize offset) {
-    static const char prefix[] = "www.";
-    return offset >= 0 && offset <= len - (markdown_core_bufsize)(sizeof(prefix) - 1) &&
-           memcmp(data + offset, prefix, sizeof(prefix) - 1) == 0;
-}
-
 static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewind, size_t max_rewind) {
     size_t len = strlen(protocol);
 
@@ -717,8 +711,6 @@ static markdown_core_node *postprocess_block(
 }
 
 static const unsigned char autolink_special_chars[] = {':', 'w'};
-static const unsigned char autolink_inline_seam_barrier_chars[] = {'@'};
-static const unsigned char autolink_inline_seam_probe_chars[] = {'w'};
 
 static const markdown_core_extension autolink_extension = {
     .name = "autolink",
@@ -726,11 +718,6 @@ static const markdown_core_extension autolink_extension = {
     .postprocess_block = postprocess_block,
     .special_inline_chars = autolink_special_chars,
     .special_inline_char_count = sizeof(autolink_special_chars),
-    .inline_seam_barrier_chars = autolink_inline_seam_barrier_chars,
-    .inline_seam_barrier_char_count = sizeof(autolink_inline_seam_barrier_chars),
-    .inline_seam_probe_chars = autolink_inline_seam_probe_chars,
-    .inline_seam_probe_char_count = sizeof(autolink_inline_seam_probe_chars),
-    .inline_seam_probe = www_inline_seam_probe,
 };
 
 markdown_core_extension *markdown_core_autolink_extension(void) {

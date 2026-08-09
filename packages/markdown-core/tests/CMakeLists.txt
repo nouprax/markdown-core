@@ -348,7 +348,6 @@ if(MARKDOWN_CORE_STATIC)
               inline_shape
               inline_smart
               inline_extension_funnel
-              inline_seam_barrier
               inline_equivalence
               inline_growth_ceiling
               recovery_literal_fallback

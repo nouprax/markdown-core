@@ -7,12 +7,6 @@
 
 #define MARKDOWN_CORE_CORE_DELIMITER_RULE_COUNT 4u
 
-typedef int (*markdown_core_inline_seam_probe_func)(
-    const unsigned char *data,
-    markdown_core_bufsize len,
-    markdown_core_bufsize offset
-);
-
 // Extension descriptors are immutable compile-time data: every bundled
 // extension defines one `static const` instance and hands out a pointer to
 // it. The engine never allocates, mutates, or frees a descriptor, which is
@@ -32,21 +26,6 @@ struct markdown_core_extension {
      * namespace; bundled GFM strikethrough is currently the sole user. */
     const unsigned char *flanking_skip_chars;
     size_t flanking_skip_char_count;
-    /*
-     * Bytes that can reshape an already parsed prefix without being ordinary
-     * inline triggers. They form part of the compiled incremental seam
-     * barrier table; the parser never infers extension identity from a
-     * trigger byte.
-     */
-    const unsigned char *inline_seam_barrier_chars;
-    size_t inline_seam_barrier_char_count;
-    /*
-     * Conditional special bytes are barriers only when this pure probe
-     * recognizes a real trigger at the common-prefix offset.
-     */
-    const unsigned char *inline_seam_probe_chars;
-    size_t inline_seam_probe_char_count;
-    markdown_core_inline_seam_probe_func inline_seam_probe;
     const char *name;
     markdown_core_get_type_string_func get_type_string;
     markdown_core_can_contain_func can_contain;
