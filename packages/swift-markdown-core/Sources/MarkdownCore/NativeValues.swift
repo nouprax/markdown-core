@@ -29,7 +29,7 @@ extension Scope {
     }
 }
 
-extension markdown_core_string_view {
+extension markdown_core_string {
     var requiredString: String {
         guard let data else { return "" }
         // Well-formed by construction, not by validation: every entry point

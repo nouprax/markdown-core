@@ -21,13 +21,14 @@
 
 #include "session_replay.h"
 #include "test_support.h"
+#include "commit_compat.h"
 
 static size_t nodes_visited;
 
 static int traverse(const markdown_core_node *node) {
     const markdown_core_node *child;
     markdown_core_scope scope;
-    markdown_core_string_view view;
+    markdown_core_string view;
     markdown_core_optional_bool checked;
     int32_t level;
     bool flag;
@@ -63,7 +64,7 @@ static int smoke(const uint8_t *bytes, size_t length, const char *label) {
     size_t second_length = 0;
     int result = -1;
 
-    document = markdown_core_document_new(bytes, length, NULL, &error);
+    document = markdown_core_document_new(mc_sv(bytes, length), NULL, &error);
     if (!document) {
         /* Parse failures must still produce a well-formed error object. */
         if (!error) {

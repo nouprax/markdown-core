@@ -330,7 +330,7 @@ static int cc_validate_nested_formula(
     const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
     const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
     markdown_core_placement_mode mode;
-    markdown_core_string_view literal;
+    markdown_core_string literal;
     markdown_core_scope scope;
 
     if (ts_ast_count_kinds(root, counts) != 0 || counts[MARKDOWN_CORE_KIND_FORMULA] != 1 ||

@@ -250,8 +250,8 @@ static int case_hard_link_emph(pc_context *context) {
     const markdown_core_node *text;
     const markdown_core_node *link;
     const markdown_core_node *emphasis;
-    markdown_core_string_view view;
-    markdown_core_string_view title;
+    markdown_core_string view;
+    markdown_core_string title;
 
     if (pc_build(context, "**x [a*b**c*](d)", "", 0, NULL) != 0) {
         return -1;
@@ -448,7 +448,7 @@ static int case_unclosed_comment(pc_context *context) {
 static int case_tables(pc_context *context) {
     const markdown_core_node *root;
     const markdown_core_node *paragraph;
-    markdown_core_string_view view;
+    markdown_core_string view;
     if (pc_build(context, NULL, "aaa\rbbb\n-\x0b\n", 30000, NULL) != 0) {
         return -1;
     }
@@ -492,7 +492,7 @@ typedef struct pc_uniform_text {
 static int pc_uniform_text_visit(const markdown_core_node *node, void *context) {
     pc_uniform_text *check = (pc_uniform_text *)context;
     if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_TEXT) {
-        markdown_core_string_view view;
+        markdown_core_string view;
         check->seen++;
         if (!markdown_core_node_literal(node, &view) || view.length != check->expected_length ||
             memcmp(view.data, check->expected, view.length) != 0) {
@@ -679,9 +679,9 @@ static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *label;
     const markdown_core_node *label_text;
     markdown_core_placement_mode mode;
-    markdown_core_string_view name;
-    markdown_core_string_view attributes;
-    markdown_core_string_view literal;
+    markdown_core_string name;
+    markdown_core_string attributes;
+    markdown_core_string literal;
     char *expected = NULL;
 
     if (pc_build(context, ":long[", "a", 1500, "]") != 0) {
@@ -722,8 +722,8 @@ static int case_directive_long_label(pc_context *context) {
 static int case_directive_long_attributes(pc_context *context) {
     const markdown_core_node *directive;
     markdown_core_placement_mode mode;
-    markdown_core_string_view name;
-    markdown_core_string_view attributes;
+    markdown_core_string name;
+    markdown_core_string attributes;
     char *value;
     char *expected;
     size_t expected_length;
@@ -790,7 +790,7 @@ static int pc_formula_case(
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
         const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
         markdown_core_placement_mode mode;
-        markdown_core_string_view literal;
+        markdown_core_string literal;
         size_t expected_length = strlen(expected_literal);
         if (markdown_core_node_get_kind(formula) != MARKDOWN_CORE_KIND_FORMULA ||
             !markdown_core_node_formula_properties(formula, &mode, &literal) ||

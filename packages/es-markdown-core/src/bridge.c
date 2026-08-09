@@ -56,7 +56,7 @@ ES_LAYOUT_ASSERT(
 );
 #undef ES_LAYOUT_ASSERT
 
-static void es_write_view(markdown_core_string_view view, uintptr_t *data, size_t *length) {
+static void es_write_view(markdown_core_string view, uintptr_t *data, size_t *length) {
     *data = (uintptr_t)view.data;
     *length = view.length;
 }
@@ -244,7 +244,7 @@ void es_scope_table_free(markdown_core_scope_entry *rows) { markdown_core_scope_
 /* A reference's source form. Its label travels through es_string like every
  * other string; only this scalar needs an accessor of its own. */
 int32_t es_node_reference_form(const markdown_core_node *node) {
-    markdown_core_string_view label = {NULL, 0};
+    markdown_core_string label = {NULL, 0};
     markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
     markdown_core_node_reference_properties(node, &label, &form);
     return (int32_t)form;
@@ -280,7 +280,7 @@ int32_t es_node_checked(const markdown_core_node *node) {
 // Layout (32 bytes): u32 info data/length, u32 language data/length,
 // u32 literal data/length, i32 fenced, i32 closed.
 void es_node_code_properties(const markdown_core_node *node, void *out) {
-    markdown_core_string_view info, language, literal;
+    markdown_core_string info, language, literal;
     bool fenced, closed;
     uint32_t *fields = (uint32_t *)out;
     markdown_core_node_code_block_properties(node, &info, &language, &literal, &fenced, &closed);
@@ -296,7 +296,7 @@ void es_node_code_properties(const markdown_core_node *node, void *out) {
 
 int32_t es_node_formula_mode(const markdown_core_node *node) {
     markdown_core_placement_mode mode;
-    markdown_core_string_view literal;
+    markdown_core_string literal;
     markdown_core_node_formula_properties(node, &mode, &literal);
     return (int32_t)mode;
 }
@@ -324,7 +324,7 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
 // topology, exactly like every other typed child relation.
 void es_node_directive_properties(const markdown_core_node *node, void *out) {
     markdown_core_placement_mode mode;
-    markdown_core_string_view name, attributes;
+    markdown_core_string name, attributes;
     es_directive_properties_layout *properties = (es_directive_properties_layout *)out;
 
     markdown_core_node_directive_properties(node, &mode, &name, &attributes);
@@ -337,7 +337,7 @@ void es_node_directive_properties(const markdown_core_node *node, void *out) {
 }
 
 void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {
-    markdown_core_string_view first = {NULL, 0}, second = {NULL, 0};
+    markdown_core_string first = {NULL, 0}, second = {NULL, 0};
     const markdown_core_node *node = (const markdown_core_node *)object;
     markdown_core_placement_mode mode;
     switch (field) {
@@ -372,7 +372,7 @@ void es_string(const void *object, int32_t field, uintptr_t *data, size_t *lengt
     case ES_STRING_DEFINITION_LABEL:
     case ES_STRING_DEFINITION_DESTINATION:
     case ES_STRING_DEFINITION_TITLE: {
-        markdown_core_string_view third = {NULL, 0};
+        markdown_core_string third = {NULL, 0};
         markdown_core_node_reference_definition_properties(node, &first, &second, &third);
         if (field == ES_STRING_DEFINITION_DESTINATION) {
             first = second;

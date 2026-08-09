@@ -96,10 +96,14 @@ typedef struct markdown_core_commit {
  * thing at the same place. 0 is never a valid id. */
 typedef uint64_t markdown_core_node_id;
 
-typedef struct markdown_core_string_view {
+/** Bytes and a length. Every string this API HANDS OUT borrows from the
+ * document that owns it and ends with that document — the ownership section
+ * above states that once, for all of them. Every string HANDED IN is copied,
+ * so the caller keeps its own. */
+typedef struct markdown_core_string {
     const uint8_t *data;
     size_t length;
-} markdown_core_string_view;
+} markdown_core_string;
 
 typedef struct markdown_core_position {
     int32_t line;
@@ -233,22 +237,11 @@ typedef struct markdown_core_optional_bool {
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
-/**
- * Parses exactly `length` UTF-8 bytes. `options == NULL` selects the defaults.
- * The returned document owns all nodes and borrowed string views. On failure,
- * NULL is returned and `*error` is set when `error` is non-NULL.
- */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
-    const uint8_t *source,
-    size_t length,
-    const markdown_core_parse_options *options,
-    markdown_core_error **error
-);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
-MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);
+MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
 MARKDOWN_CORE_API bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
@@ -274,13 +267,13 @@ MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(
 );
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *info,
-    markdown_core_string_view *language,
-    markdown_core_string_view *literal,
+    markdown_core_string *info,
+    markdown_core_string *language,
+    markdown_core_string *literal,
     bool *fenced,
     bool *closed
 );
-MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
+MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 /** For HTMLBlock and HTML nodes: true when the literal is one complete
  * comment — after surrounding whitespace it opens with `<!--` and its first
  * `-->` is the terminal bytes. Comment-prefixed html with a same-line tail
@@ -290,7 +283,7 @@ MARKDOWN_CORE_API bool markdown_core_node_html_comment(const markdown_core_node 
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *literal
+    markdown_core_string *literal
 );
 MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
 MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
@@ -302,45 +295,45 @@ MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_cor
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *name,
-    markdown_core_string_view *attributes
+    markdown_core_string *name,
+    markdown_core_string *attributes
 );
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 /** A link reference definition's label as written, and the destination and
  * title it defines. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_definition_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *label,
+    markdown_core_string *destination,
+    markdown_core_string *title
 );
 
 /** A reference's label as written and the form it was written in. It has no
  * destination: that belongs to the definition the label resolves to. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
+    markdown_core_string *label,
     markdown_core_reference_form *form
 );
 
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *destination,
+    markdown_core_string *title
 );
 MARKDOWN_CORE_API bool markdown_core_node_image_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *source,
-    markdown_core_string_view *title
+    markdown_core_string *source,
+    markdown_core_string *title
 );
-MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
+MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string *id);
 MARKDOWN_CORE_API bool markdown_core_node_cross_link_reference(
     const markdown_core_node *node,
-    markdown_core_string_view *reference
+    markdown_core_string *reference
 );
 MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
     const markdown_core_node *node,
-    markdown_core_string_view *reference
+    markdown_core_string *reference
 );
 
 /**
@@ -424,17 +417,22 @@ MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(
     size_t *length
 );
 
+/**
+ * `Document(markdown, options)` — the one entry point. `options == NULL`
+ * selects the defaults and they are fixed for this document's whole lineage:
+ * a commit takes text and not options. The returned document owns all nodes
+ * and borrowed string views. On failure, NULL is returned and `*error` is set
+ * when `error` is non-NULL.
+ */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     const markdown_core_parse_options *options,
     markdown_core_error **error
 );
 
 MARKDOWN_CORE_API bool markdown_core_document_commit(
     markdown_core_document **document,
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     markdown_core_commit *out,
     markdown_core_error **error
 );

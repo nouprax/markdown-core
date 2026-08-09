@@ -20,7 +20,7 @@ extension FormulaBlock {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
         var mode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
-        var literal = markdown_core_string_view()
+        var literal = markdown_core_string()
         markdown_core_node_formula_properties(node, &mode, &literal)
         self.init(
             id: id,

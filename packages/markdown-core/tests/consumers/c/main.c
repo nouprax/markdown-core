@@ -1,12 +1,13 @@
 #include <markdown_core.h>
 
 #include <string.h>
+#include "commit_compat.h"
 
 int main(void) {
     const char *source = "# installed consumer\n";
     markdown_core_error *error = NULL;
     markdown_core_document *document =
-        markdown_core_document_new((const uint8_t *)source, strlen(source), NULL, &error);
+        markdown_core_document_new(mc_sv((const uint8_t *)source, strlen(source)), NULL, &error);
     const markdown_core_node *root;
 
     if (document == NULL || error != NULL) {

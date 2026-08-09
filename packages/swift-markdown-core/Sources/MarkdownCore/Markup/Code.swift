@@ -19,7 +19,7 @@ public struct Code: Markup {
 extension Code {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var literal = markdown_core_string_view()
+        var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
         // The C facade fixes code spans to embedded placement (the kind's
         // only legal mode), so no native call is needed.

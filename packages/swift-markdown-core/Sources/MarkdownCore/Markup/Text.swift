@@ -16,7 +16,7 @@ public struct Text: Markup {
 extension Text {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var literal = markdown_core_string_view()
+        var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
         self.init(id: id, revision: revision, literal: literal.requiredString)
     }

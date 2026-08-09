@@ -77,9 +77,9 @@ extension ReferenceForm {
 extension ReferenceDefinition {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var label = markdown_core_string_view()
-        var destination = markdown_core_string_view()
-        var title = markdown_core_string_view()
+        var label = markdown_core_string()
+        var destination = markdown_core_string()
+        var title = markdown_core_string()
         markdown_core_node_reference_definition_properties(node, &label, &destination, &title)
         self.init(
             id: id,
@@ -94,7 +94,7 @@ extension ReferenceDefinition {
 extension LinkReference {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var label = markdown_core_string_view()
+        var label = markdown_core_string()
         var form = MARKDOWN_CORE_REFERENCE_SHORTCUT
         markdown_core_node_reference_properties(node, &label, &form)
         self.init(
@@ -110,7 +110,7 @@ extension LinkReference {
 extension ImageReference {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var label = markdown_core_string_view()
+        var label = markdown_core_string()
         var form = MARKDOWN_CORE_REFERENCE_SHORTCUT
         markdown_core_node_reference_properties(node, &label, &form)
         self.init(

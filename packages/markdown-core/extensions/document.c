@@ -456,8 +456,7 @@ static markdown_core_document *markdown_core_document_alloc(
  * insertion at the origin. */
 static bool document_set_text(
     markdown_core_document *doc,
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     markdown_core_error **error
 ) {
     markdown_core_source_edit edit;
@@ -466,8 +465,8 @@ static bool document_set_text(
     memset(&stats, 0, sizeof(stats));
     edit.span.start = 0;
     edit.span.end = 0;
-    edit.replacement = markdown;
-    edit.replacement_length = length;
+    edit.replacement = markdown.data;
+    edit.replacement_length = markdown.length;
     if (!markdown_core_source_apply(doc->source, &edit, 1, &stats, &status)) {
         markdown_core_ast_set_error(
             error,
@@ -490,8 +489,7 @@ static bool document_set_text(
  * diff and nothing else, and it is untouched by this call. */
 static markdown_core_document *document_build(
     const markdown_core_parse_options *options,
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     const markdown_core_document *prev,
     markdown_core_mem *mem,
     bool pooled,
@@ -510,7 +508,7 @@ static markdown_core_document *document_build(
         doc->next_id = prev->next_id;
         doc->revision = prev->revision + 1;
     }
-    if (length && !document_set_text(doc, markdown, length, error)) {
+    if (markdown.length && !document_set_text(doc, markdown, error)) {
         markdown_core_document_release(doc);
         return NULL;
     }
@@ -655,18 +653,18 @@ markdown_core_document *markdown_core_document_open_with_mem(
     bool pooled,
     markdown_core_error **error
 ) {
-    return document_build(options, NULL, 0, NULL, mem, pooled, NULL, error);
+    markdown_core_string empty = {NULL, 0};
+    return document_build(options, empty, NULL, mem, pooled, NULL, error);
 }
 
 /* `Document(markdown, options)` — the one entry point. */
 markdown_core_document *markdown_core_document_new(
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     const markdown_core_parse_options *options,
     markdown_core_error **error
 ) {
     clear_error(error);
-    if (!markdown && length != 0) {
+    if (!markdown.data && markdown.length != 0) {
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
@@ -674,7 +672,7 @@ markdown_core_document *markdown_core_document_new(
         );
         return NULL;
     }
-    return document_build(options, markdown, length, NULL, markdown_core_mem_default(), true, NULL, error);
+    return document_build(options, markdown, NULL, markdown_core_mem_default(), true, NULL, error);
 }
 
 markdown_core_document *markdown_core_document_open(
@@ -796,8 +794,7 @@ bool markdown_core_document_edit(
  * on every path, so a caller cannot hold both. */
 bool markdown_core_document_commit(
     markdown_core_document **document,
-    const uint8_t *markdown,
-    size_t length,
+    markdown_core_string markdown,
     markdown_core_commit *out,
     markdown_core_error **error
 ) {
@@ -814,7 +811,7 @@ bool markdown_core_document_commit(
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
         return false;
     }
-    if (!markdown && length != 0) {
+    if (!markdown.data && markdown.length != 0) {
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
@@ -830,7 +827,6 @@ bool markdown_core_document_commit(
     nw = document_build(
         &old->options,
         markdown,
-        length,
         old,
         markdown_core_mem_default(),
         old->arena != NULL,

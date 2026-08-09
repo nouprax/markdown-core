@@ -189,7 +189,7 @@ target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../i
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
-target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 set(MARKDOWN_CORE_ALL_TESTS "")

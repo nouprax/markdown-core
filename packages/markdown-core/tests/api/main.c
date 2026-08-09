@@ -743,8 +743,8 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
     const markdown_core_node *inline_empty_label;
     const markdown_core_node *block_empty_label;
     markdown_core_placement_mode mode;
-    markdown_core_string_view name;
-    markdown_core_string_view attributes;
+    markdown_core_string name;
+    markdown_core_string attributes;
     markdown_core_iter *iter;
     markdown_core_event_type event;
     markdown_core_scope scope;
@@ -1491,7 +1491,7 @@ static void test_facade_dump(
 
     memset(&options, 0, sizeof(options)); /* pure CommonMark; no smart punctuation */
     options.autolinks = autolinks != 0;
-    document = markdown_core_document_new((const uint8_t *)markdown, strlen(markdown), &options, &error);
+    document = markdown_core_document_new(mc_sv((const uint8_t *)markdown, strlen(markdown)), &options, &error);
     if (!document) {
         OK(runner, 0, "%s (facade parse succeeds)", msg);
         markdown_core_error_free(error);
@@ -1601,9 +1601,9 @@ static int reference_destination_is(
 ) {
     markdown_core_reference_info info;
     const markdown_core_node *definition;
-    markdown_core_string_view label;
-    markdown_core_string_view destination;
-    markdown_core_string_view title;
+    markdown_core_string label;
+    markdown_core_string destination;
+    markdown_core_string title;
     size_t length = strlen(expected);
 
     if (!node || !markdown_core_document_reference_info(session, markdown_core_node_get_id(node), &info) ||
@@ -1749,7 +1749,7 @@ static const char SESSION_RICH_SOURCE[] = "# Title\n"
 static void session_streaming_equivalence(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *reference =
-        markdown_core_document_new((const uint8_t *)SESSION_RICH_SOURCE, strlen(SESSION_RICH_SOURCE), NULL, &error);
+        markdown_core_document_new(mc_sv((const uint8_t *)SESSION_RICH_SOURCE, strlen(SESSION_RICH_SOURCE)), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *session = markdown_core_document_open(NULL, &error);
     size_t length = strlen(SESSION_RICH_SOURCE);
@@ -1976,7 +1976,7 @@ static void session_utf8_split_append(test_batch_runner *runner) {
      * append must yield the same tree as a one-shot parse. */
     static const uint8_t euro_doc[] = {'p', ' ', 0xE2, 0x82, 0xAC, '\n'};
     markdown_core_error *error = NULL;
-    markdown_core_document *reference = markdown_core_document_new(euro_doc, sizeof(euro_doc), NULL, &error);
+    markdown_core_document *reference = markdown_core_document_new(mc_sv(euro_doc, sizeof(euro_doc)), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *session = markdown_core_document_open(NULL, &error);
 
@@ -2072,9 +2072,7 @@ static void session_edit_errors(test_batch_runner *runner) {
 
 static void session_directive_label_parent(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(
-        (const uint8_t *)":video[watch me]{k=v}\n",
-        strlen(":video[watch me]{k=v}\n"),
+    markdown_core_document *document = markdown_core_document_new(mc_sv((const uint8_t *)":video[watch me]{k=v}\n", strlen(":video[watch me]{k=v}\n")),
         NULL,
         &error
     );
@@ -2860,7 +2858,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
             const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);
             const markdown_core_node *child = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL;
             const markdown_core_node *second = child ? markdown_core_node_get_next_sibling(child) : NULL;
-            markdown_core_string_view literal = {NULL, 0};
+            markdown_core_string literal = {NULL, 0};
             OK(runner,
                child && markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_TEXT &&
                    markdown_core_node_literal(child, &literal) && literal.length == 11 &&

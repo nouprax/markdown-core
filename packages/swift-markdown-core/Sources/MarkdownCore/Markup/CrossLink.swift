@@ -16,7 +16,7 @@ public struct CrossLink: Markup {
 extension CrossLink {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
         let (id, revision) = builder.id(of: node)
-        var reference = markdown_core_string_view()
+        var reference = markdown_core_string()
         precondition(markdown_core_node_cross_link_reference(node, &reference))
         self.init(id: id, revision: revision, reference: reference.requiredString)
     }

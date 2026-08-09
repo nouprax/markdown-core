@@ -235,7 +235,7 @@ static size_t traverse(const markdown_core_node *node) {
         return 0;
     }
 
-    markdown_core_string_view view;
+    markdown_core_string view;
     markdown_core_node_literal(node, &view);
     int32_t level;
     markdown_core_node_heading_level(node, &level);
@@ -266,7 +266,7 @@ static int parse_and_dump(const char *input, option_variant variant, uint8_t **d
 
     markdown_core_error *error = NULL;
     markdown_core_document *document =
-        markdown_core_document_new((const uint8_t *)input, strlen(input), &options, &error);
+        markdown_core_document_new(mc_sv((const uint8_t *)input, strlen(input)), &options, &error);
     if (!document || error) {
         markdown_core_error_free(error);
         return 1;
@@ -737,7 +737,7 @@ static int case_lifecycle(void) {
 
         // Failure paths must not disturb the registry or later parses.
         markdown_core_error *error = NULL;
-        if (markdown_core_document_new(NULL, 1, NULL, &error) != NULL ||
+        if (markdown_core_document_new(mc_sv(NULL, 1), NULL, &error) != NULL ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
             failed = 1;
         }
@@ -791,7 +791,7 @@ static THREAD_RETURN dump_small_stack_worker(void *user) {
     context->input[input_length - 1] = '\n';
     context->input[input_length] = '\0';
     markdown_core_parse_options_init(&options);
-    context->document = markdown_core_document_new((const uint8_t *)context->input, input_length, &options, &error);
+    context->document = markdown_core_document_new(mc_sv((const uint8_t *)context->input, input_length), &options, &error);
     if (context->document && !error) {
         uint8_t *dump = NULL;
         size_t dump_length = 0;

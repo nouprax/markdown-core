@@ -470,7 +470,7 @@ int sr_replay_commit(sr_replay *replay) {
         sr_fail(replay, "session dump failed");
         goto done;
     }
-    reference = markdown_core_document_new(replay->shadow.bytes, replay->shadow.length, replay->options, &error);
+    reference = markdown_core_document_new(mc_sv(replay->shadow.bytes, replay->shadow.length), replay->options, &error);
     if (!reference) {
         markdown_core_error_free(error);
         error = NULL;
@@ -625,7 +625,7 @@ done:
 
 bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdown_core_error **error) {
     memset(doc, 0, sizeof(*doc));
-    doc->document = markdown_core_document_new(NULL, 0, options, error);
+    doc->document = markdown_core_document_new(mc_sv(NULL, 0), options, error);
     return doc->document != NULL;
 }
 
@@ -656,13 +656,7 @@ bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_
 bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error) {
     markdown_core_commit commit;
     memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_commit(
-            &doc->document,
-            (const uint8_t *)doc->text,
-            doc->length,
-            &commit,
-            error
-        )) {
+    if (!markdown_core_document_commit(&doc->document, mc_sv(doc->text, doc->length), &commit, error)) {
         return false;
     }
     doc->document = commit.document;

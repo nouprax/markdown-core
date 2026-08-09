@@ -1,15 +1,16 @@
 #include <markdown_core.h>
 
 #include <type_traits>
+#include "commit_compat.h"
 
 static_assert(std::is_standard_layout<markdown_core_parse_options>::value, "parse options must cross the C++ boundary");
-static_assert(std::is_standard_layout<markdown_core_string_view>::value, "string views must cross the C++ boundary");
+static_assert(std::is_standard_layout<markdown_core_string>::value, "string views must cross the C++ boundary");
 
 int main() {
     markdown_core_parse_options options{};
     markdown_core_parse_options_init(&options);
     markdown_core_error *error = nullptr;
-    const auto *document = markdown_core_document_new(nullptr, 0, &options, &error);
+    const auto *document = markdown_core_document_new(mc_sv(nullptr, 0), &options, &error);
     if (!document || error) {
         return 1;
     }

@@ -7,8 +7,8 @@ struct DirectiveValues {
 
     init(from node: OpaquePointer) {
         var nativeMode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
-        var nativeName = markdown_core_string_view()
-        var nativeAttributes = markdown_core_string_view()
+        var nativeName = markdown_core_string()
+        var nativeAttributes = markdown_core_string()
         markdown_core_node_directive_properties(
             node,
             &nativeMode,

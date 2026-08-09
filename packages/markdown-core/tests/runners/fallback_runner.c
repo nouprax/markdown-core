@@ -1913,9 +1913,9 @@ static int fb_reference_destination_is(
 ) {
     markdown_core_reference_info info;
     const markdown_core_node *definition;
-    markdown_core_string_view label;
-    markdown_core_string_view destination;
-    markdown_core_string_view title;
+    markdown_core_string label;
+    markdown_core_string destination;
+    markdown_core_string title;
     size_t length = strlen(expected);
 
     if (!node || !markdown_core_document_reference_info(session, markdown_core_node_get_id(node), &info) ||

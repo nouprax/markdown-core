@@ -67,7 +67,7 @@ static bool print_document(markdown_core_node *document) {
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
-    markdown_core_string_view message;
+    markdown_core_string message;
 
     if (!markdown_core_ast_dump_root(document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);

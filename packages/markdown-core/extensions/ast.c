@@ -100,8 +100,8 @@ markdown_core_error_code markdown_core_error_get_code(const markdown_core_error 
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }
 
-markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error) {
-    markdown_core_string_view view = {NULL, 0};
+markdown_core_string markdown_core_error_get_message(const markdown_core_error *error) {
+    markdown_core_string view = {NULL, 0};
     if (error && error->message) {
         view.data = (const uint8_t *)error->message;
         view.length = strlen(error->message);
@@ -560,16 +560,16 @@ bool markdown_core_node_list_item_checked(const markdown_core_node *node, markdo
     return true;
 }
 
-static void view_chunk(markdown_core_string_view *view, const markdown_core_chunk *chunk) {
+static void view_chunk(markdown_core_string *view, const markdown_core_chunk *chunk) {
     view->data = chunk->data;
     view->length = chunk->len < 0 ? 0 : (size_t)chunk->len;
 }
 
 bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *info,
-    markdown_core_string_view *language,
-    markdown_core_string_view *literal,
+    markdown_core_string *info,
+    markdown_core_string *language,
+    markdown_core_string *literal,
     bool *fenced,
     bool *closed
 ) {
@@ -603,7 +603,7 @@ bool markdown_core_node_code_block_properties(
     return true;
 }
 
-bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal) {
+bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal) {
     if (!node || !literal) {
         return false;
     }
@@ -622,7 +622,7 @@ bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_st
 bool markdown_core_node_formula_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *literal
+    markdown_core_string *literal
 ) {
     const char *value;
     markdown_core_formula_mode native_mode;
@@ -730,8 +730,8 @@ bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comme
 bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *name,
-    markdown_core_string_view *attributes
+    markdown_core_string *name,
+    markdown_core_string *attributes
 ) {
     const char *value;
     if (!node || !mode || !name || !attributes ||
@@ -756,8 +756,8 @@ const markdown_core_node *markdown_core_node_directive_label(const markdown_core
 static bool link_properties(
     const markdown_core_node *node,
     uint16_t expected,
-    markdown_core_string_view *url,
-    markdown_core_string_view *title
+    markdown_core_string *url,
+    markdown_core_string *title
 ) {
     if (!node || node->type != expected || !url || !title) {
         return false;
@@ -781,9 +781,9 @@ static const char *reference_form_name(markdown_core_reference_form form) {
 
 bool markdown_core_node_reference_definition_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *label,
+    markdown_core_string *destination,
+    markdown_core_string *title
 ) {
     if (!node || node->type != MARKDOWN_CORE_NODE_REFERENCE_DEFINITION || !label || !destination || !title) {
         return false;
@@ -796,7 +796,7 @@ bool markdown_core_node_reference_definition_properties(
 
 bool markdown_core_node_reference_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
+    markdown_core_string *label,
     markdown_core_reference_form *form
 ) {
     if (!node || !label || !form ||
@@ -820,21 +820,21 @@ bool markdown_core_node_reference_properties(
 
 bool markdown_core_node_link_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *destination,
+    markdown_core_string *title
 ) {
     return link_properties(node, MARKDOWN_CORE_NODE_LINK, destination, title);
 }
 
 bool markdown_core_node_image_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *source,
-    markdown_core_string_view *title
+    markdown_core_string *source,
+    markdown_core_string *title
 ) {
     return link_properties(node, MARKDOWN_CORE_NODE_IMAGE, source, title);
 }
 
-bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id) {
+bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string *id) {
     if (!node || !id ||
         (node->type != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION && node->type != MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE)) {
         return false;
@@ -848,7 +848,7 @@ bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_cor
 static bool cross_reference(
     const markdown_core_node *node,
     markdown_core_node_type type,
-    markdown_core_string_view *reference
+    markdown_core_string *reference
 ) {
     const markdown_core_chunk *value;
     if (!node || !reference || node->type != type) {
@@ -862,11 +862,11 @@ static bool cross_reference(
     return true;
 }
 
-bool markdown_core_node_cross_link_reference(const markdown_core_node *node, markdown_core_string_view *reference) {
+bool markdown_core_node_cross_link_reference(const markdown_core_node *node, markdown_core_string *reference) {
     return cross_reference(node, MARKDOWN_CORE_NODE_CROSS_LINK, reference);
 }
 
-bool markdown_core_node_embed_reference(const markdown_core_node *node, markdown_core_string_view *reference) {
+bool markdown_core_node_embed_reference(const markdown_core_node *node, markdown_core_string *reference) {
     return cross_reference(node, MARKDOWN_CORE_NODE_EMBED, reference);
 }
 
@@ -921,7 +921,7 @@ static void buffer_i64(dump_buffer *buffer, int64_t value) {
     }
 }
 
-static void buffer_json_string(dump_buffer *buffer, markdown_core_string_view value) {
+static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) {
     static const char hex[] = "0123456789abcdef";
     size_t i;
     buffer_cstr(buffer, "\"");
@@ -962,7 +962,7 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string_view va
     buffer_cstr(buffer, "\"");
 }
 
-static void buffer_optional_string(dump_buffer *buffer, markdown_core_string_view value) {
+static void buffer_optional_string(dump_buffer *buffer, markdown_core_string value) {
     if (!value.data) {
         buffer_cstr(buffer, "null");
     } else {
@@ -988,7 +988,7 @@ static const char *mode_name(markdown_core_placement_mode mode) {
 }
 
 static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, markdown_core_node_kind kind) {
-    markdown_core_string_view a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
+    markdown_core_string a = {NULL, 0}, b = {NULL, 0}, c = {NULL, 0};
     markdown_core_optional_i64 start;
     markdown_core_optional_bool checked;
     markdown_core_list_flavor flavor;
@@ -1147,20 +1147,20 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 
 // Content equality; a NULL view and an empty view compare equal, matching
 // the dump output both sides of a delta are held to.
-static bool view_content_equal(markdown_core_string_view a, markdown_core_string_view b) {
+static bool view_content_equal(markdown_core_string a, markdown_core_string b) {
     return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
 }
 
 // Optional-string equality: the dump distinguishes an absent string (null)
 // from a present empty one, so presence must match before content.
-static bool view_optional_equal(markdown_core_string_view a, markdown_core_string_view b) {
+static bool view_optional_equal(markdown_core_string a, markdown_core_string b) {
     return (a.data == NULL) == (b.data == NULL) && view_content_equal(a, b);
 }
 
 bool markdown_core_ast_fields_equal(const markdown_core_node *a, const markdown_core_node *b) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
-    markdown_core_string_view a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
-    markdown_core_string_view b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
+    markdown_core_string a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
+    markdown_core_string b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
     // Callers pair nodes by raw type, so the facade kinds already match.
     switch (kind) {
     case MARKDOWN_CORE_KIND_HEADING: {

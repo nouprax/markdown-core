@@ -99,7 +99,7 @@ static void put_scope(bridge_buffer *buffer, markdown_core_scope scope) {
     put_bytes(buffer, bytes, sizeof(bytes));
 }
 
-static void put_string(bridge_buffer *buffer, markdown_core_string_view value, bool present) {
+static void put_string(bridge_buffer *buffer, markdown_core_string value, bool present) {
     if (!present) {
         put_i32(buffer, -1);
         return;
@@ -124,7 +124,7 @@ static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
     put_u8(buffer, 1);
     put_i32(buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
     if (error == NULL) {
-        markdown_core_string_view fallback = {(const uint8_t *)"markdown parsing failed", 23};
+        markdown_core_string fallback = {(const uint8_t *)"markdown parsing failed", 23};
         put_string(buffer, fallback, true);
     } else {
         put_string(buffer, markdown_core_error_get_message(error), true);
@@ -137,7 +137,7 @@ static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
 }
 
 static void put_argument_error(bridge_buffer *buffer, const char *message) {
-    markdown_core_string_view view = {(const uint8_t *)message, strlen(message)};
+    markdown_core_string view = {(const uint8_t *)message, strlen(message)};
     put_u8(buffer, 1);
     put_i32(buffer, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT);
     put_string(buffer, view, true);
@@ -183,9 +183,9 @@ static void put_child_ids(bridge_buffer *buffer, const markdown_core_node *node)
 
 static void write_record(bridge_buffer *buffer, const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    markdown_core_string_view first = {0};
-    markdown_core_string_view second = {0};
-    markdown_core_string_view third = {0};
+    markdown_core_string first = {0};
+    markdown_core_string second = {0};
+    markdown_core_string third = {0};
 
     put_u8(buffer, (uint8_t)kind);
     put_u64(buffer, markdown_core_node_get_id(node));
@@ -315,7 +315,7 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         put_child_ids(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
-        markdown_core_string_view third = {NULL, 0};
+        markdown_core_string third = {NULL, 0};
         markdown_core_node_reference_definition_properties(node, &first, &second, &third);
         put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);

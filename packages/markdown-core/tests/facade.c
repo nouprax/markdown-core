@@ -88,7 +88,7 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
 
     markdown_core_parse_options_init(&options);
     check(parse_option_mask(option_mask, &options), "manifest parse option mask is valid");
-    document = markdown_core_document_new(markdown, markdown_length, &options, &error);
+    document = markdown_core_document_new(mc_sv(markdown, markdown_length), &options, &error);
     check(document != NULL && error == NULL, "manifest-configured facade parse succeeds");
     if (!document) {
         goto done;
@@ -157,7 +157,7 @@ static void check_option_gate(option_gate gate, const char *source, const char *
         options.footnotes = false;
         break;
     }
-    document = markdown_core_document_new((const uint8_t *)source, strlen(source), &options, &error);
+    document = markdown_core_document_new(mc_sv((const uint8_t *)source, strlen(source)), &options, &error);
     check(document != NULL && error == NULL, "disabled-option parse succeeds");
     if (!document) {
         goto done;
@@ -185,7 +185,7 @@ static void check_html_comments_kept(void) {
     uint8_t *dump = NULL;
     size_t length = 0;
     markdown_core_parse_options_init(&options);
-    document = markdown_core_document_new((const uint8_t *)source, sizeof(source) - 1, &options, &error);
+    document = markdown_core_document_new(mc_sv((const uint8_t *)source, sizeof(source) - 1), &options, &error);
     check(document != NULL && error == NULL, "default-options comment parse succeeds");
     if (!document) {
         goto done;
@@ -216,7 +216,7 @@ static void check_html_comments_kept(void) {
         const markdown_core_node *padded;
         const markdown_core_node *unclosed;
         bool comment = false;
-        document = markdown_core_document_new((const uint8_t *)edges, sizeof(edges) - 1, &options, &error);
+        document = markdown_core_document_new(mc_sv((const uint8_t *)edges, sizeof(edges) - 1), &options, &error);
         check(document != NULL && error == NULL, "comment-edge parse succeeds");
         if (!document) {
             goto done;
@@ -533,7 +533,7 @@ static void check_api(void) {
     const markdown_core_node *heading;
     markdown_core_scope scope;
     int32_t level = 0;
-    markdown_core_string_view reference_value = {0};
+    markdown_core_string reference_value = {0};
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
@@ -544,7 +544,7 @@ static void check_api(void) {
         "parse option defaults are explicit and complete"
     );
 
-    document = markdown_core_document_new(source, sizeof(source) - 1, &options, &error);
+    document = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
         root = markdown_core_document_root(document);
@@ -564,7 +564,7 @@ static void check_api(void) {
     }
 
     document =
-        markdown_core_document_new(cross_reference_source, sizeof(cross_reference_source) - 1, &options, &error);
+        markdown_core_document_new(mc_sv(cross_reference_source, sizeof(cross_reference_source) - 1), &options, &error);
     check(document != NULL && error == NULL, "cross-reference parse succeeds");
     if (document) {
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
@@ -592,7 +592,7 @@ static void check_api(void) {
         markdown_core_document_free(document);
     }
 
-    document = markdown_core_document_new(NULL, 1, NULL, &error);
+    document = markdown_core_document_new(mc_sv(NULL, 1), NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
     check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 diagnostic view");
