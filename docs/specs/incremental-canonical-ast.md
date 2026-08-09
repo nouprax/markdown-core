@@ -332,10 +332,11 @@ and edits its own structure. Cost: 11.2; shapes: section 10.
 only needs to know *where* the document changed: a side-by-side editor
 highlighting the preview region a keystroke affected, a telemetry probe, a
 test assertion. It reads the entries, resolves `Document.scope` against the
-document it was handed, and takes the replaced byte spans from `Delta.edits`
-(9.2). It is not handed a predecessor to resolve against: a session publishes
-one document, and a consumer that wants to compare against what it rendered
-last keeps what it rendered last (4.2).
+document it was handed. It is not handed a predecessor to resolve against, and
+it is not handed a byte-level edit script (9.2): a consumer that wants to
+compare against what it rendered last keeps what it rendered last (4.2), and a
+consumer that wants the changed byte span holds both texts and can find it
+(4.2).
 
 B is why `Delta` is public, and it is the ordinary path below the C API, where
 there is no framework to diff on the consumer's behalf. A is why `Delta` is
@@ -507,11 +508,10 @@ forbids a design is only worth having if the alternative is concrete.
 - The composition layer walks the host AST and, at each `Embed` occurrence,
   splices a subtree built from the target's current `Document`, recording
   `(host MarkupID, target DocumentVersion)`.
-- The sub-editor submits its `SourceEdit`s to the **target's** session, in the
-  target's own byte coordinates, and resolves its ranges against the target's
-  own document. There is no shared coordinate space to map through, which is
-  why no proxy extent, forwarding source identity, or host-space projection is
-  needed anywhere.
+- The sub-editor edits the **target's** document with the target's own text and
+  resolves its ranges against the target's own document. There is no shared
+  coordinate space to map through, which is why no proxy extent, forwarding
+  source identity, or host-space projection is needed anywhere.
 - Committing the target changes the target's document only. **The host's bytes
   did not change, so the host commits nothing** and its AST, identities, and
   revisions are untouched. The composition layer reflows the region it built
@@ -1359,23 +1359,20 @@ measurement. What survives is the list above and the second must-not: what a
 consumer OBSERVES.
 
 A consumer that has chosen to materialize absolute coordinates into its own
-state remaps them from `Delta.edits` (section 9.2) — the normalized form
-of the edits it submitted itself. That cost belongs to the consumer that chose
-to denormalize, is proportional to what it chose to hold, and is not
+state re-resolves them, or diffs the two texts it holds itself (9.2). That cost
+belongs to the consumer that chose to denormalize, is proportional to what it chose to hold, and is not
 observable by any consumer that resolves coordinates on demand. There is no
 coordinate event family, remap contract, remap side channel, or coordinate
 route.
 
 ## 8. Ordinary edits and commits
 
-### 8.1 Source edit primitive
+### 8.1 Spans
+
+`Span` is a half-open run of stored bytes. It is a coordinate type; there is no
+edit primitive, because an edit hands over whole text.
 
 ```text
-SourceEdit {
-    Span   span         // the half-open run to replace
-    [byte] replacement  // the bytes that take its place
-}
-
 Span {
     Offset start
     Offset end
@@ -1386,10 +1383,10 @@ Document {
 }
 ```
 
-There is no session and no `edit`. A document is created from text and options,
-and `commit` hands it new text and SUPERSEDES it (4.2, and
-`sessions-and-deltas.md`). `SourceEdit` survives as an OUTPUT type only: it is
-what `Delta.edits` reports, not what a caller submits.
+There is no session and no byte-range edit. A document is created from text and
+options, and `edit` hands it new text and SUPERSEDES it (4.2, and
+`sessions-and-deltas.md`). `Span` stays as a coordinate type — what a resolved
+position is expressed in — and nothing submits one.
 
 `span` is a half-open run of *stored bytes*. It is not a `Scope`: a scope is a revision-relative query result resolved
 against a published document, and an edit must name storage in the pending
@@ -1456,7 +1453,6 @@ Delta {
     DocumentVersion before   // which two documents
     DocumentVersion after
     [Diff]          diffs    // how their nodes differ  (9.1)
-    [SourceEdit]    edits    // how their bytes differ  (9.2)
 }
 
 Diff {
@@ -1567,45 +1563,27 @@ bounded by `O(changed * depth)` and independent of document width and size.
 There is no padding, sentinel, or whole-index entry: a projection either
 differs or it does not.
 
-### 9.2 `edits`: the byte-level difference
+### 9.2 There is no byte-level difference in a `Delta`
 
-`edits` is a normalized, non-overlapping, ascending edit script from `before`'s
-stored bytes to `after`'s stored bytes, expressed in `before`'s coordinate
-space. **The engine determines it.** A commit is handed whole text, so there is
-no caller script to normalize; what `edits` reports is the difference the
-engine found between the two byte strings.
+A `Delta` used to carry `edits`, a normalized edit script from `before`'s
+stored bytes to `after`'s. **It is removed, and `SourceEdit` with it.**
 
-An earlier revision said "the session uses the caller's own edits, normalized",
-and that was never true of any implementation here: edits were coalesced into
-one dirty range and a net length before the commit ran, so the script was gone
-by the time a delta could carry it. It is a pure function of the two byte
-strings now, and a consumer may treat it as *the* difference rather than *an*
-edit script.
+The clause that justified it named three consumers that "do not already know"
+the change — a host that handed over a whole replacement buffer, a component
+downstream of the editor, and a side-by-side view highlighting the source pane.
+Those consumers are real. What is no longer real is the reason the engine was
+the right place to answer them: **it was free.** A session accumulated the
+caller's own submitted ranges, so reporting them back cost nothing.
 
-It is here for the consumers that do not already know it. An editor that
-submitted the edit does; these do not:
+An edit hands over whole text (8.1). Nobody submits a range, so the engine has
+nothing to report — it would have to REDISCOVER the change by scanning the two
+byte strings, which is exactly what a consumer that wants it would do, at
+exactly the same cost, from two strings it already holds. Putting that scan in
+the engine bills every caller for a service only some of them use, and it was
+never implemented: `SourceEdit` appeared in this contract and in no line of
+code.
 
-- a host that called `commit(source)` (8.1) handed over a whole replacement
-  buffer and never computed a range — the session did, and `edits` is the only
-  place that result exists;
-- a component downstream of the editor — a preview pane, an outline, a
-  collaborating peer, an indexer — did not submit the edit at all; and
-- a side-by-side editor showing *where* the document changed needs both
-  halves: `diffs` locates it in the preview pane, `edits` locates it in the
-  source pane.
-
-For a consumer that has materialized absolute coordinates, replaying `edits`
-in one ascending prefix-sum walk over its held entries costs
-`O(|edits| + held)` against `O(held * log n)` for re-resolving each through
-`Document.scope`. That is a constant-factor win, not an enabling one — the
-coordinates are always recoverable from the document — and it is worth having
-only because the session normalized this script before parsing, so producing
-it costs nothing.
-
-`edits` carries the replacing bytes, not the replaced ones, so it is not an
-inverse: a consumer that needs the replaced bytes kept them, from the document
-it was handed before this commit. It carries no node identity and describes no
-consumer state.
+A `Delta` reports what changed in the AST. Bytes are the caller's.
 
 ### 9.3 Why these six parts and no more
 
@@ -1777,8 +1755,8 @@ block plus a
 suffix, because nothing about it changed.
 
 **Materialized absolute coordinates.** The consumer that stores absolute
-offsets for `K` nodes remaps them from `edits` in `O(edits + K)` and
-reprojects only the entries that also appear in `diffs`. The consumer that
+offsets for `K` nodes re-resolves them, and reprojects only the entries that
+also appear in `diffs`. The consumer that
 instead calls `Document.scope` on demand pays nothing for a shift. Which of
 the two happens is a consumer decision, and the parser is not told which.
 
@@ -2307,7 +2285,6 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Scope` | a resolved source region: `(start: Position, end: Position)` | canonical-ast.md |
 | `Session` | the single mutable owner of one document's pending source | 8.1 |
 | `Source` | a document's committed bytes and how they are read | 7.1 |
-| `SourceEdit` | one byte-level edit: a span to replace, and its replacement | 8.1 |
 | `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
 | `UnexpectedToken` | a token the grammar did not admit at that position | 0 |
