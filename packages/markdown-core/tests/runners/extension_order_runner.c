@@ -67,7 +67,6 @@ static int load_extensions(void) {
 static int dump_permutation(const size_t order[DELIMITER_EXTENSION_COUNT], uint8_t **dump, size_t *length) {
     markdown_core_parser *parser;
     markdown_core_node *root;
-    markdown_core_document document;
     markdown_core_error *error = NULL;
     size_t i;
     int ok;
@@ -93,8 +92,7 @@ static int dump_permutation(const size_t order[DELIMITER_EXTENSION_COUNT], uint8
         return 0;
     }
 
-    document.root = root;
-    ok = markdown_core_document_dump(&document, dump, length, &error);
+    ok = markdown_core_ast_dump_root(root, dump, length, &error);
     markdown_core_error_free(error);
     markdown_core_node_free(root);
     if (!ok) {

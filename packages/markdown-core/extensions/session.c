@@ -379,7 +379,7 @@ static bool commit_full(
         changes->after = new_rev;
     }
 
-    if (!markdown_core_document_diff(session, session->view.root, root, new_rev, changes)) {
+    if (!markdown_core_document_diff(session, session->root, root, new_rev, changes)) {
         release_definition_tables(session->mem, staged);
         markdown_core_node_free(root);
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
@@ -396,7 +396,7 @@ static bool commit_full(
     // the affected revisions without any dump-visible change.
     markdown_core_footnote_index footnotes;
     memset(&footnotes, 0, sizeof(footnotes));
-    if (!session->one_shot && session->options.footnotes &&
+    if (session->options.footnotes &&
         (!markdown_core_footnote_index_build(session, root, &footnotes) ||
          !markdown_core_footnote_index_diff(session->mem, &session->footnotes, &footnotes, new_rev, changes, 0))) {
         markdown_core_footnote_index_release(session->mem, &footnotes);
@@ -413,8 +413,8 @@ static bool commit_full(
     // The lookup table is maintained here, inside the mutating call, so
     // markdown_core_session_node_by_id stays a pure concurrent-safe read.
     markdown_core_id_table ids = {NULL, 0, 0};
-    bool indexed = session->one_shot;
-    if (!indexed) {
+    bool indexed = false;
+    {
         // Clean children are indexed against the reference table alone: only a
         // vanished definition paragraph leaves a restart anchor the tree no
         // longer holds, and a footnote definition is a block that never
@@ -434,15 +434,15 @@ static bool commit_full(
         return false;
     }
 
-    if (session->view.root) {
-        markdown_core_node_free(session->view.root);
+    if (session->root) {
+        markdown_core_node_free(session->root);
     }
     id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
     release_definition_tables(session->mem, session->definitions);
     memcpy(session->definitions, staged, sizeof(staged));
     session->definitions_stale = false;
-    session->view.root = root;
+    session->root = root;
     session->ids = ids;
     session->footnotes = footnotes;
     session->total_lines = total_lines;
@@ -478,7 +478,7 @@ static bool commit_internal(
 
     // A commit with no pending edits advances the revision with an empty
     // delta; nothing else can have changed.
-    if (!initial && session->view.root && !session->pending.dirty) {
+    if (!initial && session->root && !session->pending.dirty) {
         session->revision++;
         if (changes_out) {
             *changes_out = changes;
@@ -643,8 +643,8 @@ void markdown_core_session_free(markdown_core_session *session) {
         free(session);
         return;
     }
-    if (session->view.root) {
-        markdown_core_node_free(session->view.root);
+    if (session->root) {
+        markdown_core_node_free(session->root);
     }
     markdown_core_source_release(session->source);
     id_table_release(session->mem, &session->ids);
@@ -753,7 +753,7 @@ bool markdown_core_session_commit(
 }
 
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {
-    return session ? &session->view : NULL;
+    return session;
 }
 
 uint64_t markdown_core_session_revision(const markdown_core_session *session) {

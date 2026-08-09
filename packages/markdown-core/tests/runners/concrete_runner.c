@@ -264,7 +264,7 @@ static int case_region_partition(void) {
         fprintf(stderr, "region_partition: fixture failed to parse\n");
         return -1;
     }
-    walk_init(&walk, document->root);
+    walk_init(&walk, markdown_core_document_root(document));
     while ((node = walk_next(&walk)) != NULL) {
         markdown_core_region_class region_class = markdown_core_region_classify(node);
         bool has_owned_inline_child = false; /* an inline child that is not itself a region */
@@ -405,7 +405,7 @@ static int case_region_of_walk(void) {
     if (!document) {
         return -1;
     }
-    walk_init(&walk, document->root);
+    walk_init(&walk, markdown_core_document_root(document));
     while ((node = walk_next(&walk)) != NULL) {
         markdown_core_region_class region_class = markdown_core_region_classify(node);
         const markdown_core_node *region = markdown_core_region_of(node);
@@ -504,7 +504,7 @@ static int case_region_of_walk(void) {
             return -1;
         }
         {
-            const markdown_core_node *cursor = deep->root;
+            const markdown_core_node *cursor = markdown_core_document_root(deep);
             const markdown_core_node *paragraph = NULL;
             while (cursor->first_child) {
                 cursor = cursor->first_child;
@@ -1557,8 +1557,8 @@ static int case_capture_shape(void) {
             fprintf(stderr, "capture_shape: %s failed to parse\n", source.name);
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
-        if ((tree_record_total(document->root) == 0) != source.recordless) {
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        if ((tree_record_total(markdown_core_document_root(document)) == 0) != source.recordless) {
             fprintf(
                 stderr,
                 "capture_shape: %s %s\n",
@@ -1580,7 +1580,7 @@ static int case_capture_shape(void) {
             fprintf(stderr, "capture_shape: kind fixture failed to parse\n");
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
         markdown_core_document_free(document);
     }
 
@@ -1598,8 +1598,8 @@ static int case_capture_shape(void) {
         if (!document) {
             return -1;
         }
-        quote_one = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0);
-        quote_two = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1);
+        quote_one = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0);
+        quote_two = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1);
         if (!quote_one || record_count_of(quote_one) != 7) {
             fprintf(
                 stderr,
@@ -1640,19 +1640,19 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: deep_quotes depth 0",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0),
             QUOTE_DEPTH_0,
             2
         );
         failed |= expect_records(
             "capture_shape: deep_quotes depth 1",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1),
             QUOTE_DEPTH_1,
             2
         );
         failed |= expect_records(
             "capture_shape: deep_quotes depth 2",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 2),
             QUOTE_DEPTH_2,
             1
         );
@@ -1695,7 +1695,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: atx_edges heading %zu", h);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, h),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, h),
                 expected[h],
                 expected_counts[h]
             );
@@ -1732,25 +1732,25 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: backtick fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0),
             FENCE_BACKTICK,
             3
         );
         failed |= expect_records(
             "capture_shape: tilde fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 1),
             FENCE_TILDE,
             2
         );
         failed |= expect_records(
             "capture_shape: offset fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 2),
             FENCE_OFFSET,
             3
         );
         failed |= expect_records(
             "capture_shape: unclosed fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 3),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 3),
             FENCE_UNCLOSED,
             2
         );
@@ -1768,13 +1768,13 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: setext full underline",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 0),
             SETEXT_FULL,
             1
         );
         failed |= expect_records(
             "capture_shape: setext single-byte underline",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 1),
             SETEXT_ONE,
             1
         );
@@ -1798,13 +1798,13 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: heading beside a NUL replacement",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 0),
             NUL_HEADING,
             2
         );
         failed |= expect_records(
             "capture_shape: footnote label holding a NUL replacement",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, 0),
             NUL_FOOTNOTE,
             1
         );
@@ -1833,8 +1833,8 @@ static int case_capture_shape(void) {
         if (!document) {
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
-        code = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        code = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
         if (!code || record_count_of(code) != 2) {
             fprintf(stderr, "capture_shape: clamped fence lost a record\n");
             failed = 1;
@@ -1875,43 +1875,43 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: table delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             TABLE_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: table header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             HEADER_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: table data-row pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             ROW_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: table pipeless-edge row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 2),
             BARE_PIPE,
             1
         );
         failed |= expect_records(
             "capture_shape: header cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 1),
             HEADER_ESCAPE,
             1
         );
         failed |= expect_records(
             "capture_shape: plain header cell",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 0),
             NULL,
             0
         );
         failed |= expect_records(
             "capture_shape: data cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 5),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 5),
             DATA_ESCAPE,
             1
         );
@@ -1947,25 +1947,25 @@ static int case_capture_shape(void) {
         if (!document) {
             return -1;
         }
-        table = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0);
+        table = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0);
         failed |= expect_records("capture_shape: lookback delimiter row", table, LOOKBACK_DELIM, 1);
         failed |= expect_records(
             "capture_shape: lookback header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LOOKBACK_HEADER,
             3
         );
         failed |= expect_records(
             "capture_shape: lookback data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             LOOKBACK_DATA,
             2
         );
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: split-off lead paragraph", lead, NULL, 0);
         failed |= expect_inline_records("capture_shape: split-off lead escape", lead, LOOKBACK_LEAD_ESCAPE, 1);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
             int lead_end = lead ? lead_start + lead->end_line -
                                       lead->start_line
@@ -2007,19 +2007,19 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: indented delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             INDENT_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: indented header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             INDENT_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: indented data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             INDENT_PIPES,
             3
         );
@@ -2059,7 +2059,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: tasklist item %zu", t);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_LIST_ITEM, t),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_LIST_ITEM, t),
                 expected[t],
                 expected_counts[t]
             );
@@ -2111,7 +2111,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: directive block %zu", d);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, d),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, d),
                 expected[d],
                 expected_counts[d]
             );
@@ -2139,19 +2139,19 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: dollar formula fences",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0),
             FORMULA_CLOSED,
             2
         );
         failed |= expect_records(
             "capture_shape: latex formula fences",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
             FORMULA_LATEX,
             2
         );
         failed |= expect_records(
             "capture_shape: unclosed formula fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
             FORMULA_UNCLOSED,
             1
         );
@@ -2177,13 +2177,13 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: lazy-header delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             LAZY_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: lazy-header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZY_HEADER,
             2
         );
@@ -2206,19 +2206,19 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: crlf delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             CRLF_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: crlf header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             CRLF_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: crlf data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             CRLF_PIPES,
             3
         );
@@ -2265,7 +2265,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: reference definition %zu", d);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
                 expected[d],
                 expected_counts[d]
             );
@@ -2278,7 +2278,7 @@ static int case_capture_shape(void) {
          * difference; micromark agrees with this reading. */
         {
             const markdown_core_node *rewound =
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
             if (!rewound || rewound->as.definition.title.len != 0) {
                 fprintf(stderr, "capture_shape: the rewound title leaked into the definition's scalar\n");
                 failed = 1;
@@ -2306,7 +2306,7 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: mid-tab lazy title continuation",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
             RD_LAZY,
             4
         );
@@ -2333,26 +2333,26 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             LAZYTAB_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZYTAB_PIPES,
             2
         );
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 1),
             LAZYTAB_ESCAPE,
             1
         );
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: mid-tab split-off lead paragraph", lead, NULL, 0);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int quote_resolved = lead && lead->parent && lead->parent->parent
                                      ? resolved_start_line(lead->parent->parent, root_resolved)
                                      : root_resolved;
@@ -2383,9 +2383,9 @@ static int case_capture_shape(void) {
         if (!document) {
             return -1;
         }
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int quote_resolved =
                 lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
             int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;

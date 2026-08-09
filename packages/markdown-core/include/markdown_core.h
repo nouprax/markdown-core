@@ -81,7 +81,9 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
-typedef struct markdown_core_session markdown_core_session;
+/* One owner. `markdown_core_session` is the same struct under its old name
+ * while the public surface moves to the document model. */
+typedef struct markdown_core_document markdown_core_session;
 typedef struct markdown_core_delta markdown_core_delta;
 
 /** Session-assigned node identity: unique within a session, never reused,

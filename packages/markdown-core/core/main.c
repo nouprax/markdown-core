@@ -64,13 +64,12 @@ static bool attach_extension(markdown_core_parser *parser, const char *name) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    markdown_core_document facade_document = {document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
     markdown_core_string_view message;
 
-    if (!markdown_core_document_dump(&facade_document, &dump, &length, &error)) {
+    if (!markdown_core_ast_dump_root(document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
         fprintf(
             stderr,

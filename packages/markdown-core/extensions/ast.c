@@ -93,40 +93,30 @@ markdown_core_document *markdown_core_document_parse(
         set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "source must not be null when length is nonzero");
         return NULL;
     }
-    // Unpooled: the detached tree must outlive the session, and Document.parse
-    // keeps its v1 memory profile (no arena rides along with the document).
+    // THE DOCUMENT IS THE OWNER, so this returns it rather than detaching a
+    // root into a second, emptier handle. It used to do that, and set
+    // `one_shot` to skip the footnote index and the id table on the ground
+    // that a document which never commits again does not need them — which was
+    // true of a handle that could not answer a query. A self-contained
+    // document must answer all of them (4.1), so the skip is gone with the
+    // detach.
     session = markdown_core_session_open_with_mem(options, markdown_core_mem_default(), false, error);
     if (!session) {
         return NULL;
     }
-    // A one-shot parse never commits again, so session indexes and per-unit
-    // lookup records would be pure overhead.
-    session->one_shot = true;
-    session->record_lookups = false;
     if (length && (!markdown_core_session_edit(session, 0, 0, source, length, error) ||
                    !markdown_core_session_commit(session, NULL, error))) {
         markdown_core_session_free(session);
         return NULL;
     }
-    document = (markdown_core_document *)calloc(1, sizeof(*document));
-    if (!document) {
-        markdown_core_session_free(session);
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-        return NULL;
-    }
-    // Detach the committed tree; nodes keep their session-assigned ids.
-    document->root = session->view.root;
-    session->view.root = NULL;
-    markdown_core_session_free(session);
+    document = session;
     return document;
 }
 
 void markdown_core_document_free(markdown_core_document *document) {
-    if (!document) {
-        return;
-    }
-    markdown_core_node_free(document->root);
-    free(document);
+    // One owner, one teardown. This used to free a detached root and a small
+    // wrapper; the wrapper is gone.
+    markdown_core_session_free(document);
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
@@ -1381,15 +1371,24 @@ bool markdown_core_document_dump(
     size_t *length,
     markdown_core_error **error
 ) {
+    return markdown_core_ast_dump_root(document ? document->root : NULL, output, length, error);
+}
+
+bool markdown_core_ast_dump_root(
+    const markdown_core_node *document_root,
+    uint8_t **output,
+    size_t *length,
+    markdown_core_error **error
+) {
     dump_buffer buffer = {0};
     clear_error(error);
-    if (!document || !document->root || !output || !length) {
+    if (!document_root || !output || !length) {
         set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document, output, and length must not be null");
         return false;
     }
     *output = NULL;
     *length = 0;
-    dump_tree(&buffer, document->root);
+    dump_tree(&buffer, document_root);
     if (buffer.failed) {
         free(buffer.data);
         set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not produce canonical AST dump");

@@ -1303,7 +1303,7 @@ static void fb_tree_snapshot_release(fb_tree_snapshot *snapshot) {
 }
 
 static int fb_tree_snapshot_capture(const markdown_core_session *session, fb_tree_snapshot *snapshot) {
-    const markdown_core_node *root = session->view.root;
+    const markdown_core_node *root = session->root;
     const markdown_core_node *node = root;
     size_t count = 0;
     size_t ordinal = 0;

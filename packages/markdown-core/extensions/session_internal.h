@@ -288,7 +288,7 @@ typedef struct {
     ptrdiff_t delta;
 } markdown_core_edit_summary;
 
-struct markdown_core_session {
+struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
     // The session's bytes: one growable buffer, mutable and singly owned, and
@@ -298,7 +298,7 @@ struct markdown_core_session {
     // 4.2's removed clause. A session hands out one document, reused in place,
     // so nothing can hold a predecessor to read.
     markdown_core_source *source;
-    markdown_core_document view; // view.root is the committed tree, owned
+    markdown_core_node *root; // the committed tree, owned
     uint64_t next_id;            // monotonic, starts at 1, never reused
     uint64_t lineage;
     uint64_t revision;
@@ -314,9 +314,6 @@ struct markdown_core_session {
     // labels inside each table are raw normalized bytes. Maintained by both
     // commit paths; skipped entirely for the one-shot convenience parse.
     markdown_core_lookup_table lookups[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
-    // The detached one-shot document keeps node ids but never commits or
-    // answers session-only queries, so its commit skips every session index.
-    bool one_shot;
     bool record_lookups;
     // The incremental pipeline reconciled definitions in place and then could
     // not finish: a table no longer matches the committed tree, so the next
