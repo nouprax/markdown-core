@@ -593,7 +593,7 @@ static int case_span_validation(void) {
 
     /* The empty source is the same hole reached without deleting anything, and
      * it is the state every session opens in — so this is one public
-     * markdown_core_document_splice away, with no edit history in front of it. */
+     * `markdown_core_document_edit` away, with no history in front of it. */
     {
         markdown_core_source *empty = markdown_core_source_new(&counting.mem, NULL, 0, &stats, &status);
         if (!empty) {
