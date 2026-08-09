@@ -119,7 +119,7 @@ endfunction()
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(equivalence_runner runners/equivalence_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
-markdown_core_add_runner(complexity_runner runners/complexity_runner.c)
+markdown_core_add_runner(performance_runner runners/performance_runner.c)
 
 # Compile the delimiter engine a second time in a standalone test executable.
 # Its compile-time diagnostics never enter a production library or hot path.
@@ -542,7 +542,7 @@ foreach(case IN LISTS MARKDOWN_CORE_DELIMITER_ENGINE_CASES)
     markdown_core_add_test(pathological_delimiter_engine_${case} pathological 30 delimiter_engine_runner --case ${case})
 endforeach()
 
-set(MARKDOWN_CORE_COMPLEXITY_CASES
+set(MARKDOWN_CORE_PERFORMANCE_CASES
     valid_long_quoted_value
     valid_consecutive_backslashes
     unclosed_long_quoted_value
@@ -558,21 +558,13 @@ set(MARKDOWN_CORE_COMPLEXITY_CASES
     balanced_nested_cross_links
     balanced_nested_dollar_formulas
     balanced_nested_backslash_formulas
-    session_stream_flat
-    session_edit_storm
-    session_ref_retarget
-    session_footnote_shift
-    session_footnote_renumber
-    session_head_defs
-    session_footnote_defs
-    session_quote_suffix
-    session_def_spread
-    session_scope_materialization
-    session_delta_ordering)
-foreach(case IN LISTS MARKDOWN_CORE_COMPLEXITY_CASES)
-    markdown_core_add_test(pathological_complexity_${case} "pathological;complexity" 120 complexity_runner --case
+    parse_throughput
+    edit_append
+    edit_middle)
+foreach(case IN LISTS MARKDOWN_CORE_PERFORMANCE_CASES)
+    markdown_core_add_test(performance_${case} "pathological;performance" 120 performance_runner --case
                            ${case})
-    set_tests_properties(pathological_complexity_${case} PROPERTIES RUN_SERIAL TRUE)
+    set_tests_properties(performance_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.

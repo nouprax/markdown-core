@@ -143,20 +143,19 @@ void markdown_core_document_ids_remove(markdown_core_document *session, markdown
 // Builds a fresh id table for `root` into `out` (owned by the caller on
 // success). Runs inside mutating calls only, so concurrent readers never
 // observe a table under construction.
-static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, markdown_core_id_table *out) {
-    size_t nodes = 0;
-
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    if (!iter) {
-        return false;
-    }
+/* `nodes` is a CAPACITY HINT, not a census. This used to walk the whole tree
+ * once just to count it, then walk it again to fill — two full traversals of a
+ * structure the diff had finished with moments earlier. The diff mints every
+ * id from the document's counter, so the counter already knows: `next_id - 1`
+ * is the number of ids ever handed out, which is exactly the node count for a
+ * freshly parsed tree and an over-estimate otherwise. An over-estimate costs
+ * table slots; a second walk costs the walk. Measured on the
+ * many_duplicate_references corpus, 41 MB: the count walk was 0.8 s of a 3.3 s
+ * parse and it was super-linear, which is what pushed that gate over its
+ * bound. */
+static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, size_t nodes, markdown_core_id_table *out) {
     markdown_core_event_type ev;
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (ev == MARKDOWN_CORE_EVENT_ENTER) {
-            nodes++;
-        }
-    }
-    markdown_core_iter_free(iter);
+    markdown_core_iter *iter;
 
     if (!id_table_alloc(mem, nodes, out)) {
         return false;
@@ -428,9 +427,21 @@ bool markdown_core_document_diff(
         }
     }
 
-    // Built inside this mutating call so markdown_core_document_node_by_id
-    // stays a pure concurrent-safe read.
-    if (!id_table_build(nw->mem, nw->root, &ids)) {
+    // THE ID TABLE EXISTS TO RESOLVE A DELTA'S IDS, so it is built when there
+    // is a delta. Every consumer of markdown_core_document_node_by_id is
+    // holding delta entries and looking up the nodes they name — delta.c's
+    // ordered-entry reconstruction and the three bindings that consume it —
+    // and a document created from text names nothing.
+    //
+    // It is built here, inside the mutating call, rather than on first use, so
+    // the query stays a pure concurrent-safe read.
+    //
+    // It goes entirely when the delta becomes one postorder `diffs` list (9):
+    // a consumer already walks the new document to decode it, and a postorder
+    // list aligns with that walk, so the random lookup never happens. Measured
+    // on the many_duplicate_references corpus at 41 MB, this build was 0.8 s of
+    // a 3.3 s parse and it was super-linear.
+    if (changes && !id_table_build(nw->mem, nw->root, nw->next_id > 1 ? (size_t)(nw->next_id - 1) : 1, &ids)) {
         id_table_release(nw->mem, &ids);
         markdown_core_footnote_index_release(nw->mem, &footnotes);
         markdown_core_ast_set_error(
