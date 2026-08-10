@@ -1893,6 +1893,130 @@ cleanup:
     markdown_core_error_free(error);
 }
 
+/* Every node of a finished tree carries a current `subtree_hash` -- not merely
+ * a nonzero one, but the value a fresh bottom-up computation produces.
+ *
+ * Stated this way rather than by recomputing the hash in the test, because the
+ * property that matters is not what the function returns; it is that the parse
+ * left NO node unstamped and no node stale. Re-stamping the finished tree is
+ * idempotent exactly when that holds: a node the parse skipped moves off 0
+ * here, and a node stamped before a later pass reshaped it moves to its real
+ * value -- and either way the change propagates into every ancestor, so one
+ * missed node anywhere fails this. The document is deliberately built from the
+ * constructs that reshape the tree after the nodes are created: emphasis
+ * (delimiter re-parenting), adjacent text runs (consolidation), an email
+ * autolink (text split into text/link/text), and code and entity spans. */
+static void subtree_hash_completeness(test_batch_runner *runner) {
+    static const char md[] = "para *one* two\n"
+                             "\n"
+                             "- item with a\\*escape and &amp; entity\n"
+                             "- mail me at nobody@example.com now\n"
+                             "\n"
+                             "> quoted `code` and **strong**\n"
+                             "\n"
+                             "```\nfenced\n```\n";
+    markdown_core_node *doc = markdown_core_node_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
+    enum { CAP = 512 };
+    uint64_t before[CAP];
+    markdown_core_node *nodes[CAP];
+    size_t count = 0;
+    size_t i;
+    int stale = 0;
+    markdown_core_iter *iter;
+    markdown_core_event_type ev;
+
+    OK(runner, doc != NULL, "hash-completeness document parses");
+    if (!doc) {
+        return;
+    }
+
+    iter = markdown_core_iter_new(doc);
+    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (ev == MARKDOWN_CORE_EVENT_EXIT && count < CAP) {
+            nodes[count] = markdown_core_iter_get_node(iter);
+            before[count] = nodes[count]->subtree_hash;
+            count++;
+        }
+    }
+    markdown_core_iter_free(iter);
+    OK(runner, count > 20 && count < CAP, "the document is big enough to be worth checking, and fits");
+
+    markdown_core_node_stamp_tree(doc);
+    for (i = 0; i < count; i++) {
+        if (nodes[i]->subtree_hash != before[i]) {
+            stale = 1;
+        }
+    }
+    OK(runner, !stale, "re-stamping a finished tree changes nothing: every node was stamped, and none stale");
+
+    markdown_core_node_free(doc);
+}
+
+/* Inserting a paragraph at the head of a run of same-shaped paragraphs must
+ * leave every existing paragraph's id on its own content. This is the case
+ * `subtree_hash` exists for (extensions/diff.c): the prefix sweep pairs
+ * children while their hashes agree, so a hash that cannot tell "alpha" from
+ * "bravo" lets the sweep eat the whole run and re-point every id onto the next
+ * paragraph's text. Every paragraph here has exactly one Text child, so child
+ * COUNT cannot distinguish them -- only their bytes can. */
+static void session_head_insertion_id_stability(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    mc_text mctext = {NULL, 0, 0};
+    static const char body[] = "alpha\n\nbravo\n\ncharlie\n";
+    static const char head[] = "zulu\n\n";
+    markdown_core_node_id alpha_id = 0, bravo_id = 0, charlie_id = 0;
+
+    OK(runner, session != NULL, "head-insertion session opens");
+    if (!session) {
+        markdown_core_error_free(error);
+        return;
+    }
+
+    OK(runner,
+       mc_text_splice(&mctext, 0, 0, (const uint8_t *)body, sizeof(body) - 1) &&
+           mc_edit(&session, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+       "paragraph-run baseline commits");
+    {
+        const markdown_core_node *p = markdown_core_node_get_first_child(markdown_core_document_root(session));
+        alpha_id = p ? markdown_core_node_get_id(p) : 0;
+        p = p ? markdown_core_node_get_next_sibling(p) : NULL;
+        bravo_id = p ? markdown_core_node_get_id(p) : 0;
+        p = p ? markdown_core_node_get_next_sibling(p) : NULL;
+        charlie_id = p ? markdown_core_node_get_id(p) : 0;
+        OK(runner, alpha_id && bravo_id && charlie_id, "the three paragraphs carry ids");
+    }
+
+    OK(runner,
+       mc_text_splice(&mctext, 0, 0, (const uint8_t *)head, sizeof(head) - 1) &&
+           mc_edit(&session, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+       "head insertion before the run commits");
+    {
+        const markdown_core_node *root = markdown_core_document_root(session);
+        /* Each surviving id must still name the paragraph holding its own
+         * text. Reading the literal rather than the position is the point:
+         * a re-pointed id keeps a plausible position and loses its content. */
+        struct {
+            markdown_core_node_id id;
+            const char *literal;
+        } expected[] = {{alpha_id, "alpha"}, {bravo_id, "bravo"}, {charlie_id, "charlie"}};
+        size_t i;
+        for (i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
+            const markdown_core_node *p = node_by_id(root, expected[i].id);
+            const markdown_core_node *text = p ? markdown_core_node_get_first_child(p) : NULL;
+            /* get_literal takes a mutable node; the read itself is const. */
+            const char *literal = text ? markdown_core_node_get_literal((markdown_core_node *)text) : NULL;
+            OK(runner,
+               literal && strcmp(literal, expected[i].literal) == 0,
+               "head insertion leaves each paragraph id on its own text");
+        }
+    }
+
+    mc_text_free(&mctext);
+    markdown_core_document_release(session);
+    markdown_core_error_free(error);
+}
+
 static void session_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *session = markdown_core_document_open(NULL, &error);
@@ -2938,6 +3062,8 @@ int main(void) {
     autolink_source_pos(runner);
     session_streaming_equivalence(runner);
     session_append_id_stability(runner);
+    session_head_insertion_id_stability(runner);
+    subtree_hash_completeness(runner);
     session_lineage_entropy(runner);
     session_suffix_id_stability(runner);
     session_utf8_split_append(runner);

@@ -207,9 +207,12 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
  * ancestor walk for every node it creates or moves.
  */
 /** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
- * children already carry. Called on the node's EXIT, when every child is
- * complete. */
+ * children already carry. Called on the node's EXIT during the stamping walk
+ * of the finished tree, so every child is complete and already stamped. */
 void markdown_core_node_stamp(markdown_core_node *node);
+
+/** Stamps every node of `root`'s subtree, each as the walk leaves it. */
+void markdown_core_node_stamp_tree(markdown_core_node *root);
 
 void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
 void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);

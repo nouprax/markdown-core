@@ -1060,13 +1060,6 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
                 S_parse_node_inlines(parser, cur, refmap, options);
             }
         }
-        // A node CLOSES on its EXIT, and that is when it is stamped: every
-        // child is complete by then, including the inline children this same
-        // walk parsed on the owner's ENTER. Once per node, on a walk that was
-        // already running.
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT) {
-            markdown_core_node_stamp(cur);
-        }
     }
 
     markdown_core_iter_free(iter);
@@ -2391,7 +2384,17 @@ static markdown_core_node *S_postprocess_unit(
  * by the unit pass itself, so traversal never descends into them. Successors
  * are computed before a unit runs because the pipeline may replace, free, or
  * flatten the unit node. Returns the node occupying `first`'s position after
- * processing; callers use this when the bounded root itself may be replaced. */
+ * processing; callers use this when the bounded root itself may be replaced.
+ *
+ * Deliberately does NOT stamp `subtree_hash`. Stamping was folded into this
+ * walk once, and it worked and was cheaper (+2.6% against +11.2% on
+ * multiple_duplicate_references) -- but it took three shapes to do it: a
+ * pipeline leaf stamped as it was processed, a container stamped as its last
+ * child completed, and the root stamped by the caller because this walk stops
+ * below its boundary. Correctness then depended on those three agreeing about who
+ * covers whom, which is the same "some nodes stamped, some not" split that
+ * produced the unstamped-inlines bug in the first place. One trailing pass
+ * over the settled tree is worth the difference. */
 static markdown_core_node *S_postprocess_subtree(
     markdown_core_parser *parser,
     markdown_core_node *boundary,
@@ -2483,6 +2486,31 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
         parser->root = NULL;
         return NULL;
     }
+
+    /* WHERE THE TREE IS FINGERPRINTED: one pass, over the settled tree, after
+     * every pass that could still move a node.
+     *
+     * Stamping used to ride along on process_inlines' walk, on the argument
+     * that the walk was already running. That walk cannot do the job, twice
+     * over. It never sees an inline node at all: it creates a unit's inline
+     * children on that unit's ENTER, and the iterator settles its successor
+     * before the caller gets the event, so the children appear behind the walk
+     * and are never entered. Every inline node kept hash 0, so a unit's hash
+     * mixed nothing but zeros and collapsed to a function of kind and child
+     * count -- precisely the discrimination diff.c's prefix sweep needs it to
+     * have. And it ran before S_postprocess_blocks, which merges adjacent
+     * text, splits text for autolinks and replaces whole units, so whatever it
+     * did compute described a tree that no longer existed by the time the diff
+     * read it. One cause behind both: it stamped too early.
+     *
+     * It costs a traversal -- ~6% of parse time on the throughput corpus and
+     * ~11% on multiple_duplicate_references, which is nearly all blocks and so
+     * pays for every node. Folding it into S_postprocess_subtree instead is
+     * measurably cheaper (+2.6%) and was rejected: it takes three stamping
+     * shapes to cover the tree that way, and a rule about which shape owns
+     * which node is the thing that failed here already. Placed after the
+     * failure check, so a tree that is about to be freed is never walked. */
+    markdown_core_node_stamp_tree(parser->root);
 
     res = parser->root;
     parser->root = NULL;

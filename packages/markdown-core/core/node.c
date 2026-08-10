@@ -894,3 +894,34 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     }
     node->subtree_hash = h;
 }
+
+void markdown_core_node_stamp_tree(markdown_core_node *root) {
+    markdown_core_node *node = root;
+
+    /* Postorder, so a node is stamped only once its children carry their own
+     * hashes. Iterative and allocation-free: document depth costs no stack.
+     *
+     * It sits beside markdown_core_node_stamp because that is where a node
+     * operation belongs, NOT for speed -- putting the walk in the same
+     * translation unit so the per-node stamp could inline was measured and
+     * changed nothing (2.745 s against 2.743 s on multiple_duplicate_references).
+     * The pass costs what it costs because it is one more traversal of every
+     * node in the tree; neither the call, the iterator, nor the literal
+     * sampling is the term that matters. */
+    for (;;) {
+        while (node->first_child) {
+            node = node->first_child;
+        }
+        for (;;) {
+            markdown_core_node_stamp(node);
+            if (node == root) {
+                return;
+            }
+            if (node->next) {
+                node = node->next;
+                break;
+            }
+            node = node->parent;
+        }
+    }
+}

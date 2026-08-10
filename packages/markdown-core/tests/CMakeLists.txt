@@ -549,7 +549,7 @@ set(MARKDOWN_CORE_PERFORMANCE_CASES
     many_unique_attributes
     many_duplicate_attributes
     many_unique_references
-    many_duplicate_references
+    multiple_duplicate_references
     directive_closers_after_emphasis
     nested_directive_label_closers
     many_email_autolinks
