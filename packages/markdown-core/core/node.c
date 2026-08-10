@@ -887,10 +887,10 @@ void markdown_core_node_stamp(markdown_core_node *node) {
         break;
     }
     for (child = node->first_child; child; child = child->next) {
-        h = hash_mix(h, child->hash);
+        h = hash_mix(h, child->subtree_hash);
         if (child == node->last_child) {
             break;
         }
     }
-    node->hash = h;
+    node->subtree_hash = h;
 }

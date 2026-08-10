@@ -137,7 +137,7 @@ struct markdown_core_node {
     // parses that never pass through a session's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
-    // A cheap order-sensitive fingerprint of this node and everything below it: its
+    // A cheap order-sensitive fingerprint of this node's subtree: its
     // type, its literal bytes when it has any, and its children's hashes.
     //
     // IT IS A PROPERTY OF THE NODE, a pure function of the document text,
@@ -151,7 +151,7 @@ struct markdown_core_node {
     // walking its children. So a collision, or a field the hash does not
     // cover, can only produce worse identity matching; it can never make the
     // delta miss a change. That is what makes the bounded literal sample safe.
-    uint64_t hash;
+    uint64_t subtree_hash;
 
 
     // The concrete marker records of this node's own ownership region
@@ -208,7 +208,7 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
  */
 /** True for the node types the tree walk never emits an EXIT for, so a
  * caller can tell when it is leaving a node for the last time. */
-/** Stamps `node->hash` from its type, its literal, and the hashes its
+/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
  * children already carry. Called when the walk leaves the node for the LAST
  * time -- a container's EXIT, a leaf's ENTER, since a leaf never gets an
  * EXIT (iterator.c). */

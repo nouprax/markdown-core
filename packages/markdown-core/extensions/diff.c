@@ -237,14 +237,14 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     // type below, so a node whose own text changed keeps its identity instead
     // of being retired and recreated.
     pairable = n_old < n_new ? n_old : n_new;
-    while (prefix < pairable && o->type == w->type && o->hash == w->hash) {
+    while (prefix < pairable && o->type == w->type && o->subtree_hash == w->subtree_hash) {
         prefix++;
         o = o->next;
         w = w->next;
     }
 
     while (suffix < pairable - prefix && o_end->type == w_end->type &&
-           o_end->hash == w_end->hash) {
+           o_end->subtree_hash == w_end->subtree_hash) {
         suffix++;
         o_end = o_end->prev;
         w_end = w_end->prev;
