@@ -842,3 +842,55 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     return errors;
 }
+
+// FNV-1a. A literal enters as its LENGTH plus a bounded sample of its bytes,
+// not all of them: hashing every byte would make this O(document bytes), and
+// confusing two literals that share a length and both ends is affordable for
+// the reason stated on the field (node.h).
+#define MARKDOWN_CORE_HASH_SAMPLE 32u
+
+static uint64_t hash_mix(uint64_t h, uint64_t value) {
+    h = (h ^ value) * 0x100000001b3ull;
+    return h ^ (h >> 29);
+}
+
+void markdown_core_node_stamp(markdown_core_node *node) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    markdown_core_node *child;
+
+    h = hash_mix(h, (uint64_t)node->type);
+    switch (node->type) {
+    // The raw type, not the facade kind: this runs on every node of every
+    // parse, and for these the union member IS the literal chunk.
+    case MARKDOWN_CORE_NODE_TEXT:
+    case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_HTML:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        if (node->as.literal.data) {
+            size_t length = (size_t)node->as.literal.len;
+            size_t head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
+            size_t tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
+            size_t i;
+            h = (h ^ (uint64_t)length) * 0x100000001b3ull;
+            for (i = 0; i < head; i++) {
+                h ^= node->as.literal.data[i];
+                h *= 0x100000001b3ull;
+            }
+            for (i = 0; i < tail; i++) {
+                h ^= node->as.literal.data[length - tail + i];
+                h *= 0x100000001b3ull;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+    for (child = node->first_child; child; child = child->next) {
+        h = hash_mix(h, child->hash);
+        if (child == node->last_child) {
+            break;
+        }
+    }
+    node->hash = h;
+}

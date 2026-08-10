@@ -26,7 +26,7 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
 
 void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter->mem, iter); }
 
-static bool S_is_leaf(markdown_core_node *node) {
+bool markdown_core_node_is_leaf(const markdown_core_node *node) {
     switch (node->type) {
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
     case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
@@ -53,7 +53,7 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     }
 
     /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER && !S_is_leaf(node)) {
+    if (ev_type == MARKDOWN_CORE_EVENT_ENTER && !markdown_core_node_is_leaf(node)) {
         if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;

@@ -137,14 +137,21 @@ struct markdown_core_node {
     // parses that never pass through a session's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
-    // A cheap order-sensitive digest of this node's subtree: its type, its
-    // literal bytes when it has any, and its children's digests. It decides
-    // WHICH nodes pair in the diff's prefix/suffix sweeps and nothing else --
-    // a paired node's changes are still found by comparing it field by field
-    // and walking its children. So a collision, or a field the digest does
-    // not cover, can only produce worse identity matching; it can never make
-    // the delta miss a change.
-    uint64_t subtree_digest;
+    // A cheap order-sensitive fingerprint of this node's subtree content: its
+    // type, its literal bytes when it has any, and its children's hashes.
+    //
+    // IT IS A PROPERTY OF THE NODE, a pure function of the document text,
+    // stamped when the walk leaves the node for the last time -- not a thing
+    // some later pass derives. Calling it "the matcher's digest" is what led
+    // it to live in the diff, where it grew a which-pass-pays-for-it question
+    // and a has-this-tree-been-done flag; as a node property it has neither.
+    //
+    // The diff reads it to decide WHICH nodes pair, and nothing else: a paired
+    // node's changes are still found by comparing it field by field and
+    // walking its children. So a collision, or a field the hash does not
+    // cover, can only produce worse identity matching; it can never make the
+    // delta miss a change. That is what makes the bounded literal sample safe.
+    uint64_t hash;
 
 
     // The concrete marker records of this node's own ownership region
@@ -199,6 +206,16 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
  * They exist so a delimiter reduction does not repeat an O(depth) defensive
  * ancestor walk for every node it creates or moves.
  */
+/** True for the node types the tree walk never emits an EXIT for, so a
+ * caller can tell when it is leaving a node for the last time. */
+/** Stamps `node->hash` from its type, its literal, and the hashes its
+ * children already carry. Called when the walk leaves the node for the LAST
+ * time -- a container's EXIT, a leaf's ENTER, since a leaf never gets an
+ * EXIT (iterator.c). */
+void markdown_core_node_stamp(markdown_core_node *node);
+
+bool markdown_core_node_is_leaf(const markdown_core_node *node);
+
 void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
 void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);
 void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling);
