@@ -106,6 +106,33 @@ static void thread_join(thread_handle handle) {
 #else
 #include <pthread.h>
 #include "commit_compat.h"
+
+/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
+ * that holds an id and the tree already has the node, because it meets it on
+ * the walk it was doing anyway (requirement 3). These tests hold ids across an
+ * edit exactly like a highlighter does, so they find nodes the same way. */
+static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    if (!root || id == 0) {
+        return NULL;
+    }
+    for (;;) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node != root && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        if (node == root) {
+            return NULL;
+        }
+        node = markdown_core_node_get_next_sibling(node);
+    }
+}
 typedef pthread_t thread_handle;
 typedef struct barrier {
     pthread_mutex_t lock;
@@ -552,7 +579,7 @@ typedef struct session_reader {
 // An id must round-trip under the concurrent read contract: looking up a
 // node's own id resolves back to that node. NULL round-trips vacuously.
 static int id_round_trips(const markdown_core_document *session, const markdown_core_node *node) {
-    return !node || markdown_core_document_node_by_id(session, markdown_core_node_get_id(node)) == node;
+    return !node || node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)) == node;
 }
 
 static THREAD_RETURN session_reader_main(void *argument) {

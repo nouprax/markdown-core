@@ -7,6 +7,33 @@
 #include "test_support.h"
 #include "commit_compat.h"
 
+/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
+ * that holds an id and the tree already has the node, because it meets it on
+ * the walk it was doing anyway (requirement 3). These tests hold ids across an
+ * edit exactly like a highlighter does, so they find nodes the same way. */
+static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    if (!root || id == 0) {
+        return NULL;
+    }
+    for (;;) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node != root && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        if (node == root) {
+            return NULL;
+        }
+        node = markdown_core_node_get_next_sibling(node);
+    }
+}
+
 static int sr_fail(sr_replay *replay, const char *message) {
     replay->report(replay->user, replay->context, message);
     return -1;
@@ -187,7 +214,7 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
         if (diffs[i].parts == 0) {
             continue;
         }
-        node = markdown_core_document_node_by_id(replay->session, diffs[i].markup);
+        node = node_by_id(markdown_core_document_root(replay->session), diffs[i].markup);
         if (!node) {
             return sr_fail(replay, "diffs name a surviving id the document does not have");
         }
@@ -323,8 +350,8 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     for (i = 0; i < mine.count; i++) {
         markdown_core_footnote_info a;
         markdown_core_footnote_info b;
-        bool found_a = markdown_core_document_footnote_info(replay->session, mine.ids[i], &a);
-        bool found_b = markdown_core_document_footnote_info(fresh, theirs.ids[i], &b);
+        bool found_a = markdown_core_document_footnote_info(replay->session, node_by_id(markdown_core_document_root(replay->session), mine.ids[i]), &a);
+        bool found_b = markdown_core_document_footnote_info(fresh, node_by_id(markdown_core_document_root(fresh), theirs.ids[i]), &b);
         if (found_a != found_b) {
             sr_fail(replay, "footnote info presence diverged from a fresh session");
             goto done;
@@ -412,7 +439,7 @@ static int sr_walk_visit(const markdown_core_node *node, void *context) {
         state->failed = 1;
         return 1;
     }
-    if (markdown_core_document_node_by_id(replay->session, id) != node) {
+    if (node_by_id(markdown_core_document_root(replay->session), id) != node) {
         sr_fail(replay, "node_by_id disagrees with the committed tree");
         state->failed = 1;
         return 1;

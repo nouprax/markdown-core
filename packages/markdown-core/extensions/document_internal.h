@@ -41,16 +41,6 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 // node share a slot so every probe costs one cache line, not two — the
 // table dwarfs the cache at document scale and probes dominate the
 // commit's table maintenance.
-typedef struct {
-    markdown_core_node_id id; // 0 marks an empty slot
-    markdown_core_node *node;
-} markdown_core_id_slot;
-
-typedef struct {
-    markdown_core_id_slot *slots;
-    size_t capacity; // power of two, 0 when unallocated
-    size_t count;
-} markdown_core_id_table;
 
 struct markdown_core_delta {
     uint64_t lineage;
@@ -295,7 +285,6 @@ struct markdown_core_document {
     uint64_t next_id;            // monotonic, starts at 1, never reused
     uint64_t lineage;
     uint64_t revision;
-    markdown_core_id_table ids;
     markdown_core_footnote_index footnotes;
     markdown_core_footnote_labels footnote_labels;
     // The definition tables (see markdown_core_definition_table).
@@ -493,17 +482,6 @@ markdown_core_parser *markdown_core_document_acquire_parser(markdown_core_docume
 void markdown_core_document_release_parser(markdown_core_document *session, markdown_core_parser *parser);
 
 
-/** Grows the id table so the next `extra` markdown_core_document_ids_put
- * calls cannot fail. */
-bool markdown_core_document_ids_reserve(markdown_core_document *session, size_t extra);
-
-/** Points `id` at `node`, inserting or repointing. Never fails within a
- * reserved budget. */
-void markdown_core_document_ids_put(markdown_core_document *session, markdown_core_node_id id, markdown_core_node *node);
-
-/** Drops `id` from the table (backward-shift deletion; missing ids are a
- * no-op). */
-void markdown_core_document_ids_remove(markdown_core_document *session, markdown_core_node_id id);
 
 /** Rewrites every definition owner stamped as a node pointer during the
  * just-adopted parse to that node's session id (owner 0 stays 0: the region

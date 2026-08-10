@@ -37,146 +37,6 @@ static void clear_error(markdown_core_error **error) {
     }
 }
 
-// --- id table ---------------------------------------------------------------
-
-static void id_table_release(markdown_core_mem *mem, markdown_core_id_table *table) {
-    if (table->slots) {
-        mem->free(mem, table->slots);
-    }
-    table->slots = NULL;
-    table->capacity = 0;
-    table->count = 0;
-}
-
-static void id_table_insert(markdown_core_id_table *table, markdown_core_node_id id, markdown_core_node *node) {
-    size_t mask = table->capacity - 1;
-    size_t slot = (size_t)markdown_core_mix64(id) & mask;
-    while (table->slots[slot].id != 0) {
-        if (table->slots[slot].id == id) {
-            table->slots[slot].node = node;
-            return;
-        }
-        slot = (slot + 1) & mask;
-    }
-    table->slots[slot].id = id;
-    table->slots[slot].node = node;
-    table->count++;
-}
-
-// Allocates a table for at least `entries` ids at <= 50% load.
-static bool id_table_alloc(markdown_core_mem *mem, size_t entries, markdown_core_id_table *out) {
-    size_t capacity = 16;
-    while (capacity < entries * 2) {
-        capacity *= 2;
-    }
-    out->slots = (markdown_core_id_slot *)mem->calloc(mem, capacity, sizeof(markdown_core_id_slot));
-    out->count = 0;
-    if (!out->slots) {
-        return false;
-    }
-    out->capacity = capacity;
-    return true;
-}
-
-bool markdown_core_document_ids_reserve(markdown_core_document *session, size_t extra) {
-    markdown_core_id_table *table = &session->ids;
-    markdown_core_id_table grown = {NULL, 0, 0};
-    size_t i;
-
-    if (table->capacity && (table->count + extra) * 2 <= table->capacity) {
-        return true;
-    }
-    if (!id_table_alloc(session->mem, table->count + extra, &grown)) {
-        return false;
-    }
-    for (i = 0; i < table->capacity; i++) {
-        if (table->slots[i].id != 0) {
-            id_table_insert(&grown, table->slots[i].id, table->slots[i].node);
-        }
-    }
-    id_table_release(session->mem, table);
-    *table = grown;
-    return true;
-}
-
-void markdown_core_document_ids_put(markdown_core_document *session, markdown_core_node_id id, markdown_core_node *node) {
-    id_table_insert(&session->ids, id, node);
-}
-
-void markdown_core_document_ids_remove(markdown_core_document *session, markdown_core_node_id id) {
-    markdown_core_id_table *table = &session->ids;
-    size_t mask;
-    size_t slot;
-    size_t gap;
-    size_t scan;
-
-    if (table->capacity == 0) {
-        return;
-    }
-    mask = table->capacity - 1;
-    slot = (size_t)markdown_core_mix64(id) & mask;
-    while (table->slots[slot].id != id) {
-        if (table->slots[slot].id == 0) {
-            return;
-        }
-        slot = (slot + 1) & mask;
-    }
-
-    // Backward-shift deletion: pull every entry of the collision run whose
-    // home slot lies at or before the gap into it. The load-factor bound
-    // guarantees an empty slot, so the walk terminates.
-    gap = slot;
-    scan = (gap + 1) & mask;
-    while (table->slots[scan].id != 0) {
-        size_t home = (size_t)markdown_core_mix64(table->slots[scan].id) & mask;
-        if (((scan - home) & mask) >= ((scan - gap) & mask)) {
-            table->slots[gap] = table->slots[scan];
-            gap = scan;
-        }
-        scan = (scan + 1) & mask;
-    }
-    table->slots[gap].id = 0;
-    table->slots[gap].node = NULL;
-    table->count--;
-}
-
-// Builds a fresh id table for `root` into `out` (owned by the caller on
-// success). Runs inside mutating calls only, so concurrent readers never
-// observe a table under construction.
-/* `nodes` is a CAPACITY HINT, not a census. This used to walk the whole tree
- * once just to count it, then walk it again to fill — two full traversals of a
- * structure the diff had finished with moments earlier. The diff mints every
- * id from the document's counter, so the counter already knows: `next_id - 1`
- * is the number of ids ever handed out, which is exactly the node count for a
- * freshly parsed tree and an over-estimate otherwise. An over-estimate costs
- * table slots; a second walk costs the walk. Measured on the
- * many_duplicate_references corpus, 41 MB: the count walk was 0.8 s of a 3.3 s
- * parse and it was super-linear, which is what pushed that gate over its
- * bound. */
-static bool id_table_build(markdown_core_mem *mem, markdown_core_node *root, size_t nodes, markdown_core_id_table *out) {
-    markdown_core_event_type ev;
-    markdown_core_iter *iter;
-
-    if (!id_table_alloc(mem, nodes, out)) {
-        return false;
-    }
-
-    iter = markdown_core_iter_new(root);
-    if (!iter) {
-        id_table_release(mem, out);
-        return false;
-    }
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (ev != MARKDOWN_CORE_EVENT_ENTER) {
-            continue;
-        }
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        id_table_insert(out, node->id, node);
-    }
-    markdown_core_iter_free(iter);
-    return true;
-}
-
 // --- parsing ----------------------------------------------------------------
 
 static int native_options_from(const markdown_core_parse_options *options) {
@@ -417,7 +277,6 @@ bool markdown_core_document_diff(
     markdown_core_error **error
 ) {
     markdown_core_footnote_index footnotes;
-    markdown_core_id_table ids = {NULL, 0, 0};
     size_t s;
 
     if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision, changes)) {
@@ -467,32 +326,7 @@ bool markdown_core_document_diff(
         return false;
     }
 
-    // THE ID TABLE ANSWERS `MarkupID -> node`, which is a public capability in
-    // its own right: a delta names nodes by id, and the node-addressed queries
-    // (4.1) take an id because the bindings hold a decoded value tree keyed by
-    // id and no C node pointer at all — markdown_core_document_reference_info
-    // is id-in, id-out.
-    //
-    // An earlier note here said this table's only consumers were resolving
-    // delta ids and that a postorder `diffs` list would therefore delete it.
-    // The postorder list did delete delta.c's own 321-line reconstruction,
-    // which used it; it does not delete the public query, which does not go
-    // through the delta at all.
-    //
-    // It is built here, inside the mutating call, rather than on first use, so
-    // the query stays a pure concurrent-safe read of a published document.
-    if (changes && !id_table_build(nw->mem, nw->root, nw->next_id > 1 ? (size_t)(nw->next_id - 1) : 1, &ids)) {
-        id_table_release(nw->mem, &ids);
-        markdown_core_footnote_index_release(nw->mem, &footnotes);
-        markdown_core_ast_set_error(
-            error,
-            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-            "could not index the committed document"
-        );
-        return false;
-    }
     nw->footnotes = footnotes;
-    nw->ids = ids;
     return true;
 }
 
@@ -749,7 +583,6 @@ void markdown_core_document_release(markdown_core_document *session) {
         markdown_core_node_free(session->root);
     }
     markdown_core_source_release(session->source);
-    id_table_release(session->mem, &session->ids);
     markdown_core_footnote_index_release(session->mem, &session->footnotes);
     release_definition_tables(session->mem, session->definitions);
     markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
@@ -927,23 +760,3 @@ size_t markdown_core_document_length(const markdown_core_document *session) {
     return session ? markdown_core_source_length(session->source) : 0;
 }
 
-const markdown_core_node *markdown_core_document_node_by_id(
-    const markdown_core_document *session,
-    markdown_core_node_id id
-) {
-    if (!session || id == 0) {
-        return NULL;
-    }
-    if (session->ids.capacity == 0) {
-        return NULL;
-    }
-    size_t mask = session->ids.capacity - 1;
-    size_t slot = (size_t)markdown_core_mix64(id) & mask;
-    while (session->ids.slots[slot].id != 0) {
-        if (session->ids.slots[slot].id == id) {
-            return session->ids.slots[slot].node;
-        }
-        slot = (slot + 1) & mask;
-    }
-    return NULL;
-}

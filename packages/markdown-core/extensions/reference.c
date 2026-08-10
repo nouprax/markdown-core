@@ -23,10 +23,9 @@
 
 bool markdown_core_document_reference_info(
     const markdown_core_document *session,
-    markdown_core_node_id id,
+    const markdown_core_node *node,
     markdown_core_reference_info *info
 ) {
-    const markdown_core_node *node;
     markdown_core_chunk *label;
     markdown_core_map_entry *winner;
 
@@ -35,11 +34,7 @@ bool markdown_core_document_reference_info(
     }
     // The reference table only: a footnote reference resolves to a definition
     // node, which the session's footnote index answers.
-    if (!session || !info || id == 0 || !session->definitions[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map) {
-        return false;
-    }
-    node = markdown_core_document_node_by_id(session, id);
-    if (!node) {
+    if (!session || !info || !node || !session->definitions[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map) {
         return false;
     }
     switch (node->type) {

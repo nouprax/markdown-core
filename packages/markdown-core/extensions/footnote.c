@@ -716,17 +716,17 @@ done:
 
 bool markdown_core_document_footnote_info(
     const markdown_core_document *session,
-    markdown_core_node_id id,
+    const markdown_core_node *node,
     markdown_core_footnote_info *info
 ) {
     const markdown_core_footnote_record *record;
     if (info) {
         memset(info, 0, sizeof(*info));
     }
-    if (!session || !info || id == 0) {
+    if (!session || !info || !node) {
         return false;
     }
-    record = find_record(&session->footnotes, id);
+    record = find_record(&session->footnotes, markdown_core_node_get_id(node));
     if (!record) {
         return false;
     }

@@ -1476,8 +1476,15 @@ member: `before` pins the domain, and the domain pins the schema (5.1).
 `Delta` is plain immutable caller-owned data. It is not an AST, an alternate
 root, a log a consumer must replay, a subscriber registry, a renderer change
 list, or correctness state required by `Document`. It retains no consumer
-value and no mutable parser session, and it remains valid after the session
-advances or closes.
+value and no mutable parser session.
+
+*It used to say "and it remains valid after the session advances or closes."
+That was asserted in the contract freeze (`54b2810`) and no consumer was ever
+named for it. Under supersession a delta names nodes in the SUCCESSOR document
+— the one `Commit` just handed the caller — so a consumer that frees that
+document and then reads the delta is holding names for a tree that is gone.
+The clause was doing no work, and it was the argument against putting anything
+document-shaped in a row.*
 
 `Delta` is read by paths B and C of 2.1. Path A never reads it, and nothing in
 this contract requires it: a consumer that drops every delta and re-derives
@@ -1545,12 +1552,24 @@ reconstructed after the fact: entries allocated on demand, keyed through a hash
 over all four arrays, parent-linked, and topologically sorted. A list that is
 already in order carries its own position.
 
-**The `MarkupID` → node index is a different question and it survives.** The
-ordered-entry reconstruction used it, and that use is gone; the public query
-does not go through a delta at all. A node-addressed answer (4.1) takes an id
-because that is what a consumer holds — a binding's snapshot is a decoded
-value tree keyed by `MarkupID` with no engine pointer anywhere in it, and
-`reference_info` is id-in, id-out.
+**And the `MarkupID` → node index goes too, which is a correction.** An
+earlier revision of this section kept it, on the grounds that a node-addressed
+answer takes an id "because that is what a consumer holds". That is exactly
+backwards. A consumer holding an id also holds the TREE, and it is already
+walking it — that is what requirement 3 means. It meets every node on that
+walk and matches the ids it cares about as it goes: a highlighter passes the
+id set and the AST to its renderer and lights up the node whose id matches.
+The match happens on the consumer's side, against a set it already has.
+
+So the engine never has to answer `MarkupID` → node, and it must not build an
+index on every commit to be able to. `Diff` carries the id and nothing else,
+and the node-addressed queries (4.1) take THE NODE — the caller has it in hand
+when it asks. `reference_info`'s first act used to be resolving an id back to
+a node the caller was standing on.
+
+An id remains what 5.2 says it is: a NAME. It names a node the consumer will
+meet on its own walk, and it stays valid across commits, which no pointer
+does. Naming is the whole job; resolution was never part of it.
 
 **A retired node has no parts in `after`, so `parts` is empty.** That is why
 there is no lifecycle tag: a consumer distinguishes the case with

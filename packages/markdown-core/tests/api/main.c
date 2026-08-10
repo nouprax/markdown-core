@@ -1421,6 +1421,33 @@ static void test_feed_across_line_ending(test_batch_runner *runner) {
 #if !defined(_WIN32) || defined(__CYGWIN__)
 #include <sys/time.h>
 #include "commit_compat.h"
+
+/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
+ * that holds an id and the tree already has the node, because it meets it on
+ * the walk it was doing anyway (requirement 3). These tests hold ids across an
+ * edit exactly like a highlighter does, so they find nodes the same way. */
+static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    if (!root || id == 0) {
+        return NULL;
+    }
+    for (;;) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node != root && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        if (node == root) {
+            return NULL;
+        }
+        node = markdown_core_node_get_next_sibling(node);
+    }
+}
 static struct timeval _before, _after;
 static int _timing;
 #define START_TIMING() gettimeofday(&_before, NULL)
@@ -1606,11 +1633,11 @@ static int reference_destination_is(
     markdown_core_string title;
     size_t length = strlen(expected);
 
-    if (!node || !markdown_core_document_reference_info(session, markdown_core_node_get_id(node), &info) ||
+    if (!node || !markdown_core_document_reference_info(session, node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)), &info) ||
         info.definition == 0) {
         return 0;
     }
-    definition = markdown_core_document_node_by_id(session, info.definition);
+    definition = node_by_id(markdown_core_document_root(session), info.definition);
     return definition && markdown_core_node_reference_definition_properties(definition, &label, &destination, &title) &&
            destination.length == length && memcmp(destination.data, expected, length) == 0;
 }
@@ -1908,9 +1935,9 @@ static void session_append_id_stability(test_batch_runner *runner) {
            markdown_core_node_get_revision(root) == after && root_rev_before < after,
            "root revision advances by bubbling");
         OK(runner,
-           markdown_core_document_node_by_id(session, paragraph_id) == paragraph,
+           node_by_id(markdown_core_document_root(session), paragraph_id) == paragraph,
            "node_by_id resolves the paragraph");
-        OK(runner, markdown_core_document_node_by_id(session, 0) == NULL, "node_by_id rejects id 0");
+        OK(runner, node_by_id(markdown_core_document_root(session), 0) == NULL, "node_by_id rejects id 0");
         OK(runner, markdown_core_document_lineage(session) != 0, "session lineage is nonzero");
     }
 
@@ -2136,7 +2163,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "directive label topology edit commits");
     OK(runner,
-       markdown_core_document_node_by_id(session, label_id) != NULL,
+       node_by_id(markdown_core_document_root(session), label_id) != NULL,
        "label topology edit preserves DirectiveLabel identity");
     OK(runner, delta_touched(changes, label_id), "label child topology change marks DirectiveLabel changed");
     OK(runner, !delta_touched(changes, directive_id), "label topology does not change directive fields");
@@ -2183,7 +2210,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "inline absent-to-empty label edit commits");
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
         const markdown_core_node *label = markdown_core_node_directive_label(directive);
         label_id = markdown_core_node_get_id(label);
         OK(runner,
@@ -2201,7 +2228,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "inline empty-to-absent label edit commits");
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
         OK(runner,
            directive && markdown_core_node_directive_label(directive) == NULL,
            "inline empty-to-absent preserves directive identity and removes its label child");
@@ -2237,7 +2264,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "block absent-to-empty label edit commits");
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
         const markdown_core_node *label = markdown_core_node_directive_label(directive);
         label_id = markdown_core_node_get_id(label);
         OK(runner,
@@ -2255,7 +2282,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "block empty-to-absent label edit commits");
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
         OK(runner,
            directive && markdown_core_node_directive_label(directive) == NULL,
            "block empty-to-absent preserves directive identity and removes its label child");
@@ -2376,7 +2403,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            "block-label reference resolves inside its canonical DirectiveLabel");
         OK(runner,
            footnote_reference && markdown_core_node_get_parent(footnote_reference) == label && footnote_definition &&
-               markdown_core_document_footnote_info(session, footnote_reference_id, &footnote_info) &&
+               markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), footnote_reference_id), &footnote_info) &&
                footnote_info.definition == footnote_definition_id && footnote_info.number == 1 &&
                footnote_info.reference_ordinal == 1 && footnote_info.reference_count == 1,
            "block-label footnote reference is indexed through DirectiveLabel");
@@ -2402,12 +2429,12 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            "block-label reference definition edit commits");
     }
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
-        const markdown_core_node *label = markdown_core_document_node_by_id(session, label_id);
-        const markdown_core_node *label_text = markdown_core_document_node_by_id(session, label_text_id);
-        const markdown_core_node *link = markdown_core_document_node_by_id(session, link_id);
-        const markdown_core_node *footnote_reference = markdown_core_document_node_by_id(session, footnote_reference_id);
-        const markdown_core_node *body = markdown_core_document_node_by_id(session, body_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
+        const markdown_core_node *label = node_by_id(markdown_core_document_root(session), label_id);
+        const markdown_core_node *label_text = node_by_id(markdown_core_document_root(session), label_text_id);
+        const markdown_core_node *link = node_by_id(markdown_core_document_root(session), link_id);
+        const markdown_core_node *footnote_reference = node_by_id(markdown_core_document_root(session), footnote_reference_id);
+        const markdown_core_node *body = node_by_id(markdown_core_document_root(session), body_id);
         const markdown_core_node_id *footnote_ids = NULL;
         markdown_core_footnote_info footnote_info;
         size_t count;
@@ -2435,7 +2462,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
                markdown_core_node_get_revision(footnote_reference) == footnote_reference_revision,
            "unmodified block-label footnote keeps its id, parent, and revision");
         OK(runner,
-           markdown_core_document_footnote_info(session, footnote_reference_id, &footnote_info) &&
+           markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), footnote_reference_id), &footnote_info) &&
                footnote_info.definition == footnote_definition_id && footnote_info.number == 1 &&
                footnote_info.reference_ordinal == 1 && footnote_info.reference_count == 1,
            "link retarget preserves block-label footnote resolution and ordinals");
@@ -2469,10 +2496,10 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
            mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error),
        "head insertion before a block directive commits");
     {
-        const markdown_core_node *directive = markdown_core_document_node_by_id(session, directive_id);
-        const markdown_core_node *label = markdown_core_document_node_by_id(session, label_id);
-        const markdown_core_node *label_text = markdown_core_document_node_by_id(session, label_text_id);
-        const markdown_core_node *body = markdown_core_document_node_by_id(session, body_id);
+        const markdown_core_node *directive = node_by_id(markdown_core_document_root(session), directive_id);
+        const markdown_core_node *label = node_by_id(markdown_core_document_root(session), label_id);
+        const markdown_core_node *label_text = node_by_id(markdown_core_document_root(session), label_text_id);
+        const markdown_core_node *body = node_by_id(markdown_core_document_root(session), body_id);
         markdown_core_scope shifted_label_scope =
             label ? markdown_core_node_scope(label) : (markdown_core_scope){{0, 0}, {0, 0}};
         markdown_core_scope shifted_text_scope =
@@ -2570,8 +2597,8 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
     OK(runner, mc_edit(&session, mc_sv(mctext.bytes, mctext.length), NULL, &error), "scope shift commit succeeds");
 
     {
-        const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);
-        const markdown_core_node *emphasis = markdown_core_document_node_by_id(session, emphasis_id);
+        const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(session), paragraph_id);
+        const markdown_core_node *emphasis = node_by_id(markdown_core_document_root(session), emphasis_id);
         OK(runner, paragraph != NULL && emphasis != NULL, "shifted nodes keep their ids");
         if (paragraph && emphasis) {
             markdown_core_scope after = markdown_core_node_scope(paragraph);
@@ -2671,34 +2698,34 @@ static void session_footnote_queries(test_batch_runner *runner) {
     }
 
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_b1, &info) && info.definition == def_b && info.number == 1 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_b1), &info) && info.definition == def_b && info.number == 1 &&
            info.reference_ordinal == 1 && info.reference_count == 2,
        "first [^b] reference resolves to number 1, ordinal 1 of 2");
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_b2, &info) && info.definition == def_b && info.number == 1 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_b2), &info) && info.definition == def_b && info.number == 1 &&
            info.reference_ordinal == 2 && info.reference_count == 2,
        "second [^b] reference shares the number with ordinal 2");
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_a, &info) && info.definition == def_a && info.number == 2 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_a), &info) && info.definition == def_a && info.number == 2 &&
            info.reference_ordinal == 1 && info.reference_count == 1,
        "[^A] case-folds onto [^a] and is number 2");
 
     OK(runner,
-       markdown_core_document_footnote_info(session, def_b, &info) && info.definition == def_b && info.number == 1 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), def_b), &info) && info.definition == def_b && info.number == 1 &&
            info.reference_ordinal == 0 && info.reference_count == 2,
        "winning definition reports its label's number and count");
     OK(runner,
-       markdown_core_document_footnote_info(session, def_b_dup, &info) && info.definition == def_b && info.number == 1,
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), def_b_dup), &info) && info.definition == def_b && info.number == 1,
        "duplicate definition points at the earlier winner");
     OK(runner,
-       markdown_core_document_footnote_info(session, def_u, &info) && info.definition == def_u && info.number == 0 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), def_u), &info) && info.definition == def_u && info.number == 0 &&
            info.reference_count == 0,
        "unused definition stays in the tree with no number");
 
     OK(runner,
-       !markdown_core_document_footnote_info(session, paragraph_id, &info),
+       !markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), paragraph_id), &info),
        "non-footnote ids answer no footnote info");
-    OK(runner, !markdown_core_document_footnote_info(session, 0, &info), "id 0 answers no footnote info");
+    OK(runner, !markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), 0), &info), "id 0 answers no footnote info");
 
     {
         const markdown_core_node_id *ids = NULL;
@@ -2765,7 +2792,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         );
     }
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_x, &info) && info.number == 1,
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_x), &info) && info.number == 1,
        "[^x] starts as number 1");
 
     /* A new heading on top references [^y] first: [^y] becomes number 1 and
@@ -2774,14 +2801,14 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
     OK(runner, mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error), "ordinal shift commit succeeds");
 
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_x, &info) && info.definition == def_x && info.number == 2,
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_x), &info) && info.definition == def_x && info.number == 2,
        "[^x] shifted to number 2");
     OK(runner,
-       markdown_core_document_footnote_info(session, ref_y, &info) && info.number == 1 && info.reference_ordinal == 2 &&
+       markdown_core_document_footnote_info(session, node_by_id(markdown_core_document_root(session), ref_y), &info) && info.number == 1 && info.reference_ordinal == 2 &&
            info.reference_count == 2,
        "the old [^y] reference became ordinal 2 of number 1");
     {
-        const markdown_core_node *ref = markdown_core_document_node_by_id(session, ref_x);
+        const markdown_core_node *ref = node_by_id(markdown_core_document_root(session), ref_x);
         const markdown_core_node_id *ids = NULL;
         size_t count;
         OK(runner,
@@ -2790,7 +2817,7 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         OK(runner, delta_touched(changes, ref_x), "the shifted reference is reported changed");
         OK(runner, delta_bubbled_only(changes, paragraph_id), "its untouched paragraph bubbles");
         {
-            const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);
+            const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(session), paragraph_id);
             OK(runner,
                paragraph && markdown_core_node_get_revision(paragraph) > paragraph_rev,
                "the bubbled paragraph's revision advances");
@@ -2812,11 +2839,11 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
      * "[^"). */
     {
         uint64_t paragraph_rev_before =
-            markdown_core_node_get_revision(markdown_core_document_node_by_id(session, paragraph_id));
+            markdown_core_node_get_revision(node_by_id(markdown_core_document_root(session), paragraph_id));
         mc_text_splice(&mctext, 31, 32, (const uint8_t *)"z", 1);
         OK(runner, mc_edit(&session, mc_sv(mctext.bytes, mctext.length), &changes, &error), "resolution flip commit succeeds");
         {
-            const markdown_core_node *paragraph = markdown_core_document_node_by_id(session, paragraph_id);
+            const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(session), paragraph_id);
             const markdown_core_node *child = paragraph ? markdown_core_node_get_first_child(paragraph) : NULL;
             const markdown_core_node *second = child ? markdown_core_node_get_next_sibling(child) : NULL;
             markdown_core_string literal = {NULL, 0};

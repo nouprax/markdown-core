@@ -457,10 +457,6 @@ MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_d
  * identity even when ids collide numerically. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *session);
 MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *session);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_node_by_id(
-    const markdown_core_document *session,
-    markdown_core_node_id id
-);
 
 /*
  * Footnote queries
@@ -509,21 +505,26 @@ typedef struct markdown_core_reference_info {
     markdown_core_node_id definition;
 } markdown_core_reference_info;
 
-/** Fills `info` for the reference node with the given id at the current
- * revision. Returns false (with `info` zeroed) when the id does not name a
- * reference or reference definition of this session. */
+/** Fills `info` for `node` at the current revision. Returns false (with
+ * `info` zeroed) when `node` is not a reference or reference definition.
+ *
+ * IT TAKES THE NODE, not its id. A consumer asking this question is walking
+ * the tree and has the node in hand; handing back an id and making the engine
+ * resolve it is a lookup neither side needs. `definition` is still an id,
+ * because that is a NAME for a node the consumer will meet later in its own
+ * walk -- naming is what a MarkupID is for (5.2). */
 MARKDOWN_CORE_API bool markdown_core_document_reference_info(
     const markdown_core_document *session,
-    markdown_core_node_id id,
+    const markdown_core_node *node,
     markdown_core_reference_info *info
 );
 
-/** Fills `info` for the footnote node with the given id at the current
- * revision. Returns false (with `info` zeroed) when the id does not name a
- * footnote reference or definition of this session. */
+/** Fills `info` for `node` at the current revision. Returns false (with
+ * `info` zeroed) when `node` is not a footnote reference or definition. Takes
+ * the node for the same reason reference_info does. */
 MARKDOWN_CORE_API bool markdown_core_document_footnote_info(
     const markdown_core_document *session,
-    markdown_core_node_id id,
+    const markdown_core_node *node,
     markdown_core_footnote_info *info
 );
 
