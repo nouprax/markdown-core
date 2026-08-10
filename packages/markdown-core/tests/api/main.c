@@ -1744,9 +1744,7 @@ static char *dump_document_cstr(const markdown_core_document *document) {
  * absence in every part it has, which always includes VALUE -- so "created"
  * and "changed" are the same query here, and a consumer that needs to tell
  * them apart does it from its own state, not from the delta. */
-#define DELTA_OWN_PARTS                                                                                                \
-    ((long)(MARKDOWN_CORE_DIFF_VALUE | MARKDOWN_CORE_DIFF_TEXT | MARKDOWN_CORE_DIFF_CHILDREN |                          \
-            MARKDOWN_CORE_DIFF_ANSWERS))
+#define DELTA_OWN_PARTS ((long)(MARKDOWN_CORE_DIFF_VALUE | MARKDOWN_CORE_DIFF_TEXT | MARKDOWN_CORE_DIFF_CHILDREN))
 
 static long delta_parts(const markdown_core_delta *changes, markdown_core_node_id id) {
     const markdown_core_diff *diffs = NULL;
@@ -2811,17 +2809,18 @@ static void session_footnote_revision_bumps(test_batch_runner *runner) {
         const markdown_core_node *ref = node_by_id(markdown_core_document_root(session), ref_x);
         const markdown_core_node_id *ids = NULL;
         size_t count;
-        OK(runner,
-           ref != NULL && markdown_core_node_get_revision(ref) > ref_x_rev,
-           "the shifted reference keeps its id with a revision bump");
-        OK(runner, delta_touched(changes, ref_x), "the shifted reference is reported changed");
-        OK(runner, delta_bubbled_only(changes, paragraph_id), "its untouched paragraph bubbles");
-        {
-            const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(session), paragraph_id);
-            OK(runner,
-               paragraph && markdown_core_node_get_revision(paragraph) > paragraph_rev,
-               "the bubbled paragraph's revision advances");
-        }
+        /* THE DELTA SAYS NOTHING ABOUT A RENUMBERING. The reference's answer
+         * moved from 1 to 2 and its bytes did not, so nothing in its
+         * projection differs: the ANSWERS part is gone, and with it the second
+         * pass that existed to bump revisions for exactly this. Nothing
+         * shipped ever read those answers. The answer itself is still correct
+         * -- the assertions above just read it -- it is simply not something
+         * the delta reports. */
+        OK(runner, ref != NULL && markdown_core_node_get_id(ref) == ref_x, "the shifted reference keeps its id");
+        OK(runner, ref != NULL && markdown_core_node_get_revision(ref) == ref_x_rev, "and its revision, having not changed");
+        OK(runner, delta_parts(changes, ref_x) < 0, "a renumbering is not in the delta");
+        OK(runner, delta_parts(changes, paragraph_id) < 0, "and its untouched paragraph is not either");
+        (void)paragraph_rev;
         count = markdown_core_document_footnotes(session, &ids);
         OK(runner, count == 2 && ids && ids[0] == def_y && ids[1] == def_x, "first-use order flipped");
     }

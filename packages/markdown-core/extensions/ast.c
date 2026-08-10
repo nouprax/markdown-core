@@ -1175,28 +1175,11 @@ static bool kind_has_text(markdown_core_node_kind kind) {
     }
 }
 
-// Kinds a parser answer is addressed to (4.1). The document root carries the
-// document-wide ordered answers; a footnote definition and reference carry
-// their number, resolution and back-reference ordinal.
-static bool kind_has_answers(markdown_core_node_kind kind) {
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_DOCUMENT:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
-        return true;
-    default:
-        return false;
-    }
-}
-
 uint32_t markdown_core_ast_parts_present(const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     uint32_t parts = MARKDOWN_CORE_DIFF_VALUE;
     if (kind_has_text(kind)) {
         parts |= MARKDOWN_CORE_DIFF_TEXT;
-    }
-    if (kind_has_answers(kind)) {
-        parts |= MARKDOWN_CORE_DIFF_ANSWERS;
     }
     // An empty child list and no child list are indistinguishable to every
     // consumer, so a childless node is not given the two list-valued parts.

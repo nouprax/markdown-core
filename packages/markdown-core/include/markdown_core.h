@@ -132,8 +132,7 @@ typedef enum markdown_core_diff_part {
     MARKDOWN_CORE_DIFF_VALUE = 1u << 0,
     MARKDOWN_CORE_DIFF_TEXT = 1u << 1,
     MARKDOWN_CORE_DIFF_CHILDREN = 1u << 2,
-    MARKDOWN_CORE_DIFF_ANSWERS = 1u << 3,
-    MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 4
+    MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 3
 } markdown_core_diff_part;
 
 /** One node whose projection differs between the delta's two documents. */

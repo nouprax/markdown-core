@@ -450,21 +450,6 @@ bool markdown_core_footnote_index_build_sites(
 /** Releases everything owned by `index` and zeroes it. */
 void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);
 
-/** Diffs `next` against `previous` by node id and bumps the revision of
- * every node whose query answers changed but whose dump content did not:
- * the node takes the ANSWERS part, untouched ancestors take DESCENDANT.
- * It annotates nodes and records nothing in the delta -- the delta's own
- * emission walk reads the annotations off in postorder afterwards, which is
- * what lets one ordered list carry two independently-computed answers.
- * Two-phase and transactional: on false (an allocation could not grow) no
- * node has been touched, so the diff may run against the live committed
- * tree. */
-bool markdown_core_footnote_index_diff(
-    markdown_core_mem *mem,
-    const markdown_core_footnote_index *previous,
-    const markdown_core_footnote_index *next,
-    uint64_t new_rev
-);
 
 /** Creates a parser configured with the session's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set

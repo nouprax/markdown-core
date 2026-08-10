@@ -157,10 +157,10 @@ int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *b
  * mirror keyed by MarkupID, maintained in ONE forward pass over the list.
  *
  * Everything it checks is a clause of 9.1 rather than a property of this
- * implementation: each node is named once; the retired rows (parts zero) come
- * first, so the mirror can drop dead state before it touches anything else;
- * and a surviving node always follows its own children, so a consumer that
- * builds values bottom-up never reaches a parent early. */
+ * implementation: each node is named once; a retired row (parts zero) names
+ * something the mirror already holds, and arrives before the parent whose
+ * child it was; and a surviving node always follows its own children, so a
+ * consumer that builds values bottom-up never reaches a parent early. */
 static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
     const markdown_core_diff *diffs = NULL;
     size_t count;
@@ -168,7 +168,6 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
     size_t k;
     uint64_t before;
     uint64_t after;
-    int seen_surviving = 0;
 
     markdown_core_delta_revisions(changes, &before, &after);
     if (after != expected_after) {
@@ -187,16 +186,12 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
     for (i = 0; i < count; i++) {
         sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, diffs[i].markup);
         if (diffs[i].parts == 0) {
-            if (seen_surviving) {
-                return sr_fail(replay, "a retired row followed a surviving one");
-            }
             if (!entry) {
                 return sr_fail(replay, "delta retired an id the mirror never saw");
             }
             sr_mirror_remove(&replay->mirror, entry);
             continue;
         }
-        seen_surviving = 1;
         if (entry) {
             entry->revision = after;
         } else if (sr_mirror_insert(&replay->mirror, diffs[i].markup, after) != 0) {

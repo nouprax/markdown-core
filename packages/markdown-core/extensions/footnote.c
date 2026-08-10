@@ -17,18 +17,6 @@
 // wins. Reference labels longer than MAX_LINK_LABEL_LENGTH never resolve,
 // exactly like link-reference lookups.
 
-typedef struct {
-    markdown_core_node **items;
-    size_t count;
-    size_t capacity;
-} node_list;
-
-typedef struct {
-    markdown_core_node **slots;
-    size_t count;
-    size_t capacity;
-} node_set;
-
 static uint64_t footnote_mix64(uint64_t x) {
     x ^= x >> 33;
     x *= UINT64_C(0xff51afd7ed558ccd);
@@ -36,98 +24,6 @@ static uint64_t footnote_mix64(uint64_t x) {
     x *= UINT64_C(0xc4ceb9fe1a85ec53);
     x ^= x >> 33;
     return x;
-}
-
-static bool node_list_push(markdown_core_mem *mem, node_list *list, markdown_core_node *node) {
-    if (list->count == list->capacity) {
-        size_t capacity = list->capacity ? list->capacity * 2 : 16;
-        markdown_core_node **grown = (markdown_core_node **)mem->realloc(mem, list->items, capacity * sizeof(*grown));
-        if (!grown) {
-            return false;
-        }
-        list->items = grown;
-        list->capacity = capacity;
-    }
-    list->items[list->count++] = node;
-    return true;
-}
-
-static bool node_set_grow(markdown_core_mem *mem, node_set *set) {
-    size_t capacity = set->capacity ? set->capacity * 2 : 16;
-    markdown_core_node **slots;
-    size_t i;
-
-    if (capacity < set->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
-        return false;
-    }
-    slots = (markdown_core_node **)mem->calloc(mem, capacity, sizeof(*slots));
-    if (!slots) {
-        return false;
-    }
-    for (i = 0; i < set->capacity; i++) {
-        markdown_core_node *node = set->slots[i];
-        if (node) {
-            size_t mask = capacity - 1;
-            size_t slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
-            while (slots[slot]) {
-                slot = (slot + 1) & mask;
-            }
-            slots[slot] = node;
-        }
-    }
-    if (set->slots) {
-        mem->free(mem, set->slots);
-    }
-    set->slots = slots;
-    set->capacity = capacity;
-    return true;
-}
-
-static bool node_set_holds(const node_set *set, const markdown_core_node *node) {
-    size_t mask;
-    size_t slot;
-
-    if (set->capacity == 0) {
-        return false;
-    }
-    mask = set->capacity - 1;
-    slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
-    while (set->slots[slot]) {
-        if (set->slots[slot] == node) {
-            return true;
-        }
-        slot = (slot + 1) & mask;
-    }
-    return false;
-}
-
-/* Growth is transactional and happens only during the collection phase,
- * before any live node is mutated. */
-static bool node_set_put(markdown_core_mem *mem, node_set *set, markdown_core_node *node) {
-    if (set->capacity == 0 || set->count >= set->capacity / 2) {
-        if (!node_set_grow(mem, set)) {
-            return false;
-        }
-    }
-
-    size_t mask = set->capacity - 1;
-    size_t slot = (size_t)footnote_mix64((uint64_t)(uintptr_t)node) & mask;
-    while (set->slots[slot] && set->slots[slot] != node) {
-        slot = (slot + 1) & mask;
-    }
-    if (set->slots[slot] == node) {
-        return true;
-    }
-    set->slots[slot] = node;
-    set->count++;
-    return true;
-}
-
-static void node_set_release(markdown_core_mem *mem, node_set *set) {
-    if (set->slots) {
-        mem->free(mem, set->slots);
-    }
-    memset(set, 0, sizeof(*set));
 }
 
 bool markdown_core_footnote_site_push(
@@ -627,89 +523,6 @@ static const markdown_core_footnote_record *find_record(
     markdown_core_node_id id
 ) {
     return markdown_core_footnote_table_find(&index->records, id);
-}
-
-static bool info_equal(const markdown_core_footnote_info *a, const markdown_core_footnote_info *b) {
-    return a->definition == b->definition && a->number == b->number && a->reference_ordinal == b->reference_ordinal &&
-           a->reference_count == b->reference_count;
-}
-
-bool markdown_core_footnote_index_diff(
-    markdown_core_mem *mem,
-    const markdown_core_footnote_index *previous,
-    const markdown_core_footnote_index *next,
-    uint64_t new_rev
-) {
-    // Two phases so the diff can run against a session's live tree: phase 1
-    // collects the affected nodes without touching them (every allocation
-    // happens here), phase 2 writes the parts onto them infallibly. A failed
-    // diff therefore leaves every committed node exactly as it was.
-    node_list changed = {NULL, 0, 0};
-    node_list bubbled = {NULL, 0, 0};
-    node_set affected = {NULL, 0, 0};
-    bool ok = false;
-    size_t i;
-
-    for (i = 0; i < next->records.capacity; i++) {
-        markdown_core_node *node;
-        const markdown_core_footnote_record *old;
-        markdown_core_node *parent;
-        if (next->records.keys[i] == 0 || next->records.keys[i] == FOOTNOTE_TOMBSTONE) {
-            continue;
-        }
-        node = next->records.records[i].node;
-        if (node->last_changed_rev == new_rev || node_set_holds(&affected, node)) {
-            continue; // already reported by the adoption walk or this diff
-        }
-        old = find_record(previous, node->id);
-        if (old && info_equal(&old->info, &next->records.records[i].info)) {
-            continue;
-        }
-        if (!node_list_push(mem, &changed, node)) {
-            goto done;
-        }
-        if (!node_set_put(mem, &affected, node)) {
-            goto done;
-        }
-        // Ancestors already carrying (or collected for) their own bump
-        // covered the rest of the chain.
-        for (parent = node->parent; parent && parent->last_changed_rev != new_rev; parent = parent->parent) {
-            if (node_set_holds(&affected, parent)) {
-                break;
-            }
-            if (!node_list_push(mem, &bubbled, parent)) {
-                goto done;
-            }
-            if (!node_set_put(mem, &affected, parent)) {
-                goto done;
-            }
-        }
-    }
-
-    // Phase 2 writes fields on nodes, which cannot fail. The delta-array
-    // reservation this used to need -- and the `owed_bubbled` headroom the
-    // caller had to declare, because a reservation is relative to the array's
-    // count when it is made and the caller's own push ran after its point of
-    // no return -- is gone with the arrays it protected.
-    for (i = 0; i < changed.count; i++) {
-        changed.items[i]->last_changed_rev = new_rev;
-        changed.items[i]->diff_parts |= MARKDOWN_CORE_DIFF_ANSWERS;
-    }
-    for (i = 0; i < bubbled.count; i++) {
-        bubbled.items[i]->last_changed_rev = new_rev;
-        bubbled.items[i]->diff_parts |= MARKDOWN_CORE_DIFF_DESCENDANT;
-    }
-    ok = true;
-
-done:
-    if (changed.items) {
-        mem->free(mem, changed.items);
-    }
-    if (bubbled.items) {
-        mem->free(mem, bubbled.items);
-    }
-    node_set_release(mem, &affected);
-    return ok;
 }
 
 // --- public queries ----------------------------------------------------------

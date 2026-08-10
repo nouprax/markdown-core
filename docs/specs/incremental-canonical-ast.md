@@ -1460,7 +1460,7 @@ Diff {
 }
 
 DiffPart =
-    VALUE | TEXT | CHILDREN | ANSWERS | DESCENDANT
+    VALUE | TEXT | CHILDREN | DESCENDANT
 ```
 
 9.1 gives each part its meaning and 9.3 the rule that closes the set.
@@ -1499,20 +1499,29 @@ changes it. What a path-B consumer mutates is its own state, addressed by
 Write `proj(n)` for a node's observable projection, split into parts:
 
 ```text
-proj(n) = (VALUE, TEXT, CHILDREN, ANSWERS, DESCENDANT)
+proj(n) = (VALUE, TEXT, CHILDREN, DESCENDANT)
 
 VALUE       kind, scalar fields, singular child edges, source shape
 TEXT        canonical text bytes
 CHILDREN    the list-valued child edge: membership and order
-ANSWERS     this node's parser answers, asked of the document (4.1)
 DESCENDANT  the projections of everything below it
 ```
 
-`ANSWERS` includes every node-addressed semantic query value and, on the root
-`Document`, every document-wide ordered answer. It does not include concrete
-recovery, syntax diagnostics, relation-index layout, or cache state. Thus a
-change to `Document.footnotes()` has a stable address even if no ordinary
-node field changed, while lazily filling the index emits nothing.
+**`proj` is the TREE, and parser answers are not in it.** There used to be an
+`ANSWERS` part carrying every node-addressed query value, so that a commit
+which changed only a footnote's number reported that node even though nothing
+about its bytes or its fields had moved.
+
+It is removed, on two counts. Nothing shipped ever read those answers -- no
+binding calls `footnote_info`, `footnotes`, `footnote_references` or
+`reference_info` -- so there was no consumer being kept in step. And it was
+expensive in a way that had nothing to do with its own cost: an answer like
+"which definition wins" is a FORWARD REFERENCE, decided by definitions that
+may appear anywhere later in the document, so it could not be decided while
+pairing a node with its predecessor. That forced the delta to be assembled by
+a separate full-tree pass after both verdicts were in. Removing the part let
+the diff walk emit each row at the moment it classifies it, and deleted that
+pass along with the per-node scratch field it read.
 
 Absence is a projection value: `proj(n) = ⊥` when `n` is not live in that
 document. Then, for every `n` live in `before` or `after`:
@@ -1533,18 +1542,17 @@ bottom-up therefore reads the list once, front to back, and every child it
 needs is already built. That is the whole reason the order is specified; it is
 not a stability convention.
 
-The order is: **the retired nodes first, then the `after` tree's postorder.**
-A retired node needs no position of its own, because deletion is addressed by
-id, and putting them all in front is what a consumer wants anyway — it drops
-every piece of dead state before it touches anything it is keeping.
+The order is the `after` tree's postorder, with one rule for the nodes that
+are not in it: **a retired node is emitted where it was found**, inside its
+former parent's run and so before that parent's own row. A consumer therefore
+drops a parent's dead children before it re-reads that parent's child list. A
+retired node needs no position of its own — deletion is addressed by id — so
+what this ordering buys is the single pass: the diff walk writes each row at
+the moment it decides it, and there is no second traversal.
 
-*An earlier revision of this section put a retired node "where it was found",
-inside its former parent's run. That rule was chosen to buy a single pass, and
-the single pass is not available: `ANSWERS` cannot be computed until node
-identities exist, because the footnote index is keyed by `MarkupID` and
-identities are minted by the diff walk itself. So the delta is emitted by a
-separate walk no matter what, and given a separate walk the prefix run is both
-simpler and strictly better for the consumer.*
+*This rule was briefly changed to "all retired rows first", on the grounds
+that the single pass was unavailable anyway. It was unavailable because of
+`ANSWERS` (9.1), and `ANSWERS` is gone.*
 
 **This is why there is no separate ordered-entry table.** It existed because
 `diffs` used to be four unordered id sets, so tree position had to be
@@ -1635,7 +1643,7 @@ code.
 
 A `Delta` reports what changed in the AST. Bytes are the caller's.
 
-### 9.3 Why these five parts and no more
+### 9.3 Why these four parts and no more
 
 `DiffPart` is closed, and the rule that closes it is a cost rule, not a
 taxonomy:
@@ -1643,8 +1651,7 @@ taxonomy:
 > a part exists if and only if a consumer that ignored it would either be
 > wrong, or pay more than `O(1)`.
 
-`TEXT` is `O(length)`. `CHILDREN` is `O(width)`. `ANSWERS`
-is the cost of a parser answer query (4.1). A consumer that ignored `DESCENDANT`
+`TEXT` is `O(length)`. `CHILDREN` is `O(width)`. A consumer that ignored `DESCENDANT`
 while materializing a parent-linked structure would be *wrong*: it would
 retain an ancestor holding a stale child, and a value-diffing UI below it
 would never reach the change. Everything else about a node — its kind, its

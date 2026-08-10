@@ -243,33 +243,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
  * old `adopt` name hid, and keeping parse and diff apart is what makes it
  * statable: a tree is a pure function of (bytes, options), and a delta is a
  * pure function of two trees. */
-/* Appends every node the two diff passes marked at `rev`, in postorder, so a
- * node always follows its own children. Iterative with parent pointers: depth
- * is input-controlled and native recursion does not survive it. */
-static bool delta_emit(markdown_core_delta *changes, markdown_core_node *root, uint64_t rev) {
-    markdown_core_node *node = root;
-
-    while (node->first_child) {
-        node = node->first_child;
-    }
-    for (;;) {
-        if (node->last_changed_rev == rev && !markdown_core_delta_push(changes, node->id, node->diff_parts)) {
-            return false;
-        }
-        if (node == root) {
-            return true;
-        }
-        if (node->next) {
-            node = node->next;
-            while (node->first_child) {
-                node = node->first_child;
-            }
-        } else {
-            node = node->parent;
-        }
-    }
-}
-
 bool markdown_core_document_diff(
     const markdown_core_document *old,
     markdown_core_document *nw,
@@ -290,17 +263,15 @@ bool markdown_core_document_diff(
     }
 
     // Footnote numbering, resolution and back-reference ordinals are
-    // index-backed answers; a commit that changes only those bumps the
-    // affected revisions with no dump-visible change.
+    // index-backed answers, and the delta says NOTHING about them: the
+    // ANSWERS part is gone, and so is the second pass that existed to bump
+    // revisions when only a number moved. Nothing shipped ever read those
+    // answers -- no binding calls footnote_info, footnotes,
+    // footnote_references or reference_info -- so there was no consumer to
+    // under-report to, and reporting them cost a whole extra emission pass.
     memset(&footnotes, 0, sizeof(footnotes));
     if (nw->options.footnotes) {
-        if (!markdown_core_footnote_index_build(nw, nw->root, &footnotes) ||
-            !markdown_core_footnote_index_diff(
-                nw->mem,
-                old ? &old->footnotes : &footnotes,
-                &footnotes,
-                nw->revision
-            )) {
+        if (!markdown_core_footnote_index_build(nw, nw->root, &footnotes)) {
             markdown_core_footnote_index_release(nw->mem, &footnotes);
             markdown_core_ast_set_error(
                 error,
@@ -309,21 +280,6 @@ bool markdown_core_document_diff(
             );
             return false;
         }
-    }
-
-    // EMIT THE DELTA, now that both passes have had their say. The tree diff
-    // wrote the structural parts onto the nodes and the footnote pass ORed its
-    // ANSWERS in; neither knows the other's positions, and neither needs to,
-    // because position is decided here and only here.
-    //
-    // The retired rows are already at the front: the tree diff pushed them as
-    // it discovered them, and a retired node needs no position because
-    // deletion is addressed by id. This appends every surviving changed node
-    // in postorder, so a node always follows its own children (9.1).
-    if (changes && !delta_emit(changes, nw->root, nw->revision)) {
-        markdown_core_footnote_index_release(nw->mem, &footnotes);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
-        return false;
     }
 
     nw->footnotes = footnotes;

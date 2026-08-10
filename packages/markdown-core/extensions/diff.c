@@ -46,22 +46,26 @@ typedef struct {
     bool failed;
 } diff_ctx;
 
-// ANNOTATE, DO NOT RECORD. A node's changed parts are written onto the node
-// and the delta is emitted from one postorder walk afterwards (document.c).
-// That is what lets two independently-computed answers -- this walk's
-// structural verdict and the footnote pass's ANSWERS -- land in one ordered
-// list without either of them knowing the other's positions.
-static void mark(markdown_core_node *node, uint64_t rev, uint32_t parts) {
-    node->last_changed_rev = rev;
-    node->diff_parts |= parts;
+// THIS WALK EMITS THE DELTA. It used to only annotate nodes, because a second
+// pass -- the footnote index diff -- could still add an ANSWERS part to a node
+// this one had already classified, so nothing could be written down until both
+// had spoken. That pass is gone with the part it reported, so the verdict is
+// final at frame exit and the row is pushed there. A separate postorder walk
+// over the whole tree, plus the scratch field it read, went with it.
+static void mark(diff_ctx *ctx, markdown_core_node *node, uint32_t parts) {
+    node->last_changed_rev = ctx->new_rev;
+    if (ctx->changes && !markdown_core_delta_push(ctx->changes, node->id, parts)) {
+        ctx->failed = true;
+    }
 }
 
 static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
     markdown_core_node *node = root;
+
+    // Ids preorder, which for a wholly new subtree is document order.
     for (;;) {
         node->id = ctx->session->next_id++;
-        // A created node differs from absence in every part it has (9.1).
-        mark(node, ctx->new_rev, markdown_core_ast_parts_present(node));
+        node->last_changed_rev = ctx->new_rev;
         if (node->first_child) {
             node = node->first_child;
             continue;
@@ -74,12 +78,40 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
         }
         node = node->next;
     }
+
+    if (!ctx->changes) {
+        return;
+    }
+    // Rows postorder, because a consumer building immutable values bottom-up
+    // needs a node's children before the node. A created node differs from
+    // absence in every part it has (9.1).
+    node = root;
+    while (node->first_child) {
+        node = node->first_child;
+    }
+    for (;;) {
+        if (!markdown_core_delta_push(ctx->changes, node->id, markdown_core_ast_parts_present(node))) {
+            ctx->failed = true;
+            return;
+        }
+        if (node == root) {
+            return;
+        }
+        if (node->next) {
+            node = node->next;
+            while (node->first_child) {
+                node = node->first_child;
+            }
+        } else {
+            node = node->parent;
+        }
+    }
 }
 
-// Retired nodes are the only rows this walk pushes itself, and they go in
-// BEFORE any surviving node -- deletion is addressed by id, so a retired row
-// needs no position, and a consumer that drops all dead state first can then
-// rebuild bottom-up in one forward pass.
+// A retired subtree is pushed where it is found: inside its former parent's
+// run, and so before that parent's own row. Deletion is addressed by id, so a
+// retired row needs no position of its own; what this ordering buys is that a
+// consumer drops a parent's dead children before it re-reads that parent.
 static void record_removed_subtree(diff_ctx *ctx, const markdown_core_node *root) {
     const markdown_core_node *node = root;
     for (;;) {
@@ -268,7 +300,7 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
             parts |= MARKDOWN_CORE_DIFF_DESCENDANT;
         }
         if (parts) {
-            mark(top->nw, ctx->new_rev, parts);
+            mark(ctx, top->nw, parts);
         } else {
             top->nw->last_changed_rev = top->old->last_changed_rev;
         }
