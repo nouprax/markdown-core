@@ -2326,12 +2326,9 @@ finished:
 /* Runs the block-local postprocess pipeline for one unit: text
  * consolidation, extension block postprocess hooks in attachment order,
  * and HTML-comment stripping. The caller precomputes its traversal successor
- * because a postprocessor may replace the unit. Returns the surviving node. */
-static markdown_core_node *S_postprocess_unit(
-    markdown_core_parser *parser,
-    markdown_core_node *unit,
-    bool owns_inlines
-) {
+ * because a postprocessor may replace the unit; the replacement takes the
+ * unit's place in the tree itself, so nothing is handed back. */
+static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
 
@@ -2375,32 +2372,29 @@ static markdown_core_node *S_postprocess_unit(
             }
         }
     }
-
-    return unit;
 }
 
 /* Drives S_postprocess_unit over a bounded subtree in document order.
  * Inline-owning units are pipeline leaves: their inline subtrees are handled
  * by the unit pass itself, so traversal never descends into them. Successors
  * are computed before a unit runs because the pipeline may replace, free, or
- * flatten the unit node. Returns the node occupying `first`'s position after
- * processing; callers use this when the bounded root itself may be replaced.
+ * flatten the unit node; a replacement splices itself into the tree, so no
+ * caller has to be told about it.
  *
  * Deliberately does NOT stamp `subtree_hash`. Stamping was folded into this
  * walk once, and it worked and was cheaper (+2.6% against +11.2% on
  * multiple_duplicate_references) -- but it took three shapes to do it: a
  * pipeline leaf stamped as it was processed, a container stamped as its last
  * child completed, and the root stamped by the caller because this walk stops
- * below its boundary. Correctness then depended on those three agreeing about who
- * covers whom, which is the same "some nodes stamped, some not" split that
+ * below its boundary. Correctness then depended on those three agreeing about
+ * who covers whom, which is the same "some nodes stamped, some not" split that
  * produced the unstamped-inlines bug in the first place. One trailing pass
  * over the settled tree is worth the difference. */
-static markdown_core_node *S_postprocess_subtree(
+static void S_postprocess_subtree(
     markdown_core_parser *parser,
     markdown_core_node *boundary,
     markdown_core_node *first
 ) {
-    markdown_core_node *result = first;
     markdown_core_node *node = first;
 
     while (node) {
@@ -2418,45 +2412,15 @@ static markdown_core_node *S_postprocess_subtree(
             }
         }
 
-        {
-            markdown_core_node *processed = S_postprocess_unit(parser, node, owns_inlines);
-            if (node == first) {
-                result = processed;
-            }
-        }
+        S_postprocess_unit(parser, node, owns_inlines);
         node = next;
     }
-    return result;
 }
 
 static void S_postprocess_blocks(markdown_core_parser *parser) {
     if (parser->root->first_child) {
         S_postprocess_subtree(parser, parser->root, parser->root->first_child);
     }
-}
-
-markdown_core_node *markdown_core_parser_refine_unit(
-    markdown_core_parser *parser,
-    markdown_core_map *refmap,
-    markdown_core_node *unit
-) {
-    markdown_core_iter *iter = markdown_core_iter_new(unit);
-    markdown_core_node *cur;
-    markdown_core_event_type ev_type;
-
-    if (!iter) {
-        parser->oom = true;
-        return unit;
-    }
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && contains_inlines(cur)) {
-            S_parse_node_inlines(parser, cur, refmap, parser->options);
-        }
-    }
-    markdown_core_iter_free(iter);
-
-    return S_postprocess_subtree(parser, unit, unit);
 }
 
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {

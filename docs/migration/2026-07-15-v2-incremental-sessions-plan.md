@@ -351,7 +351,10 @@ Equality everywhere is `(lineage, id, revision)`.
     winning (url, title) payload changed name the dependent units through
     the lookup table. Dependents rebuild as cloned shells re-refined
     against the reconciled map through the per-unit pipeline
-    (`markdown_core_parser_refine_unit`), adopt pairwise for id stability,
+    (`markdown_core_parser_refine_unit` — deleted 2026-08-10: the entry point
+    was built but nothing ever called it, so this per-unit rebuild path never
+    shipped; reviving it means reintroducing the function together with the
+    caller this paragraph describes), adopt pairwise for id stability,
     splice by pointer surgery inside the existing transaction, and bubble
     ancestor revisions. Only paragraphs and headings rebuild per-unit;
     extension-owned units (table cells, directives) still fall back to a

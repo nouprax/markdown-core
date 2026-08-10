@@ -461,21 +461,6 @@ void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser);
 
-struct markdown_core_map;
-
-/** Session staging for one inline-owning unit: parses the unit's inline
- * content against `refmap` and runs the block-local postprocess pipeline.
- * The parser-local compiled grammar is always active. Returns the node the
- * unit became (normally the unit itself); allocation loss is reported through
- * the parser's and the map's sticky flags, exactly like a full refine.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parser_refine_unit(
-    markdown_core_parser *parser,
-    struct markdown_core_map *refmap,
-    markdown_core_node *unit
-);
-
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for
  * the node tree should be released using 'markdown_core_node_free'
