@@ -319,15 +319,8 @@ static int sr_check_footnote_queries(sr_replay *replay) {
         sr_fail(replay, "fresh footnote reference session failed");
         goto done;
     }
-    if (ts_ast_walk(
-            markdown_core_document_root(replay->session),
-            sr_id_collect_visit,
-            &mine
-        ) < 0 ||
-        mine.failed ||
-        ts_ast_walk(markdown_core_document_root(fresh), sr_id_collect_visit, &theirs) <
-            0 ||
-        theirs.failed) {
+    if (ts_ast_walk(markdown_core_document_root(replay->session), sr_id_collect_visit, &mine) < 0 || mine.failed ||
+        ts_ast_walk(markdown_core_document_root(fresh), sr_id_collect_visit, &theirs) < 0 || theirs.failed) {
         sr_fail(replay, "footnote walk failed to allocate");
         goto done;
     }
@@ -345,8 +338,16 @@ static int sr_check_footnote_queries(sr_replay *replay) {
     for (i = 0; i < mine.count; i++) {
         markdown_core_footnote_info a;
         markdown_core_footnote_info b;
-        bool found_a = markdown_core_document_footnote_info(replay->session, node_by_id(markdown_core_document_root(replay->session), mine.ids[i]), &a);
-        bool found_b = markdown_core_document_footnote_info(fresh, node_by_id(markdown_core_document_root(fresh), theirs.ids[i]), &b);
+        bool found_a = markdown_core_document_footnote_info(
+            replay->session,
+            node_by_id(markdown_core_document_root(replay->session), mine.ids[i]),
+            &a
+        );
+        bool found_b = markdown_core_document_footnote_info(
+            fresh,
+            node_by_id(markdown_core_document_root(fresh), theirs.ids[i]),
+            &b
+        );
         if (found_a != found_b) {
             sr_fail(replay, "footnote info presence diverged from a fresh session");
             goto done;
@@ -703,4 +704,3 @@ void mc_doc_close(mc_doc *doc) {
     free(doc->text);
     memset(doc, 0, sizeof(*doc));
 }
-

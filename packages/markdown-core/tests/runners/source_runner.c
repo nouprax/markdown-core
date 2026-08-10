@@ -449,11 +449,7 @@ static int case_batch_splice(void) {
         fprintf(stderr, "batch_splice: emptying batch rejected (%d)\n", (int)status);
         failed = 1;
     } else if (markdown_core_source_length(base) != 0) {
-        fprintf(
-            stderr,
-            "batch_splice: emptying batch left %zu bytes\n",
-            markdown_core_source_length(base)
-        );
+        fprintf(stderr, "batch_splice: emptying batch left %zu bytes\n", markdown_core_source_length(base));
         failed = 1;
     }
     markdown_core_source_release(base);
@@ -470,8 +466,7 @@ static int case_batch_splice(void) {
     edits[1].replacement_length = 1;
     counting.attempts = 0;
     counting.fail_at = 1;
-    if (markdown_core_source_apply(base, edits, 2, &stats, &status) ||
-        status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
+    if (markdown_core_source_apply(base, edits, 2, &stats, &status) || status != MARKDOWN_CORE_SOURCE_NO_MEMORY) {
         fprintf(stderr, "batch_splice: batch accepted with its allocation refused\n");
         failed = 1;
     }
@@ -667,8 +662,7 @@ static int case_span_validation(void) {
         wipe.span.end = sizeof(text) - 1;
         wipe.replacement = NULL;
         wipe.replacement_length = 0;
-        if (!markdown_core_source_apply(base, &wipe, 1, &stats, &status) ||
-            markdown_core_source_length(base) != 0) {
+        if (!markdown_core_source_apply(base, &wipe, 1, &stats, &status) || markdown_core_source_length(base) != 0) {
             fprintf(stderr, "span_validation: delete-all failed\n");
             failed = 1;
         }

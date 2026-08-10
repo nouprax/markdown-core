@@ -282,7 +282,7 @@ struct markdown_core_document {
     // so nothing can hold a predecessor to read.
     markdown_core_source *source;
     markdown_core_node *root; // the committed tree, owned
-    uint64_t next_id;            // monotonic, starts at 1, never reused
+    uint64_t next_id;         // monotonic, starts at 1, never reused
     uint64_t lineage;
     uint64_t revision;
     markdown_core_footnote_index footnotes;
@@ -450,7 +450,6 @@ bool markdown_core_footnote_index_build_sites(
 /** Releases everything owned by `index` and zeroes it. */
 void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);
 
-
 /** Creates a parser configured with the session's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
  * when non-NULL. Defined in session.c. */
@@ -458,15 +457,16 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
 
 /** Takes the session's warm parser when one is held, else creates one like
  * markdown_core_document_new_parser. Defined in session.c. */
-markdown_core_parser *markdown_core_document_acquire_parser(markdown_core_document *session, markdown_core_error **error);
+markdown_core_parser *markdown_core_document_acquire_parser(
+    markdown_core_document *session,
+    markdown_core_error **error
+);
 
 /** Hands a parser back after its parse ended: a healthy one is renewed and
  * held warm for the next commit, a poisoned one (or a second hand-back) is
  * freed. The parser's definition maps must be its own or NULL — never the
  * session's. Defined in session.c. */
 void markdown_core_document_release_parser(markdown_core_document *session, markdown_core_parser *parser);
-
-
 
 /** Rewrites every definition owner stamped as a node pointer during the
  * just-adopted parse to that node's session id (owner 0 stays 0: the region

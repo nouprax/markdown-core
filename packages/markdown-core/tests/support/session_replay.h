@@ -119,4 +119,3 @@ bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdo
 bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_t length);
 bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error);
 void mc_doc_close(mc_doc *doc);
-

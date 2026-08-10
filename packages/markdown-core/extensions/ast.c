@@ -268,8 +268,6 @@ markdown_core_scope markdown_core_node_scope(const markdown_core_node *node) {
     return scope;
 }
 
-
-
 markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node) { return node ? node->id : 0; }
 
 uint64_t markdown_core_node_get_revision(const markdown_core_node *node) { return node ? node->last_changed_rev : 0; }
@@ -1210,24 +1208,27 @@ uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const mark
         bool tight_a, tight_b;
         markdown_core_node_list_properties(a, &flavor_a, &start_a, &tight_a);
         markdown_core_node_list_properties(b, &flavor_b, &start_b, &tight_b);
-        value = !(flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
-                  (!start_a.has_value || start_a.value == start_b.value));
+        value =
+            !(flavor_a == flavor_b && tight_a == tight_b && start_a.has_value == start_b.has_value &&
+              (!start_a.has_value || start_a.value == start_b.value));
         break;
     }
     case MARKDOWN_CORE_KIND_LIST_ITEM: {
         markdown_core_optional_bool checked_a, checked_b;
         markdown_core_node_list_item_checked(a, &checked_a);
         markdown_core_node_list_item_checked(b, &checked_b);
-        value = !(checked_a.has_value == checked_b.has_value &&
-                  (!checked_a.has_value || checked_a.value == checked_b.value));
+        value =
+            !(checked_a.has_value == checked_b.has_value &&
+              (!checked_a.has_value || checked_a.value == checked_b.value));
         break;
     }
     case MARKDOWN_CORE_KIND_CODE_BLOCK: {
         bool fenced_a, closed_a, fenced_b, closed_b;
         markdown_core_node_code_block_properties(a, &a1, &a2, &a3, &fenced_a, &closed_a);
         markdown_core_node_code_block_properties(b, &b1, &b2, &b3, &fenced_b, &closed_b);
-        value = !(fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
-                  view_optional_equal(a2, b2));
+        value =
+            !(fenced_a == fenced_b && closed_a == closed_b && view_optional_equal(a1, b1) &&
+              view_optional_equal(a2, b2));
         text = !view_content_equal(a3, b3);
         break;
     }

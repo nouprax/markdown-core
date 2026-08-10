@@ -338,8 +338,7 @@ markdown_core_document *ts_ast_parse(const uint8_t *bytes, size_t length, const 
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv(bytes, length), options, &error);
     if (!document) {
-        markdown_core_string message =
-            error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
+        markdown_core_string message = error ? markdown_core_error_get_message(error) : (markdown_core_string){NULL, 0};
         fprintf(stderr, "facade parse failed: ");
         if (message.data) {
             fwrite(message.data, 1, message.length, stderr);

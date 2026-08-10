@@ -171,7 +171,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
         return false;
     }
 
-
     // Fed run by run. markdown_core_parser_feed is a streaming interface
     // (core/blocks.c S_parser_feed buffers a partial line in parser->linebuf),
     // so the chunking is free to follow whatever the store hands back — which,
@@ -226,7 +225,6 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
         );
         return false;
     }
-
 
     memcpy(session->definitions, staged, sizeof(staged));
     session->root = root;
@@ -295,11 +293,7 @@ static markdown_core_document *markdown_core_document_alloc(
 
 /* Replaces the document's whole text. The source starts empty, so this is one
  * insertion at the origin. */
-static bool document_set_text(
-    markdown_core_document *doc,
-    markdown_core_string markdown,
-    markdown_core_error **error
-) {
+static bool document_set_text(markdown_core_document *doc, markdown_core_string markdown, markdown_core_error **error) {
     markdown_core_source_edit edit;
     markdown_core_source_stats stats;
     markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
@@ -710,9 +704,10 @@ uint64_t markdown_core_document_revision(const markdown_core_document *session) 
     return session ? session->revision : 0;
 }
 
-uint64_t markdown_core_document_lineage(const markdown_core_document *session) { return session ? session->lineage : 0; }
+uint64_t markdown_core_document_lineage(const markdown_core_document *session) {
+    return session ? session->lineage : 0;
+}
 
 size_t markdown_core_document_length(const markdown_core_document *session) {
     return session ? markdown_core_source_length(session->source) : 0;
 }
-

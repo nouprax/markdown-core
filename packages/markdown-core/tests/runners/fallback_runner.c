@@ -1478,8 +1478,8 @@ static int fb_delta_matches(
         matches = 0;
     }
     for (i = 0; matches && i < actual.count; i++) {
-        if (actual.marks[i].ordinal != expected->marks[i].ordinal ||
-            actual.marks[i].type != expected->marks[i].type || actual.marks[i].parts != expected->marks[i].parts) {
+        if (actual.marks[i].ordinal != expected->marks[i].ordinal || actual.marks[i].type != expected->marks[i].type ||
+            actual.marks[i].parts != expected->marks[i].parts) {
             fprintf(
                 stderr,
                 "diffs item %zu mark (%zu,%d,%u) != control (%zu,%d,%u)\n",
@@ -1913,7 +1913,12 @@ static int fb_reference_destination_is(
     markdown_core_string title;
     size_t length = strlen(expected);
 
-    if (!node || !markdown_core_document_reference_info(session, node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)), &info) ||
+    if (!node ||
+        !markdown_core_document_reference_info(
+            session,
+            node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)),
+            &info
+        ) ||
         info.definition == 0) {
         return 0;
     }
@@ -1970,13 +1975,7 @@ static char *fb_feed_shape(const char *text, size_t length, size_t split) {
             continue;
         }
         literal = markdown_core_node_get_literal(node);
-        snprintf(
-            line,
-            sizeof(line),
-            "%s|%s\n",
-            markdown_core_node_get_type_string(node),
-            literal ? literal : ""
-        );
+        snprintf(line, sizeof(line), "%s|%s\n", markdown_core_node_get_type_string(node), literal ? literal : "");
         if (used + strlen(line) + 1 >= sizeof(shape)) {
             /* The corpus is fixed and small; a truncated shape would compare
              * equal for the wrong reason, so fail loudly instead. */

@@ -418,10 +418,7 @@ MARKDOWN_CORE_API bool markdown_core_document_splice(
 /** `Document(markdown, options)`. Options are fixed for the document's whole
  * lineage; a commit takes text and not options. */
 /** TRANSITIONAL, test-only; goes with markdown_core_document_splice. */
-MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(
-    const markdown_core_document *document,
-    size_t *length
-);
+MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(const markdown_core_document *document, size_t *length);
 
 /**
  * `Document(markdown, options)` — the one entry point. `options == NULL`
@@ -448,7 +445,6 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
     markdown_core_commit *out,
     markdown_core_error **error
 );
-
 
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *session);
 

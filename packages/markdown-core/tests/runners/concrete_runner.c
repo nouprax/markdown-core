@@ -792,8 +792,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     record->length < node->as.code.fence_length || !run_all(line + record->column, record->length) ||
                     !run_maximal(line, line_length, record) ||
                     (unsigned char)line[record->column] != node->as.code.fence_char ||
-                    (int)(record->line) !=
-                        node->end_line - node->start_line) {
+                    (int)(record->line) != node->end_line - node->start_line) {
                     fprintf(stderr, "%s: fence-close record disagrees with code block\n", source->name);
                     failed = 1;
                 }
@@ -1588,7 +1587,8 @@ static int case_capture_shape(void) {
     /* Exact multiplicities where the grammar's edges hide: a lazy line and
      * a blank `>` line inside quotes, and one marker per prefix depth. */
     {
-        markdown_core_document *document = markdown_core_document_new(mc_sv((const uint8_t *)SHAPE_SOURCES[0].text, strlen(SHAPE_SOURCES[0].text)),
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)SHAPE_SOURCES[0].text, strlen(SHAPE_SOURCES[0].text)),
             &options,
             NULL
         );
@@ -1628,7 +1628,8 @@ static int case_capture_shape(void) {
             {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 1, 2, 1}
         };
         static const expected_record QUOTE_DEPTH_2[] = {{MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 4, 1}};
-        markdown_core_document *document = markdown_core_document_new(mc_sv((const uint8_t *)SHAPE_SOURCES[1].text, strlen(SHAPE_SOURCES[1].text)),
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)SHAPE_SOURCES[1].text, strlen(SHAPE_SOURCES[1].text)),
             &options,
             NULL
         );
@@ -1964,9 +1965,7 @@ static int case_capture_shape(void) {
         {
             int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      lead->start_line
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 1 || lead_end != 1 || lead->end_column != 12) {
                 fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
                 failed = 1;
@@ -2097,8 +2096,11 @@ static int case_capture_shape(void) {
         const expected_record *expected[5] = {DIR_FULL, DIR_LEAF, DIR_OUTER, DIR_INNER, DIR_OPEN};
         const size_t expected_counts[5] = {6, 2, 3, 3, 2};
         const capture_source *directives = &SHAPE_SOURCES[18];
-        markdown_core_document *document =
-            markdown_core_document_new(mc_sv((const uint8_t *)directives->text, strlen(directives->text)), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)directives->text, strlen(directives->text)),
+            &options,
+            NULL
+        );
         size_t d;
         if (!document) {
             return -1;
@@ -2355,9 +2357,7 @@ static int case_capture_shape(void) {
                                      : root_resolved;
             int inner_resolved = lead && lead->parent ? resolved_start_line(lead->parent, quote_resolved) : 0;
             int lead_start = lead ? resolved_start_line(lead, inner_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      lead->start_line
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 5 || lead_end != 1 || lead->end_column != 5) {
                 fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
                 failed = 1;
@@ -2386,9 +2386,7 @@ static int case_capture_shape(void) {
             int quote_resolved =
                 lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
             int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      lead->start_line
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 3 || lead_end != 1 || lead->end_column != 11) {
                 fprintf(stderr, "capture_shape: the tab-led split-off lead's columns left the byte convention\n");
                 failed = 1;
@@ -2433,8 +2431,7 @@ static int case_capture_document(void) {
         static const char first[] = "> quoted *q*\n> more\n\n# head #\n";
         static const char tail[] = "\n- item\n";
         static const char both[] = "> quoted *q*\n> more\n\n# head #\n\n- item\n";
-        markdown_core_document *session =
-            markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
+        markdown_core_document *session = markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
         const markdown_core_document *view;
         if (!session) {
             return -1;
@@ -3267,8 +3264,11 @@ static const char INLINE_SHAPE_TEXT[] = "*a* **b** ***c***\n"
 static int case_inline_shape(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *document =
-        markdown_core_document_new(mc_sv((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1), &options, NULL);
+    markdown_core_document *document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1),
+        &options,
+        NULL
+    );
     const markdown_core_node *root;
 
     static const expected_inline_record EMPH_TRIPLE[] = {
@@ -3575,8 +3575,11 @@ static int case_inline_smart(void) {
     };
 
     options.smart_punctuation = true;
-    document =
-        markdown_core_document_new(mc_sv((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1), &options, NULL);
+    document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1),
+        &options,
+        NULL
+    );
     if (!document) {
         fprintf(stderr, "inline_smart: fixture failed to parse\n");
         return -1;
@@ -3666,7 +3669,8 @@ static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
 static int case_inline_extension_funnel(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *document = markdown_core_document_new(mc_sv((const uint8_t *)INLINE_FUNNEL_TEXT, sizeof(INLINE_FUNNEL_TEXT) - 1),
+    markdown_core_document *document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_FUNNEL_TEXT, sizeof(INLINE_FUNNEL_TEXT) - 1),
         &options,
         NULL
     );
@@ -3905,15 +3909,15 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
-        if (!mc_text_splice(&text, 43, 51, "", 0) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
         }
         view = session;
-        fresh = markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
+        fresh =
+            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
             markdown_core_document_release(session);
@@ -4013,15 +4017,15 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` definition line. */
-        if (!mc_text_splice(&text, 46, 54, "", 0) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
             markdown_core_document_release(session);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;
         }
         view = session;
-        fresh = markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
+        fresh =
+            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
             markdown_core_document_release(session);
@@ -4355,8 +4359,11 @@ static int case_recovery_island_boundary(void) {
             {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4},
             {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 3}
         };
-        markdown_core_document *document =
-            markdown_core_document_new(mc_sv((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1),
+            &options,
+            NULL
+        );
         const markdown_core_node *directive;
         if (!document) {
             return -1;
@@ -4370,7 +4377,8 @@ static int case_recovery_island_boundary(void) {
         failed |= expect_records("island_boundary: unclosed directive records", directive, DIR_UNCLOSED, 2);
         markdown_core_document_free(document);
 
-        document = markdown_core_document_new(mc_sv((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1), &options, NULL);
+        document =
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1), &options, NULL);
         if (!document) {
             return -1;
         }

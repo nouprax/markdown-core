@@ -197,7 +197,8 @@ bool markdown_core_document_footnote_label_sites(
     size_t i;
     for (i = 0; i < defs->count; i++) {
         bool failed = false;
-        defs->items[i].label = markdown_core_document_footnote_label(session, &defs->items[i].node->as.literal, &failed);
+        defs->items[i].label =
+            markdown_core_document_footnote_label(session, &defs->items[i].node->as.literal, &failed);
         if (failed) {
             return false;
         }

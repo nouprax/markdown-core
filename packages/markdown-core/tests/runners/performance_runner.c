@@ -557,7 +557,9 @@ static char *perf_corpus(size_t stanzas, size_t *out_length) {
         written += (size_t)snprintf(
             buffer + written,
             capacity - written,
-            "## Head %zu\n\nLorem ipsum dolor sit amet, *consectetur* adipiscing [elit](/u) sed do.\n\n- one\n- two\n\n",
+            "## Head %zu\n\n"
+            "Lorem ipsum dolor sit amet, *consectetur* adipiscing [elit](/u) sed do.\n\n"
+            "- one\n- two\n\n",
             i
         );
     }

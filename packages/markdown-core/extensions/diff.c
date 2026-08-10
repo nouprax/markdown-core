@@ -243,8 +243,7 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
         w = w->next;
     }
 
-    while (suffix < pairable - prefix && o_end->type == w_end->type &&
-           o_end->subtree_hash == w_end->subtree_hash) {
+    while (suffix < pairable - prefix && o_end->type == w_end->type && o_end->subtree_hash == w_end->subtree_hash) {
         suffix++;
         o_end = o_end->prev;
         w_end = w_end->prev;
@@ -389,7 +388,6 @@ bool markdown_core_diff_trees(
         mint_subtree(&ctx, new_root);
         return !ctx.failed;
     }
-
 
     // Roots are both documents; pair them directly.
     diff_pair(&ctx, old_root, new_root);

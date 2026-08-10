@@ -153,7 +153,6 @@ struct markdown_core_node {
     // delta miss a change. That is what makes the bounded literal sample safe.
     uint64_t subtree_hash;
 
-
     // The concrete marker records of this node's own ownership region
     // (concrete_records.h), lazily allocated by the block phase and owned by
     // the node — they ride it through adoption, transplant, and detach, and

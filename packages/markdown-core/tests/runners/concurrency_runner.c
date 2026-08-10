@@ -669,8 +669,7 @@ static int case_sessions(void) {
     size_t reference_length = 0;
     markdown_core_document_free(session);
     session = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
-    if (!session ||
-        !mc_commit_compat(&session, NULL, &error) ||
+    if (!session || !mc_commit_compat(&session, NULL, &error) ||
         !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_release(session);
@@ -712,8 +711,7 @@ static int case_sessions(void) {
         size_t length = 0;
         markdown_core_document_free(session);
         session = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
-        if (!session ||
-            !mc_commit_compat(&session, NULL, &error) ||
+        if (!session || !mc_commit_compat(&session, NULL, &error) ||
             !markdown_core_document_dump(session, &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "sessions: post-read commit failed\n");
@@ -819,7 +817,8 @@ static THREAD_RETURN dump_small_stack_worker(void *user) {
     context->input[input_length - 1] = '\n';
     context->input[input_length] = '\0';
     markdown_core_parse_options_init(&options);
-    context->document = markdown_core_document_new(mc_sv((const uint8_t *)context->input, input_length), &options, &error);
+    context->document =
+        markdown_core_document_new(mc_sv((const uint8_t *)context->input, input_length), &options, &error);
     if (context->document && !error) {
         uint8_t *dump = NULL;
         size_t dump_length = 0;
