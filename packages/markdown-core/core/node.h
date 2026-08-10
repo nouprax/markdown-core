@@ -137,6 +137,14 @@ struct markdown_core_node {
     // parses that never pass through a session's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
+    // A cheap order-sensitive digest of this node's subtree: its type, its
+    // literal bytes when it has any, and its children's digests. It decides
+    // WHICH nodes pair in the diff's prefix/suffix sweeps and nothing else --
+    // a paired node's changes are still found by comparing it field by field
+    // and walking its children. So a collision, or a field the digest does
+    // not cover, can only produce worse identity matching; it can never make
+    // the delta miss a change.
+    uint64_t subtree_digest;
 
 
     // The concrete marker records of this node's own ownership region

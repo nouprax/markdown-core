@@ -133,6 +133,98 @@ static void record_removed_subtree(diff_ctx *ctx, const markdown_core_node *root
     }
 }
 
+// FNV-1a, folded bottom-up. Iterative for the same reason every other walk
+// here is: adversarial input nests tens of thousands of levels deep.
+static uint64_t digest_mix(uint64_t h, uint64_t value) {
+    // One multiply per 64-bit input, not one per byte of it: a node with k
+    // children mixes k times, and this walk runs over every node of every
+    // parse.
+    h = (h ^ value) * 0x100000001b3ull;
+    return h ^ (h >> 29);
+}
+
+// A literal enters the digest as its LENGTH plus a bounded sample of its
+// bytes, not all of them. Hashing every literal byte makes the pass O(document
+// bytes) -- measured at 3.95x-4.01x against a 4.0x scaling bound on a 41 MB
+// corpus, where it had been 3.56x. Two literals that share a length and both
+// ends are hashed alike, and that is affordable for exactly the reason the
+// digest is affordable at all: it decides which nodes pair, never what the
+// delta says about a pair (node.h).
+#define DIGEST_SAMPLE 32u
+
+static uint64_t digest_bytes(uint64_t h, const uint8_t *data, size_t length) {
+    size_t head = length < DIGEST_SAMPLE ? length : DIGEST_SAMPLE;
+    size_t tail = length - head < DIGEST_SAMPLE ? length - head : DIGEST_SAMPLE;
+    size_t i;
+
+    h = (h ^ (uint64_t)length) * 0x100000001b3ull;
+    for (i = 0; i < head; i++) {
+        h ^= data[i];
+        h *= 0x100000001b3ull;
+    }
+    for (i = 0; i < tail; i++) {
+        h ^= data[length - tail + i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+// Stamps every node of `root` with its subtree digest, children first.
+//
+// Only bytes that are a pure function of the DOCUMENT TEXT go in: the node's
+// type, and its literal when it has one. The per-kind union is deliberately
+// not hashed -- its members hold pointers into parse buffers, so two parses of
+// the same text would digest differently and every node would stop pairing.
+// A kind whose distinguishing field is not a literal (a heading's level, a
+// list's flavor) is therefore not separated by the digest, which costs
+// matching quality and cannot cost correctness (node.h).
+static void digest_subtree(markdown_core_node *root) {
+    markdown_core_node *node = root;
+
+    while (node->first_child) {
+        node = node->first_child;
+    }
+    for (;;) {
+        markdown_core_node *child;
+        uint64_t h = 0xcbf29ce484222325ull;
+        h = digest_mix(h, (uint64_t)node->type);
+        switch (node->type) {
+        // The raw type is read directly rather than through the facade kind:
+        // this runs on every node of every parse, and for these kinds the
+        // union member IS the literal chunk.
+        case MARKDOWN_CORE_NODE_TEXT:
+        case MARKDOWN_CORE_NODE_CODE:
+        case MARKDOWN_CORE_NODE_HTML:
+        case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        case MARKDOWN_CORE_NODE_CODE_BLOCK:
+            if (node->as.literal.data) {
+                h = digest_bytes(h, node->as.literal.data, (size_t)node->as.literal.len);
+            }
+            break;
+        default:
+            break;
+        }
+        for (child = node->first_child; child; child = child->next) {
+            h = digest_mix(h, child->subtree_digest);
+            if (child == node->last_child) {
+                break;
+            }
+        }
+        node->subtree_digest = h;
+        if (node == root) {
+            return;
+        }
+        if (node->next) {
+            node = node->next;
+            while (node->first_child) {
+                node = node->first_child;
+            }
+        } else {
+            node = node->parent;
+        }
+    }
+}
+
 static size_t child_count_raw(const markdown_core_node *node) {
     size_t count = 0;
     const markdown_core_node *child;
@@ -164,6 +256,7 @@ typedef struct diff_frame {
     markdown_core_node *oc; // paired-children cursors
     markdown_core_node *wc;
     size_t prefix_left;
+    size_t middle_pair_left;
     size_t middle_old;
     size_t middle_new;
     size_t suffix_left;
@@ -194,6 +287,9 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     size_t pairable;
     size_t prefix = 0;
     size_t suffix = 0;
+    size_t middle_old;
+    size_t middle_new;
+    size_t middle_pair;
 
     if ((n_old != 0 && !o_start) || (n_new != 0 && !w_start)) {
         ctx->failed = true;
@@ -216,17 +312,57 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
         stack->capacity = capacity;
     }
 
+    // THE SWEEPS PAIR IDENTICAL SUBTREES, not same-kind ones.
+    //
+    // On raw type they paired anything, so the prefix sweep ate the whole
+    // pairable run before the suffix sweep was given a byte of budget:
+    // inserting one paragraph at the front of a run of paragraphs re-pointed
+    // EVERY id in it onto the next paragraph's content, and reported the whole
+    // suffix as changed. Under `ForEach(id:)` that is per-row focus, scroll
+    // offset and in-flight animation attaching to the wrong paragraph, and it
+    // was measured at roughly half the cost of a mid-document edit -- the
+    // delta carried the entire suffix.
+    //
+    // On the digest the prefix stops at the first child that genuinely
+    // differs, which leaves the suffix its budget, and what falls out between
+    // them is the edit. The residual middle still pairs positionally by raw
+    // type below, so a node whose own text changed keeps its identity instead
+    // of being retired and recreated.
     pairable = n_old < n_new ? n_old : n_new;
-    while (prefix < pairable && o->type == w->type) {
+    while (prefix < pairable && o->type == w->type && o->subtree_digest == w->subtree_digest) {
         prefix++;
         o = o->next;
         w = w->next;
     }
 
-    while (suffix < pairable - prefix && o_end->type == w_end->type) {
+    while (suffix < pairable - prefix && o_end->type == w_end->type &&
+           o_end->subtree_digest == w_end->subtree_digest) {
         suffix++;
         o_end = o_end->prev;
         w_end = w_end->prev;
+    }
+
+    // WHAT IS LEFT BETWEEN THE SWEEPS STILL PAIRS, positionally and by raw
+    // type, for as far as the types agree. Without this a node whose own text
+    // changed would fall in the middle and be reported as a retirement plus a
+    // creation -- the identity that `ForEach(id:)` reattaches row state to
+    // would be destroyed by editing the row. A KIND change is a genuine
+    // retirement (5.2), so the run stops there.
+    middle_old = n_old - prefix - suffix;
+    middle_new = n_new - prefix - suffix;
+    middle_pair = middle_old < middle_new ? middle_old : middle_new;
+    {
+        markdown_core_node *mo = o;
+        markdown_core_node *mw = w;
+        size_t i;
+        for (i = 0; i < middle_pair; i++) {
+            if (mo->type != mw->type) {
+                break;
+            }
+            mo = mo->next;
+            mw = mw->next;
+        }
+        middle_pair = i;
     }
 
     frame = &stack->frames[stack->length++];
@@ -235,12 +371,15 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     frame->oc = o_start;
     frame->wc = w_start;
     frame->prefix_left = prefix;
-    frame->middle_old = n_old - prefix - suffix;
-    frame->middle_new = n_new - prefix - suffix;
+    frame->middle_pair_left = middle_pair;
+    frame->middle_old = middle_old - middle_pair;
+    frame->middle_new = middle_new - middle_pair;
     frame->suffix_left = suffix;
     frame->middle_done = false;
     frame->descendant_changed = false;
-    frame->child_list_changed = (n_old != n_new) || (prefix + suffix < pairable);
+    // Every child paired means the list itself did not change, whatever the
+    // paired children did to their own contents.
+    frame->child_list_changed = frame->middle_old != 0 || frame->middle_new != 0;
 
     nw->id = old->id;
     return true;
@@ -260,13 +399,15 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
             top->wc = top->wc->next;
             if (top->prefix_left > 0) {
                 top->prefix_left--;
+            } else if (top->middle_pair_left > 0) {
+                top->middle_pair_left--;
             } else {
                 top->suffix_left--;
             }
             have_result = false;
         }
 
-        if (top->prefix_left > 0 || (top->middle_done && top->suffix_left > 0)) {
+        if (top->prefix_left > 0 || top->middle_pair_left > 0 || (top->middle_done && top->suffix_left > 0)) {
             // The frame pointer may dangle after a push reallocates, so read
             // the pair first.
             markdown_core_node *oc = top->oc;
@@ -332,9 +473,23 @@ bool markdown_core_diff_trees(
     diff_ctx ctx = {session, changes, new_rev, false};
 
     if (!old_root) {
+        // NOTHING PAIRS AGAINST NOTHING, so nothing is digested. The digest
+        // exists only to decide which children pair, and a first parse pairs
+        // no children -- running it here cost 24% of a 41 MB parse to build
+        // an answer that was thrown away, and it is what pushed that corpus's
+        // scaling gate from 3.44x to 4.03x against a 4.0x bound.
         mint_subtree(&ctx, new_root);
         return !ctx.failed;
     }
+
+    // The old tree keeps the digests it was stamped with when IT was the new
+    // tree, so it is walked only if it never was one -- a document straight
+    // out of `new` has none, and every edit after the first finds them there.
+    // Re-walking it every time cost a third of a large edit.
+    if (old_root->subtree_digest == 0) {
+        digest_subtree(old_root);
+    }
+    digest_subtree(new_root);
 
     // Roots are both documents; pair them directly.
     diff_pair(&ctx, old_root, new_root);
