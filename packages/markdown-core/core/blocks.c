@@ -1060,12 +1060,11 @@ static void process_inlines(markdown_core_parser *parser, markdown_core_map *ref
                 S_parse_node_inlines(parser, cur, refmap, options);
             }
         }
-        // A node CLOSES here, and that is when it is stamped: on EXIT every
-        // child is complete, including the inline children this same walk
-        // parsed on the owner's ENTER. A leaf never gets an EXIT (iterator.c),
-        // so its ENTER is its close. Exactly once per node, on a walk that was
+        // A node CLOSES on its EXIT, and that is when it is stamped: every
+        // child is complete by then, including the inline children this same
+        // walk parsed on the owner's ENTER. Once per node, on a walk that was
         // already running.
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT || markdown_core_node_is_leaf(cur)) {
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT) {
             markdown_core_node_stamp(cur);
         }
     }

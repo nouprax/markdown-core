@@ -231,20 +231,15 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *         markdown_core_iter_free(iter);
  *     }
  *
- * Iterators will never return `EXIT` events for leaf nodes, which are nodes
- * of type:
+ * Every node is entered and exited, whatever its type and whether or not it
+ * has children: an `ENTER` is always answered by an `EXIT`.
  *
- * * MARKDOWN_CORE_NODE_HTML_BLOCK
- * * MARKDOWN_CORE_NODE_THEMATIC_BREAK
- * * MARKDOWN_CORE_NODE_CODE_BLOCK
- * * MARKDOWN_CORE_NODE_TEXT
- * * MARKDOWN_CORE_NODE_SOFT_BREAK
- * * MARKDOWN_CORE_NODE_LINE_BREAK
- * * MARKDOWN_CORE_NODE_CODE
- * * MARKDOWN_CORE_NODE_HTML
- *
- * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
- * leaf nodes.
+ * Nodes must only be modified after an `EXIT` event. `EXIT` is the walk's
+ * last event for the node, so by then the iterator's next step has been
+ * computed from nodes that outlive it. A consumer that frees or unlinks
+ * anything else -- a sibling, a subtree it does not own -- must say where the
+ * walk resumes rather than assume; that is what the iterator's reset entry is
+ * for (iterator.h).
  */
 
 typedef enum {

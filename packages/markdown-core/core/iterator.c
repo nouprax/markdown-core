@@ -37,21 +37,6 @@ void markdown_core_iter_reset(
     iter->next.node = current;
 }
 
-bool markdown_core_node_is_leaf(const markdown_core_node *node) {
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_SOFT_BREAK:
-    case MARKDOWN_CORE_NODE_LINE_BREAK:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_HTML:
-        return 1;
-    }
-    return 0;
-}
-
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
     markdown_core_node *node = iter->next.node;
@@ -64,7 +49,14 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     }
 
     /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER && !markdown_core_node_is_leaf(node)) {
+    /* EVERY node is entered and exited. Upstream skipped the exit for eight
+     * node types it called leaves, which is a renderer's distinction -- a text
+     * node has no closing tag, so the event was waste for every renderer cmark
+     * ships. It was never a structural one: a non-leaf type with no children
+     * got an exit anyway, so the rule was "my type is on a list", not "nothing
+     * is below me". A consumer asking the structural question -- am I finished
+     * with this node -- had to carry that list around to ask it. */
+    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
         if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;

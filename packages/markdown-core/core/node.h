@@ -206,15 +206,10 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
  * They exist so a delimiter reduction does not repeat an O(depth) defensive
  * ancestor walk for every node it creates or moves.
  */
-/** True for the node types the tree walk never emits an EXIT for, so a
- * caller can tell when it is leaving a node for the last time. */
 /** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
- * children already carry. Called when the walk leaves the node for the LAST
- * time -- a container's EXIT, a leaf's ENTER, since a leaf never gets an
- * EXIT (iterator.c). */
+ * children already carry. Called on the node's EXIT, when every child is
+ * complete. */
 void markdown_core_node_stamp(markdown_core_node *node);
-
-bool markdown_core_node_is_leaf(const markdown_core_node *node);
 
 void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
 void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);

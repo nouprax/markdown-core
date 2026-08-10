@@ -852,14 +852,41 @@ static void iterator(test_batch_runner *runner) {
     markdown_core_event_type ev_type;
     markdown_core_iter *iter = markdown_core_iter_new(doc);
     markdown_core_node *cur;
+    /* Every ENTER is answered by an EXIT for the same node, in order. The
+     * document is chosen to contain Text nodes -- three of them -- because
+     * Text was on the leaf list that used to get an ENTER and nothing else.
+     * Held as a stack rather than a count so that two mismatched pairings
+     * cannot cancel each other out. */
+    markdown_core_node *open[32];
+    size_t depth = 0;
+    int balanced = 1;
+    int texts_exited = 0;
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         cur = markdown_core_iter_get_node(iter);
         if (cur->type == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             parnodes += 1;
         }
+        if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
+            if (depth < sizeof(open) / sizeof(open[0])) {
+                open[depth++] = cur;
+            } else {
+                balanced = 0;
+            }
+        } else if (ev_type == MARKDOWN_CORE_EVENT_EXIT) {
+            if (depth > 0 && open[depth - 1] == cur) {
+                depth--;
+                if (cur->type == MARKDOWN_CORE_NODE_TEXT) {
+                    texts_exited += 1;
+                }
+            } else {
+                balanced = 0;
+            }
+        }
     }
     INT_EQ(runner, parnodes, 2, "iterate correctly counts paragraphs");
+    OK(runner, balanced && depth == 0, "every ENTER is answered by an EXIT for the same node");
+    INT_EQ(runner, texts_exited, 3, "text nodes are exited too, not only entered");
 
     markdown_core_iter_free(iter);
     markdown_core_node_free(doc);
@@ -879,12 +906,17 @@ static void iterator_delete(test_batch_runner *runner) {
     markdown_core_iter *iter = markdown_core_iter_new(doc);
     markdown_core_event_type ev_type;
 
+    // Delete list, emph, and code nodes. All three go on EXIT, because EXIT is
+    // where the walk is finished with a node whatever its type: the successor
+    // has been computed from nodes that outlive the free. Code used to be
+    // deleted on ENTER, which was only safe while Code was on the leaf list
+    // that got no EXIT -- the same call-site special case the type list forced
+    // on every consumer.
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *node = markdown_core_iter_get_node(iter);
-        // Delete list, emph, and code nodes.
-        if ((ev_type == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_LIST) ||
-            (ev_type == MARKDOWN_CORE_EVENT_EXIT && node->type == MARKDOWN_CORE_NODE_EMPHASIS) ||
-            (ev_type == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_CODE)) {
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
+            (node->type == MARKDOWN_CORE_NODE_LIST || node->type == MARKDOWN_CORE_NODE_EMPHASIS ||
+             node->type == MARKDOWN_CORE_NODE_CODE)) {
             markdown_core_node_free(node);
         }
     }

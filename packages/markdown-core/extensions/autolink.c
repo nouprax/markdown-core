@@ -457,7 +457,10 @@ static bool validate_protocol(const char protocol[], uint8_t *data, size_t rewin
     return !markdown_core_isalnum(prev_char);
 }
 
-static void postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+/* Splits `text` in place into prefix/link/remainder runs, appending each new
+ * node after it. Returns the LAST node of the run it produced -- the original
+ * node when it found nothing, so the caller can tell the two apart. */
+static markdown_core_node *postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
     sourcepos_cursor source_cursor = {0, text->start_line, text->start_column};
@@ -662,6 +665,8 @@ static void postprocess_text(markdown_core_parser *parser, markdown_core_node *t
 
     // Free the detached buffer.
     markdown_core_chunk_free(parser->mem, &detached_chunk);
+
+    return text;
 }
 
 static markdown_core_node *postprocess_block(
@@ -701,7 +706,18 @@ static markdown_core_node *postprocess_block(
         }
 
         if (ev == MARKDOWN_CORE_EVENT_ENTER && node->type == MARKDOWN_CORE_NODE_TEXT) {
-            postprocess_text(parser, node);
+            markdown_core_node *last = postprocess_text(parser, node);
+            if (last != node) {
+                /* The run just appended after `node` is already finished: its
+                 * prefixes are the spans the scan rejected, and its links are
+                 * links, which this walk skips anyway. Re-seat past it rather
+                 * than walk back in and re-scan every piece -- that costs a
+                 * detach/re-borrow/to_cstr round trip per produced node, and
+                 * measures +17.6% on many_email_autolinks. EXIT is the event
+                 * that means "done with this node", so the iterator rolls
+                 * forward to whatever followed the original text. */
+                markdown_core_iter_reset(iter, last, MARKDOWN_CORE_EVENT_EXIT);
+            }
         }
     }
 
