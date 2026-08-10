@@ -228,3 +228,36 @@ and is not a plain unwrap.
    fixtures pin the finalized tree.
 4. the footnote index and the four id-addressed queries move behind
    `finalize`, where their answers actually belong.
+
+## The iterator's leaf asymmetry is load-bearing by accident
+
+Attempted on 2026-08-09 and **reverted**: making the walk symmetric (an EXIT
+for every node, not only the eight types `S_is_leaf` excludes) breaks 9 gates,
+two of them SEGFAULT.
+
+The asymmetry itself has no reason of ours — `core/iterator.c` is a verbatim
+inheritance from cmark-gfm 0.29.0.gfm.13, `S_is_leaf` and all, with no comment
+either side. It is a renderer's distinction: a text node has no closing tag, so
+an EXIT for it is a wasted event for every renderer upstream ships. And it is
+a TYPE test, not a structural one — `iterator.c:57` gives an EXIT to a non-leaf
+type that has no children, so the rule is "my type is on a list", not "nothing
+is below me". That is why a consumer asking the structural question (am I
+finished with this node) has to carry the list around to ask it.
+
+**What makes it load-bearing**: `extensions/autolink.c:703` calls
+`postprocess_text` on the ENTER of a TEXT node, and that call splits or
+replaces the very node being entered. `iter->next` is computed before the
+consumer sees the event, so under the asymmetry it already pointed at the
+SIBLING and stayed valid across the mutation. Symmetric, it points at this
+node's own EXIT — a node the consumer has just freed. Hence the segfaults, and
+hence the walk missing the replacement nodes, which is what moved the spec
+output.
+
+So the asymmetry is hiding a mutate-during-iteration hazard rather than
+justifying itself. Fixing it properly means making that consumer
+iterator-safe — upstream ships `cmark_iter_reset` for exactly this — and that
+is the prerequisite, not the symmetry change.
+
+Patch kept out of tree at `scratchpad/iterator-symmetry.patch`; it is correct
+in itself (measured 3.59x / 3.85x on many_duplicate_references, no scaling
+cost from the extra events) and blocked only on the consumer.
