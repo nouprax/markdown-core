@@ -133,98 +133,6 @@ static void record_removed_subtree(diff_ctx *ctx, const markdown_core_node *root
     }
 }
 
-// FNV-1a, folded bottom-up. Iterative for the same reason every other walk
-// here is: adversarial input nests tens of thousands of levels deep.
-static uint64_t hash_mix(uint64_t h, uint64_t value) {
-    // One multiply per 64-bit input, not one per byte of it: a node with k
-    // children mixes k times, and this walk runs over every node of every
-    // parse.
-    h = (h ^ value) * 0x100000001b3ull;
-    return h ^ (h >> 29);
-}
-
-// A literal enters the hash as its LENGTH plus a bounded sample of its
-// bytes, not all of them. Hashing every literal byte makes the pass O(document
-// bytes) -- measured at 3.95x-4.01x against a 4.0x scaling bound on a 41 MB
-// corpus, where it had been 3.56x. Two literals that share a length and both
-// ends are hashed alike, and that is affordable for exactly the reason the
-// hash is affordable at all: it decides which nodes pair, never what the
-// delta says about a pair (node.h).
-#define DIGEST_SAMPLE 32u
-
-static uint64_t hash_bytes(uint64_t h, const uint8_t *data, size_t length) {
-    size_t head = length < DIGEST_SAMPLE ? length : DIGEST_SAMPLE;
-    size_t tail = length - head < DIGEST_SAMPLE ? length - head : DIGEST_SAMPLE;
-    size_t i;
-
-    h = (h ^ (uint64_t)length) * 0x100000001b3ull;
-    for (i = 0; i < head; i++) {
-        h ^= data[i];
-        h *= 0x100000001b3ull;
-    }
-    for (i = 0; i < tail; i++) {
-        h ^= data[length - tail + i];
-        h *= 0x100000001b3ull;
-    }
-    return h;
-}
-
-// Stamps every node of `root` with its subtree hash, children first.
-//
-// Only bytes that are a pure function of the DOCUMENT TEXT go in: the node's
-// type, and its literal when it has one. The per-kind union is deliberately
-// not hashed -- its members hold pointers into parse buffers, so two parses of
-// the same text would hash differently and every node would stop pairing.
-// A kind whose distinguishing field is not a literal (a heading's level, a
-// list's flavor) is therefore not separated by the hash, which costs
-// matching quality and cannot cost correctness (node.h).
-static void hash_subtree(markdown_core_node *root) {
-    markdown_core_node *node = root;
-
-    while (node->first_child) {
-        node = node->first_child;
-    }
-    for (;;) {
-        markdown_core_node *child;
-        uint64_t h = 0xcbf29ce484222325ull;
-        h = hash_mix(h, (uint64_t)node->type);
-        switch (node->type) {
-        // The raw type is read directly rather than through the facade kind:
-        // this runs on every node of every parse, and for these kinds the
-        // union member IS the literal chunk.
-        case MARKDOWN_CORE_NODE_TEXT:
-        case MARKDOWN_CORE_NODE_CODE:
-        case MARKDOWN_CORE_NODE_HTML:
-        case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        case MARKDOWN_CORE_NODE_CODE_BLOCK:
-            if (node->as.literal.data) {
-                h = hash_bytes(h, node->as.literal.data, (size_t)node->as.literal.len);
-            }
-            break;
-        default:
-            break;
-        }
-        for (child = node->first_child; child; child = child->next) {
-            h = hash_mix(h, child->hash);
-            if (child == node->last_child) {
-                break;
-            }
-        }
-        node->hash = h;
-        if (node == root) {
-            return;
-        }
-        if (node->next) {
-            node = node->next;
-            while (node->first_child) {
-                node = node->first_child;
-            }
-        } else {
-            node = node->parent;
-        }
-    }
-}
-
 static size_t child_count_raw(const markdown_core_node *node) {
     size_t count = 0;
     const markdown_core_node *child;
@@ -482,14 +390,6 @@ bool markdown_core_diff_trees(
         return !ctx.failed;
     }
 
-    // The old tree keeps the hashs it was stamped with when IT was the new
-    // tree, so it is walked only if it never was one -- a document straight
-    // out of `new` has none, and every edit after the first finds them there.
-    // Re-walking it every time cost a third of a large edit.
-    if (old_root->hash == 0) {
-        hash_subtree(old_root);
-    }
-    hash_subtree(new_root);
 
     // Roots are both documents; pair them directly.
     diff_pair(&ctx, old_root, new_root);

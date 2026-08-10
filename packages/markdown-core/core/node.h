@@ -137,7 +137,7 @@ struct markdown_core_node {
     // parses that never pass through a session's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
-    // A cheap order-sensitive fingerprint of this node's subtree content: its
+    // A cheap order-sensitive fingerprint of this node and everything below it: its
     // type, its literal bytes when it has any, and its children's hashes.
     //
     // IT IS A PROPERTY OF THE NODE, a pure function of the document text,
