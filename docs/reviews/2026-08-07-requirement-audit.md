@@ -147,6 +147,7 @@ back-derived from that binding, not from a consumer.
 | 11.1 | Regions are defined "because that is what makes the bound hold" | Regions are defined for correctness: the smallest span that can be reparsed alone and give the same answer |
 | 14.7 | Complexity gates reporting persistent nodes/bytes copied and every term against an AST-only baseline "with the CST permitted to move only the records-created term" | Removed. What it REQUIRED rather than reported moved to 11.1: `\|diffs\|` and delta application independent of unrelated nodes, and zero allocations and zero CST walks on ordinary access |
 | 4.2 | A document is independent of later session commits and structurally shareable with adjacent revisions | Removed. A session hands out one reused view, so there is no predecessor to be independent of; sharing was there to make that unreachable clause cheap |
+| 4, 5.4 | `track.revision` is a `MarkupRevision` pair, "never a single number", with equality on `(MarkupID, revision.subtree)` and `(MarkupID, revision.self)` | One `Revision` with the subtree meaning, equality on `(MarkupID, revision)`. The pair was specified and never built; `.self`'s only signal is §9.1's `DESCENDANT` flag inverted |
 
 ## What is owed
 
@@ -185,6 +186,66 @@ published document.
 
 Nothing in the contracts now asks the parser to keep a predecessor alive, and
 nothing in them asks for the persistence that was built to do it cheaply.
+
+## The revision pair that was specified and never built
+
+`canonical-ast.md` §4 said `revision` "is a pair, never a single number", gave
+`revision.self` and `revision.subtree` separate definitions, and defined
+equality as `(MarkupID, revision.subtree)` for subtrees and
+`(MarkupID, revision.self)` for local values. `incremental-canonical-ast.md`
+carried the same pair through its `MarkupTrack` shape, its revision law (§5.3),
+its aggregate traces (§5.4) and its glossary, and listed the change as a row
+in the superseded-contract table of §1.
+
+**Nothing ever built the second half, and nothing ever asked for it.**
+
+- **The core has one stamp.** `core/node.h:139` is a single
+  `uint64_t last_changed_rev`, and the comment above it at `:135-137` defines
+  it as "the session revision at which the node's own fields, child list, or
+  any descendant last changed" — which is `revision.subtree`'s definition, not
+  a conflation of two things. There is no field for the local one.
+- **The C API returns one number.** `extensions/ast.c:275` returns
+  `node->last_changed_rev` from `markdown_core_node_get_revision`, declared at
+  `include/markdown_core.h:552` with the subtree meaning spelled out at
+  `:546-550`.
+- **All three bindings consume one number.** Swift compares
+  `lhs.id == rhs.id && lhs.revision == rhs.revision`
+  (`Markup/Markup.swift:75`) and hashes the same two; ES decodes
+  `readonly revision: number` (`wire/node-decoder.ts:62`) and prunes on
+  `existing.revision !== revision` (`:217`); Kotlin reads one `ulong()` per
+  node off the wire (`wire/WireDecoder.kt:317`). No platform has a `.self` or
+  a `.subtree` member to read.
+- **The plan already knew.** The migration plan's gap table listed §4's pair
+  against "One scalar `revision` with the subtree meaning" with the work
+  described as "New per-node local stamp" — scheduled, never done.
+
+That establishes the pair never shipped. It does not by itself decide whether
+it should be built, so the second question is whether anything needs the
+distinction. It does not, and the contract says so itself:
+
+- §5.4 stated that "`revision.self` advancing is exactly the condition for a
+  flag other than `DESCENDANT`". The local stamp's entire signal is one bit
+  that §9.1 already publishes, inverted.
+- §5.3's own motivating example — the `O(1)` comparison "a consumer actually
+  wants" — was written against `.subtree` alone.
+- §4 already forbids per-field, per-text, per-edge, per-source and per-answer
+  stamps, and the reason it gives is exactly this one: "The same information is
+  carried at zero per-node cost by the projection parts of section 9.1, which
+  are paid for only by commits that actually change something." The pair is the
+  same kind of storage as the stamps that rule rejects. The rule was applied one
+  level too shallow.
+
+So the contract now says what the implementation says: one `Revision` per node
+with the subtree meaning, equality and hashing on `(MarkupID, revision)`, and
+an explicit prohibition in §5.4 against reintroducing the pair, pointing at
+`DESCENDANT` for the distinction. No code changed — there was never any code
+to change, which is the point.
+
+A note on what would have made this a different answer: if a consumer wanted
+"repaint this node's own chrome but not its children", the pair would be a real
+requirement. That consumer would still not get a second stamp, because §9.1's
+parts answer it per commit at no per-node cost; a stamp would be a second
+mechanism for a question already answered.
 
 ## The method note
 

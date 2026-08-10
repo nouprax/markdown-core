@@ -79,7 +79,6 @@ partial version of its target column. Nothing in the table below is a rename.
 | --- | --- | --- |
 | §0 one unified CST, region-relative concrete records, `Document.concrete` | No concrete layer at all: tokens are consumed, not retained | New substrate, threaded through the existing passes |
 | §2 `Commit{document, delta}`; §4.2 self-contained immutable `Document` | Session-borrowed view, invalid after the next commit | Storage-layer rewrite |
-| §4 `MarkupRevision{self, subtree}` | One scalar `revision` with the subtree meaning | New per-node local stamp |
 | §5.1–5.2 `DocumentVersion`/`MarkupID` as `(domain, ordinal)` | `lineage` and `node_id` as bare `uint64_t` | Type restructure, positive-only |
 | §5.2 anchored continuity: positional witnesses outside the edit, content LCS inside | Best-effort adoption by kind and position | Rule is now pinned; the matcher must become a pure function of (old children, new children, normalized edit) |
 | §6.1 `CanonicalText` + `TextMap` | Bare string views, no source correspondence | New subsystem |
@@ -953,8 +952,8 @@ next commit, and §4.2 promises a document that outlives it. Both belong to the
 one landing that is allowed to move the surface.
 
 So this landing absorbs what M5 held — the persistent child sequence,
-structural sharing, `MarkupID`/`DocumentVersion`, and the
-`MarkupRevision{self, subtree}` pair — together with the session-side indices
+structural sharing, and `MarkupID`/`DocumentVersion` — together with the
+session-side indices
 that only need to become queries once a commit produces new nodes: the eight
 borrowed-pointer fields at `session_internal.h:76`, `:99-101`, `:202`, `:220`
 and `:230`.
@@ -994,8 +993,11 @@ rule, the `List.tight` aggregate and the §5.4 revision rules are requirements
 this landing must satisfy, and they are kept verbatim.
 
 The persistent child sequence, structural sharing across adjacent documents,
-`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
-`MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
+`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the §5.4 revision
+rules. The `MarkupRevision{self, subtree}` pair that stood here was withdrawn
+on 2026-08-09: it never shipped, no consumer asked for it, and §9.1's
+`DESCENDANT` flag already carries the one bit it would have added
+(`docs/reviews/2026-08-07-requirement-audit.md`).
 
 **The continuity rule is now fixed, not left to the implementation.** §5.2
 previously said only "a language-specific continuity proof"; it now states the

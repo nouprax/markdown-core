@@ -206,7 +206,6 @@ surfaces.
 | The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys and `O(1)` equality — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
 | A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained, with no materialization step; `commit` supersedes the document it was called on, and there is no session |
-| One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
 | The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a five-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
 | Absolute source position is a whole-snapshot materialization | Absolute position is a query against stable extents; a position-only shift produces no diff entry at all |
@@ -350,11 +349,10 @@ inherits and must not throw away.
 - **Identity.** `MarkupID` is a stable, hashable, serializable key, usable
   unmodified as a SwiftUI `ForEach(id:)`, a Compose `key()`, or a React `key`.
   It survives edits elsewhere and is never reused after retirement (5.2).
-- **`O(1)` equality.** Node equality and hashing are `(MarkupID,
-  revision.subtree)` for whole-subtree equality and `(MarkupID, revision.self)`
-  for local equality: two-word comparisons, allocation-free, safe in a render
-  hot path. Equal means the values are identical; storage layout produces no
-  false negatives.
+- **`O(1)` equality.** Node equality and hashing are `(MarkupID, revision)`,
+  which is whole-subtree equality: a two-word comparison, allocation-free, safe
+  in a render hot path. Equal means the values are identical; storage layout
+  produces no false negatives.
 A third property stood here — **instance reuse**, that the core reuses an
 unchanged subtree "so the next document holds the same node, not merely an
 equal one" — and a fourth, **structural sharing**, that adjacent documents
@@ -581,14 +579,9 @@ Markup {
 }
 
 MarkupTrack {
-    MarkupID       identity
-    MarkupRevision revision
-    SourceExtent   extent
-}
-
-MarkupRevision {
-    Revision self       // this node's own local projection
-    Revision subtree    // that, plus everything reachable below it
+    MarkupID     identity
+    Revision     revision
+    SourceExtent extent
 }
 ```
 
@@ -609,17 +602,15 @@ answer store is not among them: it is private storage behind the queries of
 `Document` is itself a `Markup`: it carries a `MarkupID`, and it appears in
 `diffs` like any other node. A top-level insertion or removal is `CHILDREN`
 on the document, which is the only node that owns that sequence, and the
-ancestor spine of 9.1 terminates there. Its `revision.subtree` is not a
-restatement of `DocumentVersion`: a commit that changes bytes without
-changing the AST (7.1) advances the version and leaves the root revision
-alone.
+ancestor spine of 9.1 terminates there. Its `revision` is not a restatement of
+`DocumentVersion`: a commit that changes bytes without changing the AST (7.1)
+advances the version and leaves the root revision alone.
 
 `node.track.identity` is the sole public node identity. `track.revision` is
-always the pair and never a single number: no scalar member conflates local
-with subtree change, which is the ambiguity section 1 removes. No wrapper
-identity is layered around `MarkupID`.
+one `Revision`, covering the node and everything below it. No wrapper identity
+is layered around `MarkupID`.
 
-`MarkupTrack` is deliberately small — an identity, a revision pair, and an
+`MarkupTrack` is deliberately small — an identity, a revision, and an
 extent — and no more may be added.
 Per-field, per-text, per-edge, per-source, and per-answer revision stamps
 must not be stored on the node.
@@ -636,8 +627,8 @@ that exact AST revision. These concepts are distinct:
 
 - logical continuity: `MarkupID`;
 - exact view identity: `(DocumentVersion, MarkupID)`; and
-- selected-value equality: `(MarkupID, revision.self)` for the node's local
-  projection, `(MarkupID, revision.subtree)` for its whole subtree.
+- selected-value equality: `(MarkupID, revision)`, for the node together with
+  its whole subtree.
 
 A node view belongs to the exact `Document` it came from and cannot be passed
 to a later one as an exact view merely because its `MarkupID` survived. A
@@ -692,7 +683,7 @@ The tree need not copy every descendant wrapper into each parent:
 
 When only a descendant field changes, an implementation may share every
 unchanged ancestor's local record and child sequence. A persistent aggregate
-trace index may advance `revision.subtree` without copying all ancestor
+trace index may advance an ancestor's `revision` without copying all ancestor
 payloads.
 
 ### 4.2 Self-contained documents
@@ -822,9 +813,9 @@ public identity on its own.
 
 There is one counter, and one scalar type for it. `Revision` is positive and
 strictly monotonic within a domain; every stamp in this contract is a value
-drawn from it, and `revision.self` and `revision.subtree` each record the
-revision at which that projection last changed. Nothing has a private revision
-space, and no type exists for a per-source, per-field, or per-edge revision.
+drawn from it, and a node's `revision` records the revision at which its
+projection last changed. Nothing has a private revision space, and no type
+exists for a per-source, per-field, or per-edge revision.
 
 - zero is invalid;
 - a canonical no-op publishes nothing, so no stamp moves;
@@ -836,7 +827,7 @@ Because every stamp is a document revision, stamps are comparable, and the
 comparison a consumer actually wants costs `O(1)`:
 
 ```text
-markup.track.revision.subtree > remembered.revision
+markup.track.revision > remembered.revision
 ```
 
 answers "did this subtree change since I last looked" with no diff and no
@@ -851,7 +842,7 @@ required, and none may be added.
 
 ### 5.4 Node aggregate traces
 
-`revision.self` covers the node's local canonical projection:
+A node's `revision` covers its local canonical projection:
 
 - kind;
 - scalar and text field values;
@@ -859,18 +850,23 @@ required, and none may be added.
 - parser answers addressed to this node, derived through its pinned relation
   indexes; and
 - stable source shape/provenance, excluding revision-relative numeric
-  coordinates.
+  coordinates,
 
-`revision.subtree` covers `revision.self` plus the recursively reachable child
-semantic projections.
+plus the recursively reachable child semantic projections.
 
-These are equality and pruning aids, not the update mechanism. Two views with
-equal `(MarkupID, revision.self)` have identical local values; equal
-`(MarkupID, revision.subtree)` have identical subtrees. `revision.subtree`
-advancing is exactly the membership condition of section 9.1, and
-`revision.self` advancing is exactly the condition for a flag other than
-`DESCENDANT`. Section 9 is how a consumer learns *that* something changed;
-these stamps are how it cheaply confirms that something did not.
+This is an equality and pruning aid, not the update mechanism. Two views with
+equal `(MarkupID, revision)` have identical subtrees, and the stamp advancing
+is exactly the membership condition of section 9.1. Section 9 is how a
+consumer learns *that* something changed; this stamp is how it cheaply
+confirms that something did not.
+
+There is one stamp, not a local/subtree pair, and the pair may not be
+reintroduced. Splitting it would publish exactly one extra bit — whether the
+change was at the node or below it — and section 9.1 already publishes that
+bit as `DESCENDANT` versus any other flag, on the commits that changed
+something rather than on every node forever. This is section 4's rule about
+per-field and per-edge stamps applied to the case it had skipped: the finer
+distinction belongs in the diff, not in storage every node pays for.
 
 ## 6. Tracked AST values
 
@@ -1339,7 +1335,7 @@ identity, canonical semantic field content, or a diff entry.
 A prefix insertion:
 
 - preserves every later node's `MarkupID`;
-- preserves their `revision.self` and `revision.subtree`;
+- preserves their `revision`;
 - preserves parse and derived answer values;
 - changes the numeric coordinates obtained by resolving their stable extents;
   and
@@ -1584,8 +1580,10 @@ there is no lifecycle tag: a consumer distinguishes the case with
 `Document.node`, which returns `none` for exactly those nodes. A created node
 differs from `⊥` in every part it has, so it carries all of them.
 
-**`DESCENDANT ∈ parts(n)` exactly when some node below `n` differs**, which is
-exactly when `n`'s `revision.subtree` advanced (5.4). The ancestor spine of
+**`DESCENDANT ∈ parts(n)` exactly when some node below `n` differs.** Either
+that or a differing part of `n`'s own projection advances `n`'s `revision`
+(5.4), so a node in `diffs` is exactly a node whose stamp moved; which of the
+two it was is what the flags say and the stamp does not. The ancestor spine of
 every change is therefore in `diffs`, because those ancestors' projections
 genuinely differ — their `DESCENDANT` part changed. A consumer that
 materializes a parent-linked structure needs precisely that; a consumer that
@@ -2331,8 +2329,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `MarkupID` | stable identity of one logical node: `(domain, ordinal)` | 5.2 |
 | `MarkupKind` | which canonical node kind a `Markup` is | canonical-ast.md |
 | `MarkupOrdinal` | positive integer, unique within one domain, never reused | here |
-| `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
-| `MarkupTrack` | a node's identity, revision pair, and extent | 4 |
+| `MarkupTrack` | a node's identity, revision, and extent | 4 |
 | `Offset` | zero-based byte offset; the context names which buffer | here |
 | `ParseOptions` | the parse-time options that can affect AST truth | canonical-ast.md |
 | `Position` | one endpoint of a `Scope`; widened per coordinate profile | canonical-ast.md, 7.2 |

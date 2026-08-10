@@ -149,9 +149,9 @@ Shared platform types, named identically on all three platforms:
 - `MarkupID` — `(DocumentDomain, ordinal)`. Hashable, equatable, and
   serializable, usable unmodified as a SwiftUI `ForEach(id:)`, a Compose
   `key()`, or a React `key`.
-- `MarkupTrack` — `{ identity, revision, extent }`; `MarkupRevision` is the
-  `{ self, subtree }` pair. Node equality and hashing are the two-word tuples
-  of `canonical-ast.md`.
+- `MarkupTrack` — `{ identity, revision, extent }`; `revision` is one
+  `Revision`, covering the node and everything below it. Node equality and
+  hashing are the two-word tuple of `canonical-ast.md`.
 - `Commit` — `{ document, delta }`.
 - `Delta` — `{ before, after, diffs, edits }`. Always present on a platform
   `Commit`; the C-level nullable out-parameter is a C-consumer knob only.

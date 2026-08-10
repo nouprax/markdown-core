@@ -19,7 +19,10 @@ scalar with `MarkupTrack`, moving parser answers from session scope to the
 immutable published document, and pinning which string fields carry a
 `TextMap` (`incremental-canonical-ast.md`) — a map since removed, on
 2026-08-07, because no consumer ever asked to see the bytes behind decoded
-text and the reverse lookup they do ask for is `document.scope(of:)`.
+text and the reverse lookup they do ask for is `document.scope(of:)`; and
+`revision` returned to one number on 2026-08-09, the `{ self, subtree }` pair
+having been specified but never built, wanted by no consumer, and redundant
+with the `DESCENDANT` diff part.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -37,11 +40,10 @@ or semantics.
   projection of one unified CST rather than a separately allocated tree
   (`incremental-canonical-ast.md`, §0).
 - Every `Markup` has a non-optional `track: MarkupTrack` carrying its
-  `MarkupID`, its `MarkupRevision` pair, and its `SourceExtent`. Equality and
-  hashing are `(MarkupID, revision.subtree)` for whole-subtree equality and
-  `(MarkupID, revision.self)` for local equality — both O(1) and
-  allocation-free — and equal nodes are guaranteed to have identical AST
-  content. See the identity and equality section.
+  `MarkupID`, its `Revision`, and its `SourceExtent`. Equality and hashing are
+  `(MarkupID, revision)` — O(1) and allocation-free — and equal nodes are
+  guaranteed to have identical AST content, their subtrees included. See the
+  identity and equality section.
 - Nodes do not store absolute source positions. Scopes are resolved on demand
   through the owning document (`document.scope(of:)`) in `O(log n)`, supplied
   with every `MarkupWalker` event, and printed by the dump; see
@@ -249,9 +251,9 @@ is the reverse lookup itself, and that is `document.scope(of:)`.
 
 ```text
 MarkupTrack {
-    MarkupID       identity
-    MarkupRevision revision      // { self, subtree }
-    SourceExtent   extent
+    MarkupID     identity
+    Revision     revision
+    SourceExtent extent
 }
 ```
 
@@ -263,19 +265,26 @@ identity from another domain is a programmer error that traps rather than a
 result value. A one-shot parse gets its own domain, as does any change to the
 schema or the parse options.
 
-`revision` is a pair, never a single number. `revision.self` is the revision
-at which the node's own local projection last changed — its kind, scalar and
-text fields, direct child membership and order, and the parser answers
-addressed to it. `revision.subtree` is that plus everything reachable below
-it. A pure positional shift changes neither. Both are drawn from the one
-positive, strictly monotonic `Revision` counter of the owning domain; zero is
-invalid.
+`revision` is one number: the revision at which the node's own local
+projection — its kind, scalar and text fields, direct child membership and
+order, and the parser answers addressed to it — or anything reachable below it
+last changed. A pure positional shift does not change it. It is drawn from the
+one positive, strictly monotonic `Revision` counter of the owning domain; zero
+is invalid.
 
-Equality and hashing on every kind are `(MarkupID, revision.subtree)`, which
-is whole-subtree equality; `(MarkupID, revision.self)` compares the node's own
-projection without its descendants. Identifiable-style APIs use `MarkupID`
-alone. Two equal nodes are guaranteed to have identical AST content. Absolute
-source position is not content.
+Equality and hashing on every kind are `(MarkupID, revision)`, which is
+whole-subtree equality. Identifiable-style APIs use `MarkupID` alone. Two equal
+nodes are guaranteed to have identical AST content. Absolute source position is
+not content.
+
+There is deliberately no second stamp for the node's own projection without
+its descendants. A consumer that needs to tell "this node changed" from
+"something below it changed" reads the diff parts of
+`incremental-canonical-ast.md` §9.1, where `DESCENDANT` is exactly the second
+case and any other flag is exactly the first. That is the same argument §4
+already uses to forbid per-field, per-text and per-edge stamps: the
+information is carried at zero per-node cost by a commit that actually changed
+something, so a stamp every node pays for is the wrong place to put it.
 
 Which identities survive an edit is decided by the anchored continuity rule of
 `incremental-canonical-ast.md` §5.2: identity never crosses a parent or a
