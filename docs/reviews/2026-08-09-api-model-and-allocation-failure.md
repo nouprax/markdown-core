@@ -167,3 +167,64 @@ three throw. `grep -rniE "retry|retries"` across all three binding sources finds
 one comment and no loop. Two of the three already ship a poison flag of their
 own. The nine OOM gates cost 0.05 s in total, so nothing here is an argument
 about test time.
+
+## The CST should not resolve definitions — scoped, not yet done
+
+Recorded on 2026-08-09 after the delta work, with the sites verified. **The
+surgery is not started**: it cannot be split across a context without leaving
+the parser half-changed, and the oracle move has to land in the same step.
+
+### Why
+
+`markdown_core_document_reference_info`, `footnote_info`, `footnotes` and
+`footnote_references` have **zero binding callers** — the answers subsystem was
+built for nobody. Deleting its `ANSWERS` delta part today removed a whole
+emission pass. What remains is the resolution that happens during PARSING, and
+it is the more expensive half:
+
+- appending `[foo]: /url` at the end of a document RETYPES nodes anywhere
+  earlier: `<text>see [foo]</text>` becomes `<text>see </text><link>…</link>`.
+  Verified against cmark-gfm 0.29.0.gfm.13 directly.
+- that is the LLM-streaming worst case — every chunk can retroactively rewrite
+  the tree above it — and it is why "only edit-related nodes are affected"
+  (2026-08-07's R7) is structurally unreachable, not merely unimplemented.
+- it is also the source of the forward reference that made `ANSWERS`
+  undecidable pairwise.
+
+**The oracle does not require it.** CommonMark's normative text is about
+rendered HTML; cmark's AST is cmark's own shape, and mdast keeps
+`linkReference` unresolved and reverts it in `mdast-util-to-hast`. This repo
+ships **no HTML renderer** — the parity runners compare our AST dump to cmark's
+AST. So parse-time resolution is required by the SHAPE we chose for the parity
+oracle, not by the oracle itself.
+
+### The sites
+
+- **link references**: `core/inlines.c:1493` — one `markdown_core_map_lookup`
+  on `subj->refmap`; hit sets `is_reference`, miss does `goto noMatch`. The
+  node stores only the LABEL, never the destination (the comment at `:1509`
+  says why), so a `LinkReference` is already source-faithful. Resolution
+  decides only whether the node exists.
+- **footnote references**: `core/blocks.c:1970` passes `parser->footnote_defs`
+  down. `core/parser.h:24-30` states the dependency outright: "this answer
+  decides a node's type".
+
+### The risk, stated before starting
+
+`noMatch` is not just "emit the literal brackets" — it leaves bracket-stack and
+delimiter state that later emphasis and bracket processing depend on. Making
+every `[...]` a node changes that path, and 652 spec examples run through it.
+The revert in `finalize` must reproduce the exact literal the author typed
+around already-parsed inline children, which is what `mdast-util-to-hast` does
+and is not a plain unwrap.
+
+### The order
+
+1. `markdown_core_document_finalize()` — bakes definitions into the tree:
+   unresolved reference nodes revert to text, footnote numbering and first-use
+   order are computed there rather than on every commit.
+2. parse stops resolving; both sites emit unconditionally.
+3. the parity runners compare `finalize(parse(text))`; goldens and spec
+   fixtures pin the finalized tree.
+4. the footnote index and the four id-addressed queries move behind
+   `finalize`, where their answers actually belong.
