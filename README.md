@@ -143,17 +143,25 @@ There is no session type. A document is created from text and options, and
 delta between the two. Options are fixed for a document's whole lineage —
 changing what the parser means is a new document, not an edit.
 
-Node identity is stable across revisions: an id keeps naming the same node
-until that node is removed, an unchanged node keeps its exact revision, and a
-pure positional shift is not a change. After any sequence of edits the
-document is byte-for-byte dump-equal to a from-scratch parse of the same text.
+**The stability an application needs is on the TREE, not in the delta.** An id
+keeps naming the same node until that node is removed, an unchanged node keeps
+its exact revision, and a pure positional shift is not a change — so equality
+is O(1) over (id, revision) and an id goes unmodified into a SwiftUI
+`ForEach(id:)`, a Compose `key()`, or a React `key`. A complete application
+hands the edited document to its reactive framework and never reads a delta.
+After any sequence of edits the document is byte-for-byte dump-equal to a
+from-scratch parse of the same text.
 
-A delta is ONE LIST, in the new document's postorder: every node whose
-projection differs appears after all of its own children, and a retired node
-appears where it was found, before its former parent's row. Each row says
-which parts differ — value, text, children, descendant — and a row with no
-parts is a node that no longer exists. A consumer rebuilding immutable values
-bottom-up reads the list once, front to back.
+A delta answers a different question: WHERE did it change. It is one list, in
+the new document's postorder: every node whose projection differs appears
+after all of its own children, and a retired node appears where it was found,
+before its former parent's row. Each row says which parts differ — value,
+text, children, descendant — and a row with no parts is a node that no longer
+exists. `descendant` alone means "nothing of this node's own changed, something
+below it did", so a side-by-side editor highlighting what a keystroke affected
+lights the run that changed rather than the section containing it. The other
+reader is a consumer holding state it must edit in place rather than
+re-derive: a display list, a text-measurement cache, an LSP token array.
 
 ```swift
 let document = try Document("# Hello\n")
