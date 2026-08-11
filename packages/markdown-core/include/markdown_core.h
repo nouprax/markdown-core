@@ -359,6 +359,57 @@ MARKDOWN_CORE_API bool markdown_core_document_scope_table(
 );
 MARKDOWN_CORE_API void markdown_core_scope_table_free(markdown_core_scope_entry *output);
 
+/*
+ * Diagnostics
+ * ===========
+ *
+ * What an editor underlines. There is exactly one thing to underline, and
+ * that is not a placeholder for a longer list to come.
+ *
+ * Markdown has no parse errors: every byte sequence is a valid document, and
+ * the constructs an author most often gets "wrong" are all defined outcomes
+ * of the standard semantics rather than failures. An unclosed fence runs to
+ * the end of the document; a link reference with no definition is the text
+ * the author typed; a short table row is autocompleted. Reporting any of
+ * those would be reporting Markdown itself.
+ *
+ * A directive's attribute block is the exception, because it is this
+ * repository's own grammar rather than Markdown's: `{...}` that does not
+ * parse is not a construct with a defined fallback meaning, it is a mistake,
+ * and the parse degrades the braces to literal text where the author plainly
+ * wanted attributes. That degradation is invisible in the tree — the node
+ * simply has no attributes — so without a diagnostic an editor cannot tell
+ * "no attributes were written" from "the attributes were rejected".
+ */
+
+/** Why a diagnostic was raised. */
+typedef enum markdown_core_diagnostic_code {
+    /** A directive's `{...}` attribute block did not parse, so its braces
+     * stayed literal text. The scope covers the block, brace to brace. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES = 1
+} markdown_core_diagnostic_code;
+
+/** One thing to underline: what, and where.
+ *
+ * No message. A message is a string an editor shows a human, which means it
+ * is localized, and localizing it here would put one English sentence in the
+ * library and four copies of the decision to ignore it in the bindings. The
+ * code says what happened; the wording belongs to whoever is speaking to the
+ * user. */
+typedef struct markdown_core_diagnostic {
+    markdown_core_diagnostic_code code;
+    markdown_core_scope scope;
+} markdown_core_diagnostic;
+
+/** Every diagnostic of this document, in source order. Returns the count and
+ * points `*diagnostics` at the document's own array, which borrows from the
+ * document and ends with it — nothing to free. A clean document reports zero
+ * and leaves `*diagnostics` NULL. */
+MARKDOWN_CORE_API size_t markdown_core_document_diagnostics(
+    const markdown_core_document *document,
+    const markdown_core_diagnostic **diagnostics
+);
+
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(
     const markdown_core_document *document,
@@ -452,92 +503,6 @@ MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_d
  * identity even when ids collide numerically. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *session);
 MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *session);
-
-/*
- * Footnote queries
- * ----------------
- *
- * The tree is source-faithful: definitions stay at their source position
- * whether referenced or not, and references always carry the label exactly
- * as written. Numbering, first-use order, resolution state, and
- * back-reference ordinals are answered from a session-maintained index.
- * Labels match case-folded with collapsed whitespace, and the earliest
- * definition of a label in document order wins. When a commit changes only
- * an answer below (an ordinal shift, a resolution flip), the affected nodes
- * are reported `changed` with a revision bump and identical dump content.
- */
-
-/** Answers for one footnote node.
- * For a FootnoteReference: `definition` is the winning definition's id (0
- * while unresolved), `number` its 1-based first-use ordinal (0 while
- * unresolved), `reference_ordinal` the reference's 1-based position among
- * the label's references in document order, and `reference_count` how many
- * references share the label.
- * For a FootnoteDefinition: `definition` is the id of the label's winning
- * definition (its own id unless an earlier definition shadows it),
- * `number`/`reference_count` describe the label (0 when unreferenced), and
- * `reference_ordinal` is 0. */
-typedef struct markdown_core_footnote_info {
-    markdown_core_node_id definition;
-    uint64_t number;
-    uint64_t reference_ordinal;
-    uint64_t reference_count;
-} markdown_core_footnote_info;
-
-/** Answers for one reference node — the facts that hold between a reference
- * and its definition and therefore live in neither.
- *
- * `definition` is the winning ReferenceDefinition's id, and 0 when the label
- * resolves to nothing. Asked of a ReferenceDefinition it answers the same
- * question about that node's own label: its own id unless an earlier
- * definition shadows it.
- *
- * A reference carries no destination: read it from the winning definition
- * through markdown_core_node_reference_definition_properties. An edit that
- * only retargets a definition therefore changes this answer and leaves every
- * reference node untouched. */
-typedef struct markdown_core_reference_info {
-    markdown_core_node_id definition;
-} markdown_core_reference_info;
-
-/** Fills `info` for `node` at the current revision. Returns false (with
- * `info` zeroed) when `node` is not a reference or reference definition.
- *
- * IT TAKES THE NODE, not its id. A consumer asking this question is walking
- * the tree and has the node in hand; handing back an id and making the engine
- * resolve it is a lookup neither side needs. `definition` is still an id,
- * because that is a NAME for a node the consumer will meet later in its own
- * walk -- naming is what a MarkupID is for (5.2). */
-MARKDOWN_CORE_API bool markdown_core_document_reference_info(
-    const markdown_core_document *session,
-    const markdown_core_node *node,
-    markdown_core_reference_info *info
-);
-
-/** Fills `info` for `node` at the current revision. Returns false (with
- * `info` zeroed) when `node` is not a footnote reference or definition. Takes
- * the node for the same reason reference_info does. */
-MARKDOWN_CORE_API bool markdown_core_document_footnote_info(
-    const markdown_core_document *session,
-    const markdown_core_node *node,
-    markdown_core_footnote_info *info
-);
-
-/** Borrows the ids of the referenced (winning) definitions in first-use
- * order — the order a renderer lists them in. Valid until the next mutating
- * call on the session. */
-MARKDOWN_CORE_API size_t
-markdown_core_document_footnotes(const markdown_core_document *session, const markdown_core_node_id **ids);
-
-/** Borrows the ids of the references that resolve to `definition`, in
- * document order — the renderer's back-reference targets. Empty unless
- * `definition` is a referenced winning definition. Valid until the next
- * mutating call on the session. */
-MARKDOWN_CORE_API size_t markdown_core_document_footnote_references(
-    const markdown_core_document *session,
-    markdown_core_node_id definition,
-    const markdown_core_node_id **ids
-);
 
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any

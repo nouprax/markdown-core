@@ -455,6 +455,78 @@ static void check_api(void) {
     check_scope_table();
 }
 
+/* Diagnostics: the one thing an editor underlines.
+ *
+ * Markdown's own "mistakes" are all defined outcomes, so this checks the
+ * boundary as much as the report — a directive whose attributes DO parse, and
+ * one with no attributes at all, must raise nothing. The block and inline
+ * forms carry different extents on purpose: the block form loses the whole
+ * construct, the inline form loses only its braces.
+ */
+static void check_diagnostics(void) {
+    static const struct {
+        const char *markdown;
+        size_t count;
+        int start_column;
+        int end_column;
+    } cases[] = {
+        {":::note{= bad}\nbody\n:::\n", 1, 8, 14},
+        {":inline{= bad} tail\n", 1, 8, 8},
+        {":::note{a=1}\nbody\n:::\n", 0, 0, 0},
+        {":::note\nbody\n:::\n", 0, 0, 0},
+        {"plain paragraph\n", 0, 0, 0}
+    };
+    size_t c;
+
+    for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        markdown_core_parse_options options;
+        markdown_core_document *document;
+        const markdown_core_diagnostic *rows = NULL;
+        markdown_core_string text;
+        size_t count;
+
+        markdown_core_parse_options_init(&options);
+        text.data = (const uint8_t *)cases[c].markdown;
+        text.length = strlen(cases[c].markdown);
+        document = markdown_core_document_new(text, &options, NULL);
+        if (!document) {
+            fprintf(stderr, "diagnostics: case %zu did not parse\n", c);
+            failures++;
+            continue;
+        }
+        count = markdown_core_document_diagnostics(document, &rows);
+        if (count != cases[c].count) {
+            fprintf(stderr, "diagnostics: case %zu raised %zu, expected %zu\n", c, count, cases[c].count);
+            failures++;
+        } else if (count == 0) {
+            if (rows != NULL) {
+                fprintf(stderr, "diagnostics: case %zu reported none but handed back an array\n", c);
+                failures++;
+            }
+        } else if (
+            rows[0].code != MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES || rows[0].scope.start.line != 1 ||
+            rows[0].scope.start.column != cases[c].start_column || rows[0].scope.end.line != 1 ||
+            rows[0].scope.end.column != cases[c].end_column
+        ) {
+            fprintf(
+                stderr,
+                "diagnostics: case %zu reported code %d at %d:%d..%d:%d, expected code %d at 1:%d..1:%d\n",
+                c,
+                (int)rows[0].code,
+                rows[0].scope.start.line,
+                rows[0].scope.start.column,
+                rows[0].scope.end.line,
+                rows[0].scope.end.column,
+                (int)MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                cases[c].start_column,
+                cases[c].end_column
+            );
+            failures++;
+        }
+        markdown_core_document_free(document);
+    }
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -464,6 +536,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_diagnostics();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

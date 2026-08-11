@@ -10,8 +10,6 @@ set(LIBRARY_SOURCES
     concrete.c
     concrete.h
     diff.c
-    footnote.c
-    reference.c
     delta.c
     core-extensions.c
     table.c

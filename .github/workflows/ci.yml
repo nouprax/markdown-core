@@ -51,6 +51,8 @@ jobs:
                   pnpm audit:ci
                   pnpm audit:tests
                   pnpm audit:surface
+                  pnpm audit:source-lists
+                  pnpm audit:ast-projections
 
     health-check-c:
         name: Health Check - C

@@ -79,7 +79,7 @@ public struct MarkupWalker: Sendable {
     }
 }
 
-private struct ChildrenVisitor: MarkupVisitor {
+struct ChildrenVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
     mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }

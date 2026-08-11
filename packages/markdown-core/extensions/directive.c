@@ -1,3 +1,4 @@
+#include "../include/markdown_core.h"
 #include "directive.h"
 
 #include <assert.h>
@@ -1148,6 +1149,7 @@ static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *pars
 }
 
 static int parse_directive_suffix(
+    markdown_core_parser *parser,
     markdown_core_mem *mem,
     unsigned char *data,
     markdown_core_bufsize len,
@@ -1190,6 +1192,27 @@ static int parse_directive_suffix(
             pos = after_attributes;
         } else if (parsed->oom) {
             return 0;
+        } else if (parser) {
+            /* The author wrote `{`, and what follows is not attributes. The
+             * braces stay literal text — and for the block form the whole
+             * construct stops being a directive, because the leftover braces
+             * fail the blank-rest-of-line check. Nothing in the tree says
+             * that happened: it is a paragraph that happens to begin with
+             * colons. This is the one place the parse degrades silently, so
+             * it is the one place an editor has to be told. */
+            markdown_core_bufsize last = len;
+            while (last > pos && (data[last - 1] == '\n' || data[last - 1] == '\r' || data[last - 1] == ' ' ||
+                                  data[last - 1] == '\t')) {
+                last--;
+            }
+            markdown_core_parser_record_diagnostic(
+                parser,
+                MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                markdown_core_parser_get_line_number(parser),
+                (int)pos + 1,
+                markdown_core_parser_get_line_number(parser),
+                (int)last
+            );
         }
     }
 
@@ -1487,6 +1510,31 @@ static markdown_core_node *match_colon_directive(
                 parser->oom = true;
                 return NULL;
             }
+            {
+                /* Same degradation, narrower blast radius: here only the
+                 * braces are rejected and the text after them parses
+                 * normally, so the extent is the `{` alone. It cannot reach
+                 * the closing brace either — `scan_attributes_raw` is one of
+                 * the two things that can have failed, and when it is, there
+                 * is no closing brace to have found.
+                 *
+                 * The column is derived, not queried: the cursor still sits
+                 * on the directive's `:`. An inline column is `offset + 1 +
+                 * column_offset + block_offset` (inlines.c:2400), so the
+                 * brace's column is the cursor's plus the offset between
+                 * them — sound because a directive's name and its `{` are on
+                 * one line by grammar. */
+                int base = markdown_core_inline_parser_get_column(inline_parser) -
+                           markdown_core_inline_parser_get_offset(inline_parser);
+                markdown_core_parser_record_diagnostic(
+                    parser,
+                    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                    markdown_core_inline_parser_get_line(inline_parser),
+                    (int)pos + base,
+                    markdown_core_inline_parser_get_line(inline_parser),
+                    (int)pos + base
+                );
+            }
             return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
         }
         node = make_directive_node(extension, parser, chunk->data + name_start, name_len, 0, 0, 0, 0);
@@ -1586,6 +1634,7 @@ static markdown_core_node *open_directive_block(
     }
 
     if (!parse_directive_suffix(
+            parser,
             parser->mem,
             input,
             (markdown_core_bufsize)len,

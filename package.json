@@ -13,6 +13,8 @@
         "audit:repository": "scripts/audit-repository.sh",
         "audit:repository:clean": "scripts/audit-repository.sh --clean",
         "audit:scope-sanity": "node scripts/audit-scope-sanity.mjs",
+        "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
+        "audit:source-lists": "node scripts/audit-source-lists.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
         "audit:tests": "scripts/audit-test-topology.sh",
         "benchmark:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark",

@@ -206,6 +206,30 @@ static bool document_parse_text(markdown_core_document *session, markdown_core_e
     staged[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].map = parser->footnote_defs;
     parser->refmap = NULL;
     parser->footnote_defs = NULL;
+    /* The parser's diagnostics become this document's, converted from the
+     * core-side record to the facade type. A conversion that cannot allocate
+     * leaves the document with none: a missing underline is not a wrong
+     * tree, and failing an otherwise good parse over one would be the worse
+     * trade. */
+    session->mem->free(session->mem, session->diagnostics);
+    session->diagnostics = NULL;
+    session->diagnostic_count = 0;
+    if (parser->diagnostic_count > 0) {
+        markdown_core_diagnostic *rows =
+            (markdown_core_diagnostic *)session->mem->calloc(session->mem, parser->diagnostic_count, sizeof(*rows));
+        if (rows) {
+            size_t i;
+            for (i = 0; i < parser->diagnostic_count; i++) {
+                rows[i].code = (markdown_core_diagnostic_code)parser->diagnostics[i].code;
+                rows[i].scope.start.line = parser->diagnostics[i].start_line;
+                rows[i].scope.start.column = parser->diagnostics[i].start_column;
+                rows[i].scope.end.line = parser->diagnostics[i].end_line;
+                rows[i].scope.end.column = parser->diagnostics[i].end_column;
+            }
+            session->diagnostics = rows;
+            session->diagnostic_count = parser->diagnostic_count;
+        }
+    }
     markdown_core_document_release_parser(session, parser);
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
         // The sink's context is this call's stack frame; the maps outlive it.
@@ -247,7 +271,6 @@ bool markdown_core_document_diff(
     markdown_core_delta *changes,
     markdown_core_error **error
 ) {
-    markdown_core_footnote_index footnotes;
     size_t s;
 
     if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision, changes)) {
@@ -260,27 +283,6 @@ bool markdown_core_document_diff(
         markdown_core_document_resolve_definition_owners(nw->definitions[s].map);
     }
 
-    // Footnote numbering, resolution and back-reference ordinals are
-    // index-backed answers, and the delta says NOTHING about them: the
-    // ANSWERS part is gone, and so is the second pass that existed to bump
-    // revisions when only a number moved. Nothing shipped ever read those
-    // answers -- no binding calls footnote_info, footnotes,
-    // footnote_references or reference_info -- so there was no consumer to
-    // under-report to, and reporting them cost a whole extra emission pass.
-    memset(&footnotes, 0, sizeof(footnotes));
-    if (nw->options.footnotes) {
-        if (!markdown_core_footnote_index_build(nw, nw->root, &footnotes)) {
-            markdown_core_footnote_index_release(nw->mem, &footnotes);
-            markdown_core_ast_set_error(
-                error,
-                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-                "could not index the document's footnotes"
-            );
-            return false;
-        }
-    }
-
-    nw->footnotes = footnotes;
     return true;
 }
 
@@ -518,6 +520,10 @@ markdown_core_document *markdown_core_document_open(
 }
 
 void markdown_core_document_release(markdown_core_document *session) {
+    if (session) {
+        session->mem->free(session->mem, session->diagnostics);
+        session->diagnostics = NULL;
+    }
     if (!session) {
         return;
     }
@@ -533,9 +539,7 @@ void markdown_core_document_release(markdown_core_document *session) {
         markdown_core_node_free(session->root);
     }
     markdown_core_source_release(session->source);
-    markdown_core_footnote_index_release(session->mem, &session->footnotes);
     release_definition_tables(session->mem, session->definitions);
-    markdown_core_footnote_labels_release(session->mem, &session->footnote_labels);
     if (session->warm_parser) {
         markdown_core_parser_free(session->warm_parser);
     }

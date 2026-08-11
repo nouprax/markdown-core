@@ -556,7 +556,10 @@ static markdown_core_node *try_opening_table_header(
          * begin a document child on a clean line: it must not remain an
          * incremental restart point, sealing qualifier included. */
         parent_container->start_line = parser->line_marks[parser->line_mark_count - 1].line;
-        parent_container->start_column = parser->line_marks[parser->line_mark_count - 1].column;
+        /* The byte column, not the mark's tab-expanded one: every node
+         * position in the engine is byte-based, and the two disagree the
+         * moment a tab precedes the row. */
+        parent_container->start_column = (int)parser->line_marks[parser->line_mark_count - 1].byte_offset + 1;
         parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 

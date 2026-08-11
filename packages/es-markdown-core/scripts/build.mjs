@@ -24,16 +24,14 @@ const core = [
     "linked_list.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
 const extensions = [
-    "core-extensions.c",
     "ast.c",
-    "session.c",
-    "source.c",
+    "document.c",
     "arena.c",
-    "adopt.c",
-    "incremental.c",
-    "lookups.c",
-    "footnote.c",
+    "source.c",
+    "concrete.c",
+    "diff.c",
     "delta.c",
+    "core-extensions.c",
     "table.c",
     "strikethrough.c",
     "autolink.c",

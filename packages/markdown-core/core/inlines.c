@@ -291,8 +291,20 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(
     link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
     link->as.link.title = markdown_core_chunk_literal("");
     link->start_line = link->end_line = subj->line;
-    link->start_column = start_column + 1;
-    link->end_column = end_column + 1;
+    /* The two offsets are not optional here, however long they were
+     * missing. A content offset is a position in the buffer the inline
+     * pass scans; a column is a position on a source line, and the two
+     * agree only while the buffer holds exactly one line that starts at
+     * the margin. Without them an autolink on the second line of a
+     * paragraph came out at `2:18-2:38` around its own child text at
+     * `2:15-2:33` — a parent starting after its child ends, off by every
+     * byte of every line above it. make_literal, which builds that very
+     * child two lines below, has always added them; this is the same
+     * function disagreeing with itself. Inherited from cmark-gfm
+     * (src/inlines.c:178-181), which reproduces the numbers exactly, and
+     * neither parity oracle compares positions, so nothing caught it. */
+    link->start_column = start_column + 1 + subj->column_offset + subj->block_offset;
+    link->end_column = end_column + 1 + subj->column_offset + subj->block_offset;
     text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
     if (text) {
         markdown_core_node_append_child_unchecked(link, text);

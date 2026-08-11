@@ -104,6 +104,20 @@ struct markdown_core_parser {
      * A paragraph is a leaf, so at most one is ever open and one array on the
      * parser suffices — no node grows a field. It is not an asymptotic cost:
      * three ints per line describing a buffer that already holds the line. */
+    /* Diagnostics raised while parsing, in source order. Kept as plain
+     * ints because core cannot see the facade's types; the document
+     * converts them when it takes the tree. One code exists today
+     * (a directive's attribute block that did not parse), and the vector
+     * stays empty for every document that has none. */
+    struct markdown_core_parser_diagnostic {
+        int code;
+        int start_line;
+        int start_column;
+        int end_line;
+        int end_column;
+    } *diagnostics;
+    size_t diagnostic_count;
+    size_t diagnostic_capacity;
     struct markdown_core_line_mark {
         markdown_core_bufsize content_offset;
         int line;
@@ -139,6 +153,19 @@ markdown_core_bufsize markdown_core_line_mark_extent(
     markdown_core_bufsize x0,
     markdown_core_bufsize x1,
     markdown_core_bufsize *column
+);
+
+/** Records one diagnostic at the given extent. A lost diagnostic is not a
+ * lost parse: the tree is unaffected and the document is still correct, it
+ * is only missing an underline, so this reports nothing on allocation
+ * failure rather than poisoning a parse that otherwise succeeded. */
+void markdown_core_parser_record_diagnostic(
+    markdown_core_parser *parser,
+    int code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column
 );
 
 /** Returns a parser whose parse ended (root handed off or freed) to its

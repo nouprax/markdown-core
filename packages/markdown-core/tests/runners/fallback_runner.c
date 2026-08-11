@@ -1626,16 +1626,6 @@ static int fb_session_run(
         }
     }
 
-    /* The footnote index must be coherent after retries: [^b] is referenced
-     * (number 1) and [^a] resolves after stage 2. */
-    {
-        const markdown_core_node_id *ids = NULL;
-        if (markdown_core_document_footnotes(session, &ids) != 2) {
-            fputs("footnote index diverged after retries\n", stderr);
-            goto done;
-        }
-    }
-
     result = 0;
 done:
     free(committed_dump);
@@ -1894,37 +1884,6 @@ static const markdown_core_node *fb_child_of_type(const markdown_core_node *pare
         }
     }
     return NULL;
-}
-
-/* A reference carries no destination. It names a label; which definition that
- * label resolves to is an answer, and the destination is stated once at that
- * definition, where the source writes it. So this asks the answer first and
- * reads the winning definition second — which is also why retargeting a
- * definition leaves every reference node untouched. */
-static int fb_reference_destination_is(
-    const markdown_core_document *session,
-    const markdown_core_node *node,
-    const char *expected
-) {
-    markdown_core_reference_info info;
-    const markdown_core_node *definition;
-    markdown_core_string label;
-    markdown_core_string destination;
-    markdown_core_string title;
-    size_t length = strlen(expected);
-
-    if (!node ||
-        !markdown_core_document_reference_info(
-            session,
-            node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)),
-            &info
-        ) ||
-        info.definition == 0) {
-        return 0;
-    }
-    definition = node_by_id(markdown_core_document_root(session), info.definition);
-    return definition && markdown_core_node_reference_definition_properties(definition, &label, &destination, &title) &&
-           destination.length == length && memcmp(destination.data, expected, length) == 0;
 }
 
 /* A CHUNK BOUNDARY MUST NOT CHANGE THE DOCUMENT (8.2: streaming is ordinary

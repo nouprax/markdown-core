@@ -553,3 +553,49 @@ Document scope=1:1..5:16 children=2
             └── Link scope=5:3..5:18 destination="baz*" title=null children=1
                 └── Text scope=5:4..5:11 literal="foo *bar" children=0
 ````````````````````````````````
+
+A node positioned through a line mark must speak the same column space as
+the node beside it. A reference definition harvested off the front of a
+paragraph moves that paragraph's start to its first surviving byte, and
+the mark that move reads from once carried a TAB-EXPANDED column while
+every other position in the engine is a byte column. On the line below
+that produced `Paragraph scope=2:5..2:10` wrapped around a Text child at
+`2:5..2:13` — a child overrunning its own parent. Four spaces in place of
+the tab expand to the same number and hide it, which is why no fixture
+here had ever caught it.
+(Important: the second line begins with a tab.)
+
+```````````````````````````````` example
+[foo]: /url
+→text *here*
+.
+Document scope=1:1..2:12 children=2
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+└── Paragraph scope=2:2..2:12 children=2
+    ├── Text scope=2:2..2:6 literal="text " children=0
+    └── Emphasis scope=2:7..2:12 children=1
+        └── Text scope=2:8..2:11 literal="here" children=0
+````````````````````````````````
+
+An autolink is positioned like every other inline or not at all. make_autolink
+set `start_column = start_column + 1` while make_literal — which builds the very
+child text two lines below it — adds `subj->column_offset + subj->block_offset`
+as well. One function, two conventions, so on any paragraph whose buffer holds
+more than the first line the Link came out AFTER its own child ended:
+`Link scope=2:9..2:29` around `Text scope=2:6..2:24`. Inherited from cmark-gfm
+(src/inlines.c:178-181), which reproduces the wrong numbers exactly, and neither
+parity oracle compares positions.
+
+```````````````````````````````` example
+aaa
+bbb <https://example.com> ccc
+.
+Document scope=1:1..2:29 children=1
+└── Paragraph scope=1:1..2:29 children=5
+    ├── Text scope=1:1..1:3 literal="aaa" children=0
+    ├── SoftBreak scope=0:0..0:0 children=0
+    ├── Text scope=2:1..2:4 literal="bbb " children=0
+    ├── Link scope=2:5..2:25 destination="https://example.com" title="" children=1
+    │   └── Text scope=2:6..2:24 literal="https://example.com" children=0
+    └── Text scope=2:26..2:29 literal=" ccc" children=0
+````````````````````````````````

@@ -96,6 +96,22 @@ const markdown_core_node *markdown_core_document_concrete(const markdown_core_do
     return document->root;
 }
 
+size_t markdown_core_document_diagnostics(
+    const markdown_core_document *document,
+    const markdown_core_diagnostic **diagnostics
+) {
+    if (!document) {
+        if (diagnostics) {
+            *diagnostics = NULL;
+        }
+        return 0;
+    }
+    if (diagnostics) {
+        *diagnostics = document->diagnostics;
+    }
+    return document->diagnostic_count;
+}
+
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
     return error ? error->code : MARKDOWN_CORE_ERROR_NONE;
 }

@@ -170,6 +170,13 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     markdown_core_map_free(parser->refmap);
     markdown_core_map_free(parser->footnote_defs);
 
+    if (parser->diagnostics) {
+        parser->mem->free(parser->mem, parser->diagnostics);
+        parser->diagnostics = NULL;
+        parser->diagnostic_count = 0;
+        parser->diagnostic_capacity = 0;
+    }
+
     if (parser->line_marks) {
         parser->mem->free(parser->mem, parser->line_marks);
         parser->line_marks = NULL;
@@ -235,6 +242,10 @@ void markdown_core_parser_renew(markdown_core_parser *parser) {
 
     if (parser->line_marks) {
         parser->mem->free(parser->mem, parser->line_marks);
+    }
+
+    if (parser->diagnostics) {
+        parser->mem->free(parser->mem, parser->diagnostics);
     }
 
     memset(parser, 0, sizeof(markdown_core_parser));
@@ -469,6 +480,35 @@ markdown_core_bufsize markdown_core_line_mark_extent(
     return end - start;
 }
 
+void markdown_core_parser_record_diagnostic(
+    markdown_core_parser *parser,
+    int code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column
+) {
+    struct markdown_core_parser_diagnostic *grown;
+    size_t capacity;
+
+    if (parser->diagnostic_count == parser->diagnostic_capacity) {
+        capacity = parser->diagnostic_capacity ? parser->diagnostic_capacity * 2 : 4;
+        grown = (struct markdown_core_parser_diagnostic *)
+                    parser->mem->realloc(parser->mem, parser->diagnostics, capacity * sizeof(*grown));
+        if (!grown) {
+            return;
+        }
+        parser->diagnostics = grown;
+        parser->diagnostic_capacity = capacity;
+    }
+    parser->diagnostics[parser->diagnostic_count].code = code;
+    parser->diagnostics[parser->diagnostic_count].start_line = start_line;
+    parser->diagnostics[parser->diagnostic_count].start_column = start_column;
+    parser->diagnostics[parser->diagnostic_count].end_line = end_line;
+    parser->diagnostics[parser->diagnostic_count].end_column = end_column;
+    parser->diagnostic_count++;
+}
+
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
     markdown_core_bufsize i;
     unsigned char c;
@@ -555,7 +595,25 @@ static void S_content_position(
     }
     mark = &parser->line_marks[*cursor];
     *line = mark->line;
-    *column = mark->column + (int)(offset - mark->content_offset);
+    /* Through the extent helper, and NOT through `mark->column`.
+     *
+     * `column` is the block parser's tab-expanded counter, which cmark calls
+     * a VIRTUAL column (src/blocks.c:867) and never turns into a position:
+     * every node position in this engine is a byte column, from
+     * `add_child(first_nonspace + 1)` to a finalized `end_column`. Writing
+     * the expanded one here made a node placed through a mark speak a
+     * language no node beside it spoke — on a definition followed by a
+     * TAB-indented continuation the paragraph came out `2:5..2:10` around
+     * its own Text child at `2:5..2:13`, a child overrunning its parent.
+     * Four spaces in place of the tab expand to the same number and hid it,
+     * which is why no fixture caught it. The helper is also where the
+     * stand-in pad of a mid-tab lazy continuation is undone, and the `+ 1`
+     * is the zero-based record column becoming a one-based node position. */
+    {
+        markdown_core_bufsize record_column;
+        markdown_core_line_mark_extent(mark, offset, offset, &record_column);
+        *column = (int)record_column + 1;
+    }
 }
 
 /* Captures one reference-definition spelling as concrete records on `node`:

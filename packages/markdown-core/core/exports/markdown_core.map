@@ -36,6 +36,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_embed_reference;
     markdown_core_document_scope_table;
     markdown_core_scope_table_free;
+    markdown_core_document_diagnostics;
     markdown_core_document_dump;
     markdown_core_dump_free;
     markdown_core_document_open;
@@ -45,10 +46,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_revision;
     markdown_core_document_lineage;
     markdown_core_document_length;
-    markdown_core_document_reference_info;
-    markdown_core_document_footnote_info;
-    markdown_core_document_footnotes;
-    markdown_core_document_footnote_references;
     markdown_core_node_get_id;
     markdown_core_node_get_revision;
     markdown_core_node_get_parent;

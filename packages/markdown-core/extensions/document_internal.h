@@ -51,79 +51,6 @@ struct markdown_core_delta {
     size_t capacity;
 };
 
-// One record per footnote node (reference or definition) of the committed
-// tree, held in the open-addressing id table below. `group` indexes the
-// in-use group of the record's label (SIZE_MAX when the label is unused or
-// unresolvable).
-typedef struct {
-    markdown_core_node *node; // borrowed from the committed tree
-    markdown_core_footnote_info info;
-    size_t group;
-} markdown_core_footnote_record;
-
-// Open-addressing node-id -> footnote-record table (0 marks an empty slot,
-// UINT64_MAX a tombstone; ids start at 1). Kept in step with the site lists
-// by targeted removes/inserts on sequence-preserving commits and rebuilt
-// wholesale otherwise; growth and tombstone compaction happen only through
-// the fallible reserve step, so applies never allocate.
-typedef struct {
-    markdown_core_node_id *keys;
-    markdown_core_footnote_record *records;
-    size_t capacity; // power of two, 0 when unallocated
-    size_t count;    // live records
-    size_t occupied; // live + tombstones
-} markdown_core_footnote_table;
-
-// One footnote node with the containment facts the incremental splice
-// classifies by: the document child whose subtree holds it, the
-// inline-owning leaf whose parse produced it (references), the node's
-// interned label, and its position inside the label's reference group.
-typedef struct {
-    markdown_core_node *node;   // borrowed from the committed tree
-    markdown_core_node *anchor; // document child whose subtree holds `node`
-    markdown_core_node *unit;   // nearest block ancestor for references, NULL for definitions
-    size_t label;               // slot in the index's label table, SIZE_MAX unresolvable
-    size_t group_pos;           // references: index inside the label's group run
-} markdown_core_footnote_site;
-
-typedef struct {
-    markdown_core_footnote_site *items;
-    size_t count;
-    size_t capacity;
-} markdown_core_footnote_site_list;
-
-// Session-persistent label interning: one owned normalized string per
-// distinct label ever seen, folded once when a site first carries it. Slots
-// are stable for the session's lifetime — index generations, full rebuilds,
-// and failed commits never move or free them — so site label fields stay
-// valid across every path. Aggregates (winner, numbering) are derived per
-// refresh and live only in the index's structures.
-typedef struct {
-    unsigned char **normalized; // owned NUL-terminated keys
-    size_t count;
-    size_t capacity;
-    markdown_core_key_index by_label; // normalized label -> slot + 1
-} markdown_core_footnote_labels;
-
-// Session-maintained footnote index: numbering, first-use order, resolution
-// state, and back-reference ordinals are answered from here; the tree stays
-// source-faithful. Maintained across commits: a sequence-preserving commit
-// (the stale and staged site runs carry identical label sequences) patches
-// node pointers and churned ids in place, any other commit rebuilds the
-// derived structures from the spliced site lists — label-slot integers, no
-// re-normalization — and bumps the revisions of nodes whose query answers
-// changed. The full parse path rebuilds the index wholesale; the session's
-// label table persists throughout.
-typedef struct {
-    markdown_core_footnote_site_list defs; // definition sites in document order
-    markdown_core_footnote_site_list refs; // reference sites in document order
-    markdown_core_footnote_table records;
-    markdown_core_node_id *in_use; // winning definitions in first-use order
-    size_t in_use_count;
-    markdown_core_node_id *references; // reference ids grouped by in_use entry, document order
-    size_t *reference_offsets;         // in_use_count + 1 entries
-} markdown_core_footnote_index;
-
 // (hits and misses alike: every lookup is an answer a definition edit can
 // change). Labels are owned NUL-terminated strings; `positions` runs
 // parallel to `labels` and holds each label's entry position inside its
@@ -282,11 +209,14 @@ struct markdown_core_document {
     // so nothing can hold a predecessor to read.
     markdown_core_source *source;
     markdown_core_node *root; // the committed tree, owned
-    uint64_t next_id;         // monotonic, starts at 1, never reused
+    // What an editor underlines, in source order, owned. Taken from the
+    // parser when this document takes its tree, so it describes exactly the
+    // committed text and is replaced wholesale by the next edit.
+    markdown_core_diagnostic *diagnostics;
+    size_t diagnostic_count;
+    uint64_t next_id; // monotonic, starts at 1, never reused
     uint64_t lineage;
     uint64_t revision;
-    markdown_core_footnote_index footnotes;
-    markdown_core_footnote_labels footnote_labels;
     // The definition tables (see markdown_core_definition_table).
     markdown_core_definition_table definitions[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     // Persistent unit-id -> looked-up-labels tables backing per-unit re-runs
@@ -364,91 +294,6 @@ bool markdown_core_diff_trees(
 
 /** Appends one row to a delta's `diffs`; plain-malloc grow. */
 bool markdown_core_delta_push(markdown_core_delta *changes, markdown_core_node_id id, uint32_t parts);
-
-/** Builds the footnote index for `root` into `index` (zeroed on entry by the
- * caller), interning labels into the session's persistent table. Returns
- * false on allocation failure with `index` fully released. */
-bool markdown_core_footnote_index_build(
-    markdown_core_document *session,
-    markdown_core_node *root,
-    markdown_core_footnote_index *index
-);
-
-/** Interns `label` into the session's footnote-label table, returning its
- * slot; SIZE_MAX with *failed clear when the label normalizes to nothing
- * (it can never participate), SIZE_MAX with *failed set on allocation
- * loss. Idempotent — a failed commit leaves at worst unused slots. */
-size_t markdown_core_document_footnote_label(
-    markdown_core_document *session,
-    const markdown_core_chunk *label,
-    bool *failed
-);
-
-/** Stamps interned label slots on every site of both lists (used for
- * freshly collected sites, whose labels are not yet resolved). Returns
- * false on allocation failure. */
-bool markdown_core_document_footnote_label_sites(
-    markdown_core_document *session,
-    markdown_core_footnote_site_list *defs,
-    markdown_core_footnote_site_list *refs
-);
-
-/** Frees the session's footnote-label table. */
-void markdown_core_footnote_labels_release(markdown_core_mem *mem, markdown_core_footnote_labels *labels);
-
-/** Looks up a record by node id, NULL when absent. */
-markdown_core_footnote_record *markdown_core_footnote_table_find(
-    const markdown_core_footnote_table *table,
-    markdown_core_node_id id
-);
-
-/** Grows/compacts the record table so the next `extra` inserts cannot fail
- * (fallible; run before the point of no return). */
-bool markdown_core_footnote_table_reserve(markdown_core_mem *mem, markdown_core_footnote_table *table, size_t extra);
-
-/** Inserts a record within a reserved budget (never fails). The id must not
- * be present. */
-void markdown_core_footnote_table_put(markdown_core_footnote_table *table, markdown_core_footnote_record record);
-
-/** Tombstones a record (missing ids are a no-op). */
-void markdown_core_footnote_table_remove(markdown_core_footnote_table *table, markdown_core_node_id id);
-
-/** Appends a site; plain doubling grow. */
-bool markdown_core_footnote_site_push(
-    markdown_core_mem *mem,
-    markdown_core_footnote_site_list *list,
-    markdown_core_footnote_site site
-);
-
-/** Frees the list's storage and zeroes it (the nodes are borrowed). */
-void markdown_core_footnote_site_list_release(markdown_core_mem *mem, markdown_core_footnote_site_list *list);
-
-/** Appends every footnote node of `root`'s subtree to `defs`/`refs` in
- * document order. Sites take `anchor` when non-NULL (a subtree that will sit
- * under one document child), or their own top-level ancestor below `root`.
- * Returns false on allocation failure; the lists stay releasable. */
-bool markdown_core_footnote_collect_sites(
-    markdown_core_mem *mem,
-    markdown_core_node *root,
-    markdown_core_node *anchor,
-    markdown_core_footnote_site_list *defs,
-    markdown_core_footnote_site_list *refs
-);
-
-/** Builds the index's derived structures from document-ordered site lists
- * whose label slots are already interned, taking ownership of both lists'
- * storage (they are zeroed; on failure the storage is freed with the rest
- * of the index). Label-slot integer work only — nothing here folds or
- * hashes label text. Node ids must be final. */
-bool markdown_core_footnote_index_build_sites(
-    markdown_core_mem *mem,
-    markdown_core_footnote_site_list *defs,
-    markdown_core_footnote_site_list *refs,
-    markdown_core_footnote_index *index
-);
-
-/** Releases everything owned by `index` and zeroes it. */
-void markdown_core_footnote_index_release(markdown_core_mem *mem, markdown_core_footnote_index *index);
 
 /** Creates a parser configured with the session's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
