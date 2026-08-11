@@ -1501,6 +1501,27 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         found_label = true;
     }
 
+    /* WHICH definition table answers, decided once.
+     *
+     * `[^` selects the footnote table, and only when footnotes are enabled:
+     * with the option off, `^x` is an ordinary label that `[^x]: /url`
+     * defines, and both authorities agree — cmark-gfm and remark each parse
+     * `[^x]` + `[^x]: note` as a link reference when footnotes are off and
+     * as a footnote when they are on.
+     *
+     * What `[^` does NOT decide is whether a definition is consulted at all.
+     * Both forms exist exactly where their definition does, and both degrade
+     * to the bytes the author typed where it does not. That symmetry used to
+     * be invisible in the code: the footnote form was reached only by falling
+     * out of a failed refmap lookup, so `[^x]` probed the reference table
+     * first, always missed, and arrived at its own table through a label
+     * named for the miss rather than for the form. */
+    if (found_label && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && form == MARKDOWN_CORE_SHORTCUT_REFERENCE &&
+        raw_label.len > 1 && raw_label.data[0] == '^') {
+        markdown_core_chunk_free(subj->mem, &raw_label);
+        goto footnoteForm;
+    }
+
     if (found_label) {
         ref = (markdown_core_reference *)markdown_core_map_lookup(subj->refmap, &raw_label);
         if (ref != NULL) {
@@ -1530,8 +1551,12 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
 noMatch:
-    // If we fall through to here, it means we didn't match a link.
-    // What if we're a footnote link?
+footnoteForm:
+    /* Two entries, and they mean different things. `footnoteForm` is the
+     * decision above arriving deliberately; `noMatch` is a bracket that
+     * matched no reference at all and still has to spell its `]`. The
+     * footnote block below runs only for the first, because only a `[^`
+     * whose interior is one TEXT node reaches its test. */
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
         opener->inl_text->next->type == MARKDOWN_CORE_NODE_TEXT) {
 
