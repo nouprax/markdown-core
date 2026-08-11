@@ -16,7 +16,9 @@ public struct Commit: Sendable {
 /// change. A node that did not exist before differs from absence in every
 /// part it has, so it carries all of them.
 public struct DiffParts: OptionSet, Sendable, Hashable {
+    /// The set's raw bit pattern.
     public let rawValue: UInt32
+    /// Creates a part set from its raw bit pattern.
     public init(rawValue: UInt32) { self.rawValue = rawValue }
 
     /// The node's kind or one of its scalar fields differs.

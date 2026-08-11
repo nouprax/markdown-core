@@ -1,27 +1,31 @@
 import Foundation
-import MarkdownCore
 import Testing
+
+// `@testable` for one reason, stated at its use: `ParseError` is not
+// reachable through the public surface, because no input a Swift caller can
+// hand `Document` is invalid.
+@testable import MarkdownCore
 
 @Suite("api") struct APISuite {
     @Test("parse options and visitor dispatch use the public Swift API")
     func publicAPI() throws {
         let options = ParseOptions()
         #expect(options.tables && options.directives && options.formulas && options.crossLinks && options.embeds)
-        let document = try Document.parse("# Heading\n")
+        let document = try Document("# Heading\n")
         var visitor = KindVisitor()
         #expect(document.content[0].accept(&visitor) == "heading:1")
         let table = try #require(
-            Document.parse("| a |\n| --- |\n| b |\n").content.first as? Table
+            Document("| a |\n| --- |\n| b |\n").content.first as? Table
         )
         #expect(table.header.accept(&visitor) == "header")
         #expect(table.header.cells[0].accept(&visitor) == "cell")
         let directive = try #require(
-            (Document.parse(":badge[label]\n").content.first as? Paragraph)?
+            (Document(":badge[label]\n").content.first as? Paragraph)?
                 .content.first as? Directive
         )
         #expect(directive.label?.accept(&visitor) == "DirectiveLabel")
         #expect(
-            try Document.parse("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
+            try Document("| a |\n| --- |\n| b |\n", options: ParseOptions(tables: false))
                 .content.first is Paragraph
         )
     }
@@ -30,20 +34,20 @@ import Testing
     func crossReferenceOptions() throws {
         let source =
             "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n"
-        let paragraph = try #require(Document.parse(source).content.first as? Paragraph)
+        let paragraph = try #require(Document(source).content.first as? Paragraph)
         let crossLink = try #require(paragraph.content[1] as? CrossLink)
         let embed = try #require(paragraph.content[3] as? Embed)
         #expect(crossLink.reference == "folder/note#^block|display")
         #expect(embed.reference == "folder/note#^block|display")
 
         let linksDisabled = try #require(
-            Document.parse(source, options: ParseOptions(crossLinks: false))
+            Document(source, options: ParseOptions(crossLinks: false))
                 .content.first as? Paragraph
         )
         #expect(linksDisabled.content[1] is Embed)
 
         let embedsDisabled = try #require(
-            Document.parse(source, options: ParseOptions(embeds: false))
+            Document(source, options: ParseOptions(embeds: false))
                 .content.first as? Paragraph
         )
         #expect(embedsDisabled.content[1] is CrossLink)
@@ -51,11 +55,11 @@ import Testing
 
     @Test("the formulas switch controls every supported formula syntax")
     func formulaOption() throws {
-        let inlineDollar = try Document.parse("$x$\n")
-        let blockDollar = try Document.parse("$$x$$\n")
-        let inlineLaTeX = try Document.parse("\\\\(x\\\\)\n")
-        let blockLaTeX = try Document.parse("\\\\[x\\\\]\n")
-        let fenced = try Document.parse("```formula\nx\n```\n")
+        let inlineDollar = try Document("$x$\n")
+        let blockDollar = try Document("$$x$$\n")
+        let inlineLaTeX = try Document("\\\\(x\\\\)\n")
+        let blockLaTeX = try Document("\\\\[x\\\\]\n")
+        let fenced = try Document("```formula\nx\n```\n")
 
         #expect((inlineDollar.content.first as? Paragraph)?.content.first is Formula)
         #expect(blockDollar.content.first is FormulaBlock)
@@ -65,23 +69,23 @@ import Testing
 
         let disabled = ParseOptions(formulas: false)
         #expect(
-            (try Document.parse("$x$\n", options: disabled).content.first as? Paragraph)?
+            (try Document("$x$\n", options: disabled).content.first as? Paragraph)?
                 .content.first is Text
         )
-        #expect(try Document.parse("$$x$$\n", options: disabled).content.first is Paragraph)
+        #expect(try Document("$$x$$\n", options: disabled).content.first is Paragraph)
         #expect(
-            (try Document.parse("\\\\(x\\\\)\n", options: disabled).content.first as? Paragraph)?
+            (try Document("\\\\(x\\\\)\n", options: disabled).content.first as? Paragraph)?
                 .content.first is Text
         )
-        #expect(try Document.parse("\\\\[x\\\\]\n", options: disabled).content.first is Paragraph)
-        #expect(try Document.parse("```formula\nx\n```\n", options: disabled).content.first is CodeBlock)
+        #expect(try Document("\\\\[x\\\\]\n", options: disabled).content.first is Paragraph)
+        #expect(try Document("```formula\nx\n```\n", options: disabled).content.first is CodeBlock)
     }
 }
 
 @Suite("unicode") struct UnicodeSuite {
     @Test("UTF-8 survives the C-to-Swift boundary")
     func unicode() throws {
-        let paragraph = try #require(Document.parse("héllo 🚀 中文\n").content.first as? Paragraph)
+        let paragraph = try #require(Document("héllo 🚀 中文\n").content.first as? Paragraph)
         #expect((paragraph.content.first as? Text)?.literal == "héllo 🚀 中文")
     }
 }
@@ -89,24 +93,28 @@ import Testing
 @Suite("errors") struct ErrorsSuite {
     @Test("empty input maps to an empty document")
     func empty() throws {
-        #expect(try Document.parse("").content.isEmpty)
+        #expect(try Document("").content.isEmpty)
     }
 
     @Test("ParseError carries its native message through every presentation path")
-    func parseErrorPresentation() throws {
-        let session = try MarkupSession()
-        do {
-            try session.replace(5..<9, with: "beyond the stored text")
-            Issue.record("an out-of-range edit must throw")
-        } catch let error as ParseError {
-            #expect(error.code == .invalidArgument)
-            #expect(!error.message.isEmpty)
-            // String interpolation and Foundation presentation must agree:
-            // localizedDescription previously degraded to a bare domain/code.
-            #expect(String(describing: error) == error.message)
-            #expect(error.localizedDescription == error.message)
-            #expect((error as NSError).localizedDescription == error.message)
-        }
+    func parseErrorPresentation() {
+        // Every byte sequence is a valid Markdown document, so `Document` and
+        // `edit` reject nothing a Swift caller can express: the engine's
+        // remaining failures are allocation and internal, and no test can
+        // provoke either. The presentation paths are pinned directly, because
+        // `localizedDescription` degraded to a bare domain and code once and
+        // that is invisible until a user is looking at the alert.
+        let error = ParseError(
+            code: .invalidArgument,
+            message: "markdown must not be null when length is nonzero",
+            scope: nil
+        )
+        #expect(String(describing: error) == error.message)
+        #expect(error.localizedDescription == error.message)
+        #expect((error as NSError).localizedDescription == error.message)
+        // A native failure that carried no error object still says something.
+        #expect(!ParseError(from: nil).message.isEmpty)
+        #expect(ParseError(from: nil).code == .internal)
     }
 }
 
@@ -115,7 +123,7 @@ import Testing
     func copiedAndSendable() async throws {
         requireSendable(Document.self)
         requireSendable(ParseOptions.self)
-        let document = try Document.parse("parallel 🚀\n")
+        let document = try Document("parallel 🚀\n")
         let counts = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
             for _ in 0..<20 { group.addTask { document.content.count } }
             return await group.reduce(into: []) { $0.append($1) }
@@ -129,13 +137,13 @@ import Testing
     @Test("large and deeply nested inputs preserve complete value trees")
     func workloads() throws {
         let unit = "## Section\n\nParagraph with **strong**, [link](/), and 🚀.\n\n"
-        #expect(try Document.parse(String(repeating: unit, count: 5_000)).content.count == 10_000)
+        #expect(try Document(String(repeating: unit, count: 5_000)).content.count == 10_000)
         var node = try #require(
-            Document.parse(String(repeating: "> ", count: 128) + "leaf\n").content.first
+            Document(String(repeating: "> ", count: 128) + "leaf\n").content.first
         )
         for _ in 0..<128 { node = try #require((node as? BlockQuote)?.content.first) }
         #expect(node is Paragraph)
-        for _ in 0..<2_000 { #expect(try Document.parse("# Copy\n\n- [x] item\n").content.count == 2) }
+        for _ in 0..<2_000 { #expect(try Document("# Copy\n\n- [x] item\n").content.count == 2) }
     }
 
     @Test("simultaneous parses with disagreeing options never interfere")
@@ -150,7 +158,7 @@ import Testing
                 group.addTask {
                     for iteration in 0..<25 {
                         let combo = combos[(worker + iteration) % combos.count]
-                        let dump = try Document.parse(combo.source, options: combo.options).dump()
+                        let dump = try Document(combo.source, options: combo.options).dump()
                         #expect(dump == combo.reference)
                     }
                 }
@@ -197,7 +205,7 @@ private func makeConcurrencyCombos() throws -> [ConcurrencyCombo] {
             ConcurrencyCombo(
                 source: source,
                 options: options,
-                reference: try Document.parse(source, options: options).dump()
+                reference: try Document(source, options: options).dump()
             )
         }
     }

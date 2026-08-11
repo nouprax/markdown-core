@@ -80,17 +80,6 @@ extension ParseError: LocalizedError {
     public var errorDescription: String? { message }
 }
 
-/// An immutable snapshot of a parsed Markdown document.
-///
-/// A `Document` is itself the root `Markup` node. Snapshots produced by a
-/// `MarkupSession` structurally share every unchanged node with the previous
-/// snapshot; a one-shot `Document.parse` is a self-contained value.
-///
-/// Absolute source positions are not stored on nodes: resolve them with
-/// `scope(of:)`, receive them from `MarkupWalker` events, or print them with
-/// `dump()`. A session snapshot resolves scopes against its session the
-/// first time any of these is used and is self-contained from then on; see
-/// `scope(of:)` for the exact rules.
 /// One parsed Markdown document: the root of the canonical value tree, the
 /// owner of the native parse it came from, and the only entry point.
 ///
@@ -131,10 +120,6 @@ public final class Document: Markup, @unchecked Sendable {
     /// Every node of this document by identity, so an answer addressed by
     /// `MarkupID` can hand back the node value rather than the bare id.
     private let index: [UInt64: any Markup]
-    /// The same identities pointing at the native nodes. Needed because one
-    /// answer — `footnote(of:)` — is addressed by node and not by id, so an
-    /// id has to be able to find its native node again.
-    private let natives: [UInt64: OpaquePointer]
     /// Set when `edit(_:)` has handed the native document to its successor.
     /// The successor frees it; this one must not, and must not be read
     /// through either.
@@ -146,8 +131,10 @@ public final class Document: Markup, @unchecked Sendable {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?
         let handle = try markdown.withCString { cString -> OpaquePointer in
-            let text = markdown_core_string(data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
-                                            length: strlen(cString))
+            let text = markdown_core_string(
+                data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
+                length: strlen(cString)
+            )
             guard let handle = markdown_core_document_new(text, &nativeOptions, &nativeError) else {
                 defer { markdown_core_error_free(nativeError) }
                 throw ParseError(from: nativeError)
@@ -161,14 +148,12 @@ public final class Document: Markup, @unchecked Sendable {
             markdown_core_document_free(handle)
             throw ParseError(code: .internal, message: "parse produced no document root", scope: nil)
         }
-        let builder = MarkupBuilder(lineage: lineage, children: Document.childrenBuilder(lineage))
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        content = builder.children(root)
+        content = Document.content(below: root, lineage: lineage)
         scopes = Document.scopeTable(handle)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
-        natives = Document.nativeIndex(root)
     }
 
     private init(adopting handle: OpaquePointer, options: ParseOptions) throws {
@@ -179,14 +164,12 @@ public final class Document: Markup, @unchecked Sendable {
             markdown_core_document_free(handle)
             throw ParseError(code: .internal, message: "edit produced no document root", scope: nil)
         }
-        let builder = MarkupBuilder(lineage: lineage, children: Document.childrenBuilder(lineage))
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        content = builder.children(root)
+        content = Document.content(below: root, lineage: lineage)
         scopes = Document.scopeTable(handle)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
-        natives = Document.nativeIndex(root)
     }
 
     deinit {
@@ -211,16 +194,18 @@ public final class Document: Markup, @unchecked Sendable {
         var mutable: OpaquePointer? = handle
         var out = markdown_core_commit()
         var nativeError: OpaquePointer?
-        let ok = markdown.withCString { cString -> Bool in
-            let text = markdown_core_string(data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
-                                            length: strlen(cString))
+        let succeeded = markdown.withCString { cString -> Bool in
+            let text = markdown_core_string(
+                data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
+                length: strlen(cString)
+            )
             return markdown_core_document_edit(&mutable, text, &out, &nativeError)
         }
         // The native edit clears the receiver on every path, success or not,
         // so the native document is gone either way and this instance must
         // stop owning it before anything else can throw.
         superseded = true
-        guard ok, let next = out.document else {
+        guard succeeded, let next = out.document else {
             defer { markdown_core_error_free(nativeError) }
             throw ParseError(from: nativeError)
         }
@@ -239,13 +224,12 @@ public final class Document: Markup, @unchecked Sendable {
     /// caller holding an id from a superseded revision is asking exactly
     /// this question.
     public func node(_ id: MarkupID) -> (any Markup)? {
-        id.lineage == self.id.lineage ? index[id.rawValue] : nil
-    }
-
-    /// The native node behind an identity, for the one answer that is
-    /// addressed by node rather than by id.
-    func nativeNode(_ id: MarkupID) -> OpaquePointer? {
-        id.lineage == self.id.lineage ? natives[id.rawValue] : nil
+        guard id.lineage == self.id.lineage else { return nil }
+        // The root answers for itself. It is a `Markup` like any other and a
+        // delta names it whenever the top-level block list changes, so a
+        // consumer reconciling by id reaches this call with the document's
+        // own id — and the index holds the descendants, not the root.
+        return id.rawValue == self.id.rawValue ? self : index[id.rawValue]
     }
 
     /// The absolute source extent of `node`, O(1).
@@ -265,27 +249,53 @@ public final class Document: Markup, @unchecked Sendable {
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
+    /// Two documents are equal exactly when they share `id` and `revision`,
+    /// the same rule every other `Markup` node follows.
     public static func == (lhs: Document, rhs: Document) -> Bool {
         lhs.id == rhs.id && lhs.revision == rhs.revision
     }
 
+    /// Hashes the identity/revision pair that also defines equality.
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         hasher.combine(revision)
     }
 
-    private static func childrenBuilder(_ lineage: UInt64) -> (OpaquePointer) -> [any Markup] {
-        { node in
-            var builder: MarkupBuilder!
-            builder = MarkupBuilder(lineage: lineage, children: Document.childrenBuilder(lineage))
-            var values: [any Markup] = []
+    /// Builds every value below `root` and returns the root's own children.
+    ///
+    /// Postorder over an explicit stack, because nesting depth is
+    /// input-controlled: a document that PARSED must also project, and the
+    /// call stack is not a budget this package may spend on the caller's
+    /// behalf. Child arrays assemble in sibling frames, so every node is
+    /// built exactly once, from children that are already built.
+    private static func content(below root: OpaquePointer, lineage: UInt64) -> [any Markup] {
+        var frames: [[any Markup]] = [[]]
+        var completed: [any Markup] = []
+        let builder = MarkupBuilder(lineage: lineage) { _ in completed }
+        var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
+        while let (node, ready) = stack.popLast() {
+            if ready {
+                completed = frames.removeLast()
+                if node == root {
+                    return completed
+                }
+                frames[frames.count - 1].append(builder.markup(from: node))
+                continue
+            }
+            stack.append((node, true))
+            frames.append([])
+            // Reversed so pops build children in source order.
+            var children: [OpaquePointer] = []
             var child = markdown_core_node_get_first_child(node)
             while let current = child {
-                values.append(builder.markup(from: current))
+                children.append(current)
                 child = markdown_core_node_get_next_sibling(current)
             }
-            return values
+            for current in children.reversed() {
+                stack.append((current, false))
+            }
         }
+        preconditionFailure("the build never reached the document root")
     }
 
     private static func index(of content: [any Markup]) -> [UInt64: any Markup] {
@@ -298,20 +308,6 @@ public final class Document: Markup, @unchecked Sendable {
         while let node = stack.popLast() {
             table[node.id.rawValue] = node
             stack.append(contentsOf: node.accept(&children))
-        }
-        return table
-    }
-
-    private static func nativeIndex(_ root: OpaquePointer) -> [UInt64: OpaquePointer] {
-        var table: [UInt64: OpaquePointer] = [:]
-        var stack: [OpaquePointer] = [root]
-        while let node = stack.popLast() {
-            table[markdown_core_node_get_id(node)] = node
-            var child = markdown_core_node_get_first_child(node)
-            while let current = child {
-                stack.append(current)
-                child = markdown_core_node_get_next_sibling(current)
-            }
         }
         return table
     }
@@ -359,10 +355,9 @@ extension ParseOptions {
     }
 }
 
-/// Builds platform values from native nodes for the session mirror. The
-/// `children` strategy is the only degree of freedom: a first commit's bulk
-/// build assembles child arrays in sibling frames, while an incremental
-/// commit rebuilds parents from already-built mirror values.
+/// Builds one platform value from one native node. `children` hands back the
+/// values already built for that node's children, which is what lets the
+/// build run bottom-up over an explicit stack instead of down the call stack.
 struct MarkupBuilder {
     let lineage: UInt64
     let children: (OpaquePointer) -> [any Markup]
@@ -420,5 +415,3 @@ struct MarkupBuilder {
         }
     }
 }
-
-
