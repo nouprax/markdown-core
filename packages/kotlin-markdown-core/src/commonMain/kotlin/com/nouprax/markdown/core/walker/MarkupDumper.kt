@@ -20,7 +20,7 @@ public object MarkupDumper {
         document: Document,
         node: Markup,
     ): String {
-        val origin = document.scope(node).start.line
+        val origin = node.scope.start.line
         val offset = if (origin > 0) origin - 1 else 0
         val visitor = DumpVisitor()
         val remainingChildren = mutableListOf<Int>()

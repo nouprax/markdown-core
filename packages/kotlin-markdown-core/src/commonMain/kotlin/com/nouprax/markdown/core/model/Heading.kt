@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class Heading internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val level: Int,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {

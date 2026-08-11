@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class DirectiveBlock internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val mode: PlacementMode,
     public val name: String,
     public val attributes: String?,

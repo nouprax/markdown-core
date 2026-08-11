@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class HTML internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     /** True when the literal is one complete comment; the same bit as
      * [HTMLBlock.comment], and from the same place. */
     public val comment: Boolean,

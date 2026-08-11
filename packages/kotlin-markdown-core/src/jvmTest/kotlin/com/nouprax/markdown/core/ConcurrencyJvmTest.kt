@@ -100,8 +100,8 @@ class ConcurrencyJvmTest {
         assertTrue(failures.isEmpty(), failures.joinToString("\n"))
         // Every document answers for itself from any thread, and releasing
         // one never touches another's parse.
-        assertTrue(retained.all { it.scope(it).start.line == 1 })
+        assertTrue(retained.all { it.scope.start.line == 1 })
         retained.forEach { it.close() }
-        assertTrue(retained.all { it.scope(it).start.line == 1 })
+        assertTrue(retained.all { it.scope.start.line == 1 })
     }
 }

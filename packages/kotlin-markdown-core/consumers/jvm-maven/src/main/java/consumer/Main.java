@@ -64,7 +64,7 @@ public final class Main {
                     throw new IllegalStateException("every surviving delta id must resolve");
                 }
             }
-            next.scope(next);
+            next.getScope();
         }
     }
 }

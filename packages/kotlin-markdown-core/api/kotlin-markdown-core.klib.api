@@ -128,6 +128,8 @@ sealed interface com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core
         abstract fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Markup.id.<get-id>|<get-id>(){}[0]
     abstract val revision // com.nouprax.markdown.core/Markup.revision|{}revision[0]
         abstract fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Markup.revision.<get-revision>|<get-revision>(){}[0]
+    abstract val scope // com.nouprax.markdown.core/Markup.scope|{}scope[0]
+        abstract fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Markup.scope.<get-scope>|<get-scope>(){}[0]
 
     abstract fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Markup.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     open fun revisionBits(): kotlin/Long // com.nouprax.markdown.core/Markup.revisionBits|revisionBits(){}[0]
@@ -140,6 +142,8 @@ final class com.nouprax.markdown.core/BlockQuote : com.nouprax.markdown.core/Mar
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/BlockQuote.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/BlockQuote.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/BlockQuote.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/BlockQuote.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/BlockQuote.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/BlockQuote.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/BlockQuote.equals|equals(kotlin.Any?){}[0]
@@ -155,6 +159,8 @@ final class com.nouprax.markdown.core/Code : com.nouprax.markdown.core/Markup { 
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/Code.mode.<get-mode>|<get-mode>(){}[0]
     final val revision // com.nouprax.markdown.core/Code.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Code.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Code.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Code.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Code.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Code.equals|equals(kotlin.Any?){}[0]
@@ -178,6 +184,8 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/CodeBlock.mode.<get-mode>|<get-mode>(){}[0]
     final val revision // com.nouprax.markdown.core/CodeBlock.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/CodeBlock.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/CodeBlock.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/CodeBlock.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/CodeBlock.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/CodeBlock.equals|equals(kotlin.Any?){}[0]
@@ -192,7 +200,7 @@ final class com.nouprax.markdown.core/Commit { // com.nouprax.markdown.core/Comm
 }
 
 final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/CrossLink|null[0]
-    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, kotlin/String) // com.nouprax.markdown.core/CrossLink.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;kotlin.String){}[0]
+    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, com.nouprax.markdown.core/Scope, kotlin/String) // com.nouprax.markdown.core/CrossLink.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;com.nouprax.markdown.core.Scope;kotlin.String){}[0]
 
     final val id // com.nouprax.markdown.core/CrossLink.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/CrossLink.id.<get-id>|<get-id>(){}[0]
@@ -200,6 +208,8 @@ final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Mark
         final fun <get-reference>(): kotlin/String // com.nouprax.markdown.core/CrossLink.reference.<get-reference>|<get-reference>(){}[0]
     final val revision // com.nouprax.markdown.core/CrossLink.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/CrossLink.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/CrossLink.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/CrossLink.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/CrossLink.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/CrossLink.equals|equals(kotlin.Any?){}[0]
@@ -273,6 +283,8 @@ final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Mark
         final fun <get-name>(): kotlin/String // com.nouprax.markdown.core/Directive.name.<get-name>|<get-name>(){}[0]
     final val revision // com.nouprax.markdown.core/Directive.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Directive.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Directive.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Directive.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Directive.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Directive.equals|equals(kotlin.Any?){}[0]
@@ -294,6 +306,8 @@ final class com.nouprax.markdown.core/DirectiveBlock : com.nouprax.markdown.core
         final fun <get-name>(): kotlin/String // com.nouprax.markdown.core/DirectiveBlock.name.<get-name>|<get-name>(){}[0]
     final val revision // com.nouprax.markdown.core/DirectiveBlock.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/DirectiveBlock.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/DirectiveBlock.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/DirectiveBlock.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/DirectiveBlock.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DirectiveBlock.equals|equals(kotlin.Any?){}[0]
@@ -307,6 +321,8 @@ final class com.nouprax.markdown.core/DirectiveLabel : com.nouprax.markdown.core
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/DirectiveLabel.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/DirectiveLabel.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/DirectiveLabel.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/DirectiveLabel.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/DirectiveLabel.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/DirectiveLabel.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DirectiveLabel.equals|equals(kotlin.Any?){}[0]
@@ -328,6 +344,8 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
         final fun <get-options>(): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/Document.options.<get-options>|<get-options>(){}[0]
     final val revision // com.nouprax.markdown.core/Document.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Document.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Document.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Document.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
@@ -338,11 +356,10 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Document.hashCode|hashCode(){}[0]
     final fun lineageBits(): kotlin/Long // com.nouprax.markdown.core/Document.lineageBits|lineageBits(){}[0]
     final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.MarkupID){}[0]
-    final fun scope(com.nouprax.markdown.core/Markup): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup){}[0]
 }
 
 final class com.nouprax.markdown.core/Embed : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Embed|null[0]
-    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, kotlin/String) // com.nouprax.markdown.core/Embed.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;kotlin.String){}[0]
+    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, com.nouprax.markdown.core/Scope, kotlin/String) // com.nouprax.markdown.core/Embed.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;com.nouprax.markdown.core.Scope;kotlin.String){}[0]
 
     final val id // com.nouprax.markdown.core/Embed.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Embed.id.<get-id>|<get-id>(){}[0]
@@ -350,6 +367,8 @@ final class com.nouprax.markdown.core/Embed : com.nouprax.markdown.core/Markup {
         final fun <get-reference>(): kotlin/String // com.nouprax.markdown.core/Embed.reference.<get-reference>|<get-reference>(){}[0]
     final val revision // com.nouprax.markdown.core/Embed.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Embed.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Embed.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Embed.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Embed.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Embed.equals|equals(kotlin.Any?){}[0]
@@ -363,6 +382,8 @@ final class com.nouprax.markdown.core/Emphasis : com.nouprax.markdown.core/Marku
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Emphasis.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Emphasis.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Emphasis.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Emphasis.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Emphasis.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Emphasis.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Emphasis.equals|equals(kotlin.Any?){}[0]
@@ -378,6 +399,8 @@ final class com.nouprax.markdown.core/FootnoteDefinition : com.nouprax.markdown.
         final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/FootnoteDefinition.label.<get-label>|<get-label>(){}[0]
     final val revision // com.nouprax.markdown.core/FootnoteDefinition.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/FootnoteDefinition.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/FootnoteDefinition.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/FootnoteDefinition.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/FootnoteDefinition.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/FootnoteDefinition.equals|equals(kotlin.Any?){}[0]
@@ -391,6 +414,8 @@ final class com.nouprax.markdown.core/FootnoteReference : com.nouprax.markdown.c
         final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/FootnoteReference.label.<get-label>|<get-label>(){}[0]
     final val revision // com.nouprax.markdown.core/FootnoteReference.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/FootnoteReference.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/FootnoteReference.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/FootnoteReference.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/FootnoteReference.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/FootnoteReference.equals|equals(kotlin.Any?){}[0]
@@ -406,6 +431,8 @@ final class com.nouprax.markdown.core/Formula : com.nouprax.markdown.core/Markup
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/Formula.mode.<get-mode>|<get-mode>(){}[0]
     final val revision // com.nouprax.markdown.core/Formula.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Formula.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Formula.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Formula.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Formula.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Formula.equals|equals(kotlin.Any?){}[0]
@@ -421,6 +448,8 @@ final class com.nouprax.markdown.core/FormulaBlock : com.nouprax.markdown.core/M
         final fun <get-mode>(): com.nouprax.markdown.core/PlacementMode // com.nouprax.markdown.core/FormulaBlock.mode.<get-mode>|<get-mode>(){}[0]
     final val revision // com.nouprax.markdown.core/FormulaBlock.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/FormulaBlock.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/FormulaBlock.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/FormulaBlock.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/FormulaBlock.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/FormulaBlock.equals|equals(kotlin.Any?){}[0]
@@ -436,6 +465,8 @@ final class com.nouprax.markdown.core/HTML : com.nouprax.markdown.core/Markup { 
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/HTML.literal.<get-literal>|<get-literal>(){}[0]
     final val revision // com.nouprax.markdown.core/HTML.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/HTML.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/HTML.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/HTML.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/HTML.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/HTML.equals|equals(kotlin.Any?){}[0]
@@ -451,6 +482,8 @@ final class com.nouprax.markdown.core/HTMLBlock : com.nouprax.markdown.core/Mark
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/HTMLBlock.literal.<get-literal>|<get-literal>(){}[0]
     final val revision // com.nouprax.markdown.core/HTMLBlock.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/HTMLBlock.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/HTMLBlock.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/HTMLBlock.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/HTMLBlock.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/HTMLBlock.equals|equals(kotlin.Any?){}[0]
@@ -466,6 +499,8 @@ final class com.nouprax.markdown.core/Heading : com.nouprax.markdown.core/Markup
         final fun <get-level>(): kotlin/Int // com.nouprax.markdown.core/Heading.level.<get-level>|<get-level>(){}[0]
     final val revision // com.nouprax.markdown.core/Heading.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Heading.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Heading.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Heading.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Heading.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Heading.equals|equals(kotlin.Any?){}[0]
@@ -479,6 +514,8 @@ final class com.nouprax.markdown.core/Image : com.nouprax.markdown.core/Markup {
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Image.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Image.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Image.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Image.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Image.scope.<get-scope>|<get-scope>(){}[0]
     final val source // com.nouprax.markdown.core/Image.source|{}source[0]
         final fun <get-source>(): kotlin/String? // com.nouprax.markdown.core/Image.source.<get-source>|<get-source>(){}[0]
     final val title // com.nouprax.markdown.core/Image.title|{}title[0]
@@ -500,6 +537,8 @@ final class com.nouprax.markdown.core/ImageReference : com.nouprax.markdown.core
         final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/ImageReference.label.<get-label>|<get-label>(){}[0]
     final val revision // com.nouprax.markdown.core/ImageReference.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/ImageReference.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/ImageReference.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ImageReference.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/ImageReference.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/ImageReference.equals|equals(kotlin.Any?){}[0]
@@ -511,6 +550,8 @@ final class com.nouprax.markdown.core/LineBreak : com.nouprax.markdown.core/Mark
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/LineBreak.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/LineBreak.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/LineBreak.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/LineBreak.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/LineBreak.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/LineBreak.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/LineBreak.equals|equals(kotlin.Any?){}[0]
@@ -526,6 +567,8 @@ final class com.nouprax.markdown.core/Link : com.nouprax.markdown.core/Markup { 
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Link.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Link.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Link.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Link.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Link.scope.<get-scope>|<get-scope>(){}[0]
     final val title // com.nouprax.markdown.core/Link.title|{}title[0]
         final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/Link.title.<get-title>|<get-title>(){}[0]
 
@@ -545,6 +588,8 @@ final class com.nouprax.markdown.core/LinkReference : com.nouprax.markdown.core/
         final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/LinkReference.label.<get-label>|<get-label>(){}[0]
     final val revision // com.nouprax.markdown.core/LinkReference.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/LinkReference.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/LinkReference.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/LinkReference.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/LinkReference.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/LinkReference.equals|equals(kotlin.Any?){}[0]
@@ -560,6 +605,8 @@ final class com.nouprax.markdown.core/List : com.nouprax.markdown.core/Markup { 
         final fun <get-items>(): kotlin.collections/List<com.nouprax.markdown.core/ListItem> // com.nouprax.markdown.core/List.items.<get-items>|<get-items>(){}[0]
     final val revision // com.nouprax.markdown.core/List.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/List.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/List.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/List.scope.<get-scope>|<get-scope>(){}[0]
     final val start // com.nouprax.markdown.core/List.start|{}start[0]
         final fun <get-start>(): kotlin/Long? // com.nouprax.markdown.core/List.start.<get-start>|<get-start>(){}[0]
     final val tight // com.nouprax.markdown.core/List.tight|{}tight[0]
@@ -579,6 +626,8 @@ final class com.nouprax.markdown.core/ListItem : com.nouprax.markdown.core/Marku
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/ListItem.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/ListItem.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/ListItem.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/ListItem.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ListItem.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/ListItem.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/ListItem.equals|equals(kotlin.Any?){}[0]
@@ -614,6 +663,8 @@ final class com.nouprax.markdown.core/Paragraph : com.nouprax.markdown.core/Mark
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Paragraph.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Paragraph.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Paragraph.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Paragraph.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Paragraph.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Paragraph.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Paragraph.equals|equals(kotlin.Any?){}[0]
@@ -696,6 +747,8 @@ final class com.nouprax.markdown.core/ReferenceDefinition : com.nouprax.markdown
         final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.label.<get-label>|<get-label>(){}[0]
     final val revision // com.nouprax.markdown.core/ReferenceDefinition.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/ReferenceDefinition.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/ReferenceDefinition.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ReferenceDefinition.scope.<get-scope>|<get-scope>(){}[0]
     final val title // com.nouprax.markdown.core/ReferenceDefinition.title|{}title[0]
         final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/ReferenceDefinition.title.<get-title>|<get-title>(){}[0]
 
@@ -725,6 +778,8 @@ final class com.nouprax.markdown.core/SoftBreak : com.nouprax.markdown.core/Mark
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/SoftBreak.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/SoftBreak.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/SoftBreak.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/SoftBreak.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/SoftBreak.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/SoftBreak.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/SoftBreak.equals|equals(kotlin.Any?){}[0]
@@ -738,6 +793,8 @@ final class com.nouprax.markdown.core/Strikethrough : com.nouprax.markdown.core/
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Strikethrough.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Strikethrough.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Strikethrough.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Strikethrough.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Strikethrough.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Strikethrough.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Strikethrough.equals|equals(kotlin.Any?){}[0]
@@ -751,6 +808,8 @@ final class com.nouprax.markdown.core/Strong : com.nouprax.markdown.core/Markup 
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Strong.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Strong.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Strong.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Strong.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Strong.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Strong.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Strong.equals|equals(kotlin.Any?){}[0]
@@ -768,6 +827,8 @@ final class com.nouprax.markdown.core/Table : com.nouprax.markdown.core/Markup {
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Table.revision.<get-revision>|<get-revision>(){}[0]
     final val rows // com.nouprax.markdown.core/Table.rows|{}rows[0]
         final fun <get-rows>(): kotlin.collections/List<com.nouprax.markdown.core/TableRow> // com.nouprax.markdown.core/Table.rows.<get-rows>|<get-rows>(){}[0]
+    final val scope // com.nouprax.markdown.core/Table.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Table.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Table.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Table.equals|equals(kotlin.Any?){}[0]
@@ -781,6 +842,8 @@ final class com.nouprax.markdown.core/TableCell : com.nouprax.markdown.core/Mark
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/TableCell.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/TableCell.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/TableCell.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/TableCell.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/TableCell.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/TableCell.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/TableCell.equals|equals(kotlin.Any?){}[0]
@@ -796,6 +859,8 @@ final class com.nouprax.markdown.core/TableRow : com.nouprax.markdown.core/Marku
         final fun <get-isHeader>(): kotlin/Boolean // com.nouprax.markdown.core/TableRow.isHeader.<get-isHeader>|<get-isHeader>(){}[0]
     final val revision // com.nouprax.markdown.core/TableRow.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/TableRow.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/TableRow.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/TableRow.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/TableRow.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/TableRow.equals|equals(kotlin.Any?){}[0]
@@ -809,6 +874,8 @@ final class com.nouprax.markdown.core/Text : com.nouprax.markdown.core/Markup { 
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/Text.literal.<get-literal>|<get-literal>(){}[0]
     final val revision // com.nouprax.markdown.core/Text.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Text.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/Text.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Text.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Text.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Text.equals|equals(kotlin.Any?){}[0]
@@ -820,6 +887,8 @@ final class com.nouprax.markdown.core/ThematicBreak : com.nouprax.markdown.core/
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/ThematicBreak.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/ThematicBreak.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/ThematicBreak.revision.<get-revision>|<get-revision>(){}[0]
+    final val scope // com.nouprax.markdown.core/ThematicBreak.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/ThematicBreak.scope.<get-scope>|<get-scope>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/ThematicBreak.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/ThematicBreak.equals|equals(kotlin.Any?){}[0]

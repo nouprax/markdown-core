@@ -13,7 +13,7 @@ class ConsumerApplication : Application() {
                 check(next.revision > document.revision)
                 check(commit.delta.diffs.isNotEmpty())
                 check(next.node(next.id) === next)
-                next.scope(next)
+                next.scope
             }
         }
     }

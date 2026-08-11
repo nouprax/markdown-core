@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class Text internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val literal: String,
 ) : Markup {
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)

@@ -11,8 +11,12 @@ import kotlin.jvm.JvmSynthetic
  * Nodes are immutable values. Equality and hashing are O(1) and
  * allocation-free: two nodes are equal exactly when they have the same [id]
  * and the same [revision], which the engine guarantees implies identical AST
- * content (fields and descendants). Absolute source position is not content —
- * resolve it with [Document.scope] or receive it from [MarkupWalker] events.
+ * content (fields and descendants).
+ *
+ * [scope] is on every node and is deliberately NOT part of that: absolute
+ * source position is not content, so two nodes differing only in where they
+ * sit are equal. That is what lets an edit above a node leave every reactive
+ * comparison below it untouched.
  */
 public sealed interface Markup {
     /**
@@ -27,6 +31,14 @@ public sealed interface Markup {
      * elsewhere never changes a node's revision.
      */
     public val revision: ULong
+
+    /**
+     * The node's absolute source extent, both bounds inclusive of the
+     * construct's own markers. A property OF the node, not of a lookup: a
+     * document is an immutable projection of one text, so a node in it does
+     * not move.
+     */
+    public val scope: Scope
 
     /** [revision] as a bit-preserving signed value: the Java view of the
      * unsigned accessor, whose mangled name Java sources cannot write. */

@@ -23,15 +23,14 @@ function benchmark(workload, source) {
 // A deep document built end to end. This replaces the depth-4,096
 // `deep_scope_materialization` workload, whose subject no longer exists: a
 // snapshot resolved scopes lazily against its session, so the first request
-// was a measurable event. Scopes are now read once with the tree, and `scope`
-// is a map lookup. The cost did not disappear — it moved into the parse
+// was a measurable event. A node now carries its own extent, decoded with the
+// rest of its fields. The cost did not disappear — it moved into the parse
 // boundary — so the workload that measures it is a deep parse, under a name
 // that says so.
 function benchmarkDeepBuild(workload, source, depth) {
     function build() {
         const start = performance.now();
         const document = Document(source);
-        document.scope(document);
         const elapsed = performance.now() - start;
         document.close();
         return elapsed;
@@ -80,9 +79,9 @@ function benchmarkStream(workload, unit, units) {
 
 function benchmarkFanOut(workload, width) {
     // One-byte edits alternating in the first paragraph of a document with
-    // `width` root children: what the decode must stay proportional to is the
-    // delta, so the untouched siblings are taken from the mirror rather than
-    // re-decoded through the WASM boundary.
+    // `width` root children: the engine's incremental parse stays
+    // proportional to the edit, and this measures what the binding adds on
+    // top of it — one full decode of the committed tree per commit.
     const body = "a\n\n".repeat(width);
     const sources = ["a" + body.slice(1), "b" + body.slice(1)];
 

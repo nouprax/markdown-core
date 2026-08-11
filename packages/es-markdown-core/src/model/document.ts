@@ -3,7 +3,6 @@ import type { Markup } from "./markup.js";
 import type { Diagnostic } from "./diagnostic.js";
 import type { Commit } from "./commit.js";
 import type { ParseOptions } from "../parse-options.js";
-import type { Scope } from "../values.js";
 
 export interface Document extends MarkupBase<"document"> {
     readonly content: readonly Markup[];
@@ -12,15 +11,6 @@ export interface Document extends MarkupBase<"document"> {
     /** Everything an editor should underline, in source order. Empty for
      * almost every document; see `DiagnosticCode`. */
     readonly diagnostics: readonly Diagnostic[];
-    /**
-     * The absolute source extent of `node` in this document, O(1).
-     *
-     * Throws on a node from another parse, and on a stale value whose
-     * revision this document has superseded — equal nodes may sit at
-     * different absolute positions in different revisions, so pairing old
-     * fields with new positions is never right.
-     */
-    readonly scope: (node: Markup) => Scope;
     /**
      * This document's node for `id`, or null when no node has that identity
      * here. An identity from another parse is null, not a throw: a caller

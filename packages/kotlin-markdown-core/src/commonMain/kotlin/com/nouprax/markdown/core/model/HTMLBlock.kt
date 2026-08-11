@@ -6,6 +6,7 @@ package com.nouprax.markdown.core
 public class HTMLBlock internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     /** True when the literal is one complete comment, so consumers without an
      * HTML parser can skip comment material by this bit alone. Asked of the
      * parser rather than derived here: the rule belongs to the engine, and a

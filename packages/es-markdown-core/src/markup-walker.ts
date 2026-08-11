@@ -15,16 +15,14 @@ export type WalkCallback = (event: WalkEvent, node: Markup, scope: Scope) => voi
 interface Frame {
     readonly event: WalkEvent;
     readonly node: Markup;
-    readonly scope?: Scope;
 }
 
 export class MarkupWalker {
     /**
      * Walks the document depth-first, dispatching each node to `visitor` in
      * preorder. Scope-free by construction: a structural visitor neither
-     * pays scope materialization nor depends on the snapshot's resolver
-     * state, so a retained snapshot traverses regardless of whether it ever
-     * resolved scopes.
+     * pays scope materialization nor depends on anything but the values it
+     * is handed.
      */
     walk(document: Document, visitor: MarkupVisitor<void>): void;
     /** Walks the document depth-first, supplying each event with the node's
@@ -47,11 +45,11 @@ export class MarkupWalker {
         const stack: Frame[] = [{ event: WalkEvent.entering, node: from }];
         while (stack.length > 0) {
             const frame = stack.pop()!;
-            const scope = frame.scope ?? document.scope(frame.node);
+            const scope = frame.node.scope;
             callback(frame.event, frame.node, scope);
             if (frame.event === WalkEvent.exiting) continue;
 
-            stack.push({ event: WalkEvent.exiting, node: frame.node, scope });
+            stack.push({ event: WalkEvent.exiting, node: frame.node });
             const descendants = children(frame.node);
             for (let index = descendants.length - 1; index >= 0; index -= 1) {
                 stack.push({ event: WalkEvent.entering, node: descendants[index]! });

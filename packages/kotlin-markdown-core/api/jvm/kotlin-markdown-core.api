@@ -4,6 +4,7 @@ public final class com/nouprax/markdown/core/BlockQuote : com/nouprax/markdown/c
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -15,6 +16,7 @@ public final class com/nouprax/markdown/core/Code : com/nouprax/markdown/core/Ma
 	public final fun getLiteral ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -30,6 +32,7 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 	public final fun getLiteral ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -40,12 +43,13 @@ public final class com/nouprax/markdown/core/Commit {
 }
 
 public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/core/Markup {
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getReference ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -103,6 +107,7 @@ public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/co
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public final fun getName ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -117,6 +122,7 @@ public final class com/nouprax/markdown/core/DirectiveBlock : com/nouprax/markdo
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public final fun getName ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -127,6 +133,7 @@ public final class com/nouprax/markdown/core/DirectiveLabel : com/nouprax/markdo
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -147,20 +154,21 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public final fun getLineage-s-VKNKU ()J
 	public final fun getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public final fun lineageBits ()J
 	public final fun node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
 	public fun revisionBits ()J
-	public final fun scope (Lcom/nouprax/markdown/core/Markup;)Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/Embed : com/nouprax/markdown/core/Markup {
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getReference ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -171,6 +179,7 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -182,6 +191,7 @@ public final class com/nouprax/markdown/core/FootnoteDefinition : com/nouprax/ma
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -192,6 +202,7 @@ public final class com/nouprax/markdown/core/FootnoteReference : com/nouprax/mar
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -203,6 +214,7 @@ public final class com/nouprax/markdown/core/Formula : com/nouprax/markdown/core
 	public final fun getLiteral ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -214,6 +226,7 @@ public final class com/nouprax/markdown/core/FormulaBlock : com/nouprax/markdown
 	public final fun getLiteral ()Ljava/lang/String;
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -225,6 +238,7 @@ public final class com/nouprax/markdown/core/HTML : com/nouprax/markdown/core/Ma
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLiteral ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -236,6 +250,7 @@ public final class com/nouprax/markdown/core/HTMLBlock : com/nouprax/markdown/co
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLiteral ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -247,6 +262,7 @@ public final class com/nouprax/markdown/core/Heading : com/nouprax/markdown/core
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLevel ()I
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -257,6 +273,7 @@ public final class com/nouprax/markdown/core/Image : com/nouprax/markdown/core/M
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getSource ()Ljava/lang/String;
 	public final fun getTitle ()Ljava/lang/String;
 	public fun hashCode ()I
@@ -271,6 +288,7 @@ public final class com/nouprax/markdown/core/ImageReference : com/nouprax/markdo
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -280,6 +298,7 @@ public final class com/nouprax/markdown/core/LineBreak : com/nouprax/markdown/co
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -291,6 +310,7 @@ public final class com/nouprax/markdown/core/Link : com/nouprax/markdown/core/Ma
 	public final fun getDestination ()Ljava/lang/String;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getTitle ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun revisionBits ()J
@@ -304,6 +324,7 @@ public final class com/nouprax/markdown/core/LinkReference : com/nouprax/markdow
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -315,6 +336,7 @@ public final class com/nouprax/markdown/core/List : com/nouprax/markdown/core/Ma
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getItems ()Ljava/util/List;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getStart ()Ljava/lang/Long;
 	public final fun getTight ()Z
 	public fun hashCode ()I
@@ -336,6 +358,7 @@ public final class com/nouprax/markdown/core/ListItem : com/nouprax/markdown/cor
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -344,6 +367,7 @@ public abstract interface class com/nouprax/markdown/core/Markup {
 	public abstract fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public abstract fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public abstract fun getRevision-s-VKNKU ()J
+	public abstract fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun revisionBits ()J
 }
 
@@ -428,6 +452,7 @@ public final class com/nouprax/markdown/core/Paragraph : com/nouprax/markdown/co
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -516,6 +541,7 @@ public final class com/nouprax/markdown/core/ReferenceDefinition : com/nouprax/m
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public final fun getTitle ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun revisionBits ()J
@@ -548,6 +574,7 @@ public final class com/nouprax/markdown/core/SoftBreak : com/nouprax/markdown/co
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -558,6 +585,7 @@ public final class com/nouprax/markdown/core/Strikethrough : com/nouprax/markdow
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -568,6 +596,7 @@ public final class com/nouprax/markdown/core/Strong : com/nouprax/markdown/core/
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -580,6 +609,7 @@ public final class com/nouprax/markdown/core/Table : com/nouprax/markdown/core/M
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
 	public final fun getRows ()Ljava/util/List;
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -600,6 +630,7 @@ public final class com/nouprax/markdown/core/TableCell : com/nouprax/markdown/co
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -610,6 +641,7 @@ public final class com/nouprax/markdown/core/TableRow : com/nouprax/markdown/cor
 	public final fun getCells ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public final fun isHeader ()Z
 	public fun revisionBits ()J
@@ -621,6 +653,7 @@ public final class com/nouprax/markdown/core/Text : com/nouprax/markdown/core/Ma
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLiteral ()Ljava/lang/String;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }
@@ -630,6 +663,7 @@ public final class com/nouprax/markdown/core/ThematicBreak : com/nouprax/markdow
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public fun getRevision-s-VKNKU ()J
+	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
 }

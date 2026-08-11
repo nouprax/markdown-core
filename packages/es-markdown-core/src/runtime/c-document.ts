@@ -1,7 +1,6 @@
 import { ParseError } from "../parse-error.js";
 import type { ParseOptions } from "../parse-options.js";
 import type { Scope } from "../values.js";
-import type { ScopeEntry } from "../wire/node-decoder.js";
 import { NodeDecoder } from "../wire/node-decoder.js";
 import { native } from "./native.js";
 
@@ -160,10 +159,6 @@ export class CDocument {
             rawValue: decoder.toSafeNumber(native.es_node_id(root), "node id"),
             revision: decoder.toSafeNumber(native.es_node_revision(root), "node revision")
         };
-    }
-
-    scopeTable(): Map<number, ScopeEntry> {
-        return decoder.scopeTable(this.requirePointer());
     }
 
     diagnostics(): readonly RawDiagnostic[] {

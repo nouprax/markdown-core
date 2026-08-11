@@ -34,10 +34,6 @@ typedef struct {
 } es_directive_properties_layout;
 
 #define ES_LAYOUT_ASSERT(name, condition) typedef char name[(condition) ? 1 : -1]
-ES_LAYOUT_ASSERT(es_scope_entry_size_is_32, sizeof(markdown_core_scope_entry) == 32);
-ES_LAYOUT_ASSERT(es_scope_entry_id_starts_at_0, offsetof(markdown_core_scope_entry, id) == 0);
-ES_LAYOUT_ASSERT(es_scope_entry_revision_starts_at_8, offsetof(markdown_core_scope_entry, revision) == 8);
-ES_LAYOUT_ASSERT(es_scope_entry_scope_starts_at_16, offsetof(markdown_core_scope_entry, scope) == 16);
 ES_LAYOUT_ASSERT(es_scope_size_is_16, sizeof(markdown_core_scope) == 16);
 ES_LAYOUT_ASSERT(es_scope_start_starts_at_0, offsetof(markdown_core_scope, start) == 0);
 ES_LAYOUT_ASSERT(es_scope_end_starts_at_8, offsetof(markdown_core_scope, end) == 8);
@@ -138,9 +134,9 @@ uint64_t es_delta_revision(const markdown_core_delta *changes, int32_t boundary)
  * The delta's rows, handed back as the facade's own array: `(id, parts)` at
  * a 16-byte stride, borrowing from the delta and freed with it.
  *
- * No copy and no resolved node pointers. The value tree is rebuilt by the
- * decoder's existing walk, which reuses an untouched node's previous value
- * whole; what this array is for is the delta a consumer reconciles against.
+ * No copy and no resolved node pointers: the value tree is rebuilt by the
+ * decoder's own walk over the committed tree, and this array is only the
+ * diff a consumer reads to locate what changed.
  */
 size_t es_delta_diffs(const markdown_core_delta *changes, uintptr_t *data) {
     const markdown_core_diff *rows = NULL;
@@ -158,6 +154,16 @@ const markdown_core_node *es_document_root(const markdown_core_document *documen
 uint64_t es_node_id(const markdown_core_node *node) { return markdown_core_node_get_id(node); }
 
 uint64_t es_node_revision(const markdown_core_node *node) { return markdown_core_node_get_revision(node); }
+
+/* The node's own absolute extent, written into the shared scratch block as
+ * four int32 coordinates. O(1): the parser stored it on the node. */
+void es_node_scope(const markdown_core_node *node, int32_t *coordinates) {
+    markdown_core_scope scope = markdown_core_node_scope(node);
+    coordinates[0] = scope.start.line;
+    coordinates[1] = scope.start.column;
+    coordinates[2] = scope.end.line;
+    coordinates[3] = scope.end.column;
+}
 
 /* The one-complete-comment bit, from the parser. Deriving it a second time in
  * each binding is a second definition that can disagree with the first. */
@@ -192,27 +198,6 @@ const markdown_core_node *es_node_first_child(const markdown_core_node *node) {
 const markdown_core_node *es_node_next_sibling(const markdown_core_node *node) {
     return markdown_core_node_get_next_sibling(node);
 }
-
-/**
- * Returns the core's packed canonical-preorder scope table without another
- * traversal or copy. The public row layout is 32 bytes on the wasm32 ABI.
- */
-size_t es_scope_table(const markdown_core_document *document, uintptr_t *data) {
-    markdown_core_scope_entry *rows = NULL;
-    size_t count = 0;
-
-    if (!data) {
-        return 0;
-    }
-    *data = 0;
-    if (!markdown_core_document_scope_table(document, &rows, &count, NULL)) {
-        return 0;
-    }
-    *data = (uintptr_t)rows;
-    return count;
-}
-
-void es_scope_table_free(markdown_core_scope_entry *rows) { markdown_core_scope_table_free(rows); }
 
 /* A reference's source form. Its label travels through es_string like every
  * other string; only this scalar needs an accessor of its own. */

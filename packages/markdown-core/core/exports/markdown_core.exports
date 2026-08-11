@@ -10,7 +10,6 @@ _markdown_core_document_lineage
 _markdown_core_document_new
 _markdown_core_document_revision
 _markdown_core_document_root
-_markdown_core_document_scope_table
 _markdown_core_dump_free
 _markdown_core_error_free
 _markdown_core_error_get_code
@@ -45,4 +44,3 @@ _markdown_core_node_table_alignment_at
 _markdown_core_node_table_column_count
 _markdown_core_node_table_row_is_header
 _markdown_core_parse_options_init
-_markdown_core_scope_table_free

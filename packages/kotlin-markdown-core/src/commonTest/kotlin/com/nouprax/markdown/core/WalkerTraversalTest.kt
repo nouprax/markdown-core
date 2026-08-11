@@ -94,7 +94,11 @@ class ScopeOwnershipTest {
         }
         // There is nothing to materialize: a document builds its scope table
         // at parse time, so it answers whatever happened to its lineage since.
-        assertEquals(3, retained.scope(retained.content[1]).start.line)
+        assertEquals(
+            3,
+            retained.content[1]
+                .scope.start.line,
+        )
         assertTrue(retained.dump().contains("Paragraph"))
     }
 }

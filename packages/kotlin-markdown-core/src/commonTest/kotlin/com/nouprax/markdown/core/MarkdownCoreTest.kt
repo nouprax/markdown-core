@@ -96,15 +96,11 @@ class ErrorsTest {
 
     @Test
     fun corruptedNativePayloadFailsInsteadOfProducingAPartialTree() {
-        val mirror = mutableMapOf<ULong, Markup>()
         assertFailsWith<IllegalArgumentException> {
-            decodeWireOpen(
-                byteArrayOf(0x4d, 0x4b, 0x43),
-                mirror,
-                scopeEntry = { _, _ -> Unit },
-            ) { _, _, _, _, _, _ -> error("a truncated payload reached the build step") }
+            decodeWireOpen(byteArrayOf(0x4d, 0x4b, 0x43)) { _, _, _, _, _, _, _ ->
+                error("a truncated payload reached the build step")
+            }
         }
-        assertTrue(mirror.isEmpty())
     }
 }
 

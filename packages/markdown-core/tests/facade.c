@@ -239,127 +239,6 @@ done:
     markdown_core_error_free(error);
 }
 
-static void check_scope_rows(
-    const markdown_core_node *node,
-    const markdown_core_scope_entry *entries,
-    size_t count,
-    size_t *index
-) {
-    const markdown_core_node *child;
-    markdown_core_scope expected;
-    const markdown_core_scope_entry *entry;
-
-    check(*index < count, "scope table contains every canonical node");
-    if (*index >= count) {
-        return;
-    }
-    expected = markdown_core_node_scope(node);
-    entry = &entries[(*index)++];
-    check(entry->id == markdown_core_node_get_id(node), "scope table is in canonical preorder");
-    check(entry->revision == markdown_core_node_get_revision(node), "scope table preserves node revisions");
-    check(
-        entry->scope.start.line == expected.start.line && entry->scope.start.column == expected.start.column &&
-            entry->scope.end.line == expected.end.line && entry->scope.end.column == expected.end.column,
-        "scope table preserves absolute scopes"
-    );
-    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
-        check_scope_rows(child, entries, count, index);
-    }
-}
-
-static void check_scope_table(void) {
-    static const uint8_t source[] = ":badge[first *second*]{k=v}\n\n> alpha\n> beta\n";
-    markdown_core_error *error = NULL;
-    markdown_core_document *session = NULL;
-    const markdown_core_document *document;
-    markdown_core_scope_entry *entries = (markdown_core_scope_entry *)(uintptr_t)1;
-    markdown_core_scope_entry first = {0};
-    size_t count = 99;
-    size_t index = 0;
-
-    check(
-        !markdown_core_document_scope_table(NULL, &entries, &count, &error) && entries == NULL && count == 0 &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null document and clears outputs"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-    markdown_core_scope_table_free(NULL);
-
-    session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    check(session != NULL && error == NULL, "scope table session opens");
-    if (!session) {
-        goto done;
-    }
-    {
-        markdown_core_commit out;
-        memset(&out, 0, sizeof(out));
-        markdown_core_document_free(session);
-        session = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), NULL, &error);
-    }
-    if (!session) {
-        check(0, "scope table session commits");
-        goto done;
-    }
-    document = session;
-
-    count = 99;
-    check(
-        !markdown_core_document_scope_table(document, NULL, &count, &error) && count == 0 &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null output and clears the count"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    entries = (markdown_core_scope_entry *)(uintptr_t)1;
-    check(
-        !markdown_core_document_scope_table(document, &entries, NULL, &error) && entries == NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null count and clears the output"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    entries = NULL;
-    count = 0;
-    if (!document || !markdown_core_document_scope_table(document, &entries, &count, &error)) {
-        check(0, "scope table materializes");
-        goto done;
-    }
-    check(count > 0 && entries != NULL, "scope table returns owned rows");
-    if (!count || !entries) {
-        goto done;
-    }
-    check_scope_rows(markdown_core_document_root(document), entries, count, &index);
-    check(index == count, "scope table has no hidden or duplicate rows");
-    first = entries[0];
-    markdown_core_document_free(session);
-    session = NULL;
-    check(
-        entries[0].id == first.id && entries[0].revision == first.revision &&
-            entries[0].scope.start.line == first.scope.start.line && entries[0].scope.end.line == first.scope.end.line,
-        "scope table outlives its source document"
-    );
-
-done:
-    markdown_core_scope_table_free(entries);
-    markdown_core_document_free(session);
-    markdown_core_error_free(error);
-}
-
-static long delta_parts(const markdown_core_delta *changes, markdown_core_node_id id) {
-    const markdown_core_diff *diffs = NULL;
-    size_t count = markdown_core_delta_diffs(changes, &diffs);
-    size_t index;
-
-    for (index = 0; index < count; ++index) {
-        if (diffs[index].markup == id) {
-            return (long)diffs[index].parts;
-        }
-    }
-    return -1;
-}
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     static const uint8_t cross_reference_source[] = "[[folder/note#^block|display]] ![[folder/note#^block|display]]\n";
@@ -452,7 +331,6 @@ static void check_api(void) {
     check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
     check_html_comments_kept();
-    check_scope_table();
 }
 
 /* Diagnostics: the one thing an editor underlines.

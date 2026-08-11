@@ -52,9 +52,13 @@ test("edits: extending the trailing text keeps its identity and bumps its revisi
     assert.equal(secondParagraph.id, firstParagraph.id);
     assert.equal(secondText.id, firstText.id);
     assert.ok(secondText.revision > firstText.revision);
-    // The heading settled before the edit: not named at all, and the very
-    // same object, because an untouched node is never re-decoded.
-    assert.equal(secondHeading, firstHeading);
+    // The heading settled before the edit: not named at all, and equal to
+    // its predecessor down to the last field. It is not the SAME object —
+    // every node is decoded every time — and nothing should need it to be:
+    // what a reactive consumer compares is the (id, revision) pair.
+    assert.equal(secondHeading.id, firstHeading.id);
+    assert.equal(secondHeading.revision, firstHeading.revision);
+    assert.deepEqual(secondHeading, firstHeading);
 
     const named = new Set(commit.delta.diffs.map((diff) => diff.markup));
     assert.equal(named.has(firstHeading.id), false);
@@ -90,13 +94,15 @@ test("edits: a clean-boundary insert at the top leaves downstream identity intac
         descendant: true
     });
 
-    // Downstream nodes shifted by two lines: equal values, new scopes. A
-    // value carried over from the predecessor resolves against the successor
-    // at its NEW position — identity survives the edit, position does not —
-    // and the predecessor still answers at its own.
-    assert.equal(after.scope(after.content[3]).start.line, 7);
-    assert.equal(after.scope(thirdBefore).start.line, 7);
-    assert.equal(before.scope(thirdBefore).start.line, 5);
+    // Downstream nodes shifted by two lines: same identity, same revision,
+    // new extent. Each value states where it is, so the predecessor's value
+    // keeps reporting the predecessor's position forever — and the pair a
+    // reactive consumer compares is unmoved by the shift.
+    const third = after.content[3];
+    assert.equal(third.scope.start.line, 7);
+    assert.equal(thirdBefore.scope.start.line, 5);
+    assert.equal(third.id, thirdBefore.id);
+    assert.equal(third.revision, thirdBefore.revision);
     const reference = Document("# New\n\nFirst\n\nSecond\n\nThird\n");
     assert.equal(after.dump(), reference.dump());
     reference.close();
@@ -144,16 +150,19 @@ test("edits: equality is lineage-salted identity plus revision", () => {
 test("edits: a blank-line-only edit reports an empty delta yet shifts scopes", () => {
     const before = Document("Alpha\n\n\n\nOmega\n");
     const omegaBefore = before.content[1];
-    assert.equal(before.scope(omegaBefore).start.line, 5);
+    assert.equal(omegaBefore.scope.start.line, 5);
 
     // Delete two of the blank lines: no node's content changes.
     const commit = before.edit("Alpha\n\nOmega\n");
     const after = commit.document;
     assert.equal(commit.delta.diffs.length, 0);
     assert.ok(commit.delta.afterRevision > commit.delta.beforeRevision);
-    // Nothing was named, so every top-level block is the same object.
-    assert.equal(after.content[1], omegaBefore);
-    assert.equal(after.scope(after.content[1]).start.line, 3);
+    // Nothing was named, so every top-level block kept its revision — and
+    // moved, which the delta does not report because position is not
+    // content.
+    assert.equal(after.content[1].id, omegaBefore.id);
+    assert.equal(after.content[1].revision, omegaBefore.revision);
+    assert.equal(after.content[1].scope.start.line, 3);
     const reference = Document("Alpha\n\nOmega\n");
     assert.equal(after.dump(), reference.dump());
     reference.close();
@@ -172,8 +181,8 @@ test("edits: a deep rebuild names children before parents in one postorder pass"
 
     assert.ok(commit.delta.diffs.length >= depth);
     assertPostorder(commit.delta, after);
-    // The settled paragraph is untouched, so it is the same object.
-    assert.equal(after.content[0], stableBefore);
+    // The settled paragraph is untouched, so it survives byte for byte.
+    assert.deepEqual(after.content[0], stableBefore);
 
     // Exactly one node's own projection differs — the innermost text — and
     // every one of its ancestors carries `descendant` and nothing else,
@@ -195,16 +204,16 @@ test("edits: a deep rebuild names children before parents in one postorder pass"
     after.close();
 });
 
-test("edits: a superseded document keeps answering from its own tables", () => {
+test("edits: a superseded document keeps answering from its own values", () => {
     const first = Document("One\n\nTwo\n");
     const two = first.content[1];
-    assert.equal(first.scope(two).start.line, 3);
+    assert.equal(two.scope.start.line, 3);
 
     // Editing hands the native parse to the successor, which is then
     // released. The predecessor's values, scopes, diagnostics, and dump were
     // all extracted at parse time and owe that parse nothing.
     first.edit("Zero\n\nOne\n\nTwo\n").document.close();
-    assert.equal(first.scope(two).start.line, 3);
+    assert.equal(two.scope.start.line, 3);
     assert.ok(first.dump().includes("Paragraph"));
     assert.equal(flatten(first).length, 5);
 });
@@ -220,7 +229,7 @@ test("edits: an edited or closed document refuses a second edit", () => {
     closed.close();
     assert.throws(() => closed.edit("Three\n"), /released/);
     // What was already extracted stays answerable either way.
-    assert.equal(closed.scope(closed.content[0]).start.line, 1);
+    assert.equal(closed.content[0].scope.start.line, 1);
 });
 
 test("edits: diagnostics travel with the document that raised them", () => {

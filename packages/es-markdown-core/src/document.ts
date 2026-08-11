@@ -6,7 +6,6 @@ import type { Markup } from "./model/markup.js";
 import type { MarkupID } from "./model/markup-id.js";
 import type { ParseOptions } from "./parse-options.js";
 import { CDocument, decoder, normalizeOptions } from "./runtime/c-document.js";
-import type { ScopeEntry } from "./wire/node-decoder.js";
 
 export type Document = DocumentValue;
 
@@ -46,7 +45,6 @@ interface Built {
     readonly options: Readonly<Required<ParseOptions>>;
     readonly lineage: bigint;
     readonly identities: Map<number, MarkupID>;
-    readonly mirror: Map<number, Markup>;
 }
 
 function identity(state: Built, rawValue: number): MarkupID {
@@ -60,12 +58,13 @@ function identity(state: Built, rawValue: number): MarkupID {
 /**
  * Builds one document value over a freshly taken native parse.
  *
- * `touched` names the ids the delta reports; a node outside it keeps its
- * previous value, subtree and all, so an unchanged node is the same object
- * across revisions. It is null for a first parse, where nothing came before.
+ * Every node is decoded, every time: a document's projection is a function of
+ * its text and its options, not of how the caller reached it. An unchanged
+ * node still compares equal to its predecessor, which is what a reactive
+ * consumer reads — the id/revision pair, not object identity.
  */
-function build(state: Built, touched: ReadonlySet<number> | null): Document {
-    const scopes: ReadonlyMap<number, ScopeEntry> = state.handle.scopeTable();
+function build(state: Built): Document {
+    const index = new Map<number, Markup>();
     const diagnostics: readonly Diagnostic[] = state.handle.diagnostics().map((row) => ({
         code: diagnosticCode(row.code),
         scope: row.scope
@@ -77,6 +76,7 @@ function build(state: Built, touched: ReadonlySet<number> | null): Document {
                 kind: value.kind,
                 id: value.id,
                 revision: value.revision,
+                scope: value.scope,
                 content: value.content
             };
             // The mediators are non-enumerable, so the document stays a plain
@@ -86,18 +86,10 @@ function build(state: Built, touched: ReadonlySet<number> | null): Document {
             };
             define("options", state.options);
             define("diagnostics", diagnostics);
-            define("scope", (node: Markup) => {
-                if (node.id.lineage !== state.lineage) throw new Error("node belongs to a different parse");
-                const entry = scopes.get(node.id.rawValue);
-                if (entry === undefined) throw new Error("node does not belong to this document");
-                if (entry.revision !== node.revision) {
-                    throw new Error("node value is from a different revision of this lineage");
-                }
-                return entry.scope;
-            });
             define("node", (id: MarkupID) => {
                 if (id.lineage !== state.lineage) return null;
-                return state.mirror.get(id.rawValue) ?? null;
+                if (id.rawValue === value.id.rawValue) return adopted as Document;
+                return index.get(id.rawValue) ?? null;
             });
             define("edit", (markdown: string) => edit(state, markdown));
             define("close", () => {
@@ -109,8 +101,7 @@ function build(state: Built, touched: ReadonlySet<number> | null): Document {
             });
             return adopted as Document;
         },
-        mirror: state.mirror,
-        touched
+        index
     });
     if (!state.handle.released) reclaim.register(document, state.handle, document);
     return document;
@@ -132,20 +123,15 @@ function edit(state: Built, markdown: string): Commit {
             handle,
             options: state.options,
             lineage: state.lineage,
-            // Identity interning and the mirror carry over: an id names the
-            // same node across the whole lineage, and a node the delta does
-            // not name keeps its exact value.
-            identities: new Map(state.identities),
-            mirror: new Map(state.mirror)
+            // Identity interning carries over: an id names the same node
+            // across the whole lineage, so the `MarkupID` a consumer held
+            // before the edit is the one the new tree hands back.
+            identities: new Map(state.identities)
         };
         for (const row of raw.diffs) {
-            if (row.parts === 0) {
-                successor.mirror.delete(row.rawValue);
-                successor.identities.delete(row.rawValue);
-            }
+            if (row.parts === 0) successor.identities.delete(row.rawValue);
         }
-        const touched = new Set(raw.diffs.filter((row) => row.parts !== 0).map((row) => row.rawValue));
-        return { document: build(successor, touched), delta };
+        return { document: build(successor), delta };
     } finally {
         handle.deltaFree(deltaPointer);
     }
@@ -165,16 +151,12 @@ export function Document(markdown: string, options: ParseOptions = {}): Document
     const normalized = normalizeOptions(options);
     const handle = CDocument.open(markdown, normalized.flags);
     try {
-        return build(
-            {
-                handle,
-                options: normalized.options,
-                lineage: handle.lineage(),
-                identities: new Map(),
-                mirror: new Map()
-            },
-            null
-        );
+        return build({
+            handle,
+            options: normalized.options,
+            lineage: handle.lineage(),
+            identities: new Map()
+        });
     } catch (failure) {
         handle.free();
         throw failure;

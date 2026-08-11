@@ -8,18 +8,20 @@
 
 /* MKC4 wire: every payload opens with the magic and a status byte (0 =
  * success data follows, 1 = an error record follows). A success payload
- * carries the document handle, its lineage, and the root's id and revision,
- * then the body, then the scope table and the diagnostics.
+ * carries the document handle, its lineage, and the root's id, revision and
+ * extent, then the tree, then — for an edit — the delta, then the
+ * diagnostics.
  *
- * There are two bodies. An OPEN body is the whole tree: every node record,
- * children before parents. An EDIT body is the delta: the two revisions and
- * one row per differing node, in the order the facade defines — a retired row
- * is the id alone, a surviving row is the node's full record. Both bodies
- * therefore deliver records children-before-parents, which is exactly the
- * order a mirror rebuilds in.
+ * Every payload carries the WHOLE tree, children before parents, which is the
+ * order a decoder assembles immutable values in. An edit payload adds the
+ * delta after it: the two revisions and one (id, parts) row per differing
+ * node, in the order the facade defines.
  *
- * Node records carry (kind, id, revision, fields, child-id lists) and never
- * positions; scopes travel as their own (id, revision, scope) table. */
+ * Node records carry (kind, id, revision, scope, fields, child-id lists). The
+ * scope is in the record because it belongs to the node; it had a table of its
+ * own only to serve a decoder that skipped nodes the delta did not name, and
+ * that decoder is gone — it made a document's projection a function of how it
+ * was reached rather than of its text. */
 
 typedef struct bridge_buffer {
     uint8_t *data;
@@ -200,6 +202,10 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     put_u8(buffer, (uint8_t)kind);
     put_u64(buffer, markdown_core_node_get_id(node));
     put_u64(buffer, markdown_core_node_get_revision(node));
+    /* The node's own extent, read in O(1) off the node. It rides in the
+     * record because it belongs to the node; a separate table existed only to
+     * serve a decoder that skipped nodes, and this one no longer does. */
+    put_scope(buffer, markdown_core_node_scope(node));
 
     switch (kind) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
@@ -356,10 +362,8 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     }
 }
 
-/* Postorder cursor. Both bodies walk the tree children-before-parents, and
- * the delta's surviving rows are a SUBSEQUENCE of that same order (the facade
- * defines the row order as the new document's postorder), so one cursor
- * advancing forward answers every row in linear time without an id index. */
+/* Postorder: children before parents, which is the order a decoder assembles
+ * immutable values in. */
 static const markdown_core_node *postorder_first(const markdown_core_node *root) {
     const markdown_core_node *child;
     while ((child = markdown_core_node_get_first_child(root)) != NULL) {
@@ -405,72 +409,33 @@ static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root) {
     }
 }
 
-static void encode_delta(bridge_buffer *buffer, const markdown_core_node *root,
-                         const markdown_core_delta *changes) {
+/* The delta rows: an id and its parts, nothing else.
+ *
+ * They used to carry the node's record, so that a decoder could rebuild only
+ * what the delta named and keep its previous value for everything else. That
+ * reuse is gone: it made a document's projection depend on how it was reached
+ * rather than on its text. The tree above is complete, so a row needs only to
+ * say WHICH node differs and HOW — which is all a highlighter ever wanted. */
+static void encode_delta(bridge_buffer *buffer, const markdown_core_delta *changes) {
     uint64_t before = 0;
     uint64_t after = 0;
     const markdown_core_diff *rows = NULL;
     size_t count;
     size_t index;
-    const markdown_core_node *cursor;
 
     markdown_core_delta_revisions(changes, &before, &after);
     put_u64(buffer, before);
     put_u64(buffer, after);
-
     count = markdown_core_delta_diffs(changes, &rows);
     if (count > INT32_MAX) {
         buffer->failed = true;
         return;
     }
     put_i32(buffer, (int32_t)count);
-    cursor = postorder_first(root);
-    for (index = 0; index < count && !buffer->failed; ++index) {
+    for (index = 0; index < count; ++index) {
+        put_u64(buffer, rows[index].markup);
         put_u32(buffer, rows[index].parts);
-        if (rows[index].parts == 0) {
-            put_u64(buffer, rows[index].markup);
-            continue;
-        }
-        while (cursor != NULL && markdown_core_node_get_id(cursor) != rows[index].markup) {
-            cursor = postorder_next(cursor, root);
-        }
-        if (cursor == NULL) {
-            buffer->failed = true;
-            return;
-        }
-        write_record(buffer, cursor);
-        cursor = postorder_next(cursor, root);
     }
-}
-
-static void encode_scope_table(bridge_buffer *buffer, const markdown_core_document *document) {
-    markdown_core_scope_entry *entries = NULL;
-    size_t count = 0;
-    size_t index;
-
-    if (!markdown_core_document_scope_table(document, &entries, &count, NULL) || count > INT32_MAX) {
-        markdown_core_scope_table_free(entries);
-        buffer->failed = true;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    if (count > (SIZE_MAX - buffer->size) / 32) {
-        markdown_core_scope_table_free(entries);
-        buffer->failed = true;
-        return;
-    }
-    reserve(buffer, count * 32);
-    for (index = 0; index < count && !buffer->failed; ++index) {
-        uint8_t *entry = buffer->data + buffer->size;
-        encode_u64(entry, entries[index].id);
-        encode_u64(entry + 8, entries[index].revision);
-        encode_u32(entry + 16, (uint32_t)entries[index].scope.start.line);
-        encode_u32(entry + 20, (uint32_t)entries[index].scope.start.column);
-        encode_u32(entry + 24, (uint32_t)entries[index].scope.end.line);
-        encode_u32(entry + 28, (uint32_t)entries[index].scope.end.column);
-        buffer->size += 32;
-    }
-    markdown_core_scope_table_free(entries);
 }
 
 static void encode_diagnostics(bridge_buffer *buffer, const markdown_core_document *document) {
@@ -525,6 +490,7 @@ static const markdown_core_node *put_header(bridge_buffer *buffer,
     }
     put_u64(buffer, markdown_core_node_get_id(root));
     put_u64(buffer, markdown_core_node_get_revision(root));
+    put_scope(buffer, markdown_core_node_scope(root));
     return root;
 }
 
@@ -556,7 +522,6 @@ bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t op
     root = put_header(&buffer, document);
     if (root != NULL) {
         encode_tree(&buffer, root);
-        encode_scope_table(&buffer, document);
         encode_diagnostics(&buffer, document);
     }
     if (buffer.failed) {
@@ -591,8 +556,8 @@ bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t le
     }
     root = put_header(&buffer, commit.document);
     if (root != NULL) {
-        encode_delta(&buffer, root, commit.delta);
-        encode_scope_table(&buffer, commit.document);
+        encode_tree(&buffer, root);
+        encode_delta(&buffer, commit.delta);
         encode_diagnostics(&buffer, commit.document);
     }
     markdown_core_delta_free(commit.delta);

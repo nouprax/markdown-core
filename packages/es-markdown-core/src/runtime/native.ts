@@ -29,6 +29,9 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;
+    /** Writes the node's own absolute extent to `output` as four i32
+     * coordinates: start line, start column, end line, end column. */
+    es_node_scope(node: number, output: number): void;
     es_node_html_comment(node: number): number;
     es_error_code(error: number): number;
     /** Writes the error's four absolute scope coordinates to `output`;
@@ -38,13 +41,6 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;
     es_node_next_sibling(node: number): number;
-    /** One O(n) operation over `document`: writes a core-allocated,
-     * caller-owned array of 32-byte (id u64, revision u64, scope 4×i32)
-     * rows to `dataOutput` and returns the row count; release it with
-     * `es_scope_table_free`. A zero count with a null pointer reports
-     * allocation failure. */
-    es_scope_table(document: number, dataOutput: number): number;
-    es_scope_table_free(data: number): void;
     es_node_heading_level(node: number): number;
     es_node_reference_form(node: number): number;
     /** Writes i32 flavor, i32 tight, i32 has-start, i32 padding, i64 start

@@ -43,15 +43,14 @@ plus a raw value) and a change `revision`; equality is O(1) over that pair, and
 an unchanged node compares equal across consecutive revisions, which is what a
 render cache keys on.
 
-Identity says nothing about POSITION. `scope` is a function of the node AND
-the document it is read against: an edit that shifts text moves positions
+Identity says nothing about POSITION. An edit that shifts text moves positions
 without changing any node's content, and the delta deliberately does not
 report that. A consumer that draws anything positional — gutter numbers,
-underlines, a scroll anchor, a source map — must re-resolve it against the new
-document even for a node it skipped as unchanged.
+underlines, a scroll anchor, a source map — must read it from the NEW
+document's node even for one it skipped as unchanged.
 
-The package exposes parsing,
-editing, and read-only AST traversal, not rendering or mutation.
+The package exposes parsing, editing, and read-only AST traversal, not
+rendering or mutation.
 
 Every node carries its own `scope` — its absolute start and end line and
 column — read in O(1) off the value. It is deliberately not part of `==`:
@@ -61,8 +60,8 @@ comparison below it untouched.
 
 ## Traverse and Inspect
 
-Use `MarkupWalker` for a read-only depth-first traversal; every event carries the
-node's resolved absolute scope:
+Use `MarkupWalker` for a read-only depth-first traversal; every event carries
+the node's absolute scope:
 
 ```swift
 try MarkupWalker().walk(document) { event, node, scope in

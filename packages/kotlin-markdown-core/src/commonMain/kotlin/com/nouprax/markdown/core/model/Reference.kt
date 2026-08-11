@@ -18,6 +18,7 @@ public enum class ReferenceForm {
 public class ReferenceDefinition internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val label: String,
     public val destination: String?,
     public val title: String?,
@@ -38,6 +39,7 @@ public class ReferenceDefinition internal constructor(
 public class LinkReference internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val label: String,
     public val form: ReferenceForm,
     public val content: kotlin.collections.List<Markup>,
@@ -53,6 +55,7 @@ public class LinkReference internal constructor(
 public class ImageReference internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val label: String,
     public val form: ReferenceForm,
     public val content: kotlin.collections.List<Markup>,

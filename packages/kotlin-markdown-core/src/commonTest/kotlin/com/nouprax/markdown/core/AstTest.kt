@@ -4,7 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AstTest {
@@ -59,7 +58,7 @@ class AstTest {
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
-        assertTrue(documents.all { it.scope(it).start == Position(1, 1) })
+        assertTrue(documents.all { it.scope.start == Position(1, 1) })
     }
 
     @Test
@@ -77,9 +76,9 @@ class AstTest {
         assertTrue(table.header.isHeader)
         assertTrue(table.rows.all { !it.isHeader })
         assertTrue(
-            document
-                .scope(table.header.cells.single())
-                .start.line > 0,
+            table.header.cells
+                .single()
+                .scope.start.line > 0,
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
@@ -184,10 +183,13 @@ class AstTest {
 
         first.edit(":::note[Title]\nChanged\n:::\n").document.use { second ->
             val secondBlock = second.content.single() as DirectiveBlock
-            // The label did not change, so the successor holds the very same
-            // object: an unchanged node is not re-decoded.
-            assertSame(firstLabel, secondBlock.label)
-            assertSame(firstLabel, second.node(firstLabel.id))
+            val secondLabel = assertNotNull(secondBlock.label)
+            // The label did not change, so it keeps its identity and compares
+            // equal — which is what a reactive framework reads. It is NOT the
+            // same object: a document's projection is a function of its text,
+            // not of how the caller reached it.
+            assertEquals<Markup>(firstLabel, secondLabel)
+            assertEquals<Markup>(secondLabel, assertNotNull(second.node(firstLabel.id)))
         }
     }
 

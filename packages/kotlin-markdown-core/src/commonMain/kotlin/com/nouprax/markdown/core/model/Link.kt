@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class Link internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val destination: String?,
     public val title: String?,
     public val content: kotlin.collections.List<Markup>,

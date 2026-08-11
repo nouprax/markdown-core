@@ -305,7 +305,6 @@ size_t markdown_core_node_child_count(const markdown_core_node *node) {
 }
 
 #define CANONICAL_WALK_INLINE_DEPTH 64
-#define SCOPE_TABLE_INITIAL_CAPACITY 64
 
 typedef struct canonical_walk_frame {
     int32_t resolved_start_line;
@@ -451,87 +450,6 @@ static bool canonical_walk_next(
 static bool canonical_walk_branch_continues(const canonical_walk *walk, size_t depth) {
     return walk->frames[depth].next_sibling != NULL;
 }
-
-static bool scope_table_append(
-    markdown_core_scope_entry **entries,
-    size_t *count,
-    size_t *capacity,
-    const markdown_core_node *node,
-    markdown_core_scope scope
-) {
-    const size_t maximum = SIZE_MAX / sizeof(**entries);
-    markdown_core_scope_entry *resized;
-    size_t new_capacity;
-
-    if (*count == *capacity) {
-        if (*capacity == maximum) {
-            return false;
-        }
-        new_capacity = *capacity ? *capacity * 2 : SCOPE_TABLE_INITIAL_CAPACITY;
-        if (new_capacity < *capacity || new_capacity > maximum) {
-            new_capacity = maximum;
-        }
-        resized = (markdown_core_scope_entry *)realloc(*entries, new_capacity * sizeof(**entries));
-        if (!resized) {
-            return false;
-        }
-        *entries = resized;
-        *capacity = new_capacity;
-    }
-    (*entries)[*count].id = markdown_core_node_get_id(node);
-    (*entries)[*count].revision = markdown_core_node_get_revision(node);
-    (*entries)[*count].scope = scope;
-    (*count)++;
-    return true;
-}
-
-bool markdown_core_document_scope_table(
-    const markdown_core_document *document,
-    markdown_core_scope_entry **output,
-    size_t *count,
-    markdown_core_error **error
-) {
-    canonical_walk walk;
-    markdown_core_scope_entry *entries;
-    const markdown_core_node *node;
-    markdown_core_scope scope;
-    size_t capacity = 0;
-    size_t index = 0;
-
-    clear_error(error);
-    if (output) {
-        *output = NULL;
-    }
-    if (count) {
-        *count = 0;
-    }
-    if (!document || !document->root || !output || !count) {
-        set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document, output, and count must not be null");
-        return false;
-    }
-    canonical_walk_init(&walk, document->root);
-    entries = NULL;
-    while (canonical_walk_next(&walk, &node, &scope, NULL, NULL)) {
-        if (!scope_table_append(&entries, &index, &capacity, node, scope)) {
-            free(entries);
-            canonical_walk_dispose(&walk);
-            set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate scope table");
-            return false;
-        }
-    }
-    if (walk.failed) {
-        free(entries);
-        canonical_walk_dispose(&walk);
-        set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate scope traversal");
-        return false;
-    }
-    canonical_walk_dispose(&walk);
-    *output = entries;
-    *count = index;
-    return true;
-}
-
-void markdown_core_scope_table_free(markdown_core_scope_entry *output) { free(output); }
 
 bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level) {
     if (!node || node->type != MARKDOWN_CORE_NODE_HEADING || !level) {

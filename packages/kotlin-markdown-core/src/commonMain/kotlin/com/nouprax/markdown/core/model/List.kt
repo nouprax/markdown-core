@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class List internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val flavor: ListFlavor,
     public val start: Long?,
     public val tight: Boolean,
@@ -18,6 +19,7 @@ public class List internal constructor(
 public class ListItem internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val checked: Boolean?,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {

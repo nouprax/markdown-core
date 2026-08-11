@@ -53,11 +53,7 @@ test("conformance: public node schema is reachable", () => {
             "footnoteReference"
         ])
     );
-    assert.ok(
-        documents.every(
-            (document) => document.scope(document).start.line === 1 && document.scope(document).start.column === 1
-        )
-    );
+    assert.ok(documents.every((document) => document.scope.start.line === 1 && document.scope.start.column === 1));
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {

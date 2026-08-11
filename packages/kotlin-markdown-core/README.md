@@ -65,8 +65,9 @@ directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
 `formulas` option controls formula fences and every supported formula delimiter,
 including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The result is an immutable
 value tree whose nodes carry a stable identity (`id`) and a change `revision`;
-equality is O(1) over that pair. Absolute source scopes are resolved through the
-document with `document.scope(node)`. The package exposes parsing, editing, and
+equality is O(1) over that pair. Every node also carries its own `scope` — its
+absolute start/end line and column — which is deliberately outside equality,
+because position is not content. The package exposes parsing, editing, and
 read-only AST traversal, not rendering or mutation.
 
 `Document` owns a native parse and is `AutoCloseable`: `use { }` it, or hand it
@@ -78,7 +79,7 @@ diagnostics, dump — is a value and stays usable afterwards.
 ## Traverse and Inspect
 
 Use `MarkupWalker` for a depth-first traversal. The callback overload emits
-entering/exiting events with the node's resolved absolute scope:
+entering/exiting events with each node's absolute scope:
 
 ```kotlin
 import com.nouprax.markdown.core.WalkEvent
@@ -116,13 +117,13 @@ changing what the parser means is a new `Document`, not an edit.
 val document = Document("# Title\n\nHello")
 val commit = document.edit("# Title\n\nHello world")
 commit.document.use { next ->
-    // The paragraph kept its identity, and its unchanged sibling kept its
-    // exact object: an unchanged node is never re-decoded. That is about
-    // decode cost — `next.scope(...)` may still place it somewhere new,
-    // because a scope belongs to the (node, document) pair and an edit above
-    // moves every position below it without changing any node's content.
+    // The paragraph kept its identity, and its unchanged sibling compares
+    // equal down to the last field. Neither is the SAME object — a document
+    // is decoded from its own text, not carried over from the caller's last
+    // one — and `scope` may still place them somewhere new, because an edit
+    // above moves every position below it without changing any content.
     check(next.content[1].id == document.content[1].id)
-    check(next.content[0] === document.content[0])
+    check(next.content[0] == document.content[0])
 }
 ```
 
@@ -154,7 +155,7 @@ instead of the section containing it:
 for (diff in commit.delta.diffs) {
     if (diff.parts.descendant && !diff.parts.value && !diff.parts.text) continue
     val node = commit.document.node(diff.markup) ?: continue
-    highlight(commit.document.scope(node))
+    highlight(node.scope)
 }
 ```
 

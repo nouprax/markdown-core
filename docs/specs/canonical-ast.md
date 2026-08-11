@@ -516,7 +516,7 @@ node does not implicitly recurse.
 
 The standard read-only `MarkupWalker` walks a `Document` (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
-every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
+every reachable `Markup`, each carrying that node's own absolute scope. Applying an
 exhaustive MarkupVisitor on `entering` invokes it exactly once per node. MarkupWalker owns
 the typed-property rules, so consumers never inspect kinds to discover
 structure:

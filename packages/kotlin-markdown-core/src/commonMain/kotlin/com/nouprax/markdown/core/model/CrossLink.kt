@@ -7,6 +7,7 @@ package com.nouprax.markdown.core
 public class CrossLink(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     /** The source-faithful reference between the delimiters. */
     public val reference: String,
 ) : Markup {

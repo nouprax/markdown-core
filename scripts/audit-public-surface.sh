@@ -312,7 +312,6 @@ public fun dump
 public fun edit
 public fun lineageBits
 public fun node
-public fun scope
 public val afterRevision
 public val beforeRevision
 public val children
@@ -360,15 +359,14 @@ test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/
 if grep -R -E -n 'readonly children[[:space:]]*:[[:space:]]*readonly' packages/es-markdown-core/src/model; then
     fail "ES exposes a generic child list"
 fi
-# Node values carry identity, never positions; scopes are document-mediated.
-# A Diagnostic is not a node — it is a place to underline, and a place is all
-# it is — so the check names the node files rather than the directory.
-if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model \
-    --exclude=diagnostic.ts; then
-    fail "ES node values store scopes"
+# Every node value carries its own extent, declared once on the base every
+# kind extends. A document-mediated lookup is the shape this replaced.
+grep -q 'readonly scope: Scope;' packages/es-markdown-core/src/model/base.ts \
+    || fail "ES node values do not carry their own scope"
+if grep -R -n 'scope: (node' packages/es-markdown-core/src; then
+    fail "ES resolves scopes through the document instead of off the node"
 fi
 grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/markup-dumper.ts \
-    && grep -q 'readonly scope: (node: Markup) => Scope' packages/es-markdown-core/src/model/document.ts \
     && grep -q 'readonly dump: () => string' packages/es-markdown-core/src/model/document.ts \
     || fail "ES does not expose the reviewed Document diagnostic dump API"
 # The document entry points, pinned. There is no session type any more: a
@@ -415,7 +413,6 @@ readonly node: (id: Markup["id"]) => Markup | null
 readonly options: Readonly<Required<ParseOptions>>
 readonly parts: DiffParts
 readonly retired: boolean
-readonly scope: (node: Markup) => Scope
 readonly scope: Scope
 readonly text: boolean
 readonly value: boolean'

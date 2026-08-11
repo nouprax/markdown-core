@@ -93,18 +93,16 @@ new MarkupWalker().walk(document, callableVisitor);
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced
 document.dump = () => "replacement";
-// @ts-expect-error the scope mediator cannot be replaced
-document.scope = () => {
-    throw new Error("replacement");
-};
-// @ts-expect-error nodes do not store scopes
-void document.content[1].scope;
+// @ts-expect-error a node's extent is read-only, like every other field
+document.content[1].scope = { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } };
 
 const identity: MarkupID = document.id;
 const lineage: bigint = identity.lineage;
 const rawValue: number = identity.rawValue;
 const revision: number = document.revision;
-const documentScope: Scope = document.scope(document);
+const documentScope: Scope = document.scope;
+const nodeScope: Scope = document.content[1]!.scope;
+void nodeScope;
 void lineage;
 void rawValue;
 void revision;

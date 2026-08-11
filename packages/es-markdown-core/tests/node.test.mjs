@@ -83,17 +83,22 @@ test("ast: the document mediates the canonical diagnostic dump", () => {
     assert.equal(document.dump(), MarkupDumper.dump(document));
     // A subtree dump prints scopes with the subtree as origin.
     assert.match(MarkupDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
+    // The mediators are non-enumerable; the data — scope included — is not.
     assert.equal(Object.keys(document).includes("dump"), false);
-    assert.equal(Object.keys(document).includes("scope"), false);
+    assert.equal(Object.keys(document).includes("scope"), true);
 });
 
-test("ast: nodes carry identity instead of positions", () => {
-    const document = Document("# Heading\n");
+test("ast: nodes carry identity and their own extent", () => {
+    const document = Document("Lead\n\n# Heading\n");
     assert.equal(typeof document.id.lineage, "bigint");
     assert.equal(typeof document.id.rawValue, "number");
     assert.equal(typeof document.revision, "number");
-    assert.equal("scope" in document.content[0], false);
-    assert.equal(document.scope(document.content[0]).start.line, 1);
+    // The extent is a property OF the node, read without a lookup and
+    // without the document that produced it.
+    assert.deepEqual(document.content[1].scope, {
+        start: { line: 3, column: 1 },
+        end: { line: 3, column: 9 }
+    });
     // Separate parses never share identity.
     assert.notEqual(Document("# Heading\n").id.lineage, document.id.lineage);
 });

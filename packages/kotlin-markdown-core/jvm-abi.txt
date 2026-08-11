@@ -27,6 +27,7 @@
   method com/nouprax/markdown/core/BlockQuote.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/BlockQuote.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/BlockQuote.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/BlockQuote.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/BlockQuote.hashCode ()I
   method com/nouprax/markdown/core/BlockQuote.revisionBits ()J
   method com/nouprax/markdown/core/Code.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -35,6 +36,7 @@
   method com/nouprax/markdown/core/Code.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/Code.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/Code.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Code.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Code.hashCode ()I
   method com/nouprax/markdown/core/Code.revisionBits ()J
   method com/nouprax/markdown/core/CodeBlock.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -47,6 +49,7 @@
   method com/nouprax/markdown/core/CodeBlock.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/CodeBlock.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/CodeBlock.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/CodeBlock.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/CodeBlock.hashCode ()I
   method com/nouprax/markdown/core/CodeBlock.revisionBits ()J
   method com/nouprax/markdown/core/Commit.<init> (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/Delta;)V
@@ -57,6 +60,7 @@
   method com/nouprax/markdown/core/CrossLink.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/CrossLink.getReference ()Ljava/lang/String;
   method com/nouprax/markdown/core/CrossLink.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/CrossLink.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/CrossLink.hashCode ()I
   method com/nouprax/markdown/core/CrossLink.revisionBits ()J
   method com/nouprax/markdown/core/Delta.afterRevisionBits ()J
@@ -98,6 +102,7 @@
   method com/nouprax/markdown/core/Directive.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/Directive.getName ()Ljava/lang/String;
   method com/nouprax/markdown/core/Directive.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Directive.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Directive.hashCode ()I
   method com/nouprax/markdown/core/Directive.revisionBits ()J
   method com/nouprax/markdown/core/DirectiveBlock.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -109,6 +114,7 @@
   method com/nouprax/markdown/core/DirectiveBlock.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/DirectiveBlock.getName ()Ljava/lang/String;
   method com/nouprax/markdown/core/DirectiveBlock.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/DirectiveBlock.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/DirectiveBlock.hashCode ()I
   method com/nouprax/markdown/core/DirectiveBlock.revisionBits ()J
   method com/nouprax/markdown/core/DirectiveLabel.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -116,6 +122,7 @@
   method com/nouprax/markdown/core/DirectiveLabel.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/DirectiveLabel.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/DirectiveLabel.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/DirectiveLabel.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/DirectiveLabel.hashCode ()I
   method com/nouprax/markdown/core/DirectiveLabel.revisionBits ()J
   method com/nouprax/markdown/core/Document.<init> (Ljava/lang/String;)V
@@ -132,16 +139,17 @@
   method com/nouprax/markdown/core/Document.getLineage-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/Document.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Document.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Document.hashCode ()I
   method com/nouprax/markdown/core/Document.lineageBits ()J
   method com/nouprax/markdown/core/Document.node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
   method com/nouprax/markdown/core/Document.revisionBits ()J
-  method com/nouprax/markdown/core/Document.scope (Lcom/nouprax/markdown/core/Markup;)Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Embed.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Embed.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Embed.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Embed.getReference ()Ljava/lang/String;
   method com/nouprax/markdown/core/Embed.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Embed.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Embed.hashCode ()I
   method com/nouprax/markdown/core/Embed.revisionBits ()J
   method com/nouprax/markdown/core/Emphasis.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -149,6 +157,7 @@
   method com/nouprax/markdown/core/Emphasis.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Emphasis.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Emphasis.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Emphasis.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Emphasis.hashCode ()I
   method com/nouprax/markdown/core/Emphasis.revisionBits ()J
   method com/nouprax/markdown/core/FootnoteDefinition.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -157,6 +166,7 @@
   method com/nouprax/markdown/core/FootnoteDefinition.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/FootnoteDefinition.getLabel ()Ljava/lang/String;
   method com/nouprax/markdown/core/FootnoteDefinition.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/FootnoteDefinition.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/FootnoteDefinition.hashCode ()I
   method com/nouprax/markdown/core/FootnoteDefinition.revisionBits ()J
   method com/nouprax/markdown/core/FootnoteReference.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -164,6 +174,7 @@
   method com/nouprax/markdown/core/FootnoteReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/FootnoteReference.getLabel ()Ljava/lang/String;
   method com/nouprax/markdown/core/FootnoteReference.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/FootnoteReference.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/FootnoteReference.hashCode ()I
   method com/nouprax/markdown/core/FootnoteReference.revisionBits ()J
   method com/nouprax/markdown/core/Formula.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -172,6 +183,7 @@
   method com/nouprax/markdown/core/Formula.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/Formula.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/Formula.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Formula.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Formula.hashCode ()I
   method com/nouprax/markdown/core/Formula.revisionBits ()J
   method com/nouprax/markdown/core/FormulaBlock.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -180,6 +192,7 @@
   method com/nouprax/markdown/core/FormulaBlock.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/FormulaBlock.getMode ()Lcom/nouprax/markdown/core/PlacementMode;
   method com/nouprax/markdown/core/FormulaBlock.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/FormulaBlock.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/FormulaBlock.hashCode ()I
   method com/nouprax/markdown/core/FormulaBlock.revisionBits ()J
   method com/nouprax/markdown/core/HTML.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -188,6 +201,7 @@
   method com/nouprax/markdown/core/HTML.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/HTML.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/HTML.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/HTML.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/HTML.hashCode ()I
   method com/nouprax/markdown/core/HTML.revisionBits ()J
   method com/nouprax/markdown/core/HTMLBlock.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -196,6 +210,7 @@
   method com/nouprax/markdown/core/HTMLBlock.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/HTMLBlock.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/HTMLBlock.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/HTMLBlock.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/HTMLBlock.hashCode ()I
   method com/nouprax/markdown/core/HTMLBlock.revisionBits ()J
   method com/nouprax/markdown/core/Heading.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -204,6 +219,7 @@
   method com/nouprax/markdown/core/Heading.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Heading.getLevel ()I
   method com/nouprax/markdown/core/Heading.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Heading.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Heading.hashCode ()I
   method com/nouprax/markdown/core/Heading.revisionBits ()J
   method com/nouprax/markdown/core/Image.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -211,6 +227,7 @@
   method com/nouprax/markdown/core/Image.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Image.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Image.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Image.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Image.getSource ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/Image.hashCode ()I
@@ -222,12 +239,14 @@
   method com/nouprax/markdown/core/ImageReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/ImageReference.getLabel ()Ljava/lang/String;
   method com/nouprax/markdown/core/ImageReference.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ImageReference.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/ImageReference.hashCode ()I
   method com/nouprax/markdown/core/ImageReference.revisionBits ()J
   method com/nouprax/markdown/core/LineBreak.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/LineBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/LineBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/LineBreak.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/LineBreak.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/LineBreak.hashCode ()I
   method com/nouprax/markdown/core/LineBreak.revisionBits ()J
   method com/nouprax/markdown/core/Link.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -236,6 +255,7 @@
   method com/nouprax/markdown/core/Link.getDestination ()Ljava/lang/String;
   method com/nouprax/markdown/core/Link.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Link.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Link.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Link.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/Link.hashCode ()I
   method com/nouprax/markdown/core/Link.revisionBits ()J
@@ -246,6 +266,7 @@
   method com/nouprax/markdown/core/LinkReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/LinkReference.getLabel ()Ljava/lang/String;
   method com/nouprax/markdown/core/LinkReference.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/LinkReference.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/LinkReference.hashCode ()I
   method com/nouprax/markdown/core/LinkReference.revisionBits ()J
   method com/nouprax/markdown/core/List.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -254,6 +275,7 @@
   method com/nouprax/markdown/core/List.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/List.getItems ()Ljava/util/List;
   method com/nouprax/markdown/core/List.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/List.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/List.getStart ()Ljava/lang/Long;
   method com/nouprax/markdown/core/List.getTight ()Z
   method com/nouprax/markdown/core/List.hashCode ()I
@@ -267,12 +289,14 @@
   method com/nouprax/markdown/core/ListItem.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/ListItem.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/ListItem.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ListItem.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/ListItem.hashCode ()I
   method com/nouprax/markdown/core/ListItem.revisionBits ()J
   method com/nouprax/markdown/core/Markup$DefaultImpls.revisionBits (Lcom/nouprax/markdown/core/Markup;)J
   method com/nouprax/markdown/core/Markup.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Markup.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Markup.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Markup.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Markup.revisionBits ()J
   method com/nouprax/markdown/core/MarkupDumper.dump (Lcom/nouprax/markdown/core/Document;)Ljava/lang/String;
   method com/nouprax/markdown/core/MarkupDumper.dump (Lcom/nouprax/markdown/core/Document;Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
@@ -330,6 +354,7 @@
   method com/nouprax/markdown/core/Paragraph.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Paragraph.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Paragraph.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Paragraph.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Paragraph.hashCode ()I
   method com/nouprax/markdown/core/Paragraph.revisionBits ()J
   method com/nouprax/markdown/core/ParseErrorCode.getEntries ()Lkotlin/enums/EnumEntries;
@@ -392,6 +417,7 @@
   method com/nouprax/markdown/core/ReferenceDefinition.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/ReferenceDefinition.getLabel ()Ljava/lang/String;
   method com/nouprax/markdown/core/ReferenceDefinition.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ReferenceDefinition.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/ReferenceDefinition.getTitle ()Ljava/lang/String;
   method com/nouprax/markdown/core/ReferenceDefinition.hashCode ()I
   method com/nouprax/markdown/core/ReferenceDefinition.revisionBits ()J
@@ -411,6 +437,7 @@
   method com/nouprax/markdown/core/SoftBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/SoftBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/SoftBreak.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/SoftBreak.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/SoftBreak.hashCode ()I
   method com/nouprax/markdown/core/SoftBreak.revisionBits ()J
   method com/nouprax/markdown/core/Strikethrough.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -418,6 +445,7 @@
   method com/nouprax/markdown/core/Strikethrough.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Strikethrough.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Strikethrough.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Strikethrough.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Strikethrough.hashCode ()I
   method com/nouprax/markdown/core/Strikethrough.revisionBits ()J
   method com/nouprax/markdown/core/Strong.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -425,6 +453,7 @@
   method com/nouprax/markdown/core/Strong.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Strong.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Strong.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Strong.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Strong.hashCode ()I
   method com/nouprax/markdown/core/Strong.revisionBits ()J
   method com/nouprax/markdown/core/Table.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -434,6 +463,7 @@
   method com/nouprax/markdown/core/Table.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Table.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Table.getRows ()Ljava/util/List;
+  method com/nouprax/markdown/core/Table.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Table.hashCode ()I
   method com/nouprax/markdown/core/Table.revisionBits ()J
   method com/nouprax/markdown/core/TableAlignment.getEntries ()Lkotlin/enums/EnumEntries;
@@ -444,6 +474,7 @@
   method com/nouprax/markdown/core/TableCell.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/TableCell.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/TableCell.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/TableCell.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/TableCell.hashCode ()I
   method com/nouprax/markdown/core/TableCell.revisionBits ()J
   method com/nouprax/markdown/core/TableRow.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -451,6 +482,7 @@
   method com/nouprax/markdown/core/TableRow.getCells ()Ljava/util/List;
   method com/nouprax/markdown/core/TableRow.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/TableRow.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/TableRow.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/TableRow.hashCode ()I
   method com/nouprax/markdown/core/TableRow.isHeader ()Z
   method com/nouprax/markdown/core/TableRow.revisionBits ()J
@@ -459,12 +491,14 @@
   method com/nouprax/markdown/core/Text.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/Text.getLiteral ()Ljava/lang/String;
   method com/nouprax/markdown/core/Text.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/Text.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Text.hashCode ()I
   method com/nouprax/markdown/core/Text.revisionBits ()J
   method com/nouprax/markdown/core/ThematicBreak.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/ThematicBreak.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/ThematicBreak.getId ()Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/ThematicBreak.getRevision-s-VKNKU ()J
+  method com/nouprax/markdown/core/ThematicBreak.getScope ()Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/ThematicBreak.hashCode ()I
   method com/nouprax/markdown/core/ThematicBreak.revisionBits ()J
   method com/nouprax/markdown/core/WalkEvent.getEntries ()Lkotlin/enums/EnumEntries;

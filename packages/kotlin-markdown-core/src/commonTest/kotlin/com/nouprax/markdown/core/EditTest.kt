@@ -6,7 +6,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class EditTest {
@@ -70,13 +69,13 @@ class EditTest {
             assertTrue(!insertedDiff.parts.text)
 
             // Downstream nodes shifted by two lines: equal values, new scopes.
-            assertEquals(7, after.scope(assertIs<Paragraph>(after.content[3])).start.line)
-            // A value carried over from the predecessor has the same (id,
-            // revision) and resolves against the successor at its NEW
-            // position: identity survives the edit, absolute position does
-            // not. And the predecessor still answers at its own.
-            assertEquals(7, after.scope(thirdBefore).start.line)
-            assertEquals(5, before.scope(thirdBefore).start.line)
+            val third = assertIs<Paragraph>(after.content[3])
+            assertEquals(7, third.scope.start.line)
+            // The predecessor's value keeps the extent it was parsed with, and
+            // the two are still EQUAL: identity survived the edit and position
+            // is not part of equality.
+            assertEquals(5, thirdBefore.scope.start.line)
+            assertEquals<Markup>(thirdBefore, third)
             assertEquals(Document("# New\n\nFirst\n\nSecond\n\nThird\n").dump(), after.dump())
         }
     }
@@ -130,7 +129,7 @@ class EditTest {
     fun aBlankLineOnlyEditReportsAnEmptyDeltaYetShiftsScopes() {
         val before = Document("Alpha\n\n\n\nOmega\n")
         val omegaBefore = assertIs<Paragraph>(before.content[1])
-        assertEquals(5, before.scope(omegaBefore).start.line)
+        assertEquals(5, omegaBefore.scope.start.line)
 
         // Delete two of the blank lines: no node's content changes.
         val commit = before.edit("Alpha\n\nOmega\n")
@@ -138,11 +137,11 @@ class EditTest {
             val omegaAfter = assertIs<Paragraph>(after.content[1])
             assertTrue(commit.delta.diffs.isEmpty())
             assertTrue(commit.delta.afterRevision > commit.delta.beforeRevision)
+            // Equal, and at a different place: two nodes differing only in
+            // where they sit are equal, because position is not content.
             assertEquals<Markup>(omegaBefore, omegaAfter)
-            // Nothing was named, so the successor kept the predecessor's own
-            // content list — the same objects, not equal copies.
-            assertSame(omegaBefore, omegaAfter)
-            assertEquals(3, after.scope(omegaAfter).start.line)
+            assertEquals(3, omegaAfter.scope.start.line)
+            assertEquals(5, omegaBefore.scope.start.line)
             assertEquals(Document("Alpha\n\nOmega\n").dump(), after.dump())
         }
     }
@@ -184,13 +183,13 @@ class EditTest {
     fun aSupersededDocumentKeepsAnsweringFromItsOwnTables() {
         val first = Document("One\n\nTwo\n")
         val two = assertIs<Paragraph>(first.content[1])
-        assertEquals(3, first.scope(two).start.line)
+        assertEquals(3, two.scope.start.line)
 
         // Editing hands the native parse to the successor. The predecessor's
         // values, scopes, diagnostics, and dump were all extracted at parse
         // time and owe that parse nothing.
         first.edit("Zero\n\nOne\n\nTwo\n").document.close()
-        assertEquals(3, first.scope(two).start.line)
+        assertEquals(3, two.scope.start.line)
         assertTrue(first.dump().contains("Paragraph"))
         val recording = RecordingVisitor()
         MarkupWalker.walk(first, recording)
@@ -209,7 +208,11 @@ class EditTest {
         closed.close()
         assertFailsWith<IllegalStateException> { closed.edit("Three\n") }
         // What was already extracted stays answerable either way.
-        assertEquals(1, closed.scope(closed.content[0]).start.line)
+        assertEquals(
+            1,
+            closed.content[0]
+                .scope.start.line,
+        )
     }
 
     @Test

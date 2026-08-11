@@ -104,13 +104,6 @@ typedef struct markdown_core_scope {
     markdown_core_position end;
 } markdown_core_scope;
 
-/** One canonical-preorder row in a document scope table. */
-typedef struct markdown_core_scope_entry {
-    markdown_core_node_id id;
-    uint64_t revision;
-    markdown_core_scope scope;
-} markdown_core_scope_entry;
-
 /** Which components of a node's observable projection differ (9.1).
  *
  * There is no lifecycle tag. A retired node has no parts in `after`, so its
@@ -330,23 +323,6 @@ MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
     const markdown_core_node *node,
     markdown_core_string *reference
 );
-
-/**
- * Allocates one immutable `(id, revision, absolute scope)` row for every
- * canonical node in document preorder. One streaming traversal builds the
- * complete table in O(n) time with O(depth) traversal state. The table
- * remains valid independently of the document; free it with
- * markdown_core_scope_table_free. On every failure, each non-null output is
- * reset (`*output` to NULL and `*count` to zero), so callers may use one
- * unconditional cleanup path.
- */
-MARKDOWN_CORE_API bool markdown_core_document_scope_table(
-    const markdown_core_document *document,
-    markdown_core_scope_entry **output,
-    size_t *count,
-    markdown_core_error **error
-);
-MARKDOWN_CORE_API void markdown_core_scope_table_free(markdown_core_scope_entry *output);
 
 /*
  * Diagnostics

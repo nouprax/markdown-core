@@ -42,20 +42,14 @@ mutation.
 Every node carries an identity: `id` (a `MarkupID` of the owning lineage's
 salt plus a raw value, always the same object for the same identity) and
 `revision`, the revision at which the node's content last changed. Two nodes
-with the same `id` and `revision` are guaranteed to have identical content,
-and an unchanged node is the same object across consecutive revisions, which
-is a decode-cost detail and not a stronger guarantee: it says the binding did
-not have to rebuild the value, nothing more.
+with the same `id` and `revision` are guaranteed to have identical content.
 
-Identity says nothing about POSITION. `scope` is a function of the node AND
-the document it is read against: an edit that shifts text moves positions
-without changing any node's content, and the delta deliberately does not
-report that. A consumer that draws anything positional — gutter numbers,
-underlines, a scroll anchor, a source map — must re-resolve it against the new
-document even for a node it skipped as unchanged.
-
-Nodes do not store absolute positions. Resolve them through the document:
-`document.scope(node)` returns the node's absolute start/end line and column.
+Identity says nothing about POSITION. Every node carries its own `scope` — its
+absolute start/end line and column, read straight off the value — but an edit
+that shifts text moves positions without changing any node's content, and the
+delta deliberately does not report that. A consumer that draws anything
+positional — gutter numbers, underlines, a scroll anchor, a source map — must
+read it from the NEW document's node even for one it skipped as unchanged.
 
 A document owns a native parse. `document.close()` releases it, and `edit`
 hands it to the successor; a document that is neither closed nor edited is
@@ -66,7 +60,7 @@ dump — is a value and stays usable afterwards.
 ## Traverse and Inspect
 
 Use `MarkupWalker` for a read-only depth-first traversal. The callback overload
-emits entering/exiting events with the resolved scope:
+emits entering/exiting events with each node's scope:
 
 ```js
 new MarkupWalker().walk(document, (event, node, scope) => {
@@ -92,10 +86,10 @@ changing what the parser means is a new document, not an edit.
 ```js
 const document = Document("# Title\n\nHello");
 const { document: next, delta } = document.edit("# Title\n\nHello world");
-// The heading did not change, so it is the very same object: an unchanged
-// node is never re-decoded. That is about decode cost — `next.scope(...)`
-// may still place it somewhere new.
-console.log(next.content[0] === document.content[0]); // true
+// The heading did not change, so it compares equal — same id, same revision.
+// Its `scope` may still place it somewhere new.
+console.log(next.content[0].id === document.content[0].id); // true
+console.log(next.content[0].revision === document.content[0].revision); // true
 ```
 
 `edit` SUPERSEDES the receiver: the native parse moves to the successor, so
@@ -126,7 +120,7 @@ instead of the section containing it:
 for (const diff of delta.diffs) {
     if (diff.parts.descendant && !diff.parts.value && !diff.parts.text) continue;
     const node = next.node(diff.markup);
-    if (node !== null) highlight(next.scope(node));
+    if (node !== null) highlight(node.scope);
 }
 ```
 

@@ -7,49 +7,34 @@ package com.nouprax.markdown.core
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.jvm.JvmOverloads
 
-/** One node's absolute extent at the revision that reported it. Keeping the
- * revision is what lets a stale value — same id, superseded revision — be
- * rejected instead of silently paired with a current position. */
-private class ScopeEntry(
-    val revision: ULong,
-    val scope: Scope,
-)
-
 /** Everything one decoded payload settles, so that a public constructor can
  * delegate to the private one in a single expression. */
 private class Built(
     val handle: CDocumentHandle,
     val id: MarkupID,
     val revision: ULong,
+    val scope: Scope,
     val options: ParseOptions,
     val content: kotlin.collections.List<Markup>,
     val diagnostics: kotlin.collections.List<Diagnostic>,
-    val mirror: Map<ULong, Markup>,
-    val scopes: Map<ULong, ScopeEntry>,
+    val index: Map<ULong, Markup>,
 )
 
 private fun open(
     markdown: String,
     options: ParseOptions,
-): Built {
-    val mirror = HashMap<ULong, Markup>()
-    return decodeWireOpen(
-        cOpen(markdown.encodeToByteArray(), options),
-        mirror,
-        ::ScopeEntry,
-    ) { handle, id, revision, content, scopes, diagnostics ->
-        Built(
-            handle,
-            id,
-            revision,
-            options,
-            checkNotNull(content) { "a parse returned no document root" },
-            diagnostics,
-            mirror,
-            scopes,
-        )
+): Built =
+    decodeWireOpen(cOpen(markdown.encodeToByteArray(), options)) {
+        handle,
+        id,
+        revision,
+        scope,
+        content,
+        index,
+        diagnostics,
+        ->
+        Built(handle, id, revision, scope, options, content, diagnostics, index)
     }
-}
 
 /**
  * One parsed Markdown document: the root of the canonical value tree, the
@@ -107,6 +92,8 @@ public class Document private constructor(
 
     override val revision: ULong get() = built.revision
 
+    override val scope: Scope get() = built.scope
+
     /** The options this document and its whole lineage were parsed under. */
     public val options: ParseOptions get() = built.options
 
@@ -144,28 +131,18 @@ public class Document private constructor(
     public fun edit(markdown: String): Commit {
         val owned = handle.exchange(0L)
         check(owned != 0L) { "the document was superseded by an earlier edit, or closed" }
-        val next = HashMap(built.mirror)
-        val carried = content
+        val carriedOptions = options
         val (successor, delta) =
-            decodeWireEdit(
-                owned.edit(markdown.encodeToByteArray()),
-                next,
-                ::ScopeEntry,
-            ) { handle, id, revision, content, scopes, diagnostics ->
-                Document(
-                    Built(
-                        handle,
-                        id,
-                        revision,
-                        options,
-                        // No record named the root, so nothing differs at all
-                        // and this document's own content is still the answer.
-                        content ?: carried,
-                        diagnostics,
-                        next,
-                        scopes,
-                    ),
-                )
+            decodeWireEdit(owned.edit(markdown.encodeToByteArray())) {
+                handle,
+                id,
+                revision,
+                scope,
+                content,
+                index,
+                diagnostics,
+                ->
+                Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
             }
         return Commit(successor, delta)
     }
@@ -185,23 +162,8 @@ public class Document private constructor(
             // own id — while the mirror holds the descendants, not the root.
             id.rawValue == this.id.rawValue -> this
 
-            else -> built.mirror[id.rawValue]
+            else -> built.index[id.rawValue]
         }
-
-    /**
-     * The absolute source extent of [node] in this document, O(1).
-     *
-     * Fails on a node from another parse, and on a stale value whose revision
-     * this document has superseded — equal nodes may sit at different absolute
-     * positions in different revisions, so pairing old fields with new
-     * positions is never right.
-     */
-    public fun scope(node: Markup): Scope {
-        require(node.id.lineage == id.lineage) { "node belongs to a different parse" }
-        val entry = requireNotNull(built.scopes[node.id.rawValue]) { "node does not belong to this document" }
-        check(entry.revision == node.revision) { "node value is from a different revision of this lineage" }
-        return entry.scope
-    }
 
     /** Returns the canonical diagnostic dump for this document. */
     public fun dump(): String = MarkupDumper.dump(this)

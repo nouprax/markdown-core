@@ -148,7 +148,7 @@ private fun deepBuildBenchmark(
         val elapsed =
             measureNanoTime {
                 document = Document(source)
-                document.scope(document)
+                document.scope
             }
         document.close()
         return elapsed
@@ -178,7 +178,7 @@ private fun streamBenchmark(
                 streamed += chunk
                 document = document.edit(streamed).document
             }
-            document.scope(document)
+            document.scope
             document.close()
         }
     stream()
