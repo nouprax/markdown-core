@@ -2445,7 +2445,7 @@ static int case_capture_document(void) {
         }
         (void)tail;
         if (!mc_edit(&session, mc_sv(both, sizeof(both) - 1), NULL, NULL)) {
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
         }
@@ -2455,7 +2455,7 @@ static int case_capture_document(void) {
             fprintf(stderr, "capture_document: concrete owner lost across commits\n");
             failed = 1;
         }
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
     }
     return failed ? -1 : 0;
 }
@@ -2700,7 +2700,7 @@ static const capture_edit EQUIVALENCE_EDITS[] = {
 static int case_capture_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *session = markdown_core_document_open(&options, NULL);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
     mc_text text = {NULL, 0, 0};
     capture_shadow shadow = {NULL, 0, 0};
     size_t step;
@@ -2710,7 +2710,7 @@ static int case_capture_equivalence(void) {
     }
     if (!shadow_splice(&shadow, 0, 0, EQUIVALENCE_INITIAL, sizeof(EQUIVALENCE_INITIAL) - 1)) {
         mc_text_free(&text);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
         free(shadow.bytes);
         return -1;
     }
@@ -2769,7 +2769,7 @@ static int case_capture_equivalence(void) {
 
     mc_text_free(&text);
 
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     free(shadow.bytes);
     return failed ? -1 : 0;
 }
@@ -3814,7 +3814,7 @@ static int case_inline_equivalence(void) {
     {
         static const char initial[] = "plain one\nplain two\nedit *here* soon\n";
         static const char replaced[] = "*there* now\n";
-        markdown_core_document *session = markdown_core_document_open(&options, NULL);
+        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *paragraph;
@@ -3828,7 +3828,7 @@ static int case_inline_equivalence(void) {
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
             !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
             return -1;
         }
@@ -3837,7 +3837,7 @@ static int case_inline_equivalence(void) {
         prefix_text = paragraph ? paragraph->first_child : NULL;
         if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: seam fixture lost its paragraph\n");
             return -1;
         }
@@ -3848,7 +3848,7 @@ static int case_inline_equivalence(void) {
         if (!mc_text_splice(&text, 25, 36, replaced, sizeof(replaced) - 1) ||
             !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
             return -1;
         }
@@ -3856,7 +3856,7 @@ static int case_inline_equivalence(void) {
         fresh = markdown_core_document_new(mc_sv((const uint8_t *)final_text, sizeof(final_text) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             return -1;
         }
         failed |= compare_tree_records(
@@ -3868,7 +3868,7 @@ static int case_inline_equivalence(void) {
         failed |= check_inline_invariants("inline_equivalence: seam", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
         mc_text_free(&text);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
     }
 
     /* Dependent rebuild across a definition flip, both directions. */
@@ -3886,7 +3886,7 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "[^n]: note\n";
-        markdown_core_document *session = markdown_core_document_open(&options, NULL);
+        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *unit;
@@ -3898,7 +3898,7 @@ static int case_inline_equivalence(void) {
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
             !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
         }
@@ -3911,7 +3911,7 @@ static int case_inline_equivalence(void) {
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
         if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
         }
@@ -3920,7 +3920,7 @@ static int case_inline_equivalence(void) {
             markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             return -1;
         }
         failed |= compare_tree_records(
@@ -3936,7 +3936,7 @@ static int case_inline_equivalence(void) {
             if (!mc_text_splice(&text, 43, 43, "[x]: /u\n", 8) ||
                 !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
                 mc_text_free(&text);
-                markdown_core_document_release(session);
+                markdown_core_document_free(session);
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
                 return -1;
             }
@@ -3944,7 +3944,7 @@ static int case_inline_equivalence(void) {
             fresh = markdown_core_document_new(mc_sv((const uint8_t *)initial, sizeof(initial) - 1), &options, NULL);
             if (!fresh) {
                 mc_text_free(&text);
-                markdown_core_document_release(session);
+                markdown_core_document_free(session);
                 return -1;
             }
             failed |= compare_tree_records(
@@ -3957,7 +3957,7 @@ static int case_inline_equivalence(void) {
             markdown_core_document_free(fresh);
         }
         mc_text_free(&text);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
     }
 
     /* Dependent rebuild of a table cell: a definition flip converts a
@@ -3986,7 +3986,7 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "tail para\n";
-        markdown_core_document *session = markdown_core_document_open(&options, NULL);
+        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *table;
@@ -3999,7 +3999,7 @@ static int case_inline_equivalence(void) {
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
             !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
             return -1;
         }
@@ -4008,7 +4008,7 @@ static int case_inline_equivalence(void) {
         cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
         if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
             return -1;
         }
@@ -4019,7 +4019,7 @@ static int case_inline_equivalence(void) {
         /* Delete the `[x]: /u\n` definition line. */
         if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;
         }
@@ -4028,7 +4028,7 @@ static int case_inline_equivalence(void) {
             markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             return -1;
         }
         failed |= compare_tree_records(
@@ -4040,7 +4040,7 @@ static int case_inline_equivalence(void) {
         failed |= check_inline_invariants("inline_equivalence: cell dependent", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
         mc_text_free(&text);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
     }
     return failed ? -1 : 0;
 }

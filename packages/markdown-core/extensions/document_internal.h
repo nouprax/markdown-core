@@ -10,8 +10,8 @@
 
 #include "source.h"
 
-// AddressSanitizer detection: session pooling is bypassed under ASan so the
-// sanitizer keeps seeing individual allocations (see session_open_with_mem).
+// AddressSanitizer detection: document pooling is bypassed under ASan so the
+// sanitizer keeps seeing individual allocations (see markdown_core_document_open_with_mem).
 #ifndef MARKDOWN_CORE_ASAN
 #if defined(__SANITIZE_ADDRESS__)
 #define MARKDOWN_CORE_ASAN 1
@@ -26,7 +26,7 @@
 #endif
 #endif
 
-/** SplitMix64 finalizer shared by the session's open-addressing tables. */
+/** SplitMix64 finalizer shared by the document's open-addressing tables. */
 static inline uint64_t markdown_core_mix64(uint64_t x) {
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;
@@ -37,7 +37,7 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 }
 
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
-// session-unique node ids (0 marks an empty slot, ids start at 1). Id and
+// lineage-unique node ids (0 marks an empty slot, ids start at 1). Id and
 // node share a slot so every probe costs one cache line, not two — the
 // table dwarfs the cache at document scale and probes dominate the
 // commit's table maintenance.
@@ -72,7 +72,7 @@ typedef struct {
 // Every unit that recorded a lookup of one label, unordered. The label key
 // is an owned copy with posting lifetime; a posting that empties stays and
 // is reused when its label returns, mirroring the footnote label interning
-// lifetime rules (slots never move or free for the session's lifetime).
+// lifetime rules (slots never move or free for the document's lifetime).
 typedef struct {
     unsigned char *label; // owned NUL-terminated copy
     markdown_core_lookup_posting_entry *items;
@@ -146,7 +146,7 @@ typedef struct {
     size_t capacity;
 } markdown_core_clean_index;
 
-// One kind of document-scoped definition, as the session keeps it: the map
+// One kind of document-scoped definition, as the document keeps it: the map
 // plus the line-ordered index over that map. Link reference definitions and
 // footnote definitions get one table each.
 //
@@ -201,11 +201,11 @@ typedef struct {
 struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    // The session's bytes: one growable buffer, mutable and singly owned, and
+    // The document's bytes: one growable buffer, mutable and singly owned, and
     // an edit splices it in place (source.h). It was a persistent rope, and
     // both reasons it gave for being one are gone — the bounded-neighbourhood
     // copy was 11.1's removed work bound, and the readable predecessor was
-    // 4.2's removed clause. A session hands out one document, reused in place,
+    // 4.2's removed clause. A parse hands out one document, reused in place,
     // so nothing can hold a predecessor to read.
     markdown_core_source *source;
     markdown_core_node *root; // the committed tree, owned
@@ -236,19 +236,19 @@ struct markdown_core_document {
     // reference map, extension attachments) is commit-invariant, so
     // commits skip rebuilding it. NULL when no healthy parser came back.
     markdown_core_parser *warm_parser;
-    // When pooled, every session-owned allocation flows through this arena
-    // (session->mem is its allocator face) and teardown is a wholesale
-    // release. NULL for unpooled sessions: the one-shot parse (its detached
-    // tree must outlive the session and Document.parse keeps its v1 memory
+    // When pooled, every document-owned allocation flows through this arena
+    // (document->mem is its allocator face) and teardown is a wholesale
+    // release. NULL for unpooled documents: the one-shot parse (its detached
+    // tree must outlive the document and a parse keeps its v1 memory
     // profile) and the ASan suites.
     markdown_core_arena *arena;
 };
 
 /** Internal constructor used by allocation-injection tests and the one-shot
  * parse; the public markdown_core_document_open uses the default allocator
- * with pooling. `pooled` routes every session-owned allocation through a
- * session arena over `mem` — pass false when detached nodes must outlive
- * the session or when injection needs to see individual allocations. */
+ * with pooling. `pooled` routes every document-owned allocation through an
+ * arena over `mem` — pass false when detached nodes must outlive the document
+ * or when injection needs to see individual allocations. */
 markdown_core_document *markdown_core_document_open_with_mem(
     const markdown_core_parse_options *options,
     markdown_core_mem *mem,
@@ -285,7 +285,7 @@ bool markdown_core_document_diff(
 );
 
 bool markdown_core_diff_trees(
-    markdown_core_document *session,
+    markdown_core_document *document,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
@@ -295,48 +295,48 @@ bool markdown_core_diff_trees(
 /** Appends one row to a delta's `diffs`; plain-malloc grow. */
 bool markdown_core_delta_push(markdown_core_delta *changes, markdown_core_node_id id, uint32_t parts);
 
-/** Creates a parser configured with the session's options and extensions.
+/** Creates a parser configured with the document's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
- * when non-NULL. Defined in session.c. */
-markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *session, markdown_core_error **error);
+ * when non-NULL. Defined in document.c. */
+markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *document, markdown_core_error **error);
 
-/** Takes the session's warm parser when one is held, else creates one like
- * markdown_core_document_new_parser. Defined in session.c. */
+/** Takes the document's warm parser when one is held, else creates one like
+ * markdown_core_document_new_parser. Defined in document.c. */
 markdown_core_parser *markdown_core_document_acquire_parser(
-    markdown_core_document *session,
+    markdown_core_document *document,
     markdown_core_error **error
 );
 
 /** Hands a parser back after its parse ended: a healthy one is renewed and
  * held warm for the next commit, a poisoned one (or a second hand-back) is
  * freed. The parser's definition maps must be its own or NULL — never the
- * session's. Defined in session.c. */
-void markdown_core_document_release_parser(markdown_core_document *session, markdown_core_parser *parser);
+ * document's. Defined in document.c. */
+void markdown_core_document_release_parser(markdown_core_document *document, markdown_core_parser *parser);
 
 /** Rewrites every definition owner stamped as a node pointer during the
- * just-adopted parse to that node's session id (owner 0 stays 0: the region
+ * just-adopted parse to that node's document id (owner 0 stays 0: the region
  * before the first document child). Owners already holding ids are never
  * present when this runs — full parses replace the whole map, incremental
  * commits remove pointer-stamped duplicates instead. Runs per definition
  * table. */
 void markdown_core_document_resolve_definition_owners(markdown_core_map *map);
 
-/** Rebuilds the session's line-ordered at-rest definition index from `map`
+/** Rebuilds the document's line-ordered at-rest definition index from `map`
  * into caller-provided storage (swapped in by the full commit path). */
 bool markdown_core_document_index_definitions(
-    markdown_core_document *session,
+    markdown_core_document *document,
     markdown_core_map *map,
     markdown_core_map_entry ***out_items,
     size_t *out_count
 );
 
 /** Builds the clean-child index for a freshly sealed tree into `out` (zeroed
- * by the caller) by scanning the session's stored text for line starts.
+ * by the caller) by scanning the document's stored text for line starts.
  * O(text); used by full commits only — incremental commits update the index
  * from their own restart bookkeeping. Returns false on allocation failure
  * with `out` released. Defined in incremental.c. */
 bool markdown_core_document_index_clean_children(
-    markdown_core_document *session,
+    markdown_core_document *document,
     markdown_core_node *root,
     const markdown_core_map *map,
     markdown_core_clean_index *out
@@ -414,7 +414,7 @@ void markdown_core_lookup_table_remove(
 typedef enum {
     MARKDOWN_CORE_INCREMENTAL_COMMITTED, // committed; *changes filled when requested
     MARKDOWN_CORE_INCREMENTAL_FALLBACK,  // not applicable; run the full path
-    MARKDOWN_CORE_INCREMENTAL_FAILED     // allocation loss; session intact at the previous revision
+    MARKDOWN_CORE_INCREMENTAL_FAILED     // allocation loss; document intact at the previous revision
 } markdown_core_incremental_result;
 
 /** Attempts the incremental commit pipeline (restart plan, staged reparse
@@ -423,7 +423,7 @@ typedef enum {
  * footnote index, and geometry are exactly as before the call. Defined in
  * incremental.c. */
 markdown_core_incremental_result markdown_core_document_edit_incremental(
-    markdown_core_document *session,
+    markdown_core_document *document,
     uint64_t new_rev,
     markdown_core_delta *changes,
     markdown_core_error **error

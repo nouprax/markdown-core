@@ -102,8 +102,8 @@ endif()
 # Shared native test support: fixture loading, in-process conversion, byte
 # comparison, deterministic diffs, PRNG, timing, and the session replay
 # harness (shadow text, delta mirror, per-commit equivalence verification).
-add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/session_replay.c
-                                              support/session_replay.h)
+add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/edit_replay.c
+                                              support/edit_replay.h)
 target_include_directories(
     markdown-core-test-support
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
@@ -440,15 +440,15 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_long_backslash
     formula_dollar_backtick_openers
     formula_backslash_openers
-    session_emph_openers
-    session_backtick_runs
-    session_quotes_deep
-    session_list_spine
-    session_reference_collisions
-    session_fence_gate
-    session_lazy_wall
-    session_crlf_seam
-    session_footnote_labels)
+    edit_emph_openers
+    edit_backtick_runs
+    edit_quotes_deep
+    edit_list_spine
+    edit_reference_collisions
+    edit_fence_gate
+    edit_lazy_wall
+    edit_crlf_seam
+    edit_footnote_labels)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()

@@ -23,22 +23,11 @@
  * any number of threads are safe by construction; no warmup, external lock,
  * or explicit init call is required.
  *
- * Distinct documents and sessions: parse, traversal, dump, and free of
- * *different* documents, and every operation on *different* sessions, may
- * run fully concurrently. A parse call or session shares no mutable state
- * with any other.
+ * Distinct documents: parse, traversal, dump, edit, and free of *different*
+ * documents may run fully concurrently. No two documents share mutable state.
  *
- * A single session: calls on one session must be externally synchronized
- * (one writer at a time). Between mutating calls (edit, commit, free), the
- * session's document view, its nodes, and lookups are safe for concurrent
- * reads from any thread. The document view borrowed from a session is valid
- * until the session's next commit or free: edits only advance the stored
- * text and never touch the committed tree, so the borrowed view (and node
- * scopes resolved through it) stays valid across
- * markdown_core_document_splice. Deltas and ordered delta-entry tables are
- * caller-owned plain data: they survive the session and are released with
- * markdown_core_delta_free and markdown_core_delta_entries_free,
- * respectively.
+ * Deltas are caller-owned plain data: they outlive both documents they
+ * describe and are released with markdown_core_delta_free.
  *
  * A single document: after markdown_core_document_new returns, the document
  * and its nodes are logically immutable through this API. Concurrent
@@ -83,7 +72,7 @@ typedef struct markdown_core_node markdown_core_node;
 typedef struct markdown_core_error markdown_core_error;
 typedef struct markdown_core_delta markdown_core_delta;
 
-/** What a commit returns: the successor document and the delta between the
+/** What an edit returns: the successor document and the delta between the
  * document it was called on and that successor. A value, not a handle —
  * release the two members, there is nothing else to free. */
 typedef struct markdown_core_commit {
@@ -91,9 +80,9 @@ typedef struct markdown_core_commit {
     markdown_core_delta *delta;
 } markdown_core_commit;
 
-/** Session-assigned node identity: unique within a session, never reused,
- * stable across incremental commits while the node remains the same kind of
- * thing at the same place. 0 is never a valid id. */
+/** Node identity, assigned once per lineage and never reused. Stable across
+ * edits while the node remains the same kind of thing at the same place. 0 is
+ * never a valid id. */
 typedef uint64_t markdown_core_node_id;
 
 /** Bytes and a length. Every string this API HANDS OUT borrows from the
@@ -420,56 +409,23 @@ MARKDOWN_CORE_API bool markdown_core_document_dump(
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /*
- * Incremental sessions
- * ====================
+ * Editing
+ * =======
  *
- * A session owns one Markdown text and its living AST. Apply edits (append
- * is an edit at end-of-text), then commit: the session reparses, reuses node
- * identity wherever the content is unchanged, and reports exactly what
- * changed. After any sequence of edits and commits the document is
- * semantically identical to a one-shot parse of the same final text.
+ * A document owns one Markdown text and its AST. `edit` hands it new text and
+ * returns the document that text describes, together with what changed. There
+ * is nothing pending and nothing to commit.
  *
- * The stored text is the raw bytes exactly as edited. UTF-8 is ASSUMED AND
- * NEVER VALIDATED: nothing is scanned, nothing is replaced, and nothing is
- * rejected, exactly as markdown_core_document_new does. NUL is replaced
- * with U+FFFD during parsing because CommonMark requires it of canonical
- * text, and nothing else is. A streamed append may therefore complete a
- * multi-byte character whose first bytes arrived earlier.
+ * The text is the raw bytes exactly as given. UTF-8 is ASSUMED AND NEVER
+ * VALIDATED: nothing is scanned, nothing is replaced, and nothing is rejected.
+ * NUL is replaced with U+FFFD during parsing because CommonMark requires it of
+ * canonical text, and nothing else is.
  *
- * A commit that fails reports the error and ENDS the document it was called
- * on: it must not be queried, walked, or committed again, only released. The
- * caller holds the text, so recovery is building a document from it again.
- * There is no restoration and no retry.
+ * An edit that fails reports the error and ENDS the document it was called on:
+ * it must not be queried, walked, or edited again. The caller holds the text,
+ * so recovery is building a document from it again. There is no restoration
+ * and no retry.
  */
-
-/** Opens an empty session at revision 0. `options == NULL` selects the
- * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_open(
-    const markdown_core_parse_options *options,
-    markdown_core_error **error
-);
-MARKDOWN_CORE_API void markdown_core_document_release(markdown_core_document *session);
-
-/** Replaces bytes [byte_start, byte_end) of the stored text with
- * `bytes[0..length)`. Append passes byte_start == byte_end ==
- * markdown_core_document_length. Edits only update the text; parsing happens
- * at commit. */
-MARKDOWN_CORE_API bool markdown_core_document_splice(
-    markdown_core_document *session,
-    size_t byte_start,
-    size_t byte_end,
-    const uint8_t *bytes,
-    size_t length,
-    markdown_core_error **error
-);
-
-/** Reparses the pending text and advances the revision. When `changes` is
- * non-NULL it receives a caller-owned delta (release with
- * markdown_core_delta_free). */
-/** `Document(markdown, options)`. Options are fixed for the document's whole
- * lineage; a commit takes text and not options. */
-/** TRANSITIONAL, test-only; goes with markdown_core_document_splice. */
-MARKDOWN_CORE_API const uint8_t *markdown_core_document_text(const markdown_core_document *document, size_t *length);
 
 /**
  * `Document(markdown, options)` — the one entry point. `options == NULL`
@@ -497,16 +453,17 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
     markdown_core_error **error
 );
 
-MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *session);
+/** How many edits this document has survived; a fresh parse is zero. */
+MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
-/** Per-session random salt; nodes from different sessions never share
- * identity even when ids collide numerically. */
-MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *session);
-MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *session);
+/** Per-lineage random salt; nodes from different parses never share identity
+ * even when ids collide numerically. An edit inherits its predecessor's. */
+MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *document);
+MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *document);
 
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any
- * descendant last changed — two nodes of one session with equal (id,
+ * descendant last changed — two nodes of one lineage with equal (id,
  * revision) have identical content. A pure positional shift never changes a
  * node's revision. */
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);

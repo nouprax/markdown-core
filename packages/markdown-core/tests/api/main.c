@@ -1826,7 +1826,7 @@ static void session_streaming_equivalence(test_batch_runner *runner) {
         &error
     );
     char *expected = reference ? dump_document_cstr(reference) : NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     size_t length = strlen(SESSION_RICH_SOURCE);
     size_t offset;
@@ -1864,7 +1864,7 @@ cleanup:
     free(expected);
     markdown_core_document_free(reference);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -1936,7 +1936,7 @@ static void subtree_hash_completeness(test_batch_runner *runner) {
  * COUNT cannot distinguish them -- only their bytes can. */
 static void session_head_insertion_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     static const char body[] = "alpha\n\nbravo\n\ncharlie\n";
     static const char head[] = "zulu\n\n";
@@ -1988,13 +1988,13 @@ static void session_head_insertion_id_stability(test_batch_runner *runner) {
     }
 
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
 static void session_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     const char *part_one = "# Title\n\nHello ";
     const char *part_two = "world **bold**";
@@ -2074,7 +2074,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2092,7 +2092,7 @@ static void session_lineage_entropy(test_batch_runner *runner) {
     int j;
 
     for (i = 0; i < SESSIONS; i++) {
-        markdown_core_document *session = markdown_core_document_open(NULL, &error);
+        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
         mc_text mctext = {NULL, 0, 0};
         OK(runner, session != NULL, "entropy session opens");
         if (!session) {
@@ -2101,7 +2101,7 @@ static void session_lineage_entropy(test_batch_runner *runner) {
         }
         lineages[i] = markdown_core_document_lineage(session);
         mc_text_free(&mctext);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
     }
     for (i = 0; i < SESSIONS; i++) {
         nonzero = nonzero && lineages[i] != 0;
@@ -2116,7 +2116,7 @@ static void session_lineage_entropy(test_batch_runner *runner) {
 
 static void session_suffix_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     const char *source = "para one\n\npara two\n\npara three\n";
     markdown_core_node_id ids[3];
@@ -2163,7 +2163,7 @@ static void session_suffix_id_stability(test_batch_runner *runner) {
 
     mc_text_free(&mctext);
 
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2174,7 +2174,7 @@ static void session_utf8_split_append(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *reference = markdown_core_document_new(mc_sv(euro_doc, sizeof(euro_doc)), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
 
     OK(runner, session != NULL && expected != NULL, "utf8-split session and reference exist");
@@ -2195,7 +2195,7 @@ static void session_utf8_split_append(test_batch_runner *runner) {
     free(expected);
     markdown_core_document_free(reference);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2249,7 +2249,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
     static const uint8_t replacement = 'd';
     static const uint8_t reshaped[] = ":x[*adc*]\n";
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     markdown_core_delta *changes = NULL;
     markdown_core_node_id root_id = 0;
@@ -2307,7 +2307,7 @@ static void session_directive_label_delta_classification(test_batch_runner *runn
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2316,7 +2316,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     static const uint8_t block_source[] = "::x{}\n";
     static const uint8_t empty_label[] = "[]";
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     markdown_core_delta *changes = NULL;
     markdown_core_node_id directive_id = 0;
@@ -2374,8 +2374,8 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
     markdown_core_delta_free(changes);
     changes = NULL;
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
-    session = markdown_core_document_open(NULL, &error);
+    markdown_core_document_free(session);
+    session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
 
     OK(runner, session != NULL, "block empty-label delta session opens");
     if (!session) {
@@ -2428,7 +2428,7 @@ static void session_directive_empty_label_delta_classification(test_batch_runner
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
@@ -2442,7 +2442,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
     static const uint8_t replacement[] = "/b";
     static const uint8_t prefix[] = "Head\n\n";
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     markdown_core_delta *changes = NULL;
     markdown_core_node_id directive_id = 0;
@@ -2463,7 +2463,7 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
     OK(runner, session != NULL && destination_at != NULL, "block-label lookup session opens");
     if (!session || !destination_at) {
         mc_text_free(&mctext);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
         markdown_core_error_free(error);
         return;
     }
@@ -2641,13 +2641,13 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
 
     markdown_core_delta_free(changes);
     mc_text_free(&mctext);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 
 static void session_scope_shift_invariance(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
     const char *source = "# Title\n\nHello *world*\n";
     const char *prefix = "Zero\n\n";
@@ -2724,7 +2724,7 @@ static void session_scope_shift_invariance(test_batch_runner *runner) {
 
     mc_text_free(&mctext);
 
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 

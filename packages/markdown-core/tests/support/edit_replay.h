@@ -1,5 +1,5 @@
-#ifndef MARKDOWN_CORE_SESSION_REPLAY_H
-#define MARKDOWN_CORE_SESSION_REPLAY_H
+#ifndef MARKDOWN_CORE_EDIT_REPLAY_H
+#define MARKDOWN_CORE_EDIT_REPLAY_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -10,71 +10,70 @@
 extern "C" {
 #endif
 
-/* Shared session replay harness: drives an incremental session next to a
- * shadow copy of the text and verifies, on every commit, that the session
- * dump is byte-identical to a one-shot parse of the shadow bytes, that the
- * delta stream accounts for every observable node change (an id->revision
- * mirror maintained purely from deltas is compared against a fresh walk),
- * and — with footnotes enabled — that numbering, resolution, and
- * back-reference queries equal a fresh session's on the same text.
+/* Shared edit replay harness: drives a document through successive edits
+ * next to a shadow copy of the text and verifies, on every edit, that the
+ * edited document dumps byte-identically to a one-shot parse of the shadow
+ * bytes, and that the delta accounts for every observable node change (an
+ * id->revision mirror maintained purely from deltas is compared against a
+ * fresh walk).
  *
  * The equivalence runner and the fuzzing entry points share this harness so
  * every driver checks the same invariants: failures are routed through the
- * report callback, and each sr_* call returns 0 on success or -1 after
+ * report callback, and each er_* call returns 0 on success or -1 after
  * reporting. */
 
-typedef void (*sr_report_fn)(void *user, const char *context, const char *message);
+typedef void (*er_report_fn)(void *user, const char *context, const char *message);
 
-typedef struct sr_text {
+typedef struct er_text {
     uint8_t *bytes;
     size_t length;
     size_t capacity;
-} sr_text;
+} er_text;
 
-typedef struct sr_mirror_entry {
+typedef struct er_mirror_entry {
     markdown_core_node_id id;
     uint64_t revision;
-} sr_mirror_entry;
+} er_mirror_entry;
 
-typedef struct sr_mirror {
-    sr_mirror_entry *entries;
+typedef struct er_mirror {
+    er_mirror_entry *entries;
     size_t count;
     size_t capacity;
-} sr_mirror;
+} er_mirror;
 
-typedef struct sr_replay {
+typedef struct er_replay {
     const char *context;
-    markdown_core_document *session;
-    sr_text shadow;
-    sr_mirror mirror;
+    markdown_core_document *document;
+    er_text shadow;
+    er_mirror mirror;
     const markdown_core_parse_options *options;
-    sr_report_fn report;
+    er_report_fn report;
     void *user;
-} sr_replay;
+} er_replay;
 
-/* Opens a session and seeds the mirror with the revision-0 empty root.
- * `options` must stay valid until sr_replay_close. */
-int sr_replay_open(
-    sr_replay *replay,
+/* Parses the empty document and seeds the mirror with its revision-0 root.
+ * `options` must stay valid until er_replay_close. */
+int er_replay_open(
+    er_replay *replay,
     const char *context,
     const markdown_core_parse_options *options,
-    sr_report_fn report,
+    er_report_fn report,
     void *user
 );
 
-void sr_replay_close(sr_replay *replay);
+void er_replay_close(er_replay *replay);
 
-/* Applies one splice to the session and the shadow text.  The shadow buffer
+/* Applies one splice to the shadow text and hands the whole of it over.  The shadow buffer
  * is always allocated (even while empty) and NUL-terminated one byte past
  * `length`, so scripted drivers can locate edit positions with strstr. */
-int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length);
+int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length);
 
-/* Commits the session, folds the delta into the mirror, verifies the mirror
- * against a fresh walk, and compares the session dump with a one-shot parse
+/* Commits the document, folds the delta into the mirror, verifies the mirror
+ * against a fresh walk, and compares the document dump with a one-shot parse
  * of the shadow text. */
-int sr_replay_commit(sr_replay *replay);
+int er_replay_commit(er_replay *replay);
 
-/* Deterministic edit-script interpreter: replays `script` as a session edit
+/* Deterministic edit-script interpreter: replays `script` as a document edit
  * sequence with full per-commit verification, then commits once more at the
  * end.  Every byte is meaningful, so a coverage-guided fuzzer can drive it
  * directly.  The format is:
@@ -92,7 +91,7 @@ int sr_replay_commit(sr_replay *replay);
  *   zeroes.
  *
  * Returns 0 when every commit verified, -1 after reporting a failure. */
-int sr_script_replay(const uint8_t *script, size_t length, const char *context, sr_report_fn report, void *user);
+int er_script_replay(const uint8_t *script, size_t length, const char *context, er_report_fn report, void *user);
 
 #ifdef __cplusplus
 }

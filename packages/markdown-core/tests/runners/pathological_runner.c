@@ -12,12 +12,12 @@
  * equivalents of the retired HTML-output assertions.  Traversal is
  * iterative, so 50000-deep trees cannot overflow the stack.
  *
- * The session_* cases replay adversarial inputs through incremental
- * sessions via the shared replay harness: every commit checks the session
+ * The edit_* cases replay adversarial inputs through successive edits via
+ * the shared replay harness: every edit checks the edited document
  * dump against a one-shot parse of the same text, folds the delta stream
  * into an id->revision mirror, and (with footnotes enabled) compares
- * footnote queries against a fresh session.  The canonical dump is
- * iterative like every other traversal; session-case depths are bounded
+ * dump against a one-shot parse of the same text.  The canonical dump is
+ * iterative like every other traversal; edit-case depths are bounded
  * only by the dump volume the per-commit verification materializes (dump
  * bytes grow quadratically with depth), never by a stack budget.
  */
@@ -25,7 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "session_replay.h"
+#include "edit_replay.h"
 #include "test_support.h"
 
 typedef struct pc_context {
@@ -835,7 +835,7 @@ static int case_formula_backslash_openers(pc_context *context) {
 
 /* Session pathological cases ------------------------------------------------
  *
- * Adversarial structures replayed through incremental sessions.  The shared
+ * Adversarial structures replayed through successive edits.  The shared
  * harness verifies every commit in full (dump equality against a one-shot
  * parse, delta accounting, footnote-query equivalence), so these cases only
  * add the structural probes that document each attack; the CTest TIMEOUT
@@ -843,31 +843,31 @@ static int case_formula_backslash_openers(pc_context *context) {
  * stays correct.
  */
 
-static int ps_failures;
+static int pe_failures;
 
-static void ps_report(void *user, const char *context, const char *message) {
+static void pe_report(void *user, const char *context, const char *message) {
     (void)user;
     fprintf(stderr, "FAILED: %s: %s\n", context, message);
-    ps_failures++;
+    pe_failures++;
 }
 
-static int ps_open(sr_replay *replay, const char *context, const markdown_core_parse_options *options) {
-    return sr_replay_open(replay, context, options, ps_report, NULL);
+static int pe_open(er_replay *replay, const char *context, const markdown_core_parse_options *options) {
+    return er_replay_open(replay, context, options, pe_report, NULL);
 }
 
 /* One verified commit around a single splice; NULL `text` deletes. */
-static int ps_splice(sr_replay *replay, size_t start, size_t end, const char *text) {
-    if (sr_replay_edit(replay, start, end, (const uint8_t *)text, text ? strlen(text) : 0) != 0) {
+static int pe_splice(er_replay *replay, size_t start, size_t end, const char *text) {
+    if (er_replay_edit(replay, start, end, (const uint8_t *)text, text ? strlen(text) : 0) != 0) {
         return -1;
     }
-    return sr_replay_commit(replay);
+    return er_replay_commit(replay);
 }
 
-static int ps_expect_kind(const sr_replay *replay, markdown_core_node_kind kind, size_t expected, const char *what) {
+static int pe_expect_kind(const er_replay *replay, markdown_core_node_kind kind, size_t expected, const char *what) {
     size_t counts[TS_KIND_COUNT];
-    const markdown_core_document *document = replay->session;
+    const markdown_core_document *document = replay->document;
     if (!document || ts_ast_count_kinds(markdown_core_document_root(document), counts) != 0) {
-        fprintf(stderr, "cannot count node kinds in the session document\n");
+        fprintf(stderr, "cannot count node kinds in the edited document\n");
         return -1;
     }
     if ((size_t)kind >= TS_KIND_COUNT) {
@@ -875,14 +875,14 @@ static int ps_expect_kind(const sr_replay *replay, markdown_core_node_kind kind,
         return -1;
     }
     if (counts[kind] != expected) {
-        fprintf(stderr, "expected %zu %s node(s) in the session document, found %zu\n", expected, what, counts[kind]);
+        fprintf(stderr, "expected %zu %s node(s) in the edited document, found %zu\n", expected, what, counts[kind]);
         return -1;
     }
     return 0;
 }
 
 /* Locates `pattern` in the shadow text (NUL-terminated by the harness). */
-static size_t ps_find(const sr_replay *replay, const char *pattern) {
+static size_t pe_find(const er_replay *replay, const char *pattern) {
     const char *hit = strstr((const char *)replay->shadow.bytes, pattern);
     if (!hit) {
         fprintf(stderr, "pattern '%s' not found in the shadow text\n", pattern);
@@ -895,9 +895,9 @@ static size_t ps_find(const sr_replay *replay, const char *pattern) {
  * whole inline run, and the delimiter stack must not leak state between
  * commits.  The parity edit toggles one closer mid-paragraph, matching and
  * unmatching a pair against 16384 candidate openers each round. */
-static int case_session_emph_openers(pc_context *context) {
+static int case_edit_emph_openers(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     size_t closer;
     int round;
     int result = -1;
@@ -906,11 +906,11 @@ static int case_session_emph_openers(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_emph_openers", &options) != 0) {
+    if (pe_open(&replay, "edit_emph_openers", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
         goto done;
     }
     /* After the 'a' of a middle unit, so the inserted "_" right-flanks. */
@@ -918,25 +918,25 @@ static int case_session_emph_openers(pc_context *context) {
     closer -= closer % 3;
     closer += 2;
     for (round = 0; round < 3; round++) {
-        if (ps_splice(&replay, closer, closer, "_") != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 1, "Emphasis") != 0 ||
-            ps_splice(&replay, closer, closer + 1, NULL) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
+        if (pe_splice(&replay, closer, closer, "_") != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 1, "Emphasis") != 0 ||
+            pe_splice(&replay, closer, closer + 1, NULL) != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
             goto done;
         }
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
 /* Backtick runs of every length below 1200 (~700 KiB) never close a span;
  * toggling a lone backtick at the front closes exactly one and reflows the
  * candidate pairing across every run behind it on each commit. */
-static int case_session_backtick_runs(pc_context *context) {
+static int case_edit_backtick_runs(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     int round;
     int result = -1;
 
@@ -944,22 +944,22 @@ static int case_session_backtick_runs(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_backtick_runs", &options) != 0) {
+    if (pe_open(&replay, "edit_backtick_runs", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
         goto done;
     }
     for (round = 0; round < 2; round++) {
-        if (ps_splice(&replay, 0, 0, "`") != 0 || ps_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 1, "Code") != 0 ||
-            ps_splice(&replay, 0, 1, NULL) != 0 || ps_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
+        if (pe_splice(&replay, 0, 0, "`") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 1, "Code") != 0 ||
+            pe_splice(&replay, 0, 1, NULL) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
             goto done;
         }
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -972,52 +972,52 @@ done:
  * The open chain spans the whole document on every commit.  The innermost
  * text edit rides the full chain; the mid-chain marker flip re-kinds level
  * 64 and everything below it into a list and back. */
-static int case_session_quotes_deep(pc_context *context) {
+static int case_edit_quotes_deep(pc_context *context) {
     enum { QUOTE_DEPTH = 4096 };
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     int result = -1;
 
     if (pc_build(context, NULL, "> ", QUOTE_DEPTH, "a") != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_quotes_deep", &options) != 0) {
+    if (pe_open(&replay, "edit_quotes_deep", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0) {
         goto done;
     }
     /* Innermost text, under QUOTE_DEPTH open quotes. */
-    if (ps_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "b") != 0 ||
-        ps_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "a") != 0) {
+    if (pe_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "b") != 0 ||
+        pe_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "a") != 0) {
         goto done;
     }
     /* Level 64's marker becomes a list bullet (list markers only open below
      * the engine's MAX_LIST_DEPTH, so the flip sits shallow): 64 quotes
      * above, one list item holding the remaining quotes below. */
-    if (ps_splice(&replay, 64 * 2, 64 * 2 + 2, "- ") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH - 1, "BlockQuote") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 1, "List") != 0) {
+    if (pe_splice(&replay, 64 * 2, 64 * 2 + 2, "- ") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH - 1, "BlockQuote") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 1, "List") != 0) {
         goto done;
     }
-    if (ps_splice(&replay, 64 * 2, 64 * 2 + 2, "> ") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 0, "List") != 0) {
+    if (pe_splice(&replay, 64 * 2, 64 * 2 + 2, "> ") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 0, "List") != 0) {
         goto done;
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
 /* 512-deep list nesting (~260 KiB of indentation): dedenting one middle
  * level re-parents every deeper level; re-indenting restores the spine. */
-static int case_session_list_spine(pc_context *context) {
+static int case_edit_list_spine(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     size_t line_256 = 256 * 256 + 3 * 256; /* line d starts at d*d + 3*d */
     int result = -1;
 
@@ -1025,33 +1025,33 @@ static int case_session_list_spine(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_list_spine", &options) != 0) {
+    if (pe_open(&replay, "edit_list_spine", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
         goto done;
     }
     /* Innermost item text (the input ends "* a\n"). */
-    if (ps_splice(&replay, context->input_length - 2, context->input_length - 1, "b") != 0 ||
-        ps_splice(&replay, context->input_length - 2, context->input_length - 1, "a") != 0) {
+    if (pe_splice(&replay, context->input_length - 2, context->input_length - 1, "b") != 0 ||
+        pe_splice(&replay, context->input_length - 2, context->input_length - 1, "a") != 0) {
         goto done;
     }
     /* Dedent level 256: its item joins level 255's list and the deeper
      * spine re-parents beneath it. */
-    if (ps_splice(&replay, line_256, line_256 + 2, NULL) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 511, "List") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
+    if (pe_splice(&replay, line_256, line_256 + 2, NULL) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 511, "List") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
         goto done;
     }
-    if (ps_splice(&replay, line_256, line_256, "  ") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
+    if (pe_splice(&replay, line_256, line_256, "  ") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
         goto done;
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1061,10 +1061,10 @@ done:
  * across the whole document in one commit, and deleting it collapses them
  * back to literal text — maximal cross-document re-resolution against a
  * collision-saturated reference map. */
-static int case_session_reference_collisions(pc_context *context) {
+static int case_edit_reference_collisions(pc_context *context) {
     enum { COLLISIONS = 2048 };
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     char bad_key[32] = "";
     char definition[64];
     size_t definition_length;
@@ -1077,33 +1077,33 @@ static int case_session_reference_collisions(pc_context *context) {
     snprintf(definition, sizeof(definition), "[%s]: /t\n", bad_key);
     definition_length = strlen(definition);
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_reference_collisions", &options) != 0) {
+    if (pe_open(&replay, "edit_reference_collisions", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
         goto done;
     }
     for (round = 0; round < 2; round++) {
-        if (ps_splice(&replay, replay.shadow.length, replay.shadow.length, definition) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0 ||
-            ps_splice(&replay, replay.shadow.length - definition_length, replay.shadow.length, NULL) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
+        if (pe_splice(&replay, replay.shadow.length, replay.shadow.length, definition) != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0 ||
+            pe_splice(&replay, replay.shadow.length - definition_length, replay.shadow.length, NULL) != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
             goto done;
         }
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
 /* 4096 one-line paragraphs behind a toggling unclosed fence at the head:
  * each commit re-kinds the entire suffix, so adoption, the graveyard, and
  * the delta stream churn the whole tree twice per round. */
-static int case_session_fence_gate(pc_context *context) {
+static int case_edit_fence_gate(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     int round;
     int result = -1;
 
@@ -1111,25 +1111,25 @@ static int case_session_fence_gate(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_fence_gate", &options) != 0) {
+    if (pe_open(&replay, "edit_fence_gate", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
         goto done;
     }
     for (round = 0; round < 2; round++) {
-        if (ps_splice(&replay, 0, 0, "````\n") != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE_BLOCK, 1, "CodeBlock") != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 0, "Paragraph") != 0 ||
-            ps_splice(&replay, 0, 5, NULL) != 0 ||
-            ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+        if (pe_splice(&replay, 0, 0, "````\n") != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE_BLOCK, 1, "CodeBlock") != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 0, "Paragraph") != 0 ||
+            pe_splice(&replay, 0, 5, NULL) != 0 ||
+            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
             goto done;
         }
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1137,9 +1137,9 @@ done:
  * is a clean restart anchor, so every edit rides the fallback path.  The
  * mid-wall blank line splits the paragraph and evicts the tail from the
  * quote; deleting it knits the wall back together. */
-static int case_session_lazy_wall(pc_context *context) {
+static int case_edit_lazy_wall(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     size_t middle = 4 + 2 * 2048; /* a line boundary in the wall */
     int result = -1;
 
@@ -1147,31 +1147,31 @@ static int case_session_lazy_wall(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_lazy_wall", &options) != 0) {
+    if (pe_open(&replay, "edit_lazy_wall", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
     /* Tail edits: the furthest point from the only clean start. */
-    if (ps_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "c") != 0 ||
-        ps_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "b") != 0) {
+    if (pe_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "c") != 0 ||
+        pe_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "b") != 0) {
         goto done;
     }
-    if (ps_splice(&replay, middle, middle, "\n") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 2, "Paragraph") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0) {
+    if (pe_splice(&replay, middle, middle, "\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 2, "Paragraph") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0) {
         goto done;
     }
-    if (ps_splice(&replay, middle, middle + 1, NULL) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
+    if (pe_splice(&replay, middle, middle + 1, NULL) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1179,9 +1179,9 @@ done:
  * a middle "\r", splicing a byte between "\r" and "\n" on both a text line
  * and a blank line, and restoring each shape exercises the restart
  * planner's line-shape re-checks against fused and unfused endings. */
-static int case_session_crlf_seam(pc_context *context) {
+static int case_edit_crlf_seam(pc_context *context) {
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     size_t text_cr = 2048 * 6 + 2;  /* the "\r" ending a middle "aa" line */
     size_t blank_cr = 2048 * 6 + 4; /* the "\r" of the following blank */
     int result = -1;
@@ -1190,41 +1190,41 @@ static int case_session_crlf_seam(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (ps_open(&replay, "session_crlf_seam", &options) != 0) {
+    if (pe_open(&replay, "edit_crlf_seam", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
         goto done;
     }
     /* The text line's ending loses and regains its "\r". */
-    if (ps_splice(&replay, text_cr, text_cr + 1, NULL) != 0 || ps_splice(&replay, text_cr, text_cr, "\r") != 0) {
+    if (pe_splice(&replay, text_cr, text_cr + 1, NULL) != 0 || pe_splice(&replay, text_cr, text_cr, "\r") != 0) {
         goto done;
     }
     /* A byte lands between "\r" and "\n" of the text line: the "\r" becomes
      * its own ending and "x" its own line, still one paragraph. */
-    if (ps_splice(&replay, text_cr + 1, text_cr + 1, "x") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
-        ps_splice(&replay, text_cr + 1, text_cr + 2, NULL) != 0) {
+    if (pe_splice(&replay, text_cr + 1, text_cr + 1, "x") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
+        pe_splice(&replay, text_cr + 1, text_cr + 2, NULL) != 0) {
         goto done;
     }
     /* The same splice on the blank line leaves the blank alive as a lone
      * "\r" line while "x" fuses into the next paragraph. */
-    if (ps_splice(&replay, blank_cr + 1, blank_cr + 1, "x") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
-        ps_splice(&replay, blank_cr + 1, blank_cr + 2, NULL) != 0) {
+    if (pe_splice(&replay, blank_cr + 1, blank_cr + 1, "x") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
+        pe_splice(&replay, blank_cr + 1, blank_cr + 2, NULL) != 0) {
         goto done;
     }
     /* Deleting the blank's "\r\n" outright fuses the seam's paragraphs. */
-    if (ps_splice(&replay, blank_cr, blank_cr + 2, NULL) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4095, "Paragraph") != 0 ||
-        ps_splice(&replay, blank_cr, blank_cr, "\r\n") != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+    if (pe_splice(&replay, blank_cr, blank_cr + 2, NULL) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4095, "Paragraph") != 0 ||
+        pe_splice(&replay, blank_cr, blank_cr, "\r\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
         goto done;
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1233,10 +1233,10 @@ done:
  * (the timeout bounds a per-site refold), and the label flips on one
  * definition and one reference churn the interning table and cascade the
  * ordinals.  Footnote-query equivalence runs on every commit. */
-static int case_session_footnote_labels(pc_context *context) {
+static int case_edit_footnote_labels(pc_context *context) {
     enum { DEFINITIONS = 1024, REFERENCES = 256 };
     markdown_core_parse_options options;
-    sr_replay replay;
+    er_replay replay;
     size_t position;
     size_t i;
     int result = -1;
@@ -1265,45 +1265,45 @@ static int case_session_footnote_labels(pc_context *context) {
     }
     markdown_core_parse_options_init(&options);
     options.footnotes = true;
-    if (ps_open(&replay, "session_footnote_labels", &options) != 0) {
+    if (pe_open(&replay, "edit_footnote_labels", &options) != 0) {
         return -1;
     }
-    if (ps_splice(&replay, 0, 0, context->input) != 0 ||
-        ps_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES, "FootnoteReference") != 0) {
+    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES, "FootnoteReference") != 0) {
         goto done;
     }
     /* Site-free body edit: no label may be refolded. */
-    position = ps_find(&replay, "plain");
-    if (position == (size_t)-1 || ps_splice(&replay, position + 4, position + 5, "e") != 0 ||
-        ps_splice(&replay, position + 4, position + 5, "n") != 0) {
+    position = pe_find(&replay, "plain");
+    if (position == (size_t)-1 || pe_splice(&replay, position + 4, position + 5, "e") != 0 ||
+        pe_splice(&replay, position + 4, position + 5, "n") != 0) {
         goto done;
     }
     /* Definition label flip: its references unresolve, a new label is
      * interned, and the ordinals cascade. */
-    position = ps_find(
+    position = pe_find(
         &replay,
         "[^\xC3\x80\xD0\x91"
         "0004]:"
     );
-    if (position == (size_t)-1 || ps_splice(&replay, position + 6, position + 7, "x") != 0 ||
-        ps_splice(&replay, position + 6, position + 7, "0") != 0) {
+    if (position == (size_t)-1 || pe_splice(&replay, position + 6, position + 7, "x") != 0 ||
+        pe_splice(&replay, position + 6, position + 7, "0") != 0) {
         goto done;
     }
     /* Reference label flip: the head paragraph precedes every definition,
      * so the first match is the reference; it retargets to another defined
      * label and back. */
-    position = ps_find(
+    position = pe_find(
         &replay,
         "[^\xC3\x80\xD0\x91"
         "0004]"
     );
-    if (position == (size_t)-1 || ps_splice(&replay, position + 6, position + 10, "0008") != 0 ||
-        ps_splice(&replay, position + 6, position + 10, "0004") != 0) {
+    if (position == (size_t)-1 || pe_splice(&replay, position + 6, position + 10, "0008") != 0 ||
+        pe_splice(&replay, position + 6, position + 10, "0004") != 0) {
         goto done;
     }
-    result = ps_failures ? -1 : 0;
+    result = pe_failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1346,15 +1346,15 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_long_backslash", case_formula_long_backslash},
     {"formula_dollar_backtick_openers", case_formula_dollar_backtick},
     {"formula_backslash_openers", case_formula_backslash_openers},
-    {"session_emph_openers", case_session_emph_openers},
-    {"session_backtick_runs", case_session_backtick_runs},
-    {"session_quotes_deep", case_session_quotes_deep},
-    {"session_list_spine", case_session_list_spine},
-    {"session_reference_collisions", case_session_reference_collisions},
-    {"session_fence_gate", case_session_fence_gate},
-    {"session_lazy_wall", case_session_lazy_wall},
-    {"session_crlf_seam", case_session_crlf_seam},
-    {"session_footnote_labels", case_session_footnote_labels},
+    {"edit_emph_openers", case_edit_emph_openers},
+    {"edit_backtick_runs", case_edit_backtick_runs},
+    {"edit_quotes_deep", case_edit_quotes_deep},
+    {"edit_list_spine", case_edit_list_spine},
+    {"edit_reference_collisions", case_edit_reference_collisions},
+    {"edit_fence_gate", case_edit_fence_gate},
+    {"edit_lazy_wall", case_edit_lazy_wall},
+    {"edit_crlf_seam", case_edit_crlf_seam},
+    {"edit_footnote_labels", case_edit_footnote_labels},
 };
 
 int main(int argc, char **argv) {

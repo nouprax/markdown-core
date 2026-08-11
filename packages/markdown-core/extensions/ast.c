@@ -79,12 +79,6 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->embeds = true;
 }
 
-void markdown_core_document_free(markdown_core_document *document) {
-    // One owner, one teardown. This used to free a detached root and a small
-    // wrapper; the wrapper is gone.
-    markdown_core_document_release(document);
-}
-
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
     return document ? document->root : NULL;
 }

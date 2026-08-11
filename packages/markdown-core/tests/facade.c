@@ -286,7 +286,7 @@ static void check_scope_table(void) {
     error = NULL;
     markdown_core_scope_table_free(NULL);
 
-    session = markdown_core_document_open(NULL, &error);
+    session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     check(session != NULL && error == NULL, "scope table session opens");
     if (!session) {
         goto done;
@@ -334,7 +334,7 @@ static void check_scope_table(void) {
     check_scope_rows(markdown_core_document_root(document), entries, count, &index);
     check(index == count, "scope table has no hidden or duplicate rows");
     first = entries[0];
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     session = NULL;
     check(
         entries[0].id == first.id && entries[0].revision == first.revision &&
@@ -344,7 +344,7 @@ static void check_scope_table(void) {
 
 done:
     markdown_core_scope_table_free(entries);
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     markdown_core_error_free(error);
 }
 

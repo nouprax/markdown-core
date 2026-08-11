@@ -4,7 +4,7 @@
  * read-only facade: parse, traverse every node and accessor, dump twice
  * (checking dump determinism), and free.  Seeded edit scripts additionally
  * drive incremental sessions through the shared replay harness
- * (support/session_replay.h), so every commit is checked against a one-shot
+ * (support/edit_replay.h), so every commit is checked against a one-shot
  * parse and the delta-mirror invariants.  No renderer is involved and no
  * network or random device is read; the same inputs are generated on every
  * run.  Long-running fuzz campaigns stay in the explicit AFL/libFuzzer
@@ -19,7 +19,7 @@
 
 #include <markdown_core.h>
 
-#include "session_replay.h"
+#include "edit_replay.h"
 #include "test_support.h"
 #include "commit_compat.h"
 
@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
                 failures++;
                 continue;
             }
-            if (sr_script_replay(bytes, length, path, script_report, NULL) != 0) {
+            if (er_script_replay(bytes, length, path, script_report, NULL) != 0) {
                 failures++;
             }
             free(bytes);
@@ -243,7 +243,7 @@ int main(int argc, char **argv) {
             break;
         }
         snprintf(label, sizeof(label), "script[%d]", i);
-        if (sr_script_replay(script, length, label, script_report, NULL) != 0) {
+        if (er_script_replay(script, length, label, script_report, NULL) != 0) {
             failures++;
         }
         free(script);

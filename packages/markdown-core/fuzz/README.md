@@ -11,7 +11,7 @@ Apple Xcode toolchain does not ship it).
 
 `fuzz_session_edits` interprets every input as an edit script over an
 incremental session (format documented in
-`tests/support/session_replay.h`: two option bytes, then
+`tests/support/edit_replay.h`: two option bytes, then
 insert/delete/replace/commit operations) and verifies each commit through the
 shared replay harness — the session dump must equal a one-shot parse of the
 same text, the delta stream must account for every observable node change,

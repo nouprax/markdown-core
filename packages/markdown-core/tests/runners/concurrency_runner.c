@@ -24,7 +24,7 @@
 //                first.
 //
 //   sessions     Multi-session isolation: a barrier releases every thread
-//                into its very first markdown_core_document_open
+//                into its very first markdown_core_document_new
 //                simultaneously; each thread owns one session and streams
 //                its own input byte-by-byte with a commit per byte,
 //                repeatedly (clear + restream), asserting per-thread dump
@@ -520,7 +520,7 @@ static THREAD_RETURN session_worker_main(void *argument) {
     barrier_wait(self->start);
 
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(&options, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, &error);
     if (!session) {
         markdown_core_error_free(error);
         self->failed = 1;
@@ -563,7 +563,7 @@ static THREAD_RETURN session_worker_main(void *argument) {
         }
     }
 
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     return THREAD_RESULT;
 }
 
@@ -658,7 +658,7 @@ static int case_sessions(void) {
     // Phase 2: concurrent read-only access to a single session's document
     // between mutating calls.
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_open(NULL, &error);
+    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     if (!session) {
         markdown_core_error_free(error);
         fprintf(stderr, "sessions: shared session open failed\n");
@@ -669,10 +669,10 @@ static int case_sessions(void) {
     size_t reference_length = 0;
     markdown_core_document_free(session);
     session = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
-    if (!session || !mc_commit_compat(&session, NULL, &error) ||
+    if (!session || !mc_edit(&session, mc_sv(shared_input, strlen(shared_input)), NULL, &error) ||
         !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
-        markdown_core_document_release(session);
+        markdown_core_document_free(session);
         fprintf(stderr, "sessions: shared session setup failed\n");
         return 1;
     }
@@ -690,7 +690,7 @@ static int case_sessions(void) {
         if (thread_spawn(&handles[index], session_reader_main, &readers[index])) {
             fprintf(stderr, "sessions: failed to spawn reader %d\n", index);
             markdown_core_dump_free(reference);
-            markdown_core_document_release(session);
+            markdown_core_document_free(session);
             return 1;
         }
     }
@@ -711,7 +711,7 @@ static int case_sessions(void) {
         size_t length = 0;
         markdown_core_document_free(session);
         session = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
-        if (!session || !mc_commit_compat(&session, NULL, &error) ||
+        if (!session || !mc_edit(&session, mc_sv("tail\n\n", 6), NULL, &error) ||
             !markdown_core_document_dump(session, &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "sessions: post-read commit failed\n");
@@ -720,7 +720,7 @@ static int case_sessions(void) {
         markdown_core_dump_free(dump);
     }
 
-    markdown_core_document_release(session);
+    markdown_core_document_free(session);
     return failures ? 1 : 0;
 }
 

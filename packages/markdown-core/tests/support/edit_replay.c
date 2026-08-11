@@ -1,4 +1,4 @@
-#include "session_replay.h"
+#include "edit_replay.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +34,14 @@ static const markdown_core_node *node_by_id(const markdown_core_node *root, mark
     }
 }
 
-static int sr_fail(sr_replay *replay, const char *message) {
+static int er_fail(er_replay *replay, const char *message) {
     replay->report(replay->user, replay->context, message);
     return -1;
 }
 
 /* --- shadow text -------------------------------------------------------- */
 
-static int sr_text_splice(sr_text *text, size_t start, size_t end, const uint8_t *insert, size_t insert_length) {
+static int er_text_splice(er_text *text, size_t start, size_t end, const uint8_t *insert, size_t insert_length) {
     size_t removed = end - start;
     size_t new_length = text->length - removed + insert_length;
     if (new_length + 1 > text->capacity) {
@@ -68,7 +68,7 @@ static int sr_text_splice(sr_text *text, size_t start, size_t end, const uint8_t
 
 /* --- delta mirror ------------------------------------------------------- */
 
-static sr_mirror_entry *sr_mirror_find(sr_mirror *mirror, markdown_core_node_id id) {
+static er_mirror_entry *er_mirror_find(er_mirror *mirror, markdown_core_node_id id) {
     size_t i;
     for (i = 0; i < mirror->count; i++) {
         if (mirror->entries[i].id == id) {
@@ -78,10 +78,10 @@ static sr_mirror_entry *sr_mirror_find(sr_mirror *mirror, markdown_core_node_id 
     return NULL;
 }
 
-static int sr_mirror_insert(sr_mirror *mirror, markdown_core_node_id id, uint64_t revision) {
+static int er_mirror_insert(er_mirror *mirror, markdown_core_node_id id, uint64_t revision) {
     if (mirror->count == mirror->capacity) {
         size_t capacity = mirror->capacity ? mirror->capacity * 2 : 64;
-        sr_mirror_entry *grown = (sr_mirror_entry *)realloc(mirror->entries, capacity * sizeof(*grown));
+        er_mirror_entry *grown = (er_mirror_entry *)realloc(mirror->entries, capacity * sizeof(*grown));
         if (!grown) {
             return -1;
         }
@@ -94,18 +94,18 @@ static int sr_mirror_insert(sr_mirror *mirror, markdown_core_node_id id, uint64_
     return 0;
 }
 
-static void sr_mirror_remove(sr_mirror *mirror, sr_mirror_entry *entry) {
+static void er_mirror_remove(er_mirror *mirror, er_mirror_entry *entry) {
     *entry = mirror->entries[mirror->count - 1];
     mirror->count--;
 }
 
 /* --- replay harness ------------------------------------------------------ */
 
-int sr_replay_open(
-    sr_replay *replay,
+int er_replay_open(
+    er_replay *replay,
     const char *context,
     const markdown_core_parse_options *options,
-    sr_report_fn report,
+    er_report_fn report,
     void *user
 ) {
     markdown_core_error *error = NULL;
@@ -114,31 +114,31 @@ int sr_replay_open(
     replay->options = options;
     replay->report = report;
     replay->user = user;
-    replay->session = markdown_core_document_open(options, &error);
-    if (!replay->session) {
+    replay->document = markdown_core_document_new(mc_sv("", 0), options, &error);
+    if (!replay->document) {
         markdown_core_error_free(error);
-        return sr_fail(replay, "session open failed");
+        return er_fail(replay, "document open failed");
     }
     /* The shadow buffer exists even while empty so scripted drivers can
      * strstr into it before the first edit. */
-    if (sr_text_splice(&replay->shadow, 0, 0, NULL, 0) != 0) {
-        return sr_fail(replay, "shadow allocation failed");
+    if (er_text_splice(&replay->shadow, 0, 0, NULL, 0) != 0) {
+        return er_fail(replay, "shadow allocation failed");
     }
     /* Revision 0 (empty document) seeds the mirror. */
     {
-        const markdown_core_document *document = replay->session;
+        const markdown_core_document *document = replay->document;
         const markdown_core_node *root = markdown_core_document_root(document);
         if (!root ||
-            sr_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
+            er_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
                 0) {
-            return sr_fail(replay, "empty session has no addressable root");
+            return er_fail(replay, "empty document has no addressable root");
         }
     }
     return 0;
 }
 
-void sr_replay_close(sr_replay *replay) {
-    markdown_core_document_release(replay->session);
+void er_replay_close(er_replay *replay) {
+    markdown_core_document_free(replay->document);
     free(replay->shadow.bytes);
     free(replay->mirror.entries);
     memset(replay, 0, sizeof(*replay));
@@ -146,9 +146,9 @@ void sr_replay_close(sr_replay *replay) {
 
 /* The shadow IS the text now. An edit splices the harness's own buffer and
  * nothing else; the document only ever sees whole text, at commit. */
-int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
-    if (sr_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
-        return sr_fail(replay, "shadow splice allocation failed");
+int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
+    if (er_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
+        return er_fail(replay, "shadow splice allocation failed");
     }
     return 0;
 }
@@ -161,7 +161,7 @@ int sr_replay_edit(sr_replay *replay, size_t start, size_t end, const uint8_t *b
  * something the mirror already holds, and arrives before the parent whose
  * child it was; and a surviving node always follows its own children, so a
  * consumer that builds values bottom-up never reaches a parent early. */
-static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
+static int er_apply_delta(er_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
     const markdown_core_diff *diffs = NULL;
     size_t count;
     size_t i;
@@ -171,31 +171,31 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
 
     markdown_core_delta_revisions(changes, &before, &after);
     if (after != expected_after) {
-        return sr_fail(replay, "delta revisions disagree with the session");
+        return er_fail(replay, "delta revisions disagree with the document");
     }
 
     count = markdown_core_delta_diffs(changes, &diffs);
     for (i = 0; i < count; i++) {
         for (k = i + 1; k < count; k++) {
             if (diffs[i].markup == diffs[k].markup) {
-                return sr_fail(replay, "diffs name one node twice");
+                return er_fail(replay, "diffs name one node twice");
             }
         }
     }
 
     for (i = 0; i < count; i++) {
-        sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, diffs[i].markup);
+        er_mirror_entry *entry = er_mirror_find(&replay->mirror, diffs[i].markup);
         if (diffs[i].parts == 0) {
             if (!entry) {
-                return sr_fail(replay, "delta retired an id the mirror never saw");
+                return er_fail(replay, "delta retired an id the mirror never saw");
             }
-            sr_mirror_remove(&replay->mirror, entry);
+            er_mirror_remove(&replay->mirror, entry);
             continue;
         }
         if (entry) {
             entry->revision = after;
-        } else if (sr_mirror_insert(&replay->mirror, diffs[i].markup, after) != 0) {
-            return sr_fail(replay, "mirror allocation failed");
+        } else if (er_mirror_insert(&replay->mirror, diffs[i].markup, after) != 0) {
+            return er_fail(replay, "mirror allocation failed");
         }
     }
 
@@ -209,9 +209,9 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
         if (diffs[i].parts == 0) {
             continue;
         }
-        node = node_by_id(markdown_core_document_root(replay->session), diffs[i].markup);
+        node = node_by_id(markdown_core_document_root(replay->document), diffs[i].markup);
         if (!node) {
-            return sr_fail(replay, "diffs name a surviving id the document does not have");
+            return er_fail(replay, "diffs name a surviving id the document does not have");
         }
         parent = markdown_core_node_get_parent(node);
         if (!parent) {
@@ -220,7 +220,7 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
         parent_id = markdown_core_node_get_id(parent);
         for (k = 0; k < i; k++) {
             if (diffs[k].markup == parent_id) {
-                return sr_fail(replay, "a parent was emitted before its own child");
+                return er_fail(replay, "a parent was emitted before its own child");
             }
         }
     }
@@ -230,112 +230,112 @@ static int sr_apply_delta(sr_replay *replay, markdown_core_delta *changes, uint6
 
 /* --- verified commit ----------------------------------------------------- */
 
-typedef struct sr_walk_state {
-    sr_replay *replay;
+typedef struct er_walk_state {
+    er_replay *replay;
     size_t seen;
     int failed;
-} sr_walk_state;
+} er_walk_state;
 
-static int sr_walk_visit(const markdown_core_node *node, void *context) {
-    sr_walk_state *state = (sr_walk_state *)context;
-    sr_replay *replay = state->replay;
+static int er_walk_visit(const markdown_core_node *node, void *context) {
+    er_walk_state *state = (er_walk_state *)context;
+    er_replay *replay = state->replay;
     markdown_core_node_id id = markdown_core_node_get_id(node);
-    sr_mirror_entry *entry = sr_mirror_find(&replay->mirror, id);
+    er_mirror_entry *entry = er_mirror_find(&replay->mirror, id);
 
     state->seen++;
     if (!entry) {
-        sr_fail(replay, "tree holds an id the delta stream never added");
+        er_fail(replay, "tree holds an id the delta stream never added");
         state->failed = 1;
         return 1;
     }
     if (entry->revision != markdown_core_node_get_revision(node)) {
-        sr_fail(replay, "node revision changed without a delta notification");
+        er_fail(replay, "node revision changed without a delta notification");
         state->failed = 1;
         return 1;
     }
-    if (node_by_id(markdown_core_document_root(replay->session), id) != node) {
-        sr_fail(replay, "node_by_id disagrees with the committed tree");
+    if (node_by_id(markdown_core_document_root(replay->document), id) != node) {
+        er_fail(replay, "node_by_id disagrees with the committed tree");
         state->failed = 1;
         return 1;
     }
     return 0;
 }
 
-int sr_replay_commit(sr_replay *replay) {
+int er_replay_commit(er_replay *replay) {
     markdown_core_error *error = NULL;
     markdown_core_delta *changes = NULL;
     const markdown_core_document *document;
     const markdown_core_node *root;
     markdown_core_document *reference = NULL;
-    uint8_t *session_dump = NULL;
+    uint8_t *edited_dump = NULL;
     uint8_t *reference_dump = NULL;
     size_t session_dump_length = 0;
     size_t reference_dump_length = 0;
-    sr_walk_state state;
+    er_walk_state state;
     int result = -1;
 
     {
         markdown_core_commit out;
         memset(&out, 0, sizeof(out));
         if (!markdown_core_document_edit(
-                &replay->session,
+                &replay->document,
                 mc_sv(replay->shadow.bytes, replay->shadow.length),
                 &out,
                 &error
             )) {
-            replay->session = NULL;
+            replay->document = NULL;
             markdown_core_error_free(error);
-            return sr_fail(replay, "commit failed");
+            return er_fail(replay, "commit failed");
         }
-        replay->session = out.document;
+        replay->document = out.document;
         changes = out.delta;
     }
     if (!changes) {
-        return sr_fail(replay, "commit produced no delta");
+        return er_fail(replay, "commit produced no delta");
     }
-    if (sr_apply_delta(replay, changes, markdown_core_document_revision(replay->session)) != 0) {
+    if (er_apply_delta(replay, changes, markdown_core_document_revision(replay->document)) != 0) {
         goto done;
     }
 
-    document = replay->session;
+    document = replay->document;
     root = markdown_core_document_root(document);
     state.replay = replay;
     state.seen = 0;
     state.failed = 0;
-    if (ts_ast_walk(root, sr_walk_visit, &state) < 0 || state.failed) {
+    if (ts_ast_walk(root, er_walk_visit, &state) < 0 || state.failed) {
         if (!state.failed) {
-            sr_fail(replay, "mirror walk failed to allocate");
+            er_fail(replay, "mirror walk failed to allocate");
         }
         goto done;
     }
     if (state.seen != replay->mirror.count) {
-        sr_fail(replay, "mirror holds ids that are no longer in the tree");
+        er_fail(replay, "mirror holds ids that are no longer in the tree");
         goto done;
     }
 
-    if (!markdown_core_document_dump(document, &session_dump, &session_dump_length, &error)) {
+    if (!markdown_core_document_dump(document, &edited_dump, &session_dump_length, &error)) {
         markdown_core_error_free(error);
         error = NULL;
-        sr_fail(replay, "session dump failed");
+        er_fail(replay, "document dump failed");
         goto done;
     }
     reference = markdown_core_document_new(mc_sv(replay->shadow.bytes, replay->shadow.length), replay->options, &error);
     if (!reference) {
         markdown_core_error_free(error);
         error = NULL;
-        sr_fail(replay, "one-shot reference parse failed");
+        er_fail(replay, "one-shot reference parse failed");
         goto done;
     }
     if (!markdown_core_document_dump(reference, &reference_dump, &reference_dump_length, &error)) {
         markdown_core_error_free(error);
         error = NULL;
-        sr_fail(replay, "reference dump failed");
+        er_fail(replay, "reference dump failed");
         goto done;
     }
     if (session_dump_length != reference_dump_length ||
-        memcmp(session_dump, reference_dump, reference_dump_length) != 0) {
-        sr_fail(replay, "session dump diverged from the one-shot parse");
-        ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)session_dump);
+        memcmp(edited_dump, reference_dump, reference_dump_length) != 0) {
+        er_fail(replay, "document dump diverged from the one-shot parse");
+        ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)edited_dump);
         if (getenv("SR_DEBUG_DUMPS")) {
             size_t di;
             fprintf(stderr, "=== text (%zu) ===\n", replay->shadow.length);
@@ -344,9 +344,9 @@ int sr_replay_commit(sr_replay *replay) {
             }
             fprintf(
                 stderr,
-                "\n=== reference ===\n%s\n=== session ===\n%s\n",
+                "\n=== reference ===\n%s\n=== document ===\n%s\n",
                 (const char *)reference_dump,
-                (const char *)session_dump
+                (const char *)edited_dump
             );
         }
         goto done;
@@ -354,7 +354,7 @@ int sr_replay_commit(sr_replay *replay) {
 
     result = 0;
 done:
-    markdown_core_dump_free(session_dump);
+    markdown_core_dump_free(edited_dump);
     markdown_core_dump_free(reference_dump);
     markdown_core_document_free(reference);
     markdown_core_delta_free(changes);
@@ -363,29 +363,29 @@ done:
 
 /* --- edit-script interpreter --------------------------------------------- */
 
-typedef struct sr_script_cursor {
+typedef struct er_script_cursor {
     const uint8_t *bytes;
     size_t length;
     size_t offset;
-} sr_script_cursor;
+} er_script_cursor;
 
 /* Operand reads past the end of the script supply zeroes, so every input
  * decodes to a complete operation sequence. */
-static uint8_t sr_script_u8(sr_script_cursor *cursor) {
+static uint8_t er_script_u8(er_script_cursor *cursor) {
     if (cursor->offset >= cursor->length) {
         return 0;
     }
     return cursor->bytes[cursor->offset++];
 }
 
-static uint16_t sr_script_u16(sr_script_cursor *cursor) {
-    uint16_t lo = sr_script_u8(cursor);
-    uint16_t hi = sr_script_u8(cursor);
+static uint16_t er_script_u16(er_script_cursor *cursor) {
+    uint16_t lo = er_script_u8(cursor);
+    uint16_t hi = er_script_u8(cursor);
     return (uint16_t)(lo | (hi << 8));
 }
 
-int sr_script_replay(const uint8_t *script, size_t length, const char *context, sr_report_fn report, void *user) {
-    sr_script_cursor cursor;
+int er_script_replay(const uint8_t *script, size_t length, const char *context, er_report_fn report, void *user) {
+    er_script_cursor cursor;
     markdown_core_parse_options options;
     bool *fields[] = {
         &options.smart_punctuation,
@@ -401,7 +401,7 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
     };
     uint16_t mask;
     size_t i;
-    sr_replay replay;
+    er_replay replay;
     int result = -1;
 
     cursor.bytes = script;
@@ -409,34 +409,34 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
     cursor.offset = 0;
 
     markdown_core_parse_options_init(&options);
-    mask = sr_script_u16(&cursor);
+    mask = er_script_u16(&cursor);
     for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
         *fields[i] = (mask >> i) & 1;
     }
 
-    if (sr_replay_open(&replay, context, &options, report, user) != 0) {
+    if (er_replay_open(&replay, context, &options, report, user) != 0) {
         return -1;
     }
 
     while (cursor.offset < cursor.length) {
-        uint8_t op = sr_script_u8(&cursor);
+        uint8_t op = er_script_u8(&cursor);
         switch (op & 3) {
         case 0: /* insert */
         case 2: /* replace */
         {
-            size_t position = (size_t)sr_script_u16(&cursor) % (replay.shadow.length + 1);
+            size_t position = (size_t)er_script_u16(&cursor) % (replay.shadow.length + 1);
             size_t span = 0;
             size_t insert_length;
             size_t available;
             if ((op & 3) == 2) {
-                span = (size_t)sr_script_u16(&cursor) % (replay.shadow.length - position + 1);
+                span = (size_t)er_script_u16(&cursor) % (replay.shadow.length - position + 1);
             }
-            insert_length = sr_script_u8(&cursor);
+            insert_length = er_script_u8(&cursor);
             available = cursor.length - cursor.offset;
             if (insert_length > available) {
                 insert_length = available;
             }
-            if (sr_replay_edit(&replay, position, position + span, cursor.bytes + cursor.offset, insert_length) != 0) {
+            if (er_replay_edit(&replay, position, position + span, cursor.bytes + cursor.offset, insert_length) != 0) {
                 goto done;
             }
             cursor.offset += insert_length;
@@ -444,27 +444,27 @@ int sr_script_replay(const uint8_t *script, size_t length, const char *context, 
         }
         case 1: /* delete */
         {
-            size_t position = (size_t)sr_script_u16(&cursor) % (replay.shadow.length + 1);
-            size_t span = (size_t)sr_script_u16(&cursor) % (replay.shadow.length - position + 1);
-            if (sr_replay_edit(&replay, position, position + span, NULL, 0) != 0) {
+            size_t position = (size_t)er_script_u16(&cursor) % (replay.shadow.length + 1);
+            size_t span = (size_t)er_script_u16(&cursor) % (replay.shadow.length - position + 1);
+            if (er_replay_edit(&replay, position, position + span, NULL, 0) != 0) {
                 goto done;
             }
             break;
         }
         default: /* commit */
-            if (sr_replay_commit(&replay) != 0) {
+            if (er_replay_commit(&replay) != 0) {
                 goto done;
             }
             break;
         }
     }
 
-    if (sr_replay_commit(&replay) != 0) {
+    if (er_replay_commit(&replay) != 0) {
         goto done;
     }
     result = 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
