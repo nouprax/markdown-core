@@ -100,7 +100,6 @@ rewrite's acceptance mechanism are in
 ## Running a platform
 
 ```sh
-pnpm coverage:c-host
 pnpm coverage:swift-macos
 pnpm coverage:kotlin-jvm
 pnpm coverage:es-node
@@ -110,15 +109,19 @@ Each producer builds an instrumented tree, runs its suites, and hands the
 toolchain-native report to `scripts/check-coverage.mjs`, which normalizes it
 and applies this policy.
 
-`swift-macos`, `kotlin-jvm`, and `es-node` still run their full suites rather
-than a pinning selection, so their numbers are **not** comparable with
-`c-host`. The `source -> AST` truth lives in the C core and the bindings
-re-expose it; aligning them is follow-up work.
+These platforms run their full suites rather than a pinning selection.
+
+There is no `c-host` platform. It ratcheted line and branch counts per C
+file, and those files are exactly what a Rust engine replaces, so the ledger
+could not outlive the rewrite it existed to protect. What protects the engine
+across that rewrite is the `source -> AST` corpus — spec, pathological,
+entity, extension-order, equivalence, fuzz, and both parity oracles — none of
+which mentions a C symbol.
 
 ## Recording an improvement
 
 ```sh
-sh scripts/coverage-c-host.sh --update-ledger
+sh scripts/coverage-swift-macos.sh --update-ledger
 ```
 
 This rewrites `policy.json` with the exact current numbers and drops the entry

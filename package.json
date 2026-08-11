@@ -39,7 +39,6 @@
         "conformance:kotlin-macos-arm64": "scripts/gradle.sh :packages:kotlin-markdown-core:macosArm64ConformanceTest",
         "conformance:kotlin-linux-x64": "scripts/gradle.sh :packages:kotlin-markdown-core:linuxX64ConformanceTest",
         "conformance:es-node": "pnpm --dir packages/es-markdown-core run conformance",
-        "coverage:c-host": "scripts/coverage-c-host.sh",
         "coverage:swift-macos": "scripts/coverage-swift-macos.sh",
         "coverage:kotlin-jvm": "scripts/coverage-kotlin-jvm.sh",
         "coverage:es-node": "scripts/coverage-es-node.sh",

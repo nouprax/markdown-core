@@ -129,25 +129,6 @@ typedef struct {
     uint32_t generation;
 } markdown_core_delimiter_mark;
 
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-/*
- * Deterministic work counters for the standalone engine invariant suite.
- * Production builds do not contain this state or any counter updates.
- */
-typedef struct {
-    uint64_t pushes;
-    uint64_t peak_live_records;
-    uint64_t capacity_growths;
-    uint64_t process_calls;
-    uint64_t opener_candidate_visits;
-    uint64_t reductions;
-    uint64_t unlinks;
-    uint64_t run_bytes_consumed;
-    uint64_t truncate_visits;
-    uint64_t reclaimed_records;
-} markdown_core_delimiter_diagnostics;
-#endif
-
 typedef struct {
     markdown_core_mem *mem;
     markdown_core_delimiter_record *records;
@@ -164,9 +145,6 @@ typedef struct {
     markdown_core_delimiter_id tail;
     uint64_t last_claim_order;
     uint32_t process_epoch;
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-    markdown_core_delimiter_diagnostics diagnostics;
-#endif
 } markdown_core_delimiter_engine;
 
 markdown_core_inline_config *markdown_core_inline_config_new(
@@ -245,19 +223,5 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_truncate(
     markdown_core_delimiter_engine *engine,
     markdown_core_delimiter_mark mark
 );
-
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-const markdown_core_delimiter_diagnostics *markdown_core_delimiter_engine_diagnostics(
-    const markdown_core_delimiter_engine *engine
-);
-int markdown_core_delimiter_engine_validate(const markdown_core_delimiter_engine *engine);
-/* Provided by the diagnostics driver (the invariant suite), not by the
- * engine: every mutating operation re-validates the engine in diagnostics
- * builds and reports a violation here with a tag naming the mutation, so
- * a broken chain fails deterministically at the mutation site instead of
- * as a distant dereference. Linking delimiter.c with the diagnostics
- * define means supplying this symbol. */
-void markdown_core_delimiter_engine_invariant_failed(const char *site);
-#endif
 
 #endif

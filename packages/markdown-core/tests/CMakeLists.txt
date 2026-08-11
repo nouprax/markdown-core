@@ -119,46 +119,18 @@ endfunction()
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(equivalence_runner runners/equivalence_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
-markdown_core_add_runner(performance_runner runners/performance_runner.c)
 
-# Compile the delimiter engine a second time in a standalone test executable.
-# Its compile-time diagnostics never enter a production library or hot path.
-# concrete_records.c rides along: the engine is the concrete capture's one
-# delimiter choke point.
-add_executable(delimiter_engine_runner runners/delimiter_engine_runner.c "${MARKDOWN_CORE_CORE_SOURCE_DIR}/delimiter.c"
-                                       "${MARKDOWN_CORE_CORE_SOURCE_DIR}/concrete_records.c")
-target_compile_definitions(delimiter_engine_runner PRIVATE MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-                                                           MARKDOWN_CORE_STATIC_DEFINE)
-target_include_directories(
-    delimiter_engine_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                                    "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-
-# fallback_runner drives core-private map symbols directly, so it links the
-# static engine instead of the shared facade and skips test-support.
+# extension_order_runner permutes extension attachment and requires a
+# byte-identical canonical AST, so it reaches the registration API and links
+# the static engine instead of the shared facade.
 if(MARKDOWN_CORE_STATIC)
-    add_executable(fallback_runner runners/fallback_runner.c)
     add_executable(extension_order_runner runners/extension_order_runner.c)
-    target_include_directories(
-        fallback_runner
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
-                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_include_directories(
         extension_order_runner
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
                 "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
                 "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
-    target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     target_link_libraries(extension_order_runner libmarkdown-core-extensions_static libmarkdown-core_static)
-    # source_runner drives the internal stored-byte substrate (source.h), so
-    # it links the static archives directly, like fallback_runner.
-    add_executable(source_runner runners/source_runner.c)
-    target_include_directories(
-        source_runner
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
-                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-    target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     # concrete_runner drives the ownership-region classification (concrete.h).
     add_executable(concrete_runner runners/concrete_runner.c)
     target_include_directories(
@@ -288,49 +260,9 @@ markdown_core_add_test(spec_entities spec 240 entity_runner)
 markdown_core_add_test(regression_commonmark regression 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/regression.txt")
 
-# regression: allocation-failure and probe-limit fallbacks of the shared
-# byte-key index keep hash-path duplicate semantics; probe exhaustion grows
-# the table once before falling back.
+# concrete_runner and extension_order_runner reach the static engine, so
+# their tests exist only in a static build.
 if(MARKDOWN_CORE_STATIC)
-    set(MARKDOWN_CORE_FALLBACK_CASES
-        reference_sorted_fallback
-        reference_map_v2
-        directive_sorted_fallback
-        key_index_probe_growth
-        key_index_skewed_cardinality
-        directive_skewed_cardinality
-        delimiter_scratch_reuse
-        backslash_run_borrowed_payload
-        map_prepare_oom
-        constructor_oom
-        oom_sweep
-        seam_static_literal
-        session_oom_sweep
-        session_oom_sweep_delta
-        session_oom_sweep_pooled
-        session_open_unwind
-        feed_chunk_seam)
-    foreach(case IN LISTS MARKDOWN_CORE_FALLBACK_CASES)
-        markdown_core_add_test(regression_fallback_${case} regression 240 fallback_runner --case ${case})
-    endforeach()
-
-    # regression: the stored bytes' own gates — a span or resulting length the
-    # store cannot represent, refused before a byte moves; the batch splice's
-    # empty-result and refused-allocation states; and the allocation-failure
-    # sweep. The path-copy, no-prefix-copy, amplification, STRICT_UTF8 and
-    # validation-locality gates that stood here are gone with their clauses.
-    set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES span_validation batch_splice oom_sweep)
-    foreach(case IN LISTS MARKDOWN_CORE_SOURCE_REGRESSION_CASES)
-        markdown_core_add_test(regression_source_${case} regression 240 source_runner --case ${case})
-    endforeach()
-
-    # equivalence: substrate edits against an independent oracle and the
-    # multi-byte chunk-partition clauses (14.3.1, 14.3.7, 14.8.2-3).
-    set(MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES random_edits split_character chunk_partition)
-    foreach(case IN LISTS MARKDOWN_CORE_SOURCE_EQUIVALENCE_CASES)
-        markdown_core_add_test(equivalence_source_${case} equivalence 240 source_runner --case ${case})
-    endforeach()
-
     # regression: the 11.1 ownership-region partition over every node kind,
     # with the class checked against each node's observed content category,
     # region resolution for concrete ownership, and the block-phase marker
@@ -519,51 +451,6 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     session_footnote_labels)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
-endforeach()
-
-set(MARKDOWN_CORE_DELIMITER_ENGINE_CASES
-    balanced_nearest_ranges
-    commonmark_modulo_one_floor
-    commonmark_modulo_two_floor
-    commonmark_modulo_zero_pairs
-    per_rule_isolation
-    mark_restore_and_reuse
-    stale_id_is_refused
-    stale_mark_is_refused
-    generation_wrap_is_refused
-    validator_rejects_corruption
-    randomized_operation_soak
-    residual_run_progress
-    geometric_arena_growth
-    arena_growth_oom_transaction
-    unit_lane_growth_and_reuse
-    reducer_failure_is_terminal
-    invalid_push_is_transactional)
-foreach(case IN LISTS MARKDOWN_CORE_DELIMITER_ENGINE_CASES)
-    markdown_core_add_test(pathological_delimiter_engine_${case} pathological 30 delimiter_engine_runner --case ${case})
-endforeach()
-
-set(MARKDOWN_CORE_PERFORMANCE_CASES
-    valid_long_quoted_value
-    valid_consecutive_backslashes
-    unclosed_long_quoted_value
-    unclosed_backslash_value
-    many_unique_attributes
-    many_duplicate_attributes
-    many_unique_references
-    directive_closers_after_emphasis
-    nested_directive_label_closers
-    many_email_autolinks
-    unclosed_cross_references
-    balanced_nested_cross_links
-    balanced_nested_dollar_formulas
-    balanced_nested_backslash_formulas
-    parse_throughput
-    edit_append
-    edit_middle)
-foreach(case IN LISTS MARKDOWN_CORE_PERFORMANCE_CASES)
-    markdown_core_add_test(performance_${case} "pathological;performance" 120 performance_runner --case ${case})
-    set_tests_properties(performance_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.

@@ -43,7 +43,8 @@ if [ ! -f "$binary" ]; then
     exit 1
 fi
 
-# The full report, not -summary-only; see the note in scripts/coverage-c-host.sh.
+# The full report, not -summary-only: a summary drops the per-region detail
+# check-coverage.mjs needs to attribute an uncovered branch to a line.
 "$LLVM_COV" export "$binary" \
     -instr-profile="$profdata" \
     -ignore-filename-regex='(/Tests/|/\.build/|^/usr/|Xcode\.app|/Plugins/)' \
