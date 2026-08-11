@@ -1,4 +1,4 @@
-/* libFuzzer target for incremental sessions: every input is an edit script
+/* libFuzzer target for incremental documents: every input is an edit script
  * (format in tests/support/edit_replay.h) replayed with full per-commit
  * verification — dump equality against a one-shot parse of the shadow text,
  * delta-mirror integrity, and footnote-query equivalence when the script
@@ -14,11 +14,11 @@
 static void fuzz_report(void *user, const char *context, const char *message) {
     (void)user;
     (void)context;
-    fprintf(stderr, "session edit script failed verification: %s\n", message);
+    fprintf(stderr, "document edit script failed verification: %s\n", message);
     abort();
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    (void)er_script_replay(data, size, "fuzz_session_edits", fuzz_report, NULL);
+    (void)er_script_replay(data, size, "fuzz_document_edits", fuzz_report, NULL);
     return 0;
 }

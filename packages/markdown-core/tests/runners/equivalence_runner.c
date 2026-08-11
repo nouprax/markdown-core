@@ -1,10 +1,10 @@
-/* Session equivalence suite: an incrementally edited session must always
+/* Document equivalence suite: an incrementally edited document must always
  * dump byte-identically to a one-shot parse of the same final text, and its
  * deltas must account for every observable node change.
  *
- * Every replay drives the public facade only, through the shared session
+ * Every replay drives the public facade only, through the shared document
  * replay harness (support/edit_replay.h): a shadow text buffer receives
- * the same edits as the session, so each commit can be checked against
+ * the same edits as the document, so each commit can be checked against
  * markdown_core_document_new of the shadow bytes; a shadow id->revision
  * mirror is maintained purely from deltas and compared against a fresh
  * walk after every commit, which catches adoption bugs that dumps cannot
@@ -1026,7 +1026,7 @@ static int case_boundary_edits(void) {
 /* Scripted edits inside a cluster of link reference definitions.
  *
  * `link_ref_edits` drives one label's duplicates; this drives a *population*
- * of distinct labels, which is what the session's definition index is for.
+ * of distinct labels, which is what the document's definition index is for.
  * Three shapes the other equivalence cases never produce:
  *
  *   - inserting a definition between two adjacent ones. Definition order is

@@ -146,7 +146,7 @@ int main(int argc, char *argv[]) {
     parser = markdown_core_parser_new(options);
 
     // Attachment order is priority, and `table` goes last for the reason given
-    // in extensions/session.c: its row opener matches any line inside an open
+    // in extensions/document.c: its row opener matches any line inside an open
     // table, so every narrower claim has to come first. The others here are
     // cmark-gfm's own; the repository's own extensions are off under the gfm
     // profile so a comparison against upstream compares the same language.

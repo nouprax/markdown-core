@@ -2,7 +2,7 @@
 
 #include "document_internal.h"
 
-// Deltas are caller-owned plain data: they stay valid after the session
+// Deltas are caller-owned plain data: they stay valid after the document
 // advances or is freed, so they use the system allocator like the facade's
 // error and dump buffers do.
 //

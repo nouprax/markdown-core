@@ -23,16 +23,16 @@
 //                still attach every extension and dump identically to the
 //                first.
 //
-//   sessions     Multi-session isolation: a barrier releases every thread
+//   documents     Multi-document isolation: a barrier releases every thread
 //                into its very first markdown_core_document_new
-//                simultaneously; each thread owns one session and streams
+//                simultaneously; each thread owns one document and streams
 //                its own input byte-by-byte with a commit per byte,
 //                repeatedly (clear + restream), asserting per-thread dump
 //                determinism, monotonically increasing revisions, a stable
 //                root id, and a final dump byte-equal to a one-shot parse of
-//                the same input — no cross-session interference. A second
+//                the same input — no cross-document interference. A second
 //                phase has every thread concurrently traverse and dump one
-//                shared session's document between mutating calls, which is
+//                shared document's document between mutating calls, which is
 //                exactly the documented read contract.
 //
 // The runner uses raw native threads (pthread / Win32) on purpose: the
@@ -451,9 +451,9 @@ static int run_threads_and_verify(int iterations) {
     return failures ? 1 : 0;
 }
 
-// --- sessions case -----------------------------------------------------------
+// --- documents case -----------------------------------------------------------
 
-typedef struct session_worker {
+typedef struct document_worker {
     barrier *start;
     int index;
     int iterations;
@@ -462,12 +462,12 @@ typedef struct session_worker {
     option_variant variant;
     uint8_t *dump;
     size_t length;
-} session_worker;
+} document_worker;
 
-// Clears the session text, then streams `input` byte-by-byte with a commit
+// Clears the document text, then streams `input` byte-by-byte with a commit
 // (and discarded delta) per byte. Hands back a determinism-checked dump.
-static int session_stream_once(
-    markdown_core_document **session_ref,
+static int document_stream_once(
+    markdown_core_document **document_ref,
     const char *input,
     uint8_t **dump_out,
     size_t *length_out
@@ -482,12 +482,12 @@ static int session_stream_once(
     for (offset = 0; offset < length; offset++) {
         markdown_core_commit out;
         memset(&out, 0, sizeof(out));
-        if (!markdown_core_document_edit(session_ref, mc_sv(input, offset + 1), &out, &error)) {
-            *session_ref = NULL;
+        if (!markdown_core_document_edit(document_ref, mc_sv(input, offset + 1), &out, &error)) {
+            *document_ref = NULL;
             markdown_core_error_free(error);
             return 1;
         }
-        *session_ref = out.document;
+        *document_ref = out.document;
         markdown_core_delta_free(out.delta);
     }
 
@@ -495,8 +495,8 @@ static int session_stream_once(
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump((*session_ref), &first, &first_length, &error) ||
-        !markdown_core_document_dump((*session_ref), &second, &second_length, &error)) {
+    if (!markdown_core_document_dump((*document_ref), &first, &first_length, &error) ||
+        !markdown_core_document_dump((*document_ref), &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_dump_free(first);
         return 1;
@@ -512,16 +512,16 @@ static int session_stream_once(
     return 0;
 }
 
-static THREAD_RETURN session_worker_main(void *argument) {
-    session_worker *self = (session_worker *)argument;
+static THREAD_RETURN document_worker_main(void *argument) {
+    document_worker *self = (document_worker *)argument;
     markdown_core_parse_options options;
     options_for_variant(self->variant, &options);
 
     barrier_wait(self->start);
 
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, &error);
-    if (!session) {
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+    if (!document) {
         markdown_core_error_free(error);
         self->failed = 1;
         return THREAD_RESULT;
@@ -532,14 +532,14 @@ static THREAD_RETURN session_worker_main(void *argument) {
     for (int iteration = 0; iteration < self->iterations; iteration++) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (session_stream_once(&session, self->input, &dump, &length)) {
+        if (document_stream_once(&document, self->input, &dump, &length)) {
             self->failed = 1;
             break;
         }
 
-        const markdown_core_node *root = markdown_core_document_root(session);
+        const markdown_core_node *root = markdown_core_document_root(document);
         uint64_t id = markdown_core_node_get_id(root);
-        uint64_t revision = markdown_core_document_revision(session);
+        uint64_t revision = markdown_core_document_revision(document);
         if (id == 0 || (root_id != 0 && id != root_id) || revision <= last_revision || !traverse(root)) {
             markdown_core_dump_free(dump);
             self->failed = 1;
@@ -563,27 +563,27 @@ static THREAD_RETURN session_worker_main(void *argument) {
         }
     }
 
-    markdown_core_document_free(session);
+    markdown_core_document_free(document);
     return THREAD_RESULT;
 }
 
-typedef struct session_reader {
+typedef struct document_reader {
     barrier *start;
-    const markdown_core_document *session;
+    const markdown_core_document *document;
     const markdown_core_document *view;
     const uint8_t *reference;
     size_t reference_length;
     int failed;
-} session_reader;
+} document_reader;
 
 // An id must round-trip under the concurrent read contract: looking up a
 // node's own id resolves back to that node. NULL round-trips vacuously.
-static int id_round_trips(const markdown_core_document *session, const markdown_core_node *node) {
-    return !node || node_by_id(markdown_core_document_root(session), markdown_core_node_get_id(node)) == node;
+static int id_round_trips(const markdown_core_document *document, const markdown_core_node *node) {
+    return !node || node_by_id(markdown_core_document_root(document), markdown_core_node_get_id(node)) == node;
 }
 
-static THREAD_RETURN session_reader_main(void *argument) {
-    session_reader *self = (session_reader *)argument;
+static THREAD_RETURN document_reader_main(void *argument) {
+    document_reader *self = (document_reader *)argument;
     barrier_wait(self->start);
 
     for (int round = 0; round < 50 && !self->failed; round++) {
@@ -591,8 +591,8 @@ static THREAD_RETURN session_reader_main(void *argument) {
         uint8_t *dump = NULL;
         size_t length = 0;
         const markdown_core_node *root = markdown_core_document_root(self->view);
-        if (!id_round_trips(self->session, root) ||
-            !id_round_trips(self->session, markdown_core_node_get_first_child(root)) || !traverse(root) ||
+        if (!id_round_trips(self->document, root) ||
+            !id_round_trips(self->document, markdown_core_node_get_first_child(root)) || !traverse(root) ||
             !markdown_core_document_dump(self->view, &dump, &length, &error) || length != self->reference_length ||
             memcmp(dump, self->reference, length) != 0) {
             markdown_core_error_free(error);
@@ -603,13 +603,13 @@ static THREAD_RETURN session_reader_main(void *argument) {
     return THREAD_RESULT;
 }
 
-static int case_sessions(void) {
-    static session_worker workers[THREAD_COUNT];
+static int case_documents(void) {
+    static document_worker workers[THREAD_COUNT];
     thread_handle handles[THREAD_COUNT];
     barrier start;
     int failures = 0;
 
-    // Phase 1: one isolated session per thread, first session_open under
+    // Phase 1: one isolated document per thread, first document_open under
     // contention, byte-streamed commits overlapping across threads.
     barrier_init(&start, THREAD_COUNT);
     for (int index = 0; index < THREAD_COUNT; index++) {
@@ -619,8 +619,8 @@ static int case_sessions(void) {
         workers[index].iterations = 3;
         workers[index].input = INPUTS[(size_t)index % INPUT_COUNT];
         workers[index].variant = (option_variant)(index % OPTION_VARIANT_COUNT);
-        if (thread_spawn(&handles[index], session_worker_main, &workers[index])) {
-            fprintf(stderr, "sessions: failed to spawn thread %d\n", index);
+        if (thread_spawn(&handles[index], document_worker_main, &workers[index])) {
+            fprintf(stderr, "documents: failed to spawn thread %d\n", index);
             return 1;
         }
     }
@@ -630,20 +630,20 @@ static int case_sessions(void) {
 
     for (int index = 0; index < THREAD_COUNT; index++) {
         if (workers[index].failed || !workers[index].dump) {
-            fprintf(stderr, "sessions: thread %d reported a violation\n", index);
+            fprintf(stderr, "documents: thread %d reported a violation\n", index);
             failures += 1;
             continue;
         }
         uint8_t *reference = NULL;
         size_t reference_length = 0;
         if (parse_and_dump(workers[index].input, workers[index].variant, &reference, &reference_length)) {
-            fprintf(stderr, "sessions: reference parse failed for thread %d\n", index);
+            fprintf(stderr, "documents: reference parse failed for thread %d\n", index);
             failures += 1;
             continue;
         }
         if (workers[index].length != reference_length ||
             memcmp(workers[index].dump, reference, reference_length) != 0) {
-            fprintf(stderr, "sessions: thread %d streamed dump diverges from one-shot parse\n", index);
+            fprintf(stderr, "documents: thread %d streamed dump diverges from one-shot parse\n", index);
             failures += 1;
         }
         markdown_core_dump_free(reference);
@@ -655,42 +655,42 @@ static int case_sessions(void) {
         return 1;
     }
 
-    // Phase 2: concurrent read-only access to a single session's document
+    // Phase 2: concurrent read-only access to a single document's document
     // between mutating calls.
     markdown_core_error *error = NULL;
-    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    if (!session) {
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
+    if (!document) {
         markdown_core_error_free(error);
-        fprintf(stderr, "sessions: shared session open failed\n");
+        fprintf(stderr, "documents: shared document open failed\n");
         return 1;
     }
     const char *shared_input = INPUTS[0];
     uint8_t *reference = NULL;
     size_t reference_length = 0;
-    markdown_core_document_free(session);
-    session = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
-    if (!session || !mc_edit(&session, mc_sv(shared_input, strlen(shared_input)), NULL, &error) ||
-        !markdown_core_document_dump(session, &reference, &reference_length, &error)) {
+    markdown_core_document_free(document);
+    document = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
+    if (!document || !mc_edit(&document, mc_sv(shared_input, strlen(shared_input)), NULL, &error) ||
+        !markdown_core_document_dump(document, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
-        markdown_core_document_free(session);
-        fprintf(stderr, "sessions: shared session setup failed\n");
+        markdown_core_document_free(document);
+        fprintf(stderr, "documents: shared document setup failed\n");
         return 1;
     }
 
-    static session_reader readers[THREAD_COUNT];
+    static document_reader readers[THREAD_COUNT];
     barrier read_start;
     barrier_init(&read_start, THREAD_COUNT);
     for (int index = 0; index < THREAD_COUNT; index++) {
         memset(&readers[index], 0, sizeof(readers[index]));
         readers[index].start = &read_start;
-        readers[index].session = session;
-        readers[index].view = session;
+        readers[index].document = document;
+        readers[index].view = document;
         readers[index].reference = reference;
         readers[index].reference_length = reference_length;
-        if (thread_spawn(&handles[index], session_reader_main, &readers[index])) {
-            fprintf(stderr, "sessions: failed to spawn reader %d\n", index);
+        if (thread_spawn(&handles[index], document_reader_main, &readers[index])) {
+            fprintf(stderr, "documents: failed to spawn reader %d\n", index);
             markdown_core_dump_free(reference);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             return 1;
         }
     }
@@ -699,28 +699,28 @@ static int case_sessions(void) {
     }
     for (int index = 0; index < THREAD_COUNT; index++) {
         if (readers[index].failed) {
-            fprintf(stderr, "sessions: reader %d observed a divergent document\n", index);
+            fprintf(stderr, "documents: reader %d observed a divergent document\n", index);
             failures += 1;
         }
     }
     markdown_core_dump_free(reference);
 
-    // The session must still be fully mutable after the readers are done.
+    // The document must still be fully mutable after the readers are done.
     if (!failures) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        markdown_core_document_free(session);
-        session = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
-        if (!session || !mc_edit(&session, mc_sv("tail\n\n", 6), NULL, &error) ||
-            !markdown_core_document_dump(session, &dump, &length, &error)) {
+        markdown_core_document_free(document);
+        document = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
+        if (!document || !mc_edit(&document, mc_sv("tail\n\n", 6), NULL, &error) ||
+            !markdown_core_document_dump(document, &dump, &length, &error)) {
             markdown_core_error_free(error);
-            fprintf(stderr, "sessions: post-read commit failed\n");
+            fprintf(stderr, "documents: post-read commit failed\n");
             failures += 1;
         }
         markdown_core_dump_free(dump);
     }
 
-    markdown_core_document_free(session);
+    markdown_core_document_free(document);
     return failures ? 1 : 0;
 }
 
@@ -860,13 +860,13 @@ int main(int argc, char **argv) {
         } else {
             fprintf(
                 stderr,
-                "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions|dump_small_stack\n"
+                "usage: concurrency_runner --case first_parse|stress|lifecycle|documents|dump_small_stack\n"
             );
             return 1;
         }
     }
     if (!case_name) {
-        fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle|sessions|dump_small_stack\n");
+        fprintf(stderr, "usage: concurrency_runner --case first_parse|stress|lifecycle|documents|dump_small_stack\n");
         return 1;
     }
     if (strcmp(case_name, "first_parse") == 0) {
@@ -878,8 +878,8 @@ int main(int argc, char **argv) {
     if (strcmp(case_name, "lifecycle") == 0) {
         return case_lifecycle();
     }
-    if (strcmp(case_name, "sessions") == 0) {
-        return case_sessions();
+    if (strcmp(case_name, "documents") == 0) {
+        return case_documents();
     }
     if (strcmp(case_name, "dump_small_stack") == 0) {
         return case_dump_small_stack();

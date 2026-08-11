@@ -40,7 +40,7 @@
 // not survive (especially under sanitizer instrumentation).
 
 typedef struct {
-    markdown_core_document *session;
+    markdown_core_document *document;
     markdown_core_delta *changes;
     uint64_t new_rev;
     bool failed;
@@ -64,7 +64,7 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
 
     // Ids preorder, which for a wholly new subtree is document order.
     for (;;) {
-        node->id = ctx->session->next_id++;
+        node->id = ctx->document->next_id++;
         node->last_changed_rev = ctx->new_rev;
         if (node->first_child) {
             node = node->first_child;
@@ -360,24 +360,24 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
 }
 
 static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
-    diff_stack stack = {NULL, 0, 0, ctx->session->mem};
+    diff_stack stack = {NULL, 0, 0, ctx->document->mem};
 
     if (diff_push(ctx, &stack, old_root, new_root)) {
         diff_run(ctx, &stack);
     }
     if (stack.frames) {
-        ctx->session->mem->free(ctx->session->mem, stack.frames);
+        ctx->document->mem->free(ctx->document->mem, stack.frames);
     }
 }
 
 bool markdown_core_diff_trees(
-    markdown_core_document *session,
+    markdown_core_document *document,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev,
     markdown_core_delta *changes
 ) {
-    diff_ctx ctx = {session, changes, new_rev, false};
+    diff_ctx ctx = {document, changes, new_rev, false};
 
     if (!old_root) {
         // NOTHING PAIRS AGAINST NOTHING, so nothing is hashed. The hash

@@ -32,12 +32,12 @@
  *                        against the line bytes, cross-checked against
  *                        AST fields, counted per owner.
  *   capture_document     Document.concrete returns the one physical tree
- *                        from a one-shot document and from a session's
+ *                        from a one-shot document and from a document's
  *                        committed view alike (14.1.9), records reachable
  *                        through both.
  *   capture_equivalence  after every commit of an edit script that forces
  *                        suffix reflow, nested reparses, marker edits,
- *                        fence reflow, and definition flips, the session
+ *                        fence reflow, and definition flips, the document
  *                        tree's records equal a fresh parse's, node for
  *                        node — which is exactly the region-relative
  *                        encoding claim: a record an edit did not own
@@ -2424,19 +2424,19 @@ static int case_capture_document(void) {
         markdown_core_document_free(document);
     }
 
-    /* Incremental: Document.concrete must reach the owner from a session's
+    /* Incremental: Document.concrete must reach the owner from a document's
      * committed view, across commits — not only from a one-shot parse. */
     if (!failed) {
         markdown_core_parse_options options = capture_options();
         static const char first[] = "> quoted *q*\n> more\n\n# head #\n";
         static const char tail[] = "\n- item\n";
         static const char both[] = "> quoted *q*\n> more\n\n# head #\n\n- item\n";
-        markdown_core_document *session = markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
         const markdown_core_document *view;
-        if (!session) {
+        if (!document) {
             return -1;
         }
-        view = session;
+        view = document;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0 ||
             tree_inline_record_total(markdown_core_document_concrete(view)) == 0) {
@@ -2444,18 +2444,18 @@ static int case_capture_document(void) {
             failed = 1;
         }
         (void)tail;
-        if (!mc_edit(&session, mc_sv(both, sizeof(both) - 1), NULL, NULL)) {
-            markdown_core_document_free(session);
+        if (!mc_edit(&document, mc_sv(both, sizeof(both) - 1), NULL, NULL)) {
+            markdown_core_document_free(document);
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0) {
             fprintf(stderr, "capture_document: concrete owner lost across commits\n");
             failed = 1;
         }
-        markdown_core_document_free(session);
+        markdown_core_document_free(document);
     }
     return failed ? -1 : 0;
 }
@@ -2700,17 +2700,17 @@ static const capture_edit EQUIVALENCE_EDITS[] = {
 static int case_capture_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
     mc_text text = {NULL, 0, 0};
     capture_shadow shadow = {NULL, 0, 0};
     size_t step;
 
-    if (!session) {
+    if (!document) {
         return -1;
     }
     if (!shadow_splice(&shadow, 0, 0, EQUIVALENCE_INITIAL, sizeof(EQUIVALENCE_INITIAL) - 1)) {
         mc_text_free(&text);
-        markdown_core_document_free(session);
+        markdown_core_document_free(document);
         free(shadow.bytes);
         return -1;
     }
@@ -2742,12 +2742,12 @@ static int case_capture_equivalence(void) {
                 break;
             }
         }
-        if (!mc_edit(&session, mc_sv(shadow.bytes, shadow.length), NULL, NULL)) {
+        if (!mc_edit(&document, mc_sv(shadow.bytes, shadow.length), NULL, NULL)) {
             fprintf(stderr, "capture_equivalence: commit %zu failed\n", step);
             failed = 1;
             break;
         }
-        view = session;
+        view = document;
         fresh = markdown_core_document_new(mc_sv((const uint8_t *)shadow.bytes, shadow.length), &options, NULL);
         if (!fresh) {
             fprintf(stderr, "capture_equivalence: fresh parse %zu failed\n", step);
@@ -2769,7 +2769,7 @@ static int case_capture_equivalence(void) {
 
     mc_text_free(&text);
 
-    markdown_core_document_free(session);
+    markdown_core_document_free(document);
     free(shadow.bytes);
     return failed ? -1 : 0;
 }
@@ -3814,7 +3814,7 @@ static int case_inline_equivalence(void) {
     {
         static const char initial[] = "plain one\nplain two\nedit *here* soon\n";
         static const char replaced[] = "*there* now\n";
-        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *paragraph;
@@ -3822,22 +3822,22 @@ static int case_inline_equivalence(void) {
         markdown_core_document *fresh;
         static const char final_text[] = "plain one\nplain two\nedit *there* now\n";
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         paragraph = markdown_core_document_root(view)->first_child;
         prefix_text = paragraph ? paragraph->first_child : NULL;
         if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam fixture lost its paragraph\n");
             return -1;
         }
@@ -3846,17 +3846,17 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         if (!mc_text_splice(&text, 25, 36, replaced, sizeof(replaced) - 1) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         fresh = markdown_core_document_new(mc_sv((const uint8_t *)final_text, sizeof(final_text) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -3868,7 +3868,7 @@ static int case_inline_equivalence(void) {
         failed |= check_inline_invariants("inline_equivalence: seam", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
         mc_text_free(&text);
-        markdown_core_document_free(session);
+        markdown_core_document_free(document);
     }
 
     /* Dependent rebuild across a definition flip, both directions. */
@@ -3886,41 +3886,41 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "[^n]: note\n";
-        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *unit;
         markdown_core_document *fresh;
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         unit = markdown_core_document_root(view)->first_child;
         if (!unit || inline_record_count_of(unit) == 0) {
             fprintf(stderr, "inline_equivalence: dependent unit captured nothing to compare\n");
             failed = 1;
         }
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
-        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         fresh =
             markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -3934,17 +3934,17 @@ static int case_inline_equivalence(void) {
         /* Flip it back: the same unit swaps again to the resolved shape. */
         if (!failed) {
             if (!mc_text_splice(&text, 43, 43, "[x]: /u\n", 8) ||
-                !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+                !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
                 mc_text_free(&text);
-                markdown_core_document_free(session);
+                markdown_core_document_free(document);
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
                 return -1;
             }
-            view = session;
+            view = document;
             fresh = markdown_core_document_new(mc_sv((const uint8_t *)initial, sizeof(initial) - 1), &options, NULL);
             if (!fresh) {
                 mc_text_free(&text);
-                markdown_core_document_free(session);
+                markdown_core_document_free(document);
                 return -1;
             }
             failed |= compare_tree_records(
@@ -3957,7 +3957,7 @@ static int case_inline_equivalence(void) {
             markdown_core_document_free(fresh);
         }
         mc_text_free(&text);
-        markdown_core_document_free(session);
+        markdown_core_document_free(document);
     }
 
     /* Dependent rebuild of a table cell: a definition flip converts a
@@ -3986,29 +3986,29 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "tail para\n";
-        markdown_core_document *session = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
         mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *table;
         const markdown_core_node *cell;
         markdown_core_document *fresh;
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         table = markdown_core_document_root(view)->first_child;
         cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
         if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
             return -1;
         }
@@ -4017,18 +4017,18 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` definition line. */
-        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&session, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;
         }
-        view = session;
+        view = document;
         fresh =
             markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
             mc_text_free(&text);
-            markdown_core_document_free(session);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -4040,7 +4040,7 @@ static int case_inline_equivalence(void) {
         failed |= check_inline_invariants("inline_equivalence: cell dependent", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
         mc_text_free(&text);
-        markdown_core_document_free(session);
+        markdown_core_document_free(document);
     }
     return failed ? -1 : 0;
 }

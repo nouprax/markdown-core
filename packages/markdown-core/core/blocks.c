@@ -1089,7 +1089,7 @@ static void S_parse_node_inlines(
     /* Both definition maps attribute to the same unit: a lookup in either is
      * a dependency of the block whose inlines are being parsed. One test arms
      * both, because a watcher attaches its sink to both maps or to neither
-     * (session.c, watch_definition_lookups) — so a watched reference map is
+     * (document.c, watch_definition_lookups) — so a watched reference map is
      * proof that the footnote map is there. */
     if (refmap && refmap->lookup_sink) {
         markdown_core_node *unit = S_lookup_attribution(cur);

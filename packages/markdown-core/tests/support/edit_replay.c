@@ -269,7 +269,7 @@ int er_replay_commit(er_replay *replay) {
     markdown_core_document *reference = NULL;
     uint8_t *edited_dump = NULL;
     uint8_t *reference_dump = NULL;
-    size_t session_dump_length = 0;
+    size_t document_dump_length = 0;
     size_t reference_dump_length = 0;
     er_walk_state state;
     int result = -1;
@@ -313,7 +313,7 @@ int er_replay_commit(er_replay *replay) {
         goto done;
     }
 
-    if (!markdown_core_document_dump(document, &edited_dump, &session_dump_length, &error)) {
+    if (!markdown_core_document_dump(document, &edited_dump, &document_dump_length, &error)) {
         markdown_core_error_free(error);
         error = NULL;
         er_fail(replay, "document dump failed");
@@ -332,7 +332,7 @@ int er_replay_commit(er_replay *replay) {
         er_fail(replay, "reference dump failed");
         goto done;
     }
-    if (session_dump_length != reference_dump_length ||
+    if (document_dump_length != reference_dump_length ||
         memcmp(edited_dump, reference_dump, reference_dump_length) != 0) {
         er_fail(replay, "document dump diverged from the one-shot parse");
         ts_print_line_diff(stderr, (const char *)reference_dump, (const char *)edited_dump);

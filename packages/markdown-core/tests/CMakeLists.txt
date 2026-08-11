@@ -100,7 +100,7 @@ else()
 endif()
 
 # Shared native test support: fixture loading, in-process conversion, byte
-# comparison, deterministic diffs, PRNG, timing, and the session replay
+# comparison, deterministic diffs, PRNG, timing, and the document replay
 # harness (shadow text, delta mirror, per-commit equivalence verification).
 add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/edit_replay.c
                                               support/edit_replay.h)
@@ -201,10 +201,10 @@ markdown_core_add_test(consumer_facade_cplusplus consumer 120 facade_cplusplus_t
 markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runner --case first_parse)
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
-# facade multi-session contract: isolated sessions streaming concurrently
-# with per-byte commits must never interfere, and one session's document
+# facade multi-document contract: isolated documents streaming concurrently
+# with per-byte commits must never interfere, and one document's document
 # must support concurrent read-only access between mutating calls.
-markdown_core_add_test(facade_concurrent_sessions facade 600 concurrency_runner --case sessions)
+markdown_core_add_test(facade_concurrent_documents facade 600 concurrency_runner --case documents)
 
 # regression: registry lifecycle stays immutable across parse/free cycles
 # and facade failure paths.
@@ -268,7 +268,7 @@ if(MARKDOWN_CORE_STATIC)
     # region resolution for concrete ownership, and the block-phase marker
     # capture gates — records dereferenced against source lines and AST
     # fields, Document.concrete reachability from one-shot and committed
-    # documents (14.1.9), record equality between every session commit and
+    # documents (14.1.9), record equality between every document commit and
     # a fresh parse, and the allocation-failure sweep.
     foreach(
         case IN
@@ -290,7 +290,7 @@ if(MARKDOWN_CORE_STATIC)
     endforeach()
 endif()
 
-# equivalence: incrementally edited sessions must dump byte-identically to a
+# equivalence: incrementally edited documents must dump byte-identically to a
 # one-shot parse of the same final text after every commit, and the delta
 # stream must account for every observable node change (mirror check).
 markdown_core_add_test(
@@ -455,8 +455,8 @@ endforeach()
 
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.
 # Long-running campaigns stay in the explicit AFL/libFuzzer maintenance
-# targets and reuse the corpus under core/afl_test_cases; the session
-# edit-script campaign (fuzz_session_edits) shares the script format the
+# targets and reuse the corpus under core/afl_test_cases; the document
+# edit-script campaign (fuzz_document_edits) shares the script format the
 # seeded smoke below drives deterministically.
 markdown_core_add_test(
     fuzz_smoke
@@ -487,9 +487,9 @@ markdown_core_add_test(
     --generated
     0
     --script
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-extension-specials.bin"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/edit_scripts/seam-extension-specials.bin"
     --script
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/session_scripts/seam-column-environment.bin"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/edit_scripts/seam-column-environment.bin"
     --script-generated
     512)
 

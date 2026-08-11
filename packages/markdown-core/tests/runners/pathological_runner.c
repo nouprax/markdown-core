@@ -833,7 +833,7 @@ static int case_formula_backslash_openers(pc_context *context) {
     return pc_formula_case(context, "\\\\(x", " \\\\(x", 19999, NULL, (size_t)-1, NULL);
 }
 
-/* Session pathological cases ------------------------------------------------
+/* Document pathological cases ------------------------------------------------
  *
  * Adversarial structures replayed through successive edits.  The shared
  * harness verifies every commit in full (dump equality against a one-shot

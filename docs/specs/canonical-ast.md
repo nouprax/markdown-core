@@ -479,10 +479,10 @@ edge rule.
 
 ## ParseOptions
 
-`Document.parse(source, options = ParseOptions.default)` and
-`MarkupSession(options)` (`sessions-and-deltas.md`) are the two canonical
-parsing entry points. `ParseOptions` is immutable and contains exactly these
-booleans:
+`Document(source, options = ParseOptions.default)` is the canonical parsing
+entry point, and `document.edit(source)` is the only other way to obtain a
+document. There is no session type and no separate one-shot parse.
+`ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |
