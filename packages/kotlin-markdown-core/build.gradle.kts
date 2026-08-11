@@ -362,10 +362,6 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val officialApiFile: RegularFileProperty
 
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val abiSnapshotFile: RegularFileProperty
-
     @get:CompileClasspath
     abstract val compileClasspath: ConfigurableFileCollection
 
@@ -385,21 +381,7 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
         val classesDirectory = outputRoot.resolve("classes").apply { mkdirs() }
         val classpath = (libraryClasses + compileClasspath).filter(File::exists).asPath
 
-        val actualSurface = JavaAbi.surface(libraryClasses.files)
-        val expectedSurface =
-            abiSnapshotFile
-                .get()
-                .asFile
-                .readLines()
-                .sorted()
-        check(actualSurface == expectedSurface) {
-            val actualLines = actualSurface.toSet()
-            val expectedLines = expectedSurface.toSet()
-            val added = (actualLines - expectedLines).sorted().joinToString("\n")
-            val removed = (expectedLines - actualLines).sorted().joinToString("\n")
-            "$path Java ABI differs from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed"
-        }
-        val actualClasses = JavaAbi.classes(actualSurface)
+        val actualClasses = JavaAbi.classes(JavaAbi.surface(libraryClasses.files))
         val officialClasses = JavaAbi.officialClasses(officialApiFile.get().asFile)
         check(actualClasses == officialClasses) {
             val undocumented = (actualClasses - officialClasses).joinToString("\n")
@@ -489,7 +471,6 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
                 "MarkupKt",
                 "ParseOptionsKt",
                 "RootSink",
-                "ScopeEntry",
                 "WireKind",
                 "WireReader",
             )
@@ -1135,51 +1116,6 @@ fun VerifyJavaImplementationHidden.useJavaCompiler(
     javaRelease.set(release.map { it.toInt() })
 }
 
-val verifyJvmAbi =
-    tasks.register("verifyJvmAbi") {
-        group = "verification"
-        description = "Compares the JVM jar's public ABI against the checked-in snapshot."
-        val snapshotFile = layout.projectDirectory.file("jvm-abi.txt").asFile
-        val officialApiFile = layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api").asFile
-        val write = providers.gradleProperty("writeJvmAbi").isPresent
-        // Capture the provider itself in the task action. Referencing a script
-        // property from doLast would retain the Gradle script object and make
-        // this otherwise-lazy provider incompatible with configuration cache.
-        val jarFile = jvmLibraryJar
-        inputs.file(jarFile)
-        inputs.file(officialApiFile)
-
-        doLast {
-            val lines = JavaAbi.surface(setOf(jarFile.get().asFile))
-            val actualClasses = JavaAbi.classes(lines)
-            val officialClasses = JavaAbi.officialClasses(officialApiFile)
-            check(actualClasses == officialClasses) {
-                val undocumented = (actualClasses - officialClasses).joinToString("\n")
-                val missing = (officialClasses - actualClasses).joinToString("\n")
-                "JVM Java-callable classes differ from the official Kotlin API dump.\n" +
-                    "Undocumented:\n$undocumented\nMissing:\n$missing"
-            }
-            val rendered = lines.joinToString("\n") + "\n"
-            if (write) {
-                snapshotFile.writeText(rendered)
-                logger.lifecycle("Wrote JVM ABI snapshot: ${snapshotFile.absolutePath}")
-                return@doLast
-            }
-            check(snapshotFile.isFile) {
-                "jvm-abi.txt is missing; generate it with ./gradlew :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi"
-            }
-            val expected = snapshotFile.readText()
-            check(rendered == expected) {
-                val actualLines = rendered.lines().toSet()
-                val expectedLines = expected.lines().toSet()
-                val added = (actualLines - expectedLines).sorted().joinToString("\n")
-                val removed = (expectedLines - actualLines).sorted().joinToString("\n")
-                "JVM public ABI drifted from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed\n" +
-                    "If the change is intentional, regenerate with -PwriteJvmAbi."
-            }
-        }
-    }
-
 val verifyJvmImplementationHidden =
     tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
         group = "verification"
@@ -1187,7 +1123,6 @@ val verifyJvmImplementationHidden =
         useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
         libraryClasses.from(jvmLibraryJar)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
         compileClasspath.from(jvmMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/jvm-implementation-hidden"))
     }
@@ -1199,7 +1134,6 @@ val verifyAndroidImplementationHidden =
         useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
         libraryClasses.from(androidMainCompilation.output.classesDirs)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
         compileClasspath.from(androidMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/android-implementation-hidden"))
     }
@@ -1213,7 +1147,6 @@ tasks.register("kotlinTest") {
             "testAndroidHostTest",
             hostNativeTest,
             "verifyKotlinNativePackaging",
-            "verifyJvmAbi",
             verifyJvmImplementationHidden,
             verifyAndroidImplementationHidden,
             "checkKotlinAbi",

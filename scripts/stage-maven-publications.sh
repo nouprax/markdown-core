@@ -29,7 +29,6 @@ base_tasks=(
 )
 abi_tasks=(
     :packages:kotlin-markdown-core:checkKotlinAbi
-    :packages:kotlin-markdown-core:verifyJvmAbi
 )
 
 case "$mode" in

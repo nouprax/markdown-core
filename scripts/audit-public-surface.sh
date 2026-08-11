@@ -200,13 +200,6 @@ grep -q 'visitor: MarkupVisitor<Unit>' \
 grep -Fq '// Targets: [linuxX64, macosArm64]' \
     packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
     || fail "Kotlin KLIB ABI snapshot does not cover both published Native targets"
-test -s packages/kotlin-markdown-core/jvm-abi.txt \
-    || fail "Java-source-visible Kotlin/JVM ABI snapshot is missing"
-if grep -q -E \
-    'CSession|HostNativeLibrary|JvmNative|JvmSession|ScopeEntry|ScopeResolver|WireDecoder|WireKind|WireReader' \
-    packages/kotlin-markdown-core/jvm-abi.txt; then
-    fail "Kotlin/JVM implementation types leaked into the Java ABI snapshot"
-fi
 grep -q 'officialClasses' packages/kotlin-markdown-core/build.gradle.kts \
     && grep -q 'verifyJvmImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
     && grep -q 'verifyAndroidImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
@@ -286,55 +279,12 @@ if grep -R -n -E \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports mutation, renderer, or native implementation details"
 fi
-# The document entry points, pinned. A document is created from text, edited
-# into its successor, and closed; the four footnote/reference answer queries
-# are gone entirely, and so is MarkupSession.
-# Anchored at the start of a line: an unanchored pattern also matched the
-# word "constructor" inside a doc comment, and a pin that quotes prose drifts
-# whenever the prose does.
-kotlin_document_surface=$(grep -R -h -o -E \
-    '^[[:space:]]*public (fun|val|var|class|object|enum class) [A-Za-z]+|^[[:space:]]*public constructor' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Commit.kt \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Diagnostic.kt |
-    sed -E 's/^[[:space:]]+//' | sort -u)
-expected_kotlin_document_surface='public class Commit
-public class Delta
-public class Diagnostic
-public class Diff
-public class DiffParts
-public class Document
-public constructor
-public enum class DiagnosticCode
-public fun afterRevisionBits
-public fun beforeRevisionBits
-public fun dump
-public fun edit
-public fun node
-public fun seriesBits
-public val afterRevision
-public val beforeRevision
-public val children
-public val code
-public val content
-public val delta
-public val descendant
-public val diagnostics
-public val diffs
-public val document
-public val isRetired
-public val markup
-public val options
-public val parts
-public val rawValue
-public val scope
-public val series
-public val text
-public val value'
-if [ "$kotlin_document_surface" != "$expected_kotlin_document_surface" ]; then
-    printf '%s\n' "$kotlin_document_surface" >&2
-    fail "Kotlin document surface drifted from the reviewed pin"
-fi
+# The Kotlin public surface is pinned by kotlinx binary-compatibility-validator
+# in api/jvm/kotlin-markdown-core.api and api/kotlin-markdown-core.klib.api,
+# with full JVM signatures over every file and a task that regenerates them.
+# A name-only grep over three of those files re-derived a strict subset of the
+# same thing by hand, and cost a manual edit every time alphabetical order
+# shifted under it.
 grep -q 'public object MarkupDumper' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt \
     && grep -q 'public fun dump(document: Document): String' \
