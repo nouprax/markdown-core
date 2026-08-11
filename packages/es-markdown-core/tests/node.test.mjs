@@ -18,6 +18,23 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
     assert.equal(events.at(-1), `${WalkEvent.exiting}-document`);
 });
 
+test("api: the walker's typed-visitor overload dispatches once per node in preorder", () => {
+    // The scope-free overload: no events, no scopes, one exhaustive visitor
+    // call per node in preorder. Table rows and cells are first-class here,
+    // which is what a consumer relying on exhaustive dispatch depends on.
+    const document = Document("| a |\n| --- |\n| b |\n");
+    const visited = [];
+    new MarkupWalker().walk(document, {
+        ...kindVisitor,
+        visitDocument: (node) => visited.push(node.kind),
+        visitTable: (node) => visited.push(node.kind),
+        visitTableRow: (node) => visited.push(node.kind),
+        visitTableCell: (node) => visited.push(node.kind),
+        visitText: (node) => visited.push(node.kind)
+    });
+    assert.deepEqual(visited, ["document", "table", "tableRow", "tableCell", "text", "tableRow", "tableCell", "text"]);
+});
+
 test("api: options gate extensions", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
     assert.equal(Document(markdown).content[0].kind, "table");
@@ -192,4 +209,45 @@ test("robustness: worker threads own isolated engine instances", async () => {
     for (const dumps of await Promise.all(workers)) {
         assert.deepEqual(dumps, references);
     }
+
+    // The same corpus reached by line-by-line EDITS instead of one-shot
+    // parses, still one WASM instance per thread: incremental state is per
+    // instance, so four threads editing at once must land on the same trees
+    // a one-shot parse produces.
+    const editors = Array.from(
+        { length: 4 },
+        () =>
+            new Promise((resolve, reject) => {
+                const worker = new Worker(new URL("./worker-edit.mjs", import.meta.url), {
+                    workerData: { jobs }
+                });
+                worker.once("message", resolve);
+                worker.once("error", reject);
+            })
+    );
+    for (const dumps of await Promise.all(editors)) {
+        assert.deepEqual(dumps, references);
+    }
+});
+
+test("robustness: worker threads never mint the same document series", async () => {
+    const { Worker } = await import("node:worker_threads");
+    // Each worker is a fresh WASM instance whose allocator state and coarse
+    // clocks repeat exactly across threads, so only host entropy can keep
+    // their salts apart. If it cannot, two unrelated documents' identities
+    // compare equal — raw values restart at 1 for every series.
+    const series = await Promise.all(
+        Array.from(
+            { length: 8 },
+            () =>
+                new Promise((resolve, reject) => {
+                    const worker = new Worker(new URL("./worker-series.mjs", import.meta.url));
+                    worker.once("message", resolve);
+                    worker.once("error", reject);
+                })
+        )
+    );
+    assert.equal(series.length, 8);
+    assert.ok(series.every((value) => value !== "0"));
+    assert.equal(new Set(series).size, 8);
 });

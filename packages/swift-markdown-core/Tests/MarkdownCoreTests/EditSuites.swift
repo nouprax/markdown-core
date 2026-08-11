@@ -104,6 +104,25 @@ import Testing
         #expect(first.id.series != second.id.series)
         // An id from another series is not this document's to answer.
         #expect(first.node(second.content[0].id) == nil)
+
+        // `series` reads the salt straight off the document, and it is the
+        // WHOLE lineage's: an edit inherits it, which is what makes an id
+        // minted before the edit still name something after it.
+        #expect(first.series == first.id.series)
+        let edited = try first.edit("Same *content* twice, extended.\n")
+        #expect(edited.document.series == first.series)
+        #expect(edited.document.id.series == first.id.series)
+
+        // Hashable agrees with ==, which is what a document held as a
+        // dictionary key or in a Set depends on.
+        #expect(first.hashValue == first.hashValue)
+        var byDocument: [Document: String] = [first: "first", second: "second"]
+        #expect(byDocument.count == 2)
+        #expect(byDocument[first] == "first")
+        byDocument[first] = "replaced"
+        #expect(byDocument.count == 2)
+        #expect(byDocument[first] == "replaced")
+        #expect(Set([first, first, second]).count == 2)
     }
 
     @Test("a blank-line-only edit reports an empty delta yet shifts scopes")

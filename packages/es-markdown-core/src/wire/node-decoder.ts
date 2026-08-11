@@ -70,14 +70,10 @@ export class NodeDecoder {
         if (!this.scratch) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
     }
 
-    dispose(): void {
-        if (!this.scratch) return;
-        this.native.free(this.scratch);
-        this.scratch = 0;
-    }
-
-    /** The scratch block shared with the session boundary; valid until
-     * `dispose`. Holds `scratchSlots` little-endian 64-bit slots. */
+    /** The scratch block shared with the document boundary. Allocated once
+     * in the constructor and held for the module's lifetime — the decoder is
+     * a singleton over one WASM instance, so there is nothing to release it
+     * to. Holds `scratchSlots` little-endian 64-bit slots. */
     get scratchPointer(): number {
         this.requireLive();
         return this.scratch;

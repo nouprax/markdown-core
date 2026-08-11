@@ -419,14 +419,13 @@ consumer that owns those targets, not for the parser. They are nodes whenever
 their syntax matches, and "unresolved" is not a state this AST can observe.
 
 Numbering, first-use order, resolution state, and back-reference ordinals are
-not AST content. They are parser answers: queries over the relation indexes
-the immutable published document pins, addressed by `MarkupID`
-(`incremental-canonical-ast.md` §4.1 and §6.3), with the answer record types
-defined in `sessions-and-deltas.md`. They are not a live-session feature, and
-a retained document keeps answering them after session close. Renderers that need the GFM presentation
-(definitions gathered at the tail in first-use order, numbered markers)
-derive it from those queries. This aligns the tree with the mdast model and
-keeps edits from rewriting unrelated parts of the document.
+not AST content, and no binding exposes them. They are presentation: a
+renderer that wants the GFM shape — definitions gathered at the tail in
+first-use order, numbered markers — derives it by walking the tree, where
+first-use order IS the document order of the `FootnoteReference` nodes and a
+definition is the `FootnoteDefinition` carrying the same label. Keeping them
+out of the tree aligns it with the mdast model and keeps an edit from
+renumbering nodes it did not touch.
 
 Making definedness decide a node's type puts a document-scoped fact inside an
 inline parse, which an incremental parser has to answer without reading the

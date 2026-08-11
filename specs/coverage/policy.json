@@ -30,11 +30,11 @@
                     "reason": "llvm-cov emits no branch regions for Swift: SwiftPM's coverage instrumentation produces line, function, and region counters only. Line and function coverage carry this platform's gate until the toolchain grows branch support."
                 }
             ],
-            "minimumMeasuredFiles": 36,
+            "minimumMeasuredFiles": 34,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 1,
-                    "functions": 1
+                    "lines": 15,
+                    "functions": 5
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
                     "lines": 1,
@@ -57,27 +57,11 @@
                     "functions": 3
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
-                    "lines": 3,
+                    "lines": 13,
                     "functions": 1
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/FootnoteQueries.swift": {
-                    "lines": 4,
-                    "functions": 2
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/MarkupSession.swift": {
-                    "lines": 36,
-                    "functions": 8
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/ScopeResolver.swift": {
-                    "lines": 27,
-                    "functions": 7
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift": {
                     "lines": 2,
-                    "functions": 1
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupWalker.swift": {
-                    "lines": 1,
                     "functions": 1
                 }
             }
@@ -89,7 +73,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 41,
+            "minimumMeasuredFiles": 40,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/BlockQuote.kt": {
                     "lines": 2,
@@ -106,10 +90,20 @@
                     "functions": 2,
                     "branches": 0
                 },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Commit.kt": {
+                    "lines": 20,
+                    "functions": 9,
+                    "branches": 26
+                },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/CrossLink.kt": {
                     "lines": 2,
                     "functions": 2,
                     "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Diagnostic.kt": {
+                    "lines": 3,
+                    "functions": 3,
+                    "branches": 6
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Directive.kt": {
                     "lines": 2,
@@ -122,14 +116,14 @@
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/DirectiveLabel.kt": {
-                    "lines": 2,
-                    "functions": 2,
+                    "lines": 1,
+                    "functions": 1,
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt": {
-                    "lines": 7,
-                    "functions": 5,
-                    "branches": 9
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Embed.kt": {
                     "lines": 2,
@@ -207,8 +201,8 @@
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/ParseException.kt": {
-                    "lines": 0,
-                    "functions": 3,
+                    "lines": 6,
+                    "functions": 5,
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/SoftBreak.kt": {
@@ -241,21 +235,6 @@
                     "functions": 2,
                     "branches": 0
                 },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/Commit.kt": {
-                    "lines": 16,
-                    "functions": 6,
-                    "branches": 14
-                },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/FootnoteQueries.kt": {
-                    "lines": 10,
-                    "functions": 2,
-                    "branches": 16
-                },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/MarkupSession.kt": {
-                    "lines": 9,
-                    "functions": 4,
-                    "branches": 7
-                },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt": {
                     "lines": 0,
                     "functions": 2,
@@ -267,9 +246,9 @@
                     "branches": 1
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
-                    "lines": 5,
+                    "lines": 3,
                     "functions": 0,
-                    "branches": 29
+                    "branches": 12
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt": {
                     "lines": 3,
@@ -294,8 +273,13 @@
                 }
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 15,
+            "minimumMeasuredFiles": 11,
             "unpinned": {
+                "packages/es-markdown-core/src/document.ts": {
+                    "lines": 3,
+                    "functions": 0,
+                    "branches": 2
+                },
                 "packages/es-markdown-core/src/markup-dumper.ts": {
                     "lines": 0,
                     "functions": 1,
@@ -311,45 +295,25 @@
                     "functions": 1,
                     "branches": 2
                 },
-                "packages/es-markdown-core/src/runtime/c-session.ts": {
-                    "lines": 15,
-                    "functions": 0,
-                    "branches": 15
+                "packages/es-markdown-core/src/parse-error.ts": {
+                    "lines": 5,
+                    "functions": 2,
+                    "branches": 1
+                },
+                "packages/es-markdown-core/src/runtime/c-document.ts": {
+                    "lines": 20,
+                    "functions": 1,
+                    "branches": 12
                 },
                 "packages/es-markdown-core/src/runtime/native.ts": {
                     "lines": 8,
                     "functions": 4,
                     "branches": 3
                 },
-                "packages/es-markdown-core/src/runtime/parser.ts": {
-                    "lines": 2,
-                    "functions": 0,
-                    "branches": 1
-                },
-                "packages/es-markdown-core/src/session/markup-session.ts": {
-                    "lines": 20,
-                    "functions": 0,
-                    "branches": 18
-                },
-                "packages/es-markdown-core/src/session/relink.ts": {
-                    "lines": 17,
-                    "functions": 1,
-                    "branches": 18
-                },
-                "packages/es-markdown-core/src/session/scope-resolver.ts": {
-                    "lines": 5,
-                    "functions": 2,
-                    "branches": 0
-                },
-                "packages/es-markdown-core/src/session/snapshot.ts": {
-                    "lines": 4,
-                    "functions": 0,
-                    "branches": 3
-                },
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 47,
-                    "functions": 1,
-                    "branches": 31
+                    "lines": 52,
+                    "functions": 4,
+                    "branches": 24
                 }
             }
         }

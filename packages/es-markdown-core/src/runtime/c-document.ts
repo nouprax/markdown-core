@@ -153,14 +153,6 @@ export class CDocument {
         return root;
     }
 
-    rootIdentity(): { readonly rawValue: number; readonly revision: number } {
-        const root = this.rootPointer();
-        return {
-            rawValue: decoder.toSafeNumber(native.es_node_id(root), "node id"),
-            revision: decoder.toSafeNumber(native.es_node_revision(root), "node revision")
-        };
-    }
-
     diagnostics(): readonly RawDiagnostic[] {
         const document = this.requirePointer();
         const scratch = decoder.scratchPointer;
