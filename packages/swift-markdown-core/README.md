@@ -40,8 +40,17 @@ single `formulas` switch controls `$…$`, `$$…$$`, LaTeX delimiters, and
 `formula` fenced blocks. The result is an immutable `Sendable` value tree whose
 nodes carry a stable identity (`id`, a `MarkupID` of the owning lineage's salt
 plus a raw value) and a change `revision`; equality is O(1) over that pair, and
-an unchanged node compares equal across consecutive revisions — safe fast paths
-for render caches and reconciliation keys. The package exposes parsing,
+an unchanged node compares equal across consecutive revisions, which is what a
+render cache keys on.
+
+Identity says nothing about POSITION. `scope` is a function of the node AND
+the document it is read against: an edit that shifts text moves positions
+without changing any node's content, and the delta deliberately does not
+report that. A consumer that draws anything positional — gutter numbers,
+underlines, a scroll anchor, a source map — must re-resolve it against the new
+document even for a node it skipped as unchanged.
+
+The package exposes parsing,
 editing, and read-only AST traversal, not rendering or mutation.
 
 Nodes do not store absolute positions. Resolve them through the document:

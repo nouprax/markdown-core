@@ -117,7 +117,10 @@ val document = Document("# Title\n\nHello")
 val commit = document.edit("# Title\n\nHello world")
 commit.document.use { next ->
     // The paragraph kept its identity, and its unchanged sibling kept its
-    // exact object: an unchanged node is never re-decoded.
+    // exact object: an unchanged node is never re-decoded. That is about
+    // decode cost — `next.scope(...)` may still place it somewhere new,
+    // because a scope belongs to the (node, document) pair and an edit above
+    // moves every position below it without changing any node's content.
     check(next.content[1].id == document.content[1].id)
     check(next.content[0] === document.content[0])
 }

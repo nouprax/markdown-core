@@ -43,8 +43,16 @@ Every node carries an identity: `id` (a `MarkupID` of the owning lineage's
 salt plus a raw value, always the same object for the same identity) and
 `revision`, the revision at which the node's content last changed. Two nodes
 with the same `id` and `revision` are guaranteed to have identical content,
-and an unchanged node is the same object across consecutive revisions — safe
-fast paths for render caches and reconciliation keys.
+and an unchanged node is the same object across consecutive revisions, which
+is a decode-cost detail and not a stronger guarantee: it says the binding did
+not have to rebuild the value, nothing more.
+
+Identity says nothing about POSITION. `scope` is a function of the node AND
+the document it is read against: an edit that shifts text moves positions
+without changing any node's content, and the delta deliberately does not
+report that. A consumer that draws anything positional — gutter numbers,
+underlines, a scroll anchor, a source map — must re-resolve it against the new
+document even for a node it skipped as unchanged.
 
 Nodes do not store absolute positions. Resolve them through the document:
 `document.scope(node)` returns the node's absolute start/end line and column.
@@ -85,7 +93,8 @@ changing what the parser means is a new document, not an edit.
 const document = Document("# Title\n\nHello");
 const { document: next, delta } = document.edit("# Title\n\nHello world");
 // The heading did not change, so it is the very same object: an unchanged
-// node is never re-decoded.
+// node is never re-decoded. That is about decode cost — `next.scope(...)`
+// may still place it somewhere new.
 console.log(next.content[0] === document.content[0]); // true
 ```
 
