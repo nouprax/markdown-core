@@ -49,14 +49,25 @@ public struct MarkupID: Sendable, Hashable {
     }
 }
 
+/// Identity, revision, and extent: what every kind carries whatever it is.
+/// The contract calls this the node's `MarkupTrack`.
+struct MarkupTrack {
+    let id: MarkupID
+    let revision: UInt64
+    let scope: Scope
+}
+
 /// A node of the canonical Markdown value tree.
 ///
 /// Nodes are immutable values. Equality and hashing are O(1) and
 /// allocation-free: two nodes are equal exactly when they have the same
 /// `id` and the same `revision`, which the engine guarantees implies
-/// identical AST content (fields and descendants). Absolute source position
-/// is not content — resolve it with `Document.scope(of:)` or receive it from
-/// `MarkupWalker` events.
+/// identical AST content (fields and descendants).
+///
+/// `scope` is on every node and is deliberately NOT part of that: absolute
+/// source position is not content, so two nodes differing only in where they
+/// sit are equal. That is what lets an edit above a node leave every reactive
+/// comparison below it untouched.
 public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     var id: MarkupID { get }
 
@@ -64,6 +75,9 @@ public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     /// any descendant last changed. A pure positional shift caused by an
     /// edit elsewhere never changes a node's revision.
     var revision: UInt64 { get }
+
+    /// The node's absolute source extent, O(1) and stored on the value.
+    var scope: Scope { get }
 
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
 }

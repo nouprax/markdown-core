@@ -6,6 +6,14 @@ public struct DirectiveBlock: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// Whether the construct is `embedded` in surrounding inline content or
     /// stands alone as its own block; always `standalone` for directive
     /// blocks.
@@ -26,12 +34,13 @@ public struct DirectiveBlock: Markup {
 
 extension DirectiveBlock {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         let values = DirectiveValues(from: node)
         let (label, content) = values.partition(builder.children(node))
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             mode: values.mode,
             name: values.name,
             attributes: values.attributes,

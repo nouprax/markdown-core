@@ -104,7 +104,6 @@ public final class Document: Markup, @unchecked Sendable
 public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
 public func hash(into hasher: inout Hasher)
 public func node(_ id: MarkupID) -> (any Markup)?
-public func scope(of node: some Markup) -> Scope
 public init(
 public init(_ markdown: String, options: ParseOptions
 public init(rawValue: UInt32)

@@ -12,6 +12,14 @@ public struct List: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// Whether the list is bulleted or ordered.
     public let flavor: ListFlavor
     /// An ordered list's starting number; nil for bullet lists.
@@ -27,7 +35,7 @@ public struct List: Markup {
 
 extension List {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var flavor = MARKDOWN_CORE_LIST_FLAVOR_BULLET
         var start = markdown_core_optional_i64()
         var tight = false
@@ -39,8 +47,9 @@ extension List {
             return item
         }
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             flavor: flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED ? .ordered : .bullet,
             start: start.has_value ? start.value : nil,
             tight: tight,
@@ -55,6 +64,14 @@ public struct ListItem: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// A task-list item's checkbox state; nil for plain items.
     public let checked: Bool?
     /// The item's block content in source order.
@@ -66,12 +83,13 @@ public struct ListItem: Markup {
 
 extension ListItem {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var checked = markdown_core_optional_bool()
         markdown_core_node_list_item_checked(node, &checked)
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             checked: checked.has_value ? checked.value : nil,
             content: builder.children(node)
         )

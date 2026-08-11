@@ -53,9 +53,11 @@ document even for a node it skipped as unchanged.
 The package exposes parsing,
 editing, and read-only AST traversal, not rendering or mutation.
 
-Nodes do not store absolute positions. Resolve them through the document:
-`document.scope(of: node)` returns the node's absolute start/end line and
-column.
+Every node carries its own `scope` — its absolute start and end line and
+column — read in O(1) off the value. It is deliberately not part of `==`:
+position is not content, so two nodes differing only in where they sit are
+equal, which is what lets an edit above a node leave every reactive
+comparison below it untouched.
 
 ## Traverse and Inspect
 
@@ -123,7 +125,7 @@ instead of the section containing it:
 let commit = try document.edit(text)
 for diff in commit.delta.diffs where diff.parts != .descendant {
     guard let node = commit.document.node(diff.markup) else { continue }
-    highlight(commit.document.scope(of: node))
+    highlight(node.scope)
 }
 ```
 

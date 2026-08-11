@@ -103,6 +103,8 @@ public final class Document: Markup, @unchecked Sendable {
     public let id: MarkupID
     /// The revision at which this document's content last changed.
     public let revision: UInt64
+    /// The document's absolute source extent: the whole text.
+    public let scope: Scope
     /// The document's top-level blocks in source order.
     public let content: [any Markup]
     /// Everything an editor should underline, in source order. Empty for
@@ -116,7 +118,6 @@ public final class Document: Markup, @unchecked Sendable {
     public var lineage: UInt64 { id.lineage }
 
     let handle: OpaquePointer
-    private let scopes: [UInt64: Scope]
     /// Every node of this document by identity, so an answer addressed by
     /// `MarkupID` can hand back the node value rather than the bare id.
     private let index: [UInt64: any Markup]
@@ -150,7 +151,8 @@ public final class Document: Markup, @unchecked Sendable {
         }
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        (content, scopes) = Document.project(root, lineage: lineage)
+        scope = Scope(from: markdown_core_node_scope(root))
+        content = Document.project(root, lineage: lineage)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -165,7 +167,8 @@ public final class Document: Markup, @unchecked Sendable {
         }
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        (content, scopes) = Document.project(root, lineage: lineage)
+        scope = Scope(from: markdown_core_node_scope(root))
+        content = Document.project(root, lineage: lineage)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -230,20 +233,6 @@ public final class Document: Markup, @unchecked Sendable {
         return id.rawValue == self.id.rawValue ? self : index[id.rawValue]
     }
 
-    /// The absolute source extent of `node`, O(1).
-    ///
-    /// Traps on a node from another parse, and on a stale value whose
-    /// revision this document has superseded — equal nodes may sit at
-    /// different absolute positions in different revisions, so pairing old
-    /// fields with new positions is never right.
-    public func scope(of node: some Markup) -> Scope {
-        precondition(node.id.lineage == id.lineage, "node belongs to a different parse")
-        guard let scope = scopes[node.id.rawValue] else {
-            preconditionFailure("node does not belong to this document")
-        }
-        return scope
-    }
-
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
@@ -259,35 +248,23 @@ public final class Document: Markup, @unchecked Sendable {
         hasher.combine(revision)
     }
 
-    /// Builds every value below `root` and every node's absolute extent, in
-    /// ONE pass.
-    ///
-    /// The scopes come from `markdown_core_node_scope`, which reads two fields
-    /// the parser already wrote — the positions are absolute and stored on the
-    /// node. This walk meets every node anyway, so a second traversal to
-    /// collect them (which is all the facade's scope table is) would be the
-    /// same work done twice into an intermediate array.
+    /// Builds every value below `root`.
     ///
     /// Postorder over an explicit stack, because nesting depth is
     /// input-controlled: a document that PARSED must also project, and the
     /// call stack is not a budget this package may spend on the caller's
     /// behalf. Child arrays assemble in sibling frames, so every node is
     /// built exactly once, from children that are already built.
-    private static func project(
-        _ root: OpaquePointer,
-        lineage: UInt64
-    ) -> (content: [any Markup], scopes: [UInt64: Scope]) {
+    private static func project(_ root: OpaquePointer, lineage: UInt64) -> [any Markup] {
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
-        var scopes: [UInt64: Scope] = [:]
         let builder = MarkupBuilder(lineage: lineage) { _ in completed }
         var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
         while let (node, ready) = stack.popLast() {
             if ready {
-                scopes[markdown_core_node_get_id(node)] = Scope(from: markdown_core_node_scope(node))
                 completed = frames.removeLast()
                 if node == root {
-                    return (completed, scopes)
+                    return completed
                 }
                 frames[frames.count - 1].append(builder.markup(from: node))
                 continue
@@ -357,10 +334,12 @@ struct MarkupBuilder {
     let lineage: UInt64
     let children: (OpaquePointer) -> [any Markup]
 
-    func id(of node: OpaquePointer) -> (id: MarkupID, revision: UInt64) {
-        (
-            MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
-            markdown_core_node_get_revision(node)
+    /// The three things every kind carries, read once per node.
+    func track(of node: OpaquePointer) -> MarkupTrack {
+        MarkupTrack(
+            id: MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
+            revision: markdown_core_node_get_revision(node),
+            scope: Scope(from: markdown_core_node_scope(node))
         )
     }
 

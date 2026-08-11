@@ -19,10 +19,18 @@ scalar with `MarkupTrack`, moving parser answers from session scope to the
 immutable published document, and pinning which string fields carry a
 `TextMap` (`incremental-canonical-ast.md`) — a map since removed, on
 2026-08-07, because no consumer ever asked to see the bytes behind decoded
-text and the reverse lookup they do ask for is `document.scope(of:)`; and
+text and the reverse lookup they do ask for is the node's own scope; and
 `revision` returned to one number on 2026-08-09, the `{ self, subtree }` pair
 having been specified but never built, wanted by no consumer, and redundant
-with the `DESCENDANT` diff part.
+with the `DESCENDANT` diff part; and `scope` came BACK onto node values on
+2026-08-11, reversing the M4 move above. It was taken off so that a binding
+could hand a moved-but-unchanged node back as the same object; that reuse
+turned out to be a decode-cost optimization dressed as a guarantee, and it
+made a document's projection a function of how it was reached rather than of
+its text — the opposite of the value semantics a reactive consumer needs.
+Scope was never part of equality and still is not, so nothing a reactive
+framework compares changes; what goes with the move is the scope table, the
+`document.scope(of:)` mediator, and the stale-value failure mode it needed.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -44,11 +52,11 @@ or semantics.
   `(MarkupID, revision)` — O(1) and allocation-free — and equal nodes are
   guaranteed to have identical AST content, their subtrees included. See the
   identity and equality section.
-- Nodes do not store absolute source positions. Scopes are resolved on demand
-  through the owning document (`document.scope(of:)`) in `O(log n)`, supplied
-  with every `MarkupWalker` event, and printed by the dump; see
-  `incremental-canonical-ast.md` §7.2 for the resolution rules and the
-  coordinate profiles.
+- Every node carries its own absolute source extent, read in O(1) off the
+  value, supplied with every `MarkupWalker` event, and printed by the dump;
+  see `incremental-canonical-ast.md` §7.2 for the coordinate profiles. There is
+  no lookup structure and no document-mediated accessor: a document is an
+  immutable projection of one text, so a node in it does not move.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -215,9 +223,16 @@ error rather than silently dropping a value.
 | `CrossLink` | `reference: String` | source-faithful non-empty reference from `[[reference]]`; leaf; has no in-document definition, so it is never undefined |
 | `Embed` | `reference: String` | source-faithful non-empty reference from `![[reference]]`; leaf; as `CrossLink` |
 
-Every row above also carries the inherited `track: MarkupTrack`; it is not
-repeated in the table. No row has a stored scope, and no row has a stored
-absolute offset of any kind.
+Every row above also carries the inherited `track: MarkupTrack` — identity,
+revision, and the node's absolute source extent; it is not repeated in the
+table. No row has a stored absolute byte offset of any kind.
+
+The extent is on the node because it is a property OF the node, known at parse
+time, and constant for the life of that node value: a document is an immutable
+projection of one text, so a node in it cannot move. It is deliberately absent
+from equality (below), because a consumer diffing values in a reactive
+framework does not compare positions — which is exactly why holding it costs
+that consumer nothing.
 
 At most one field per kind is the kind's content text, spelled `literal`, and
 it is a `Utf8Text`: decoded characters and nothing beside them. UTF-8 there is
@@ -245,7 +260,7 @@ see the bytes behind decoded text, the two kinds whose reverse lookup the
 design was for — `CrossLink.reference` and `Embed.reference` — are
 source-faithful and so map identically, and a local diagnostic names a source
 span rather than a decoded character's provenance. What consumers do ask for
-is the reverse lookup itself, and that is `document.scope(of:)`.
+is the reverse lookup itself, and that is the node's own `scope`.
 
 ### Identity and equality
 
@@ -274,8 +289,10 @@ is invalid.
 
 Equality and hashing on every kind are `(MarkupID, revision)`, which is
 whole-subtree equality. Identifiable-style APIs use `MarkupID` alone. Two equal
-nodes are guaranteed to have identical AST content. Absolute source position is
-not content.
+nodes are guaranteed to have identical AST content. **`extent` does not
+participate**: absolute source position is not content, and two nodes that
+differ only in where they sit are equal — which is what lets an edit above a
+node leave every reactive comparison below it untouched.
 
 There is deliberately no second stamp for the node's own projection without
 its descendants. A consumer that needs to tell "this node changed" from

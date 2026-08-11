@@ -83,10 +83,9 @@ try benchmark("deep_nesting", source: String(repeating: "> ", count: 128) + "lea
 // A deep document built end to end. This replaces the depth-4,096
 // `deep_scope_materialization` workload, whose subject no longer exists: a
 // document resolved scopes lazily against its session, so the first request
-// was a measurable event. Scopes are now built once inside the initializer
-// along with the value tree, and `scope(of:)` is a dictionary lookup. The
-// cost did not disappear — it moved into the parse boundary — so the workload
-// that measures it is a deep parse, under a name that says so.
+// was a measurable event. Every node carries its own extent now, so there is
+// nothing to resolve at all. The cost moved into the parse boundary, so the
+// workload that measures it is a deep parse, under a name that says so.
 func benchmarkDeepBuild(_ workload: String, depth: Int) throws {
     let source = String(repeating: "> ", count: depth) + "leaf\n"
     try measureAndReport(
@@ -95,7 +94,7 @@ func benchmarkDeepBuild(_ workload: String, depth: Int) throws {
         metrics: "bytes=\(source.utf8.count) depth=\(depth)"
     ) { _ in
         let document = try Document(source)
-        _ = document.scope(of: document)
+        _ = document.scope
     }
 }
 

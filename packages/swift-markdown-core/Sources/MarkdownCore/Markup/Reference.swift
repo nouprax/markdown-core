@@ -16,6 +16,14 @@ public struct ReferenceDefinition: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The label between `[` and `]`, exactly as written.
     public let label: String
     /// The destination this definition assigns to its label.
@@ -36,6 +44,14 @@ public struct LinkReference: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The label this reference resolves by, exactly as written.
     public let label: String
     /// The source form the reference was written in.
@@ -53,6 +69,14 @@ public struct ImageReference: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The label this reference resolves by, exactly as written.
     public let label: String
     /// The source form the reference was written in.
@@ -76,14 +100,15 @@ extension ReferenceForm {
 
 extension ReferenceDefinition {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var label = markdown_core_string()
         var destination = markdown_core_string()
         var title = markdown_core_string()
         markdown_core_node_reference_definition_properties(node, &label, &destination, &title)
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             label: label.requiredString,
             destination: destination.optionalString,
             title: title.optionalString
@@ -93,13 +118,14 @@ extension ReferenceDefinition {
 
 extension LinkReference {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var label = markdown_core_string()
         var form = MARKDOWN_CORE_REFERENCE_SHORTCUT
         markdown_core_node_reference_properties(node, &label, &form)
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             label: label.requiredString,
             form: ReferenceForm(form),
             content: builder.children(node)
@@ -109,13 +135,14 @@ extension LinkReference {
 
 extension ImageReference {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var label = markdown_core_string()
         var form = MARKDOWN_CORE_REFERENCE_SHORTCUT
         markdown_core_node_reference_properties(node, &label, &form)
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             label: label.requiredString,
             form: ReferenceForm(form),
             content: builder.children(node)

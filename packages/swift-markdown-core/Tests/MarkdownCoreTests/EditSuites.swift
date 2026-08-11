@@ -52,15 +52,17 @@ import Testing
         let insertedDiff = try #require(commit.delta.diffs.first { $0.markup == inserted.id })
         #expect(insertedDiff.parts == [.value, .children, .descendant])
 
-        // Downstream nodes shifted by two lines: equal values, new scopes.
+        // Downstream nodes shifted by two lines. The successor's value is the
+        // one that moved; the predecessor's value keeps the extent it was
+        // parsed with, because a document is an immutable projection of one
+        // text and a node in it does not move.
         let third = try #require(after.content[3] as? Paragraph)
-        #expect(after.scope(of: third).start.line == 7)
-        // A value carried over from the predecessor has the same (id,
-        // revision) and resolves against the successor at its NEW position —
-        // identity survives the edit, absolute position does not.
-        #expect(after.scope(of: thirdBefore).start.line == 7)
-        // And the predecessor, superseded, still answers at its own.
-        #expect(before.scope(of: thirdBefore).start.line == 5)
+        #expect(third.scope.start.line == 7)
+        #expect(thirdBefore.scope.start.line == 5)
+        // And they are still EQUAL: identity survived the edit and position is
+        // not part of equality, which is exactly what lets an edit above a
+        // node leave every reactive comparison below it untouched.
+        #expect(third == thirdBefore)
         #expect(after.dump() == (try Document("# New\n\nFirst\n\nSecond\n\nThird\n").dump()))
     }
 
@@ -108,7 +110,7 @@ import Testing
     func pureShiftReportsEmptyDelta() throws {
         let before = try Document("Alpha\n\n\n\nOmega\n")
         let omegaBefore = try #require(before.content[1] as? Paragraph)
-        #expect(before.scope(of: omegaBefore).start.line == 5)
+        #expect(omegaBefore.scope.start.line == 5)
 
         // Delete two of the blank lines: no node's content changes.
         let commit = try before.edit("Alpha\n\nOmega\n")
@@ -117,8 +119,11 @@ import Testing
 
         #expect(commit.delta.diffs.isEmpty)
         #expect(commit.delta.afterRevision > commit.delta.beforeRevision)
+        // Equal, and at a different place: two nodes differing only in where
+        // they sit are equal, because position is not content.
         #expect(omegaAfter == omegaBefore)
-        #expect(after.scope(of: omegaAfter).start.line == 3)
+        #expect(omegaAfter.scope.start.line == 3)
+        #expect(omegaBefore.scope.start.line == 5)
         #expect(after.dump() == (try Document("Alpha\n\nOmega\n").dump()))
     }
 
@@ -164,7 +169,7 @@ import Testing
         do {
             let first = try Document("One\n\nTwo\n")
             two = try #require(first.content[1] as? Paragraph)
-            #expect(first.scope(of: try #require(two)).start.line == 3)
+            #expect(try #require(two).scope.start.line == 3)
 
             // Editing hands the native parse to the successor, which then
             // goes out of scope and frees it. The predecessor's values,
@@ -174,7 +179,7 @@ import Testing
             retained = first
         }
         let document = try #require(retained)
-        #expect(document.scope(of: try #require(two)).start.line == 3)
+        #expect(try #require(two).scope.start.line == 3)
         #expect(document.dump().contains("Paragraph"))
         var visitor = CountingVisitor()
         MarkupWalker().walk(document, visitor: &visitor)

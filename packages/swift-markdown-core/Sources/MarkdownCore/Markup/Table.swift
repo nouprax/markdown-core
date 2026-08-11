@@ -14,6 +14,14 @@ public struct Table: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// Per-column alignments, one entry per column.
     public let alignments: [TableAlignment]
     /// The single header row.
@@ -27,7 +35,7 @@ public struct Table: Markup {
 
 extension Table {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var count = 0
         markdown_core_node_table_column_count(node, &count)
         let alignments = (0..<count).map { index in
@@ -44,8 +52,9 @@ extension Table {
         let headers = rows.filter(\.isHeader)
         precondition(headers.count == 1, "table must contain exactly one header row")
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             alignments: alignments,
             header: headers[0],
             rows: rows.filter { !$0.isHeader }
@@ -59,6 +68,14 @@ public struct TableRow: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// Whether this is the table's header row.
     public let isHeader: Bool
     /// The row's cells in column order.
@@ -70,7 +87,7 @@ public struct TableRow: Markup {
 
 extension TableRow {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var header = false
         markdown_core_node_table_row_is_header(node, &header)
         let cells = builder.children(node).map { child -> TableCell in
@@ -79,7 +96,7 @@ extension TableRow {
             }
             return cell
         }
-        self.init(id: id, revision: revision, isHeader: header, cells: cells)
+        self.init(id: track.id, revision: track.revision, scope: track.scope, isHeader: header, cells: cells)
     }
 }
 
@@ -89,6 +106,14 @@ public struct TableCell: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The cell's inline content.
     public let content: [any Markup]
 
@@ -98,7 +123,7 @@ public struct TableCell: Markup {
 
 extension TableCell {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
-        self.init(id: id, revision: revision, content: builder.children(node))
+        let track = builder.track(of: node)
+        self.init(id: track.id, revision: track.revision, scope: track.scope, content: builder.children(node))
     }
 }

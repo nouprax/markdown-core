@@ -27,7 +27,7 @@ import Testing
         ]
         #expect(kinds == expected)
         #expect(
-            documents.allSatisfy { $0.scope(of: $0).start == Position(line: 1, column: 1) }
+            documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) }
         )
     }
 
@@ -95,7 +95,7 @@ import Testing
         #expect(empty.label != nil)
         #expect(empty.label?.content.isEmpty == true)
         #expect(
-            document.scope(of: try #require(empty.label))
+            (try #require(empty.label)).scope
                 == Scope(
                     start: Position(line: 9, column: 44),
                     end: Position(line: 9, column: 45)

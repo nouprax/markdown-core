@@ -7,6 +7,14 @@ public struct FootnoteDefinition: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The label exactly as written between `[^` and `]`, without the
     /// delimiters. Matching is case-folded with collapsed whitespace via
     /// the session's footnote queries; the stored value is not normalized.
@@ -20,12 +28,13 @@ public struct FootnoteDefinition: Markup {
 
 extension FootnoteDefinition {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var label = markdown_core_string()
         markdown_core_node_footnote_id(node, &label)
         self.init(
-            id: id,
-            revision: revision,
+            id: track.id,
+            revision: track.revision,
+            scope: track.scope,
             label: label.requiredString,
             content: builder.children(node)
         )
@@ -38,6 +47,14 @@ public struct FootnoteReference: Markup {
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
+    /// The node's absolute source extent, both bounds inclusive of the
+    /// construct's own markers.
+    ///
+    /// A property OF the node, not of a lookup: a document is an immutable
+    /// projection of one text, so a node in it does not move. It is
+    /// deliberately absent from `==` — position is not content — so an edit
+    /// above this node leaves every reactive comparison below it untouched.
+    public let scope: Scope
     /// The label exactly as written between `[^` and `]`, without the
     /// delimiters. Matching is case-folded with collapsed whitespace via
     /// the session's footnote queries; the stored value is not normalized.
@@ -49,9 +66,9 @@ public struct FootnoteReference: Markup {
 
 extension FootnoteReference {
     init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
+        let track = builder.track(of: node)
         var label = markdown_core_string()
         markdown_core_node_footnote_id(node, &label)
-        self.init(id: id, revision: revision, label: label.requiredString)
+        self.init(id: track.id, revision: track.revision, scope: track.scope, label: label.requiredString)
     }
 }

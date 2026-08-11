@@ -14,7 +14,7 @@ public enum MarkupDumper {
     /// line becomes line 1. Position-free markers (0:0..0:0) print
     /// unchanged.
     public static func dump(_ document: Document, of node: some Markup) -> String {
-        let origin = document.scope(of: node).start.line
+        let origin = node.scope.start.line
         let offset = origin > 0 ? origin - 1 : 0
         var visitor = DumpVisitor()
         var frames: [Frame] = []
