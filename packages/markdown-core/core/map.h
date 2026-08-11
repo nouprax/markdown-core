@@ -12,9 +12,22 @@ extern "C" {
  * order for that label. Entries may be added and removed at any time; there
  * is no freeze after the first lookup. */
 struct markdown_core_map_entry {
-    struct markdown_core_map_entry *next;        /* every live entry, newest first */
-    struct markdown_core_map_entry *prev;        /* back link: sessions unlink stale entries in O(1) */
-    struct markdown_core_map_entry *bucket_next; /* same-label chain, ascending document order */
+    struct markdown_core_map_entry *next; /* every live entry, newest first */
+    struct markdown_core_map_entry *prev; /* back link: sessions unlink stale entries in O(1) */
+    /* Same-label chain, ascending document order, CIRCULAR and doubly
+     * linked: the index slot names the head (the winner), so `head->bucket_prev`
+     * names the tail without a field of its own. A lone entry links to itself.
+     *
+     * Circular because both ends are hot and neither insertion is a search.
+     * A definition joins its label either as the new minimum (a full index
+     * build walks the live chain newest-first) or as the new maximum (an
+     * incremental add stamps the largest order there has ever been), and both
+     * are "splice in front of the head" — the second one just does not move
+     * the head. Doubly linked because removal is equally hot: a reparse
+     * retracts a paragraph's definitions and the winner must be re-elected,
+     * which is the next node, not a search for it. */
+    struct markdown_core_map_entry *bucket_next;
+    struct markdown_core_map_entry *bucket_prev;
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
     uint64_t owner; /* owning document-child id (0 = the head region) */
