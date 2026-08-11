@@ -150,8 +150,7 @@ public final class Document: Markup, @unchecked Sendable {
         }
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        content = Document.content(below: root, lineage: lineage)
-        scopes = Document.scopeTable(handle)
+        (content, scopes) = Document.project(root, lineage: lineage)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -166,8 +165,7 @@ public final class Document: Markup, @unchecked Sendable {
         }
         id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
-        content = Document.content(below: root, lineage: lineage)
-        scopes = Document.scopeTable(handle)
+        (content, scopes) = Document.project(root, lineage: lineage)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -261,23 +259,35 @@ public final class Document: Markup, @unchecked Sendable {
         hasher.combine(revision)
     }
 
-    /// Builds every value below `root` and returns the root's own children.
+    /// Builds every value below `root` and every node's absolute extent, in
+    /// ONE pass.
+    ///
+    /// The scopes come from `markdown_core_node_scope`, which reads two fields
+    /// the parser already wrote — the positions are absolute and stored on the
+    /// node. This walk meets every node anyway, so a second traversal to
+    /// collect them (which is all the facade's scope table is) would be the
+    /// same work done twice into an intermediate array.
     ///
     /// Postorder over an explicit stack, because nesting depth is
     /// input-controlled: a document that PARSED must also project, and the
     /// call stack is not a budget this package may spend on the caller's
     /// behalf. Child arrays assemble in sibling frames, so every node is
     /// built exactly once, from children that are already built.
-    private static func content(below root: OpaquePointer, lineage: UInt64) -> [any Markup] {
+    private static func project(
+        _ root: OpaquePointer,
+        lineage: UInt64
+    ) -> (content: [any Markup], scopes: [UInt64: Scope]) {
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
+        var scopes: [UInt64: Scope] = [:]
         let builder = MarkupBuilder(lineage: lineage) { _ in completed }
         var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
         while let (node, ready) = stack.popLast() {
             if ready {
+                scopes[markdown_core_node_get_id(node)] = Scope(from: markdown_core_node_scope(node))
                 completed = frames.removeLast()
                 if node == root {
-                    return completed
+                    return (completed, scopes)
                 }
                 frames[frames.count - 1].append(builder.markup(from: node))
                 continue
@@ -308,21 +318,6 @@ public final class Document: Markup, @unchecked Sendable {
         while let node = stack.popLast() {
             table[node.id.rawValue] = node
             stack.append(contentsOf: node.accept(&children))
-        }
-        return table
-    }
-
-    private static func scopeTable(_ handle: OpaquePointer) -> [UInt64: Scope] {
-        var rows: UnsafeMutablePointer<markdown_core_scope_entry>?
-        var count = 0
-        guard markdown_core_document_scope_table(handle, &rows, &count, nil), let rows else {
-            return [:]
-        }
-        defer { markdown_core_scope_table_free(rows) }
-        var table: [UInt64: Scope] = [:]
-        table.reserveCapacity(count)
-        for index in 0..<count {
-            table[rows[index].id] = Scope(from: rows[index].scope)
         }
         return table
     }
