@@ -70,7 +70,11 @@ if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
 fi
 
 tests_all=$("ctest" --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
-for label in api facade conformance consumer spec equivalence extensions regression pathological complexity fuzz packaging benchmark; do
+# `performance` and not `complexity`: complexity_runner was replaced by
+# performance_runner, and this list kept asking for the dead label — so the
+# audit failed on a name nothing produces while never checking the one that
+# every timing gate now carries.
+for label in api facade conformance consumer spec equivalence extensions regression pathological performance fuzz packaging benchmark; do
     count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
     if [ "${count:-0}" -lt 1 ]; then
         fail "no CTest tests carry label '$label'"
@@ -92,11 +96,11 @@ else
 fi
 
 for preset in correctness-asan correctness-ubsan correctness-tsan; do
-    if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
-        fail "$preset includes timing-based complexity gates"
+    if ctest --preset "$preset" -N | grep -q 'performance_'; then
+        fail "$preset includes timing-based performance gates"
     fi
 done
-note "sanitizer presets exclude timing-based complexity gates"
+note "sanitizer presets exclude timing-based performance gates"
 
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native

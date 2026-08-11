@@ -1,7 +1,6 @@
 package com.nouprax.markdown.core.benchmark
 
 import com.nouprax.markdown.core.Document
-import com.nouprax.markdown.core.MarkupSession
 import java.io.File
 import kotlin.system.measureNanoTime
 
@@ -52,11 +51,15 @@ private fun benchmark(
     workload: String,
     source: String,
 ) {
-    Document.parse(source)
+    Document(source).close()
     val samples =
         kotlin.collections
-            .List(5) { measureNanoTime { Document.parse(source) } }
-            .sorted()
+            .List(5) {
+                lateinit var document: Document
+                val elapsed = measureNanoTime { document = Document(source) }
+                document.close()
+                elapsed
+            }.sorted()
     println(
         "benchmark runtime=kotlin boundary=jni_parse_and_value_copy workload=$workload " +
             "workload_version=1 bytes=${source.encodeToByteArray().size} warmup=1 repeats=5 " +
@@ -110,62 +113,73 @@ private fun deepScalingBenchmark(
 
 private fun oneShotParseNs(source: String): Long {
     lateinit var document: Document
-    val elapsed = measureNanoTime { document = Document.parse(source) }
+    val elapsed = measureNanoTime { document = Document(source) }
     consume(document)
+    document.close()
     return elapsed
 }
 
-private fun firstCommitNs(source: String): Long =
-    MarkupSession().use { session ->
-        // Isolate the first commit and delta decode: session creation and
-        // edit transfer prepare the exact committed input outside the clock.
-        session.append(source)
-        lateinit var document: Document
-        val elapsed = measureNanoTime { document = session.commit().document }
-        consume(document)
-        elapsed
-    }
+/** One localized edit of a deep chain: the delta decode, with the document it
+ * edits prepared outside the clock. */
+private fun deepEditNs(source: String): Long {
+    val document = Document(source)
+    val edited = source.dropLast("leaf\n".length) + "seed\n"
+    lateinit var next: Document
+    val elapsed = measureNanoTime { next = document.edit(edited).document }
+    consume(next)
+    next.close()
+    return elapsed
+}
 
-private fun scopeMaterializationBenchmark(
+// A deep document built end to end. This replaces the depth-4,096
+// `deep_scope_materialization` workload, whose subject no longer exists: a
+// snapshot resolved scopes lazily against its session, so the first request
+// was a measurable event. Scopes now arrive with the tree in one payload, and
+// `scope` is a map lookup. The cost did not disappear — it moved into the
+// parse boundary — so the workload that measures it is a deep parse, under a
+// name that says so.
+private fun deepBuildBenchmark(
     workload: String,
     source: String,
     depth: Int,
 ) {
-    fun materialize(): Long =
-        MarkupSession().use { session ->
-            session.append(source)
-            session.commit()
-            val document = session.document
-            measureNanoTime { document.scope(document) }
-        }
+    fun build(): Long {
+        lateinit var document: Document
+        val elapsed =
+            measureNanoTime {
+                document = Document(source)
+                document.scope(document)
+            }
+        document.close()
+        return elapsed
+    }
 
-    materialize()
+    build()
     val samples =
         kotlin.collections
-            .List(5) { materialize() }
+            .List(5) { build() }
             .sorted()
     println(
-        "benchmark runtime=kotlin boundary=jni_session_scope_materialization workload=$workload " +
+        "benchmark runtime=kotlin boundary=jni_parse_and_value_copy workload=$workload " +
             "workload_version=1 bytes=${source.encodeToByteArray().size} depth=$depth warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} ${memoryMetrics()}",
     )
 }
 
-private fun sessionBenchmark(
+private fun streamBenchmark(
     workload: String,
     chunks: kotlin.collections.List<String>,
 ) {
     fun stream(): Long =
         measureNanoTime {
-            MarkupSession().use { session ->
-                for (chunk in chunks) {
-                    session.append(chunk)
-                    session.commit()
-                }
-                // Decode cost includes one scope materialization, matching a
-                // consumer that renders the final snapshot.
-                session.document.scope(session.document)
+            var document = Document("")
+            var streamed = ""
+            for (chunk in chunks) {
+                streamed += chunk
+                document = document.edit(streamed).document
             }
+            document.scope(document)
+            document.close()
         }
     stream()
     val samples =
@@ -173,7 +187,7 @@ private fun sessionBenchmark(
             .List(5) { stream() }
             .sorted()
     println(
-        "benchmark runtime=kotlin boundary=jni_session_stream_and_delta_decode workload=$workload " +
+        "benchmark runtime=kotlin boundary=jni_edit_and_delta_decode workload=$workload " +
             "workload_version=1 bytes=${chunks.sumOf { it.encodeToByteArray().size }} " +
             "commits=${chunks.size} warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} ${memoryMetrics()}",
@@ -190,17 +204,17 @@ fun main() {
         ::oneShotParseNs,
     )
     deepScalingBenchmark(
-        "deep_first_commit",
-        "jni_session_first_commit_and_delta_decode",
-        ::firstCommitNs,
+        "deep_edit",
+        "jni_edit_and_delta_decode",
+        ::deepEditNs,
     )
-    scopeMaterializationBenchmark(
-        "deep_scope_materialization",
+    deepBuildBenchmark(
+        "deep_document_build",
         "> ".repeat(4_096) + "leaf\n",
         4_096,
     )
-    sessionBenchmark(
-        "session_stream_flat",
+    streamBenchmark(
+        "stream_flat",
         buildList {
             val line = "Paragraph with **strong**, [link](https://example.com), and streaming text.\n"
             repeat(400) {

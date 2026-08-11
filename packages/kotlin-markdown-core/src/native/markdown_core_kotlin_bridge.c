@@ -6,13 +6,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* MKC3 wire: every payload opens with the magic and a status byte (0 =
- * success data follows, 1 = an error record follows). Node records carry
- * (kind, id, revision, fields, child-id lists) and never positions; a commit
- * body lists removed ids and then full records for added/changed/bubbled
- * nodes ordered children-before-parents, which is exactly the order a mirror
- * can rebuild in. Scopes travel as a separate (id, revision, scope) table so
- * snapshots can materialize them lazily. */
+/* MKC4 wire: every payload opens with the magic and a status byte (0 =
+ * success data follows, 1 = an error record follows). A success payload
+ * carries the document handle, its lineage, and the root's id and revision,
+ * then the body, then the scope table and the diagnostics.
+ *
+ * There are two bodies. An OPEN body is the whole tree: every node record,
+ * children before parents. An EDIT body is the delta: the two revisions and
+ * one row per differing node, in the order the facade defines — a retired row
+ * is the id alone, a surviving row is the node's full record. Both bodies
+ * therefore deliver records children-before-parents, which is exactly the
+ * order a mirror rebuilds in.
+ *
+ * Node records carry (kind, id, revision, fields, child-id lists) and never
+ * positions; scopes travel as their own (id, revision, scope) table. */
 
 typedef struct bridge_buffer {
     uint8_t *data;
@@ -76,11 +83,13 @@ static void encode_u64(uint8_t *bytes, uint64_t value) {
     }
 }
 
-static void put_i32(bridge_buffer *buffer, int32_t value) {
+static void put_u32(bridge_buffer *buffer, uint32_t value) {
     uint8_t bytes[4];
-    encode_u32(bytes, (uint32_t)value);
+    encode_u32(bytes, value);
     put_bytes(buffer, bytes, sizeof(bytes));
 }
+
+static void put_i32(bridge_buffer *buffer, int32_t value) { put_u32(buffer, (uint32_t)value); }
 
 static void put_u64(bridge_buffer *buffer, uint64_t value) {
     uint8_t bytes[8];
@@ -113,7 +122,7 @@ static void put_string(bridge_buffer *buffer, markdown_core_string value, bool p
 }
 
 static void put_magic(bridge_buffer *buffer) {
-    static const uint8_t magic[] = {'M', 'K', 'C', '3'};
+    static const uint8_t magic[] = {'M', 'K', 'C', '4'};
     put_bytes(buffer, magic, sizeof(magic));
 }
 
@@ -134,14 +143,6 @@ static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
         put_scope(buffer, scope);
     }
     markdown_core_error_free(error);
-}
-
-static void put_argument_error(bridge_buffer *buffer, const char *message) {
-    markdown_core_string view = {(const uint8_t *)message, strlen(message)};
-    put_u8(buffer, 1);
-    put_i32(buffer, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT);
-    put_string(buffer, view, true);
-    put_u8(buffer, 0);
 }
 
 static bool finish(bridge_buffer *buffer, uint8_t **output, size_t *output_length) {
@@ -179,6 +180,15 @@ static void put_id_list(bridge_buffer *buffer, const markdown_core_node *node, s
 
 static void put_child_ids(bridge_buffer *buffer, const markdown_core_node *node) {
     put_id_list(buffer, markdown_core_node_get_first_child(node), markdown_core_node_child_count(node));
+}
+
+static void put_html_comment(bridge_buffer *buffer, const markdown_core_node *node) {
+    /* Asked of the parser, never re-derived here: the one-complete-comment
+     * rule belongs to the engine, and a second copy in each binding is a
+     * second definition that can disagree with the first. */
+    bool comment = false;
+    markdown_core_node_html_comment(node, &comment);
+    put_u8(buffer, comment ? 1 : 0);
 }
 
 static void write_record(bridge_buffer *buffer, const markdown_core_node *node) {
@@ -244,9 +254,13 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         break;
     }
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_HTML:
+        markdown_core_node_literal(node, &first);
+        put_html_comment(buffer, node);
+        put_string(buffer, first, true);
+        break;
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_CODE:
-    case MARKDOWN_CORE_KIND_HTML:
         markdown_core_node_literal(node, &first);
         put_string(buffer, first, true);
         break;
@@ -314,14 +328,12 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         put_string(buffer, second, second.data != NULL);
         put_child_ids(buffer, node);
         break;
-    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION: {
-        markdown_core_string third = {NULL, 0};
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_reference_definition_properties(node, &first, &second, &third);
         put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);
         put_string(buffer, third, third.data != NULL);
         break;
-    }
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:
     case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
         markdown_core_reference_form form = MARKDOWN_CORE_REFERENCE_SHORTCUT;
@@ -344,77 +356,99 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     }
 }
 
-static bool wire_verdict(uint32_t change, uint8_t *verdict) {
-    switch (change) {
-    case MARKDOWN_CORE_DELTA_CHANGE_ADDED:
-        *verdict = 0;
-        return true;
-    case MARKDOWN_CORE_DELTA_CHANGE_CHANGED:
-        *verdict = 1;
-        return true;
-    case MARKDOWN_CORE_DELTA_CHANGE_BUBBLED:
-        *verdict = 2;
-        return true;
-    default:
-        return false;
+/* Postorder cursor. Both bodies walk the tree children-before-parents, and
+ * the delta's surviving rows are a SUBSEQUENCE of that same order (the facade
+ * defines the row order as the new document's postorder), so one cursor
+ * advancing forward answers every row in linear time without an id index. */
+static const markdown_core_node *postorder_first(const markdown_core_node *root) {
+    const markdown_core_node *child;
+    while ((child = markdown_core_node_get_first_child(root)) != NULL) {
+        root = child;
+    }
+    return root;
+}
+
+static const markdown_core_node *postorder_next(const markdown_core_node *node,
+                                                const markdown_core_node *root) {
+    const markdown_core_node *next;
+    if (node == root) {
+        return NULL;
+    }
+    next = markdown_core_node_get_next_sibling(node);
+    if (next == NULL) {
+        return markdown_core_node_get_parent(node);
+    }
+    return postorder_first(next);
+}
+
+static size_t postorder_count(const markdown_core_node *root) {
+    const markdown_core_node *node = postorder_first(root);
+    size_t count = 0;
+    while (node != NULL) {
+        count++;
+        node = postorder_next(node, root);
+    }
+    return count;
+}
+
+static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root) {
+    const markdown_core_node *node;
+    size_t count = postorder_count(root);
+    if (count > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    put_i32(buffer, (int32_t)count);
+    for (node = postorder_first(root); node != NULL && !buffer->failed;
+         node = postorder_next(node, root)) {
+        write_record(buffer, node);
     }
 }
 
-static void encode_commit_body(
-    bridge_buffer *buffer,
-    const markdown_core_session *session,
-    const markdown_core_delta *changes
-) {
+static void encode_delta(bridge_buffer *buffer, const markdown_core_node *root,
+                         const markdown_core_delta *changes) {
     uint64_t before = 0;
     uint64_t after = 0;
-    const markdown_core_node_id *removed = NULL;
-    size_t removed_count;
-    markdown_core_delta_entry *entries = NULL;
-    size_t count = 0;
+    const markdown_core_diff *rows = NULL;
+    size_t count;
     size_t index;
-    markdown_core_error *error = NULL;
+    const markdown_core_node *cursor;
 
     markdown_core_delta_revisions(changes, &before, &after);
     put_u64(buffer, before);
     put_u64(buffer, after);
 
-    removed_count = markdown_core_delta_removed(changes, &removed);
-    if (removed_count > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    put_i32(buffer, (int32_t)removed_count);
-    for (index = 0; index < removed_count; ++index) {
-        put_u64(buffer, removed[index]);
-    }
-
-    if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, &error) || count > INT32_MAX) {
-        markdown_core_error_free(error);
-        markdown_core_delta_entries_free(entries);
+    count = markdown_core_delta_diffs(changes, &rows);
+    if (count > INT32_MAX) {
         buffer->failed = true;
         return;
     }
     put_i32(buffer, (int32_t)count);
+    cursor = postorder_first(root);
     for (index = 0; index < count && !buffer->failed; ++index) {
-        const markdown_core_node *node = markdown_core_session_node_by_id(session, entries[index].id);
-        uint8_t verdict;
-        if (!node || !wire_verdict(entries[index].change, &verdict)) {
-            buffer->failed = true;
-            break;
+        put_u32(buffer, rows[index].parts);
+        if (rows[index].parts == 0) {
+            put_u64(buffer, rows[index].markup);
+            continue;
         }
-        put_u8(buffer, verdict);
-        write_record(buffer, node);
+        while (cursor != NULL && markdown_core_node_get_id(cursor) != rows[index].markup) {
+            cursor = postorder_next(cursor, root);
+        }
+        if (cursor == NULL) {
+            buffer->failed = true;
+            return;
+        }
+        write_record(buffer, cursor);
+        cursor = postorder_next(cursor, root);
     }
-    markdown_core_delta_entries_free(entries);
 }
 
-static void encode_scope_table(bridge_buffer *buffer, const markdown_core_session *session) {
-    const markdown_core_document *view = markdown_core_session_document(session);
+static void encode_scope_table(bridge_buffer *buffer, const markdown_core_document *document) {
     markdown_core_scope_entry *entries = NULL;
     size_t count = 0;
     size_t index;
 
-    if (!view || !markdown_core_document_scope_table(view, &entries, &count, NULL) || count > INT32_MAX) {
+    if (!markdown_core_document_scope_table(document, &entries, &count, NULL) || count > INT32_MAX) {
         markdown_core_scope_table_free(entries);
         buffer->failed = true;
         return;
@@ -439,6 +473,22 @@ static void encode_scope_table(bridge_buffer *buffer, const markdown_core_sessio
     markdown_core_scope_table_free(entries);
 }
 
+static void encode_diagnostics(bridge_buffer *buffer, const markdown_core_document *document) {
+    const markdown_core_diagnostic *rows = NULL;
+    size_t count = markdown_core_document_diagnostics(document, &rows);
+    size_t index;
+
+    if (count > INT32_MAX) {
+        buffer->failed = true;
+        return;
+    }
+    put_i32(buffer, (int32_t)count);
+    for (index = 0; index < count && !buffer->failed; ++index) {
+        put_i32(buffer, (int32_t)rows[index].code);
+        put_scope(buffer, rows[index].scope);
+    }
+}
+
 static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->smart_punctuation = (mask & (1u << 0)) != 0;
     options->footnotes = (mask & (1u << 1)) != 0;
@@ -452,35 +502,39 @@ static void apply_options(markdown_core_parse_options *options, uint32_t mask) {
     options->embeds = (mask & (1u << 9)) != 0;
 }
 
-static markdown_core_session *to_session(markdown_core_kotlin_session *session) {
-    return (markdown_core_session *)session;
+static markdown_core_document *document_of(uint64_t handle) {
+    return (markdown_core_document *)(uintptr_t)handle;
 }
 
-static const markdown_core_session *to_const_session(const markdown_core_kotlin_session *session) {
-    return (const markdown_core_session *)session;
+/* Handle, lineage, root id, root revision — the header every success payload
+ * carries, whichever body follows it.
+ *
+ * The ROOT NODE's revision, not the document's: the document's revision counts
+ * commits, while a node's counts the commits that changed it, and an edit that
+ * changes nothing advances the first and not the second. The root is a Markup
+ * node like any other and answers by the node rule. */
+static const markdown_core_node *put_header(bridge_buffer *buffer,
+                                            const markdown_core_document *document) {
+    const markdown_core_node *root = markdown_core_document_root(document);
+    put_u8(buffer, 0);
+    put_u64(buffer, (uint64_t)(uintptr_t)document);
+    put_u64(buffer, markdown_core_document_lineage(document));
+    if (root == NULL) {
+        buffer->failed = true;
+        return NULL;
+    }
+    put_u64(buffer, markdown_core_node_get_id(root));
+    put_u64(buffer, markdown_core_node_get_revision(root));
+    return root;
 }
 
-static uint64_t session_root_id(const markdown_core_session *session) {
-    const markdown_core_document *view = markdown_core_session_document(session);
-    const markdown_core_node *root = view == NULL ? NULL : markdown_core_document_root(view);
-    return root == NULL ? 0 : markdown_core_node_get_id(root);
-}
-
-/* One-shot parse as session sugar: open + edit + single delta-bearing commit
- * + free, encoded in one crossing. The commit's delta lists every node as
- * added, so the payload body is the same record stream a session commit
- * produces, followed by the eagerly materialized scope table. */
-bool markdown_core_kotlin_parse(
-    const uint8_t *source,
-    size_t length,
-    uint32_t options_mask,
-    uint8_t **output,
-    size_t *output_length
-) {
+bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t options_mask,
+                               uint8_t **output, size_t *output_length) {
     markdown_core_parse_options options;
     markdown_core_error *error = NULL;
-    markdown_core_session *session;
-    markdown_core_delta *changes = NULL;
+    markdown_core_document *document;
+    markdown_core_string text;
+    const markdown_core_node *root;
     bridge_buffer buffer = {0};
 
     if (output == NULL || output_length == NULL) {
@@ -492,179 +546,64 @@ bool markdown_core_kotlin_parse(
     apply_options(&options, options_mask);
 
     put_magic(&buffer);
-    session = markdown_core_session_open(&options, &error);
-    if (session == NULL) {
+    text.data = source;
+    text.length = length;
+    document = markdown_core_document_new(text, &options, &error);
+    if (document == NULL) {
         put_error(&buffer, error);
         return finish(&buffer, output, output_length);
     }
-    if (!markdown_core_session_edit(session, 0, 0, source, length, &error) ||
-        !markdown_core_session_commit(session, &changes, &error)) {
-        put_error(&buffer, error);
-        markdown_core_session_free(session);
-        return finish(&buffer, output, output_length);
+    root = put_header(&buffer, document);
+    if (root != NULL) {
+        encode_tree(&buffer, root);
+        encode_scope_table(&buffer, document);
+        encode_diagnostics(&buffer, document);
     }
-    put_u8(&buffer, 0);
-    put_u64(&buffer, markdown_core_session_lineage(session));
-    put_u64(&buffer, session_root_id(session));
-    encode_commit_body(&buffer, session, changes);
-    markdown_core_delta_free(changes);
-    encode_scope_table(&buffer, session);
-    markdown_core_session_free(session);
+    if (buffer.failed) {
+        /* The handle never reaches the caller, so this call owns it. */
+        markdown_core_document_free(document);
+    }
     return finish(&buffer, output, output_length);
+}
+
+bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
+                               uint8_t **output, size_t *output_length) {
+    markdown_core_document *document = document_of(handle);
+    markdown_core_commit commit;
+    markdown_core_error *error = NULL;
+    markdown_core_string text;
+    const markdown_core_node *root;
+    bridge_buffer buffer = {0};
+
+    if (output == NULL || output_length == NULL) {
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+
+    put_magic(&buffer);
+    text.data = source;
+    text.length = length;
+    memset(&commit, 0, sizeof(commit));
+    if (!markdown_core_document_edit(&document, text, &commit, &error)) {
+        put_error(&buffer, error);
+        return finish(&buffer, output, output_length);
+    }
+    root = put_header(&buffer, commit.document);
+    if (root != NULL) {
+        encode_delta(&buffer, root, commit.delta);
+        encode_scope_table(&buffer, commit.document);
+        encode_diagnostics(&buffer, commit.document);
+    }
+    markdown_core_delta_free(commit.delta);
+    if (buffer.failed) {
+        markdown_core_document_free(commit.document);
+    }
+    return finish(&buffer, output, output_length);
+}
+
+void markdown_core_kotlin_release(uint64_t handle) {
+    markdown_core_document_free(document_of(handle));
 }
 
 void markdown_core_kotlin_free(uint8_t *output) { free(output); }
-
-markdown_core_kotlin_session *markdown_core_kotlin_session_open(uint32_t options_mask) {
-    markdown_core_parse_options options;
-    markdown_core_error *error = NULL;
-    markdown_core_session *session;
-
-    markdown_core_parse_options_init(&options);
-    apply_options(&options, options_mask);
-    session = markdown_core_session_open(&options, &error);
-    if (session == NULL) {
-        markdown_core_error_free(error);
-        return NULL;
-    }
-    return (markdown_core_kotlin_session *)session;
-}
-
-void markdown_core_kotlin_session_free(markdown_core_kotlin_session *session) {
-    markdown_core_session_free(to_session(session));
-}
-
-uint64_t markdown_core_kotlin_session_lineage(const markdown_core_kotlin_session *session) {
-    return markdown_core_session_lineage(to_const_session(session));
-}
-
-uint64_t markdown_core_kotlin_session_revision(const markdown_core_kotlin_session *session) {
-    return markdown_core_session_revision(to_const_session(session));
-}
-
-uint64_t markdown_core_kotlin_session_length(const markdown_core_kotlin_session *session) {
-    return (uint64_t)markdown_core_session_length(to_const_session(session));
-}
-
-uint64_t markdown_core_kotlin_session_root(const markdown_core_kotlin_session *session) {
-    return session_root_id(to_const_session(session));
-}
-
-bool markdown_core_kotlin_session_edit(
-    markdown_core_kotlin_session *session,
-    uint64_t byte_start,
-    uint64_t byte_end,
-    const uint8_t *bytes,
-    size_t length,
-    uint8_t **output,
-    size_t *output_length
-) {
-    markdown_core_error *error = NULL;
-    bridge_buffer buffer = {0};
-
-    put_magic(&buffer);
-    if (byte_start > SIZE_MAX || byte_end > SIZE_MAX) {
-        put_argument_error(&buffer, "edit range exceeds the platform address space");
-    } else if (
-        markdown_core_session_edit(to_session(session), (size_t)byte_start, (size_t)byte_end, bytes, length, &error)
-    ) {
-        put_u8(&buffer, 0);
-    } else {
-        put_error(&buffer, error);
-    }
-    return finish(&buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_session_commit(
-    markdown_core_kotlin_session *session,
-    uint8_t **output,
-    size_t *output_length
-) {
-    markdown_core_error *error = NULL;
-    markdown_core_delta *changes = NULL;
-    bridge_buffer buffer = {0};
-
-    put_magic(&buffer);
-    if (!markdown_core_session_commit(to_session(session), &changes, &error)) {
-        put_error(&buffer, error);
-        return finish(&buffer, output, output_length);
-    }
-    put_u8(&buffer, 0);
-    encode_commit_body(&buffer, to_session(session), changes);
-    markdown_core_delta_free(changes);
-    return finish(&buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_session_scopes(
-    const markdown_core_kotlin_session *session,
-    uint8_t **output,
-    size_t *output_length
-) {
-    bridge_buffer buffer = {0};
-
-    put_magic(&buffer);
-    put_u8(&buffer, 0);
-    encode_scope_table(&buffer, to_const_session(session));
-    return finish(&buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_session_footnote_info(
-    const markdown_core_kotlin_session *session,
-    uint64_t id,
-    uint8_t **output,
-    size_t *output_length
-) {
-    markdown_core_footnote_info info;
-    bool found;
-    bridge_buffer buffer = {0};
-
-    put_magic(&buffer);
-    put_u8(&buffer, 0);
-    found = markdown_core_session_footnote_info(to_const_session(session), id, &info);
-    put_u8(&buffer, found ? 1 : 0);
-    if (found) {
-        put_u64(&buffer, info.definition);
-        put_u64(&buffer, info.number);
-        put_u64(&buffer, info.reference_ordinal);
-        put_u64(&buffer, info.reference_count);
-    }
-    return finish(&buffer, output, output_length);
-}
-
-static bool encode_id_array(const markdown_core_node_id *ids, size_t count, uint8_t **output, size_t *output_length) {
-    bridge_buffer buffer = {0};
-    size_t index;
-
-    put_magic(&buffer);
-    put_u8(&buffer, 0);
-    if (count > INT32_MAX) {
-        buffer.failed = true;
-        return finish(&buffer, output, output_length);
-    }
-    put_i32(&buffer, (int32_t)count);
-    for (index = 0; index < count; ++index) {
-        put_u64(&buffer, ids[index]);
-    }
-    return finish(&buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_session_footnotes(
-    const markdown_core_kotlin_session *session,
-    uint8_t **output,
-    size_t *output_length
-) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = markdown_core_session_footnotes(to_const_session(session), &ids);
-    return encode_id_array(ids, count, output, output_length);
-}
-
-bool markdown_core_kotlin_session_footnote_references(
-    const markdown_core_kotlin_session *session,
-    uint64_t definition,
-    uint8_t **output,
-    size_t *output_length
-) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = markdown_core_session_footnote_references(to_const_session(session), definition, &ids);
-    return encode_id_array(ids, count, output, output_length);
-}

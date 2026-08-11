@@ -90,8 +90,9 @@ let commit = try document.edit("# Title\n\nHello world")
 document it was called on must not be edited again. Its already-extracted
 values, scopes, and diagnostics stay valid forever, because they are values.
 
-A `Delta` is one list, in postorder: every node whose projection differs,
-retired nodes first, then every survivor after all of its own children. Each
+A `Delta` is one list, in the new document's postorder: every node whose
+projection differs appears after all of its own children, and a retired node
+appears where it was found — before its former parent's row. Each
 row says WHICH parts differ — `value`, `text`, `children`, `descendant` — and a
 row with no parts is a node that no longer exists. A renderer reconciling by id
 reads the list once, front to back.

@@ -50,7 +50,7 @@ application path uses Markdown Core, R8 may remove the bridge as well.
 import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.ParseOptions
 
-val document = Document.parse(
+val document = Document(
     "# Hello",
     ParseOptions(directives = false),
 )
@@ -66,8 +66,14 @@ directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
 including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The result is an immutable
 value tree whose nodes carry a stable identity (`id`) and a change `revision`;
 equality is O(1) over that pair. Absolute source scopes are resolved through the
-snapshot with `document.scope(node)`. The package exposes parsing, incremental
-sessions, and read-only AST traversal, not rendering or mutation.
+document with `document.scope(node)`. The package exposes parsing, editing, and
+read-only AST traversal, not rendering or mutation.
+
+`Document` owns a native parse and is `AutoCloseable`: `use { }` it, or hand it
+to `edit`, which moves the parse to the successor. A document that is neither
+closed nor edited is released when it becomes unreachable, but that is a
+backstop, not the contract. Everything it produced — content, scopes,
+diagnostics, dump — is a value and stays usable afterwards.
 
 ## Traverse and Inspect
 
@@ -86,9 +92,7 @@ MarkupWalker.walk(document) { event, node, scope ->
 ```
 
 The typed-visitor overload, `MarkupWalker.walk(document, visitor)`, instead
-dispatches each node once in preorder without resolving scopes. That
-scope-free form remains valid for a retained session snapshot even if it was
-superseded before scope materialization.
+dispatches each node once in preorder without resolving scopes.
 
 `Document` exposes `dump()`, which delegates to the public `MarkupDumper` and
 returns the canonical file-tree diagnostic for the snapshot:
@@ -96,41 +100,53 @@ returns the canonical file-tree diagnostic for the snapshot:
 ```kotlin
 import com.nouprax.markdown.core.MarkupDumper
 
-val document = Document.parse("# Hello")
+val document = Document("# Hello")
 println(document.dump())
 println(MarkupDumper.dump(document))
 ```
 
-## Incremental Sessions
+## Edit
 
-`MarkupSession` owns one Markdown text and its living AST. Queue edits
-(`append` is an edit at end-of-text), then `commit()`: the session reparses
-only the stale region, keeps node identity wherever content is unchanged, and
-returns a `Commit` holding the new immutable snapshot plus its `Delta` — the
-exact ids that were `added`, `removed`, `changed`, or `bubbled`. Unchanged
-nodes are the same objects across snapshots, so UI diffing is O(delta).
+There is no session type. A document is created from text and options, and
+`edit` hands it new text: it returns the document that text describes plus the
+`Delta` between the two. Options are fixed for a document's whole lineage —
+changing what the parser means is a new `Document`, not an edit.
 
 ```kotlin
-import com.nouprax.markdown.core.MarkupSession
-
-MarkupSession().use { session ->
-    session.append("# Title\n\nHello")
-    val first = session.commit()
-    session.append(" world")
-    val second = session.commit()
-    check(second.document.content[1].id == first.document.content[1].id)
-    check(second.delta.added.isEmpty())
+val document = Document("# Title\n\nHello")
+val commit = document.edit("# Title\n\nHello world")
+commit.document.use { next ->
+    // The paragraph kept its identity, and its unchanged sibling kept its
+    // exact object: an unchanged node is never re-decoded.
+    check(next.content[1].id == document.content[1].id)
+    check(next.content[0] === document.content[0])
 }
 ```
 
-Streaming consumers keep the two primitives on their natural cadences:
-`append` on every socket message (cheap — nothing parses), `commit()` on the
-render tick, so messages between ticks conflate into one commit and the parse
-rate follows the display, not the socket. `footnote(id)` / `footnotes()` /
-`references(id)` answer footnote numbering, resolution, and back-reference
-ordinals as queries against the committed revision. Sessions are `AutoCloseable`; snapshots, deltas, and any
-scopes materialized while their snapshot was current stay usable after
-`close()`.
+`edit` SUPERSEDES the receiver: the native parse moves to the successor, so the
+document it was called on must not be edited again. Its already-extracted
+values stay valid forever, because they are values.
+
+A `Delta` is one list, in the new document's postorder: every node whose
+projection differs appears after all of its own children, and a retired node
+appears where it was found, before its former parent's row. Each row says WHICH
+parts differ — `value`, `text`, `children`, `descendant` — and a row whose
+`parts.isRetired` is a node that no longer exists. A renderer reconciling by id
+reads the list once, front to back:
+
+```kotlin
+for (diff in commit.delta.diffs) {
+    val node = commit.document.node(diff.markup)
+    if (node == null) retire(diff.markup) else refresh(node, diff.parts)
+}
+```
+
+Streaming consumers edit on the render tick rather than on every socket
+message, so the parse rate follows the display and not the socket.
+`document.diagnostics` lists everything an editor should underline — which, for
+Markdown, is one thing: a directive's `{...}` attribute block that did not
+parse. Every other "wrong" construct is a defined outcome of the standard
+semantics, not a failure.
 
 On JDK 26 and later, JVM applications should launch with
 `--enable-native-access=ALL-UNNAMED` so the package-private JNI loader can load
@@ -147,12 +163,13 @@ The package intentionally has two complementary ABI gates:
 - `jvm-abi.txt` freezes the artifact's Java-source-callable bytecode, including
   JVM descriptors and inheritance. Its class inventory must match the
   documented JVM API dump exactly, while a Java compiler probe proves that
-  native-bridge, wire-decoder, and resolver implementation names and members
-  cannot be used from ordinary Java source.
+  native-bridge and wire-decoder implementation names and members cannot be
+  used from ordinary Java source.
 
-Module-internal top-level helpers share the documented `FootnoteQueriesKt`
-owner through Kotlin's multifile-class mechanism. Its generated backing parts
-are package-private on both JVM and Android; keep the matching `@JvmName` and
+Module-internal top-level helpers share one `MarkdownCoreKt` owner through
+Kotlin's multifile-class mechanism, and each is `@JvmSynthetic`, so the facade
+carries no Java-callable member at all. Its generated backing parts are
+package-private on both JVM and Android; keep the matching `@JvmName` and
 `@JvmMultifileClass` file annotations together when moving those helpers.
 
 After an intentional public Kotlin API change, update the metadata and KLIB

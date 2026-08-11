@@ -86,7 +86,7 @@
             "displayName": "Correctness suites under AddressSanitizer (excludes timing gates)",
             "configurePreset": "asan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "filter": { "exclude": { "label": "^(benchmark|performance|conformance)$" } },
             "execution": { "noTestsAction": "error" }
         },
         {
@@ -94,7 +94,7 @@
             "displayName": "Correctness suites under UndefinedBehaviorSanitizer (excludes timing gates)",
             "configurePreset": "ubsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "filter": { "exclude": { "label": "^(benchmark|performance|conformance)$" } },
             "execution": { "noTestsAction": "error" }
         },
         {
@@ -104,7 +104,7 @@
             "output": { "outputOnFailure": true },
             "filter": {
                 "include": { "label": "^(spec|extensions|regression|conformance|equivalence|pathological)$" },
-                "exclude": { "label": "^complexity$" }
+                "exclude": { "label": "^performance$" }
             },
             "execution": { "noTestsAction": "error" }
         },
@@ -113,7 +113,7 @@
             "displayName": "Correctness suites under ThreadSanitizer (excludes timing gates)",
             "configurePreset": "tsan",
             "output": { "outputOnFailure": true },
-            "filter": { "exclude": { "label": "^(benchmark|complexity|conformance)$" } },
+            "filter": { "exclude": { "label": "^(benchmark|performance|conformance)$" } },
             "execution": { "noTestsAction": "error" }
         }
     ]

@@ -1,4 +1,8 @@
-  field com/nouprax/markdown/core/Document.Companion Lcom/nouprax/markdown/core/Document$Companion;
+  field com/nouprax/markdown/core/DiagnosticCode.DIRECTIVE_ATTRIBUTES Lcom/nouprax/markdown/core/DiagnosticCode;
+  field com/nouprax/markdown/core/DiffParts.CHILDREN I
+  field com/nouprax/markdown/core/DiffParts.DESCENDANT I
+  field com/nouprax/markdown/core/DiffParts.TEXT I
+  field com/nouprax/markdown/core/DiffParts.VALUE I
   field com/nouprax/markdown/core/ListFlavor.BULLET Lcom/nouprax/markdown/core/ListFlavor;
   field com/nouprax/markdown/core/ListFlavor.ORDERED Lcom/nouprax/markdown/core/ListFlavor;
   field com/nouprax/markdown/core/MarkupDumper.INSTANCE Lcom/nouprax/markdown/core/MarkupDumper;
@@ -58,13 +62,34 @@
   method com/nouprax/markdown/core/Delta.afterRevisionBits ()J
   method com/nouprax/markdown/core/Delta.beforeRevisionBits ()J
   method com/nouprax/markdown/core/Delta.equals (Ljava/lang/Object;)Z
-  method com/nouprax/markdown/core/Delta.getAdded ()Ljava/util/List;
   method com/nouprax/markdown/core/Delta.getAfterRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Delta.getBeforeRevision-s-VKNKU ()J
-  method com/nouprax/markdown/core/Delta.getBubbled ()Ljava/util/List;
-  method com/nouprax/markdown/core/Delta.getChanged ()Ljava/util/List;
-  method com/nouprax/markdown/core/Delta.getRemoved ()Ljava/util/List;
+  method com/nouprax/markdown/core/Delta.getDiffs ()Ljava/util/List;
   method com/nouprax/markdown/core/Delta.hashCode ()I
+  method com/nouprax/markdown/core/Diagnostic.<init> (Lcom/nouprax/markdown/core/DiagnosticCode;Lcom/nouprax/markdown/core/Scope;)V
+  method com/nouprax/markdown/core/Diagnostic.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/Diagnostic.getCode ()Lcom/nouprax/markdown/core/DiagnosticCode;
+  method com/nouprax/markdown/core/Diagnostic.getScope ()Lcom/nouprax/markdown/core/Scope;
+  method com/nouprax/markdown/core/Diagnostic.hashCode ()I
+  method com/nouprax/markdown/core/Diagnostic.toString ()Ljava/lang/String;
+  method com/nouprax/markdown/core/DiagnosticCode.getEntries ()Lkotlin/enums/EnumEntries;
+  method com/nouprax/markdown/core/DiagnosticCode.valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/DiagnosticCode;
+  method com/nouprax/markdown/core/DiagnosticCode.values ()[Lcom/nouprax/markdown/core/DiagnosticCode;
+  method com/nouprax/markdown/core/Diff.<init> (Lcom/nouprax/markdown/core/MarkupID;Lcom/nouprax/markdown/core/DiffParts;)V
+  method com/nouprax/markdown/core/Diff.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/Diff.getMarkup ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/Diff.getParts ()Lcom/nouprax/markdown/core/DiffParts;
+  method com/nouprax/markdown/core/Diff.hashCode ()I
+  method com/nouprax/markdown/core/DiffParts.<init> (I)V
+  method com/nouprax/markdown/core/DiffParts.equals (Ljava/lang/Object;)Z
+  method com/nouprax/markdown/core/DiffParts.getChildren ()Z
+  method com/nouprax/markdown/core/DiffParts.getDescendant ()Z
+  method com/nouprax/markdown/core/DiffParts.getRawValue ()I
+  method com/nouprax/markdown/core/DiffParts.getText ()Z
+  method com/nouprax/markdown/core/DiffParts.getValue ()Z
+  method com/nouprax/markdown/core/DiffParts.hashCode ()I
+  method com/nouprax/markdown/core/DiffParts.isRetired ()Z
+  method com/nouprax/markdown/core/DiffParts.toString ()Ljava/lang/String;
   method com/nouprax/markdown/core/Directive.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Directive.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Directive.getAttributes ()Ljava/lang/String;
@@ -93,19 +118,23 @@
   method com/nouprax/markdown/core/DirectiveLabel.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/DirectiveLabel.hashCode ()I
   method com/nouprax/markdown/core/DirectiveLabel.revisionBits ()J
-  method com/nouprax/markdown/core/Document$Companion.parse (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
-  method com/nouprax/markdown/core/Document$Companion.parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
+  method com/nouprax/markdown/core/Document.<init> (Ljava/lang/String;)V
+  method com/nouprax/markdown/core/Document.<init> (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)V
   method com/nouprax/markdown/core/Document.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+  method com/nouprax/markdown/core/Document.close ()V
   method com/nouprax/markdown/core/Document.dump ()Ljava/lang/String;
   method com/nouprax/markdown/core/Document.dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
+  method com/nouprax/markdown/core/Document.edit (Ljava/lang/String;)Lcom/nouprax/markdown/core/Commit;
   method com/nouprax/markdown/core/Document.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Document.getContent ()Ljava/util/List;
+  method com/nouprax/markdown/core/Document.getDiagnostics ()Ljava/util/List;
   method com/nouprax/markdown/core/Document.getId ()Lcom/nouprax/markdown/core/MarkupID;
+  method com/nouprax/markdown/core/Document.getLineage-s-VKNKU ()J
+  method com/nouprax/markdown/core/Document.getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/Document.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.hashCode ()I
-  method com/nouprax/markdown/core/Document.materialize ()V
-  method com/nouprax/markdown/core/Document.parse (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
-  method com/nouprax/markdown/core/Document.parse (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)Lcom/nouprax/markdown/core/Document;
+  method com/nouprax/markdown/core/Document.lineageBits ()J
+  method com/nouprax/markdown/core/Document.node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
   method com/nouprax/markdown/core/Document.revisionBits ()J
   method com/nouprax/markdown/core/Document.scope (Lcom/nouprax/markdown/core/Markup;)Lcom/nouprax/markdown/core/Scope;
   method com/nouprax/markdown/core/Embed.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -130,16 +159,6 @@
   method com/nouprax/markdown/core/FootnoteDefinition.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/FootnoteDefinition.hashCode ()I
   method com/nouprax/markdown/core/FootnoteDefinition.revisionBits ()J
-  method com/nouprax/markdown/core/FootnoteInfo.<init> (Lcom/nouprax/markdown/core/MarkupID;Ljava/lang/Integer;Ljava/lang/Integer;I)V
-  method com/nouprax/markdown/core/FootnoteInfo.equals (Ljava/lang/Object;)Z
-  method com/nouprax/markdown/core/FootnoteInfo.getDefinition ()Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/FootnoteInfo.getNumber ()Ljava/lang/Integer;
-  method com/nouprax/markdown/core/FootnoteInfo.getReferenceCount ()I
-  method com/nouprax/markdown/core/FootnoteInfo.getReferenceOrdinal ()Ljava/lang/Integer;
-  method com/nouprax/markdown/core/FootnoteInfo.hashCode ()I
-  method com/nouprax/markdown/core/FootnoteQueriesKt.footnote (Lcom/nouprax/markdown/core/MarkupSession;Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/FootnoteInfo;
-  method com/nouprax/markdown/core/FootnoteQueriesKt.footnotes (Lcom/nouprax/markdown/core/MarkupSession;)Ljava/util/List;
-  method com/nouprax/markdown/core/FootnoteQueriesKt.references (Lcom/nouprax/markdown/core/MarkupSession;Lcom/nouprax/markdown/core/MarkupID;)Ljava/util/List;
   method com/nouprax/markdown/core/FootnoteReference.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/FootnoteReference.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/FootnoteReference.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -269,20 +288,6 @@
   method com/nouprax/markdown/core/MarkupID.lineageBits ()J
   method com/nouprax/markdown/core/MarkupID.rawValueBits ()J
   method com/nouprax/markdown/core/MarkupID.toString ()Ljava/lang/String;
-  method com/nouprax/markdown/core/MarkupSession.<init> ()V
-  method com/nouprax/markdown/core/MarkupSession.<init> (Lcom/nouprax/markdown/core/ParseOptions;)V
-  method com/nouprax/markdown/core/MarkupSession.append (Ljava/lang/String;)V
-  method com/nouprax/markdown/core/MarkupSession.close ()V
-  method com/nouprax/markdown/core/MarkupSession.commit ()Lcom/nouprax/markdown/core/Commit;
-  method com/nouprax/markdown/core/MarkupSession.getDocument ()Lcom/nouprax/markdown/core/Document;
-  method com/nouprax/markdown/core/MarkupSession.getLength ()I
-  method com/nouprax/markdown/core/MarkupSession.getLineage-s-VKNKU ()J
-  method com/nouprax/markdown/core/MarkupSession.getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
-  method com/nouprax/markdown/core/MarkupSession.getRevision-s-VKNKU ()J
-  method com/nouprax/markdown/core/MarkupSession.lineageBits ()J
-  method com/nouprax/markdown/core/MarkupSession.node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
-  method com/nouprax/markdown/core/MarkupSession.replace (IILjava/lang/String;)V
-  method com/nouprax/markdown/core/MarkupSession.revisionBits ()J
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/CodeBlock;)Ljava/lang/Object;
@@ -471,16 +476,17 @@ class com/nouprax/markdown/core/CodeBlock extends java/lang/Object implements co
 class com/nouprax/markdown/core/Commit extends java/lang/Object implements 
 class com/nouprax/markdown/core/CrossLink extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Delta extends java/lang/Object implements 
+class com/nouprax/markdown/core/Diagnostic extends java/lang/Object implements 
+class com/nouprax/markdown/core/DiagnosticCode extends java/lang/Enum implements 
+class com/nouprax/markdown/core/Diff extends java/lang/Object implements 
+class com/nouprax/markdown/core/DiffParts extends java/lang/Object implements 
 class com/nouprax/markdown/core/Directive extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/DirectiveBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/DirectiveLabel extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/Document extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/Document$Companion extends java/lang/Object implements 
+class com/nouprax/markdown/core/Document extends java/lang/Object implements com/nouprax/markdown/core/Markup,java/lang/AutoCloseable
 class com/nouprax/markdown/core/Embed extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Emphasis extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/FootnoteDefinition extends java/lang/Object implements com/nouprax/markdown/core/Markup
-class com/nouprax/markdown/core/FootnoteInfo extends java/lang/Object implements 
-class com/nouprax/markdown/core/FootnoteQueriesKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/FootnoteReference extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/Formula extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/FormulaBlock extends java/lang/Object implements com/nouprax/markdown/core/Markup
@@ -495,12 +501,12 @@ class com/nouprax/markdown/core/LinkReference extends java/lang/Object implement
 class com/nouprax/markdown/core/List extends java/lang/Object implements com/nouprax/markdown/core/Markup
 class com/nouprax/markdown/core/ListFlavor extends java/lang/Enum implements 
 class com/nouprax/markdown/core/ListItem extends java/lang/Object implements com/nouprax/markdown/core/Markup
+class com/nouprax/markdown/core/MarkdownCoreKt extends java/lang/Object implements 
 class com/nouprax/markdown/core/Markup extends java/lang/Object implements 
 class com/nouprax/markdown/core/Markup$DefaultImpls extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupDumper extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupID extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupID$Companion extends java/lang/Object implements 
-class com/nouprax/markdown/core/MarkupSession extends java/lang/Object implements java/lang/AutoCloseable
 class com/nouprax/markdown/core/MarkupVisitor extends java/lang/Object implements 
 class com/nouprax/markdown/core/MarkupWalker extends java/lang/Object implements 
 class com/nouprax/markdown/core/Paragraph extends java/lang/Object implements com/nouprax/markdown/core/Markup

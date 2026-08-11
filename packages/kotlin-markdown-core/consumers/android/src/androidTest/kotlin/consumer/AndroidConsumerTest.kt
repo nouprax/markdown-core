@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 class AndroidConsumerTest {
     @Test
     fun aarSelectsAndLoadsTheDeviceNativeLibrary() {
-        val heading = Document.parse("# Android\n").content.single() as Heading
+        val heading = Document("# Android\n").content.single() as Heading
         assertEquals(1, heading.level)
     }
 }

@@ -1,176 +1,123 @@
-@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmName("MarkdownCoreKt")
 @file:kotlin.jvm.JvmMultifileClass
 
 package com.nouprax.markdown.core
 
 import kotlin.jvm.JvmSynthetic
 
-private object WireDecoder {
-    private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x33)
+private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x34)
 
-    private fun reader(bytes: ByteArray): WireReader {
-        val reader = WireReader(bytes)
-        magic.forEachIndexed { index, expected ->
-            val actual = reader.byte()
-            require(actual == expected) {
-                "invalid native bridge payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
-            }
+private fun reader(bytes: ByteArray): WireReader {
+    val reader = WireReader(bytes)
+    magic.forEachIndexed { index, expected ->
+        val actual = reader.byte()
+        require(actual == expected) {
+            "invalid native bridge payload at byte $index: expected ${expected.toUByte()}, got ${actual.toUByte()}"
         }
-        when (reader.byte().toInt()) {
-            0 -> Unit
-            1 -> throw reader.error()
-            else -> error("unsupported native bridge status")
+    }
+    when (reader.byte().toInt()) {
+        0 -> Unit
+        1 -> throw reader.error()
+        else -> error("unsupported native bridge status")
+    }
+    return reader
+}
+
+/**
+ * Decodes one payload into [mirror], which it OWNS: an open payload fills an
+ * empty mirror from the whole tree, an edit payload applies the delta to a
+ * copy of the predecessor's. Either way every record's child ids resolve
+ * against already-decoded entries in one pass, because both bodies deliver
+ * records children-before-parents.
+ *
+ * The decoded pieces leave through [build] rather than in a payload type of
+ * this file's own, so no wire type crosses a file boundary — the whole wire
+ * layer stays file-private, which is what keeps it out of the Java-visible
+ * surface. [scopeEntry] builds whatever the caller wants to remember about
+ * one scope row, for the same reason.
+ *
+ * `content` is null exactly when no record named the document root, which
+ * happens only for an edit whose delta is empty: nothing differs, so the
+ * caller's own content is still the answer.
+ */
+private fun <Entry, Result> decode(
+    bytes: ByteArray,
+    mirror: MutableMap<ULong, Markup>,
+    edit: Boolean,
+    scopeEntry: (ULong, Scope) -> Entry,
+    build: (
+        handle: Long,
+        id: MarkupID,
+        revision: ULong,
+        content: kotlin.collections.List<Markup>?,
+        scopes: Map<ULong, Entry>,
+        diagnostics: kotlin.collections.List<Diagnostic>,
+    ) -> Result,
+): Pair<Result, Delta?> {
+    val reader = reader(bytes)
+    val handle = reader.long()
+    val lineage = reader.ulong()
+    val rootId = reader.ulong()
+    val revision = reader.ulong()
+    val root = RootSink()
+    val delta =
+        if (edit) {
+            reader.deltaBody(lineage, rootId, mirror, root)
+        } else {
+            reader.treeBody(lineage, rootId, mirror, root)
         }
-        return reader
-    }
-
-    /** One-shot parse payload: lineage and root id, the first commit's
-     * records, and the eagerly materialized scope table. */
-    fun <Entry> decodeDocument(
-        bytes: ByteArray,
-        scopeEntry: (ULong, Scope) -> Entry,
-        materialize: (
-            MarkupID,
-            ULong,
-            kotlin.collections.List<Markup>,
-            Map<ULong, Entry>,
-        ) -> Document,
-    ): Document {
-        val reader = reader(bytes)
-        val lineage = reader.ulong()
-        val rootId = reader.ulong()
-        val mirror = HashMap<ULong, Markup>()
-        reader.commitBody(lineage, mirror)
-        var rootScopeRevision: ULong? = null
-        val scopes =
-            reader.scopeMap { id, revision, scope ->
-                if (id == rootId) {
-                    rootScopeRevision = revision
-                }
-                scopeEntry(revision, scope)
-            }
-        require(reader.finished) { "trailing bytes after a native parse payload" }
-        val root = mirror[rootId]
-        if (root is Document) {
-            return materialize(
-                root.id,
-                root.revision,
-                root.content,
-                scopes,
-            )
-        }
-        // An empty source commits an empty delta: no record names the root,
-        // which simply kept its revision-0 empty shape.
-        require(mirror.isEmpty()) { "native bridge returned an invalid document tree" }
-        return materialize(
-            MarkupID(lineage, rootId),
-            requireNotNull(rootScopeRevision) { "native bridge returned an invalid document tree" },
-            emptyList(),
-            scopes,
-        )
-    }
-
-    /** Edit acknowledgement: magic and status only. */
-    fun decodeAck(bytes: ByteArray) {
-        require(reader(bytes).finished) { "trailing bytes after a native edit payload" }
-    }
-
-    /** Applies one commit payload to [mirror] and returns its delta. Throws
-     * before touching the mirror when the native commit reported an error. */
-    fun decodeCommit(
-        bytes: ByteArray,
-        lineage: ULong,
-        mirror: MutableMap<ULong, Markup>,
-    ): Delta {
-        val reader = reader(bytes)
-        val delta = reader.commitBody(lineage, mirror)
-        require(reader.finished) { "trailing bytes after a native commit payload" }
-        return delta
-    }
-
-    fun <Entry> decodeScopeMap(
-        bytes: ByteArray,
-        transform: (ULong, Scope) -> Entry,
-    ): Map<ULong, Entry> {
-        val reader = reader(bytes)
-        val entries =
-            reader.scopeMap { _, revision, scope ->
-                transform(revision, scope)
-            }
-        require(reader.finished) { "trailing bytes after a native scope payload" }
-        return entries
-    }
-
-    fun decodeFootnoteInfo(
-        bytes: ByteArray,
-        lineage: ULong,
-    ): FootnoteInfo? {
-        val reader = reader(bytes)
-        if (!reader.boolean()) {
-            require(reader.finished) { "trailing bytes after a native footnote payload" }
-            return null
-        }
-        val definition = reader.ulong()
-        val number = reader.ulong()
-        val referenceOrdinal = reader.ulong()
-        val referenceCount = reader.ulong()
-        require(reader.finished) { "trailing bytes after a native footnote payload" }
-        return FootnoteInfo(
-            definition = if (definition == 0UL) null else MarkupID(lineage, definition),
-            number = if (number == 0UL) null else number.toInt(),
-            referenceOrdinal = if (referenceOrdinal == 0UL) null else referenceOrdinal.toInt(),
-            referenceCount = referenceCount.toInt(),
-        )
-    }
-
-    fun decodeIds(bytes: ByteArray): kotlin.collections.List<ULong> {
-        val reader = reader(bytes)
-        val count = reader.int()
-        require(count >= 0) { "invalid native id count" }
-        val ids = immutableList(count) { reader.ulong() }
-        require(reader.finished) { "trailing bytes after a native id payload" }
-        return ids
-    }
+    val scopes = reader.scopeMap(scopeEntry)
+    val diagnostics = reader.diagnostics()
+    require(reader.finished) { "trailing bytes after a native payload" }
+    return build(
+        handle,
+        MarkupID(lineage, rootId),
+        revision,
+        root.content,
+        scopes,
+        diagnostics,
+    ) to delta
 }
 
 @JvmSynthetic
-internal fun <Entry> decodeWireDocument(
+internal fun <Entry, Result> decodeWireOpen(
     bytes: ByteArray,
+    mirror: MutableMap<ULong, Markup>,
     scopeEntry: (ULong, Scope) -> Entry,
-    materialize: (
+    build: (
+        Long,
         MarkupID,
         ULong,
-        kotlin.collections.List<Markup>,
+        kotlin.collections.List<Markup>?,
         Map<ULong, Entry>,
-    ) -> Document,
-): Document = WireDecoder.decodeDocument(bytes, scopeEntry, materialize)
+        kotlin.collections.List<Diagnostic>,
+    ) -> Result,
+): Result = decode(bytes, mirror, edit = false, scopeEntry, build).first
 
 @JvmSynthetic
-internal fun decodeWireAck(bytes: ByteArray) {
-    WireDecoder.decodeAck(bytes)
+internal fun <Entry, Result> decodeWireEdit(
+    bytes: ByteArray,
+    mirror: MutableMap<ULong, Markup>,
+    scopeEntry: (ULong, Scope) -> Entry,
+    build: (
+        Long,
+        MarkupID,
+        ULong,
+        kotlin.collections.List<Markup>?,
+        Map<ULong, Entry>,
+        kotlin.collections.List<Diagnostic>,
+    ) -> Result,
+): Pair<Result, Delta> {
+    val (result, delta) = decode(bytes, mirror, edit = true, scopeEntry, build)
+    return result to checkNotNull(delta) { "an edit payload carried no delta" }
 }
 
-@JvmSynthetic
-internal fun decodeWireCommit(
-    bytes: ByteArray,
-    lineage: ULong,
-    mirror: MutableMap<ULong, Markup>,
-): Delta = WireDecoder.decodeCommit(bytes, lineage, mirror)
-
-@JvmSynthetic
-internal fun <Entry> decodeWireScopeMap(
-    bytes: ByteArray,
-    transform: (ULong, Scope) -> Entry,
-): Map<ULong, Entry> = WireDecoder.decodeScopeMap(bytes, transform)
-
-@JvmSynthetic
-internal fun decodeWireFootnoteInfo(
-    bytes: ByteArray,
-    lineage: ULong,
-): FootnoteInfo? = WireDecoder.decodeFootnoteInfo(bytes, lineage)
-
-@JvmSynthetic
-internal fun decodeWireIds(bytes: ByteArray): kotlin.collections.List<ULong> = WireDecoder.decodeIds(bytes)
+/** Catches the one record that is not a mirror entry. The root has no parent
+ * to resolve it as a child, and it is a `Document` on the Kotlin side —
+ * which owns a native parse and cannot be minted from a record. */
+private class RootSink {
+    var content: kotlin.collections.List<Markup>? = null
+}
 
 private fun WireReader.error(): ParseException {
     val code =
@@ -251,75 +198,107 @@ private class WireReader(
         }
 }
 
-private fun <Entry> WireReader.scopeMap(transform: (ULong, ULong, Scope) -> Entry): Map<ULong, Entry> {
+private fun <Entry> WireReader.scopeMap(transform: (ULong, Scope) -> Entry): Map<ULong, Entry> {
     val count = int()
     require(count >= 0) { "invalid native scope count" }
     return buildMap(capacity = count) {
-        repeat(count) {
-            val id = ulong()
-            put(id, transform(id, ulong(), scope()))
-        }
+        repeat(count) { put(ulong(), transform(ulong(), scope())) }
     }
+}
+
+private fun WireReader.diagnostics(): kotlin.collections.List<Diagnostic> {
+    val count = int()
+    require(count >= 0) { "invalid native diagnostic count" }
+    return immutableList(count) { Diagnostic(diagnosticCode(int()), scope()) }
+}
+
+private fun diagnosticCode(rawValue: Int): DiagnosticCode =
+    when (rawValue) {
+        1 -> DiagnosticCode.DIRECTIVE_ATTRIBUTES
+        else -> error("unknown native diagnostic code $rawValue")
+    }
+
+/**
+ * Reads a whole tree into [mirror]: every record, children before parents.
+ * The root record is diverted to [root] rather than stored, and returns no
+ * delta — an open payload has no predecessor to differ from.
+ */
+private fun WireReader.treeBody(
+    lineage: ULong,
+    rootId: ULong,
+    mirror: MutableMap<ULong, Markup>,
+    root: RootSink,
+): Delta? {
+    val count = int()
+    require(count >= 0) { "invalid native record count" }
+    repeat(count) { readInto(lineage, rootId, mirror, root) }
+    requireNotNull(root.content) { "native payload carried no document root" }
+    return null
 }
 
 /**
- * Applies one MKC3 commit body to [mirror] and returns its delta.
+ * Applies one delta body to [mirror] and returns it.
  *
- * The body lists removed ids and then full records for added, changed, and
- * bubbled nodes ordered children-before-parents, so every record's child ids
- * resolve against already-decoded mirror entries in one pass. Unchanged
- * children keep their exact platform object across snapshots.
+ * A row with no parts retires an id; every other row is that node's full
+ * record. The rows arrive in the new document's postorder with each retired
+ * node where it was found, so a record's child ids always resolve — against a
+ * node this body just decoded, or against the unchanged value the mirror
+ * already holds, which keeps its exact platform object across revisions.
  */
-private fun WireReader.commitBody(
+private fun WireReader.deltaBody(
     lineage: ULong,
+    rootId: ULong,
     mirror: MutableMap<ULong, Markup>,
+    root: RootSink,
 ): Delta {
     val beforeRevision = ulong()
     val afterRevision = ulong()
-
-    val removedCount = int()
-    require(removedCount >= 0) { "invalid native removed count" }
-    val removed = immutableList(removedCount) { MarkupID(lineage, ulong()) }
-    removed.forEach { mirror.remove(it.rawValue) }
-
-    val recordCount = int()
-    require(recordCount >= 0) { "invalid native record count" }
-    val added = ArrayList<MarkupID>()
-    val changed = ArrayList<MarkupID>()
-    val bubbled = ArrayList<MarkupID>()
-    repeat(recordCount) {
-        val verdict = byte().toInt()
-        val node = record(lineage, mirror)
-        mirror[node.id.rawValue] = node
-        when (verdict) {
-            0 -> added += node.id
-            1 -> changed += node.id
-            2 -> bubbled += node.id
-            else -> error("invalid native delta verdict $verdict")
+    val count = int()
+    require(count >= 0) { "invalid native diff count" }
+    val diffs =
+        immutableList(count) {
+            val parts = DiffParts(int())
+            if (parts.isRetired) {
+                val id = MarkupID(lineage, ulong())
+                mirror.remove(id.rawValue)
+                Diff(id, parts)
+            } else {
+                Diff(readInto(lineage, rootId, mirror, root), parts)
+            }
         }
-    }
-    return Delta(
-        beforeRevision,
-        afterRevision,
-        immutableList(added.size) { added[it] },
-        removed,
-        immutableList(changed.size) { changed[it] },
-        immutableList(bubbled.size) { bubbled[it] },
-    )
+    return Delta(beforeRevision, afterRevision, diffs)
 }
 
-private fun WireReader.record(
+/** Decodes one record, stores it, and returns its identity. The root's record
+ * is the one that never becomes a mirror entry: nothing resolves it as a
+ * child, and on this side it is a [Document], which owns a native parse and
+ * cannot be minted from a record. */
+private fun WireReader.readInto(
     lineage: ULong,
-    mirror: Map<ULong, Markup>,
-): Markup {
+    rootId: ULong,
+    mirror: MutableMap<ULong, Markup>,
+    root: RootSink,
+): MarkupID {
     val kind = kind()
     val id = MarkupID(lineage, ulong())
     val revision = ulong()
-    return when (kind) {
-        WireKind.DOCUMENT -> {
-            Document.unresolved(id, revision, children(mirror))
-        }
+    if (kind == WireKind.DOCUMENT) {
+        require(id.rawValue == rootId) { "native payload carried a nested document record" }
+        root.content = children(mirror)
+        return id
+    }
+    val node = record(kind, id, revision, mirror)
+    mirror[id.rawValue] = node
+    return id
+}
 
+private fun WireReader.record(
+    kind: Int,
+    id: MarkupID,
+    revision: ULong,
+    mirror: Map<ULong, Markup>,
+): Markup =
+    when (kind) {
         WireKind.BLOCK_QUOTE -> {
             BlockQuote(id, revision, children(mirror))
         }
@@ -358,7 +337,7 @@ private fun WireReader.record(
         }
 
         WireKind.HTML_BLOCK -> {
-            HTMLBlock(id, revision, requiredString())
+            HTMLBlock(id, revision, boolean(), requiredString())
         }
 
         WireKind.FORMULA_BLOCK -> {
@@ -406,7 +385,7 @@ private fun WireReader.record(
         }
 
         WireKind.HTML -> {
-            HTML(id, revision, requiredString())
+            HTML(id, revision, boolean(), requiredString())
         }
 
         WireKind.FORMULA -> {
@@ -465,7 +444,6 @@ private fun WireReader.record(
             error("unsupported native node kind $kind")
         }
     }
-}
 
 private fun WireReader.placement(): PlacementMode =
     when (val rawValue = int()) {

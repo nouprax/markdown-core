@@ -1,14 +1,11 @@
 package consumer;
 
 import com.nouprax.markdown.core.Commit;
+import com.nouprax.markdown.core.Diff;
 import com.nouprax.markdown.core.Document;
-import com.nouprax.markdown.core.FootnoteDefinition;
-import com.nouprax.markdown.core.FootnoteInfo;
-import com.nouprax.markdown.core.FootnoteQueriesKt;
 import com.nouprax.markdown.core.Markup;
 import com.nouprax.markdown.core.MarkupDumper;
 import com.nouprax.markdown.core.MarkupID;
-import com.nouprax.markdown.core.MarkupSession;
 import com.nouprax.markdown.core.ParseOptions;
 import java.util.List;
 
@@ -17,9 +14,9 @@ public final class Main {
 
     public static void main(String[] args) {
         ParseOptions options = new ParseOptions();
-        Document document = Document.parse("héllo 🚀\n", options);
+        Document document = new Document("héllo 🚀\n", options);
         if (document.getContent().size() != 1) {
-            throw new IllegalStateException("Document.parse returned unexpected top-level content");
+            throw new IllegalStateException("Document returned unexpected top-level content");
         }
         String dump = MarkupDumper.INSTANCE.dump(document);
         if (!dump.contains("héllo 🚀")) {
@@ -31,49 +28,43 @@ public final class Main {
         Markup paragraph = document.getContent().get(0);
         MarkupID id = paragraph.getId();
         if (id.lineageBits() == 0L) {
-            throw new IllegalStateException("lineage bits must carry the session salt");
+            throw new IllegalStateException("lineage bits must carry the lineage salt");
         }
         MarkupID rebuilt = MarkupID.fromBits(id.lineageBits(), id.rawValueBits());
         if (!rebuilt.equals(id)) {
             throw new IllegalStateException("MarkupID.fromBits must round-trip the identity");
         }
-        if (paragraph.revisionBits() <= 0L) {
-            throw new IllegalStateException("a parsed node must carry a positive revision");
-        }
         if (document.revisionBits() != paragraph.revisionBits()) {
-            // Both were minted by the same single commit.
-            throw new IllegalStateException("one-shot parse must commit every node at one revision");
+            // Both were minted by the same parse, which is revision zero: a
+            // revision counts the edits a node has survived, and this one has
+            // survived none.
+            throw new IllegalStateException("one parse must mint every node at one revision");
+        }
+        if (document.revisionBits() != 0L) {
+            throw new IllegalStateException("an unedited parse is revision zero");
         }
 
-        // Sessions, deltas, and footnote queries from plain Java.
-        try (MarkupSession session = new MarkupSession()) {
-            session.append("See [^n].\n\n[^n]: note\n");
-            Commit commit = session.commit();
-            if (session.lineageBits() == 0L) {
-                throw new IllegalStateException("session lineage bits must be nonzero");
+        // Editing and deltas from plain Java.
+        Commit commit = document.edit("héllo 🚀 world\n");
+        try (Document next = commit.getDocument()) {
+            if (commit.getDelta().beforeRevisionBits() != document.revisionBits()
+                    || commit.getDelta().afterRevisionBits() != next.revisionBits()) {
+                throw new IllegalStateException("delta revision bits must bracket the edit");
             }
-            if (commit.getDelta().beforeRevisionBits() != 0L
-                    || commit.getDelta().afterRevisionBits() != session.revisionBits()) {
-                throw new IllegalStateException("delta revision bits must bracket the commit");
+            List<Diff> diffs = commit.getDelta().getDiffs();
+            if (diffs.isEmpty()) {
+                throw new IllegalStateException("a text change must report a delta");
             }
-            if (commit.getDelta().getAdded().isEmpty()) {
-                throw new IllegalStateException("first commit must report added nodes");
+            Diff last = diffs.get(diffs.size() - 1);
+            if (!last.getMarkup().equals(next.getId()) || !last.getParts().getDescendant()) {
+                throw new IllegalStateException("the document root must close a postorder delta");
             }
-            MarkupID first = commit.getDelta().getAdded().get(0);
-            if (session.node(first) == null) {
-                throw new IllegalStateException("session.node must resolve a delta id");
+            for (Diff diff : diffs) {
+                if (!diff.getParts().isRetired() && next.node(diff.getMarkup()) == null) {
+                    throw new IllegalStateException("every surviving delta id must resolve");
+                }
             }
-            List<FootnoteDefinition> footnotes = FootnoteQueriesKt.footnotes(session);
-            if (footnotes.size() != 1 || !"n".equals(footnotes.get(0).getLabel())) {
-                throw new IllegalStateException("footnote query must list the winning definition");
-            }
-            FootnoteInfo info = FootnoteQueriesKt.footnote(session, footnotes.get(0).getId());
-            if (info == null || info.getNumber() == null || info.getNumber() != 1) {
-                throw new IllegalStateException("footnote info must number the definition");
-            }
-            if (FootnoteQueriesKt.references(session, footnotes.get(0).getId()).size() != 1) {
-                throw new IllegalStateException("footnote back-references must list the reference");
-            }
+            next.scope(next);
         }
     }
 }

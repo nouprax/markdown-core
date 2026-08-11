@@ -77,12 +77,13 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 }
 NODE
 
-# The model and walker stay mutation-free; the session directory is the one
-# deliberate exception (append/replace are its reviewed edit surface) and is
-# pinned exactly below instead.
+# The model and walker stay mutation-free. There is no exception directory any
+# more: the session's append/replace surface is gone, and a document is edited
+# into a successor rather than mutated. (The exclusion that used to sit here
+# named a directory that no longer exists, which is a filter that quietly
+# filters nothing.)
 if grep -R -n -E \
     'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
-    --exclude-dir=Session \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports mutation, renderer, or native implementation details"
 fi
@@ -260,65 +261,81 @@ const inventories = new Map([
         )].map((match) => match[1]),
     ],
 ]);
+// The four inventories are held to EACH OTHER, and the count comes from the
+// first of them. A literal count here was a fourth copy of the same fact, and
+// changing the JNI surface left it stale in three files at once.
 let expected;
 for (const [label, names] of inventories) {
-    if (names.length !== 13 || new Set(names).size !== 13) {
-        throw new Error(`${label} must contain exactly 13 unique JNI methods`);
+    if (names.length === 0 || new Set(names).size !== names.length) {
+        throw new Error(`${label} must list at least one JNI method, each exactly once`);
     }
     const sorted = names.toSorted();
     expected ??= sorted;
     if (sorted.join("\n") !== expected.join("\n")) {
-        throw new Error(`${label} differs from the reviewed JvmNative inventory`);
+        throw new Error(
+            `${label} differs from the other JvmNative inventories: ` +
+                `[${sorted.join(", ")}] vs [${expected.join(", ")}]`
+        );
     }
 }
 NODE
-# The model and walker stay mutation-free; the session directory is the one
-# deliberate exception (append/replace are its reviewed edit surface) and is
-# pinned exactly below instead.
+# The model and walker stay mutation-free. There is no exception directory any
+# more: the session's append/replace surface is gone, and a document is edited
+# into a successor rather than mutated.
 if grep -R -n -E \
     'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
-    --exclude-dir=session \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports mutation, renderer, or native implementation details"
 fi
-kotlin_session_surface=$(grep -R -h -o -E \
-    'public (fun|val|var|class|object) [A-Za-z.]+' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session | sort -u)
-expected_kotlin_session_surface='public class Commit
+# The document entry points, pinned. A document is created from text, edited
+# into its successor, and closed; the four footnote/reference answer queries
+# are gone entirely, and so is MarkupSession.
+# Anchored at the start of a line: an unanchored pattern also matched the
+# word "constructor" inside a doc comment, and a pin that quotes prose drifts
+# whenever the prose does.
+kotlin_document_surface=$(grep -R -h -o -E \
+    '^[[:space:]]*public (fun|val|var|class|object|enum class) [A-Za-z]+|^[[:space:]]*public constructor' \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Commit.kt \
+    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Diagnostic.kt |
+    sed -E 's/^[[:space:]]+//' | sort -u)
+expected_kotlin_document_surface='public class Commit
 public class Delta
-public class FootnoteInfo
-public class MarkupSession
-public fun MarkupSession.footnote
-public fun MarkupSession.footnotes
-public fun MarkupSession.references
+public class Diagnostic
+public class Diff
+public class DiffParts
+public class Document
+public constructor
+public enum class DiagnosticCode
 public fun afterRevisionBits
-public fun append
 public fun beforeRevisionBits
-public fun commit
+public fun dump
+public fun edit
 public fun lineageBits
 public fun node
-public fun replace
-public fun revisionBits
-public val added
+public fun scope
 public val afterRevision
 public val beforeRevision
-public val bubbled
-public val changed
-public val definition
+public val children
+public val code
+public val content
 public val delta
+public val descendant
+public val diagnostics
+public val diffs
 public val document
-public val length
+public val isRetired
 public val lineage
-public val number
+public val markup
 public val options
-public val referenceCount
-public val referenceOrdinal
-public val removed
-public val revision
-public var document'
-if [ "$kotlin_session_surface" != "$expected_kotlin_session_surface" ]; then
-    printf '%s\n' "$kotlin_session_surface" >&2
-    fail "Kotlin session surface drifted from the reviewed pin"
+public val parts
+public val rawValue
+public val scope
+public val text
+public val value'
+if [ "$kotlin_document_surface" != "$expected_kotlin_document_surface" ]; then
+    printf '%s\n' "$kotlin_document_surface" >&2
+    fail "Kotlin document surface drifted from the reviewed pin"
 fi
 grep -q 'public object MarkupDumper' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt \

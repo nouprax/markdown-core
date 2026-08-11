@@ -220,12 +220,31 @@ private object JavaAbi {
             }.sorted()
     }
 
-    fun classes(surface: kotlin.collections.List<String>): Set<String> =
-        surface
+    /**
+     * The classes Java source can actually USE: public, and carrying at least
+     * one member Java can name.
+     *
+     * The member requirement is not a nicety. Kotlin emits a public class for
+     * a `@JvmMultifileClass` facade whether or not anything public lands in
+     * it, so a facade holding only `@JvmSynthetic` internals is a public class
+     * name with nothing behind it — javac can import it and then do nothing
+     * with it. Counting it as surface would force it into the public API dump,
+     * which would be a lie about what the library offers.
+     */
+    fun classes(surface: kotlin.collections.List<String>): Set<String> {
+        val withMembers =
+            surface
+                .asSequence()
+                .filter { it.startsWith("  ") }
+                .map { it.trim().substringAfter(' ').substringBefore('.') }
+                .toSet()
+        return surface
             .asSequence()
             .filter { it.startsWith("class ") }
             .map { it.substringAfter("class ").substringBefore(' ') }
+            .filter { it in withMembers }
             .toSortedSet()
+    }
 
     fun officialClasses(apiFile: File): Set<String> =
         apiFile
@@ -420,18 +439,24 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
             compile(
                 "PublicApiProbe",
                 """
+                import com.nouprax.markdown.core.Commit;
+                import com.nouprax.markdown.core.Diff;
                 import com.nouprax.markdown.core.Document;
-                import com.nouprax.markdown.core.FootnoteQueriesKt;
-                import com.nouprax.markdown.core.MarkupSession;
                 import java.util.List;
 
                 final class PublicApiProbe {
                     Document parse() {
-                        return Document.parse("visible");
+                        return new Document("visible");
                     }
 
-                    List<?> footnotes(MarkupSession session) {
-                        return FootnoteQueriesKt.footnotes(session);
+                    List<Diff> edit(Document document) {
+                        Commit commit = document.edit("visible again");
+                        commit.getDocument().close();
+                        return commit.getDelta().getDiffs();
+                    }
+
+                    boolean retired(Diff diff) {
+                        return diff.getParts().isRetired();
                     }
                 }
                 """.trimIndent(),
@@ -442,41 +467,29 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
 
         val hiddenTypes =
             listOf(
-                "CBridgeKt",
-                "CBridge_androidKt",
-                "CBridge_jvmKt",
-                "CBridge_jvmSharedKt",
-                "CSession",
+                "Built",
                 "DesktopNativeLoader",
-                "DocumentKt",
-                "FootnoteQueriesKt__CBridgeKt",
-                "FootnoteQueriesKt__CBridge_androidKt",
-                "FootnoteQueriesKt__CBridge_jvmKt",
-                "FootnoteQueriesKt__CBridge_jvmSharedKt",
-                "FootnoteQueriesKt__DocumentKt",
-                "FootnoteQueriesKt__FootnoteQueriesKt",
-                "FootnoteQueriesKt__ImmutableListKt",
-                "FootnoteQueriesKt__MarkupDumperKt",
-                "FootnoteQueriesKt__MarkupKt",
-                "FootnoteQueriesKt__ParseOptionsKt",
-                "FootnoteQueriesKt__Spin_androidKt",
-                "FootnoteQueriesKt__Spin_jvmKt",
-                "FootnoteQueriesKt__WireDecoderKt",
                 "HostNativeLibrary",
-                "ImmutableListKt",
                 "JvmNative",
-                "JvmSession",
+                "MarkdownCoreKt__CBridgeKt",
+                "MarkdownCoreKt__CBridge_androidKt",
+                "MarkdownCoreKt__CBridge_jvmKt",
+                "MarkdownCoreKt__CBridge_jvmSharedKt",
+                "MarkdownCoreKt__CommitKt",
+                "MarkdownCoreKt__DiagnosticKt",
+                "MarkdownCoreKt__DocumentKt",
+                "MarkdownCoreKt__HTMLBlockKt",
+                "MarkdownCoreKt__ImmutableListKt",
+                "MarkdownCoreKt__MarkupDumperKt",
+                "MarkdownCoreKt__MarkupKt",
+                "MarkdownCoreKt__ParseOptionsKt",
+                "MarkdownCoreKt__WireDecoderKt",
                 "MarkupDumper${'$'}WhenMappings",
                 "MarkupDumperKt",
                 "MarkupKt",
                 "ParseOptionsKt",
+                "RootSink",
                 "ScopeEntry",
-                "ScopeResolver",
-                "Spin_androidKt",
-                "Spin_jvmKt",
-                "WireDecoder",
-                "WireDecoderKt",
-                "WireDecoderKt${'$'}WhenMappings",
                 "WireKind",
                 "WireReader",
             )
@@ -503,41 +516,28 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
         val hiddenMembers =
             listOf(
                 Triple(
-                    "DocumentResolverProbe",
-                    "getResolver",
+                    "DocumentHandleProbe",
+                    "getHandle",
                     """
                     import com.nouprax.markdown.core.Document;
 
-                    final class DocumentResolverProbe {
-                        Object resolver(Document document) {
-                            return document.getResolver${'$'}com_nouprax_kotlin_markdown_core();
-                        }
-                    }
-                    """.trimIndent(),
-                ),
-                Triple(
-                    "SessionNativeProbe",
-                    "getNative",
-                    """
-                    import com.nouprax.markdown.core.MarkupSession;
-
-                    final class SessionNativeProbe {
-                        Object nativeSession(MarkupSession session) {
-                            return session.getNative${'$'}com_nouprax_kotlin_markdown_core();
+                    final class DocumentHandleProbe {
+                        Object handle(Document document) {
+                            return document.getHandle();
                         }
                     }
                     """.trimIndent(),
                 ),
                 Triple(
                     "BridgeFunctionProbe",
-                    "openCSession",
+                    "cOpen",
                     """
-                    import com.nouprax.markdown.core.FootnoteQueriesKt;
+                    import com.nouprax.markdown.core.MarkdownCoreKt;
                     import com.nouprax.markdown.core.ParseOptions;
 
                     final class BridgeFunctionProbe {
                         Object open() {
-                            return FootnoteQueriesKt.openCSession(new ParseOptions());
+                            return MarkdownCoreKt.cOpen(new byte[0], new ParseOptions());
                         }
                     }
                     """.trimIndent(),

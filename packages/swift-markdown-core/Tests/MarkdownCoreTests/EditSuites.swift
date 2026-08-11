@@ -76,10 +76,17 @@ import Testing
         let retired = commit.delta.diffs.filter(\.parts.isRetired).map(\.markup)
         #expect(retired.contains(paragraph.id))
         #expect(commit.delta.diffs.contains { $0.markup == heading.id && !$0.parts.isRetired })
-        // Retirement comes first, so a consumer drops the dead state before
-        // it reads anything that replaced it.
-        let firstSurviving = try #require(commit.delta.diffs.firstIndex { !$0.parts.isRetired })
-        #expect(commit.delta.diffs[..<firstSurviving].allSatisfy { $0.parts.isRetired })
+        // A retired node is emitted WHERE IT WAS FOUND — inside its former
+        // parent's run, before the nodes that took its place there and before
+        // that parent's own row — so a consumer drops a parent's dead children
+        // before it re-reads that parent's child list. (It is NOT true that
+        // every retirement precedes every survivor: a sibling that merely
+        // changed is emitted before the removal that follows it.)
+        let retiredIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == paragraph.id })
+        let createdIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == heading.id })
+        let rootIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == commit.document.id })
+        #expect(retiredIndex < createdIndex)
+        #expect(createdIndex < rootIndex)
     }
 
     @Test("equality is lineage-salted identity plus revision")

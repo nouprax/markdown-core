@@ -6,6 +6,16 @@
 // - Show declarations: true
 
 // Library unique name: <com.nouprax:kotlin-markdown-core>
+final enum class com.nouprax.markdown.core/DiagnosticCode : kotlin/Enum<com.nouprax.markdown.core/DiagnosticCode> { // com.nouprax.markdown.core/DiagnosticCode|null[0]
+    enum entry DIRECTIVE_ATTRIBUTES // com.nouprax.markdown.core/DiagnosticCode.DIRECTIVE_ATTRIBUTES|null[0]
+
+    final val entries // com.nouprax.markdown.core/DiagnosticCode.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<com.nouprax.markdown.core/DiagnosticCode> // com.nouprax.markdown.core/DiagnosticCode.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): com.nouprax.markdown.core/DiagnosticCode // com.nouprax.markdown.core/DiagnosticCode.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<com.nouprax.markdown.core/DiagnosticCode> // com.nouprax.markdown.core/DiagnosticCode.values|values#static(){}[0]
+}
+
 final enum class com.nouprax.markdown.core/ListFlavor : kotlin/Enum<com.nouprax.markdown.core/ListFlavor> { // com.nouprax.markdown.core/ListFlavor|null[0]
     enum entry BULLET // com.nouprax.markdown.core/ListFlavor.BULLET|null[0]
     enum entry ORDERED // com.nouprax.markdown.core/ListFlavor.ORDERED|null[0]
@@ -197,23 +207,57 @@ final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/Delta { // com.nouprax.markdown.core/Delta|null[0]
-    final val added // com.nouprax.markdown.core/Delta.added|{}added[0]
-        final fun <get-added>(): kotlin.collections/List<com.nouprax.markdown.core/MarkupID> // com.nouprax.markdown.core/Delta.added.<get-added>|<get-added>(){}[0]
     final val afterRevision // com.nouprax.markdown.core/Delta.afterRevision|{}afterRevision[0]
         final fun <get-afterRevision>(): kotlin/ULong // com.nouprax.markdown.core/Delta.afterRevision.<get-afterRevision>|<get-afterRevision>(){}[0]
     final val beforeRevision // com.nouprax.markdown.core/Delta.beforeRevision|{}beforeRevision[0]
         final fun <get-beforeRevision>(): kotlin/ULong // com.nouprax.markdown.core/Delta.beforeRevision.<get-beforeRevision>|<get-beforeRevision>(){}[0]
-    final val bubbled // com.nouprax.markdown.core/Delta.bubbled|{}bubbled[0]
-        final fun <get-bubbled>(): kotlin.collections/List<com.nouprax.markdown.core/MarkupID> // com.nouprax.markdown.core/Delta.bubbled.<get-bubbled>|<get-bubbled>(){}[0]
-    final val changed // com.nouprax.markdown.core/Delta.changed|{}changed[0]
-        final fun <get-changed>(): kotlin.collections/List<com.nouprax.markdown.core/MarkupID> // com.nouprax.markdown.core/Delta.changed.<get-changed>|<get-changed>(){}[0]
-    final val removed // com.nouprax.markdown.core/Delta.removed|{}removed[0]
-        final fun <get-removed>(): kotlin.collections/List<com.nouprax.markdown.core/MarkupID> // com.nouprax.markdown.core/Delta.removed.<get-removed>|<get-removed>(){}[0]
+    final val diffs // com.nouprax.markdown.core/Delta.diffs|{}diffs[0]
+        final fun <get-diffs>(): kotlin.collections/List<com.nouprax.markdown.core/Diff> // com.nouprax.markdown.core/Delta.diffs.<get-diffs>|<get-diffs>(){}[0]
 
     final fun afterRevisionBits(): kotlin/Long // com.nouprax.markdown.core/Delta.afterRevisionBits|afterRevisionBits(){}[0]
     final fun beforeRevisionBits(): kotlin/Long // com.nouprax.markdown.core/Delta.beforeRevisionBits|beforeRevisionBits(){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Delta.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Delta.hashCode|hashCode(){}[0]
+}
+
+final class com.nouprax.markdown.core/Diagnostic { // com.nouprax.markdown.core/Diagnostic|null[0]
+    final val code // com.nouprax.markdown.core/Diagnostic.code|{}code[0]
+        final fun <get-code>(): com.nouprax.markdown.core/DiagnosticCode // com.nouprax.markdown.core/Diagnostic.code.<get-code>|<get-code>(){}[0]
+    final val scope // com.nouprax.markdown.core/Diagnostic.scope|{}scope[0]
+        final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Diagnostic.scope.<get-scope>|<get-scope>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Diagnostic.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Diagnostic.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.nouprax.markdown.core/Diagnostic.toString|toString(){}[0]
+}
+
+final class com.nouprax.markdown.core/Diff { // com.nouprax.markdown.core/Diff|null[0]
+    final val markup // com.nouprax.markdown.core/Diff.markup|{}markup[0]
+        final fun <get-markup>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Diff.markup.<get-markup>|<get-markup>(){}[0]
+    final val parts // com.nouprax.markdown.core/Diff.parts|{}parts[0]
+        final fun <get-parts>(): com.nouprax.markdown.core/DiffParts // com.nouprax.markdown.core/Diff.parts.<get-parts>|<get-parts>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Diff.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Diff.hashCode|hashCode(){}[0]
+}
+
+final class com.nouprax.markdown.core/DiffParts { // com.nouprax.markdown.core/DiffParts|null[0]
+    final val children // com.nouprax.markdown.core/DiffParts.children|{}children[0]
+        final fun <get-children>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.children.<get-children>|<get-children>(){}[0]
+    final val descendant // com.nouprax.markdown.core/DiffParts.descendant|{}descendant[0]
+        final fun <get-descendant>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.descendant.<get-descendant>|<get-descendant>(){}[0]
+    final val isRetired // com.nouprax.markdown.core/DiffParts.isRetired|{}isRetired[0]
+        final fun <get-isRetired>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.isRetired.<get-isRetired>|<get-isRetired>(){}[0]
+    final val rawValue // com.nouprax.markdown.core/DiffParts.rawValue|{}rawValue[0]
+        final fun <get-rawValue>(): kotlin/Int // com.nouprax.markdown.core/DiffParts.rawValue.<get-rawValue>|<get-rawValue>(){}[0]
+    final val text // com.nouprax.markdown.core/DiffParts.text|{}text[0]
+        final fun <get-text>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.text.<get-text>|<get-text>(){}[0]
+    final val value // com.nouprax.markdown.core/DiffParts.value|{}value[0]
+        final fun <get-value>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.value.<get-value>|<get-value>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/DiffParts.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.nouprax.markdown.core/DiffParts.toString|toString(){}[0]
 }
 
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
@@ -269,25 +313,32 @@ final class com.nouprax.markdown.core/DirectiveLabel : com.nouprax.markdown.core
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/DirectiveLabel.hashCode|hashCode(){}[0]
 }
 
-final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Document|null[0]
+final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Markup, kotlin/AutoCloseable { // com.nouprax.markdown.core/Document|null[0]
+    constructor <init>(kotlin/String, com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/Document.<init>|<init>(kotlin.String;com.nouprax.markdown.core.ParseOptions){}[0]
+
     final val content // com.nouprax.markdown.core/Document.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Document.content.<get-content>|<get-content>(){}[0]
+    final val diagnostics // com.nouprax.markdown.core/Document.diagnostics|{}diagnostics[0]
+        final fun <get-diagnostics>(): kotlin.collections/List<com.nouprax.markdown.core/Diagnostic> // com.nouprax.markdown.core/Document.diagnostics.<get-diagnostics>|<get-diagnostics>(){}[0]
     final val id // com.nouprax.markdown.core/Document.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Document.id.<get-id>|<get-id>(){}[0]
+    final val lineage // com.nouprax.markdown.core/Document.lineage|{}lineage[0]
+        final fun <get-lineage>(): kotlin/ULong // com.nouprax.markdown.core/Document.lineage.<get-lineage>|<get-lineage>(){}[0]
+    final val options // com.nouprax.markdown.core/Document.options|{}options[0]
+        final fun <get-options>(): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/Document.options.<get-options>|<get-options>(){}[0]
     final val revision // com.nouprax.markdown.core/Document.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Document.revision.<get-revision>|<get-revision>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Document.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
+    final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
     final fun dump(): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(){}[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(com.nouprax.markdown.core.Markup){}[0]
+    final fun edit(kotlin/String): com.nouprax.markdown.core/Commit // com.nouprax.markdown.core/Document.edit|edit(kotlin.String){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Document.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Document.hashCode|hashCode(){}[0]
-    final fun materialize() // com.nouprax.markdown.core/Document.materialize|materialize(){}[0]
+    final fun lineageBits(): kotlin/Long // com.nouprax.markdown.core/Document.lineageBits|lineageBits(){}[0]
+    final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.MarkupID){}[0]
     final fun scope(com.nouprax.markdown.core/Markup): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup){}[0]
-
-    final object Companion { // com.nouprax.markdown.core/Document.Companion|null[0]
-        final fun parse(kotlin/String, com.nouprax.markdown.core/ParseOptions = ...): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Document.Companion.parse|parse(kotlin.String;com.nouprax.markdown.core.ParseOptions){}[0]
-    }
 }
 
 final class com.nouprax.markdown.core/Embed : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Embed|null[0]
@@ -331,20 +382,6 @@ final class com.nouprax.markdown.core/FootnoteDefinition : com.nouprax.markdown.
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/FootnoteDefinition.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/FootnoteDefinition.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/FootnoteDefinition.hashCode|hashCode(){}[0]
-}
-
-final class com.nouprax.markdown.core/FootnoteInfo { // com.nouprax.markdown.core/FootnoteInfo|null[0]
-    final val definition // com.nouprax.markdown.core/FootnoteInfo.definition|{}definition[0]
-        final fun <get-definition>(): com.nouprax.markdown.core/MarkupID? // com.nouprax.markdown.core/FootnoteInfo.definition.<get-definition>|<get-definition>(){}[0]
-    final val number // com.nouprax.markdown.core/FootnoteInfo.number|{}number[0]
-        final fun <get-number>(): kotlin/Int? // com.nouprax.markdown.core/FootnoteInfo.number.<get-number>|<get-number>(){}[0]
-    final val referenceCount // com.nouprax.markdown.core/FootnoteInfo.referenceCount|{}referenceCount[0]
-        final fun <get-referenceCount>(): kotlin/Int // com.nouprax.markdown.core/FootnoteInfo.referenceCount.<get-referenceCount>|<get-referenceCount>(){}[0]
-    final val referenceOrdinal // com.nouprax.markdown.core/FootnoteInfo.referenceOrdinal|{}referenceOrdinal[0]
-        final fun <get-referenceOrdinal>(): kotlin/Int? // com.nouprax.markdown.core/FootnoteInfo.referenceOrdinal.<get-referenceOrdinal>|<get-referenceOrdinal>(){}[0]
-
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/FootnoteInfo.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/FootnoteInfo.hashCode|hashCode(){}[0]
 }
 
 final class com.nouprax.markdown.core/FootnoteReference : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/FootnoteReference|null[0]
@@ -568,30 +605,6 @@ final class com.nouprax.markdown.core/MarkupID { // com.nouprax.markdown.core/Ma
     final object Companion { // com.nouprax.markdown.core/MarkupID.Companion|null[0]
         final fun fromBits(kotlin/Long, kotlin/Long): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/MarkupID.Companion.fromBits|fromBits(kotlin.Long;kotlin.Long){}[0]
     }
-}
-
-final class com.nouprax.markdown.core/MarkupSession : kotlin/AutoCloseable { // com.nouprax.markdown.core/MarkupSession|null[0]
-    constructor <init>(com.nouprax.markdown.core/ParseOptions = ...) // com.nouprax.markdown.core/MarkupSession.<init>|<init>(com.nouprax.markdown.core.ParseOptions){}[0]
-
-    final val length // com.nouprax.markdown.core/MarkupSession.length|{}length[0]
-        final fun <get-length>(): kotlin/Int // com.nouprax.markdown.core/MarkupSession.length.<get-length>|<get-length>(){}[0]
-    final val lineage // com.nouprax.markdown.core/MarkupSession.lineage|{}lineage[0]
-        final fun <get-lineage>(): kotlin/ULong // com.nouprax.markdown.core/MarkupSession.lineage.<get-lineage>|<get-lineage>(){}[0]
-    final val options // com.nouprax.markdown.core/MarkupSession.options|{}options[0]
-        final fun <get-options>(): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/MarkupSession.options.<get-options>|<get-options>(){}[0]
-    final val revision // com.nouprax.markdown.core/MarkupSession.revision|{}revision[0]
-        final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/MarkupSession.revision.<get-revision>|<get-revision>(){}[0]
-
-    final var document // com.nouprax.markdown.core/MarkupSession.document|{}document[0]
-        final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkupSession.document.<get-document>|<get-document>(){}[0]
-
-    final fun append(kotlin/String) // com.nouprax.markdown.core/MarkupSession.append|append(kotlin.String){}[0]
-    final fun close() // com.nouprax.markdown.core/MarkupSession.close|close(){}[0]
-    final fun commit(): com.nouprax.markdown.core/Commit // com.nouprax.markdown.core/MarkupSession.commit|commit(){}[0]
-    final fun lineageBits(): kotlin/Long // com.nouprax.markdown.core/MarkupSession.lineageBits|lineageBits(){}[0]
-    final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/MarkupSession.node|node(com.nouprax.markdown.core.MarkupID){}[0]
-    final fun replace(kotlin/Int, kotlin/Int, kotlin/String) // com.nouprax.markdown.core/MarkupSession.replace|replace(kotlin.Int;kotlin.Int;kotlin.String){}[0]
-    final fun revisionBits(): kotlin/Long // com.nouprax.markdown.core/MarkupSession.revisionBits|revisionBits(){}[0]
 }
 
 final class com.nouprax.markdown.core/Paragraph : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Paragraph|null[0]
@@ -823,7 +836,3 @@ final object com.nouprax.markdown.core/MarkupWalker { // com.nouprax.markdown.co
     final fun walk(com.nouprax.markdown.core/Document, com.nouprax.markdown.core/MarkupVisitor<kotlin/Unit>) // com.nouprax.markdown.core/MarkupWalker.walk|walk(com.nouprax.markdown.core.Document;com.nouprax.markdown.core.MarkupVisitor<kotlin.Unit>){}[0]
     final fun walk(com.nouprax.markdown.core/Document, kotlin/Function3<com.nouprax.markdown.core/WalkEvent, com.nouprax.markdown.core/Markup, com.nouprax.markdown.core/Scope, kotlin/Unit>) // com.nouprax.markdown.core/MarkupWalker.walk|walk(com.nouprax.markdown.core.Document;kotlin.Function3<com.nouprax.markdown.core.WalkEvent,com.nouprax.markdown.core.Markup,com.nouprax.markdown.core.Scope,kotlin.Unit>){}[0]
 }
-
-final fun (com.nouprax.markdown.core/MarkupSession).com.nouprax.markdown.core/footnote(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/FootnoteInfo? // com.nouprax.markdown.core/footnote|footnote@com.nouprax.markdown.core.MarkupSession(com.nouprax.markdown.core.MarkupID){}[0]
-final fun (com.nouprax.markdown.core/MarkupSession).com.nouprax.markdown.core/footnotes(): kotlin.collections/List<com.nouprax.markdown.core/FootnoteDefinition> // com.nouprax.markdown.core/footnotes|footnotes@com.nouprax.markdown.core.MarkupSession(){}[0]
-final fun (com.nouprax.markdown.core/MarkupSession).com.nouprax.markdown.core/references(com.nouprax.markdown.core/MarkupID): kotlin.collections/List<com.nouprax.markdown.core/FootnoteReference> // com.nouprax.markdown.core/references|references@com.nouprax.markdown.core.MarkupSession(com.nouprax.markdown.core.MarkupID){}[0]

@@ -41,11 +41,13 @@ const expectedNativeMethods = new Set(
             .matchAll(/^\s*Java_com_nouprax_markdown_core_JvmNative_([A-Za-z0-9]+);$/gmu)
     ].map((match) => match[1])
 );
-if (expectedNativeMethods.size !== 13) {
-    throw new Error(
-        `${nativeExportMapPath} must define exactly 13 ${nativeExportPrefix} exports; ` +
-            `found ${expectedNativeMethods.size}`
-    );
+// The COUNT is read from the map, not written down here. It was written down
+// here, and in two other places, and adding or removing one JNI method left
+// three copies of a stale number to find. What this file actually needs is
+// that the map parsed at all; scripts/audit-public-surface.sh is where the
+// four JNI inventories are held to each other.
+if (expectedNativeMethods.size === 0) {
+    throw new Error(`${nativeExportMapPath} defines no ${nativeExportPrefix} exports`);
 }
 
 const rules = fs.readFileSync(rulesPath, "utf8");
@@ -232,7 +234,7 @@ const missing = [...expectedNativeMethods].filter((method) => !usedDex.nativeMet
 const unexpected = [...usedDex.nativeMethods].filter((method) => !expectedNativeMethods.has(method));
 if (missing.length > 0 || unexpected.length > 0) {
     throw new Error(
-        `used release APK JvmNative methods differ from the 13 JNI exports; ` +
+        `used release APK JvmNative methods differ from the ${expectedNativeMethods.size} JNI exports; ` +
             `missing=[${missing.join(", ")}], unexpected=[${unexpected.join(", ")}]`
     );
 }
@@ -245,6 +247,6 @@ if (unusedDex.bridgeCount !== 0 || unusedDex.nativeMethods.size !== 0) {
 }
 
 console.log(
-    "Android release shrinking preserved one JvmNative class and all 13 JNI methods when used, " +
-        "and removed the bridge when unused."
+    `Android release shrinking preserved one JvmNative class and all ${expectedNativeMethods.size} ` +
+        "JNI methods when used, and removed the bridge when unused."
 );

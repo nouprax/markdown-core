@@ -522,16 +522,22 @@ MARKDOWN_CORE_API void markdown_core_delta_revisions(
     uint64_t *after
 );
 /**
- * Every node whose projection differs, IN ORDER: the retired nodes first
- * (`parts` zero), then every surviving node in the new document's postorder,
- * so a node always appears after all of its own children.
+ * Every node whose projection differs, IN ORDER: the new document's postorder
+ * over the surviving nodes, so a node always appears after all of its own
+ * children, and a retired node (`parts` zero) EMITTED WHERE IT WAS FOUND —
+ * inside its former parent's run, and so before that parent's own row, but
+ * after any surviving sibling that precedes it.
  *
  * That order is the answer, not a convention. A consumer materializing
- * immutable values bottom-up reads the list once, front to back: it drops the
- * dead state first, and every child it needs is already built by the time it
- * reaches a parent. There is no separate ordered-entry table and no
- * id-to-node index, because a list that is already in order carries its own
- * position (9.1).
+ * immutable values bottom-up reads the list once, front to back: every child
+ * it needs is already built by the time it reaches a parent, and a parent's
+ * dead children are gone before it re-reads that parent's child list. There is
+ * no separate ordered-entry table and no id-to-node index, because a list that
+ * is already in order carries its own position (9.1).
+ *
+ * A retired node needs no position of its own — deletion is addressed by id,
+ * and ids are never reused — so what this ordering buys is the single pass:
+ * the diff walk writes each row at the moment it decides it.
  *
  * The rows belong to the delta and live as long as it does.
  */

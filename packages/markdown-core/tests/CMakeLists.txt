@@ -139,12 +139,15 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(fallback_runner runners/fallback_runner.c)
     add_executable(extension_order_runner runners/extension_order_runner.c)
     target_include_directories(
-        fallback_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+        fallback_runner
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_include_directories(
         extension_order_runner
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}")
     target_link_libraries(fallback_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     target_link_libraries(extension_order_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     # source_runner drives the internal stored-byte substrate (source.h), so
@@ -152,17 +155,17 @@ if(MARKDOWN_CORE_STATIC)
     add_executable(source_runner runners/source_runner.c)
     target_include_directories(
         source_runner
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(source_runner libmarkdown-core-extensions_static libmarkdown-core_static)
     # concrete_runner drives the ownership-region classification (concrete.h).
     add_executable(concrete_runner runners/concrete_runner.c)
     target_include_directories(
         concrete_runner
-        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_INCLUDE_DIR}"
-                "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}"
-                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support" "${MARKDOWN_CORE_CORE_SOURCE_DIR}"
+                "${MARKDOWN_CORE_CORE_INCLUDE_DIR}" "${MARKDOWN_CORE_EXTENSIONS_SOURCE_DIR}"
+                "${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../include")
     target_link_libraries(concrete_runner libmarkdown-core-extensions_static libmarkdown-core_static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
@@ -185,11 +188,13 @@ endif()
 
 # Facade tests exercise the read-only markdown_core C API directly.
 add_executable(facade_test facade.c)
-target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_CURRENT_SOURCE_DIR}/support")
+target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+                                               "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 add_executable(facade_cplusplus_test facade_cplusplus.cpp)
-target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include" "${CMAKE_CURRENT_SOURCE_DIR}/support")
+target_include_directories(facade_cplusplus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include"
+                                                         "${CMAKE_CURRENT_SOURCE_DIR}/support")
 target_link_libraries(facade_cplusplus_test ${MARKDOWN_CORE_TEST_LIBRARIES})
 
 set(MARKDOWN_CORE_ALL_TESTS "")
@@ -314,10 +319,7 @@ if(MARKDOWN_CORE_STATIC)
     # empty-result and refused-allocation states; and the allocation-failure
     # sweep. The path-copy, no-prefix-copy, amplification, STRICT_UTF8 and
     # validation-locality gates that stood here are gone with their clauses.
-    set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES
-        span_validation
-        batch_splice
-        oom_sweep)
+    set(MARKDOWN_CORE_SOURCE_REGRESSION_CASES span_validation batch_splice oom_sweep)
     foreach(case IN LISTS MARKDOWN_CORE_SOURCE_REGRESSION_CASES)
         markdown_core_add_test(regression_source_${case} regression 240 source_runner --case ${case})
     endforeach()
@@ -561,8 +563,7 @@ set(MARKDOWN_CORE_PERFORMANCE_CASES
     edit_append
     edit_middle)
 foreach(case IN LISTS MARKDOWN_CORE_PERFORMANCE_CASES)
-    markdown_core_add_test(performance_${case} "pathological;performance" 120 performance_runner --case
-                           ${case})
+    markdown_core_add_test(performance_${case} "pathological;performance" 120 performance_runner --case ${case})
     set_tests_properties(performance_${case} PROPERTIES RUN_SERIAL TRUE)
 endforeach()
 

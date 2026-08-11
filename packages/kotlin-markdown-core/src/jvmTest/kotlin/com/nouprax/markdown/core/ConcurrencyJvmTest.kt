@@ -42,7 +42,7 @@ class ConcurrencyJvmTest {
             )
         val combos =
             sources.flatMap { source ->
-                variants.map { options -> Triple(source, options, Document.parse(source, options).dump()) }
+                variants.map { options -> Triple(source, options, Document(source, options).use { it.dump() }) }
             }
 
         val failures = ConcurrentLinkedQueue<String>()
@@ -53,7 +53,7 @@ class ConcurrencyJvmTest {
                     start.await()
                     repeat(25) { iteration ->
                         val (source, options, reference) = combos[(worker + iteration) % combos.size]
-                        val dump = Document.parse(source, options).dump()
+                        val dump = Document(source, options).use { it.dump() }
                         if (dump != reference) {
                             failures.add("worker $worker iteration $iteration produced a divergent dump")
                         }
@@ -66,41 +66,42 @@ class ConcurrencyJvmTest {
     }
 
     @Test
-    fun parallelSessionsOnExecutorThreadsStayIsolated() {
-        // One session per worker thread, interleaved edit/commit/read, with
-        // cross-thread snapshot reads after the writer thread finished — the
-        // session contract keeps snapshots readable from any thread between
-        // mutating calls.
+    fun parallelLineagesOnExecutorThreadsStayIsolated() {
+        // One lineage per worker thread, interleaved edit and read, with
+        // cross-thread reads after the writer thread finished — a document is
+        // an immutable value, so whatever a thread produced stays readable
+        // from any other.
         val source = "# Title\n\nBody with *emphasis*, `code`, and [^n].\n\n[^n]: note\n"
-        val reference = Document.parse(source).dump()
-        val snapshots = ConcurrentLinkedQueue<Document>()
+        val reference = Document(source).use { it.dump() }
+        val retained = ConcurrentLinkedQueue<Document>()
         val failures = ConcurrentLinkedQueue<String>()
         val start = CountDownLatch(1)
         val threads =
             (0 until 8).map { worker ->
                 thread {
                     start.await()
-                    MarkupSession().use { session ->
-                        repeat(25) { iteration ->
-                            session.replace(0, session.length, "")
-                            session.commit()
-                            for (line in source.split("\n").dropLast(1)) {
-                                session.append(line + "\n")
-                                session.commit()
-                            }
-                            if (session.document.dump() != reference) {
-                                failures.add("worker $worker iteration $iteration diverged")
-                            }
+                    var document = Document("")
+                    repeat(25) { iteration ->
+                        document = document.edit("").document
+                        var streamed = ""
+                        for (line in source.split("\n").dropLast(1)) {
+                            streamed += line + "\n"
+                            document = document.edit(streamed).document
                         }
-                        snapshots.add(session.document)
+                        if (document.dump() != reference) {
+                            failures.add("worker $worker iteration $iteration diverged")
+                        }
                     }
+                    retained.add(document)
                 }
             }
         start.countDown()
         threads.forEach { it.join() }
         assertTrue(failures.isEmpty(), failures.joinToString("\n"))
-        // Snapshots materialized their scopes while current; they answer
-        // after their sessions closed, from any thread.
-        assertTrue(snapshots.all { it.scope(it).start.line == 1 })
+        // Every document answers for itself from any thread, and releasing
+        // one never touches another's parse.
+        assertTrue(retained.all { it.scope(it).start.line == 1 })
+        retained.forEach { it.close() }
+        assertTrue(retained.all { it.scope(it).start.line == 1 })
     }
 }

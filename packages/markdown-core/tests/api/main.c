@@ -2450,7 +2450,6 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
     markdown_core_node_id label_text_id = 0;
     markdown_core_node_id link_id = 0;
     markdown_core_node_id footnote_reference_id = 0;
-    markdown_core_node_id footnote_definition_id = 0;
     markdown_core_node_id body_id = 0;
     uint64_t label_revision = 0;
     uint64_t label_text_revision = 0;
@@ -2486,7 +2485,6 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         const markdown_core_node *body = markdown_core_node_get_next_sibling(label);
         const markdown_core_node *link = NULL;
         const markdown_core_node *footnote_reference = NULL;
-        const markdown_core_node *footnote_definition = NULL;
         const markdown_core_node *child;
 
         for (child = label_text; child; child = markdown_core_node_get_next_sibling(child)) {
@@ -2496,19 +2494,11 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
                 footnote_reference = child;
             }
         }
-        for (child = markdown_core_node_get_next_sibling(directive); child;
-             child = markdown_core_node_get_next_sibling(child)) {
-            if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION) {
-                footnote_definition = child;
-                break;
-            }
-        }
         directive_id = markdown_core_node_get_id(directive);
         label_id = markdown_core_node_get_id(label);
         label_text_id = markdown_core_node_get_id(label_text);
         link_id = markdown_core_node_get_id(link);
         footnote_reference_id = markdown_core_node_get_id(footnote_reference);
-        footnote_definition_id = markdown_core_node_get_id(footnote_definition);
         body_id = markdown_core_node_get_id(body);
         label_revision = markdown_core_node_get_revision(label);
         label_text_revision = markdown_core_node_get_revision(label_text);
@@ -2552,7 +2542,6 @@ static void session_block_directive_label_lookup(test_batch_runner *runner) {
         const markdown_core_node *footnote_reference =
             node_by_id(markdown_core_document_root(session), footnote_reference_id);
         const markdown_core_node *body = node_by_id(markdown_core_document_root(session), body_id);
-        size_t count;
         OK(runner,
            directive && label && markdown_core_node_directive_label(directive) == label &&
                markdown_core_node_get_parent(label) == directive,

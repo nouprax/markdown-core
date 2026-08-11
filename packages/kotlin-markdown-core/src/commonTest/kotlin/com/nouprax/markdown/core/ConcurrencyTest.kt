@@ -8,12 +8,12 @@ import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Distinct sessions are fully concurrent (decision #7: zero process-global
+/** Distinct documents are fully concurrent (decision #7: zero process-global
  * state). Runs on real worker threads on every platform via
  * Dispatchers.Default: JVM executors, native workers, Android host. */
-class SessionConcurrencyTest {
+class ConcurrencyTest {
     @Test
-    fun parallelSessionsWithDisagreeingOptionsNeverInterfere() =
+    fun parallelLineagesWithDisagreeingOptionsNeverInterfere() =
         runTest {
             val sources =
                 listOf(
@@ -41,7 +41,7 @@ class SessionConcurrencyTest {
             // Single-threaded references computed up front.
             val expected =
                 sources.flatMap { source ->
-                    variants.map { options -> Document.parse(source, options).dump() }
+                    variants.map { options -> Document(source, options).use { it.dump() } }
                 }
 
             val streamed =
@@ -50,20 +50,21 @@ class SessionConcurrencyTest {
                         .flatMap { source ->
                             variants.map { options ->
                                 async {
-                                    MarkupSession(options).use { session ->
-                                        var commit: Commit? = null
-                                        repeat(24) { round ->
-                                            for (character in source) {
-                                                session.append(character.toString())
-                                            }
-                                            commit = session.commit()
-                                            if (round + 1 < 24) {
-                                                session.replace(0, session.length, "")
-                                                session.commit()
-                                            }
+                                    // The same text arrived at by 24 rounds of
+                                    // growing and clearing, so each lineage is
+                                    // busy in the engine while the others are.
+                                    var document = Document("", options)
+                                    repeat(24) { round ->
+                                        var streamed = ""
+                                        for (character in source) {
+                                            streamed += character
                                         }
-                                        requireNotNull(commit).document.dump()
+                                        document = document.edit(streamed).document
+                                        if (round + 1 < 24) {
+                                            document = document.edit("").document
+                                        }
                                     }
+                                    document.use { it.dump() }
                                 }
                             }
                         }.awaitAll()
