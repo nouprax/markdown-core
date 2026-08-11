@@ -1,6 +1,5 @@
 import {
     Document,
-    MarkupSession,
     MarkupDumper,
     visit,
     MarkupWalker,
@@ -10,8 +9,10 @@ import {
     type DirectiveBlock,
     type DirectiveLabel,
     type CrossLink,
+    DiagnosticCode,
+    type Diagnostic,
+    type Diff,
     type Embed,
-    type FootnoteInfo,
     type Heading,
     type Markup,
     type MarkupID,
@@ -23,7 +24,7 @@ import {
 } from "@nouprax/es-markdown-core";
 import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# typed", { tables: true });
+const document = Document("# typed", { tables: true });
 const parsedDocument: ParsedDocument = document;
 const diagnostic: string = document.dump();
 const explicitDiagnostic: string = MarkupDumper.dump(document);
@@ -32,7 +33,7 @@ void diagnostic;
 void explicitDiagnostic;
 void subtreeDiagnostic;
 void parsedDocument;
-// @ts-expect-error Document values are created only by Document.parse
+// @ts-expect-error a document is parsed from text, not constructed empty
 new Document();
 const visitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind,
@@ -109,22 +110,23 @@ void rawValue;
 void revision;
 void documentScope;
 
-const session = new MarkupSession({ tables: true });
-const snapshot: ParsedDocument = session.document;
-const commit: Commit = session.commit();
+const commit: Commit = document.edit("# typed again");
+const successor: ParsedDocument = commit.document;
 const delta: Delta = commit.delta;
-const added: readonly MarkupID[] = delta.added;
-const currentValue: Markup | null = session.node(document.id);
-const info: FootnoteInfo | null = session.footnote(document.id);
-const sessionLineage: bigint = session.lineage;
-void snapshot;
-void added;
+const diffs: readonly Diff[] = delta.diffs;
+const retired: boolean = diffs[0]!.parts.retired;
+const currentValue: Markup | null = successor.node(document.id);
+const diagnostics: readonly Diagnostic[] = successor.diagnostics;
+const attributeCode: DiagnosticCode = DiagnosticCode.directiveAttributes;
+void attributeCode;
+void successor;
+void diffs;
+void retired;
 void currentValue;
-void info;
-void sessionLineage;
-// @ts-expect-error session options are immutable for the session lifetime
-session.options.tables = false;
-session.close();
+void diagnostics;
+// @ts-expect-error options are immutable for a document's whole lineage
+document.options.tables = false;
+successor.close();
 
 declare const table: Table;
 const rowMarkup: Markup = table.header;

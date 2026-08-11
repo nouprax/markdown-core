@@ -4,7 +4,7 @@ import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
-    const document = Document.parse("# Heading\n\nBody\n");
+    const document = Document("# Heading\n\nBody\n");
     assert.equal(
         visit(document.content[0], {
             ...kindVisitor,
@@ -20,22 +20,22 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
 
 test("api: options gate extensions", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
-    assert.equal(Document.parse(markdown).content[0].kind, "table");
-    assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
+    assert.equal(Document(markdown).content[0].kind, "table");
+    assert.equal(Document(markdown, { tables: false }).content[0].kind, "paragraph");
 
     const directive = "Use :note[text].\n";
-    assert.equal(Document.parse(directive).dump().includes("Directive"), true);
-    assert.equal(Document.parse(directive, { directives: false }).dump().includes("Directive"), false);
+    assert.equal(Document(directive).dump().includes("Directive"), true);
+    assert.equal(Document(directive, { directives: false }).dump().includes("Directive"), false);
 
     const source = "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n";
-    const paragraph = Document.parse(source).content[0];
+    const paragraph = Document(source).content[0];
     assert.equal(paragraph.content[1].kind, "crossLink");
     assert.equal(paragraph.content[1].reference, "folder/note#^block|display");
     assert.equal(paragraph.content[3].kind, "embed");
     assert.equal(paragraph.content[3].reference, "folder/note#^block|display");
-    const linksDisabled = Document.parse(source, { crossLinks: false }).content[0];
+    const linksDisabled = Document(source, { crossLinks: false }).content[0];
     assert.equal(linksDisabled.content[1].kind, "embed");
-    const embedsDisabled = Document.parse(source, { embeds: false }).content[0];
+    const embedsDisabled = Document(source, { embeds: false }).content[0];
     assert.equal(embedsDisabled.content[1].kind, "crossLink");
 });
 
@@ -56,7 +56,7 @@ test("api: formulas gates every formula syntax", () => {
         "```",
         ""
     ].join("\n");
-    const enabled = Document.parse(markdown);
+    const enabled = Document(markdown);
     assert.deepEqual(
         enabled.content.map((node) => node.kind),
         ["paragraph", "formulaBlock", "formulaBlock", "formulaBlock"]
@@ -66,20 +66,20 @@ test("api: formulas gates every formula syntax", () => {
         ["d", "l"]
     );
 
-    const disabled = Document.parse(markdown, { formulas: false });
+    const disabled = Document(markdown, { formulas: false });
     assert.equal(disabled.dump().includes("Formula"), false);
     assert.equal(disabled.content.at(-1).kind, "codeBlock");
 });
 
 test("ast: typed fields are copied from direct WASM accessors", () => {
-    const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
+    const document = Document("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.deepEqual(document.content[1].alignments, ["center"]);
 });
 
 test("ast: the document mediates the canonical diagnostic dump", () => {
-    const document = Document.parse("Lead\n\n# Heading\n");
+    const document = Document("Lead\n\n# Heading\n");
     assert.equal(document.dump(), MarkupDumper.dump(document));
     // A subtree dump prints scopes with the subtree as origin.
     assert.match(MarkupDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
@@ -88,45 +88,45 @@ test("ast: the document mediates the canonical diagnostic dump", () => {
 });
 
 test("ast: nodes carry identity instead of positions", () => {
-    const document = Document.parse("# Heading\n");
+    const document = Document("# Heading\n");
     assert.equal(typeof document.id.lineage, "bigint");
     assert.equal(typeof document.id.rawValue, "number");
     assert.equal(typeof document.revision, "number");
     assert.equal("scope" in document.content[0], false);
     assert.equal(document.scope(document.content[0]).start.line, 1);
     // Separate parses never share identity.
-    assert.notEqual(Document.parse("# Heading\n").id.lineage, document.id.lineage);
+    assert.notEqual(Document("# Heading\n").id.lineage, document.id.lineage);
 });
 
 test("unicode: UTF-8 survives native document release", () => {
-    const document = Document.parse("héllo 🚀 中文\n");
+    const document = Document("héllo 🚀 中文\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
-    for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
+    for (let index = 0; index < 300; index += 1) Document("# copy\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
 test("errors: empty input is valid and arguments are checked", () => {
-    assert.deepEqual(Document.parse("").content, []);
-    assert.throws(() => Document.parse(null), TypeError);
-    assert.throws(() => Document.parse("x", { tables: "yes" }), TypeError);
-    assert.throws(() => Document.parse("x", { tables: null }), TypeError);
+    assert.deepEqual(Document("").content, []);
+    assert.throws(() => Document(null), TypeError);
+    assert.throws(() => Document("x", { tables: "yes" }), TypeError);
+    assert.throws(() => Document("x", { tables: null }), TypeError);
     assert.throws(() => new Document(), TypeError);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
-    const document = Document.parse("text\n");
+    const document = Document("text\n");
     assert.equal(Object.isFrozen(document), false);
     assert.equal(Object.isFrozen(document.content), false);
 });
 
 test("robustness: large documents copy completely before native release", () => {
     const unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n";
-    assert.equal(Document.parse(unit.repeat(5_000)).content.length, 10_000);
+    assert.equal(Document(unit.repeat(5_000)).content.length, 10_000);
 });
 
 test("robustness: deep block quote nesting remains traversable", () => {
     const depth = 128;
-    let node = Document.parse("> ".repeat(depth) + "leaf\n").content[0];
+    let node = Document("> ".repeat(depth) + "leaf\n").content[0];
     for (let index = 0; index < depth; index += 1) {
         assert.equal(node.kind, "blockQuote");
         node = node.content[0];
@@ -136,7 +136,7 @@ test("robustness: deep block quote nesting remains traversable", () => {
 
 test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {
-        assert.equal(Document.parse("# Copy\n\n- [x] item 🚀\n").content.length, 2);
+        assert.equal(Document("# Copy\n\n- [x] item 🚀\n").content.length, 2);
     }
 });
 
@@ -171,7 +171,7 @@ test("robustness: worker threads own isolated engine instances", async () => {
         }
     ];
     const jobs = sources.flatMap((source) => variants.map((options) => ({ source, options })));
-    const references = jobs.map(({ source, options }) => Document.parse(source, options).dump());
+    const references = jobs.map(({ source, options }) => Document(source, options).dump());
 
     const workers = Array.from(
         { length: 4 },

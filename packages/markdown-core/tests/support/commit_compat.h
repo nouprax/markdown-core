@@ -4,7 +4,6 @@
 #include "../../include/markdown_core.h"
 #include <stdlib.h>
 #include <string.h>
-#include "commit_compat.h"
 
 /* TRANSITIONAL. The engine's operation is `commit(markdown)`: it builds a new
  * document from whole text, diffs it against the one it was called on, and

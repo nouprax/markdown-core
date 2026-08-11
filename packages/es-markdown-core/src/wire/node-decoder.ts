@@ -1,35 +1,39 @@
 import type { Document } from "../model/document.js";
-import { htmlLiteralIsComment } from "../model/html-comment.js";
 import type { Markup } from "../model/markup.js";
 import type { MarkupID } from "../model/markup-id.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
 import type { NativeExports } from "../runtime/native.js";
-import type { ScopeEntry } from "../session/scope-resolver.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before snapshot adoption wires its scope, dump, and
- * materialize mediators to a resolver. */
-export type DocumentValue = Omit<Document, "scope" | "dump" | "materialize">;
+/** One node's absolute extent at the revision that reported it. Keeping the
+ * revision is what lets a stale value — same id, superseded revision — be
+ * rejected instead of silently paired with a current position. */
+export interface ScopeEntry {
+    readonly revision: number;
+    readonly scope: Scope;
+}
+
+/** A decoded document before `adopt` wires its mediators — scope, node,
+ * edit, close, dump — to the parse it came from. */
+export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "content">;
 
 /**
- * One decode pass over the native committed tree. One-shot parses decode
- * everything (`touched === null`); session commits decode only the delta —
- * a node outside `touched` is taken from the mirror by identity, reusing the
- * previous snapshot's value and entire subtree.
+ * One decode pass over the native tree. A first parse decodes everything
+ * (`touched === null`); an edit decodes only the nodes its delta names — a
+ * node outside `touched` is taken from the mirror by identity, reusing the
+ * previous revision's value and entire subtree.
  */
 export interface DecodeContext {
-    /** Session-interned identity for a raw id: the same identity is always
+    /** Lineage-interned identity for a raw id: the same identity is always
      * the same `MarkupID` object. */
     readonly ids: (rawValue: number) => MarkupID;
-    /** Wires the decoded root to the snapshot's scope resolver. */
+    /** Completes the decoded root into the document value. */
     readonly adopt: (value: DocumentValue) => Document;
-    /** The session's id → node mirror; null for a one-shot parse, whose
-     * values live only in the returned tree. */
+    /** The document's id → node mirror. */
     readonly mirror: Map<number, Markup> | null;
-    /** Raw ids of this commit's `added ∪ changed ∪ bubbled`; null decodes
-     * every node. */
+    /** Raw ids this edit's delta names; null decodes every node. */
     readonly touched: ReadonlySet<number> | null;
 }
 
@@ -215,7 +219,7 @@ export class NodeDecoder {
                 if (context.touched !== null && !context.touched.has(rawId)) {
                     const existing = context.mirror?.get(rawId);
                     if (existing === undefined || existing.revision !== revision) {
-                        throw new Error("the delta omitted a node the session mirror does not carry");
+                        throw new Error("the delta omitted a node the document mirror does not carry");
                     }
                     top.values.push(existing);
                     continue;
@@ -268,7 +272,7 @@ export class NodeDecoder {
                 return this.copyCodeBlock(node, id, revision);
             case "htmlBlock": {
                 const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+                return { kind, id, revision, comment: this.native.es_node_html_comment(node) !== 0, literal };
             }
             case "formulaBlock": {
                 const mode = this.placement(this.native.es_node_formula_mode(node));
@@ -308,7 +312,7 @@ export class NodeDecoder {
                 };
             case "html": {
                 const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+                return { kind, id, revision, comment: this.native.es_node_html_comment(node) !== 0, literal };
             }
             case "formula":
                 return {

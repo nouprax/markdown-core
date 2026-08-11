@@ -4,5 +4,5 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { Document } from "../dist/index.js";
 
-const dumps = workerData.jobs.map(({ source, options }) => Document.parse(source, options).dump());
+const dumps = workerData.jobs.map(({ source, options }) => Document(source, options).dump());
 parentPort.postMessage(dumps);

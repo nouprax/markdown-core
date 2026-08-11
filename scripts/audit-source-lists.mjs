@@ -74,8 +74,7 @@ function esArray(relative, variable) {
 }
 
 const swiftPattern = (dir) => new RegExp(`"${dir}\\/(?<file>[A-Za-z0-9_-]+\\.c)"`, "g");
-const androidPattern = (dir) =>
-    new RegExp(`MARKDOWN_CORE_${dir}_DIR\\}\\/(?<file>[A-Za-z0-9_-]+\\.c)`, "g");
+const androidPattern = (dir) => new RegExp(`MARKDOWN_CORE_${dir}_DIR\\}\\/(?<file>[A-Za-z0-9_-]+\\.c)`, "g");
 
 const followers = {
     "Package.swift": {

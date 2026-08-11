@@ -355,64 +355,74 @@ test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/
     -eq "$markup_kind_count" \
     || fail "Kotlin MarkupVisitor is not exhaustive over all $markup_kind_count Markup kinds"
 
-if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
-    fail "ES exposes generic children"
+# A generic CHILD LIST, which is what this forbids — every kind names its own
+# edges. `DiffParts.children` is a boolean saying that a node's child list
+# differs, and an unanchored `children` pattern reported it as a violation.
+if grep -R -E -n 'readonly children[[:space:]]*:[[:space:]]*readonly' packages/es-markdown-core/src/model; then
+    fail "ES exposes a generic child list"
 fi
 # Node values carry identity, never positions; scopes are document-mediated.
-if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model; then
+# A Diagnostic is not a node — it is a place to underline, and a place is all
+# it is — so the check names the node files rather than the directory.
+if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model \
+    --exclude=diagnostic.ts; then
     fail "ES node values store scopes"
 fi
 grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/markup-dumper.ts \
     && grep -q 'readonly scope: (node: Markup) => Scope' packages/es-markdown-core/src/model/document.ts \
     && grep -q 'readonly dump: () => string' packages/es-markdown-core/src/model/document.ts \
     || fail "ES does not expose the reviewed Document diagnostic dump API"
-es_session_surface=$(
+# The document entry points, pinned. There is no session type any more: a
+# document is created from text and edited into its successor, and the
+# footnote/reference answers are gone entirely.
+es_document_surface=$(
     {
-        grep -R -h -E '^export (class|interface|function) [A-Za-z]+' packages/es-markdown-core/src/session
-        grep -h -E '^    [a-zA-Z].*[{;]$' \
-            packages/es-markdown-core/src/session/markup-session.ts \
-            packages/es-markdown-core/src/session/commit.ts \
-            packages/es-markdown-core/src/session/footnote-info.ts \
-            | grep -v '^    private '
-    } | sed -E 's/ \{$//; s/;$//; s/^    //' | sort -u
+        grep -h -E '^export (function|const|type|interface) [A-Za-z]+' \
+            packages/es-markdown-core/src/document.ts \
+            packages/es-markdown-core/src/model/document.ts \
+            packages/es-markdown-core/src/model/commit.ts \
+            packages/es-markdown-core/src/model/diagnostic.ts
+        grep -h -E '^    readonly [a-zA-Z]+' \
+            packages/es-markdown-core/src/model/document.ts \
+            packages/es-markdown-core/src/model/commit.ts \
+            packages/es-markdown-core/src/model/diagnostic.ts
+    } | sed -E 's/;$//; s/^    //' | sort -u
 )
-expected_es_session_surface='append(text: string): void
-close(): void
-commit(): Commit
-constructor(options: ParseOptions = {})
-export class MarkupSession
-export class ScopeResolver
-export function adopt(value: DocumentValue, resolver: ScopeResolver): Document
-export function relink(previous: Markup, revision: number, replacements: ChildReplacements): Markup
-export interface Commit
-export interface Delta
-export interface FootnoteInfo
-export interface ScopeEntry
-footnote(id: MarkupID): FootnoteInfo | null
-footnotes(): FootnoteDefinition[]
-get document(): Document
-get length(): number
-get revision(): number
-node(id: MarkupID): Markup | null
-readonly added: readonly MarkupID[]
+expected_es_document_surface='export const DiagnosticCode = {
+export function Document(markdown: string, options: ParseOptions = {}): Document {
+export interface Commit {
+export interface Delta {
+export interface Diagnostic {
+export interface Diff {
+export interface DiffParts {
+export interface Document extends MarkupBase<"document"> {
+export type DiagnosticCode = (typeof DiagnosticCode)[keyof typeof DiagnosticCode]
+export type Document = DocumentValue
 readonly afterRevision: number
 readonly beforeRevision: number
-readonly bubbled: readonly MarkupID[]
-readonly changed: readonly MarkupID[]
-readonly definition: MarkupID | null
+readonly children: boolean
+readonly close: () => void
+readonly code: DiagnosticCode
+readonly content: readonly Markup[]
 readonly delta: Delta
+readonly descendant: boolean
+readonly diagnostics: readonly Diagnostic[]
+readonly diffs: readonly Diff[]
 readonly document: Document
-readonly lineage: bigint
-readonly number: number | null
+readonly dump: () => string
+readonly edit: (markdown: string) => Commit
+readonly markup: MarkupID
+readonly node: (id: Markup["id"]) => Markup | null
 readonly options: Readonly<Required<ParseOptions>>
-readonly referenceCount: number
-readonly referenceOrdinal: number | null
-readonly removed: readonly MarkupID[]
-references(definition: MarkupID): FootnoteReference[]
-replace(byteStart: number, byteEnd: number, replacement: string): void'
-if [ "$es_session_surface" != "$expected_es_session_surface" ]; then
-    printf '%s\n' "$es_session_surface" >&2
-    fail "ES session surface drifted from the reviewed pin"
+readonly parts: DiffParts
+readonly retired: boolean
+readonly scope: (node: Markup) => Scope
+readonly scope: Scope
+readonly text: boolean
+readonly value: boolean'
+if [ "$es_document_surface" != "$expected_es_document_surface" ]; then
+    printf '%s\n' "$es_document_surface" >&2
+    fail "ES document surface drifted from the reviewed pin"
 fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
@@ -444,14 +454,14 @@ if (rootExport?.types !== "./dist/index.d.ts" || rootExport?.import !== "./dist/
 }
 const runtime = fs.readFileSync(runtimePath, "utf8");
 const runtimeExports = [
-    ...[...runtime.matchAll(/^export (?:class|const) ([A-Za-z0-9_]+)/gm)].map(
+    ...[...runtime.matchAll(/^export (?:class|const|function) ([A-Za-z0-9_]+)/gm)].map(
         (match) => match[1]
     ),
     ...[...runtime.matchAll(/^export \{ ([^}]+) \} from /gm)].flatMap((match) =>
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "MarkupDumper", "MarkupSession", "MarkupWalker", "ParseError", "WalkEvent", "visit"].sort();
+const expectedRuntime = ["DiagnosticCode", "Document", "MarkupDumper", "MarkupWalker", "ParseError", "WalkEvent", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

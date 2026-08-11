@@ -1,13 +1,16 @@
+/* The INSTALLED package, used the way a consumer uses it: one header, the
+ * public names, and nothing from this repository's test support — which is
+ * exactly what an earlier commit reached into here, for a two-line helper the
+ * installed header does not ship. */
 #include <markdown_core.h>
 
 #include <string.h>
-#include "commit_compat.h"
 
 int main(void) {
-    const char *source = "# installed consumer\n";
+    static const char source[] = "# installed consumer\n";
+    markdown_core_string markdown = {(const uint8_t *)source, sizeof(source) - 1};
     markdown_core_error *error = NULL;
-    markdown_core_document *document =
-        markdown_core_document_new(mc_sv((const uint8_t *)source, strlen(source)), NULL, &error);
+    markdown_core_document *document = markdown_core_document_new(markdown, NULL, &error);
     const markdown_core_node *root;
 
     if (document == NULL || error != NULL) {

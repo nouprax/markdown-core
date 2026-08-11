@@ -32,9 +32,7 @@ const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 /** The kind -> fields table of the canonical AST contract. */
 function definition() {
-    const lines = fs
-        .readFileSync(path.join(root, "docs/specs/canonical-ast.md"), "utf8")
-        .split("\n");
+    const lines = fs.readFileSync(path.join(root, "docs/specs/canonical-ast.md"), "utf8").split("\n");
     const header = lines.findIndex((line) => line.startsWith("| Kind | Fields in canonical order"));
     if (header < 0) {
         throw new Error("canonical-ast.md: the kind/fields table is gone or renamed");
@@ -42,15 +40,16 @@ function definition() {
     const kinds = new Map();
     for (const line of lines.slice(header + 2)) {
         if (!line.startsWith("|")) break;
-        const cells = line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+        const cells = line
+            .trim()
+            .replace(/^\||\|$/g, "")
+            .split("|")
+            .map((c) => c.trim());
         if (cells.length < 2) break;
         const kind = cells[0].replace(/`/g, "");
         // `mode` is spelled without a type in the table because the allowed
         // values are fixed per kind by the table above it.
-        const fields =
-            cells[1] === "none"
-                ? []
-                : [...cells[1].matchAll(/`([A-Za-z]+)(?::[^`]*)?`/g)].map((m) => m[1]);
+        const fields = cells[1] === "none" ? [] : [...cells[1].matchAll(/`([A-Za-z]+)(?::[^`]*)?`/g)].map((m) => m[1]);
         kinds.set(kind, fields);
     }
     if (kinds.size === 0) {
@@ -120,8 +119,7 @@ const projections = [
         // A kind with no fields is a type alias, not an interface — which is
         // the correct TypeScript for it, and reads as "declared with zero
         // fields", not as "missing".
-        declaration: (kind) =>
-            new RegExp(`export (?:interface ${kind}\\b[^\\n]*\\{|type ${kind}\\s*=)`),
+        declaration: (kind) => new RegExp(`export (?:interface ${kind}\\b[^\\n]*\\{|type ${kind}\\s*=)`),
         field: /readonly ([A-Za-z]+)\s*[?]?\s*:/g
     })
 ];
@@ -149,6 +147,4 @@ if (failed) {
     console.error("\nAST-projection audit failed: a platform's definition layer has drifted from the contract.");
     process.exit(1);
 }
-console.log(
-    `AST-projection audit passed: ${kinds.size} kinds declared by ${projections.length} platforms.`
-);
+console.log(`AST-projection audit passed: ${kinds.size} kinds declared by ${projections.length} platforms.`);

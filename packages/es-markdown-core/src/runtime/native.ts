@@ -2,41 +2,34 @@ export interface NativeExports extends WebAssembly.Exports {
     readonly memory: WebAssembly.Memory;
     malloc(size: number): number;
     free(pointer: number): void;
-    es_session_open(flags: number, errorOutput: number): number;
-    es_session_free(session: number): void;
-    es_session_edit(
-        session: number,
-        byteStart: number,
-        byteEnd: number,
+    /** Parses `bytes` and returns the document, or 0 with `*errorOutput`
+     * set. */
+    es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
+    /** Hands `document` new text. CONSUMES the document on every path;
+     * `commitOutput` receives the successor document and the delta as two
+     * caller-owned pointers. */
+    es_document_edit(
+        document: number,
         bytes: number,
         length: number,
+        commitOutput: number,
         errorOutput: number
     ): number;
-    es_session_commit(session: number, changesOutput: number, errorOutput: number): number;
-    es_session_document(session: number): number;
-    es_session_revision(session: number): bigint;
-    es_session_lineage(session: number): bigint;
-    es_session_length(session: number): number;
-    es_session_footnote_info(session: number, id: bigint, fieldsOutput: number): number;
-    es_session_footnotes(session: number, dataOutput: number): number;
-    es_session_footnote_references(session: number, definition: bigint, dataOutput: number): number;
+    es_document_free(document: number): void;
+    es_document_lineage(document: number): bigint;
+    /** Writes a pointer to the document's own diagnostic array — 20-byte
+     * (code i32, scope 4×i32) rows that borrow from the document — and
+     * returns the row count. */
+    es_document_diagnostics(document: number, dataOutput: number): number;
     es_delta_revision(delta: number, boundary: number): bigint;
-    es_delta_ids(delta: number, verdict: number, dataOutput: number): number;
-    /** Writes a caller-owned array of 24-byte (id u64, parent u64,
-     * change i32, padding) rows in children-before-parents order. */
-    es_session_ordered_delta_entries(
-        session: number,
-        delta: number,
-        dataOutput: number,
-        countOutput: number,
-        errorOutput: number
-    ): number;
-    es_delta_entries_free(entries: number): void;
+    /** Writes a pointer to the delta's own row array — 16-byte (id u64,
+     * parts u32) rows that borrow from the delta — and returns the count. */
+    es_delta_diffs(delta: number, dataOutput: number): number;
     es_delta_free(delta: number): void;
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;
-    es_session_node_by_id(session: number, id: bigint): number;
+    es_node_html_comment(node: number): number;
     es_error_code(error: number): number;
     /** Writes the error's four absolute scope coordinates to `output`;
      * answers 0 when the error carries no scope. */
@@ -138,6 +131,6 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     return instance;
 }
 
-// Top-level initialization keeps Document.parse synchronous in Node and browsers.
+// Top-level initialization keeps Document() synchronous in Node and browsers.
 const instance = await loadWasm();
 export const native = instance.exports as NativeExports;

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "markdown_core.h"
 
@@ -43,10 +44,12 @@ ES_LAYOUT_ASSERT(es_scope_end_starts_at_8, offsetof(markdown_core_scope, end) ==
 ES_LAYOUT_ASSERT(es_position_size_is_8, sizeof(markdown_core_position) == 8);
 ES_LAYOUT_ASSERT(es_position_line_starts_at_0, offsetof(markdown_core_position, line) == 0);
 ES_LAYOUT_ASSERT(es_position_column_starts_at_4, offsetof(markdown_core_position, column) == 4);
-ES_LAYOUT_ASSERT(es_delta_entry_size_is_24, sizeof(markdown_core_delta_entry) == 24);
-ES_LAYOUT_ASSERT(es_delta_entry_id_starts_at_0, offsetof(markdown_core_delta_entry, id) == 0);
-ES_LAYOUT_ASSERT(es_delta_entry_parent_starts_at_8, offsetof(markdown_core_delta_entry, parent) == 8);
-ES_LAYOUT_ASSERT(es_delta_entry_change_starts_at_16, offsetof(markdown_core_delta_entry, change) == 16);
+ES_LAYOUT_ASSERT(es_diff_size_is_16, sizeof(markdown_core_diff) == 16);
+ES_LAYOUT_ASSERT(es_diff_markup_starts_at_0, offsetof(markdown_core_diff, markup) == 0);
+ES_LAYOUT_ASSERT(es_diff_parts_starts_at_8, offsetof(markdown_core_diff, parts) == 8);
+ES_LAYOUT_ASSERT(es_diagnostic_size_is_20, sizeof(markdown_core_diagnostic) == 20);
+ES_LAYOUT_ASSERT(es_diagnostic_code_starts_at_0, offsetof(markdown_core_diagnostic, code) == 0);
+ES_LAYOUT_ASSERT(es_diagnostic_scope_starts_at_4, offsetof(markdown_core_diagnostic, scope) == 4);
 ES_LAYOUT_ASSERT(es_directive_properties_size_is_24, sizeof(es_directive_properties_layout) == 24);
 ES_LAYOUT_ASSERT(es_directive_properties_mode_starts_at_0, offsetof(es_directive_properties_layout, mode) == 0);
 ES_LAYOUT_ASSERT(es_directive_properties_name_starts_at_8, offsetof(es_directive_properties_layout, name_data) == 8);
@@ -61,8 +64,14 @@ static void es_write_view(markdown_core_string view, uintptr_t *data, size_t *le
     *length = view.length;
 }
 
-markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **error) {
+markdown_core_document *es_document_open(
+    const uint8_t *bytes,
+    size_t length,
+    uint32_t flags,
+    markdown_core_error **error
+) {
     markdown_core_parse_options options;
+    markdown_core_string markdown;
     markdown_core_parse_options_init(&options);
     options.smart_punctuation = (flags & (1u << 0)) != 0;
     options.footnotes = (flags & (1u << 1)) != 0;
@@ -74,59 +83,47 @@ markdown_core_session *es_session_open(uint32_t flags, markdown_core_error **err
     options.directives = (flags & (1u << 7)) != 0;
     options.cross_links = (flags & (1u << 8)) != 0;
     options.embeds = (flags & (1u << 9)) != 0;
-    return markdown_core_session_open(&options, error);
+    markdown.data = bytes;
+    markdown.length = length;
+    return markdown_core_document_new(markdown, &options, error);
 }
 
-void es_session_free(markdown_core_session *session) { markdown_core_session_free(session); }
-
-int32_t es_session_edit(
-    markdown_core_session *session,
-    size_t byte_start,
-    size_t byte_end,
+/* Hands `document` new text. CONSUMES it on every path, success or not;
+ * `out` receives the successor document and the delta, each caller-owned. */
+int32_t es_document_edit(
+    markdown_core_document *document,
     const uint8_t *bytes,
     size_t length,
+    uintptr_t *out,
     markdown_core_error **error
 ) {
-    return markdown_core_session_edit(session, byte_start, byte_end, bytes, length, error);
-}
+    markdown_core_document *owned = document;
+    markdown_core_commit commit;
+    markdown_core_string markdown;
 
-int32_t es_session_commit(markdown_core_session *session, markdown_core_delta **changes, markdown_core_error **error) {
-    return markdown_core_session_commit(session, changes, error);
-}
-
-const markdown_core_document *es_session_document(const markdown_core_session *session) {
-    return markdown_core_session_document(session);
-}
-
-uint64_t es_session_revision(const markdown_core_session *session) { return markdown_core_session_revision(session); }
-
-uint64_t es_session_lineage(const markdown_core_session *session) { return markdown_core_session_lineage(session); }
-
-size_t es_session_length(const markdown_core_session *session) { return markdown_core_session_length(session); }
-
-int32_t es_session_footnote_info(const markdown_core_session *session, uint64_t id, uint64_t *fields) {
-    markdown_core_footnote_info info;
-    if (!markdown_core_session_footnote_info(session, id, &info)) {
+    markdown.data = bytes;
+    markdown.length = length;
+    memset(&commit, 0, sizeof(commit));
+    if (!markdown_core_document_edit(&owned, markdown, &commit, error)) {
         return 0;
     }
-    fields[0] = info.definition;
-    fields[1] = info.number;
-    fields[2] = info.reference_ordinal;
-    fields[3] = info.reference_count;
+    out[0] = (uintptr_t)commit.document;
+    out[1] = (uintptr_t)commit.delta;
     return 1;
 }
 
-size_t es_session_footnotes(const markdown_core_session *session, uintptr_t *data) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = markdown_core_session_footnotes(session, &ids);
-    *data = (uintptr_t)ids;
-    return count;
+void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
+
+uint64_t es_document_lineage(const markdown_core_document *document) {
+    return markdown_core_document_lineage(document);
 }
 
-size_t es_session_footnote_references(const markdown_core_session *session, uint64_t definition, uintptr_t *data) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = markdown_core_session_footnote_references(session, definition, &ids);
-    *data = (uintptr_t)ids;
+/* Every diagnostic of `document`: the count, and a pointer to the document's
+ * own array, which borrows from it. Nothing to free. */
+size_t es_document_diagnostics(const markdown_core_document *document, uintptr_t *data) {
+    const markdown_core_diagnostic *rows = NULL;
+    size_t count = markdown_core_document_diagnostics(document, &rows);
+    *data = (uintptr_t)rows;
     return count;
 }
 
@@ -137,48 +134,20 @@ uint64_t es_delta_revision(const markdown_core_delta *changes, int32_t boundary)
     return boundary == 0 ? before : after;
 }
 
-size_t es_delta_ids(const markdown_core_delta *changes, int32_t verdict, uintptr_t *data) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count = 0;
-    switch (verdict) {
-    case 0:
-        count = markdown_core_delta_added(changes, &ids);
-        break;
-    case 1:
-        count = markdown_core_delta_removed(changes, &ids);
-        break;
-    case 2:
-        count = markdown_core_delta_changed(changes, &ids);
-        break;
-    default:
-        count = markdown_core_delta_bubbled(changes, &ids);
-        break;
-    }
-    *data = (uintptr_t)ids;
+/**
+ * The delta's rows, handed back as the facade's own array: `(id, parts)` at
+ * a 16-byte stride, borrowing from the delta and freed with it.
+ *
+ * No copy and no resolved node pointers. The value tree is rebuilt by the
+ * decoder's existing walk, which reuses an untouched node's previous value
+ * whole; what this array is for is the delta a consumer reconciles against.
+ */
+size_t es_delta_diffs(const markdown_core_delta *changes, uintptr_t *data) {
+    const markdown_core_diff *rows = NULL;
+    size_t count = markdown_core_delta_diffs(changes, &rows);
+    *data = (uintptr_t)rows;
     return count;
 }
-
-int32_t es_session_ordered_delta_entries(
-    const markdown_core_session *session,
-    const markdown_core_delta *changes,
-    uintptr_t *data,
-    size_t *count,
-    uintptr_t *error_output
-) {
-    markdown_core_delta_entry *entries = NULL;
-    markdown_core_error *error = NULL;
-    bool succeeded;
-
-    if (!data || !count || !error_output) {
-        return 0;
-    }
-    succeeded = markdown_core_session_ordered_delta_entries(session, changes, &entries, count, &error);
-    *data = (uintptr_t)entries;
-    *error_output = (uintptr_t)error;
-    return succeeded ? 1 : 0;
-}
-
-void es_delta_entries_free(markdown_core_delta_entry *entries) { markdown_core_delta_entries_free(entries); }
 
 void es_delta_free(markdown_core_delta *changes) { markdown_core_delta_free(changes); }
 
@@ -190,8 +159,12 @@ uint64_t es_node_id(const markdown_core_node *node) { return markdown_core_node_
 
 uint64_t es_node_revision(const markdown_core_node *node) { return markdown_core_node_get_revision(node); }
 
-const markdown_core_node *es_session_node_by_id(const markdown_core_session *session, uint64_t id) {
-    return markdown_core_session_node_by_id(session, id);
+/* The one-complete-comment bit, from the parser. Deriving it a second time in
+ * each binding is a second definition that can disagree with the first. */
+int32_t es_node_html_comment(const markdown_core_node *node) {
+    bool comment = false;
+    markdown_core_node_html_comment(node, &comment);
+    return comment ? 1 : 0;
 }
 
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }

@@ -192,7 +192,9 @@ process.stdout.write(
         `cmark-gfm ${policy.upstream.version}\n`
 );
 process.stdout.write(`  registered deltas: ${policy.deltas.map((d) => d.id).join(", ")}\n`);
-process.stdout.write(`  registered divergences: ${String(reproduced.size)}/${String(expected.size)} inputs reproduced\n`);
+process.stdout.write(
+    `  registered divergences: ${String(reproduced.size)}/${String(expected.size)} inputs reproduced\n`
+);
 
 if (unmappedKinds.size) {
     // Two unmapped kinds render alike and would compare equal, so this reads as

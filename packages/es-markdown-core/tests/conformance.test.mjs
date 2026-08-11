@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, MarkupSession, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -17,7 +17,7 @@ test("conformance: public node schema is reachable", () => {
         "| left | center |\n| :--- | :----: |\n| a | b |\n\n::leaf[Label]{id=value}\n\n:::container[Title]{kind=demo}\nBody\n:::\n",
         "$$\ny\n$$\n"
     ];
-    const documents = sources.map((source) => Document.parse(source));
+    const documents = sources.map((source) => Document(source));
     const nodes = documents.flatMap(flatten);
     assert.deepEqual(
         new Set(nodes.map((node) => node.kind)),
@@ -61,9 +61,7 @@ test("conformance: public node schema is reachable", () => {
 });
 
 test("conformance: fields, nullability, and typed table nodes map to JavaScript", () => {
-    const document = Document.parse(
-        '3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n'
-    );
+    const document = Document('3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image "title")\n');
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.equal(document.content[0].tight, true);
@@ -97,7 +95,7 @@ test("conformance: fields, nullability, and typed table nodes map to JavaScript"
 });
 
 test("conformance: directive labels preserve missing, empty, and populated states", () => {
-    const document = Document.parse(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
+    const document = Document(":missing{id=1}\n\n:empty[]\n\n:label[text]\n\n::block[title]\n");
     const missing = document.content[0].content[0];
     const empty = document.content[1].content[0];
     const label = document.content[2].content[0];
@@ -123,55 +121,52 @@ test("conformance: directive labels preserve missing, empty, and populated state
 
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
-        const document = Document.parse(testCase.source, testCase.parseOptions);
+        const document = Document(testCase.source, testCase.parseOptions);
         assert.equal(MarkupDumper.dump(document), testCase.expected, testCase.name);
         assert.equal(document.dump(), testCase.expected, testCase.name);
     });
 }
 
-// Session replay of the shared canonical AST corpus: every per-line commit
-// must dump byte-equal to a one-shot parse of the same prefix, and the delta
+// Edit replay of the shared canonical AST corpus: every per-line revision
+// must dump byte-equal to a one-shot parse of the same text, and the delta
 // must be exactly the difference between consecutive mirrors.
 for (const testCase of canonicalManifest.cases) {
-    test(`conformance: session replay of canonical AST case ${testCase.name}`, () => {
-        const session = new MarkupSession(testCase.parseOptions);
-        try {
-            let replayed = "";
-            let previous = new Map();
-            for (const chunk of lineChunks(testCase.source)) {
-                replayed += chunk;
-                session.append(chunk);
-                const commit = session.commit();
+    test(`conformance: edit replay of canonical AST case ${testCase.name}`, () => {
+        let document = Document("", testCase.parseOptions);
+        let replayed = "";
+        let previous = new Map();
+        for (const chunk of lineChunks(testCase.source)) {
+            replayed += chunk;
+            const commit = document.edit(replayed);
+            document = commit.document;
 
-                // Equivalence: the incremental snapshot dumps byte-equal to
-                // a one-shot parse of the same prefix.
-                const reference = Document.parse(replayed, testCase.parseOptions);
-                assert.equal(commit.document.dump(), reference.dump(), testCase.name);
+            // Equivalence: the edited document dumps byte-equal to a
+            // one-shot parse of the same text.
+            const reference = Document(replayed, testCase.parseOptions);
+            assert.equal(document.dump(), reference.dump(), testCase.name);
+            reference.close();
 
-                // Delta-mirror integrity: the four arrays are disjoint,
-                // every node outside the delta kept its exact revision, and
-                // removed ids are gone.
-                const delta = commit.delta;
-                const touched = [...delta.added, ...delta.changed, ...delta.bubbled].map((id) => id.rawValue);
-                const removed = delta.removed.map((id) => id.rawValue);
-                assert.equal(new Set([...touched, ...removed]).size, touched.length + removed.length, testCase.name);
-                const touchedSet = new Set(touched);
-                const current = new Map();
-                for (const node of flatten(commit.document)) {
-                    current.set(node.id.rawValue, node.revision);
-                    if (!touchedSet.has(node.id.rawValue)) {
-                        assert.equal(node.revision, previous.get(node.id.rawValue), testCase.name);
-                    }
+            // Delta integrity: no id is named twice, every node the delta
+            // does not name kept its exact revision, and every retired id is
+            // gone from the tree.
+            const delta = commit.delta;
+            const named = delta.diffs.map((diff) => diff.markup.rawValue);
+            assert.equal(new Set(named).size, named.length, testCase.name);
+            const namedSet = new Set(named);
+            const current = new Map();
+            for (const node of flatten(document)) {
+                current.set(node.id.rawValue, node.revision);
+                if (!namedSet.has(node.id.rawValue)) {
+                    assert.equal(node.revision, previous.get(node.id.rawValue), testCase.name);
                 }
-                for (const rawValue of removed) {
-                    assert.equal(current.has(rawValue), false, testCase.name);
-                }
-                previous = current;
             }
-            assert.equal(session.document.dump(), testCase.expected, testCase.name);
-        } finally {
-            session.close();
+            for (const diff of delta.diffs) {
+                if (diff.parts.retired) assert.equal(current.has(diff.markup.rawValue), false, testCase.name);
+            }
+            previous = current;
         }
+        assert.equal(document.dump(), testCase.expected, testCase.name);
+        document.close();
     });
 }
 

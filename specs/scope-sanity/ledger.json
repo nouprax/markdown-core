@@ -1,7 +1,7 @@
 {
     "schemaVersion": 1,
     "rule": "docs/specs/canonical-ast-dump.md",
-    "purpose": "A dumped scope is a place in the source. Two classes of row are not: the sentinel 0:0..0:0, written when a node is recorded as having no position, and a negative range, written when a closed (line, column) interval is asked to express an empty one. Both are symptoms of one representation defect \u2014 the dump has no spelling for \"no position\" or \"empty\" that does not borrow a coordinate. This ledger used to name M3's extents as the cure and cite docs/reviews/2026-08-05-m3-endstate-poc.md as its authority; that design was reverted on 2026-08-07 (docs/reviews/2026-08-07-requirement-audit.md) and the cure is a dump spelling, not a substrate. Until it exists the counts may only shrink. When every count reaches zero this ledger and scripts/audit-scope-sanity.mjs are deleted, not kept at zero.",
+    "purpose": "A dumped scope is a place in the source. Two classes of row are not: the sentinel 0:0..0:0, written when a node is recorded as having no position, and a negative range, written when a closed (line, column) interval is asked to express an empty one. Both are symptoms of one representation defect — the dump has no spelling for \"no position\" or \"empty\" that does not borrow a coordinate. This ledger used to name M3's extents as the cure and cite docs/reviews/2026-08-05-m3-endstate-poc.md as its authority; that design was reverted on 2026-08-07 (docs/reviews/2026-08-07-requirement-audit.md) and the cure is a dump spelling, not a substrate. Until it exists the counts may only shrink, with one recorded exception: regression.txt's sentinel budget went 18 -> 19 on 2026-08-10, because the autolink position defect it now pins only appears on a paragraph whose buffer holds more than its first line, and a second line is a SoftBreak. The row is the same known class the ledger already tracks, not a new one. When every count reaches zero this ledger and scripts/audit-scope-sanity.mjs are deleted, not kept at zero.",
     "budget": {
         "packages/markdown-core/tests/fixtures/extensions-cross-link-embed.txt": {
             "sentinel": 7,
@@ -20,7 +20,7 @@
             "negative": 7
         },
         "packages/markdown-core/tests/fixtures/regression.txt": {
-            "sentinel": 18,
+            "sentinel": 19,
             "negative": 1
         },
         "packages/markdown-core/tests/fixtures/smart_punct.txt": {
