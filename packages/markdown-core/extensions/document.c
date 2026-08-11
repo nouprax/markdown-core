@@ -371,7 +371,7 @@ static markdown_core_document *document_build(
     return doc;
 }
 
-// One 64-bit read from the host CSPRNG. Sessions stay free of any library-
+// One 64-bit read from the host CSPRNG. Documents stay free of any library-
 // owned RNG state: every source below is the platform's own, shared-nothing
 // entropy service.
 static bool document_host_entropy(uint64_t *value) {

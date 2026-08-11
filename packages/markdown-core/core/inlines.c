@@ -1364,7 +1364,7 @@ static markdown_core_bufsize manual_scan_link_url(
  * not a bracket around a strikethrough, which is why this synthesizes the text
  * instead of falling through to the ordinary "emit the `]` and let the
  * delimiter stack sort it out" tail. And the answer is a definedness question
- * asked of the whole document, so it belongs to the session's footnote map
+ * asked of the whole document, so it belongs to the document's footnote map
  * rather than to the block being parsed. */
 static markdown_core_node *make_footnote_reference_or_text(
     subject *subj,
@@ -1593,7 +1593,7 @@ footnoteForm:
             // renderer had to special-case. The label reads exactly as the
             // borrow below reads it.
             //
-            // The map is the session's, spanning the whole document: a
+            // The map is the document's, spanning all of it: a
             // paragraph reparsed on its own still sees a definition a hundred
             // lines further down, so an incremental tree equals the one-shot
             // tree. A definedness flip is what re-refines the units that read

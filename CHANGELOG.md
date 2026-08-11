@@ -44,21 +44,25 @@ promised to remain compatible between releases.
     (`Text`, `Code`, `CodeBlock`, `HTML`, `HTMLBlock`, `Formula`,
     `FormulaBlock`, `ThematicBreak`, `SoftBreak`, `LineBreak`,
     `FootnoteReference`); traverse structure through `MarkupWalker`.
-- C, Swift, Kotlin, and ECMAScript: materializing every node scope is now a
-  linear whole-document batch operation, including deeply nested documents.
-  The C facade returns one owned canonical-preorder table that every binding
-  consumes without per-node native calls. Each binding's `MarkupWalker` also
-  has a scope-free typed-visitor traversal that remains usable on an
-  unmaterialized retained snapshot.
-- C, Swift, Kotlin, and ECMAScript: incremental mirrors now consume one
-  caller-owned C delta table whose `(id, parent, change)` rows are ordered
-  children before parents. A hash-indexed Kahn pass with expected O(delta)
-  cost replaces binding-local ancestor walks and comparison sorts, while the
-  table validates revision, session lineage, disjoint verdicts, and the
-  complete touched parent chain. ECMAScript also indexes all replacements for
-  a bubbled parent once, then performs one replacement-lookup pass and at most
-  one linear copy per child field, eliminating the former
-  O(changes × parent width) relink path.
+- Breaking (C, Swift, Kotlin, and ECMAScript): every node value carries its
+  own `scope` — its absolute source extent, read in O(1) off the value. The
+  bulk scope table and the document-mediated lookup that went with it are
+  removed: `markdown_core_document_scope_table`,
+  `markdown_core_scope_table_free`, `Document.scope(of:)` in Swift,
+  `Document.scope(node)` in Kotlin, and `document.scope(node)` in
+  ECMAScript. `scope` is deliberately NOT part of equality on any platform,
+  so an edit that only shifts text still leaves every reactive comparison
+  below it unchanged. Each binding's `MarkupWalker` keeps its scope-free
+  typed-visitor traversal.
+- Breaking (C, Swift, Kotlin, and ECMAScript): a delta is one ordered list of
+  `(markup, parts)` rows in the new document's postorder, where `parts == 0`
+  is a retired node and a retired row appears where it was found. The parent
+  column, the topological pass that consumed it, and the binding-local mirror
+  that reused an unchanged node's previous OBJECT are all gone. Every binding
+  now decodes every node on every commit: a document's projection is a
+  function of its text and options, not of how the caller reached it. What a
+  reactive consumer compares is unchanged — an untouched node keeps its `id`
+  and its `revision`.
 - Kotlin/JVM: native-bridge, scope-resolver, and wire-decoder implementation
   types are no longer importable or constructible from Java; dedicated ABI
   and Java-compiler gates keep the documented API as the only public surface.

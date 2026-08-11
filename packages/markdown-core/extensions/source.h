@@ -13,14 +13,14 @@ extern "C" {
 
 /** The stored bytes (incremental-canonical-ast.md 7.1, 8.1).
  *
- * A markdown_core_source owns one growable buffer holding the session's exact
+ * A markdown_core_source owns one growable buffer holding the document's exact
  * bytes. It is mutable and singly owned: applying an edit splices the buffer
  * in place.
  *
  * It was a persistent AVL rope of windows into refcounted immutable buffers,
  * so that an apply built a successor sharing every unedited subtree and
  * predecessors stayed readable however many successors existed. Nothing
- * needed a predecessor. A session publishes one document — the view it reuses
+ * needed a predecessor. One document is published at a time — the view it reuses
  * in place at every commit — so no caller can hold one (4.2), and a consumer
  * that wants a revision to outlive its commit takes a value copy, which the
  * bindings already do. The two bounds declared here for that design, an
@@ -33,7 +33,7 @@ extern "C" {
  * That is a walk, and 11.1 no longer treats a size-dependent term as a
  * violation on its own.
  *
- * Ownership: a source is confined to one thread, like the session state it
+ * Ownership: a source is confined to one thread, like the document state it
  * serves. All allocation goes through the markdown_core_mem it was created
  * with. Allocation failure surfaces before any byte moves — an apply reserves
  * what it needs while the source is still untouched — so a failed apply

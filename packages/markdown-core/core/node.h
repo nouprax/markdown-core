@@ -65,7 +65,7 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Set at seal time (session commit): start_line holds a delta from the
+    // Set at seal time (commit): start_line holds a delta from the
     // raw parent's resolved start line (root keeps its absolute), end_line a
     // delta from the node's own absolute start line; columns stay line-local.
     // The parser and raw one-shot parses keep absolute lines and never set
@@ -130,11 +130,11 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    // Session-assigned identity: `id` is unique within the owning session and
+    // Commit-assigned identity: `id` is unique within the owning series and
     // stable across incremental commits while the node remains "the same
-    // thing"; `last_changed_rev` is the session revision at which the node's
+    // thing"; `last_changed_rev` is the document revision at which the node's
     // own fields, child list, or any descendant last changed. Both stay 0 for
-    // parses that never pass through a session's adoption walk.
+    // parses that never pass through a commit's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
     // A cheap order-sensitive fingerprint of this node's subtree: its

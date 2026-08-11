@@ -164,7 +164,7 @@ typedef struct {
 // Nothing is duplicated to buy that: the coordination chain takes the table it
 // operates on and runs once per table. One mechanism, two instances.
 typedef struct {
-    // Session-persistent definitions. Each entry carries the id of the
+    // Definitions that outlive one parse. Each entry carries the id of the
     // document child anchoring it (0 = the region before the first child), so
     // a commit retracts exactly the definitions whose bytes it reparses. At
     // rest every entry's `order` stems from the most recent full parse, so

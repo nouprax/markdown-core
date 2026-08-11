@@ -23,8 +23,8 @@ struct markdown_core_parser {
      * only once every block is closed, asks whether `[^x]` names one. A
      * reference to a label nobody defines is not a footnote at all — it is the
      * literal text the author typed — so this answer decides a node's type,
-     * and it has to be the whole document's answer even when a session
-     * reparses one paragraph of it. That is why the map is the session's, not
+     * and it has to be the whole document's answer even when an edit
+     * reparses one paragraph of it. That is why the map is the document's, not
      * the parse's: see markdown_core_footnote_definition_create for why it is
      * a second map rather than a discriminated column of `refmap`. */
     struct markdown_core_map *footnote_defs;

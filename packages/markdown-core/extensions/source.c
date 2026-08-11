@@ -8,7 +8,7 @@
 // This was an AVL-balanced rope of windows into refcounted immutable buffers,
 // so that applying an edit built a successor sharing every untouched subtree
 // and predecessors stayed readable at zero copying cost. Nothing needed
-// predecessors: a session publishes one document, reusing its view in place at
+// predecessors: one document is published at a time, reusing its view in place at
 // every commit, so no caller can hold one (incremental-canonical-ast.md 4.2),
 // and a consumer that wants a revision to outlive its commit takes a value
 // copy, which the bindings already do.
@@ -135,7 +135,7 @@ bool markdown_core_source_apply(
              * an allocator — the ceiling is PTRDIFF_MAX rather than SIZE_MAX
              * because a size between the two is arithmetically fine and still
              * cannot be allocated, which is what ASan reports when realloc is
-             * handed one. The session passes this number straight through from
+             * handed one. The document passes this number straight through from
              * public API, which is what makes the guard reachable at all. */
             *status = MARKDOWN_CORE_SOURCE_NO_MEMORY;
             return false;
@@ -156,7 +156,7 @@ bool markdown_core_source_apply(
      * mid-splice, whichever direction it runs. Back-to-front alone looked
      * right and the randomized oracle caught it in round twenty. A batch
      * therefore copies into a fresh buffer, in order, which is what the
-     * oracle itself does. The session sends one edit per call. */
+     * oracle itself does. One edit arrives per call. */
     if (edit_count <= 1) {
         /* Reserved before anything moves, so the splice below cannot fail
          * halfway: the only failure this primitive has is an allocation, and

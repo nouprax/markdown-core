@@ -555,12 +555,12 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
 }
 
 /* The document-child anchor a definition retracts with: the direct document
- * child containing `b`. Sessions reparse whole document children at a
+ * child containing `b`. An edit reparses whole document children at a
  * time, so a
  * definition stamped with its anchor is re-harvested exactly when its bytes
  * are reparsed. Anchors are stamped as node pointers here and rewritten to
- * node ids once the session's adoption walk has assigned them; the map is
- * parse-local everywhere else, so the stamp is inert outside sessions. */
+ * node ids once the commit's adoption walk has assigned them; the map is
+ * parse-local everywhere else, so the stamp is inert outside an edit. */
 static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *anchor = b;
     while (anchor->parent && anchor->parent != parser->root) {
@@ -769,7 +769,7 @@ static void S_emit_definition(
      * continuation as an indented code block.
      *
      * Before definitions had nodes, a definition-only paragraph vanished and
-     * the session kept a sentinel clean entry to stand in for the anchor the
+     * the document kept a sentinel clean entry to stand in for the anchor the
      * tree no longer had; the node is now that anchor. */
     if (start == 0) {
         node->flags |= b->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
@@ -843,7 +843,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
      * position inside it is computed from this start, so they were all off by
      * the definitions' lines. The defect predates the ReferenceDefinition
      * node; it was invisible while a definition left nothing to overlap with,
-     * and neither parity oracle compares positions. The session's restart
+     * and neither parity oracle compares positions. The restart
      * reparses from the surviving line and got this right, which is how the
      * equivalence gate found it. */
     if (consumed) {
@@ -854,7 +854,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
          * a line that arrived while it was already open, and reparsing from
          * there does not reproduce it — an indented continuation reads as a
          * code block instead. Moving the start without dropping the claim is
-         * what made the session restart mid-definition. */
+         * what made the parse restart mid-definition. */
         b->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
     markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));

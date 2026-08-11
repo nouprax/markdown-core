@@ -766,7 +766,7 @@ bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_cor
         return false;
     }
     // Both kinds carry their own label exactly as written in the source;
-    // resolution and numbering are session queries, not node content.
+    // resolution and numbering are presentation, not node content.
     view_chunk(id, &node->as.literal);
     return true;
 }

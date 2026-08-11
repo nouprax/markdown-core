@@ -9,7 +9,7 @@ extern "C" {
 
 /** Size-classed slab arena behind the markdown_core_mem interface.
  *
- * A session allocates everything it owns — nodes, content buffers, tables,
+ * A document allocates everything it owns — nodes, content buffers, tables,
  * the staged parsers — through its arena. Freed class-sized blocks go to
  * per-class freelists and are reused by later commits; those slabs return to
  * the base allocator only at release. Growing a block within its class
@@ -20,7 +20,7 @@ extern "C" {
  *
  * The arena embeds its markdown_core_mem first and the allocator functions
  * recover it by casting back; there is no global state and no locking — an
- * arena is confined to its session exactly like the session's other state.
+ * arena is confined to its document exactly like its other state.
  * Allocation failure (base refill, overflow) surfaces as NULL through the
  * markdown_core_mem contract.
  */
