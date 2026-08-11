@@ -45,8 +45,8 @@ bindings already do. This is what lets the engine reuse the previous tree in
 place, and it is why nothing here promises a predecessor.
 
 **`commit` takes text, not options.** Options are fixed when the document is
-created and are immutable for its whole lineage. A `DocumentDomain` therefore
-never changes within a lineage: a domain change is a new `Document(...)` call,
+created and are immutable for its whole series. A `DocumentDomain` therefore
+never changes within a series: a domain change is a new `Document(...)` call,
 and its identities compare equal to nothing that came before — which is exactly
 what a consumer expects when it changes what the parser means.
 
@@ -131,7 +131,7 @@ The canonical entry point on Swift, Kotlin, and ES is `Document`:
 
 | Operation | Contract |
 | --- | --- |
-| `Document(markdown, options)` | options are immutable for the document's whole lineage |
+| `Document(markdown, options)` | options are immutable for the document's whole series |
 | `commit(markdown)` | returns `Commit { document, delta }` and SUPERSEDES the receiver |
 | `version` | this document's `DocumentVersion` |
 | `node(for:)` / `parent(of:)` / `index(of:)` | resolve an identity in this document |

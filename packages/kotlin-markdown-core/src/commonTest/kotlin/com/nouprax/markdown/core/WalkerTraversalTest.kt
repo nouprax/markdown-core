@@ -93,7 +93,7 @@ class ScopeOwnershipTest {
             retained = first
         }
         // There is nothing to materialize: a document builds its scope table
-        // at parse time, so it answers whatever happened to its lineage since.
+        // at parse time, so it answers whatever happened to its series since.
         assertEquals(
             3,
             retained.content[1]

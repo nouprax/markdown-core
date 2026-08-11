@@ -140,7 +140,7 @@ after all access to that document has finished. The complete C contract is in
 
 There is no session type. A document is created from text and options, and
 `edit` hands it new text: it returns the document that text describes plus the
-delta between the two. Options are fixed for a document's whole lineage —
+delta between the two. Options are fixed for a document's whole series —
 changing what the parser means is a new document, not an edit.
 
 **The stability an application needs is on the TREE, not in the delta.** An id

@@ -80,7 +80,7 @@ typedef struct markdown_core_commit {
     markdown_core_delta *delta;
 } markdown_core_commit;
 
-/** Node identity, assigned once per lineage and never reused. Stable across
+/** Node identity, assigned once per series and never reused. Stable across
  * edits while the node remains the same kind of thing at the same place. 0 is
  * never a valid id. */
 typedef uint64_t markdown_core_node_id;
@@ -405,7 +405,7 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /**
  * `Document(markdown, options)` — the one entry point. `options == NULL`
- * selects the defaults and they are fixed for this document's whole lineage:
+ * selects the defaults and they are fixed for this document's whole series:
  * a commit takes text and not options. The returned document owns all nodes
  * and borrowed string views. On failure, NULL is returned and `*error` is set
  * when `error` is non-NULL.
@@ -432,14 +432,17 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
 /** How many edits this document has survived; a fresh parse is zero. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
-/** Per-lineage random salt; nodes from different parses never share identity
- * even when ids collide numerically. An edit inherits its predecessor's. */
-MARKDOWN_CORE_API uint64_t markdown_core_document_lineage(const markdown_core_document *document);
+/** Per-series random salt; nodes from different parses never share identity
+ * even when ids collide numerically. A SERIES is one document and every
+ * document its edits produce, so an edit inherits its predecessor's salt;
+ * ids restart at 1 for each new series, which is what makes the salt
+ * load-bearing rather than decorative. */
+MARKDOWN_CORE_API uint64_t markdown_core_document_series(const markdown_core_document *document);
 MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *document);
 
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any
- * descendant last changed — two nodes of one lineage with equal (id,
+ * descendant last changed — two nodes of one series with equal (id,
  * revision) have identical content. A pure positional shift never changes a
  * node's revision. */
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);

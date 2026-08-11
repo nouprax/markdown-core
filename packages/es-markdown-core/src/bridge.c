@@ -110,8 +110,8 @@ int32_t es_document_edit(
 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
 
-uint64_t es_document_lineage(const markdown_core_document *document) {
-    return markdown_core_document_lineage(document);
+uint64_t es_document_series(const markdown_core_document *document) {
+    return markdown_core_document_series(document);
 }
 
 /* Every diagnostic of `document`: the count, and a pointer to the document's

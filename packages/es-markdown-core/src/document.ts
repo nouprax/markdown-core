@@ -43,14 +43,14 @@ const reclaim = new FinalizationRegistry<CDocument>((handle) => handle.free());
 interface Built {
     readonly handle: CDocument;
     readonly options: Readonly<Required<ParseOptions>>;
-    readonly lineage: bigint;
+    readonly series: bigint;
     readonly identities: Map<number, MarkupID>;
 }
 
 function identity(state: Built, rawValue: number): MarkupID {
     const existing = state.identities.get(rawValue);
     if (existing) return existing;
-    const created: MarkupID = { lineage: state.lineage, rawValue };
+    const created: MarkupID = { series: state.series, rawValue };
     state.identities.set(rawValue, created);
     return created;
 }
@@ -87,7 +87,7 @@ function build(state: Built): Document {
             define("options", state.options);
             define("diagnostics", diagnostics);
             define("node", (id: MarkupID) => {
-                if (id.lineage !== state.lineage) return null;
+                if (id.series !== state.series) return null;
                 if (id.rawValue === value.id.rawValue) return adopted as Document;
                 return index.get(id.rawValue) ?? null;
             });
@@ -122,9 +122,9 @@ function edit(state: Built, markdown: string): Commit {
         const successor: Built = {
             handle,
             options: state.options,
-            lineage: state.lineage,
+            series: state.series,
             // Identity interning carries over: an id names the same node
-            // across the whole lineage, so the `MarkupID` a consumer held
+            // across the whole series, so the `MarkupID` a consumer held
             // before the edit is the one the new tree hands back.
             identities: new Map(state.identities)
         };
@@ -143,7 +143,7 @@ function edit(state: Built, markdown: string): Commit {
  *
  * There is no session type. A document is created from text and options;
  * `edit` hands it new text and returns the next document with the delta
- * between them. Options are fixed for a document's whole lineage — changing
+ * between them. Options are fixed for a document's whole series — changing
  * what the parser means is a new document, not an edit, and there is no
  * delta to be had across it.
  */
@@ -154,7 +154,7 @@ export function Document(markdown: string, options: ParseOptions = {}): Document
         return build({
             handle,
             options: normalized.options,
-            lineage: handle.lineage(),
+            series: handle.series(),
             identities: new Map()
         });
     } catch (failure) {

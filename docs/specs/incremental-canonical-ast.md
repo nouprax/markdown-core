@@ -734,9 +734,9 @@ DocumentVersion {
 ```
 
 A `DocumentDomain` is the scope that node identities and revisions live in. It
-is unique to one document lineage and includes the schema and the parse
+is unique to one document series and includes the schema and the parse
 options that can affect AST truth. Changing one of those inputs starts a fresh
-domain; it is not an ordinary same-lineage update. `SourceProfile` used to be
+domain; it is not an ordinary same-series update. `SourceProfile` used to be
 named here — twice, by an old typo — and it is gone with the type (7.1).
 
 A domain is opaque and is only ever compared for equality. A consumer never

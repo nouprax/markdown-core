@@ -38,7 +38,7 @@ stripping, tables, strikethrough, autolinks, task lists, formulas, and
 directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
 single `formulas` switch controls `$…$`, `$$…$$`, LaTeX delimiters, and
 `formula` fenced blocks. The result is an immutable `Sendable` value tree whose
-nodes carry a stable identity (`id`, a `MarkupID` of the owning lineage's salt
+nodes carry a stable identity (`id`, a `MarkupID` of the owning series salt
 plus a raw value) and a change `revision`; equality is O(1) over that pair, and
 an unchanged node compares equal across consecutive revisions, which is what a
 render cache keys on.
@@ -87,7 +87,7 @@ persistence or data interchange.
 
 There is no session type. A document is created from text and options, and
 `edit(_:)` hands it new text: it returns the document that text describes plus
-the `Delta` between the two. Options are fixed for a document's whole lineage —
+the `Delta` between the two. Options are fixed for a document's whole series —
 changing what the parser means is a new `Document`, not an edit.
 
 ```swift

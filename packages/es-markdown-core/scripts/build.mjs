@@ -51,7 +51,7 @@ const exported = [
     "es_document_open",
     "es_document_edit",
     "es_document_free",
-    "es_document_lineage",
+    "es_document_series",
     "es_document_diagnostics",
     "es_delta_revision",
     "es_delta_diffs",

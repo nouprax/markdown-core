@@ -38,7 +38,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_dump_free;
     markdown_core_document_edit;
     markdown_core_document_revision;
-    markdown_core_document_lineage;
+    markdown_core_document_series;
     markdown_core_document_length;
     markdown_core_node_get_id;
     markdown_core_node_get_revision;

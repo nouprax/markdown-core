@@ -48,7 +48,7 @@ private fun open(
  *
  * There is no session type. A document is created from text and options;
  * [edit] hands it new text and returns the next document with the delta
- * between them. Options are fixed for a document's whole lineage — changing
+ * between them. Options are fixed for a document's whole series — changing
  * what the parser means is a new `Document`, not an edit, and there is no
  * delta to be had across it.
  *
@@ -94,7 +94,7 @@ public class Document private constructor(
 
     override val scope: Scope get() = built.scope
 
-    /** The options this document and its whole lineage were parsed under. */
+    /** The options this document and its whole series were parsed under. */
     public val options: ParseOptions get() = built.options
 
     /** The document's top-level blocks in source order. */
@@ -105,14 +105,14 @@ public class Document private constructor(
     public val diagnostics: kotlin.collections.List<Diagnostic> get() = built.diagnostics
 
     /**
-     * Per-lineage random salt; nodes from different parses never compare equal
+     * Per-series random salt; nodes from different parses never compare equal
      * even when their raw ids collide numerically.
      */
-    public val lineage: ULong get() = id.lineage
+    public val series: ULong get() = id.series
 
-    /** [lineage] as a bit-preserving signed value: the Java view of the
+    /** [series] as a bit-preserving signed value: the Java view of the
      * unsigned accessor, whose mangled name Java sources cannot write. */
-    public fun lineageBits(): Long = lineage.toLong()
+    public fun seriesBits(): Long = series.toLong()
 
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
@@ -154,7 +154,7 @@ public class Document private constructor(
      */
     public fun node(id: MarkupID): Markup? =
         when {
-            id.lineage != this.id.lineage -> null
+            id.series != this.id.series -> null
 
             // The root answers for itself. It is a Markup like any other, and
             // a delta names it whenever the top-level block list changes, so a

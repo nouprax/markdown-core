@@ -8,7 +8,7 @@
 
 /* MKC4 wire: every payload opens with the magic and a status byte (0 =
  * success data follows, 1 = an error record follows). A success payload
- * carries the document handle, its lineage, and the root's id, revision and
+ * carries the document handle, its series, and the root's id, revision and
  * extent, then the tree, then — for an edit — the delta, then the
  * diagnostics.
  *
@@ -471,7 +471,7 @@ static markdown_core_document *document_of(uint64_t handle) {
     return (markdown_core_document *)(uintptr_t)handle;
 }
 
-/* Handle, lineage, root id, root revision — the header every success payload
+/* Handle, series, root id, root revision — the header every success payload
  * carries, whichever body follows it.
  *
  * The ROOT NODE's revision, not the document's: the document's revision counts
@@ -483,7 +483,7 @@ static const markdown_core_node *put_header(bridge_buffer *buffer,
     const markdown_core_node *root = markdown_core_document_root(document);
     put_u8(buffer, 0);
     put_u64(buffer, (uint64_t)(uintptr_t)document);
-    put_u64(buffer, markdown_core_document_lineage(document));
+    put_u64(buffer, markdown_core_document_series(document));
     if (root == NULL) {
         buffer->failed = true;
         return NULL;

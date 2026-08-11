@@ -6,7 +6,7 @@ import type { ParseOptions } from "../parse-options.js";
 
 export interface Document extends MarkupBase<"document"> {
     readonly content: readonly Markup[];
-    /** The options this document and its whole lineage were parsed under. */
+    /** The options this document and its whole series were parsed under. */
     readonly options: Readonly<Required<ParseOptions>>;
     /** Everything an editor should underline, in source order. Empty for
      * almost every document; see `DiagnosticCode`. */

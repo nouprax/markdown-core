@@ -6,6 +6,14 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Breaking (C, Swift, Kotlin, and ECMAScript): the per-parse identity salt is
+  now called `series` everywhere it was called `lineage`
+  (`markdown_core_document_series`, `MarkupID.series`, Kotlin's `seriesBits`
+  and `MarkupID.fromBits`, `document.series`). Nothing about the value or its
+  contract changed: a SERIES is one document and every document its edits
+  produce, node raw values restart at 1 for each new series, and the salt is
+  what keeps two unrelated documents' identities from comparing equal. The
+  old name is removed rather than aliased.
 - Breaking (C, Swift, Kotlin, and ECMAScript): formula parsing now has one
   `formulas` option. Enabling it recognizes dollar delimiters, LaTeX
   delimiters, and `formula` fenced code together; disabling it turns off the

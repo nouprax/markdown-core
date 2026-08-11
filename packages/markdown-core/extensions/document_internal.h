@@ -37,13 +37,13 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 }
 
 // Open-addressing id -> node table. Rebuilt lazily after a commit; keys are
-// lineage-unique node ids (0 marks an empty slot, ids start at 1). Id and
+// series-unique node ids (0 marks an empty slot, ids start at 1). Id and
 // node share a slot so every probe costs one cache line, not two — the
 // table dwarfs the cache at document scale and probes dominate the
 // commit's table maintenance.
 
 struct markdown_core_delta {
-    uint64_t lineage;
+    uint64_t series;
     uint64_t before;
     uint64_t after;
     markdown_core_diff *diffs;
@@ -215,7 +215,7 @@ struct markdown_core_document {
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
     uint64_t next_id; // monotonic, starts at 1, never reused
-    uint64_t lineage;
+    uint64_t series;
     uint64_t revision;
     // The definition tables (see markdown_core_definition_table).
     markdown_core_definition_table definitions[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];

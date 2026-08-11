@@ -90,7 +90,7 @@ test("ast: the document mediates the canonical diagnostic dump", () => {
 
 test("ast: nodes carry identity and their own extent", () => {
     const document = Document("Lead\n\n# Heading\n");
-    assert.equal(typeof document.id.lineage, "bigint");
+    assert.equal(typeof document.id.series, "bigint");
     assert.equal(typeof document.id.rawValue, "number");
     assert.equal(typeof document.revision, "number");
     // The extent is a property OF the node, read without a lookup and
@@ -100,7 +100,7 @@ test("ast: nodes carry identity and their own extent", () => {
         end: { line: 3, column: 9 }
     });
     // Separate parses never share identity.
-    assert.notEqual(Document("# Heading\n").id.lineage, document.id.lineage);
+    assert.notEqual(Document("# Heading\n").id.series, document.id.series);
 });
 
 test("unicode: UTF-8 survives native document release", () => {

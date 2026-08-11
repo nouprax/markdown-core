@@ -91,7 +91,7 @@ import Testing
         #expect(createdIndex < rootIndex)
     }
 
-    @Test("equality is lineage-salted identity plus revision")
+    @Test("equality is series-salted identity plus revision")
     func equalitySemantics() throws {
         let source = "Same *content* twice.\n"
         let first = try Document(source)
@@ -101,8 +101,8 @@ import Testing
         #expect(first.content[0] as? Paragraph != second.content[0] as? Paragraph)
         // Within one document, identity is value equality.
         #expect(first.content[0] as? Paragraph == first.content[0] as? Paragraph)
-        #expect(first.id.lineage != second.id.lineage)
-        // An id from another lineage is not this document's to answer.
+        #expect(first.id.series != second.id.series)
+        // An id from another series is not this document's to answer.
         #expect(first.node(second.content[0].id) == nil)
     }
 

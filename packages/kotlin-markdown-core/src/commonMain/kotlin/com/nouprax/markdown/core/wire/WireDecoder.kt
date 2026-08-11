@@ -50,19 +50,19 @@ private fun <Result> decode(
 ): Pair<Result, Delta?> {
     val reader = reader(bytes)
     val handle = reader.long()
-    val lineage = reader.ulong()
+    val series = reader.ulong()
     val rootId = reader.ulong()
     val revision = reader.ulong()
     val scope = reader.scope()
     val index = HashMap<ULong, Markup>()
     val root = RootSink()
-    reader.treeBody(lineage, rootId, index, root)
-    val delta = if (edit) reader.deltaBody(lineage) else null
+    reader.treeBody(series, rootId, index, root)
+    val delta = if (edit) reader.deltaBody(series) else null
     val diagnostics = reader.diagnostics()
     require(reader.finished) { "trailing bytes after a native payload" }
     return build(
         handle,
-        MarkupID(lineage, rootId),
+        MarkupID(series, rootId),
         revision,
         scope,
         checkNotNull(root.content) { "a payload carried no document root" },
@@ -212,7 +212,7 @@ private fun diagnosticCode(rawValue: Int): DiagnosticCode =
  * stored: nothing resolves it as a child, and on this side it is a [Document],
  * which owns a native parse and cannot be minted from a record. */
 private fun WireReader.treeBody(
-    lineage: ULong,
+    series: ULong,
     rootId: ULong,
     index: MutableMap<ULong, Markup>,
     root: RootSink,
@@ -221,7 +221,7 @@ private fun WireReader.treeBody(
     require(count >= 0) { "invalid native record count" }
     repeat(count) {
         val kind = kind()
-        val id = MarkupID(lineage, ulong())
+        val id = MarkupID(series, ulong())
         val revision = ulong()
         val scope = scope()
         if (kind == WireKind.DOCUMENT) {
@@ -237,7 +237,7 @@ private fun WireReader.treeBody(
 /** One (id, parts) row per differing node, in the order the facade defines.
  * The rows name what changed; they do not carry it, because the tree above
  * carries everything. */
-private fun WireReader.deltaBody(lineage: ULong): Delta {
+private fun WireReader.deltaBody(series: ULong): Delta {
     val beforeRevision = ulong()
     val afterRevision = ulong()
     val count = int()
@@ -245,7 +245,7 @@ private fun WireReader.deltaBody(lineage: ULong): Delta {
     return Delta(
         beforeRevision,
         afterRevision,
-        immutableList(count) { Diff(MarkupID(lineage, ulong()), DiffParts(int())) },
+        immutableList(count) { Diff(MarkupID(series, ulong()), DiffParts(int())) },
     )
 }
 

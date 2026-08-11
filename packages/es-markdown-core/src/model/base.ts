@@ -17,7 +17,7 @@ import type { Scope } from "../values.js";
  */
 export interface MarkupBase<Kind extends string> {
     readonly kind: Kind;
-    /** Lineage-scoped identity: stable across edits while the node remains the
+    /** Series-scoped identity: stable across edits while the node remains the
      * same kind of thing at the same place. */
     readonly id: MarkupID;
     /** The revision at which this node's own fields, child list, or any

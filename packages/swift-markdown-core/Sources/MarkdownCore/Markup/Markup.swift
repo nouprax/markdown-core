@@ -29,22 +29,25 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
-/// Session-scoped node identity: `rawValue` is unique within the owning
-/// session and never reused; `lineage` is the session's random salt, so nodes
-/// from different sessions (including separate one-shot parses) never share
-/// an identity. Stable across incremental commits while the node remains the
-/// same kind of thing at the same place.
+/// Series-scoped node identity: `rawValue` is unique within the owning series
+/// and never reused; `series` is that series' random salt, so nodes from
+/// different series (including separate one-shot parses) never share an
+/// identity. Stable across edits while the node remains the same kind of
+/// thing at the same place.
+///
+/// A SERIES is one document and every document its edits produce. Raw values
+/// restart at 1 for each new series, so the salt is the only thing keeping
+/// two unrelated documents' identities apart.
 public struct MarkupID: Sendable, Hashable {
-    /// The owning session's random salt; ids from different sessions never
+    /// The owning series' random salt; ids from different series never
     /// compare equal even when raw values collide.
-    public let lineage: UInt64
-    /// The id's value within its lineage: unique in the owning session and
-    /// never reused.
+    public let series: UInt64
+    /// The id's value within its series: unique there and never reused.
     public let rawValue: UInt64
 
-    /// Creates an identity from a session lineage and a raw id value.
-    public init(lineage: UInt64, rawValue: UInt64) {
-        self.lineage = lineage
+    /// Creates an identity from a series salt and a raw id value.
+    public init(series: UInt64, rawValue: UInt64) {
+        self.series = series
         self.rawValue = rawValue
     }
 }

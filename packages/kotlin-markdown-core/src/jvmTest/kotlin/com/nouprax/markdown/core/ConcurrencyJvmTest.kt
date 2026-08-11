@@ -66,8 +66,8 @@ class ConcurrencyJvmTest {
     }
 
     @Test
-    fun parallelLineagesOnExecutorThreadsStayIsolated() {
-        // One lineage per worker thread, interleaved edit and read, with
+    fun parallelSeriesOnExecutorThreadsStayIsolated() {
+        // One series per worker thread, interleaved edit and read, with
         // cross-thread reads after the writer thread finished — a document is
         // an immutable value, so whatever a thread produced stays readable
         // from any other.

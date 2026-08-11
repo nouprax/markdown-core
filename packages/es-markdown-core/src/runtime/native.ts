@@ -16,7 +16,7 @@ export interface NativeExports extends WebAssembly.Exports {
         errorOutput: number
     ): number;
     es_document_free(document: number): void;
-    es_document_lineage(document: number): bigint;
+    es_document_series(document: number): bigint;
     /** Writes a pointer to the document's own diagnostic array — 20-byte
      * (code i32, scope 4×i32) rows that borrow from the document — and
      * returns the row count. */
@@ -85,7 +85,7 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     // reported value a full second past the previous call: the entropy mix
     // survives libc only at seconds granularity, and a freed-and-reallocated
     // session at the same address within the same wall-clock second would
-    // otherwise mint the same lineage. The clock is only the fallback layer
+    // otherwise mint the same series. The clock is only the fallback layer
     // of the seed; random_get below carries the cross-runtime uniqueness
     // contract.
     let lastNanoseconds = 0n;
@@ -98,7 +98,7 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             new DataView(memory.buffer).setBigUint64(timePtr, lastNanoseconds, true);
             return 0;
         },
-        // Backs the engine's getentropy: per-session lineages must stay
+        // Backs the engine's getentropy: per-session series must stay
         // collision-resistant across isolated runtimes (workers, processes),
         // where every deterministic input — allocator state, coarse clocks —
         // repeats exactly.

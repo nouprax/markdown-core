@@ -17,7 +17,7 @@ export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" 
  * the caller reached it.
  */
 export interface DecodeContext {
-    /** Lineage-interned identity for a raw id: the same identity is always
+    /** Series-interned identity for a raw id: the same identity is always
      * the same `MarkupID` object. */
     readonly ids: (rawValue: number) => MarkupID;
     /** Completes the decoded root into the document value. */

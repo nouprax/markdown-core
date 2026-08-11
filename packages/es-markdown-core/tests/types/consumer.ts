@@ -97,13 +97,13 @@ document.dump = () => "replacement";
 document.content[1].scope = { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } };
 
 const identity: MarkupID = document.id;
-const lineage: bigint = identity.lineage;
+const series: bigint = identity.series;
 const rawValue: number = identity.rawValue;
 const revision: number = document.revision;
 const documentScope: Scope = document.scope;
 const nodeScope: Scope = document.content[1]!.scope;
 void nodeScope;
-void lineage;
+void series;
 void rawValue;
 void revision;
 void documentScope;
@@ -122,7 +122,7 @@ void diffs;
 void retired;
 void currentValue;
 void diagnostics;
-// @ts-expect-error options are immutable for a document's whole lineage
+// @ts-expect-error options are immutable for a document's whole series
 document.options.tables = false;
 successor.close();
 

@@ -338,14 +338,14 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
         final fun <get-diagnostics>(): kotlin.collections/List<com.nouprax.markdown.core/Diagnostic> // com.nouprax.markdown.core/Document.diagnostics.<get-diagnostics>|<get-diagnostics>(){}[0]
     final val id // com.nouprax.markdown.core/Document.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Document.id.<get-id>|<get-id>(){}[0]
-    final val lineage // com.nouprax.markdown.core/Document.lineage|{}lineage[0]
-        final fun <get-lineage>(): kotlin/ULong // com.nouprax.markdown.core/Document.lineage.<get-lineage>|<get-lineage>(){}[0]
     final val options // com.nouprax.markdown.core/Document.options|{}options[0]
         final fun <get-options>(): com.nouprax.markdown.core/ParseOptions // com.nouprax.markdown.core/Document.options.<get-options>|<get-options>(){}[0]
     final val revision // com.nouprax.markdown.core/Document.revision|{}revision[0]
         final fun <get-revision>(): kotlin/ULong // com.nouprax.markdown.core/Document.revision.<get-revision>|<get-revision>(){}[0]
     final val scope // com.nouprax.markdown.core/Document.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope.<get-scope>|<get-scope>(){}[0]
+    final val series // com.nouprax.markdown.core/Document.series|{}series[0]
+        final fun <get-series>(): kotlin/ULong // com.nouprax.markdown.core/Document.series.<get-series>|<get-series>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Document.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
     final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
@@ -354,8 +354,8 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun edit(kotlin/String): com.nouprax.markdown.core/Commit // com.nouprax.markdown.core/Document.edit|edit(kotlin.String){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Document.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Document.hashCode|hashCode(){}[0]
-    final fun lineageBits(): kotlin/Long // com.nouprax.markdown.core/Document.lineageBits|lineageBits(){}[0]
     final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.MarkupID){}[0]
+    final fun seriesBits(): kotlin/Long // com.nouprax.markdown.core/Document.seriesBits|seriesBits(){}[0]
 }
 
 final class com.nouprax.markdown.core/Embed : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Embed|null[0]
@@ -637,18 +637,18 @@ final class com.nouprax.markdown.core/ListItem : com.nouprax.markdown.core/Marku
 final class com.nouprax.markdown.core/MarkupID { // com.nouprax.markdown.core/MarkupID|null[0]
     constructor <init>(kotlin/ULong, kotlin/ULong) // com.nouprax.markdown.core/MarkupID.<init>|<init>(kotlin.ULong;kotlin.ULong){}[0]
 
-    final val lineage // com.nouprax.markdown.core/MarkupID.lineage|{}lineage[0]
-        final fun <get-lineage>(): kotlin/ULong // com.nouprax.markdown.core/MarkupID.lineage.<get-lineage>|<get-lineage>(){}[0]
     final val rawValue // com.nouprax.markdown.core/MarkupID.rawValue|{}rawValue[0]
         final fun <get-rawValue>(): kotlin/ULong // com.nouprax.markdown.core/MarkupID.rawValue.<get-rawValue>|<get-rawValue>(){}[0]
+    final val series // com.nouprax.markdown.core/MarkupID.series|{}series[0]
+        final fun <get-series>(): kotlin/ULong // com.nouprax.markdown.core/MarkupID.series.<get-series>|<get-series>(){}[0]
 
     final fun component1(): kotlin/ULong // com.nouprax.markdown.core/MarkupID.component1|component1(){}[0]
     final fun component2(): kotlin/ULong // com.nouprax.markdown.core/MarkupID.component2|component2(){}[0]
     final fun copy(kotlin/ULong = ..., kotlin/ULong = ...): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/MarkupID.copy|copy(kotlin.ULong;kotlin.ULong){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/MarkupID.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/MarkupID.hashCode|hashCode(){}[0]
-    final fun lineageBits(): kotlin/Long // com.nouprax.markdown.core/MarkupID.lineageBits|lineageBits(){}[0]
     final fun rawValueBits(): kotlin/Long // com.nouprax.markdown.core/MarkupID.rawValueBits|rawValueBits(){}[0]
+    final fun seriesBits(): kotlin/Long // com.nouprax.markdown.core/MarkupID.seriesBits|seriesBits(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/MarkupID.toString|toString(){}[0]
 
     final object Companion { // com.nouprax.markdown.core/MarkupID.Companion|null[0]

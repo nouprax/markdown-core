@@ -39,7 +39,7 @@ TypeScript properties. The JavaScript objects are not runtime-frozen. The
 package exposes parsing, editing, and AST traversal, not rendering or AST
 mutation.
 
-Every node carries an identity: `id` (a `MarkupID` of the owning lineage's
+Every node carries an identity: `id` (a `MarkupID` of the owning series
 salt plus a raw value, always the same object for the same identity) and
 `revision`, the revision at which the node's content last changed. Two nodes
 with the same `id` and `revision` are guaranteed to have identical content.
@@ -80,7 +80,7 @@ and debugging rather than persistence or data interchange.
 
 There is no session type. A document is created from text and options, and
 `edit` hands it new text: it returns the document that text describes plus the
-`Delta` between the two. Options are fixed for a document's whole lineage —
+`Delta` between the two. Options are fixed for a document's whole series —
 changing what the parser means is a new document, not an edit.
 
 ```js

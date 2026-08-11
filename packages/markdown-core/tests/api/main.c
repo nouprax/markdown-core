@@ -2069,7 +2069,7 @@ static void session_append_id_stability(test_batch_runner *runner) {
            node_by_id(markdown_core_document_root(session), paragraph_id) == paragraph,
            "node_by_id resolves the paragraph");
         OK(runner, node_by_id(markdown_core_document_root(session), 0) == NULL, "node_by_id rejects id 0");
-        OK(runner, markdown_core_document_lineage(session) != 0, "session lineage is nonzero");
+        OK(runner, markdown_core_document_series(session) != 0, "session series is nonzero");
     }
 
     markdown_core_delta_free(changes);
@@ -2078,13 +2078,13 @@ static void session_append_id_stability(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
-/* The lineage contract requires collision resistance beyond the local
+/* The series contract requires collision resistance beyond the local
  * address/time mix: sequential open/free pairs revisit the same allocator
- * address within one wall-clock second, so distinct lineages here prove the
+ * address within one wall-clock second, so distinct series here prove the
  * host-entropy source is live. */
-static void session_lineage_entropy(test_batch_runner *runner) {
+static void session_series_entropy(test_batch_runner *runner) {
     enum { SESSIONS = 64 };
-    uint64_t lineages[SESSIONS];
+    uint64_t series[SESSIONS];
     markdown_core_error *error = NULL;
     bool distinct = true;
     bool nonzero = true;
@@ -2099,18 +2099,18 @@ static void session_lineage_entropy(test_batch_runner *runner) {
             markdown_core_error_free(error);
             return;
         }
-        lineages[i] = markdown_core_document_lineage(session);
+        series[i] = markdown_core_document_series(session);
         mc_text_free(&mctext);
         markdown_core_document_free(session);
     }
     for (i = 0; i < SESSIONS; i++) {
-        nonzero = nonzero && lineages[i] != 0;
+        nonzero = nonzero && series[i] != 0;
         for (j = i + 1; j < SESSIONS; j++) {
-            distinct = distinct && lineages[i] != lineages[j];
+            distinct = distinct && series[i] != series[j];
         }
     }
-    OK(runner, nonzero, "every lineage is nonzero");
-    OK(runner, distinct, "sequential same-address sessions never share a lineage");
+    OK(runner, nonzero, "every series is nonzero");
+    OK(runner, distinct, "sequential same-address sessions never share a series");
     markdown_core_error_free(error);
 }
 
@@ -2761,7 +2761,7 @@ int main(void) {
     session_append_id_stability(runner);
     session_head_insertion_id_stability(runner);
     subtree_hash_completeness(runner);
-    session_lineage_entropy(runner);
+    session_series_entropy(runner);
     session_suffix_id_stability(runner);
     session_utf8_split_append(runner);
     session_directive_label_parent(runner);

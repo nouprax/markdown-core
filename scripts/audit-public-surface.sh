@@ -145,7 +145,7 @@ public struct ParseOptions: Sendable, Hashable
 public var description: String
 public var errorDescription: String?
 public var isRetired: Bool
-public var lineage: UInt64'
+public var series: UInt64'
 if [ "$document_surface" != "$expected_document_surface" ]; then
     printf '%s\n' "$document_surface" >&2
     fail "Swift document surface drifted from the reviewed pin"
@@ -310,8 +310,8 @@ public fun afterRevisionBits
 public fun beforeRevisionBits
 public fun dump
 public fun edit
-public fun lineageBits
 public fun node
+public fun seriesBits
 public val afterRevision
 public val beforeRevision
 public val children
@@ -323,12 +323,12 @@ public val diagnostics
 public val diffs
 public val document
 public val isRetired
-public val lineage
 public val markup
 public val options
 public val parts
 public val rawValue
 public val scope
+public val series
 public val text
 public val value'
 if [ "$kotlin_document_surface" != "$expected_kotlin_document_surface" ]; then

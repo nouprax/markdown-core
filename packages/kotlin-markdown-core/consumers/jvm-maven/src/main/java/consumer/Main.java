@@ -27,10 +27,10 @@ public final class Main {
         // through their bit-preserving signed views.
         Markup paragraph = document.getContent().get(0);
         MarkupID id = paragraph.getId();
-        if (id.lineageBits() == 0L) {
-            throw new IllegalStateException("lineage bits must carry the lineage salt");
+        if (id.seriesBits() == 0L) {
+            throw new IllegalStateException("series bits must carry the series salt");
         }
-        MarkupID rebuilt = MarkupID.fromBits(id.lineageBits(), id.rawValueBits());
+        MarkupID rebuilt = MarkupID.fromBits(id.seriesBits(), id.rawValueBits());
         if (!rebuilt.equals(id)) {
             throw new IllegalStateException("MarkupID.fromBits must round-trip the identity");
         }

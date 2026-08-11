@@ -193,10 +193,10 @@ export class CDocument {
         return rows;
     }
 
-    lineage(): bigint {
+    series(): bigint {
         // The WASM boundary delivers i64 as a signed bigint; the salt is an
         // unsigned 64-bit value.
-        return BigInt.asUintN(64, native.es_document_lineage(this.requirePointer()));
+        return BigInt.asUintN(64, native.es_document_series(this.requirePointer()));
     }
 
     /** Reads one delta's rows, in the order the facade defines. */

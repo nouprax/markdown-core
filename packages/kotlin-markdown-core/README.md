@@ -110,7 +110,7 @@ println(MarkupDumper.dump(document))
 
 There is no session type. A document is created from text and options, and
 `edit` hands it new text: it returns the document that text describes plus the
-`Delta` between the two. Options are fixed for a document's whole lineage —
+`Delta` between the two. Options are fixed for a document's whole series —
 changing what the parser means is a new `Document`, not an edit.
 
 ```kotlin

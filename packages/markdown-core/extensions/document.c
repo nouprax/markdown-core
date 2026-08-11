@@ -341,7 +341,7 @@ static markdown_core_document *document_build(
         return NULL;
     }
     if (prev) {
-        doc->lineage = prev->lineage;
+        doc->series = prev->series;
         doc->next_id = prev->next_id;
         doc->revision = prev->revision + 1;
     }
@@ -356,7 +356,7 @@ static markdown_core_document *document_build(
             markdown_core_document_free(doc);
             return NULL;
         }
-        changes->lineage = doc->lineage;
+        changes->series = doc->series;
         changes->before = prev ? prev->revision : 0;
         changes->after = doc->revision;
     }
@@ -480,7 +480,7 @@ static markdown_core_document *markdown_core_document_alloc(
     if (document_host_entropy(&host_entropy)) {
         entropy ^= host_entropy;
     }
-    document->lineage = markdown_core_mix64(entropy);
+    document->series = markdown_core_mix64(entropy);
     return document;
 }
 
@@ -608,8 +608,8 @@ uint64_t markdown_core_document_revision(const markdown_core_document *document)
     return document ? document->revision : 0;
 }
 
-uint64_t markdown_core_document_lineage(const markdown_core_document *document) {
-    return document ? document->lineage : 0;
+uint64_t markdown_core_document_series(const markdown_core_document *document) {
+    return document ? document->series : 0;
 }
 
 size_t markdown_core_document_length(const markdown_core_document *document) {

@@ -110,7 +110,7 @@ class EditTest {
     }
 
     @Test
-    fun equalityIsLineageSaltedIdentityPlusRevision() {
+    fun equalityIsSeriesSaltedIdentityPlusRevision() {
         Document("Same *content* twice.\n").use { first ->
             Document("Same *content* twice.\n").use { second ->
                 // Identical content from different parses never compares equal.
@@ -118,8 +118,8 @@ class EditTest {
                 assertNotEquals<Markup>(first.content[0], second.content[0])
                 // Within one document, identity is value equality.
                 assertEquals(first.content[0], first.content[0])
-                assertNotEquals(first.id.lineage, second.id.lineage)
-                // An id from another lineage is not this document's to answer.
+                assertNotEquals(first.id.series, second.id.series)
+                // An id from another series is not this document's to answer.
                 assertNull(first.node(second.content[0].id))
             }
         }
@@ -228,7 +228,7 @@ class EditTest {
                 // needs.
                 assertEquals(document.id, document.node(document.id)?.id)
                 assertEquals("paragraph", byId[paragraph.id])
-                assertNull(document.node(MarkupID(document.lineage + 1UL, paragraph.id.rawValue)))
+                assertNull(document.node(MarkupID(document.series + 1UL, paragraph.id.rawValue)))
             }
         }
     }

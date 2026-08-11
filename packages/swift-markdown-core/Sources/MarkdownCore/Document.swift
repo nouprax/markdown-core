@@ -90,7 +90,7 @@ extension ParseError: LocalizedError {
 ///
 /// There is no session type. A document is created from text and options;
 /// editing hands it new text and returns the next document with the delta
-/// between them. Options are fixed for a document's whole lineage — changing
+/// between them. Options are fixed for a document's whole series — changing
 /// what the parser means is a new `Document`, not an edit, and there is no
 /// delta to be had across it.
 ///
@@ -110,12 +110,12 @@ public final class Document: Markup, @unchecked Sendable {
     /// Everything an editor should underline, in source order. Empty for
     /// almost every document; see `DiagnosticCode`.
     public let diagnostics: [Diagnostic]
-    /// The options this document and its whole lineage were parsed under.
+    /// The options this document and its whole series were parsed under.
     public let options: ParseOptions
 
     /// Nodes from different parses never share an identity even when their
     /// raw values collide.
-    public var lineage: UInt64 { id.lineage }
+    public var series: UInt64 { id.series }
 
     let handle: OpaquePointer
     /// Every node of this document by identity, so an answer addressed by
@@ -144,15 +144,15 @@ public final class Document: Markup, @unchecked Sendable {
         }
         self.handle = handle
         self.options = options
-        let lineage = markdown_core_document_lineage(handle)
+        let series = markdown_core_document_series(handle)
         guard let root = markdown_core_document_root(handle) else {
             markdown_core_document_free(handle)
             throw ParseError(code: .internal, message: "parse produced no document root", scope: nil)
         }
-        id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
+        id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
         scope = Scope(from: markdown_core_node_scope(root))
-        content = Document.project(root, lineage: lineage)
+        content = Document.project(root, series: series)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -160,15 +160,15 @@ public final class Document: Markup, @unchecked Sendable {
     private init(adopting handle: OpaquePointer, options: ParseOptions) throws {
         self.handle = handle
         self.options = options
-        let lineage = markdown_core_document_lineage(handle)
+        let series = markdown_core_document_series(handle)
         guard let root = markdown_core_document_root(handle) else {
             markdown_core_document_free(handle)
             throw ParseError(code: .internal, message: "edit produced no document root", scope: nil)
         }
-        id = MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(root))
+        id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
         scope = Scope(from: markdown_core_node_scope(root))
-        content = Document.project(root, lineage: lineage)
+        content = Document.project(root, series: series)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -213,7 +213,7 @@ public final class Document: Markup, @unchecked Sendable {
         let delta: Delta
         if let changes = out.delta {
             defer { markdown_core_delta_free(changes) }
-            delta = Delta(from: changes, lineage: markdown_core_document_lineage(next))
+            delta = Delta(from: changes, series: markdown_core_document_series(next))
         } else {
             preconditionFailure("edit succeeded without a delta")
         }
@@ -225,7 +225,7 @@ public final class Document: Markup, @unchecked Sendable {
     /// caller holding an id from a superseded revision is asking exactly
     /// this question.
     public func node(_ id: MarkupID) -> (any Markup)? {
-        guard id.lineage == self.id.lineage else { return nil }
+        guard id.series == self.id.series else { return nil }
         // The root answers for itself. It is a `Markup` like any other and a
         // delta names it whenever the top-level block list changes, so a
         // consumer reconciling by id reaches this call with the document's
@@ -255,10 +255,10 @@ public final class Document: Markup, @unchecked Sendable {
     /// call stack is not a budget this package may spend on the caller's
     /// behalf. Child arrays assemble in sibling frames, so every node is
     /// built exactly once, from children that are already built.
-    private static func project(_ root: OpaquePointer, lineage: UInt64) -> [any Markup] {
+    private static func project(_ root: OpaquePointer, series: UInt64) -> [any Markup] {
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
-        let builder = MarkupBuilder(lineage: lineage) { _ in completed }
+        let builder = MarkupBuilder(series: series) { _ in completed }
         var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
         while let (node, ready) = stack.popLast() {
             if ready {
@@ -331,13 +331,13 @@ extension ParseOptions {
 /// values already built for that node's children, which is what lets the
 /// build run bottom-up over an explicit stack instead of down the call stack.
 struct MarkupBuilder {
-    let lineage: UInt64
+    let series: UInt64
     let children: (OpaquePointer) -> [any Markup]
 
     /// The three things every kind carries, read once per node.
     func track(of node: OpaquePointer) -> MarkupTrack {
         MarkupTrack(
-            id: MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
+            id: MarkupID(series: series, rawValue: markdown_core_node_get_id(node)),
             revision: markdown_core_node_get_revision(node),
             scope: Scope(from: markdown_core_node_scope(node))
         )

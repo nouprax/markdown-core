@@ -13,7 +13,7 @@ import kotlin.test.assertEquals
  * Dispatchers.Default: JVM executors, native workers, Android host. */
 class ConcurrencyTest {
     @Test
-    fun parallelLineagesWithDisagreeingOptionsNeverInterfere() =
+    fun parallelSeriesWithDisagreeingOptionsNeverInterfere() =
         runTest {
             val sources =
                 listOf(
@@ -51,7 +51,7 @@ class ConcurrencyTest {
                             variants.map { options ->
                                 async {
                                     // The same text arrived at by 24 rounds of
-                                    // growing and clearing, so each lineage is
+                                    // growing and clearing, so each series is
                                     // busy in the engine while the others are.
                                     var document = Document("", options)
                                     repeat(24) { round ->

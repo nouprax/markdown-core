@@ -131,14 +131,14 @@ test("edits: a kind change retires the old identity and mints a new one", () => 
     after.close();
 });
 
-test("edits: equality is lineage-salted identity plus revision", () => {
+test("edits: equality is series-salted identity plus revision", () => {
     const source = "Same *content* twice.\n";
     const first = Document(source);
     const second = Document(source);
     // Identical content from different parses never shares identity.
-    assert.notEqual(first.id.lineage, second.id.lineage);
+    assert.notEqual(first.id.series, second.id.series);
     assert.notEqual(first.content[0], second.content[0]);
-    // An id from another lineage is not this document's to answer.
+    // An id from another series is not this document's to answer.
     assert.equal(first.node(second.content[0].id), null);
     assert.equal(first.node(first.content[0].id), first.content[0]);
     // The root answers for itself, which is what a delta naming it needs.
@@ -254,7 +254,7 @@ test("edits: diagnostics travel with the document that raised them", () => {
     after.close();
 });
 
-test("edits: options are fixed for a lineage and reported by every revision", () => {
+test("edits: options are fixed for a series and reported by every revision", () => {
     const before = Document("| a |\n| --- |\n| b |\n", { tables: false });
     assert.equal(before.options.tables, false);
     assert.equal(before.content[0].kind, "paragraph");

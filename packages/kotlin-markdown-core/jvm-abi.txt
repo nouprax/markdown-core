@@ -136,14 +136,14 @@
   method com/nouprax/markdown/core/Document.getContent ()Ljava/util/List;
   method com/nouprax/markdown/core/Document.getDiagnostics ()Ljava/util/List;
   method com/nouprax/markdown/core/Document.getId ()Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/Document.getLineage-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
   method com/nouprax/markdown/core/Document.getRevision-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.getScope ()Lcom/nouprax/markdown/core/Scope;
+  method com/nouprax/markdown/core/Document.getSeries-s-VKNKU ()J
   method com/nouprax/markdown/core/Document.hashCode ()I
-  method com/nouprax/markdown/core/Document.lineageBits ()J
   method com/nouprax/markdown/core/Document.node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
   method com/nouprax/markdown/core/Document.revisionBits ()J
+  method com/nouprax/markdown/core/Document.seriesBits ()J
   method com/nouprax/markdown/core/Embed.accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
   method com/nouprax/markdown/core/Embed.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/Embed.getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -306,11 +306,11 @@
   method com/nouprax/markdown/core/MarkupID.copy-PWzV0Is (JJ)Lcom/nouprax/markdown/core/MarkupID;
   method com/nouprax/markdown/core/MarkupID.equals (Ljava/lang/Object;)Z
   method com/nouprax/markdown/core/MarkupID.fromBits (JJ)Lcom/nouprax/markdown/core/MarkupID;
-  method com/nouprax/markdown/core/MarkupID.getLineage-s-VKNKU ()J
   method com/nouprax/markdown/core/MarkupID.getRawValue-s-VKNKU ()J
+  method com/nouprax/markdown/core/MarkupID.getSeries-s-VKNKU ()J
   method com/nouprax/markdown/core/MarkupID.hashCode ()I
-  method com/nouprax/markdown/core/MarkupID.lineageBits ()J
   method com/nouprax/markdown/core/MarkupID.rawValueBits ()J
+  method com/nouprax/markdown/core/MarkupID.seriesBits ()J
   method com/nouprax/markdown/core/MarkupID.toString ()Ljava/lang/String;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/BlockQuote;)Ljava/lang/Object;
   method com/nouprax/markdown/core/MarkupVisitor.visit (Lcom/nouprax/markdown/core/Code;)Ljava/lang/Object;

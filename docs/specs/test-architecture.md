@@ -155,7 +155,7 @@ Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
 `sessions` 覆盖 M4 binding 契约:streaming/clean-boundary/kind-change 的
-id-stability、(lineage, id, revision) 等值语义、空 delta 纯位移、scope
+id-stability、(series, id, revision) 等值语义、空 delta 纯位移、scope
 惰性物化的存活性、footnote queries,以及模拟真实 LLM 消费端的
 conflated-streaming 驱动(多 turn、不规律 render tick、20-30 token 量级
 消息混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界换行之间)、

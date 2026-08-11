@@ -151,14 +151,14 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public final fun getContent ()Ljava/util/List;
 	public final fun getDiagnostics ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
-	public final fun getLineage-s-VKNKU ()J
 	public final fun getOptions ()Lcom/nouprax/markdown/core/ParseOptions;
 	public fun getRevision-s-VKNKU ()J
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
+	public final fun getSeries-s-VKNKU ()J
 	public fun hashCode ()I
-	public final fun lineageBits ()J
 	public final fun node (Lcom/nouprax/markdown/core/MarkupID;)Lcom/nouprax/markdown/core/Markup;
 	public fun revisionBits ()J
+	public final fun seriesBits ()J
 }
 
 public final class com/nouprax/markdown/core/Embed : com/nouprax/markdown/core/Markup {
@@ -390,11 +390,11 @@ public final class com/nouprax/markdown/core/MarkupID {
 	public static synthetic fun copy-PWzV0Is$default (Lcom/nouprax/markdown/core/MarkupID;JJILjava/lang/Object;)Lcom/nouprax/markdown/core/MarkupID;
 	public fun equals (Ljava/lang/Object;)Z
 	public static final fun fromBits (JJ)Lcom/nouprax/markdown/core/MarkupID;
-	public final fun getLineage-s-VKNKU ()J
 	public final fun getRawValue-s-VKNKU ()J
+	public final fun getSeries-s-VKNKU ()J
 	public fun hashCode ()I
-	public final fun lineageBits ()J
 	public final fun rawValueBits ()J
+	public final fun seriesBits ()J
 	public fun toString ()Ljava/lang/String;
 }
 

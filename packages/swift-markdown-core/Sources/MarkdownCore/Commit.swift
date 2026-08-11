@@ -61,7 +61,7 @@ public struct Delta: Sendable, Hashable {
 }
 
 extension Delta {
-    init(from native: OpaquePointer, lineage: UInt64) {
+    init(from native: OpaquePointer, series: UInt64) {
         var before: UInt64 = 0
         var after: UInt64 = 0
         markdown_core_delta_revisions(native, &before, &after)
@@ -73,7 +73,7 @@ extension Delta {
             for index in 0..<count {
                 diffs.append(
                     Diff(
-                        markup: MarkupID(lineage: lineage, rawValue: rows[index].markup),
+                        markup: MarkupID(series: series, rawValue: rows[index].markup),
                         parts: DiffParts(rawValue: rows[index].parts)
                     )
                 )
