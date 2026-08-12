@@ -220,12 +220,31 @@ private object JavaAbi {
             }.sorted()
     }
 
-    fun classes(surface: kotlin.collections.List<String>): Set<String> =
-        surface
+    /**
+     * The classes Java source can actually USE: public, and carrying at least
+     * one member Java can name.
+     *
+     * The member requirement is not a nicety. Kotlin emits a public class for
+     * a `@JvmMultifileClass` facade whether or not anything public lands in
+     * it, so a facade holding only `@JvmSynthetic` internals is a public class
+     * name with nothing behind it — javac can import it and then do nothing
+     * with it. Counting it as surface would force it into the public API dump,
+     * which would be a lie about what the library offers.
+     */
+    fun classes(surface: kotlin.collections.List<String>): Set<String> {
+        val withMembers =
+            surface
+                .asSequence()
+                .filter { it.startsWith("  ") }
+                .map { it.trim().substringAfter(' ').substringBefore('.') }
+                .toSet()
+        return surface
             .asSequence()
             .filter { it.startsWith("class ") }
             .map { it.substringAfter("class ").substringBefore(' ') }
+            .filter { it in withMembers }
             .toSortedSet()
+    }
 
     fun officialClasses(apiFile: File): Set<String> =
         apiFile
@@ -343,10 +362,6 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val officialApiFile: RegularFileProperty
 
-    @get:InputFile
-    @get:PathSensitive(PathSensitivity.RELATIVE)
-    abstract val abiSnapshotFile: RegularFileProperty
-
     @get:CompileClasspath
     abstract val compileClasspath: ConfigurableFileCollection
 
@@ -366,21 +381,7 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
         val classesDirectory = outputRoot.resolve("classes").apply { mkdirs() }
         val classpath = (libraryClasses + compileClasspath).filter(File::exists).asPath
 
-        val actualSurface = JavaAbi.surface(libraryClasses.files)
-        val expectedSurface =
-            abiSnapshotFile
-                .get()
-                .asFile
-                .readLines()
-                .sorted()
-        check(actualSurface == expectedSurface) {
-            val actualLines = actualSurface.toSet()
-            val expectedLines = expectedSurface.toSet()
-            val added = (actualLines - expectedLines).sorted().joinToString("\n")
-            val removed = (expectedLines - actualLines).sorted().joinToString("\n")
-            "$path Java ABI differs from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed"
-        }
-        val actualClasses = JavaAbi.classes(actualSurface)
+        val actualClasses = JavaAbi.classes(JavaAbi.surface(libraryClasses.files))
         val officialClasses = JavaAbi.officialClasses(officialApiFile.get().asFile)
         check(actualClasses == officialClasses) {
             val undocumented = (actualClasses - officialClasses).joinToString("\n")
@@ -420,18 +421,24 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
             compile(
                 "PublicApiProbe",
                 """
+                import com.nouprax.markdown.core.Commit;
+                import com.nouprax.markdown.core.Diff;
                 import com.nouprax.markdown.core.Document;
-                import com.nouprax.markdown.core.FootnoteQueriesKt;
-                import com.nouprax.markdown.core.MarkupSession;
                 import java.util.List;
 
                 final class PublicApiProbe {
                     Document parse() {
-                        return Document.parse("visible");
+                        return new Document("visible");
                     }
 
-                    List<?> footnotes(MarkupSession session) {
-                        return FootnoteQueriesKt.footnotes(session);
+                    List<Diff> edit(Document document) {
+                        Commit commit = document.edit("visible again");
+                        commit.getDocument().close();
+                        return commit.getDelta().getDiffs();
+                    }
+
+                    boolean retired(Diff diff) {
+                        return diff.getParts().isRetired();
                     }
                 }
                 """.trimIndent(),
@@ -442,41 +449,28 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
 
         val hiddenTypes =
             listOf(
-                "CBridgeKt",
-                "CBridge_androidKt",
-                "CBridge_jvmKt",
-                "CBridge_jvmSharedKt",
-                "CSession",
+                "Built",
                 "DesktopNativeLoader",
-                "DocumentKt",
-                "FootnoteQueriesKt__CBridgeKt",
-                "FootnoteQueriesKt__CBridge_androidKt",
-                "FootnoteQueriesKt__CBridge_jvmKt",
-                "FootnoteQueriesKt__CBridge_jvmSharedKt",
-                "FootnoteQueriesKt__DocumentKt",
-                "FootnoteQueriesKt__FootnoteQueriesKt",
-                "FootnoteQueriesKt__ImmutableListKt",
-                "FootnoteQueriesKt__MarkupDumperKt",
-                "FootnoteQueriesKt__MarkupKt",
-                "FootnoteQueriesKt__ParseOptionsKt",
-                "FootnoteQueriesKt__Spin_androidKt",
-                "FootnoteQueriesKt__Spin_jvmKt",
-                "FootnoteQueriesKt__WireDecoderKt",
                 "HostNativeLibrary",
-                "ImmutableListKt",
                 "JvmNative",
-                "JvmSession",
+                "MarkdownCoreKt__CBridgeKt",
+                "MarkdownCoreKt__CBridge_androidKt",
+                "MarkdownCoreKt__CBridge_jvmKt",
+                "MarkdownCoreKt__CBridge_jvmSharedKt",
+                "MarkdownCoreKt__CommitKt",
+                "MarkdownCoreKt__DiagnosticKt",
+                "MarkdownCoreKt__DocumentKt",
+                "MarkdownCoreKt__HTMLBlockKt",
+                "MarkdownCoreKt__ImmutableListKt",
+                "MarkdownCoreKt__MarkupDumperKt",
+                "MarkdownCoreKt__MarkupKt",
+                "MarkdownCoreKt__ParseOptionsKt",
+                "MarkdownCoreKt__WireDecoderKt",
                 "MarkupDumper${'$'}WhenMappings",
                 "MarkupDumperKt",
                 "MarkupKt",
                 "ParseOptionsKt",
-                "ScopeEntry",
-                "ScopeResolver",
-                "Spin_androidKt",
-                "Spin_jvmKt",
-                "WireDecoder",
-                "WireDecoderKt",
-                "WireDecoderKt${'$'}WhenMappings",
+                "RootSink",
                 "WireKind",
                 "WireReader",
             )
@@ -503,41 +497,28 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
         val hiddenMembers =
             listOf(
                 Triple(
-                    "DocumentResolverProbe",
-                    "getResolver",
+                    "DocumentHandleProbe",
+                    "getHandle",
                     """
                     import com.nouprax.markdown.core.Document;
 
-                    final class DocumentResolverProbe {
-                        Object resolver(Document document) {
-                            return document.getResolver${'$'}com_nouprax_kotlin_markdown_core();
-                        }
-                    }
-                    """.trimIndent(),
-                ),
-                Triple(
-                    "SessionNativeProbe",
-                    "getNative",
-                    """
-                    import com.nouprax.markdown.core.MarkupSession;
-
-                    final class SessionNativeProbe {
-                        Object nativeSession(MarkupSession session) {
-                            return session.getNative${'$'}com_nouprax_kotlin_markdown_core();
+                    final class DocumentHandleProbe {
+                        Object handle(Document document) {
+                            return document.getHandle();
                         }
                     }
                     """.trimIndent(),
                 ),
                 Triple(
                     "BridgeFunctionProbe",
-                    "openCSession",
+                    "cOpen",
                     """
-                    import com.nouprax.markdown.core.FootnoteQueriesKt;
+                    import com.nouprax.markdown.core.MarkdownCoreKt;
                     import com.nouprax.markdown.core.ParseOptions;
 
                     final class BridgeFunctionProbe {
                         Object open() {
-                            return FootnoteQueriesKt.openCSession(new ParseOptions());
+                            return MarkdownCoreKt.cOpen(new byte[0], new ParseOptions());
                         }
                     }
                     """.trimIndent(),
@@ -1135,51 +1116,6 @@ fun VerifyJavaImplementationHidden.useJavaCompiler(
     javaRelease.set(release.map { it.toInt() })
 }
 
-val verifyJvmAbi =
-    tasks.register("verifyJvmAbi") {
-        group = "verification"
-        description = "Compares the JVM jar's public ABI against the checked-in snapshot."
-        val snapshotFile = layout.projectDirectory.file("jvm-abi.txt").asFile
-        val officialApiFile = layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api").asFile
-        val write = providers.gradleProperty("writeJvmAbi").isPresent
-        // Capture the provider itself in the task action. Referencing a script
-        // property from doLast would retain the Gradle script object and make
-        // this otherwise-lazy provider incompatible with configuration cache.
-        val jarFile = jvmLibraryJar
-        inputs.file(jarFile)
-        inputs.file(officialApiFile)
-
-        doLast {
-            val lines = JavaAbi.surface(setOf(jarFile.get().asFile))
-            val actualClasses = JavaAbi.classes(lines)
-            val officialClasses = JavaAbi.officialClasses(officialApiFile)
-            check(actualClasses == officialClasses) {
-                val undocumented = (actualClasses - officialClasses).joinToString("\n")
-                val missing = (officialClasses - actualClasses).joinToString("\n")
-                "JVM Java-callable classes differ from the official Kotlin API dump.\n" +
-                    "Undocumented:\n$undocumented\nMissing:\n$missing"
-            }
-            val rendered = lines.joinToString("\n") + "\n"
-            if (write) {
-                snapshotFile.writeText(rendered)
-                logger.lifecycle("Wrote JVM ABI snapshot: ${snapshotFile.absolutePath}")
-                return@doLast
-            }
-            check(snapshotFile.isFile) {
-                "jvm-abi.txt is missing; generate it with ./gradlew :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi"
-            }
-            val expected = snapshotFile.readText()
-            check(rendered == expected) {
-                val actualLines = rendered.lines().toSet()
-                val expectedLines = expected.lines().toSet()
-                val added = (actualLines - expectedLines).sorted().joinToString("\n")
-                val removed = (expectedLines - actualLines).sorted().joinToString("\n")
-                "JVM public ABI drifted from jvm-abi.txt.\nAdded:\n$added\nRemoved:\n$removed\n" +
-                    "If the change is intentional, regenerate with -PwriteJvmAbi."
-            }
-        }
-    }
-
 val verifyJvmImplementationHidden =
     tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
         group = "verification"
@@ -1187,7 +1123,6 @@ val verifyJvmImplementationHidden =
         useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
         libraryClasses.from(jvmLibraryJar)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
         compileClasspath.from(jvmMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/jvm-implementation-hidden"))
     }
@@ -1199,7 +1134,6 @@ val verifyAndroidImplementationHidden =
         useJavaCompiler(javaProbeCompiler, libs.versions.jvm.bytecode)
         libraryClasses.from(androidMainCompilation.output.classesDirs)
         officialApiFile.set(layout.projectDirectory.file("api/jvm/kotlin-markdown-core.api"))
-        abiSnapshotFile.set(layout.projectDirectory.file("jvm-abi.txt"))
         compileClasspath.from(androidMainCompilation.compileDependencyFiles)
         outputDirectory.set(layout.buildDirectory.dir("verification/android-implementation-hidden"))
     }
@@ -1213,7 +1147,6 @@ tasks.register("kotlinTest") {
             "testAndroidHostTest",
             hostNativeTest,
             "verifyKotlinNativePackaging",
-            "verifyJvmAbi",
             verifyJvmImplementationHidden,
             verifyAndroidImplementationHidden,
             "checkKotlinAbi",

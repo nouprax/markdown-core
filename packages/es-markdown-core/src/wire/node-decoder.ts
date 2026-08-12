@@ -1,36 +1,29 @@
 import type { Document } from "../model/document.js";
-import { htmlLiteralIsComment } from "../model/html-comment.js";
 import type { Markup } from "../model/markup.js";
 import type { MarkupID } from "../model/markup-id.js";
 import type { TableCell, TableRow } from "../model/table.js";
 import { ParseError, type ParseErrorCode } from "../parse-error.js";
 import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values.js";
 import type { NativeExports } from "../runtime/native.js";
-import type { ScopeEntry } from "../session/scope-resolver.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before snapshot adoption wires its scope, dump, and
- * materialize mediators to a resolver. */
-export type DocumentValue = Omit<Document, "scope" | "dump" | "materialize">;
+/** A decoded document before `adopt` wires its mediators — scope, node,
+ * edit, close, dump — to the parse it came from. */
+export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" | "content">;
 
 /**
- * One decode pass over the native committed tree. One-shot parses decode
- * everything (`touched === null`); session commits decode only the delta —
- * a node outside `touched` is taken from the mirror by identity, reusing the
- * previous snapshot's value and entire subtree.
+ * One decode pass over the native tree. Every node is decoded, every time: a
+ * document's projection is a function of its text and its options, not of how
+ * the caller reached it.
  */
 export interface DecodeContext {
-    /** Session-interned identity for a raw id: the same identity is always
+    /** Series-interned identity for a raw id: the same identity is always
      * the same `MarkupID` object. */
     readonly ids: (rawValue: number) => MarkupID;
-    /** Wires the decoded root to the snapshot's scope resolver. */
+    /** Completes the decoded root into the document value. */
     readonly adopt: (value: DocumentValue) => Document;
-    /** The session's id → node mirror; null for a one-shot parse, whose
-     * values live only in the returned tree. */
-    readonly mirror: Map<number, Markup> | null;
-    /** Raw ids of this commit's `added ∪ changed ∪ bubbled`; null decodes
-     * every node. */
-    readonly touched: ReadonlySet<number> | null;
+    /** The document's id → node index, filled as the walk decodes. */
+    readonly index: Map<number, Markup>;
 }
 
 const stringField = {
@@ -60,6 +53,7 @@ interface DecodeFrame {
     readonly node: number;
     readonly id: MarkupID;
     readonly revision: number;
+    readonly scope: Scope;
     readonly pointers: readonly number[];
     readonly values: Markup[];
     index: number;
@@ -76,14 +70,10 @@ export class NodeDecoder {
         if (!this.scratch) throw new ParseError("allocationFailed", "failed to allocate WASM memory");
     }
 
-    dispose(): void {
-        if (!this.scratch) return;
-        this.native.free(this.scratch);
-        this.scratch = 0;
-    }
-
-    /** The scratch block shared with the session boundary; valid until
-     * `dispose`. Holds `scratchSlots` little-endian 64-bit slots. */
+    /** The scratch block shared with the document boundary. Allocated once
+     * in the constructor and held for the module's lifetime — the decoder is
+     * a singleton over one WASM instance, so there is nothing to release it
+     * to. Holds `scratchSlots` little-endian 64-bit slots. */
     get scratchPointer(): number {
         this.requireLive();
         return this.scratch;
@@ -99,45 +89,12 @@ export class NodeDecoder {
                 kind: "document",
                 id: context.ids(this.rawId(root)),
                 revision: this.revisionOf(root),
+                scope: this.scopeOf(root),
                 content: this.decodeChildren(root)
             });
-            context.mirror?.set(document.id.rawValue, document);
             return document;
         } finally {
             this.context = null;
-        }
-    }
-
-    /** One O(n) native batch over the committed tree: every node's
-     * (revision, absolute scope) keyed by raw id — the snapshot's scope
-     * table, decoded from a single packed row buffer. */
-    scopeTable(document: number): Map<number, ScopeEntry> {
-        this.requireLive();
-        const rowBytes = 32;
-        const count = this.native.es_scope_table(document, this.scratch);
-        const data = this.dataView().getUint32(this.scratch, true);
-        if (!Number.isSafeInteger(count) || count <= 0 || !data) {
-            throw new ParseError("allocationFailed", "failed to allocate WASM memory");
-        }
-        try {
-            if (count * rowBytes > this.native.memory.buffer.byteLength - data) {
-                throw new Error("native parser returned an out-of-bounds scope table");
-            }
-            const view = this.dataView();
-            const table = new Map<number, ScopeEntry>();
-            for (let index = 0; index < count; index += 1) {
-                const row = data + index * rowBytes;
-                table.set(this.toSafeNumber(view.getBigUint64(row, true), "node id"), {
-                    revision: this.toSafeNumber(view.getBigUint64(row + 8, true), "node revision"),
-                    scope: {
-                        start: { line: view.getInt32(row + 16, true), column: view.getInt32(row + 20, true) },
-                        end: { line: view.getInt32(row + 24, true), column: view.getInt32(row + 28, true) }
-                    }
-                });
-            }
-            return table;
-        } finally {
-            this.native.es_scope_table_free(data);
         }
     }
 
@@ -183,17 +140,33 @@ export class NodeDecoder {
         return this.toSafeNumber(this.native.es_node_revision(node), "node revision");
     }
 
+    /** The node's own absolute extent, read in O(1) off the node. */
+    scopeOf(node: number): Scope {
+        this.requireLive();
+        this.native.es_node_scope(node, this.scratch);
+        const view = this.dataView();
+        return {
+            start: {
+                line: view.getInt32(this.scratch, true),
+                column: view.getInt32(this.scratch + 4, true)
+            },
+            end: {
+                line: view.getInt32(this.scratch + 8, true),
+                column: view.getInt32(this.scratch + 12, true)
+            }
+        };
+    }
+
     /** One decode frame: a node whose value is assembled once every direct
      * child value in `values` is ready. */
-    private static frame(node: number, id: MarkupID, revision: number, pointers: number[]): DecodeFrame {
-        return { node, id, revision, pointers, values: [], index: 0 };
+    private static frame(node: number, id: MarkupID, revision: number, scope: Scope, pointers: number[]): DecodeFrame {
+        return { node, id, revision, scope, pointers, values: [], index: 0 };
     }
 
     /**
      * Decodes the direct children of `parent` post-order over an explicit
      * frame stack: nesting depth is input-controlled, so the decoder must
-     * not grow the JavaScript call stack with it. Nodes outside the
-     * context's `touched` set reuse their mirror value, subtree and all.
+     * not grow the JavaScript call stack with it.
      */
     private decodeChildren(parent: number): Markup[] {
         const context = this.context!;
@@ -202,6 +175,7 @@ export class NodeDecoder {
                 parent,
                 context.ids(this.rawId(parent)),
                 this.revisionOf(parent),
+                this.scopeOf(parent),
                 this.childPointers(parent)
             )
         ];
@@ -211,124 +185,134 @@ export class NodeDecoder {
                 const pointer = top.pointers[top.index]!;
                 top.index += 1;
                 const rawId = this.rawId(pointer);
-                const revision = this.revisionOf(pointer);
-                if (context.touched !== null && !context.touched.has(rawId)) {
-                    const existing = context.mirror?.get(rawId);
-                    if (existing === undefined || existing.revision !== revision) {
-                        throw new Error("the delta omitted a node the session mirror does not carry");
-                    }
-                    top.values.push(existing);
-                    continue;
-                }
-                stack.push(NodeDecoder.frame(pointer, context.ids(rawId), revision, this.childPointers(pointer)));
+                stack.push(
+                    NodeDecoder.frame(
+                        pointer,
+                        context.ids(rawId),
+                        this.revisionOf(pointer),
+                        this.scopeOf(pointer),
+                        this.childPointers(pointer)
+                    )
+                );
                 continue;
             }
             stack.pop();
             if (stack.length === 0) return top.values;
-            const value = this.decodeValue(top.node, top.id, top.revision, top.values);
-            context.mirror?.set(top.id.rawValue, value);
+            const value = this.decodeValue(top.node, top.id, top.revision, top.scope, top.values);
+            context.index.set(top.id.rawValue, value);
             stack[stack.length - 1]!.values.push(value);
         }
     }
 
     /**
      * Assembles one node's value from its native fields and its ready direct
-     * child values. Context-free: session rebuilds call this per delta entry
-     * with mirror-sourced children.
+     * child values.
      */
-    decodeValue(node: number, id: MarkupID, revision: number, children: readonly Markup[]): Markup {
+    decodeValue(node: number, id: MarkupID, revision: number, scope: Scope, children: readonly Markup[]): Markup {
         const kind = this.kind(node);
         switch (kind) {
             case "document":
                 throw new Error("native parser returned a nested document node");
             case "blockQuote":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
             case "paragraph":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
             case "heading": {
                 const level = this.native.es_node_heading_level(node);
                 if (!Number.isInteger(level) || level < 1 || level > 6) {
                     throw new Error(`native parser returned an invalid heading level ${level}`);
                 }
-                return { kind, id, revision, level, content: children };
+                return { kind, id, revision, scope, level, content: children };
             }
             case "thematicBreak":
-                return { kind, id, revision };
+                return { kind, id, revision, scope };
             case "list":
-                return this.copyList(node, id, revision, children);
+                return this.copyList(node, id, revision, scope, children);
             case "listItem":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     checked: this.nullableBoolean(this.native.es_node_checked(node), "list item checked state"),
                     content: children
                 };
             case "codeBlock":
-                return this.copyCodeBlock(node, id, revision);
+                return this.copyCodeBlock(node, id, revision, scope);
             case "htmlBlock": {
                 const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+                return { kind, id, revision, scope, comment: this.native.es_node_html_comment(node) !== 0, literal };
             }
             case "formulaBlock": {
                 const mode = this.placement(this.native.es_node_formula_mode(node));
                 if (mode !== "standalone") throw new Error("native parser returned an embedded formula block");
-                return { kind, id, revision, mode, literal: this.requiredString(node, stringField.formulaLiteral) };
+                return {
+                    kind,
+                    id,
+                    revision,
+                    scope,
+                    mode,
+                    literal: this.requiredString(node, stringField.formulaLiteral)
+                };
             }
             case "table":
-                return this.copyTable(node, id, revision, children);
+                return this.copyTable(node, id, revision, scope, children);
             case "directiveBlock": {
                 const fields = this.directiveFields(node, children);
                 if (fields.mode !== "standalone") {
                     throw new Error("native parser returned an embedded directive block");
                 }
-                return { kind, id, revision, ...fields };
+                return { kind, id, revision, scope, ...fields };
             }
             case "footnoteDefinition":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     label: this.requiredString(node, stringField.footnoteLabel),
                     content: children
                 };
             case "text":
-                return { kind, id, revision, literal: this.requiredString(node, stringField.literal) };
+                return { kind, id, revision, scope, literal: this.requiredString(node, stringField.literal) };
             case "softBreak":
-                return { kind, id, revision };
+                return { kind, id, revision, scope };
             case "lineBreak":
-                return { kind, id, revision };
+                return { kind, id, revision, scope };
             case "code":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     mode: "embedded",
                     literal: this.requiredString(node, stringField.literal)
                 };
             case "html": {
                 const literal = this.requiredString(node, stringField.literal);
-                return { kind, id, revision, comment: htmlLiteralIsComment(literal), literal };
+                return { kind, id, revision, scope, comment: this.native.es_node_html_comment(node) !== 0, literal };
             }
             case "formula":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     mode: this.placement(this.native.es_node_formula_mode(node)),
                     literal: this.requiredString(node, stringField.formulaLiteral)
                 };
             case "emphasis":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
             case "strong":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
             case "strikethrough":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
             case "link":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     destination: this.readString(node, stringField.linkDestination),
                     title: this.readString(node, stringField.linkTitle),
                     content: children
@@ -338,6 +322,7 @@ export class NodeDecoder {
                     kind,
                     id,
                     revision,
+                    scope,
                     source: this.readString(node, stringField.imageSource),
                     title: this.readString(node, stringField.imageTitle),
                     content: children
@@ -350,6 +335,7 @@ export class NodeDecoder {
                     kind,
                     id,
                     revision,
+                    scope,
                     mode: fields.mode,
                     name: fields.name,
                     attributes: fields.attributes,
@@ -357,16 +343,23 @@ export class NodeDecoder {
                 };
             }
             case "footnoteReference":
-                return { kind, id, revision, label: this.requiredString(node, stringField.footnoteLabel) };
+                return { kind, id, revision, scope, label: this.requiredString(node, stringField.footnoteLabel) };
             case "crossLink":
-                return { kind, id, revision, reference: this.requiredString(node, stringField.crossLinkReference) };
+                return {
+                    kind,
+                    id,
+                    revision,
+                    scope,
+                    reference: this.requiredString(node, stringField.crossLinkReference)
+                };
             case "embed":
-                return { kind, id, revision, reference: this.requiredString(node, stringField.embedReference) };
+                return { kind, id, revision, scope, reference: this.requiredString(node, stringField.embedReference) };
             case "referenceDefinition":
                 return {
                     kind,
                     id,
                     revision,
+                    scope,
                     label: this.requiredString(node, stringField.definitionLabel),
                     destination: this.readString(node, stringField.definitionDestination),
                     title: this.readString(node, stringField.definitionTitle)
@@ -377,23 +370,29 @@ export class NodeDecoder {
                     kind,
                     id,
                     revision,
+                    scope,
                     label: this.requiredString(node, stringField.referenceLabel),
                     form: referenceForms[this.native.es_node_reference_form(node)] ?? "shortcut",
                     content: children
                 };
             case "tableRow":
-                return this.copyTableRow(node, id, revision, children);
+                return this.copyTableRow(node, id, revision, scope, children);
             case "tableCell":
-                return this.copyTableCell(id, revision, children);
+                return this.copyTableCell(id, revision, scope, children);
             case "directiveLabel":
-                return { kind, id, revision, content: children };
+                return { kind, id, revision, scope, content: children };
         }
         return unreachable(kind);
     }
 
     /** One packed crossing for every code-block field; scratch layout
      * mirrors `es_node_code_properties`. */
-    private copyCodeBlock(node: number, id: MarkupID, revision: number): Extract<Markup, { kind: "codeBlock" }> {
+    private copyCodeBlock(
+        node: number,
+        id: MarkupID,
+        revision: number,
+        scope: Scope
+    ): Extract<Markup, { kind: "codeBlock" }> {
         this.requireLive();
         this.native.es_node_code_properties(node, this.scratch);
         const view = this.dataView();
@@ -403,6 +402,7 @@ export class NodeDecoder {
             kind: "codeBlock",
             id,
             revision,
+            scope,
             mode: "standalone",
             info: this.scratchString(view, 0),
             language: this.scratchString(view, 8),
@@ -416,6 +416,7 @@ export class NodeDecoder {
         node: number,
         id: MarkupID,
         revision: number,
+        scope: Scope,
         children: readonly Markup[]
     ): Extract<Markup, { kind: "list" }> {
         this.requireLive();
@@ -438,13 +439,14 @@ export class NodeDecoder {
             if (item.kind !== "listItem") throw new Error("list contains a non-item node");
             return item;
         });
-        return { kind: "list", id, revision, flavor, start, tight, items };
+        return { kind: "list", id, revision, scope, flavor, start, tight, items };
     }
 
     private copyTable(
         node: number,
         id: MarkupID,
         revision: number,
+        scope: Scope,
         children: readonly Markup[]
     ): Extract<Markup, { kind: "table" }> {
         const columnCount = this.count(this.native.es_node_table_column_count(node), "table column count");
@@ -461,17 +463,25 @@ export class NodeDecoder {
             kind: "table",
             id,
             revision,
+            scope,
             alignments,
             header: headers[0]!,
             rows: rows.filter((row) => !row.isHeader)
         };
     }
 
-    private copyTableRow(node: number, id: MarkupID, revision: number, children: readonly Markup[]): TableRow {
+    private copyTableRow(
+        node: number,
+        id: MarkupID,
+        revision: number,
+        scope: Scope,
+        children: readonly Markup[]
+    ): TableRow {
         return {
             kind: "tableRow",
             id,
             revision,
+            scope,
             isHeader: this.boolean(this.native.es_node_table_row_header(node), "table header state"),
             cells: children.map((cell) => {
                 if (cell.kind !== "tableCell") throw new Error("table row contains a non-cell node");
@@ -480,8 +490,8 @@ export class NodeDecoder {
         };
     }
 
-    private copyTableCell(id: MarkupID, revision: number, children: readonly Markup[]): TableCell {
-        return { kind: "tableCell", id, revision, content: children };
+    private copyTableCell(id: MarkupID, revision: number, scope: Scope, children: readonly Markup[]): TableCell {
+        return { kind: "tableCell", id, revision, scope, content: children };
     }
 
     private directiveFields(
@@ -490,30 +500,49 @@ export class NodeDecoder {
     ): {
         readonly mode: PlacementMode;
         readonly name: string;
-        readonly attributes: string | null;
+        readonly attributes: Readonly<Record<string, string>> | null;
         readonly label: Extract<Markup, { kind: "directiveLabel" }> | null;
         readonly content: readonly Markup[];
     } {
-        // One packed crossing for every directive field; scratch layout
-        // mirrors `es_node_directive_properties`.
+        // One packed crossing for mode, name, presence and count; scratch
+        // layout mirrors `es_node_directive_properties`. Everything is read
+        // out before the pair loop, which reuses the same scratch block.
         this.requireLive();
         this.native.es_node_directive_properties(node, this.scratch);
         const view = this.dataView();
+        const mode = this.placement(view.getInt32(this.scratch, true));
+        const present = view.getUint32(this.scratch + 4, true) !== 0;
         const name = this.scratchString(view, 8);
         if (name === null) throw new Error("native parser returned a missing string");
+        const count = this.count(view.getUint32(this.scratch + 16, true), "directive attribute count");
+        const attributes = present ? this.directiveAttributes(node, count) : null;
         const firstChild = children[0];
         const label = firstChild?.kind === "directiveLabel" ? firstChild : null;
         const content = label === null ? children : children.slice(1);
         if (content.some((child) => child.kind === "directiveLabel")) {
             throw new Error("native parser returned a misplaced directive label");
         }
-        return {
-            mode: this.placement(view.getInt32(this.scratch, true)),
-            name,
-            attributes: this.scratchString(view, 16),
-            label,
-            content
-        };
+        return { mode, name, attributes, label, content };
+    }
+
+    /** The attribute pairs, one crossing each, in the source order the engine
+     * holds them. The grammar has no duplicate name to represent, so a plain
+     * object IS the value rather than a rendering of it. */
+    private directiveAttributes(node: number, count: number): Record<string, string> {
+        const attributes: Record<string, string> = {};
+        for (let index = 0; index < count; index += 1) {
+            if (!this.native.es_node_directive_attribute_at(node, index, this.scratch)) {
+                throw new Error("native parser returned fewer directive attributes than it counted");
+            }
+            const view = this.dataView();
+            const key = this.scratchString(view, 0);
+            const value = this.scratchString(view, 8);
+            if (key === null || value === null) {
+                throw new Error("native parser returned a missing string");
+            }
+            attributes[key] = value;
+        }
+        return attributes;
     }
 
     childPointers(node: number): number[] {

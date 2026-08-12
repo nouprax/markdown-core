@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include <markdown_core.h>
+#include "commit_compat.h"
 
 static int failures = 0;
 
@@ -87,7 +88,7 @@ static void check_fixture(const char *fixture_dir, const char *name, const char 
 
     markdown_core_parse_options_init(&options);
     check(parse_option_mask(option_mask, &options), "manifest parse option mask is valid");
-    document = markdown_core_document_parse(markdown, markdown_length, &options, &error);
+    document = markdown_core_document_new(mc_sv(markdown, markdown_length), &options, &error);
     check(document != NULL && error == NULL, "manifest-configured facade parse succeeds");
     if (!document) {
         goto done;
@@ -156,7 +157,7 @@ static void check_option_gate(option_gate gate, const char *source, const char *
         options.footnotes = false;
         break;
     }
-    document = markdown_core_document_parse((const uint8_t *)source, strlen(source), &options, &error);
+    document = markdown_core_document_new(mc_sv((const uint8_t *)source, strlen(source)), &options, &error);
     check(document != NULL && error == NULL, "disabled-option parse succeeds");
     if (!document) {
         goto done;
@@ -184,7 +185,7 @@ static void check_html_comments_kept(void) {
     uint8_t *dump = NULL;
     size_t length = 0;
     markdown_core_parse_options_init(&options);
-    document = markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &options, &error);
+    document = markdown_core_document_new(mc_sv((const uint8_t *)source, sizeof(source) - 1), &options, &error);
     check(document != NULL && error == NULL, "default-options comment parse succeeds");
     if (!document) {
         goto done;
@@ -215,7 +216,7 @@ static void check_html_comments_kept(void) {
         const markdown_core_node *padded;
         const markdown_core_node *unclosed;
         bool comment = false;
-        document = markdown_core_document_parse((const uint8_t *)edges, sizeof(edges) - 1, &options, &error);
+        document = markdown_core_document_new(mc_sv((const uint8_t *)edges, sizeof(edges) - 1), &options, &error);
         check(document != NULL && error == NULL, "comment-edge parse succeeds");
         if (!document) {
             goto done;
@@ -238,290 +239,6 @@ done:
     markdown_core_error_free(error);
 }
 
-static void check_scope_rows(
-    const markdown_core_node *node,
-    const markdown_core_scope_entry *entries,
-    size_t count,
-    size_t *index
-) {
-    const markdown_core_node *child;
-    markdown_core_scope expected;
-    const markdown_core_scope_entry *entry;
-
-    check(*index < count, "scope table contains every canonical node");
-    if (*index >= count) {
-        return;
-    }
-    expected = markdown_core_node_scope(node);
-    entry = &entries[(*index)++];
-    check(entry->id == markdown_core_node_get_id(node), "scope table is in canonical preorder");
-    check(entry->revision == markdown_core_node_get_revision(node), "scope table preserves node revisions");
-    check(
-        entry->scope.start.line == expected.start.line && entry->scope.start.column == expected.start.column &&
-            entry->scope.end.line == expected.end.line && entry->scope.end.column == expected.end.column,
-        "scope table preserves absolute scopes"
-    );
-    for (child = markdown_core_node_get_first_child(node); child; child = markdown_core_node_get_next_sibling(child)) {
-        check_scope_rows(child, entries, count, index);
-    }
-}
-
-static void check_scope_table(void) {
-    static const uint8_t source[] = ":badge[first *second*]{k=v}\n\n> alpha\n> beta\n";
-    markdown_core_error *error = NULL;
-    markdown_core_session *session = NULL;
-    const markdown_core_document *document;
-    markdown_core_scope_entry *entries = (markdown_core_scope_entry *)(uintptr_t)1;
-    markdown_core_scope_entry first = {0};
-    size_t count = 99;
-    size_t index = 0;
-
-    check(
-        !markdown_core_document_scope_table(NULL, &entries, &count, &error) && entries == NULL && count == 0 &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null document and clears outputs"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-    markdown_core_scope_table_free(NULL);
-
-    session = markdown_core_session_open(NULL, &error);
-    check(session != NULL && error == NULL, "scope table session opens");
-    if (!session) {
-        goto done;
-    }
-    if (!markdown_core_session_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(session, NULL, &error)) {
-        check(0, "scope table session commits");
-        goto done;
-    }
-    document = markdown_core_session_document(session);
-
-    count = 99;
-    check(
-        !markdown_core_document_scope_table(document, NULL, &count, &error) && count == 0 &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null output and clears the count"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    entries = (markdown_core_scope_entry *)(uintptr_t)1;
-    check(
-        !markdown_core_document_scope_table(document, &entries, NULL, &error) && entries == NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "scope table rejects a null count and clears the output"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    entries = NULL;
-    count = 0;
-    if (!document || !markdown_core_document_scope_table(document, &entries, &count, &error)) {
-        check(0, "scope table materializes");
-        goto done;
-    }
-    check(count > 0 && entries != NULL, "scope table returns owned rows");
-    if (!count || !entries) {
-        goto done;
-    }
-    check_scope_rows(markdown_core_document_root(document), entries, count, &index);
-    check(index == count, "scope table has no hidden or duplicate rows");
-    first = entries[0];
-    markdown_core_session_free(session);
-    session = NULL;
-    check(
-        entries[0].id == first.id && entries[0].revision == first.revision &&
-            entries[0].scope.start.line == first.scope.start.line && entries[0].scope.end.line == first.scope.end.line,
-        "scope table outlives its source document"
-    );
-
-done:
-    markdown_core_scope_table_free(entries);
-    markdown_core_session_free(session);
-    markdown_core_error_free(error);
-}
-
-static int delta_array_contains(const markdown_core_delta *changes, uint32_t change, markdown_core_node_id id) {
-    const markdown_core_node_id *ids = NULL;
-    size_t count;
-    size_t index;
-
-    switch (change) {
-    case MARKDOWN_CORE_DELTA_CHANGE_ADDED:
-        count = markdown_core_delta_added(changes, &ids);
-        break;
-    case MARKDOWN_CORE_DELTA_CHANGE_CHANGED:
-        count = markdown_core_delta_changed(changes, &ids);
-        break;
-    case MARKDOWN_CORE_DELTA_CHANGE_BUBBLED:
-        count = markdown_core_delta_bubbled(changes, &ids);
-        break;
-    default:
-        return 0;
-    }
-    for (index = 0; index < count; ++index) {
-        if (ids[index] == id) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static void check_ordered_delta_entries(void) {
-    static const uint8_t source[] = "> > alpha *beta*\n";
-    markdown_core_session *session = NULL;
-    markdown_core_session *other = NULL;
-    markdown_core_delta *changes = NULL;
-    markdown_core_delta *empty_changes = NULL;
-    markdown_core_delta *other_changes = NULL;
-    markdown_core_delta_entry *entries = (markdown_core_delta_entry *)(uintptr_t)1;
-    markdown_core_delta_entry first = {0};
-    markdown_core_error *error = NULL;
-    size_t count = 99;
-    size_t expected_count;
-    size_t index;
-    size_t roots = 0;
-
-    check(
-        !markdown_core_session_ordered_delta_entries(NULL, NULL, &entries, &count, &error) && entries == NULL &&
-            count == 0 && markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "ordered delta entries reject null inputs and clear outputs"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-    markdown_core_delta_entries_free(NULL);
-
-    session = markdown_core_session_open(NULL, &error);
-    check(session != NULL && error == NULL, "ordered delta session opens");
-    if (!session) {
-        goto done;
-    }
-    if (!markdown_core_session_edit(session, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(session, &changes, &error)) {
-        check(0, "ordered delta session commits");
-        goto done;
-    }
-
-    count = 99;
-    check(
-        !markdown_core_session_ordered_delta_entries(session, changes, NULL, &count, &error) && count == 0 &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "ordered delta entries reject a null output and clear the count"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-    entries = (markdown_core_delta_entry *)(uintptr_t)1;
-    check(
-        !markdown_core_session_ordered_delta_entries(session, changes, &entries, NULL, &error) && entries == NULL &&
-            markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-        "ordered delta entries reject a null count and clear the output"
-    );
-    markdown_core_error_free(error);
-    error = NULL;
-
-    entries = NULL;
-    count = 0;
-    if (!markdown_core_session_ordered_delta_entries(session, changes, &entries, &count, &error)) {
-        check(0, "ordered delta entries materialize");
-        goto done;
-    }
-    expected_count = markdown_core_delta_added(changes, NULL) + markdown_core_delta_changed(changes, NULL) +
-                     markdown_core_delta_bubbled(changes, NULL);
-    check(count == expected_count && count != 0 && entries != NULL, "ordered delta entries cover every live verdict");
-    for (index = 0; index < count; ++index) {
-        const markdown_core_node *node = markdown_core_session_node_by_id(session, entries[index].id);
-        const markdown_core_node *parent = markdown_core_node_get_parent(node);
-        size_t other_index;
-        int parent_seen_later = entries[index].parent == 0;
-
-        check(node != NULL, "ordered delta entry resolves in the committed session");
-        check(
-            delta_array_contains(changes, entries[index].change, entries[index].id),
-            "ordered delta entry preserves its exact verdict"
-        );
-        check(
-            (parent == NULL && entries[index].parent == 0) ||
-                (parent != NULL && entries[index].parent == markdown_core_node_get_id(parent)),
-            "ordered delta entry preserves its canonical parent"
-        );
-        if (entries[index].parent == 0) {
-            ++roots;
-        }
-        for (other_index = 0; other_index < count; ++other_index) {
-            if (other_index != index) {
-                check(entries[other_index].id != entries[index].id, "ordered delta entries contain no duplicate ids");
-            }
-            if (other_index > index && entries[other_index].id == entries[index].parent) {
-                parent_seen_later = 1;
-            }
-        }
-        check(parent_seen_later, "every non-root delta parent follows its children");
-    }
-    check(roots == 1 && entries[count - 1].parent == 0, "the document root is the unique final delta entry");
-    first = entries[0];
-
-    other = markdown_core_session_open(NULL, &error);
-    if (!other || !markdown_core_session_edit(other, 0, 0, source, sizeof(source) - 1, &error) ||
-        !markdown_core_session_commit(other, &other_changes, &error)) {
-        check(0, "second ordered delta session reaches the same revision");
-        goto done;
-    }
-    {
-        markdown_core_delta_entry *foreign = (markdown_core_delta_entry *)(uintptr_t)1;
-        size_t foreign_count = 99;
-        check(
-            !markdown_core_session_ordered_delta_entries(other, changes, &foreign, &foreign_count, &error) &&
-                foreign == NULL && foreign_count == 0 &&
-                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "ordered delta entries reject a same-revision delta from another lineage"
-        );
-        markdown_core_error_free(error);
-        error = NULL;
-    }
-    check(markdown_core_session_commit(session, &empty_changes, &error), "ordered delta session advances");
-    {
-        markdown_core_delta_entry *stale = (markdown_core_delta_entry *)(uintptr_t)1;
-        size_t stale_count = 99;
-        check(
-            !markdown_core_session_ordered_delta_entries(session, changes, &stale, &stale_count, &error) &&
-                stale == NULL && stale_count == 0 &&
-                markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "ordered delta entries reject a stale session revision"
-        );
-        markdown_core_error_free(error);
-        error = NULL;
-    }
-    {
-        markdown_core_delta_entry *empty = (markdown_core_delta_entry *)(uintptr_t)1;
-        size_t empty_count = 99;
-        check(
-            markdown_core_session_ordered_delta_entries(session, empty_changes, &empty, &empty_count, &error) &&
-                empty == NULL && empty_count == 0 && error == NULL,
-            "an empty delta produces an empty owned table"
-        );
-        markdown_core_delta_entries_free(empty);
-    }
-
-    markdown_core_delta_free(changes);
-    changes = NULL;
-    markdown_core_session_free(session);
-    session = NULL;
-    check(
-        entries[0].id == first.id && entries[0].parent == first.parent && entries[0].change == first.change,
-        "ordered delta entries outlive their session and delta"
-    );
-
-done:
-    markdown_core_delta_entries_free(entries);
-    markdown_core_delta_free(changes);
-    markdown_core_delta_free(empty_changes);
-    markdown_core_delta_free(other_changes);
-    markdown_core_session_free(session);
-    markdown_core_session_free(other);
-    markdown_core_error_free(error);
-}
-
 static void check_api(void) {
     static const uint8_t source[] = "# Heading\n\n- [ ] task\n";
     static const uint8_t cross_reference_source[] = "[[folder/note#^block|display]] ![[folder/note#^block|display]]\n";
@@ -532,7 +249,7 @@ static void check_api(void) {
     const markdown_core_node *heading;
     markdown_core_scope scope;
     int32_t level = 0;
-    markdown_core_string_view reference_value = {0};
+    markdown_core_string reference_value = {0};
 
     memset(&options, 0, sizeof(options));
     markdown_core_parse_options_init(&options);
@@ -543,7 +260,7 @@ static void check_api(void) {
         "parse option defaults are explicit and complete"
     );
 
-    document = markdown_core_document_parse(source, sizeof(source) - 1, &options, &error);
+    document = markdown_core_document_new(mc_sv(source, sizeof(source) - 1), &options, &error);
     check(document != NULL && error == NULL, "typed-options parse succeeds");
     if (document) {
         root = markdown_core_document_root(document);
@@ -563,7 +280,7 @@ static void check_api(void) {
     }
 
     document =
-        markdown_core_document_parse(cross_reference_source, sizeof(cross_reference_source) - 1, &options, &error);
+        markdown_core_document_new(mc_sv(cross_reference_source, sizeof(cross_reference_source) - 1), &options, &error);
     check(document != NULL && error == NULL, "cross-reference parse succeeds");
     if (document) {
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
@@ -591,7 +308,7 @@ static void check_api(void) {
         markdown_core_document_free(document);
     }
 
-    document = markdown_core_document_parse(NULL, 1, NULL, &error);
+    document = markdown_core_document_new(mc_sv(NULL, 1), NULL, &error);
     check(document == NULL && error != NULL, "invalid input produces an explicit error");
     check(markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "error exposes a stable code");
     check(markdown_core_error_get_message(error).length != 0, "error exposes a UTF-8 diagnostic view");
@@ -614,8 +331,78 @@ static void check_api(void) {
     check_option_gate(GATE_EMBEDS, "![[reference]]\n", "Embed scope=");
     check_option_gate(GATE_FOOTNOTES, "ref[^a]\n\n[^a]: note\n", "FootnoteReference scope=");
     check_html_comments_kept();
-    check_scope_table();
-    check_ordered_delta_entries();
+}
+
+/* Diagnostics: the one thing an editor underlines.
+ *
+ * Markdown's own "mistakes" are all defined outcomes, so this checks the
+ * boundary as much as the report — a directive whose attributes DO parse, and
+ * one with no attributes at all, must raise nothing. The block and inline
+ * forms carry different extents on purpose: the block form loses the whole
+ * construct, the inline form loses only its braces.
+ */
+static void check_diagnostics(void) {
+    static const struct {
+        const char *markdown;
+        size_t count;
+        int start_column;
+        int end_column;
+    } cases[] = {
+        {":::note{= bad}\nbody\n:::\n", 1, 8, 14},
+        {":inline{= bad} tail\n", 1, 8, 8},
+        {":::note{a=1}\nbody\n:::\n", 0, 0, 0},
+        {":::note\nbody\n:::\n", 0, 0, 0},
+        {"plain paragraph\n", 0, 0, 0}
+    };
+    size_t c;
+
+    for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+        markdown_core_parse_options options;
+        markdown_core_document *document;
+        const markdown_core_diagnostic *rows = NULL;
+        markdown_core_string text;
+        size_t count;
+
+        markdown_core_parse_options_init(&options);
+        text.data = (const uint8_t *)cases[c].markdown;
+        text.length = strlen(cases[c].markdown);
+        document = markdown_core_document_new(text, &options, NULL);
+        if (!document) {
+            fprintf(stderr, "diagnostics: case %zu did not parse\n", c);
+            failures++;
+            continue;
+        }
+        count = markdown_core_document_diagnostics(document, &rows);
+        if (count != cases[c].count) {
+            fprintf(stderr, "diagnostics: case %zu raised %zu, expected %zu\n", c, count, cases[c].count);
+            failures++;
+        } else if (count == 0) {
+            if (rows != NULL) {
+                fprintf(stderr, "diagnostics: case %zu reported none but handed back an array\n", c);
+                failures++;
+            }
+        } else if (
+            rows[0].code != MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES || rows[0].scope.start.line != 1 ||
+            rows[0].scope.start.column != cases[c].start_column || rows[0].scope.end.line != 1 ||
+            rows[0].scope.end.column != cases[c].end_column
+        ) {
+            fprintf(
+                stderr,
+                "diagnostics: case %zu reported code %d at %d:%d..%d:%d, expected code %d at 1:%d..1:%d\n",
+                c,
+                (int)rows[0].code,
+                rows[0].scope.start.line,
+                rows[0].scope.start.column,
+                rows[0].scope.end.line,
+                rows[0].scope.end.column,
+                (int)MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                cases[c].start_column,
+                cases[c].end_column
+            );
+            failures++;
+        }
+        markdown_core_document_free(document);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -627,6 +414,7 @@ int main(int argc, char **argv) {
     }
     fixture_dir = argv[2];
     check_api();
+    check_diagnostics();
     for (i = 3; i < argc; i += 2) {
         check_fixture(fixture_dir, argv[i], argv[i + 1]);
     }

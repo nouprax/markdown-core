@@ -12,27 +12,40 @@ extern "C" {
  * order for that label. Entries may be added and removed at any time; there
  * is no freeze after the first lookup. */
 struct markdown_core_map_entry {
-    struct markdown_core_map_entry *next;        /* every live entry, newest first */
-    struct markdown_core_map_entry *prev;        /* back link: sessions unlink stale entries in O(1) */
-    struct markdown_core_map_entry *bucket_next; /* same-label chain, ascending document order */
+    struct markdown_core_map_entry *next; /* every live entry, newest first */
+    struct markdown_core_map_entry *prev; /* back link: an edit unlinks stale entries in O(1) */
+    /* Same-label chain, ascending document order, CIRCULAR and doubly
+     * linked: the index slot names the head (the winner), so `head->bucket_prev`
+     * names the tail without a field of its own. A lone entry links to itself.
+     *
+     * Circular because both ends are hot and neither insertion is a search.
+     * A definition joins its label either as the new minimum (a full index
+     * build walks the live chain newest-first) or as the new maximum (an
+     * incremental add stamps the largest order there has ever been), and both
+     * are "splice in front of the head" — the second one just does not move
+     * the head. Doubly linked because removal is equally hot: a reparse
+     * retracts a paragraph's definitions and the winner must be re-elected,
+     * which is the next node, not a search for it. */
+    struct markdown_core_map_entry *bucket_next;
+    struct markdown_core_map_entry *bucket_prev;
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
     uint64_t owner; /* owning document-child id (0 = the head region) */
     /* The ReferenceDefinition node this entry was written as: a node pointer
-     * during the parse, rewritten to that node's session id by the same walk
+     * during the parse, rewritten to that node's published id by the same walk
      * that resolves `owner`. It is what makes "which definition does this
      * reference resolve to" answerable from the map alone — the map already
      * elects the winner per label and is already maintained incrementally, so
      * the answer needs no second index and no per-commit rebuild. */
     uint64_t definition_node;
-    /* Source line of the harvesting paragraph (absolute; sessions keep it in
+    /* Source line of the harvesting paragraph (absolute; a document keeps it in
      * committed-text coordinates). Head-region entries (owner 0) classify by
      * this line, so a restart inside a leading definition cluster retracts
      * only the reparsed paragraphs instead of the whole region. */
     int start_line;
     /* The harvesting paragraph was fully consumed and had begun on a clean
      * line: its start is a safe restart point the tree no longer records,
-     * so the session indexes it as a sentinel clean entry. */
+     * so the document indexes it as a sentinel clean entry. */
     bool from_vanished_clean;
     size_t size; /* reference expansion accounting */
 };
@@ -71,7 +84,7 @@ struct markdown_core_map {
     uint64_t next_order;                       /* monotonic document-order allocator */
     uint64_t pending_owner;                    /* stamped onto entries at add time */
     int pending_line;                          /* stamped onto entries at add time */
-    markdown_core_map_lookup_sink lookup_sink; /* NULL outside sessions */
+    markdown_core_map_lookup_sink lookup_sink; /* NULL outside an edit */
     void *lookup_context;
     void *lookup_unit; /* attribution target for the current inline parse */
     size_t ref_size;

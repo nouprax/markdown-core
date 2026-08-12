@@ -1,5 +1,24 @@
 # Incremental canonical AST: delivery plan
 
+> **PARTLY SUPERSEDED — 2026-08-07.** Four things this plan builds on were
+> removed from the contract on that date. Two are the clauses the whole
+> persistent-structure line rests on: 11.1's requirement that a commit cost a
+> bound independent of document size, and 7.2's prescription of a persistent
+> aggregate sequence keyed by private order-maintenance labels — neither ever
+> traced to a consumer, and the sixty-commit landing that implemented them was
+> reverted. The other two are 4.2's clauses that a document be independent of
+> later session commits and structurally shareable with adjacent revisions,
+> which is what any milestone here justifying persistence by "the old document
+> stays readable" was appealing to; and `SourceProfile` with the whole
+> validation boundary (see M2, superseded in place). Read
+> [`../reviews/2026-08-07-requirement-audit.md`](../reviews/2026-08-07-requirement-audit.md)
+> before acting on M2's rope, M3's substrate unification, M3.2's extent
+> sequence, §6.2's persistent child sequence, or any acceptance criterion here
+> that measures bytes path-copied or asserts an amplification bound. The
+> milestones are left standing because their sequencing, their dependency
+> reasoning, and the defects they name are still worth reading — but the
+> structure they were sequencing is not the one the contract now asks for.
+
 Status: planning (2026-08-01; milestones resynced 2026-08-03). The design is
 frozen in
 [`../specs/incremental-canonical-ast.md`](../specs/incremental-canonical-ast.md)
@@ -60,7 +79,6 @@ partial version of its target column. Nothing in the table below is a rename.
 | --- | --- | --- |
 | §0 one unified CST, region-relative concrete records, `Document.concrete` | No concrete layer at all: tokens are consumed, not retained | New substrate, threaded through the existing passes |
 | §2 `Commit{document, delta}`; §4.2 self-contained immutable `Document` | Session-borrowed view, invalid after the next commit | Storage-layer rewrite |
-| §4 `MarkupRevision{self, subtree}` | One scalar `revision` with the subtree meaning | New per-node local stamp |
 | §5.1–5.2 `DocumentVersion`/`MarkupID` as `(domain, ordinal)` | `lineage` and `node_id` as bare `uint64_t` | Type restructure, positive-only |
 | §5.2 anchored continuity: positional witnesses outside the edit, content LCS inside | Best-effort adoption by kind and position | Rule is now pinned; the matcher must become a pure function of (old children, new children, normalized edit) |
 | §6.1 `CanonicalText` + `TextMap` | Bare string views, no source correspondence | New subsystem |
@@ -349,41 +367,28 @@ not be written.
 
 ### M2 — Source substrate
 
-`Source{profile, content}` with `STRICT_UTF8` and `PERMISSIVE_BYTES`, the
-persistent byte storage behind it, and the `SourceEdit`/`Span` primitive in
-stored-byte coordinates.
-
-**`STRICT_UTF8` is not "valid UTF-8 only", and this is the milestone's main
-trap.** It admits exactly one deviation: a truncated final code point — a
-well-formed prefix at end-of-source that a continuation byte would complete.
-Edits are byte-addressed, so a streamed chunk may split a multi-byte
-character; rejecting that intermediate commit would make streaming legal only
-under `PERMISSIVE_BYTES` and turn §8.2's "streaming is ordinary editing" into
-a profile-conditional rule, which is the special-casing that section exists to
-forbid. The boundary is asymmetric and all four cases are separate behaviour:
-
-| Input, `STRICT_UTF8` | Result |
-| --- | --- |
-| truncated final code point | accepted; that tail decodes to U+FFFD |
-| complete invalid sequence | rejected; neither source nor AST published |
-| truncated code point with further bytes after it | rejected — the exception is positional |
-| all three under `PERMISSIVE_BYTES` | accepted |
-
-A document ending in a truncated tail is legal as a **final** document, not
-only as an intermediate one: §8.2 forbids a finalize operation, a session may
-close at any commit, and a caller may parse two bytes and stop. Do not build a
-pending or awaiting-continuation state; there is none.
-
-Gates: §14.3.1, §14.3.4, §14.3.5, §14.3.6, §14.3.7, and the multi-byte
-boundary clauses of §14.8.2–3. §14.3.6 and §14.3.7 were added on 2026-08-03
-because the boundary above had no gate at all: §14.3.1 exercises only *legal*
-edits and §14.8 compares only final outputs, so an implementation rejecting
-every incomplete chunk and one accepting every invalid sequence both passed.
-
-Requirements that are easy to lose: repeated tail appends must not copy the
-prefix; a tiny retained slice must respect the declared amplification bound;
-and `Span` is built from `Offset`, never `EncodedOffset`, so a projected
-coordinate cannot be fed back in as an edit.
+> **SUPERSEDED 2026-08-07.** This milestone specified `Source{profile, content}`
+> with `STRICT_UTF8` and `PERMISSIVE_BYTES`, an asymmetric four-row acceptance
+> boundary around a truncated final code point, and persistent byte storage
+> with an amplification bound. **All of it is gone.** UTF-8 is assumed and
+> never validated (§7.1), so there is no boundary to be asymmetric about and
+> no profile to select; `SourceProfile`, the validator, §14.3.6 and the three
+> gates over them were deleted, and the persistent rope is one growable buffer
+> spliced in place. See [`../reviews/2026-08-07-requirement-audit.md`](../reviews/2026-08-07-requirement-audit.md).
+>
+> What the milestone actually shipped and what still holds: one store for the
+> session's bytes; the `SourceEdit`/`Span` primitive in stored-byte
+> coordinates; `Span` built from `Offset` and never `EncodedOffset`, so a
+> projected coordinate cannot be fed back in as an edit; repeated tail appends
+> that do not copy the prefix (geometric growth); and — for the reason the
+> deleted trap paragraph got right even though its mechanism was wrong — a
+> document ending in a truncated tail is legal as a FINAL document, not only
+> as an intermediate one. §8.2 forbids a finalize operation, a session may
+> close at any commit, and a caller may parse two bytes and stop. There is no
+> pending or awaiting-continuation state.
+>
+> Live gates: §14.3.1, §14.3.7, and the multi-byte boundary clauses of
+> §14.8.2–3.
 
 ### M2.5 — Unified CST substrate and definition sets
 
@@ -947,8 +952,8 @@ next commit, and §4.2 promises a document that outlives it. Both belong to the
 one landing that is allowed to move the surface.
 
 So this landing absorbs what M5 held — the persistent child sequence,
-structural sharing, `MarkupID`/`DocumentVersion`, and the
-`MarkupRevision{self, subtree}` pair — together with the session-side indices
+structural sharing, and `MarkupID`/`DocumentVersion` — together with the
+session-side indices
 that only need to become queries once a commit produces new nodes: the eight
 borrowed-pointer fields at `session_internal.h:76`, `:99-101`, `:202`, `:220`
 and `:230`.
@@ -988,8 +993,11 @@ rule, the `List.tight` aggregate and the §5.4 revision rules are requirements
 this landing must satisfy, and they are kept verbatim.
 
 The persistent child sequence, structural sharing across adjacent documents,
-`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the
-`MarkupRevision{self, subtree}` pair with the §5.4 aggregate rules.
+`MarkupID`/`DocumentVersion` as domain-qualified pairs, and the §5.4 revision
+rules. The `MarkupRevision{self, subtree}` pair that stood here was withdrawn
+on 2026-08-09: it never shipped, no consumer asked for it, and §9.1's
+`DESCENDANT` flag already carries the one bit it would have added
+(`docs/reviews/2026-08-07-requirement-audit.md`).
 
 **The continuity rule is now fixed, not left to the implementation.** §5.2
 previously said only "a language-specific continuity proof"; it now states the

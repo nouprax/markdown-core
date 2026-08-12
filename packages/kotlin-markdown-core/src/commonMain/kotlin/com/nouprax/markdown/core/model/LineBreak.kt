@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class LineBreak internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
 ) : Markup {
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 

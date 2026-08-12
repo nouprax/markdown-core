@@ -2,32 +2,29 @@ package com.nouprax.markdown.core
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class WalkerTraversalTest {
     @Test
-    fun scopeFreeVisitorTraversesAnUnmaterializedSupersededSnapshot() {
-        MarkupSession().use { session ->
-            session.append("First\n\nSecond\n")
-            val first = session.commit()
-            session.append("\nThird\n")
-            session.commit()
+    fun bothVisitorOverloadsTraverseASupersededDocument() {
+        val first = Document("First\n\nSecond\n")
+        first.edit("First\n\nSecond\n\nThird\n").document.close()
 
-            // The retained snapshot never resolved scopes while it was
-            // current. Its immutable tree is complete, so the structural
-            // visitor overload must traverse it — and must therefore never
-            // request scope materialization.
-            val recording = RecordingVisitor()
-            MarkupWalker.walk(first.document, recording)
-            assertEquals(listOf("Document", "Paragraph", "Text", "Paragraph", "Text"), recording.visited)
+        // Editing handed the native parse to the successor, which has since
+        // been released. Both overloads still traverse the predecessor,
+        // because its tree and its scopes were copied out at parse time.
+        val recording = RecordingVisitor()
+        MarkupWalker.walk(first, recording)
+        assertEquals(listOf("Document", "Paragraph", "Text", "Paragraph", "Text"), recording.visited)
 
-            // The scopeful overload keeps the documented superseded-snapshot
-            // failure.
-            assertFailsWith<IllegalStateException> {
-                MarkupWalker.walk(first.document) { _, _, _ -> }
+        var scopeful = 0
+        MarkupWalker.walk(first) { event, _, scope ->
+            if (event == WalkEvent.ENTERING) {
+                scopeful += 1
+                assertTrue(scope.start.line >= 1)
             }
         }
+        assertEquals(5, scopeful)
     }
 
     @Test
@@ -42,7 +39,7 @@ class WalkerTraversalTest {
         // depth whose volume every platform affords.
         val depth = 4096
         val source = "> ".repeat(depth) + "leaf\n"
-        val document = Document.parse(source)
+        val document = Document(source)
 
         var quoteEnters = 0
         var events = 0
@@ -61,14 +58,10 @@ class WalkerTraversalTest {
         MarkupWalker.walk(document, structural)
         assertEquals(depth + 3, structural.visited.size)
 
-        MarkupSession().use { session ->
-            session.append(source)
-            session.commit()
-            session.replace(depth * 2, depth * 2 + 4, "seed")
-            val second = session.commit()
+        document.edit("> ".repeat(depth) + "seed\n").document.use { second ->
             var seedSeen = false
             var secondEvents = 0
-            MarkupWalker.walk(second.document) { event, node, _ ->
+            MarkupWalker.walk(second) { event, node, _ ->
                 secondEvents += 1
                 if (event == WalkEvent.ENTERING && node is Text) {
                     seedSeen = node.literal == "seed"
@@ -80,41 +73,32 @@ class WalkerTraversalTest {
     }
 
     @Test
-    fun deepIncrementalCommitDumpsIdenticallyToAOneShotParse() {
+    fun aDeepEditDumpsIdenticallyToAOneShotParse() {
         // Byte-for-byte dump equality for the deep delta path, at a depth
         // whose quadratic dump volume fits every platform's test heap.
         val depth = 512
-        MarkupSession().use { session ->
-            session.append("> ".repeat(depth) + "leaf\n")
-            session.commit()
-            session.replace(depth * 2, depth * 2 + 4, "seed")
-            val second = session.commit()
-            assertEquals(Document.parse("> ".repeat(depth) + "seed\n").dump(), second.document.dump())
+        Document("> ".repeat(depth) + "leaf\n").edit("> ".repeat(depth) + "seed\n").document.use { second ->
+            assertEquals(Document("> ".repeat(depth) + "seed\n").use { it.dump() }, second.dump())
         }
     }
 }
 
-class SnapshotMaterializationTest {
+class ScopeOwnershipTest {
     @Test
-    fun anExplicitlyMaterializedSnapshotStaysUsableAcrossCommitsAndClose() {
-        val session = MarkupSession()
-        val first =
-            session.use {
-                it.append("First\n\nSecond\n")
-                val commit = it.commit()
-                // The explicit contract: materialize while current, stay
-                // self-contained forever after.
-                commit.document.materialize()
-                it.append("\nThird\n")
-                it.commit()
-                commit
-            }
+    fun aDocumentAnswersScopesAfterEveryOtherDocumentIsGone() {
+        val retained: Document
+        run {
+            val first = Document("First\n\nSecond\n")
+            first.edit("First\n\nSecond\n\nThird\n").document.close()
+            retained = first
+        }
+        // There is nothing to materialize: a document builds its scope table
+        // at parse time, so it answers whatever happened to its series since.
         assertEquals(
             3,
-            first.document
-                .scope(first.document.content[1])
-                .start.line,
+            retained.content[1]
+                .scope.start.line,
         )
-        assertTrue(first.document.dump().contains("Paragraph"))
+        assertTrue(retained.dump().contains("Paragraph"))
     }
 }

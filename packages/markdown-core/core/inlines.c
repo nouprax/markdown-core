@@ -291,8 +291,20 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(
     link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
     link->as.link.title = markdown_core_chunk_literal("");
     link->start_line = link->end_line = subj->line;
-    link->start_column = start_column + 1;
-    link->end_column = end_column + 1;
+    /* The two offsets are not optional here, however long they were
+     * missing. A content offset is a position in the buffer the inline
+     * pass scans; a column is a position on a source line, and the two
+     * agree only while the buffer holds exactly one line that starts at
+     * the margin. Without them an autolink on the second line of a
+     * paragraph came out at `2:18-2:38` around its own child text at
+     * `2:15-2:33` — a parent starting after its child ends, off by every
+     * byte of every line above it. make_literal, which builds that very
+     * child two lines below, has always added them; this is the same
+     * function disagreeing with itself. Inherited from cmark-gfm
+     * (src/inlines.c:178-181), which reproduces the numbers exactly, and
+     * neither parity oracle compares positions, so nothing caught it. */
+    link->start_column = start_column + 1 + subj->column_offset + subj->block_offset;
+    link->end_column = end_column + 1 + subj->column_offset + subj->block_offset;
     text = make_str_with_entities(subj, start_column + 1, end_column - 1, &url);
     if (text) {
         markdown_core_node_append_child_unchecked(link, text);
@@ -1352,7 +1364,7 @@ static markdown_core_bufsize manual_scan_link_url(
  * not a bracket around a strikethrough, which is why this synthesizes the text
  * instead of falling through to the ordinary "emit the `]` and let the
  * delimiter stack sort it out" tail. And the answer is a definedness question
- * asked of the whole document, so it belongs to the session's footnote map
+ * asked of the whole document, so it belongs to the document's footnote map
  * rather than to the block being parsed. */
 static markdown_core_node *make_footnote_reference_or_text(
     subject *subj,
@@ -1489,6 +1501,27 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
         found_label = true;
     }
 
+    /* WHICH definition table answers, decided once.
+     *
+     * `[^` selects the footnote table, and only when footnotes are enabled:
+     * with the option off, `^x` is an ordinary label that `[^x]: /url`
+     * defines, and both authorities agree — cmark-gfm and remark each parse
+     * `[^x]` + `[^x]: note` as a link reference when footnotes are off and
+     * as a footnote when they are on.
+     *
+     * What `[^` does NOT decide is whether a definition is consulted at all.
+     * Both forms exist exactly where their definition does, and both degrade
+     * to the bytes the author typed where it does not. That symmetry used to
+     * be invisible in the code: the footnote form was reached only by falling
+     * out of a failed refmap lookup, so `[^x]` probed the reference table
+     * first, always missed, and arrived at its own table through a label
+     * named for the miss rather than for the form. */
+    if (found_label && (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES) && form == MARKDOWN_CORE_SHORTCUT_REFERENCE &&
+        raw_label.len > 1 && raw_label.data[0] == '^') {
+        markdown_core_chunk_free(subj->mem, &raw_label);
+        goto footnoteForm;
+    }
+
     if (found_label) {
         ref = (markdown_core_reference *)markdown_core_map_lookup(subj->refmap, &raw_label);
         if (ref != NULL) {
@@ -1518,8 +1551,12 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
 noMatch:
-    // If we fall through to here, it means we didn't match a link.
-    // What if we're a footnote link?
+footnoteForm:
+    /* Two entries, and they mean different things. `footnoteForm` is the
+     * decision above arriving deliberately; `noMatch` is a bracket that
+     * matched no reference at all and still has to spell its `]`. The
+     * footnote block below runs only for the first, because only a `[^`
+     * whose interior is one TEXT node reaches its test. */
     if (parser->options & MARKDOWN_CORE_OPT_FOOTNOTES && opener->inl_text->next &&
         opener->inl_text->next->type == MARKDOWN_CORE_NODE_TEXT) {
 
@@ -1556,7 +1593,7 @@ noMatch:
             // renderer had to special-case. The label reads exactly as the
             // borrow below reads it.
             //
-            // The map is the session's, spanning the whole document: a
+            // The map is the document's, spanning all of it: a
             // paragraph reparsed on its own still sees a definition a hundred
             // lines further down, so an incremental tree equals the one-shot
             // tree. A definedness flip is what re-refines the units that read
@@ -2067,77 +2104,11 @@ parsed:
 }
 
 // Parse inlines from parent's string_content, adding as children of parent.
-/* Longest line-aligned common prefix of two content buffers that is also
- * inert for inline parsing: no special character (the parser's table, which
- * includes every attached extension's) and, under SMART, no smart
- * punctuation; '\n' and '\r' delimit lines rather than disqualifying. Such
- * a prefix parses to exactly one Text and one break per line, and nothing at
- * or after the returned offset can pair with, or reshape, anything before it
- * — every pairing construct (emphasis, code spans, links, images, smart
- * quotes) needs an opener, and the prefix admits none. Returns 0 when no
- * usable seam exists; a nonzero seam always leaves a nonempty suffix on both
- * buffers. */
-markdown_core_bufsize markdown_core_inline_seam_prefix(
-    const markdown_core_parser *parser,
-    const unsigned char *a,
-    markdown_core_bufsize a_len,
-    const unsigned char *b,
-    markdown_core_bufsize b_len,
-    int options
-) {
-    markdown_core_bufsize limit = a_len < b_len ? a_len : b_len;
-    markdown_core_bufsize i = 0;
-    markdown_core_bufsize seam = 0;
-    while (i < limit) {
-        unsigned char c = a[i];
-        if (c != b[i]) {
-            break;
-        }
-        if (c == '\n') {
-            seam = i + 1;
-        } else if (c == '\r') {
-            // A carriage return is a line ending of its own (lone or as
-            // CRLF), so it would break the one-Text-one-break-per-'\n'
-            // accounting the transplant relies on; end the seam before it.
-            break;
-        } else {
-            const markdown_core_inline_dispatch *seam_bucket = &parser->inline_config->seam_dispatch[c];
-            int seam_barrier = parser->inline_config->seam_barrier_chars[c] != 0;
-            size_t j;
-            for (j = 0; !seam_barrier && j < seam_bucket->count; j++) {
-                markdown_core_extension *extension = seam_bucket->items[j]->extension;
-                seam_barrier = extension->inline_seam_probe(a, limit, i) != 0;
-            }
-            if (seam_barrier) {
-                break;
-            }
-            if ((options & MARKDOWN_CORE_OPT_SMART) && SMART_PUNCT_CHARS[c]) {
-                break;
-            }
-        }
-        i++;
-    }
-    if (seam >= a_len || seam >= b_len) {
-        return 0;
-    }
-    return seam;
-}
-
 void markdown_core_parse_inlines(
     markdown_core_parser *parser,
     markdown_core_node *parent,
     markdown_core_map *refmap,
     int options
-) {
-    markdown_core_parse_inlines_from(parser, parent, refmap, options, 0);
-}
-
-void markdown_core_parse_inlines_from(
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    markdown_core_map *refmap,
-    int options,
-    markdown_core_bufsize start
 ) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
@@ -2151,24 +2122,6 @@ void markdown_core_parse_inlines_from(
         refmap
     );
     markdown_core_chunk_rtrim(&subj.input);
-
-    // Fast-forward over a caller-guaranteed inert prefix: same position
-    // bookkeeping a real scan would leave (column = pos + 1 + column_offset
-    // + block_offset; every newline resets column_offset to -pos and
-    // advances the line).
-    if (start > 0) {
-        markdown_core_bufsize i;
-        markdown_core_bufsize bound = start < subj.input.len ? start : subj.input.len;
-        for (i = 0; i < start && i < content.len; i++) {
-            if (content.data[i] == '\n') {
-                subj.line++;
-            }
-        }
-        // A seam at or past the rtrimmed end leaves nothing to parse; the
-        // clamp keeps is_eof true instead of rescanning from zero.
-        subj.pos = bound;
-        subj.column_offset = -(int)start;
-    }
 
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
         ;
@@ -2188,9 +2141,7 @@ void markdown_core_parse_inlines_from(
     /* Handoff: the parsed node owns its inline records from here — through
      * adoption, the dependent-domain swap, and detach. A failed parse is
      * discarded whole, records included, so a transient loss can never
-     * publish a quietly thinner tree. A seam parse (start > 0) hands over
-     * a complete vector too: the inert prefix admits no record-producing
-     * byte, which the seam-barrier gate pins. */
+     * publish a quietly thinner tree. */
     if (subject_has_failure(parser, &subj)) {
         markdown_core_concrete_capture_abandon(&subj.capture);
     } else {

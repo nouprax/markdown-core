@@ -34,13 +34,12 @@ export class MarkupDumper {
 
     /**
      * Returns the canonical diagnostic dump for the subtree rooted at
-     * `node` (the whole document by default), resolving absolute scopes
-     * through the snapshot. A non-document subtree prints scopes with the
-     * subtree as origin: the root's start line becomes line 1.
-     * Position-free markers (0:0..0:0) print unchanged.
+     * `node` (the whole document by default). A non-document subtree prints
+     * scopes with the subtree as origin: the root's start line becomes line
+     * 1. Position-free markers (0:0..0:0) print unchanged.
      */
     static dump(document: Document, node: Markup = document): string {
-        const origin = document.scope(node).start.line;
+        const origin = node.scope.start.line;
         const offset = origin > 0 ? origin - 1 : 0;
         const remainingChildren: number[] = [];
         const lines: string[] = [];
@@ -156,8 +155,23 @@ function record(kind: string, fields: readonly string[] = [], children = 0): Pen
     return { line: (scope) => `${kind} ${scope}${fieldText} children=${children}`, children };
 }
 
-function directiveFields(mode: "embedded" | "standalone", name: string, attributes: string | null): readonly string[] {
-    return [`mode=${mode}`, `name=${jsonString(name)}`, `attributes=${optionalString(attributes)}`];
+function directiveFields(
+    mode: "embedded" | "standalone",
+    name: string,
+    attributes: Readonly<Record<string, string>> | null
+): readonly string[] {
+    // Pair by pair, like every other field: `null` for no container at all,
+    // nothing after `attributes=` for an empty one. Sorted by name, because
+    // four dumpers have to agree byte for byte and Swift's map is unordered;
+    // the order the engine holds belongs to the value, not to the dump.
+    const rendered =
+        attributes === null
+            ? "null"
+            : `[${Object.keys(attributes)
+                  .sort()
+                  .map((key) => `${key}=${jsonString(attributes[key]!)}`)
+                  .join(" ")}]`;
+    return [`mode=${mode}`, `name=${jsonString(name)}`, `attributes=${rendered}`];
 }
 
 function rebased(value: Scope, offset: number): string {

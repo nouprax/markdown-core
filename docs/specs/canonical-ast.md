@@ -17,7 +17,20 @@ all three reference forms answer "no definition" the same way; adopted the
 unified-CST ownership model on 2026-08-03, replacing the single `revision`
 scalar with `MarkupTrack`, moving parser answers from session scope to the
 immutable published document, and pinning which string fields carry a
-`TextMap` (`incremental-canonical-ast.md`).
+`TextMap` (`incremental-canonical-ast.md`) — a map since removed, on
+2026-08-07, because no consumer ever asked to see the bytes behind decoded
+text and the reverse lookup they do ask for is the node's own scope; and
+`revision` returned to one number on 2026-08-09, the `{ self, subtree }` pair
+having been specified but never built, wanted by no consumer, and redundant
+with the `DESCENDANT` diff part; and `scope` came BACK onto node values on
+2026-08-11, reversing the M4 move above. It was taken off so that a binding
+could hand a moved-but-unchanged node back as the same object; that reuse
+turned out to be a decode-cost optimization dressed as a guarantee, and it
+made a document's projection a function of how it was reached rather than of
+its text — the opposite of the value semantics a reactive consumer needs.
+Scope was never part of equality and still is not, so nothing a reactive
+framework compares changes; what goes with the move is the scope table, the
+`document.scope(of:)` mediator, and the stale-value failure mode it needed.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -35,16 +48,15 @@ or semantics.
   projection of one unified CST rather than a separately allocated tree
   (`incremental-canonical-ast.md`, §0).
 - Every `Markup` has a non-optional `track: MarkupTrack` carrying its
-  `MarkupID`, its `MarkupRevision` pair, and its `SourceExtent`. Equality and
-  hashing are `(MarkupID, revision.subtree)` for whole-subtree equality and
-  `(MarkupID, revision.self)` for local equality — both O(1) and
-  allocation-free — and equal nodes are guaranteed to have identical AST
-  content. See the identity and equality section.
-- Nodes do not store absolute source positions. Scopes are resolved on demand
-  through the owning document (`document.scope(of:)`) in `O(log n)`, supplied
-  with every `MarkupWalker` event, and printed by the dump; see
-  `incremental-canonical-ast.md` §7.2 for the resolution rules and the
-  coordinate profiles.
+  `MarkupID`, its `Revision`, and its `SourceExtent`. Equality and hashing are
+  `(MarkupID, revision)` — O(1) and allocation-free — and equal nodes are
+  guaranteed to have identical AST content, their subtrees included. See the
+  identity and equality section.
+- Every node carries its own absolute source extent, read in O(1) off the
+  value, supplied with every `MarkupWalker` event, and printed by the dump;
+  see `incremental-canonical-ast.md` §7.2 for the coordinate profiles. There is
+  no lookup structure and no document-mediated accessor: a document is an
+  immutable projection of one text, so a node in it does not move.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -101,19 +113,27 @@ paragraph. The invariants for other nodes are:
 | `Formula` | `embedded` or `standalone` |
 | `FormulaBlock` | `standalone` |
 
-### Directive attributes JSON
+### Directive attributes
 
-Directive `attributes` is an optional `String` containing the normalized JSON
-representation of a generic directive attribute list. Every member name and
-value is a JSON string. Non-string values and nested objects or arrays are
-invalid. `null` means no attributes container was present; `"{}"` means an
-explicit empty map.
+Directive `attributes` is an optional string-to-string map: `Record<string,
+string>` in ECMAScript, `[String: String]?` in Swift, `Map<String, String>?`
+in Kotlin, and a count plus an indexed pair accessor in C. `null` means no
+attribute container was present; an empty map means an explicit empty one.
 
-Markdown source uses `{key=value}` attribute-list syntax, not JSON syntax.
-Bare attributes and unquoted, single-quoted, or double-quoted values are
-supported. Values that look like booleans or numbers remain strings. JSON
-serialization is deterministic and is the value passed to consumers for
-decoding.
+There is no serialization in between. The grammar has no duplicate name to
+represent — a later `k=` replaces an earlier one, `.a .b` accumulates into a
+single `class`, `#a #b` keeps the last — so the pairs the parser holds ARE
+the value, and no consumer has to decode a rendering to use them. The engine
+keeps source order; a binding's own container may or may not, and equality
+compares contents, not order. The canonical dump prints the pairs SORTED BY
+NAME inside brackets (`attributes=[a="2" class="one two"]`, `attributes=[]`,
+`attributes=null`) so that four dumpers agree byte for byte.
+
+Markdown source uses `{key=value}` attribute-list syntax, following
+micromark-extension-directive. Bare attributes and unquoted, single-quoted,
+or double-quoted values are supported. Values that look like booleans or
+numbers remain strings; a value that happens to contain JSON is a string that
+contains JSON, and nothing parses it.
 
 An `=` promises a value, and a bare attribute is not the same thing as one with
 an empty value: `{a}` is valid and `{a=}` is not. Whitespace, including a line
@@ -189,7 +209,7 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is the optional first canonical child; content is block; null label and explicit empty label remain distinct |
+| `DirectiveBlock` | `mode`, `name: String`, `attributes: Map<String, String>?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is the string-to-string map, null when no container was written; mode is `standalone`; label is the optional first canonical child; content is block; null label and explicit empty label remain distinct |
 | `DirectiveLabel` | `content: [Markup]` | complete inline child list; scope covers the full `[...]`; an explicit `[]` is a present node with empty content |
 | `FootnoteDefinition` | `label: String`, `content: [Markup]` | label is written between `[^` and `]`; non-empty; block content; stays at its source position whether referenced or not |
 | `ReferenceDefinition` | `label: String`, `destination: String?`, `title: String?` | a link reference definition at the position it was written; label is written between `[` and `]`; leaf; stays whether referenced or not |
@@ -206,37 +226,57 @@ error rather than silently dropping a value.
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | the inline form `![a](/u)`; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `form: ReferenceForm`, `content: [Markup]` | `[text][label]`, `[label][]`, `[label]`; carries no destination — which definition the label resolves to is a query; inline content |
 | `ImageReference` | `label: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`, for `![alt][label]` and its collapsed and shortcut forms |
-| `Directive` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?` | attributes is normalized string-map JSON object text; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
+| `Directive` | `mode`, `name: String`, `attributes: Map<String, String>?`, `label: DirectiveLabel?` | attributes is the string-to-string map, null when no container was written; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
 | `FootnoteReference` | `label: String` | label is written as in source; non-empty; leaf; exists only where the document defines the label — an undefined `[^x]` is `Text` |
 | `CrossLink` | `reference: String` | source-faithful non-empty reference from `[[reference]]`; leaf; has no in-document definition, so it is never undefined |
 | `Embed` | `reference: String` | source-faithful non-empty reference from `![[reference]]`; leaf; as `CrossLink` |
 
-Every row above also carries the inherited `track: MarkupTrack`; it is not
-repeated in the table. No row has a stored scope, and no row has a stored
-absolute offset of any kind.
+Every row above also carries the inherited `track: MarkupTrack` — identity,
+revision, and the node's absolute source extent; it is not repeated in the
+table. No row has a stored absolute byte offset of any kind.
 
-At most one field per kind is a `CanonicalText` — the kind's content text,
-spelled `literal` — and it carries the map back to the source bytes that
-produced it. Seven kinds have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`,
-`Text`, `Code`, `HTML`, and `Formula`. The other twenty-seven have none;
-their content is a child sequence or nothing, and a kind with no textual
-value simply never carries the `TEXT` or `TEXT_MAP` parts of
-`incremental-canonical-ast.md` §9.1. Every other string field above
-is a plain scalar holding decoded characters with no map: `Link.destination`
-and `Link.title`, `Image.source` and `Image.title`,
-`ReferenceDefinition.destination` and `.title`, `CodeBlock.info` and
-`.language`, every `label`, `name`, `attributes`, and `reference`. Naming the
-source span of one of those scalars is a sub-node extent that does not exist
-yet (`incremental-canonical-ast.md` §7.2); a consumer that needs one today
-resolves the owning node's extent and searches within it.
+The extent is on the node because it is a property OF the node, known at parse
+time, and constant for the life of that node value: a document is an immutable
+projection of one text, so a node in it cannot move. It is deliberately absent
+from equality (below), because a consumer diffing values in a reactive
+framework does not compare positions — which is exactly why holding it costs
+that consumer nothing.
+
+At most one field per kind is the kind's content text, spelled `literal`, and
+it is a `Utf8Text`: decoded characters and nothing beside them. UTF-8 there is
+the caller's obligation carried through, not a property the engine
+manufactures — `incremental-canonical-ast.md` §7.1 assumes the input encoding
+and never validates it, so bytes that were not UTF-8 going in are not UTF-8
+coming out. Seven kinds
+have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
+and `Formula`. The other twenty-seven have none; their content is a child
+sequence or nothing, and a kind with no textual value simply never carries the
+`TEXT` part of `incremental-canonical-ast.md` §9.1.
+
+**No text field carries a map back to the bytes that produced it**, and
+neither does any other string field: `Link.destination` and `Link.title`,
+`Image.source` and `Image.title`, `ReferenceDefinition.destination` and
+`.title`, `CodeBlock.info` and `.language`, every `label`, `name`,
+`attributes`, and `reference` are plain scalars holding decoded characters.
+Naming the source span of any of them is a sub-node extent that does not exist
+yet (`incremental-canonical-ast.md` §7.2); a consumer that needs one resolves
+the owning node's extent and searches within it.
+
+The seven text fields used to be the exception, paired with a span map back to
+source. `incremental-canonical-ast.md` §6.1 removes it: no consumer asked to
+see the bytes behind decoded text, the two kinds whose reverse lookup the
+design was for — `CrossLink.reference` and `Embed.reference` — are
+source-faithful and so map identically, and a local diagnostic names a source
+span rather than a decoded character's provenance. What consumers do ask for
+is the reverse lookup itself, and that is the node's own `scope`.
 
 ### Identity and equality
 
 ```text
 MarkupTrack {
-    MarkupID       identity
-    MarkupRevision revision      // { self, subtree }
-    SourceExtent   extent
+    MarkupID     identity
+    Revision     revision
+    SourceExtent extent
 }
 ```
 
@@ -246,21 +286,30 @@ and stable across incremental commits while the node remains the same logical
 node. Nodes from different domains never compare equal, and passing an
 identity from another domain is a programmer error that traps rather than a
 result value. A one-shot parse gets its own domain, as does any change to the
-schema, parse options, or source profile.
+schema or the parse options.
 
-`revision` is a pair, never a single number. `revision.self` is the revision
-at which the node's own local projection last changed — its kind, scalar and
-text fields, direct child membership and order, and the parser answers
-addressed to it. `revision.subtree` is that plus everything reachable below
-it. A pure positional shift changes neither. Both are drawn from the one
-positive, strictly monotonic `Revision` counter of the owning domain; zero is
-invalid.
+`revision` is one number: the revision at which the node's own local
+projection — its kind, scalar and text fields, direct child membership and
+order, and the parser answers addressed to it — or anything reachable below it
+last changed. A pure positional shift does not change it. It is drawn from the
+one positive, strictly monotonic `Revision` counter of the owning domain; zero
+is invalid.
 
-Equality and hashing on every kind are `(MarkupID, revision.subtree)`, which
-is whole-subtree equality; `(MarkupID, revision.self)` compares the node's own
-projection without its descendants. Identifiable-style APIs use `MarkupID`
-alone. Two equal nodes are guaranteed to have identical AST content. Absolute
-source position is not content.
+Equality and hashing on every kind are `(MarkupID, revision)`, which is
+whole-subtree equality. Identifiable-style APIs use `MarkupID` alone. Two equal
+nodes are guaranteed to have identical AST content. **`extent` does not
+participate**: absolute source position is not content, and two nodes that
+differ only in where they sit are equal — which is what lets an edit above a
+node leave every reactive comparison below it untouched.
+
+There is deliberately no second stamp for the node's own projection without
+its descendants. A consumer that needs to tell "this node changed" from
+"something below it changed" reads the diff parts of
+`incremental-canonical-ast.md` §9.1, where `DESCENDANT` is exactly the second
+case and any other flag is exactly the first. That is the same argument §4
+already uses to forbid per-field, per-text and per-edge stamps: the
+information is carried at zero per-node cost by a commit that actually changed
+something, so a stamp every node pays for is the wrong place to put it.
 
 Which identities survive an edit is decided by the anchored continuity rule of
 `incremental-canonical-ast.md` §5.2: identity never crosses a parent or a
@@ -378,15 +427,13 @@ consumer that owns those targets, not for the parser. They are nodes whenever
 their syntax matches, and "unresolved" is not a state this AST can observe.
 
 Numbering, first-use order, resolution state, and back-reference ordinals are
-not AST content. They are parser answers: queries over the relation indexes
-the immutable published document pins, addressed by `MarkupID`
-(`incremental-canonical-ast.md` §4.1 and §6.3), with the answer record types
-defined in `sessions-and-deltas.md`. They are not a live-session feature, and
-a retained document keeps answering them after later commits and session
-close. Renderers that need the GFM presentation
-(definitions gathered at the tail in first-use order, numbered markers)
-derive it from those queries. This aligns the tree with the mdast model and
-keeps edits from rewriting unrelated parts of the document.
+not AST content, and no binding exposes them. They are presentation: a
+renderer that wants the GFM shape — definitions gathered at the tail in
+first-use order, numbered markers — derives it by walking the tree, where
+first-use order IS the document order of the `FootnoteReference` nodes and a
+definition is the `FootnoteDefinition` carrying the same label. Keeping them
+out of the tree aligns it with the mdast model and keeps an edit from
+renumbering nodes it did not touch.
 
 Making definedness decide a node's type puts a document-scoped fact inside an
 inline parse, which an incremental parser has to answer without reading the
@@ -439,10 +486,10 @@ edge rule.
 
 ## ParseOptions
 
-`Document.parse(source, options = ParseOptions.default)` and
-`MarkupSession(options)` (`sessions-and-deltas.md`) are the two canonical
-parsing entry points. `ParseOptions` is immutable and contains exactly these
-booleans:
+`Document(source, options = ParseOptions.default)` is the canonical parsing
+entry point, and `document.edit(source)` is the only other way to obtain a
+document. There is no session type and no separate one-shot parse.
+`ParseOptions` is immutable and contains exactly these booleans:
 
 | Field | Default |
 | --- | --- |
@@ -476,7 +523,7 @@ node does not implicitly recurse.
 
 The standard read-only `MarkupWalker` walks a `Document` (whole or from
 a subtree root) depth-first and emits `entering` then `exiting` events for
-every reachable `Markup`, each carrying the node's resolved absolute scope. Applying an
+every reachable `Markup`, each carrying that node's own absolute scope. Applying an
 exhaustive MarkupVisitor on `entering` invokes it exactly once per node. MarkupWalker owns
 the typed-property rules, so consumers never inspect kinds to discover
 structure:

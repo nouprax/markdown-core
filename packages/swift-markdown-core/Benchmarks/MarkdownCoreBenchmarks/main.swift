@@ -72,7 +72,7 @@ func benchmark(_ workload: String, source: String) throws {
         workload: workload,
         metrics: "bytes=\(source.utf8.count)"
     ) { _ in
-        _ = try Document.parse(source)
+        _ = try Document(source)
     }
 }
 
@@ -80,61 +80,57 @@ let unit = "## Section\n\nParagraph with **strong**, [link](https://example.com)
 try benchmark("large_document", source: String(repeating: unit, count: 2_000))
 try benchmark("deep_nesting", source: String(repeating: "> ", count: 128) + "leaf\n")
 
-struct ScopeBenchmarkSnapshot {
-    let session: MarkupSession
-    let document: Document
-}
-
-func benchmarkScopeMaterialization(_ workload: String, depth: Int) throws {
+// A deep document built end to end. This replaces the depth-4,096
+// `deep_scope_materialization` workload, whose subject no longer exists: a
+// document resolved scopes lazily against its session, so the first request
+// was a measurable event. Every node carries its own extent now, so there is
+// nothing to resolve at all. The cost moved into the parse boundary, so the
+// workload that measures it is a deep parse, under a name that says so.
+func benchmarkDeepBuild(_ workload: String, depth: Int) throws {
     let source = String(repeating: "> ", count: depth) + "leaf\n"
-    try measurePreparedAndReport(
-        boundary: "native_session_scope_materialization",
+    try measureAndReport(
+        boundary: "native_parse_and_value_copy",
         workload: workload,
         metrics: "bytes=\(source.utf8.count) depth=\(depth)"
     ) { _ in
-        let session = try MarkupSession()
-        try session.append(source)
-        let document = try session.commit().document
-        return ScopeBenchmarkSnapshot(session: session, document: document)
-    } body: { snapshot, _ in
-        _ = snapshot.document.scope(of: snapshot.document)
-        withExtendedLifetime(snapshot.session) {}
+        let document = try Document(source)
+        _ = document.scope
     }
 }
 
-try benchmarkScopeMaterialization("deep_scope_materialization", depth: 4_096)
+try benchmarkDeepBuild("deep_document_build", depth: 4_096)
 
-func benchmarkSession(_ workload: String, unit: String, units: Int) throws {
+func benchmarkStream(_ workload: String, unit: String, units: Int) throws {
+    // The streaming consumer: text grows by one unit per tick and each tick
+    // edits the document into its successor.
     try measureAndReport(
-        boundary: "session_stream_and_delta_decode",
+        boundary: "native_edit_and_delta_decode",
         workload: workload,
         metrics: "bytes=\(unit.utf8.count * units) commits=\(units)"
     ) { _ in
-        let session = try MarkupSession()
+        var document = try Document("")
+        var streamed = ""
         for _ in 0..<units {
-            try session.append(unit)
-            _ = try session.commit()
+            streamed += unit
+            document = try document.edit(streamed).document
         }
     }
 }
 
-try benchmarkSession("streamed_document", unit: unit, units: 500)
+try benchmarkStream("streamed_document", unit: unit, units: 500)
 
 func benchmarkDeepEdit(_ workload: String, depth: Int) throws {
     // A one-byte edit at the innermost leaf of a deep quote chain: the
     // rebuild ordering must stay proportional to the touched path, not turn
     // quadratic through per-entry ancestor walks.
-    let session = try MarkupSession()
-    try session.append(String(repeating: "> ", count: depth) + "a\n")
-    _ = try session.commit()
-    try measureAndReport(
-        boundary: "session_stream_and_delta_decode",
+    let prefix = String(repeating: "> ", count: depth)
+    try measurePreparedAndReport(
+        boundary: "native_edit_and_delta_decode",
         workload: workload,
-        metrics: "bytes=\(depth * 2 + 2) commits=1"
-    ) { round in
-        try session.replace((depth * 2)..<(depth * 2 + 1), with: round % 2 == 0 ? "b" : "a")
-        _ = try session.commit()
-    }
+        metrics: "bytes=\(depth * 2 + 2) commits=1",
+        prepare: { _ in try Document(prefix + "a\n") },
+        body: { document, _ in _ = try document.edit(prefix + "b\n") }
+    )
 }
 
 try benchmarkDeepEdit("deep_path_edit", depth: 5_000)

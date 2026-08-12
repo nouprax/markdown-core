@@ -80,42 +80,216 @@ extension ParseError: LocalizedError {
     public var errorDescription: String? { message }
 }
 
-/// An immutable snapshot of a parsed Markdown document.
+/// One parsed Markdown document: the root of the canonical value tree, the
+/// owner of the native parse it came from, and the only entry point.
 ///
-/// A `Document` is itself the root `Markup` node. Snapshots produced by a
-/// `MarkupSession` structurally share every unchanged node with the previous
-/// snapshot; a one-shot `Document.parse` is a self-contained value.
+/// ```swift
+/// let document = try Document("# Title")
+/// let commit = try document.edit("# Renamed")
+/// ```
 ///
-/// Absolute source positions are not stored on nodes: resolve them with
-/// `scope(of:)`, receive them from `MarkupWalker` events, or print them with
-/// `dump()`. A session snapshot resolves scopes against its session the
-/// first time any of these is used and is self-contained from then on; see
-/// `scope(of:)` for the exact rules.
-public struct Document: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+/// There is no session type. A document is created from text and options;
+/// editing hands it new text and returns the next document with the delta
+/// between them. Options are fixed for a document's whole series — changing
+/// what the parser means is a new `Document`, not an edit, and there is no
+/// delta to be had across it.
+///
+/// The node values are ordinary Swift values with no reference back here:
+/// hold them, copy them, put them in a view model. What this class owns is
+/// the native parse, which `edit(_:)` needs in order to keep identities
+/// stable across revisions.
+public final class Document: Markup, @unchecked Sendable {
+    /// The node's identity; see `MarkupID`.
     public let id: MarkupID
-    /// The commit revision at which this document's content last changed.
+    /// The revision at which this document's content last changed.
     public let revision: UInt64
+    /// The document's absolute source extent: the whole text.
+    public let scope: Scope
     /// The document's top-level blocks in source order.
     public let content: [any Markup]
-    var resolver: ScopeResolver
+    /// Everything an editor should underline, in source order. Empty for
+    /// almost every document; see `DiagnosticCode`.
+    public let diagnostics: [Diagnostic]
+    /// The options this document and its whole series were parsed under.
+    public let options: ParseOptions
+
+    /// Nodes from different parses never share an identity even when their
+    /// raw values collide.
+    public var series: UInt64 { id.series }
+
+    let handle: OpaquePointer
+    /// Every node of this document by identity, so an answer addressed by
+    /// `MarkupID` can hand back the node value rather than the bare id.
+    private let index: [UInt64: any Markup]
+    /// Parses `markdown` and returns a self-contained document; throws
+    /// `ParseError` when the engine rejects the input or cannot allocate.
+    public init(_ markdown: String, options: ParseOptions = .init()) throws {
+        var nativeOptions = options.native
+        var nativeError: OpaquePointer?
+        var source = markdown
+        let handle = try source.withUTF8 { buffer -> OpaquePointer in
+            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
+            guard let handle = markdown_core_document_new(text, &nativeOptions, &nativeError) else {
+                defer { markdown_core_error_free(nativeError) }
+                throw ParseError(from: nativeError)
+            }
+            return handle
+        }
+        self.handle = handle
+        self.options = options
+        let series = markdown_core_document_series(handle)
+        guard let root = markdown_core_document_root(handle) else {
+            markdown_core_document_free(handle)
+            throw ParseError(code: .internal, message: "parse produced no document root", scope: nil)
+        }
+        id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
+        revision = markdown_core_node_get_revision(root)
+        scope = Scope(from: markdown_core_node_scope(root))
+        content = Document.project(root, series: series)
+        diagnostics = Document.diagnostics(handle)
+        index = Document.index(of: content)
+    }
+
+    private init(adopting handle: OpaquePointer, options: ParseOptions) throws {
+        self.handle = handle
+        self.options = options
+        let series = markdown_core_document_series(handle)
+        guard let root = markdown_core_document_root(handle) else {
+            markdown_core_document_free(handle)
+            throw ParseError(code: .internal, message: "edit produced no document root", scope: nil)
+        }
+        id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
+        revision = markdown_core_node_get_revision(root)
+        scope = Scope(from: markdown_core_node_scope(root))
+        content = Document.project(root, series: series)
+        diagnostics = Document.diagnostics(handle)
+        index = Document.index(of: content)
+    }
+
+    deinit {
+        markdown_core_document_free(handle)
+    }
+
+    /// Hands this document new text and returns the document that text
+    /// describes, together with what changed.
+    ///
+    /// Reads the receiver and takes nothing from it: this document stays
+    /// usable and may be edited again. Editing it twice gives two lines of
+    /// descent, told apart by their revisions — and, like nodes from two
+    /// separate parses, nodes from two lines are not comparable.
+    ///
+    /// There is nothing to synchronize. Every stored property is a `let` and
+    /// the native document is only READ here, so concurrent callers cannot
+    /// race: what made this unsafe before was handing the native parse away.
+    public func edit(_ markdown: String) throws -> Commit {
+        var out = markdown_core_commit()
+        var nativeError: OpaquePointer?
+        var source = markdown
+        let succeeded = source.withUTF8 { buffer -> Bool in
+            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
+            return markdown_core_document_edit(handle, text, &out, &nativeError)
+        }
+        guard succeeded, let next = out.document else {
+            defer { markdown_core_error_free(nativeError) }
+            throw ParseError(from: nativeError)
+        }
+        let delta: Delta
+        if let changes = out.delta {
+            defer { markdown_core_delta_free(changes) }
+            delta = Delta(from: changes, series: markdown_core_document_series(next))
+        } else {
+            preconditionFailure("edit succeeded without a delta")
+        }
+        return Commit(document: try Document(adopting: next, options: options), delta: delta)
+    }
+
+    /// This document's node for `id`, or nil when no node has that identity
+    /// here. Passing an identity from another parse is nil, not a trap: a
+    /// caller holding an id from a superseded revision is asking exactly
+    /// this question.
+    public func node(_ id: MarkupID) -> (any Markup)? {
+        guard id.series == self.id.series else { return nil }
+        // The root answers for itself. It is a `Markup` like any other and a
+        // delta names it whenever the top-level block list changes, so a
+        // consumer reconciling by id reaches this call with the document's
+        // own id — and the index holds the descendants, not the root.
+        return id.rawValue == self.id.rawValue ? self : index[id.rawValue]
+    }
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
-    /// Parses `source` in one shot and returns a self-contained immutable
-    /// snapshot; throws `ParseError` when the engine rejects the input.
-    /// Semantically identical to committing the same text through a
-    /// `MarkupSession`.
-    public static func parse(_ source: String, options: ParseOptions = .init()) throws -> Document {
-        // A one-shot parse is literally a single-commit session. Materialize
-        // its bulk scope table before the temporary session goes away so the
-        // returned value is immediately self-contained.
-        let session = try MarkupSession(options: options)
-        try session.append(source)
-        let document = try session.commit().document
-        document.materialize()
-        return document
+    /// Two documents are equal exactly when they share `id` and `revision`,
+    /// the same rule every other `Markup` node follows.
+    public static func == (lhs: Document, rhs: Document) -> Bool {
+        lhs.id == rhs.id && lhs.revision == rhs.revision
+    }
+
+    /// Hashes the identity/revision pair that also defines equality.
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(revision)
+    }
+
+    /// Builds every value below `root`.
+    ///
+    /// Postorder over an explicit stack, because nesting depth is
+    /// input-controlled: a document that PARSED must also project, and the
+    /// call stack is not a budget this package may spend on the caller's
+    /// behalf. Child arrays assemble in sibling frames, so every node is
+    /// built exactly once, from children that are already built.
+    private static func project(_ root: OpaquePointer, series: UInt64) -> [any Markup] {
+        var frames: [[any Markup]] = [[]]
+        var completed: [any Markup] = []
+        let builder = MarkupBuilder(series: series) { _ in completed }
+        var stack: [(node: OpaquePointer, ready: Bool)] = [(root, false)]
+        while let (node, ready) = stack.popLast() {
+            if ready {
+                completed = frames.removeLast()
+                if node == root {
+                    return completed
+                }
+                frames[frames.count - 1].append(builder.markup(from: node))
+                continue
+            }
+            stack.append((node, true))
+            frames.append([])
+            // Reversed so pops build children in source order.
+            var children: [OpaquePointer] = []
+            var child = markdown_core_node_get_first_child(node)
+            while let current = child {
+                children.append(current)
+                child = markdown_core_node_get_next_sibling(current)
+            }
+            for current in children.reversed() {
+                stack.append((current, false))
+            }
+        }
+        preconditionFailure("the build never reached the document root")
+    }
+
+    private static func index(of content: [any Markup]) -> [UInt64: any Markup] {
+        var table: [UInt64: any Markup] = [:]
+        // The walker's own child visitor, which is the one place that knows
+        // which of a kind's edges are children — reusing it is what keeps a
+        // kind from being indexed here and walked there.
+        var children = ChildrenVisitor()
+        var stack = content
+        while let node = stack.popLast() {
+            table[node.id.rawValue] = node
+            stack.append(contentsOf: node.accept(&children))
+        }
+        return table
+    }
+
+    private static func diagnostics(_ handle: OpaquePointer) -> [Diagnostic] {
+        var rows: UnsafePointer<markdown_core_diagnostic>?
+        let count = markdown_core_document_diagnostics(handle, &rows)
+        guard let rows, count > 0 else { return [] }
+        return (0..<count).compactMap { index in
+            guard let code = DiagnosticCode(rawValue: Int32(rows[index].code.rawValue)) else { return nil }
+            return Diagnostic(code: code, scope: Scope(from: rows[index].scope))
+        }
     }
 }
 
@@ -136,18 +310,19 @@ extension ParseOptions {
     }
 }
 
-/// Builds platform values from native nodes for the session mirror. The
-/// `children` strategy is the only degree of freedom: a first commit's bulk
-/// build assembles child arrays in sibling frames, while an incremental
-/// commit rebuilds parents from already-built mirror values.
+/// Builds one platform value from one native node. `children` hands back the
+/// values already built for that node's children, which is what lets the
+/// build run bottom-up over an explicit stack instead of down the call stack.
 struct MarkupBuilder {
-    let lineage: UInt64
+    let series: UInt64
     let children: (OpaquePointer) -> [any Markup]
 
-    func id(of node: OpaquePointer) -> (id: MarkupID, revision: UInt64) {
-        (
-            MarkupID(lineage: lineage, rawValue: markdown_core_node_get_id(node)),
-            markdown_core_node_get_revision(node)
+    /// The three things every kind carries, read once per node.
+    func track(of node: OpaquePointer) -> MarkupTrack {
+        MarkupTrack(
+            id: MarkupID(series: series, rawValue: markdown_core_node_get_id(node)),
+            revision: markdown_core_node_get_revision(node),
+            scope: Scope(from: markdown_core_node_scope(node))
         )
     }
 
@@ -156,7 +331,10 @@ struct MarkupBuilder {
     // swiftlint:disable:next cyclomatic_complexity
     func markup(from node: OpaquePointer) -> any Markup {
         switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_DOCUMENT: Document(from: node, builder: self)
+        // A document is only ever the root, and the root is built by
+        // Document's own initializer — it owns the native parse, which a
+        // child value has no business holding.
+        case MARKDOWN_CORE_KIND_DOCUMENT: preconditionFailure("a document cannot be a child node")
         case MARKDOWN_CORE_KIND_BLOCK_QUOTE: BlockQuote(from: node, builder: self)
         case MARKDOWN_CORE_KIND_PARAGRAPH: Paragraph(from: node, builder: self)
         case MARKDOWN_CORE_KIND_HEADING: Heading(from: node, builder: self)
@@ -192,17 +370,5 @@ struct MarkupBuilder {
         case MARKDOWN_CORE_KIND_EMBED: Embed(from: node, builder: self)
         default: preconditionFailure("native parser returned an unknown node kind")
         }
-    }
-}
-
-extension Document {
-    init(from node: OpaquePointer, builder: MarkupBuilder) {
-        let (id, revision) = builder.id(of: node)
-        self.init(
-            id: id,
-            revision: revision,
-            content: builder.children(node),
-            resolver: ScopeResolver.unresolvable
-        )
     }
 }

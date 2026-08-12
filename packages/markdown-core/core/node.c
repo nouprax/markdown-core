@@ -842,3 +842,167 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 
     return errors;
 }
+
+// FNV-1a. A literal enters as its LENGTH plus a bounded sample of its bytes,
+// not all of them: hashing every byte would make this O(document bytes), and
+// confusing two literals that share a length and both ends is affordable for
+// the reason stated on the field (node.h).
+#define MARKDOWN_CORE_HASH_SAMPLE 32u
+
+uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value) {
+    h = (h ^ value) * 0x100000001b3ull;
+    return h ^ (h >> 29);
+}
+
+uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length) {
+    size_t head;
+    size_t tail;
+    size_t i;
+
+    if (!data) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
+    tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
+    h = (h ^ (uint64_t)length) * 0x100000001b3ull;
+    for (i = 0; i < head; i++) {
+        h ^= data[i];
+        h *= 0x100000001b3ull;
+    }
+    for (i = 0; i < tail; i++) {
+        h ^= data[length - tail + i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
+    if (!chunk->data || chunk->len < 0) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    return markdown_core_hash_bytes(h, chunk->data, (size_t)chunk->len);
+}
+
+/* WHAT GOES IN, and why this list and not another: the scalars below are
+ * exactly the ones markdown_core_ast_parts_changed (extensions/ast.c) reads
+ * to decide that two nodes of the same kind differ in VALUE. A field it
+ * compares and this omits is a field on which two different nodes hash
+ * equal, and the prefix sweep in diff.c then PAIRS them -- which is how an
+ * inserted `## Same` in front of an existing `# Same` took the H1's id and
+ * left the surviving H1 to be minted fresh. The delta stayed honest, because
+ * a paired node is still compared field by field; what was wrong was which
+ * node the consumer's row state stayed attached to.
+ *
+ * Values core cannot reach are mixed by the extension that owns them,
+ * through `hash_value` -- a directive's name and attributes, a table's
+ * alignments, a row's header bit, a formula's mode. An extension that
+ * registers a node type and does not implement it leaves its own nodes
+ * pairing on type and children alone. */
+void markdown_core_node_stamp(markdown_core_node *node) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    markdown_core_node *child;
+
+    h = markdown_core_hash_mix(h, (uint64_t)node->type);
+    switch (node->type) {
+    // The raw type, not the facade kind: this runs on every node of every
+    // parse, and for these the union member IS the literal chunk.
+    case MARKDOWN_CORE_NODE_TEXT:
+    case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_HTML:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    // A footnote's label is its own literal, and it is what tells two
+    // otherwise identical definitions apart.
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        h = hash_chunk(h, &node->as.literal);
+        break;
+    // `as.literal` aliases `as.code.info`, so reading it here hashed a code
+    // block's INFO STRING while meaning its body: two blocks sharing a fence
+    // language hashed equal however far apart their contents were.
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        h = hash_chunk(h, &node->as.code.literal);
+        h = hash_chunk(h, &node->as.code.info);
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fenced != 0));
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fence_closed != 0));
+        break;
+    case MARKDOWN_CORE_NODE_HEADING:
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.heading.level);
+        break;
+    case MARKDOWN_CORE_NODE_LIST:
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.list.list_type);
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.list.tight != 0));
+        // The start ordinal is the list's only when it is ordered; a bullet
+        // list has none, which is what the facade reports.
+        if (node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST) {
+            h = markdown_core_hash_mix(h, (uint64_t)node->as.list.start);
+        }
+        break;
+    // The checkbox is an extension's, present only where one claimed the
+    // item; `extension` is the same gate the facade uses, minus its strcmp.
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        h = markdown_core_hash_mix(h, node->extension ? (uint64_t)(node->as.list.checked != 0) + 1u : 0u);
+        break;
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        h = hash_chunk(h, &node->as.link.url);
+        h = hash_chunk(h, &node->as.link.title);
+        break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        h = hash_chunk(h, &node->as.definition.label);
+        h = hash_chunk(h, &node->as.definition.url);
+        h = hash_chunk(h, &node->as.definition.title);
+        break;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        h = hash_chunk(h, &node->as.reference.label);
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.reference.form);
+        break;
+    default:
+        break;
+    }
+    // Whatever the core union cannot reach: a directive's name and
+    // attributes, a table's alignments, a row's header bit, a formula's
+    // mode. The extension that registered the type is the only thing that
+    // can read them, so it is the thing that mixes them.
+    if (node->extension && node->extension->hash_value) {
+        h = node->extension->hash_value(node->extension, node, h);
+    }
+    for (child = node->first_child; child; child = child->next) {
+        h = markdown_core_hash_mix(h, child->subtree_hash);
+        if (child == node->last_child) {
+            break;
+        }
+    }
+    node->subtree_hash = h;
+}
+
+void markdown_core_node_stamp_tree(markdown_core_node *root) {
+    markdown_core_node *node = root;
+
+    /* Postorder, so a node is stamped only once its children carry their own
+     * hashes. Iterative and allocation-free: document depth costs no stack.
+     *
+     * It sits beside markdown_core_node_stamp because that is where a node
+     * operation belongs, NOT for speed -- putting the walk in the same
+     * translation unit so the per-node stamp could inline was measured and
+     * changed nothing (2.745 s against 2.743 s on multiple_duplicate_references).
+     * The pass costs what it costs because it is one more traversal of every
+     * node in the tree; neither the call, the iterator, nor the literal
+     * sampling is the term that matters. */
+    for (;;) {
+        while (node->first_child) {
+            node = node->first_child;
+        }
+        for (;;) {
+            markdown_core_node_stamp(node);
+            if (node == root) {
+                return;
+            }
+            if (node->next) {
+                node = node->next;
+                break;
+            }
+            node = node->parent;
+        }
+    }
+}

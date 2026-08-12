@@ -32,12 +32,12 @@
  *                        against the line bytes, cross-checked against
  *                        AST fields, counted per owner.
  *   capture_document     Document.concrete returns the one physical tree
- *                        from a one-shot document and from a session's
+ *                        from a one-shot document and from a document's
  *                        committed view alike (14.1.9), records reachable
  *                        through both.
  *   capture_equivalence  after every commit of an edit script that forces
  *                        suffix reflow, nested reparses, marker edits,
- *                        fence reflow, and definition flips, the session
+ *                        fence reflow, and definition flips, the document
  *                        tree's records equal a fresh parse's, node for
  *                        node — which is exactly the region-relative
  *                        encoding claim: a record an edit did not own
@@ -76,6 +76,7 @@
 #include "parser.h"
 #include "strikethrough.h"
 #include "table.h"
+#include "commit_compat.h"
 
 /* The complete engine node inventory with each kind's expected region
  * class, verbatim from 11.1 — the gate asserts the exact class, not a
@@ -202,7 +203,7 @@ static markdown_core_parse_options capture_options(void) {
 
 static markdown_core_document *parse_fixture(void) {
     markdown_core_parse_options options = capture_options();
-    return markdown_core_document_parse((const uint8_t *)FIXTURE, sizeof(FIXTURE) - 1, &options, NULL);
+    return markdown_core_document_new(mc_sv((const uint8_t *)FIXTURE, sizeof(FIXTURE) - 1), &options, NULL);
 }
 
 static bool is_block(const markdown_core_node *node) {
@@ -264,7 +265,7 @@ static int case_region_partition(void) {
         fprintf(stderr, "region_partition: fixture failed to parse\n");
         return -1;
     }
-    walk_init(&walk, document->root);
+    walk_init(&walk, markdown_core_document_root(document));
     while ((node = walk_next(&walk)) != NULL) {
         markdown_core_region_class region_class = markdown_core_region_classify(node);
         bool has_owned_inline_child = false; /* an inline child that is not itself a region */
@@ -405,7 +406,7 @@ static int case_region_of_walk(void) {
     if (!document) {
         return -1;
     }
-    walk_init(&walk, document->root);
+    walk_init(&walk, markdown_core_document_root(document));
     while ((node = walk_next(&walk)) != NULL) {
         markdown_core_region_class region_class = markdown_core_region_classify(node);
         const markdown_core_node *region = markdown_core_region_of(node);
@@ -498,13 +499,13 @@ static int case_region_of_walk(void) {
         text[depth * 2] = 'a';
         text[depth * 2 + 1] = '\n';
         text[text_length] = 0;
-        deep = markdown_core_document_parse((const uint8_t *)text, text_length, NULL, NULL);
+        deep = markdown_core_document_new(mc_sv((const uint8_t *)text, text_length), NULL, NULL);
         free(text);
         if (!deep) {
             return -1;
         }
         {
-            const markdown_core_node *cursor = deep->root;
+            const markdown_core_node *cursor = markdown_core_document_root(deep);
             const markdown_core_node *paragraph = NULL;
             while (cursor->first_child) {
                 cursor = cursor->first_child;
@@ -573,12 +574,9 @@ static bool normalized_line(
     return true;
 }
 
-/* Absolute start line under the sealed parent-relative encoding — the same
- * resolution scope_with_parent_start applies for the dump. */
+/* Positions are absolute; the parent-relative encoding is gone. */
 static int resolved_start_line(const markdown_core_node *node, int parent_resolved) {
-    if (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) {
-        return parent_resolved + node->start_line;
-    }
+    (void)parent_resolved;
     return node->start_line;
 }
 
@@ -794,8 +792,7 @@ static int check_node_records(const capture_source *source, const markdown_core_
                     record->length < node->as.code.fence_length || !run_all(line + record->column, record->length) ||
                     !run_maximal(line, line_length, record) ||
                     (unsigned char)line[record->column] != node->as.code.fence_char ||
-                    (int)(record->line) !=
-                        node->end_line - (node->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE ? 0 : node->start_line)) {
+                    (int)(record->line) != node->end_line - node->start_line) {
                     fprintf(stderr, "%s: fence-close record disagrees with code block\n", source->name);
                     failed = 1;
                 }
@@ -1555,13 +1552,13 @@ static int case_capture_shape(void) {
         if (source.length == 0) {
             source.length = strlen(source.text);
         }
-        document = markdown_core_document_parse((const uint8_t *)source.text, source.length, &options, NULL);
+        document = markdown_core_document_new(mc_sv((const uint8_t *)source.text, source.length), &options, NULL);
         if (!document) {
             fprintf(stderr, "capture_shape: %s failed to parse\n", source.name);
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
-        if ((tree_record_total(document->root) == 0) != source.recordless) {
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        if ((tree_record_total(markdown_core_document_root(document)) == 0) != source.recordless) {
             fprintf(
                 stderr,
                 "capture_shape: %s %s\n",
@@ -1583,16 +1580,15 @@ static int case_capture_shape(void) {
             fprintf(stderr, "capture_shape: kind fixture failed to parse\n");
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
         markdown_core_document_free(document);
     }
 
     /* Exact multiplicities where the grammar's edges hide: a lazy line and
      * a blank `>` line inside quotes, and one marker per prefix depth. */
     {
-        markdown_core_document *document = markdown_core_document_parse(
-            (const uint8_t *)SHAPE_SOURCES[0].text,
-            strlen(SHAPE_SOURCES[0].text),
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)SHAPE_SOURCES[0].text, strlen(SHAPE_SOURCES[0].text)),
             &options,
             NULL
         );
@@ -1601,8 +1597,8 @@ static int case_capture_shape(void) {
         if (!document) {
             return -1;
         }
-        quote_one = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0);
-        quote_two = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1);
+        quote_one = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0);
+        quote_two = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1);
         if (!quote_one || record_count_of(quote_one) != 7) {
             fprintf(
                 stderr,
@@ -1632,9 +1628,8 @@ static int case_capture_shape(void) {
             {MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 1, 2, 1}
         };
         static const expected_record QUOTE_DEPTH_2[] = {{MARKDOWN_CORE_CONCRETE_BLOCK_QUOTE_MARKER, 0, 4, 1}};
-        markdown_core_document *document = markdown_core_document_parse(
-            (const uint8_t *)SHAPE_SOURCES[1].text,
-            strlen(SHAPE_SOURCES[1].text),
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)SHAPE_SOURCES[1].text, strlen(SHAPE_SOURCES[1].text)),
             &options,
             NULL
         );
@@ -1643,19 +1638,19 @@ static int case_capture_shape(void) {
         }
         failed |= expect_records(
             "capture_shape: deep_quotes depth 0",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 0),
             QUOTE_DEPTH_0,
             2
         );
         failed |= expect_records(
             "capture_shape: deep_quotes depth 1",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 1),
             QUOTE_DEPTH_1,
             2
         );
         failed |= expect_records(
             "capture_shape: deep_quotes depth 2",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_BLOCK_QUOTE, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_BLOCK_QUOTE, 2),
             QUOTE_DEPTH_2,
             1
         );
@@ -1688,7 +1683,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[7] = {1, 1, 2, 2, 2, 1, 2};
         const capture_source *atx = &SHAPE_SOURCES[5];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)atx->text, strlen(atx->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)atx->text, strlen(atx->text)), &options, NULL);
         size_t h;
         if (!document) {
             return -1;
@@ -1698,7 +1693,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: atx_edges heading %zu", h);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, h),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, h),
                 expected[h],
                 expected_counts[h]
             );
@@ -1729,31 +1724,31 @@ static int case_capture_shape(void) {
         };
         const capture_source *fences = &SHAPE_SOURCES[2];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)fences->text, strlen(fences->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)fences->text, strlen(fences->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: backtick fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0),
             FENCE_BACKTICK,
             3
         );
         failed |= expect_records(
             "capture_shape: tilde fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 1),
             FENCE_TILDE,
             2
         );
         failed |= expect_records(
             "capture_shape: offset fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 2),
             FENCE_OFFSET,
             3
         );
         failed |= expect_records(
             "capture_shape: unclosed fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 3),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 3),
             FENCE_UNCLOSED,
             2
         );
@@ -1765,19 +1760,19 @@ static int case_capture_shape(void) {
         static const expected_record SETEXT_ONE[] = {{MARKDOWN_CORE_CONCRETE_SETEXT_UNDERLINE, 1, 0, 1}};
         const capture_source *setext = &SHAPE_SOURCES[3];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)setext->text, strlen(setext->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)setext->text, strlen(setext->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: setext full underline",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 0),
             SETEXT_FULL,
             1
         );
         failed |= expect_records(
             "capture_shape: setext single-byte underline",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 1),
             SETEXT_ONE,
             1
         );
@@ -1795,19 +1790,19 @@ static int case_capture_shape(void) {
         static const expected_record NUL_FOOTNOTE[] = {{MARKDOWN_CORE_CONCRETE_FOOTNOTE_OPENER, 0, 0, 9}};
         const capture_source *nul = &SHAPE_SOURCES[9];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)nul->text, nul->length, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)nul->text, nul->length), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: heading beside a NUL replacement",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_HEADING, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_HEADING, 0),
             NUL_HEADING,
             2
         );
         failed |= expect_records(
             "capture_shape: footnote label holding a NUL replacement",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION, 0),
             NUL_FOOTNOTE,
             1
         );
@@ -1832,12 +1827,12 @@ static int case_capture_shape(void) {
         pos += 300;
         text[pos++] = '\n';
         source.length = pos;
-        document = markdown_core_document_parse((const uint8_t *)text, pos, &options, NULL);
+        document = markdown_core_document_new(mc_sv((const uint8_t *)text, pos), &options, NULL);
         if (!document) {
             return -1;
         }
-        failed |= check_node_records(&source, document->root, 0);
-        code = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
+        failed |= check_node_records(&source, markdown_core_document_root(document), 0);
+        code = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_CODE_BLOCK, 0);
         if (!code || record_count_of(code) != 2) {
             fprintf(stderr, "capture_shape: clamped fence lost a record\n");
             failed = 1;
@@ -1872,49 +1867,49 @@ static int case_capture_shape(void) {
         static const expected_record DATA_ESCAPE[] = {{MARKDOWN_CORE_CONCRETE_TABLE_CELL_ESCAPE, 0, 5, 1}};
         const capture_source *table = &SHAPE_SOURCES[14];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)table->text, strlen(table->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)table->text, strlen(table->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: table delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             TABLE_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: table header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             HEADER_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: table data-row pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             ROW_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: table pipeless-edge row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 2),
             BARE_PIPE,
             1
         );
         failed |= expect_records(
             "capture_shape: header cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 1),
             HEADER_ESCAPE,
             1
         );
         failed |= expect_records(
             "capture_shape: plain header cell",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 0),
             NULL,
             0
         );
         failed |= expect_records(
             "capture_shape: data cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 5),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 5),
             DATA_ESCAPE,
             1
         );
@@ -1946,33 +1941,31 @@ static int case_capture_shape(void) {
         const markdown_core_node *lead;
         const markdown_core_node *table;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lookback->text, strlen(lookback->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)lookback->text, strlen(lookback->text)), &options, NULL);
         if (!document) {
             return -1;
         }
-        table = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0);
+        table = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0);
         failed |= expect_records("capture_shape: lookback delimiter row", table, LOOKBACK_DELIM, 1);
         failed |= expect_records(
             "capture_shape: lookback header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LOOKBACK_HEADER,
             3
         );
         failed |= expect_records(
             "capture_shape: lookback data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             LOOKBACK_DATA,
             2
         );
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: split-off lead paragraph", lead, NULL, 0);
         failed |= expect_inline_records("capture_shape: split-off lead escape", lead, LOOKBACK_LEAD_ESCAPE, 1);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int lead_start = lead ? resolved_start_line(lead, root_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 1 || lead_end != 1 || lead->end_column != 12) {
                 fprintf(stderr, "capture_shape: the split-off lead paragraph is not positioned at its source\n");
                 failed = 1;
@@ -2004,25 +1997,25 @@ static int case_capture_shape(void) {
         };
         const capture_source *indent = &SHAPE_SOURCES[16];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)indent->text, strlen(indent->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)indent->text, strlen(indent->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: indented delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             INDENT_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: indented header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             INDENT_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: indented data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             INDENT_PIPES,
             3
         );
@@ -2052,7 +2045,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[6] = {2, 2, 2, 1, 2, 3};
         const capture_source *tasks = &SHAPE_SOURCES[17];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)tasks->text, strlen(tasks->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)tasks->text, strlen(tasks->text)), &options, NULL);
         size_t t;
         if (!document) {
             return -1;
@@ -2062,7 +2055,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: tasklist item %zu", t);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_LIST_ITEM, t),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_LIST_ITEM, t),
                 expected[t],
                 expected_counts[t]
             );
@@ -2103,8 +2096,11 @@ static int case_capture_shape(void) {
         const expected_record *expected[5] = {DIR_FULL, DIR_LEAF, DIR_OUTER, DIR_INNER, DIR_OPEN};
         const size_t expected_counts[5] = {6, 2, 3, 3, 2};
         const capture_source *directives = &SHAPE_SOURCES[18];
-        markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)directives->text, strlen(directives->text), &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)directives->text, strlen(directives->text)),
+            &options,
+            NULL
+        );
         size_t d;
         if (!document) {
             return -1;
@@ -2114,7 +2110,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: directive block %zu", d);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, d),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK, d),
                 expected[d],
                 expected_counts[d]
             );
@@ -2136,25 +2132,25 @@ static int case_capture_shape(void) {
         static const expected_record FORMULA_UNCLOSED[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
         const capture_source *formulas = &SHAPE_SOURCES[19];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)formulas->text, strlen(formulas->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)formulas->text, strlen(formulas->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: dollar formula fences",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 0),
             FORMULA_CLOSED,
             2
         );
         failed |= expect_records(
             "capture_shape: latex formula fences",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 1),
             FORMULA_LATEX,
             2
         );
         failed |= expect_records(
             "capture_shape: unclosed formula fence",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_FORMULA_BLOCK, 2),
             FORMULA_UNCLOSED,
             1
         );
@@ -2174,19 +2170,19 @@ static int case_capture_shape(void) {
         static const expected_record LAZY_DELIM[] = {{MARKDOWN_CORE_CONCRETE_TABLE_DELIMITER_ROW, 1, 2, 9}};
         const capture_source *lazy = &SHAPE_SOURCES[20];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)lazy->text, strlen(lazy->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: lazy-header delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             LAZY_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: lazy-header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZY_HEADER,
             2
         );
@@ -2203,25 +2199,25 @@ static int case_capture_shape(void) {
         };
         const capture_source *crlf = &SHAPE_SOURCES[21];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)crlf->text, strlen(crlf->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)crlf->text, strlen(crlf->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: crlf delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             CRLF_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: crlf header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             CRLF_PIPES,
             3
         );
         failed |= expect_records(
             "capture_shape: crlf data pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 1),
             CRLF_PIPES,
             3
         );
@@ -2258,7 +2254,7 @@ static int case_capture_shape(void) {
         const size_t expected_counts[4] = {3, 3, 5, 2};
         const capture_source *refdefs = &SHAPE_SOURCES[22];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)refdefs->text, strlen(refdefs->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)refdefs->text, strlen(refdefs->text)), &options, NULL);
         size_t d;
         if (!document) {
             return -1;
@@ -2268,7 +2264,7 @@ static int case_capture_shape(void) {
             snprintf(context, sizeof(context), "capture_shape: reference definition %zu", d);
             failed |= expect_records(
                 context,
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, d),
                 expected[d],
                 expected_counts[d]
             );
@@ -2281,7 +2277,7 @@ static int case_capture_shape(void) {
          * difference; micromark agrees with this reading. */
         {
             const markdown_core_node *rewound =
-                nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
+                nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 3);
             if (!rewound || rewound->as.definition.title.len != 0) {
                 fprintf(stderr, "capture_shape: the rewound title leaked into the definition's scalar\n");
                 failed = 1;
@@ -2303,13 +2299,13 @@ static int case_capture_shape(void) {
         };
         const capture_source *lazy = &SHAPE_SOURCES[23];
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)lazy->text, strlen(lazy->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: mid-tab lazy title continuation",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_REFERENCE_DEFINITION, 0),
             RD_LAZY,
             4
         );
@@ -2330,40 +2326,38 @@ static int case_capture_shape(void) {
         const capture_source *lazy = &SHAPE_SOURCES[24];
         const markdown_core_node *lead;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)lazy->text, strlen(lazy->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)lazy->text, strlen(lazy->text)), &options, NULL);
         if (!document) {
             return -1;
         }
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header delimiter row",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE, 0),
             LAZYTAB_DELIM,
             1
         );
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header pipes",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_ROW, 0),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_ROW, 0),
             LAZYTAB_PIPES,
             2
         );
         failed |= expect_records(
             "capture_shape: mid-tab lazy-header cell escape",
-            nth_node_of_type(document->root, MARKDOWN_CORE_NODE_TABLE_CELL, 1),
+            nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_TABLE_CELL, 1),
             LAZYTAB_ESCAPE,
             1
         );
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         failed |= expect_records("capture_shape: mid-tab split-off lead paragraph", lead, NULL, 0);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int quote_resolved = lead && lead->parent && lead->parent->parent
                                      ? resolved_start_line(lead->parent->parent, root_resolved)
                                      : root_resolved;
             int inner_resolved = lead && lead->parent ? resolved_start_line(lead->parent, quote_resolved) : 0;
             int lead_start = lead ? resolved_start_line(lead, inner_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 5 || lead_end != 1 || lead->end_column != 5) {
                 fprintf(stderr, "capture_shape: the mid-tab split-off lead paragraph is not positioned\n");
                 failed = 1;
@@ -2382,19 +2376,17 @@ static int case_capture_shape(void) {
                                    "> | - | - |\n";
         const markdown_core_node *lead;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         if (!document) {
             return -1;
         }
-        lead = nth_node_of_type(document->root, MARKDOWN_CORE_NODE_PARAGRAPH, 0);
+        lead = nth_node_of_type(markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         {
-            int root_resolved = resolved_start_line(document->root, 0);
+            int root_resolved = resolved_start_line(markdown_core_document_root(document), 0);
             int quote_resolved =
                 lead && lead->parent ? resolved_start_line(lead->parent, root_resolved) : root_resolved;
             int lead_start = lead ? resolved_start_line(lead, quote_resolved) : 0;
-            int lead_end = lead ? lead_start + lead->end_line -
-                                      ((lead->flags & MARKDOWN_CORE_NODE__SEALED_RELATIVE) ? 0 : lead->start_line)
-                                : 0;
+            int lead_end = lead ? lead_start + lead->end_line - lead->start_line : 0;
             if (!lead || lead_start != 1 || lead->start_column != 3 || lead_end != 1 || lead->end_column != 11) {
                 fprintf(stderr, "capture_shape: the tab-led split-off lead's columns left the byte convention\n");
                 failed = 1;
@@ -2432,50 +2424,38 @@ static int case_capture_document(void) {
         markdown_core_document_free(document);
     }
 
-    /* Incremental: Document.concrete must reach the owner from a session's
+    /* Incremental: Document.concrete must reach the owner from a document's
      * committed view, across commits — not only from a one-shot parse. */
     if (!failed) {
         markdown_core_parse_options options = capture_options();
-        markdown_core_session *session = markdown_core_session_open(&options, NULL);
         static const char first[] = "> quoted *q*\n> more\n\n# head #\n";
         static const char tail[] = "\n- item\n";
+        static const char both[] = "> quoted *q*\n> more\n\n# head #\n\n- item\n";
+        markdown_core_document *document = markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
         const markdown_core_document *view;
-        if (!session) {
+        if (!document) {
             return -1;
         }
-        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)first, sizeof(first) - 1, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
-            fprintf(stderr, "capture_document: first commit failed\n");
-            return -1;
-        }
-        view = markdown_core_session_document(session);
+        view = document;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0 ||
             tree_inline_record_total(markdown_core_document_concrete(view)) == 0) {
             fprintf(stderr, "capture_document: committed view exposes no concrete owner\n");
             failed = 1;
         }
-        if (!markdown_core_session_edit(
-                session,
-                markdown_core_session_length(session),
-                markdown_core_session_length(session),
-                (const uint8_t *)tail,
-                sizeof(tail) - 1,
-                NULL
-            ) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        (void)tail;
+        if (!mc_edit(&document, mc_sv(both, sizeof(both) - 1), NULL, NULL)) {
+            markdown_core_document_free(document);
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
+        view = document;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0) {
             fprintf(stderr, "capture_document: concrete owner lost across commits\n");
             failed = 1;
         }
-        markdown_core_session_free(session);
+        markdown_core_document_free(document);
     }
     return failed ? -1 : 0;
 }
@@ -2720,23 +2700,17 @@ static const capture_edit EQUIVALENCE_EDITS[] = {
 static int case_capture_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_session *session = markdown_core_session_open(&options, NULL);
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+    mc_text text = {NULL, 0, 0};
     capture_shadow shadow = {NULL, 0, 0};
     size_t step;
 
-    if (!session) {
+    if (!document) {
         return -1;
     }
-    if (!shadow_splice(&shadow, 0, 0, EQUIVALENCE_INITIAL, sizeof(EQUIVALENCE_INITIAL) - 1) ||
-        !markdown_core_session_edit(
-            session,
-            0,
-            0,
-            (const uint8_t *)EQUIVALENCE_INITIAL,
-            sizeof(EQUIVALENCE_INITIAL) - 1,
-            NULL
-        )) {
-        markdown_core_session_free(session);
+    if (!shadow_splice(&shadow, 0, 0, EQUIVALENCE_INITIAL, sizeof(EQUIVALENCE_INITIAL) - 1)) {
+        mc_text_free(&text);
+        markdown_core_document_free(document);
         free(shadow.bytes);
         return -1;
     }
@@ -2762,20 +2736,19 @@ static int case_capture_equivalence(void) {
                 start = edit->fallback_offset == (size_t)-1 ? shadow.length : edit->fallback_offset;
                 end = start;
             }
-            if (!markdown_core_session_edit(session, start, end, (const uint8_t *)edit->insert, insert_length, NULL) ||
-                !shadow_splice(&shadow, start, end, edit->insert, insert_length)) {
+            if (!shadow_splice(&shadow, start, end, edit->insert, insert_length)) {
                 fprintf(stderr, "capture_equivalence: edit %zu failed\n", step);
                 failed = 1;
                 break;
             }
         }
-        if (!markdown_core_session_commit(session, NULL, NULL)) {
+        if (!mc_edit(&document, mc_sv(shadow.bytes, shadow.length), NULL, NULL)) {
             fprintf(stderr, "capture_equivalence: commit %zu failed\n", step);
             failed = 1;
             break;
         }
-        view = markdown_core_session_document(session);
-        fresh = markdown_core_document_parse((const uint8_t *)shadow.bytes, shadow.length, &options, NULL);
+        view = document;
+        fresh = markdown_core_document_new(mc_sv((const uint8_t *)shadow.bytes, shadow.length), &options, NULL);
         if (!fresh) {
             fprintf(stderr, "capture_equivalence: fresh parse %zu failed\n", step);
             failed = 1;
@@ -2794,7 +2767,9 @@ static int case_capture_equivalence(void) {
         markdown_core_document_free(fresh);
     }
 
-    markdown_core_session_free(session);
+    mc_text_free(&text);
+
+    markdown_core_document_free(document);
     free(shadow.bytes);
     return failed ? -1 : 0;
 }
@@ -3289,8 +3264,11 @@ static const char INLINE_SHAPE_TEXT[] = "*a* **b** ***c***\n"
 static int case_inline_shape(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *document =
-        markdown_core_document_parse((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1, &options, NULL);
+    markdown_core_document *document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_SHAPE_TEXT, sizeof(INLINE_SHAPE_TEXT) - 1),
+        &options,
+        NULL
+    );
     const markdown_core_node *root;
 
     static const expected_inline_record EMPH_TRIPLE[] = {
@@ -3597,8 +3575,11 @@ static int case_inline_smart(void) {
     };
 
     options.smart_punctuation = true;
-    document =
-        markdown_core_document_parse((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1, &options, NULL);
+    document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_SMART_TEXT, sizeof(INLINE_SMART_TEXT) - 1),
+        &options,
+        NULL
+    );
     if (!document) {
         fprintf(stderr, "inline_smart: fixture failed to parse\n");
         return -1;
@@ -3688,9 +3669,8 @@ static const char INLINE_FUNNEL_TEXT[] = "~~del~~ und ~one~ mm ~~no~\n"
 static int case_inline_extension_funnel(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
-    markdown_core_document *document = markdown_core_document_parse(
-        (const uint8_t *)INLINE_FUNNEL_TEXT,
-        sizeof(INLINE_FUNNEL_TEXT) - 1,
+    markdown_core_document *document = markdown_core_document_new(
+        mc_sv((const uint8_t *)INLINE_FUNNEL_TEXT, sizeof(INLINE_FUNNEL_TEXT) - 1),
         &options,
         NULL
     );
@@ -3813,81 +3793,19 @@ static int case_inline_extension_funnel(void) {
     return failed ? -1 : 0;
 }
 
-/* --- inline_seam_barrier ------------------------------------------------ */
-
-/* The seam contract the capture leans on: every byte a capture site can
- * begin a record at is a seam barrier (or, for the tail records, sits
- * strictly after a barrier `]` of the same construct), so the inert prefix
- * an incremental reparse fast-forwards over holds zero records and no
- * record ever needs transplanting. SMART bytes are checked behaviorally
- * because the seam function owns their clause. */
-static int case_inline_seam_barrier(void) {
-    static const unsigned char RECORD_TRIGGER_BYTES[] = {'*', '_', '`', '\\', '&', '<', '[', ']', '!', '~', '$', ':'};
-    static const unsigned char SMART_TRIGGER_BYTES[] = {'-', '.', '\'', '"'};
-    int failed = 0;
-    markdown_core_parser *parser = sweep_parser_new(NULL);
-    size_t i;
-
-    if (!parser) {
-        return -1;
-    }
-    for (i = 0; i < sizeof(RECORD_TRIGGER_BYTES); i++) {
-        if (!parser->inline_config->seam_barrier_chars[RECORD_TRIGGER_BYTES[i]]) {
-            fprintf(
-                stderr,
-                "inline_seam_barrier: record trigger byte '%c' is not a seam barrier\n",
-                RECORD_TRIGGER_BYTES[i]
-            );
-            failed = 1;
-        }
-    }
-    for (i = 0; i < sizeof(SMART_TRIGGER_BYTES); i++) {
-        unsigned char line[8] = {'x', 'x', 0, '\n', 'y', 'y', 0, 0};
-        unsigned char other[8] = {'x', 'x', 0, '\n', 'z', 'z', 0, 0};
-        markdown_core_bufsize seam;
-        line[2] = SMART_TRIGGER_BYTES[i];
-        other[2] = SMART_TRIGGER_BYTES[i];
-        seam = markdown_core_inline_seam_prefix(parser, line, 6, other, 6, MARKDOWN_CORE_OPT_SMART);
-        if (seam != 0) {
-            fprintf(
-                stderr,
-                "inline_seam_barrier: smart byte '%c' fell inside a seam prefix (seam %d)\n",
-                SMART_TRIGGER_BYTES[i],
-                (int)seam
-            );
-            failed = 1;
-        }
-    }
-    /* The two-space hard break is seam-admissible, which is exactly why it
-     * must own no record: the prefix a reparse never rescans still equals
-     * the fresh parse record-for-record only if breaks stay implicit. */
-    {
-        static const unsigned char broken_a[] = "ab  \ncd";
-        static const unsigned char broken_b[] = "ab  \ncq";
-        markdown_core_bufsize seam =
-            markdown_core_inline_seam_prefix(parser, broken_a, 7, broken_b, 7, MARKDOWN_CORE_OPT_SMART);
-        if (seam != 5) {
-            fprintf(stderr, "inline_seam_barrier: hard-break prefix must stay seam-admissible (seam %d)\n", (int)seam);
-            failed = 1;
-        }
-    }
-    markdown_core_parser_free(parser);
-    return failed ? -1 : 0;
-}
-
 /* --- inline_equivalence ------------------------------------------------- */
 
-/* The two incremental paths the inline vectors must survive, each proven to
- * have actually run before its records are compared:
+/* Inline concrete records must equal a fresh parse's after a commit, on the
+ * two shapes that used to be the incremental engine's hardest: an edit inside
+ * a paragraph whose prefix is inert, and a definition flip that changes what
+ * a unit the edit never touched resolves to.
  *
- * - the seam fast-forward: the staged leaf never rescans its inert prefix,
- *   the old prefix children move over physically (pointer identity), and
- *   the staged vector is already complete because the prefix owns no
- *   records;
- * - the dependent rebuild: a definition flip rebuilds a unit the edit never
- *   touched, the stable owner keeps its node (pointer identity) while
- *   {content, children, inline records} swap in — a vector left behind by
- *   the swap is exactly what the fresh-parse comparison catches. */
+ * This case used to ALSO assert, by pointer identity, that the seam
+ * fast-forward and the dependent rebuild had actually engaged. Those
+ * assertions are gone with the mechanism they described — a commit is a full
+ * reparse now, so no node survives one and pointer identity across a commit
+ * is not a property this engine has. What is asserted is what a consumer can
+ * observe: the records equal a fresh parse's. */
 static int case_inline_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
@@ -3896,27 +3814,30 @@ static int case_inline_equivalence(void) {
     {
         static const char initial[] = "plain one\nplain two\nedit *here* soon\n";
         static const char replaced[] = "*there* now\n";
-        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *paragraph;
         const markdown_core_node *prefix_text;
         markdown_core_document *fresh;
         static const char final_text[] = "plain one\nplain two\nedit *there* now\n";
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
-        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
+        view = document;
         paragraph = markdown_core_document_root(view)->first_child;
         prefix_text = paragraph ? paragraph->first_child : NULL;
         if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
-            markdown_core_session_free(session);
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam fixture lost its paragraph\n");
             return -1;
         }
@@ -3924,26 +3845,18 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: seam paragraph captured nothing to compare\n");
             failed = 1;
         }
-        if (!markdown_core_session_edit(session, 25, 36, (const uint8_t *)replaced, sizeof(replaced) - 1, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 25, 36, replaced, sizeof(replaced) - 1) ||
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
-        if (!markdown_core_document_root(view)->first_child ||
-            markdown_core_document_root(view)->first_child->first_child != prefix_text) {
-            fprintf(stderr, "inline_equivalence: seam transplant did not engage (prefix child was reparsed)\n");
-            failed = 1;
-        }
-        if (markdown_core_document_root(view)->first_child &&
-            markdown_core_document_root(view)->first_child->user_data != NULL) {
-            fprintf(stderr, "inline_equivalence: committed leaf retained its seam user_data\n");
-            failed = 1;
-        }
-        fresh = markdown_core_document_parse((const uint8_t *)final_text, sizeof(final_text) - 1, &options, NULL);
+        view = document;
+        fresh = markdown_core_document_new(mc_sv((const uint8_t *)final_text, sizeof(final_text) - 1), &options, NULL);
         if (!fresh) {
-            markdown_core_session_free(session);
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -3954,7 +3867,8 @@ static int case_inline_equivalence(void) {
         );
         failed |= check_inline_invariants("inline_equivalence: seam", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
-        markdown_core_session_free(session);
+        mc_text_free(&text);
+        markdown_core_document_free(document);
     }
 
     /* Dependent rebuild across a definition flip, both directions. */
@@ -3972,41 +3886,41 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "[^n]: note\n";
-        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *unit;
         markdown_core_document *fresh;
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
-        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
+        view = document;
         unit = markdown_core_document_root(view)->first_child;
         if (!unit || inline_record_count_of(unit) == 0) {
             fprintf(stderr, "inline_equivalence: dependent unit captured nothing to compare\n");
             failed = 1;
         }
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
-        if (!markdown_core_session_edit(session, 43, 51, (const uint8_t *)"", 0, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
-        if (markdown_core_document_root(view)->first_child != unit) {
-            fprintf(stderr, "inline_equivalence: dependent rebuild replaced its stable owner\n");
-            failed = 1;
-        }
-        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        view = document;
+        fresh =
+            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
-            markdown_core_session_free(session);
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -4019,20 +3933,18 @@ static int case_inline_equivalence(void) {
 
         /* Flip it back: the same unit swaps again to the resolved shape. */
         if (!failed) {
-            if (!markdown_core_session_edit(session, 43, 43, (const uint8_t *)"[x]: /u\n", 8, NULL) ||
-                !markdown_core_session_commit(session, NULL, NULL)) {
-                markdown_core_session_free(session);
+            if (!mc_text_splice(&text, 43, 43, "[x]: /u\n", 8) ||
+                !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+                mc_text_free(&text);
+                markdown_core_document_free(document);
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
                 return -1;
             }
-            view = markdown_core_session_document(session);
-            if (markdown_core_document_root(view)->first_child != unit) {
-                fprintf(stderr, "inline_equivalence: restore rebuild replaced its stable owner\n");
-                failed = 1;
-            }
-            fresh = markdown_core_document_parse((const uint8_t *)initial, sizeof(initial) - 1, &options, NULL);
+            view = document;
+            fresh = markdown_core_document_new(mc_sv((const uint8_t *)initial, sizeof(initial) - 1), &options, NULL);
             if (!fresh) {
-                markdown_core_session_free(session);
+                mc_text_free(&text);
+                markdown_core_document_free(document);
                 return -1;
             }
             failed |= compare_tree_records(
@@ -4044,7 +3956,8 @@ static int case_inline_equivalence(void) {
             failed |= check_inline_invariants("inline_equivalence: dependent", markdown_core_document_root(view));
             markdown_core_document_free(fresh);
         }
-        markdown_core_session_free(session);
+        mc_text_free(&text);
+        markdown_core_document_free(document);
     }
 
     /* Dependent rebuild of a table cell: a definition flip converts a
@@ -4073,26 +3986,29 @@ static int case_inline_equivalence(void) {
                                           "\n"
                                           "\n"
                                           "tail para\n";
-        markdown_core_session *session = markdown_core_session_open(&options, NULL);
+        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
+        mc_text text = {NULL, 0, 0};
         const markdown_core_document *view;
         const markdown_core_node *table;
         const markdown_core_node *cell;
         markdown_core_document *fresh;
 
-        if (!session) {
+        if (!document) {
             return -1;
         }
-        if (!markdown_core_session_edit(session, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
+        view = document;
         table = markdown_core_document_root(view)->first_child;
         cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
         if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
-            markdown_core_session_free(session);
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
             return -1;
         }
@@ -4101,21 +4017,18 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` definition line. */
-        if (!markdown_core_session_edit(session, 46, 54, (const uint8_t *)"", 0, NULL) ||
-            !markdown_core_session_commit(session, NULL, NULL)) {
-            markdown_core_session_free(session);
+        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
             return -1;
         }
-        view = markdown_core_session_document(session);
-        if (markdown_core_document_root(view)->first_child != table ||
-            nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0) != cell) {
-            fprintf(stderr, "inline_equivalence: cell dependent rebuild replaced its stable owner\n");
-            failed = 1;
-        }
-        fresh = markdown_core_document_parse((const uint8_t *)without_def, sizeof(without_def) - 1, &options, NULL);
+        view = document;
+        fresh =
+            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
         if (!fresh) {
-            markdown_core_session_free(session);
+            mc_text_free(&text);
+            markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
@@ -4126,7 +4039,8 @@ static int case_inline_equivalence(void) {
         );
         failed |= check_inline_invariants("inline_equivalence: cell dependent", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
-        markdown_core_session_free(session);
+        mc_text_free(&text);
+        markdown_core_document_free(document);
     }
     return failed ? -1 : 0;
 }
@@ -4294,7 +4208,7 @@ static int case_recovery_literal_fallback(void) {
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         size_t k;
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)fixture->text, strlen(fixture->text), &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)fixture->text, strlen(fixture->text)), &options, NULL);
         if (!document) {
             markdown_core_strbuf_free(&text);
             return -1;
@@ -4348,7 +4262,7 @@ static int case_recovery_island_boundary(void) {
         static const char BODY[] = "# h\n> q\n";
         static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 3}};
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *code;
         if (!document) {
             return -1;
@@ -4372,7 +4286,7 @@ static int case_recovery_island_boundary(void) {
         static const char TEXT[] = "before\n\n$$\nx + y\n# not a heading\n";
         static const expected_record OPEN_ONLY[] = {{MARKDOWN_CORE_CONCRETE_FENCE_OPEN, 0, 0, 2}};
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *formula;
         const char *literal;
         if (!document) {
@@ -4397,7 +4311,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = "> $$\n> a\n\nafter\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *root;
         const markdown_core_node *quote;
         const markdown_core_node *formula;
@@ -4445,8 +4359,11 @@ static int case_recovery_island_boundary(void) {
             {MARKDOWN_CORE_CONCRETE_DIRECTIVE_NAME, 0, 3, 4},
             {MARKDOWN_CORE_CONCRETE_FENCE_CLOSE, 3, 0, 3}
         };
-        markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1, &options, NULL);
+        markdown_core_document *document = markdown_core_document_new(
+            mc_sv((const uint8_t *)TEXT_UNCLOSED, sizeof(TEXT_UNCLOSED) - 1),
+            &options,
+            NULL
+        );
         const markdown_core_node *directive;
         if (!document) {
             return -1;
@@ -4460,7 +4377,8 @@ static int case_recovery_island_boundary(void) {
         failed |= expect_records("island_boundary: unclosed directive records", directive, DIR_UNCLOSED, 2);
         markdown_core_document_free(document);
 
-        document = markdown_core_document_parse((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1, &options, NULL);
+        document =
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT_CLOSED, sizeof(TEXT_CLOSED) - 1), &options, NULL);
         if (!document) {
             return -1;
         }
@@ -4478,7 +4396,7 @@ static int case_recovery_island_boundary(void) {
         static const char TEXT[] = ":::note[unclosed\n$$ trailing\n";
         static const char EXPECTED[] = ":::note[unclosed\n$$ trailing";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         if (!document) {
             return -1;
@@ -4505,7 +4423,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = ":name[unclosed rest *em*\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *root;
         markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
         if (!document) {
@@ -4532,7 +4450,7 @@ static int case_recovery_island_boundary(void) {
     {
         static const char TEXT[] = "[^l]: def\n\nout\n";
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *root;
         const markdown_core_node *definition;
         if (!document) {
@@ -4564,7 +4482,7 @@ static int case_recovery_island_boundary(void) {
             {MARKDOWN_CORE_CONCRETE_TABLE_PIPE, 0, 12, 1}
         };
         markdown_core_document *document =
-            markdown_core_document_parse((const uint8_t *)TEXT, sizeof(TEXT) - 1, &options, NULL);
+            markdown_core_document_new(mc_sv((const uint8_t *)TEXT, sizeof(TEXT) - 1), &options, NULL);
         const markdown_core_node *row;
         if (!document) {
             return -1;
@@ -4595,7 +4513,6 @@ static const concrete_case CASES[] = {
     {"inline_shape", case_inline_shape},
     {"inline_smart", case_inline_smart},
     {"inline_extension_funnel", case_inline_extension_funnel},
-    {"inline_seam_barrier", case_inline_seam_barrier},
     {"inline_equivalence", case_inline_equivalence},
     {"inline_growth_ceiling", case_inline_growth_ceiling},
     {"recovery_literal_fallback", case_recovery_literal_fallback},

@@ -17,218 +17,6 @@
         "A platform that cannot produce a required metric declares it in `unsupportedMetrics` with a reason; the gate fails if a required metric turns up with no counters at all, and fails again if an unsupported one turns up with data."
     ],
     "platforms": {
-        "c-host": {
-            "producer": "scripts/coverage-c-host.sh",
-            "format": "llvm-cov",
-            "include": [
-                "packages/markdown-core/core/",
-                "packages/markdown-core/extensions/"
-            ],
-            "exempt": [],
-            "minimumMeasuredFiles": 44,
-            "unpinned": {
-                "packages/markdown-core/core/blocks.c": {
-                    "lines": 56,
-                    "functions": 2,
-                    "branches": 82
-                },
-                "packages/markdown-core/core/buffer.c": {
-                    "lines": 10,
-                    "functions": 1,
-                    "branches": 11
-                },
-                "packages/markdown-core/core/buffer.h": {
-                    "lines": 3,
-                    "functions": 1,
-                    "branches": 0
-                },
-                "packages/markdown-core/core/case_fold_switch.inc": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 1383
-                },
-                "packages/markdown-core/core/chunk.h": {
-                    "lines": 44,
-                    "functions": 2,
-                    "branches": 54
-                },
-                "packages/markdown-core/core/delimiter.c": {
-                    "lines": 79,
-                    "functions": 0,
-                    "branches": 163
-                },
-                "packages/markdown-core/core/houdini.h": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 2
-                },
-                "packages/markdown-core/core/houdini_html_u.c": {
-                    "lines": 2,
-                    "functions": 0,
-                    "branches": 9
-                },
-                "packages/markdown-core/core/inlines.c": {
-                    "lines": 129,
-                    "functions": 2,
-                    "branches": 141
-                },
-                "packages/markdown-core/core/iterator.c": {
-                    "lines": 8,
-                    "functions": 0,
-                    "branches": 5
-                },
-                "packages/markdown-core/core/linked_list.c": {
-                    "lines": 16,
-                    "functions": 1,
-                    "branches": 6
-                },
-                "packages/markdown-core/core/main.c": {
-                    "lines": 28,
-                    "functions": 0,
-                    "branches": 23
-                },
-                "packages/markdown-core/core/map.c": {
-                    "lines": 91,
-                    "functions": 1,
-                    "branches": 69
-                },
-                "packages/markdown-core/core/markdown_core.c": {
-                    "lines": 8,
-                    "functions": 2,
-                    "branches": 2
-                },
-                "packages/markdown-core/core/markdown_core_ctype.c": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 1
-                },
-                "packages/markdown-core/core/node.c": {
-                    "lines": 345,
-                    "functions": 21,
-                    "branches": 231
-                },
-                "packages/markdown-core/core/node.h": {
-                    "lines": 3,
-                    "functions": 1,
-                    "branches": 3
-                },
-                "packages/markdown-core/core/references.c": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 2
-                },
-                "packages/markdown-core/core/scanners.c": {
-                    "lines": 6053,
-                    "functions": 0,
-                    "branches": 6155
-                },
-                "packages/markdown-core/core/utf8.c": {
-                    "lines": 54,
-                    "functions": 0,
-                    "branches": 228
-                },
-                "packages/markdown-core/extensions/adopt.c": {
-                    "lines": 16,
-                    "functions": 1,
-                    "branches": 10
-                },
-                "packages/markdown-core/extensions/arena.c": {
-                    "lines": 20,
-                    "functions": 0,
-                    "branches": 14
-                },
-                "packages/markdown-core/extensions/ast.c": {
-                    "lines": 134,
-                    "functions": 1,
-                    "branches": 148
-                },
-                "packages/markdown-core/extensions/autolink.c": {
-                    "lines": 33,
-                    "functions": 0,
-                    "branches": 49
-                },
-                "packages/markdown-core/extensions/core-extensions.c": {
-                    "lines": 9,
-                    "functions": 1,
-                    "branches": 4
-                },
-                "packages/markdown-core/extensions/cross_reference.c": {
-                    "lines": 19,
-                    "functions": 1,
-                    "branches": 33
-                },
-                "packages/markdown-core/extensions/delta.c": {
-                    "lines": 73,
-                    "functions": 0,
-                    "branches": 68
-                },
-                "packages/markdown-core/extensions/directive.c": {
-                    "lines": 370,
-                    "functions": 11,
-                    "branches": 292
-                },
-                "packages/markdown-core/extensions/ext_scanners.c": {
-                    "lines": 253,
-                    "functions": 0,
-                    "branches": 175
-                },
-                "packages/markdown-core/extensions/ext_scanners.h": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 1
-                },
-                "packages/markdown-core/extensions/footnote.c": {
-                    "lines": 26,
-                    "functions": 0,
-                    "branches": 56
-                },
-                "packages/markdown-core/extensions/formula.c": {
-                    "lines": 87,
-                    "functions": 3,
-                    "branches": 68
-                },
-                "packages/markdown-core/extensions/incremental.c": {
-                    "lines": 251,
-                    "functions": 1,
-                    "branches": 318
-                },
-                "packages/markdown-core/extensions/inline_util.h": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 9
-                },
-                "packages/markdown-core/extensions/lookups.c": {
-                    "lines": 16,
-                    "functions": 0,
-                    "branches": 7
-                },
-                "packages/markdown-core/extensions/reference.c": {
-                    "lines": 9,
-                    "functions": 0,
-                    "branches": 11
-                },
-                "packages/markdown-core/extensions/session.c": {
-                    "lines": 56,
-                    "functions": 1,
-                    "branches": 47
-                },
-                "packages/markdown-core/extensions/strikethrough.c": {
-                    "lines": 12,
-                    "functions": 1,
-                    "branches": 13
-                },
-                "packages/markdown-core/extensions/table.c": {
-                    "lines": 82,
-                    "functions": 5,
-                    "branches": 70
-                },
-                "packages/markdown-core/extensions/tasklist.c": {
-                    "lines": 16,
-                    "functions": 2,
-                    "branches": 15
-                }
-            }
-        },
         "swift-macos": {
             "producer": "scripts/coverage-swift-macos.sh",
             "format": "llvm-cov",
@@ -242,11 +30,11 @@
                     "reason": "llvm-cov emits no branch regions for Swift: SwiftPM's coverage instrumentation produces line, function, and region counters only. Line and function coverage carry this platform's gate until the toolchain grows branch support."
                 }
             ],
-            "minimumMeasuredFiles": 36,
+            "minimumMeasuredFiles": 34,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 1,
-                    "functions": 1
+                    "lines": 17,
+                    "functions": 5
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
                     "lines": 1,
@@ -269,27 +57,11 @@
                     "functions": 3
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
-                    "lines": 3,
+                    "lines": 13,
                     "functions": 1
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/FootnoteQueries.swift": {
-                    "lines": 4,
-                    "functions": 2
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/MarkupSession.swift": {
-                    "lines": 36,
-                    "functions": 8
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Session/ScopeResolver.swift": {
-                    "lines": 27,
-                    "functions": 7
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift": {
                     "lines": 2,
-                    "functions": 1
-                },
-                "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupWalker.swift": {
-                    "lines": 1,
                     "functions": 1
                 }
             }
@@ -301,7 +73,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 41,
+            "minimumMeasuredFiles": 40,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/BlockQuote.kt": {
                     "lines": 2,
@@ -318,10 +90,20 @@
                     "functions": 2,
                     "branches": 0
                 },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Commit.kt": {
+                    "lines": 20,
+                    "functions": 9,
+                    "branches": 26
+                },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/CrossLink.kt": {
                     "lines": 2,
                     "functions": 2,
                     "branches": 0
+                },
+                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Diagnostic.kt": {
+                    "lines": 3,
+                    "functions": 3,
+                    "branches": 6
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Directive.kt": {
                     "lines": 2,
@@ -334,14 +116,14 @@
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/DirectiveLabel.kt": {
-                    "lines": 2,
-                    "functions": 2,
+                    "lines": 1,
+                    "functions": 1,
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt": {
-                    "lines": 7,
-                    "functions": 5,
-                    "branches": 9
+                    "lines": 2,
+                    "functions": 2,
+                    "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Embed.kt": {
                     "lines": 2,
@@ -419,8 +201,8 @@
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/ParseException.kt": {
-                    "lines": 0,
-                    "functions": 3,
+                    "lines": 6,
+                    "functions": 5,
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/SoftBreak.kt": {
@@ -453,21 +235,6 @@
                     "functions": 2,
                     "branches": 0
                 },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/Commit.kt": {
-                    "lines": 16,
-                    "functions": 6,
-                    "branches": 14
-                },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/FootnoteQueries.kt": {
-                    "lines": 10,
-                    "functions": 2,
-                    "branches": 16
-                },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session/MarkupSession.kt": {
-                    "lines": 9,
-                    "functions": 4,
-                    "branches": 7
-                },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt": {
                     "lines": 0,
                     "functions": 2,
@@ -479,9 +246,9 @@
                     "branches": 1
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
-                    "lines": 5,
+                    "lines": 3,
                     "functions": 0,
-                    "branches": 29
+                    "branches": 14
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt": {
                     "lines": 3,
@@ -506,8 +273,13 @@
                 }
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 15,
+            "minimumMeasuredFiles": 11,
             "unpinned": {
+                "packages/es-markdown-core/src/document.ts": {
+                    "lines": 3,
+                    "functions": 0,
+                    "branches": 2
+                },
                 "packages/es-markdown-core/src/markup-dumper.ts": {
                     "lines": 0,
                     "functions": 1,
@@ -523,48 +295,28 @@
                     "functions": 1,
                     "branches": 2
                 },
-                "packages/es-markdown-core/src/runtime/c-session.ts": {
-                    "lines": 15,
-                    "functions": 0,
-                    "branches": 15
+                "packages/es-markdown-core/src/parse-error.ts": {
+                    "lines": 5,
+                    "functions": 2,
+                    "branches": 1
+                },
+                "packages/es-markdown-core/src/runtime/c-document.ts": {
+                    "lines": 20,
+                    "functions": 1,
+                    "branches": 12
                 },
                 "packages/es-markdown-core/src/runtime/native.ts": {
                     "lines": 8,
                     "functions": 4,
                     "branches": 3
                 },
-                "packages/es-markdown-core/src/runtime/parser.ts": {
-                    "lines": 2,
-                    "functions": 0,
-                    "branches": 1
-                },
-                "packages/es-markdown-core/src/session/markup-session.ts": {
-                    "lines": 20,
-                    "functions": 0,
-                    "branches": 18
-                },
-                "packages/es-markdown-core/src/session/relink.ts": {
-                    "lines": 17,
-                    "functions": 1,
-                    "branches": 18
-                },
-                "packages/es-markdown-core/src/session/scope-resolver.ts": {
-                    "lines": 5,
-                    "functions": 2,
-                    "branches": 0
-                },
-                "packages/es-markdown-core/src/session/snapshot.ts": {
-                    "lines": 4,
-                    "functions": 0,
-                    "branches": 3
-                },
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 47,
-                    "functions": 1,
-                    "branches": 31
+                    "lines": 56,
+                    "functions": 4,
+                    "branches": 26
                 }
             }
         }
     },
-    "purpose": "This gate exists to prove that the incremental-canonical-AST rewrite does not change source -> canonical AST output. It is not a code-quality score and must never be used to record current behaviour as acceptable. Producers run only the suites that assert parse output, so a covered branch is one a golden assertion would catch changing, and an uncovered branch is behaviour the rewrite can alter silently."
+    "purpose": "This gate measures which BINDING code a golden assertion pins. It is not a code-quality score and must never be used to record current behaviour as acceptable. Producers run only the suites that assert parse output, so a covered branch is one a golden assertion would catch changing, and an uncovered branch is behaviour a rewrite can alter silently. The c-host platform is gone: it ratcheted line and branch counts per C file, and those files are the ones a Rust engine replaces, so the ledger could not outlive the rewrite it was meant to protect. What protects the engine across that rewrite is the source-to-AST corpus — spec, pathological, entity, extension-order, equivalence, fuzz, and both parity oracles."
 }

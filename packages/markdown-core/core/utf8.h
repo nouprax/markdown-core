@@ -18,9 +18,6 @@ MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_iterate(const uint8_t *str, markdown_core_bufsize str_len, int32_t *dst);
 
 MARKDOWN_CORE_EXPORT
-void markdown_core_utf8proc_check(markdown_core_strbuf *dest, const uint8_t *line, markdown_core_bufsize size);
-
-MARKDOWN_CORE_EXPORT
 int markdown_core_utf8proc_is_space(int32_t uc);
 
 MARKDOWN_CORE_EXPORT

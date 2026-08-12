@@ -14,7 +14,7 @@ import Testing
                 + ":::container[Title]{kind=demo}\nBody\n:::\n",
             "$$\ny\n$$\n",
         ]
-        let documents = try sources.map { try Document.parse($0) }
+        let documents = try sources.map { try Document($0) }
         let nodes = documents.flatMap(flatten)
         let kinds = Set(nodes.map(kindName))
         let expected: Set<String> = [
@@ -27,13 +27,13 @@ import Testing
         ]
         #expect(kinds == expected)
         #expect(
-            documents.allSatisfy { $0.scope(of: $0).start == Position(line: 1, column: 1) }
+            documents.allSatisfy { $0.scope.start == Position(line: 1, column: 1) }
         )
     }
 
     @Test("field and nullability mapping uses Swift-native types")
     func fieldsAndNullability() throws {
-        let document = try Document.parse(
+        let document = try Document(
             "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n"
         )
         let ordered = try #require(document.content[0] as? MarkdownCore.List)
@@ -56,7 +56,7 @@ import Testing
 
     @Test("code carries its placement mode and code blocks their fence state")
     func codePlacementModes() throws {
-        let document = try Document.parse("`span`\n\n```swift\nbody\n```\n\n    indented\n")
+        let document = try Document("`span`\n\n```swift\nbody\n```\n\n    indented\n")
         let paragraph = try #require(document.content[0] as? Paragraph)
         let code = try #require(paragraph.content[0] as? Code)
         #expect(code.mode == .embedded)
@@ -70,7 +70,7 @@ import Testing
 
     @Test("directives partition typed label and content; nil and empty labels stay distinct")
     func directiveLabelPartition() throws {
-        let document = try Document.parse(
+        let document = try Document(
             ":::note[*Title*]{kind=demo}\nBody\n:::\n\n:::bare\nBody\n:::\n\n"
                 + "Inline :badge[label] then :plain and :empty[].\n"
         )
@@ -95,7 +95,7 @@ import Testing
         #expect(empty.label != nil)
         #expect(empty.label?.content.isEmpty == true)
         #expect(
-            document.scope(of: try #require(empty.label))
+            (try #require(empty.label)).scope
                 == Scope(
                     start: Position(line: 9, column: 44),
                     end: Position(line: 9, column: 45)
@@ -107,53 +107,48 @@ import Testing
     func sharedCanonicalAST() throws {
         let manifest = try loadManifest()
         for testCase in manifest.cases {
-            let document = try Document.parse(testCase.source, options: testCase.parseOptions.value)
+            let document = try Document(testCase.source, options: testCase.parseOptions.value)
             #expect(MarkupDumper.dump(document) == testCase.expected, Comment(rawValue: testCase.name))
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
 
-    @Test("sessions replay the manifest corpus to dump equality per commit")
-    func sessionEquivalenceReplay() throws {
+    @Test("edits replay the manifest corpus to dump equality per revision")
+    func editEquivalenceReplay() throws {
         let manifest = try loadManifest()
         for testCase in manifest.cases {
-            let session = try MarkupSession(options: testCase.parseOptions.value)
+            var document = try Document("", options: testCase.parseOptions.value)
             var replayed = ""
             var previous: [UInt64: UInt64] = [:]
             for chunk in lineChunks(testCase.source) {
                 replayed += chunk
-                try session.append(chunk)
-                let commit = try session.commit()
+                let commit = try document.edit(replayed)
+                document = commit.document
 
-                // Equivalence: the incremental snapshot dumps byte-equal to a
-                // one-shot parse of the same prefix.
-                let reference = try Document.parse(replayed, options: testCase.parseOptions.value)
-                #expect(commit.document.dump() == reference.dump(), Comment(rawValue: testCase.name))
+                // Equivalence: the edited document dumps byte-equal to a
+                // one-shot parse of the same text.
+                let reference = try Document(replayed, options: testCase.parseOptions.value)
+                #expect(document.dump() == reference.dump(), Comment(rawValue: testCase.name))
 
-                // Delta-mirror integrity: every node outside the
-                // delta kept its exact revision, removed ids are gone,
-                // and the four arrays are disjoint.
+                // Delta integrity: no id is named twice, every node the delta
+                // does not name kept its exact revision, and every retired id
+                // is gone from the tree.
                 let delta = commit.delta
-                let touched = [delta.added, delta.changed, delta.bubbled]
-                    .joined().map(\.rawValue)
-                #expect(
-                    touched.count + delta.removed.count
-                        == Set(touched).union(delta.removed.map(\.rawValue)).count
-                )
+                let named = Set(delta.diffs.map(\.markup.rawValue))
+                #expect(named.count == delta.diffs.count, Comment(rawValue: testCase.name))
                 var current: [UInt64: UInt64] = [:]
-                let touchedSet = Set(touched)
-                for node in flatten(commit.document) {
+                for node in flatten(document) {
                     current[node.id.rawValue] = node.revision
-                    if !touchedSet.contains(node.id.rawValue) {
+                    if !named.contains(node.id.rawValue) {
                         #expect(previous[node.id.rawValue] == node.revision)
                     }
                 }
-                for removed in delta.removed {
-                    #expect(current[removed.rawValue] == nil)
+                for retired in delta.diffs where retired.parts.isRetired {
+                    #expect(current[retired.markup.rawValue] == nil)
                 }
                 previous = current
             }
-            #expect(session.document.dump() == testCase.expected, Comment(rawValue: testCase.name))
+            #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
 }

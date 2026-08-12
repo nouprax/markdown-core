@@ -1,37 +1,38 @@
 import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
-import type { Scope } from "../values.js";
+import type { Diagnostic } from "./diagnostic.js";
+import type { Commit } from "./commit.js";
+import type { ParseOptions } from "../parse-options.js";
 
 export interface Document extends MarkupBase<"document"> {
     readonly content: readonly Markup[];
+    /** The options this document and its whole series were parsed under. */
+    readonly options: Readonly<Required<ParseOptions>>;
+    /** Everything an editor should underline, in source order. Empty for
+     * almost every document; see `DiagnosticCode`. */
+    readonly diagnostics: readonly Diagnostic[];
     /**
-     * Resolves the absolute scope of `node` within this snapshot, O(1) after
-     * the snapshot's one-time materialization.
+     * This document's node for `id`, or null when no node has that identity
+     * here. An identity from another parse is null, not a throw: a caller
+     * holding an id from a superseded revision is asking exactly this.
+     */
+    readonly node: (id: Markup["id"]) => Markup | null;
+    /**
+     * Hands this document new text and returns the document that text
+     * describes, together with what changed.
      *
-     * A one-shot `Document.parse` result always answers. A session snapshot
-     * materializes its scopes on first use (of `scope`, a scopeful
-     * `MarkupWalker` event walk, or `dump`) while it is the session's current
-     * snapshot and is self-contained afterwards — including after the
-     * session advances or is closed. Requesting a scope from a snapshot that
-     * was superseded before any of those ran is a programmer error, as is
-     * passing a node that does not belong to this snapshot: one whose id this
-     * snapshot does not contain, or a stale value whose revision this
-     * snapshot has superseded.
-     * (An unchanged value shared across snapshots resolves against any of
-     * them — equal nodes may sit at different absolute positions in
-     * different snapshots.)
+     * SUPERSEDES the receiver: the native parse moves to the successor, so
+     * this document must not be edited again. Its already-extracted values,
+     * scopes, and diagnostics stay valid forever, because they are values.
      */
-    readonly scope: (node: Markup) => Scope;
+    readonly edit: (markdown: string) => Commit;
     /**
-     * Resolves and caches every scope of this snapshot now, making the
-     * retained value self-contained regardless of later commits or session
-     * close — the explicit form of the materialization that `scope`, a
-     * scopeful event walk, or `dump` would perform implicitly on first use.
-     * Call while the snapshot is current (before the owning session's next
-     * successful commit). Idempotent; a one-shot `Document.parse` result is
-     * always materialized.
+     * Releases the native parse. Idempotent, and unnecessary after `edit`,
+     * which hands the parse to the successor. Every value this document
+     * already produced stays usable afterwards, because none of them borrow
+     * from the parse.
      */
-    readonly materialize: () => void;
+    readonly close: () => void;
     /** Returns the canonical diagnostic dump for this document. */
     readonly dump: () => string;
 }

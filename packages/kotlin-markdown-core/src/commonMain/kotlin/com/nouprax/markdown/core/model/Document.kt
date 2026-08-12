@@ -1,140 +1,120 @@
-@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmName("MarkdownCoreKt")
 @file:kotlin.jvm.JvmMultifileClass
+@file:OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)
 
 package com.nouprax.markdown.core
 
-import kotlin.concurrent.atomics.AtomicReference
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.AtomicLong
 import kotlin.jvm.JvmOverloads
-import kotlin.jvm.JvmStatic
-import kotlin.jvm.JvmSynthetic
 
-private class ScopeEntry(
+/** Everything one decoded payload settles, so that a public constructor can
+ * delegate to the private one in a single expression. */
+private class Built(
+    val handle: CDocumentHandle,
+    val id: MarkupID,
     val revision: ULong,
     val scope: Scope,
+    val options: ParseOptions,
+    val content: kotlin.collections.List<Markup>,
+    val diagnostics: kotlin.collections.List<Diagnostic>,
+    val index: Map<ULong, Markup>,
 )
 
-private sealed interface ResolverState
-
-private class LiveResolver(
-    val session: CSessionHandle,
-) : ResolverState
-
-private class MaterializedResolver(
-    val entries: Map<ULong, ScopeEntry>,
-) : ResolverState
-
-private object DetachedResolver : ResolverState
-
-private object MaterializingResolver : ResolverState
-
-@get:JvmSynthetic
-@set:JvmSynthetic
-internal var scopeMaterializeProbe: (() -> Unit)? = null
+private fun open(
+    markdown: String,
+    options: ParseOptions,
+): Built =
+    decodeWireOpen(cOpen(markdown.encodeToByteArray(), options)) {
+        handle,
+        id,
+        revision,
+        scope,
+        content,
+        index,
+        diagnostics,
+        ->
+        Built(handle, id, revision, scope, options, content, diagnostics, index)
+    }
 
 /**
- * Resolves absolute scopes for one snapshot.
+ * One parsed Markdown document: the root of the canonical value tree, the
+ * owner of the native parse it came from, and the only entry point.
  *
- * Session snapshots do not store positions on node values: deltas
- * deliberately omit pure positional shifts, so a snapshot resolves every
- * scope against the session's native tree the first time one is requested
- * (one payload, cached) and is self-contained from then on. The owning
- * session detaches the resolver before the tree changes; a resolver that was
- * detached before it ever materialized can no longer answer.
+ * ```kotlin
+ * Document("# Title").use { document ->
+ *     val commit = document.edit("# Renamed")
+ * }
+ * ```
  *
- * Each cached entry keeps the node's revision at this snapshot, so a stale
- * value — same id, superseded revision — is rejected instead of silently
- * pairing old fields with this snapshot's position.
+ * There is no session type. A document is created from text and options;
+ * [edit] hands it new text and returns the next document with the delta
+ * between them. Options are fixed for a document's whole series — changing
+ * what the parser means is a new `Document`, not an edit, and there is no
+ * delta to be had across it.
+ *
+ * The node values are ordinary immutable values with no reference back here:
+ * hold them, put them in a view model, hand them to another thread. What this
+ * class owns is the native parse, which [edit] needs in order to keep
+ * identities stable across revisions — and which [close] releases. A document
+ * that is neither closed nor edited is released once it becomes unreachable,
+ * but that is a backstop, not the contract.
  */
-@OptIn(ExperimentalAtomicApi::class)
-private class ScopeResolver(
-    initial: ResolverState,
-) {
-    // LiveResolver (pending) | MaterializingResolver (one reader owns the
-    // native scopes() call) | MaterializedResolver | DetachedResolver.
-    // The materializing state makes the native call atomic with the owning
-    // document's detach: a writer that wants to commit or close spins until
-    // the reader publishes its table, so the native session can never be
-    // mutated or freed under a reader.
-    private val state = AtomicReference(initial)
-
-    fun detach() {
-        while (true) {
-            when (val current = state.load()) {
-                is LiveResolver -> {
-                    if (state.compareAndSet(current, DetachedResolver)) {
-                        return
-                    }
-                }
-
-                MaterializingResolver -> {
-                    materializeWaitHint()
-                }
-
-                DetachedResolver, is MaterializedResolver -> {
-                    return
-                }
-            }
-        }
-    }
-
-    fun reattach(session: CSessionHandle) {
-        state.compareAndSet(DetachedResolver, LiveResolver(session))
-    }
-
-    /** Forces the one-time materialization now. Zero is never a valid id, so
-     * this only builds the table. */
-    fun materialize() {
-        entry(0UL)
-    }
-
-    fun entry(rawValue: ULong): ScopeEntry? {
-        while (true) {
-            when (val current = state.load()) {
-                is LiveResolver -> {
-                    if (state.compareAndSet(current, MaterializingResolver)) {
-                        val entries =
-                            try {
-                                scopeMaterializeProbe?.invoke()
-                                decodeWireScopeMap(current.session.scopes()) { revision, scope ->
-                                    ScopeEntry(revision, scope)
-                                }
-                            } catch (failure: Throwable) {
-                                // The snapshot is still current: hand the
-                                // session back so another reader may retry,
-                                // and let a spinning detach reclaim it.
-                                state.store(current)
-                                throw failure
-                            }
-                        state.store(MaterializedResolver(entries))
-                        return entries[rawValue]
-                    }
-                }
-
-                MaterializingResolver -> {
-                    materializeWaitHint()
-                }
-
-                DetachedResolver -> {
-                    error(
-                        "scope requested from a superseded snapshot that never resolved scopes while it was current",
-                    )
-                }
-
-                is MaterializedResolver -> {
-                    return current.entries[rawValue]
-                }
-            }
-        }
-    }
-}
-
 public class Document private constructor(
-    override val id: MarkupID,
-    override val revision: ULong,
-    public val content: kotlin.collections.List<Markup>,
-    private val resolver: ScopeResolver,
-) : Markup {
+    private val built: Built,
+) : Markup,
+    AutoCloseable {
+    /** Parses [markdown]. */
+    @JvmOverloads
+    public constructor(markdown: String, options: ParseOptions = ParseOptions()) : this(open(markdown, options))
+
+    /** The native parse, or zero once something has taken it. Both paths that
+     * END the parse — [close] and the platform's reclaim — go through this
+     * one exchange, and only the first wins. [edit] is not one of them: it
+     * READS the parse and leaves it here. */
+    private val handle = AtomicLong(built.handle)
+
+    // Held so the platform's reclaim registration outlives this constructor;
+    // see attachNativeCleanup. Never read.
+    @Suppress("unused")
+    private val cleanup: Any? =
+        run {
+            // The action captures the handle slot and NOTHING else: a cleanup
+            // that could reach this document would keep it reachable forever.
+            val slot = handle
+            attachNativeCleanup(this) {
+                val owned = slot.exchange(0L)
+                if (owned != 0L) {
+                    owned.release()
+                }
+            }
+        }
+
+    override val id: MarkupID get() = built.id
+
+    override val revision: ULong get() = built.revision
+
+    override val scope: Scope get() = built.scope
+
+    /** The options this document and its whole series were parsed under. */
+    public val options: ParseOptions get() = built.options
+
+    /** The document's top-level blocks in source order. */
+    public val content: kotlin.collections.List<Markup> get() = built.content
+
+    /** Everything an editor should underline, in source order. Empty for
+     * almost every document; see [DiagnosticCode]. */
+    public val diagnostics: kotlin.collections.List<Diagnostic> get() = built.diagnostics
+
+    /**
+     * Per-series random salt; nodes from different parses never compare equal
+     * even when their raw ids collide numerically.
+     */
+    public val series: ULong get() = id.series
+
+    /** [series] as a bit-preserving signed value: the Java view of the
+     * unsigned accessor, whose mangled name Java sources cannot write. */
+    public fun seriesBits(): Long = series.toLong()
+
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
 
     override fun equals(other: Any?): Boolean = markupEquals(this, other)
@@ -142,44 +122,50 @@ public class Document private constructor(
     override fun hashCode(): Int = markupHashCode(this)
 
     /**
-     * Resolves the absolute scope of [node] within this snapshot, O(1) after
-     * the snapshot's one-time materialization.
+     * Hands this document new text and returns the document that text
+     * describes, together with what changed.
      *
-     * A one-shot [parse] result always answers. A session snapshot
-     * materializes its scopes on first use (of [scope], a scopeful
-     * [MarkupWalker] event walk, or [dump]) while it is the session's current
-     * snapshot and is self-contained afterwards — including after the
-     * session advances or is closed. Requesting a scope from a snapshot that
-     * was superseded before any of those ran is a programmer error, as is
-     * passing a node that does not belong to this snapshot: one whose id this
-     * snapshot does not contain, or a stale value whose revision this
-     * snapshot has superseded.
-     * (An unchanged value shared across snapshots resolves against any of
-     * them — equal nodes may sit at different absolute positions in
-     * different snapshots.)
+     * Reads the receiver and takes nothing from it: this document stays
+     * usable and may be edited again. Editing it twice gives two lines of
+     * descent, told apart by their revisions — and, like nodes from two
+     * separate parses, nodes from two lines are not comparable.
      */
-    public fun scope(node: Markup): Scope {
-        require(node.id.lineage == id.lineage) { "node belongs to a different session or parse" }
-        val entry =
-            requireNotNull(resolver.entry(node.id.rawValue)) { "node does not belong to this snapshot" }
-        check(entry.revision == node.revision) {
-            "node value is from a different revision of this snapshot's session"
-        }
-        return entry.scope
+    public fun edit(markdown: String): Commit {
+        val owned = handle.load()
+        check(owned != 0L) { "the document is closed" }
+        val carriedOptions = options
+        val (successor, delta) =
+            decodeWireEdit(owned.edit(markdown.encodeToByteArray())) {
+                handle,
+                id,
+                revision,
+                scope,
+                content,
+                index,
+                diagnostics,
+                ->
+                Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
+            }
+        return Commit(successor, delta)
     }
 
     /**
-     * Resolves and caches every scope of this snapshot now, making the
-     * retained value self-contained regardless of later commits or session
-     * close — the explicit form of the materialization that [scope], a
-     * scopeful event walk, or [dump] would perform implicitly on first use.
-     * Call while the snapshot is current (before the owning session's next
-     * successful commit). Idempotent; a one-shot [parse] result is always
-     * materialized.
+     * This document's node for [id], or null when no node has that identity
+     * here. An identity from another parse is null, not a failure: a caller
+     * holding an id from a superseded revision is asking exactly this.
      */
-    public fun materialize() {
-        resolver.materialize()
-    }
+    public fun node(id: MarkupID): Markup? =
+        when {
+            id.series != this.id.series -> null
+
+            // The root answers for itself. It is a Markup like any other, and
+            // a delta names it whenever the top-level block list changes, so a
+            // consumer reconciling by id reaches this call with the document's
+            // own id — while the mirror holds the descendants, not the root.
+            id.rawValue == this.id.rawValue -> this
+
+            else -> built.index[id.rawValue]
+        }
 
     /** Returns the canonical diagnostic dump for this document. */
     public fun dump(): String = MarkupDumper.dump(this)
@@ -188,45 +174,16 @@ public class Document private constructor(
      * [node], with the subtree as scope origin. */
     public fun dump(node: Markup): String = MarkupDumper.dump(this, node)
 
-    @JvmSynthetic
-    internal fun detachResolver() {
-        resolver.detach()
-    }
-
-    @JvmSynthetic
-    internal fun reattachResolver(session: CSessionHandle) {
-        resolver.reattach(session)
-    }
-
-    public companion object {
-        @JvmSynthetic
-        internal fun unresolved(
-            id: MarkupID,
-            revision: ULong,
-            content: kotlin.collections.List<Markup>,
-        ): Document = Document(id, revision, content, ScopeResolver(DetachedResolver))
-
-        @JvmSynthetic
-        internal fun live(
-            id: MarkupID,
-            revision: ULong,
-            content: kotlin.collections.List<Markup>,
-            session: CSessionHandle,
-        ): Document = Document(id, revision, content, ScopeResolver(LiveResolver(session)))
-
-        /** Parses [source] in one shot into a self-contained snapshot;
-         * statically callable from Java as `Document.parse(...)`. */
-        @JvmStatic
-        @JvmOverloads
-        public fun parse(
-            source: String,
-            options: ParseOptions = ParseOptions(),
-        ): Document =
-            decodeWireDocument(
-                cParse(source.encodeToByteArray(), options),
-                ::ScopeEntry,
-            ) { id, revision, content, entries ->
-                Document(id, revision, content, ScopeResolver(MaterializedResolver(entries)))
-            }
+    /**
+     * Releases the native parse. Idempotent, and unnecessary after [edit],
+     * which hands the parse to the successor. Every value this document
+     * already produced — its content, scopes, diagnostics, and dump — stays
+     * usable afterwards, because none of them borrow from the parse.
+     */
+    override fun close() {
+        val owned = handle.exchange(0L)
+        if (owned != 0L) {
+            owned.release()
+        }
     }
 }

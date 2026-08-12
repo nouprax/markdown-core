@@ -1,11 +1,11 @@
-/* Session equivalence suite: an incrementally edited session must always
+/* Document equivalence suite: an incrementally edited document must always
  * dump byte-identically to a one-shot parse of the same final text, and its
  * deltas must account for every observable node change.
  *
- * Every replay drives the public facade only, through the shared session
- * replay harness (support/session_replay.h): a shadow text buffer receives
- * the same edits as the session, so each commit can be checked against
- * markdown_core_document_parse of the shadow bytes; a shadow id->revision
+ * Every replay drives the public facade only, through the shared document
+ * replay harness (support/edit_replay.h): a shadow text buffer receives
+ * the same edits as the document, so each commit can be checked against
+ * markdown_core_document_new of the shadow bytes; a shadow id->revision
  * mirror is maintained purely from deltas and compared against a fresh
  * walk after every commit, which catches adoption bugs that dumps cannot
  * see.
@@ -21,7 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "session_replay.h"
+#include "edit_replay.h"
 #include "test_support.h"
 
 #include <markdown_core.h>
@@ -47,15 +47,15 @@ static void eq_report(void *user, const char *context, const char *message) {
     eq_fail(context, message);
 }
 
-static int eq_open(sr_replay *replay, const char *context, const markdown_core_parse_options *options) {
-    return sr_replay_open(replay, context, options, eq_report, NULL);
+static int eq_open(er_replay *replay, const char *context, const markdown_core_parse_options *options) {
+    return er_replay_open(replay, context, options, eq_report, NULL);
 }
 
-static int eq_replay_append_commit(sr_replay *replay, const uint8_t *bytes, size_t length) {
-    if (sr_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
+static int eq_replay_append_commit(er_replay *replay, const uint8_t *bytes, size_t length) {
+    if (er_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
         return -1;
     }
-    return sr_replay_commit(replay);
+    return er_replay_commit(replay);
 }
 
 /* --- replays over one input --------------------------------------------- */
@@ -66,7 +66,7 @@ static int eq_replay_per_line(
     size_t length,
     const markdown_core_parse_options *options
 ) {
-    sr_replay replay;
+    er_replay replay;
     size_t offset = 0;
     int result = -1;
 
@@ -87,12 +87,12 @@ static int eq_replay_per_line(
         offset = line_end;
     }
     /* Empty inputs still must commit cleanly. */
-    if (length == 0 && sr_replay_commit(&replay) != 0) {
+    if (length == 0 && er_replay_commit(&replay) != 0) {
         goto done;
     }
     result = 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -102,7 +102,7 @@ static int eq_replay_per_byte(
     size_t length,
     const markdown_core_parse_options *options
 ) {
-    sr_replay replay;
+    er_replay replay;
     size_t offset;
     int result = -1;
 
@@ -116,7 +116,7 @@ static int eq_replay_per_byte(
     }
     result = 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -137,7 +137,7 @@ static int eq_replay_random_edits(
     int inserted[EQ_MAX_CHUNKS] = {0};
     size_t chunk_count;
     size_t i;
-    sr_replay replay;
+    er_replay replay;
     int result = -1;
 
     chunk_count = length ? 1 + (size_t)(ts_prng_next(prng) % EQ_MAX_CHUNKS) : 0;
@@ -182,7 +182,7 @@ static int eq_replay_random_edits(
                 position += boundaries[k + 1] - boundaries[k];
             }
         }
-        if (sr_replay_edit(
+        if (er_replay_edit(
                 &replay,
                 position,
                 position,
@@ -193,11 +193,11 @@ static int eq_replay_random_edits(
         }
         inserted[chunk] = 1;
         /* Commit roughly every other insertion to cover coalesced edits. */
-        if ((ts_prng_next(prng) & 1) && sr_replay_commit(&replay) != 0) {
+        if ((ts_prng_next(prng) & 1) && er_replay_commit(&replay) != 0) {
             goto done;
         }
     }
-    if (sr_replay_commit(&replay) != 0) {
+    if (er_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -205,10 +205,10 @@ static int eq_replay_random_edits(
     {
         static const uint8_t noise[] = "*[zz](x\n> ~~q~~\n";
         size_t position = replay.shadow.length ? (size_t)(ts_prng_next(prng) % replay.shadow.length) : 0;
-        if (sr_replay_edit(&replay, position, position, noise, sizeof(noise) - 1) != 0 ||
-            sr_replay_commit(&replay) != 0 ||
-            sr_replay_edit(&replay, position, position + sizeof(noise) - 1, NULL, 0) != 0 ||
-            sr_replay_commit(&replay) != 0) {
+        if (er_replay_edit(&replay, position, position, noise, sizeof(noise) - 1) != 0 ||
+            er_replay_commit(&replay) != 0 ||
+            er_replay_edit(&replay, position, position + sizeof(noise) - 1, NULL, 0) != 0 ||
+            er_replay_commit(&replay) != 0) {
             goto done;
         }
     }
@@ -219,7 +219,7 @@ static int eq_replay_random_edits(
     }
     result = 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -397,7 +397,7 @@ static int case_link_ref_edits(void) {
                                   "[label]: /first \"one\"\n"
                                   "[label]: /second \"two\"\n";
     static const char early_definition[] = "[label]: /zero\n\n";
-    sr_replay replay;
+    er_replay replay;
     markdown_core_parse_options options;
     int result = -1;
     size_t position;
@@ -408,52 +408,52 @@ static int case_link_ref_edits(void) {
     }
 
     /* Duplicate labels: the first definition wins. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Deleting the winning definition re-elects the later duplicate. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]: /first") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position + strlen("[label]: /first \"one\"\n"), NULL, 0) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position + strlen("[label]: /first \"one\"\n"), NULL, 0) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A definition inserted earlier in the document takes the label over. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)early_definition, sizeof(early_definition) - 1) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)early_definition, sizeof(early_definition) - 1) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Editing the winning definition's destination re-resolves the links. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "/zero") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position + strlen("/zero"), (const uint8_t *)"/elsewhere", 10) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position + strlen("/zero"), (const uint8_t *)"/elsewhere", 10) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A definition for the second label appears after its reference. */
-    if (sr_replay_edit(
+    if (er_replay_edit(
             &replay,
             replay.shadow.length,
             replay.shadow.length,
             (const uint8_t *)"\n[other]: /other\n",
             17
         ) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Removing every definition degrades the references to literal text. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[label]:") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     result = failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -468,7 +468,7 @@ static int case_footnote_edits(void) {
     static const char initial[] = "alpha[^a] then beta[^b] then beta again[^b]\n"
                                   "\n"
                                   "[^b]: b body\n";
-    sr_replay replay;
+    er_replay replay;
     markdown_core_parse_options options;
     int result = -1;
     size_t position;
@@ -479,8 +479,8 @@ static int case_footnote_edits(void) {
     }
 
     /* [^a] is unresolved; [^b] is number 1 with two references. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -491,27 +491,27 @@ static int case_footnote_edits(void) {
     }
 
     /* An early reference to a brand-new label shifts every later ordinal. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)"first[^c]\n\n[^c]: c body\n\n", 25) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)"first[^c]\n\n[^c]: c body\n\n", 25) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* A duplicate definition earlier in the document takes the label over. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)"[^b]: usurper\n\n", 15) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)"[^b]: usurper\n\n", 15) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Deleting a definition flips its references back to unresolved; the
      * definition node itself stays only if its text stays. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[^a]: a body") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, replay.shadow.length, NULL, 0) != 0 || er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     result = failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -966,7 +966,7 @@ static const eq_script EQ_BOUNDARY_SCRIPTS[] = {
 };
 
 static int eq_run_script(const eq_script *script) {
-    sr_replay replay;
+    er_replay replay;
     markdown_core_parse_options options;
     size_t i;
     int result = -1;
@@ -975,8 +975,8 @@ static int eq_run_script(const eq_script *script) {
     if (eq_open(&replay, script->name, &options) != 0) {
         return -1;
     }
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)script->initial, strlen(script->initial)) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)script->initial, strlen(script->initial)) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
     for (i = 0; i < script->step_count; i++) {
@@ -996,20 +996,20 @@ static int eq_run_script(const eq_script *script) {
         if (delete_length == (size_t)-1) {
             delete_length = replay.shadow.length - position;
         }
-        if (sr_replay_edit(
+        if (er_replay_edit(
                 &replay,
                 position,
                 position + delete_length,
                 (const uint8_t *)step->insert,
                 strlen(step->insert)
             ) != 0 ||
-            sr_replay_commit(&replay) != 0) {
+            er_replay_commit(&replay) != 0) {
             goto done;
         }
     }
     result = 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 
@@ -1026,7 +1026,7 @@ static int case_boundary_edits(void) {
 /* Scripted edits inside a cluster of link reference definitions.
  *
  * `link_ref_edits` drives one label's duplicates; this drives a *population*
- * of distinct labels, which is what the session's definition index is for.
+ * of distinct labels, which is what the document's definition index is for.
  * Three shapes the other equivalence cases never produce:
  *
  *   - inserting a definition between two adjacent ones. Definition order is
@@ -1061,7 +1061,7 @@ static int case_definition_cluster_edits(void) {
                                     "\n"
                                     "[zeta]: /f-one\n"
                                     "\n";
-    sr_replay replay;
+    er_replay replay;
     markdown_core_parse_options options;
     int result = -1;
     size_t position;
@@ -1071,23 +1071,23 @@ static int case_definition_cluster_edits(void) {
         return -1;
     }
 
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)initial, sizeof(initial) - 1) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* One definition between two adjacent ones: the order span is zero. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[beta]:") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[inserted]: /i-one\n", 19) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position, (const uint8_t *)"[inserted]: /i-one\n", 19) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Two at once into the same gap, so the staged run outruns the span by
      * more than one. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[gamma]:") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[extra]: /x-one\n[more]: /m-one\n", 31) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position, (const uint8_t *)"[extra]: /x-one\n[more]: /m-one\n", 31) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -1098,8 +1098,8 @@ static int case_definition_cluster_edits(void) {
 
     /* Definition-only paragraphs ahead of the cluster: every one of them
      * vanishes, and they sit at distinct lines below the first. */
-    if (sr_replay_edit(&replay, 0, 0, (const uint8_t *)scattered, sizeof(scattered) - 1) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, 0, 0, (const uint8_t *)scattered, sizeof(scattered) - 1) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
@@ -1110,35 +1110,35 @@ static int case_definition_cluster_edits(void) {
 
     /* Removing a middle definition re-elects nothing but renumbers the rest. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[epsilon]: /e-one\n") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position + strlen("[epsilon]: /e-one\n"), NULL, 0) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position + strlen("[epsilon]: /e-one\n"), NULL, 0) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Reinstating it at a different line moves it across the index. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[alpha]:") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(&replay, position, position, (const uint8_t *)"[epsilon]: /e-two\n", 18) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+    if (er_replay_edit(&replay, position, position, (const uint8_t *)"[epsilon]: /e-two\n", 18) != 0 ||
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     /* Collapsing the scattered paragraphs into one cluster retires several
      * restart points in a single commit. */
     position = (size_t)(strstr((const char *)replay.shadow.bytes, "[delta]: /d-one\n") - (char *)replay.shadow.bytes);
-    if (sr_replay_edit(
+    if (er_replay_edit(
             &replay,
             position,
             (size_t)(strstr((const char *)replay.shadow.bytes, "[zeta]: /f-one\n") - (char *)replay.shadow.bytes),
             (const uint8_t *)"[delta]: /d-two\n",
             16
         ) != 0 ||
-        sr_replay_commit(&replay) != 0) {
+        er_replay_commit(&replay) != 0) {
         goto done;
     }
 
     result = failures ? -1 : 0;
 done:
-    sr_replay_close(&replay);
+    er_replay_close(&replay);
     return result;
 }
 

@@ -22,33 +22,6 @@ void markdown_core_parse_inlines(
     int options
 );
 
-/** Longest line-aligned, inline-inert common prefix of two content buffers
- * (see the definition for the exact guarantee); 0 when no usable seam
- * exists. */
-markdown_core_bufsize markdown_core_inline_seam_prefix(
-    const struct markdown_core_parser *parser,
-    const unsigned char *a,
-    markdown_core_bufsize a_len,
-    const unsigned char *b,
-    markdown_core_bufsize b_len,
-    int options
-);
-
-/** Parses `parent`'s inline content starting at byte `start` of the content
- * buffer, appending to whatever children are already attached. `start` must
- * sit at a line start, and the caller must guarantee nothing in [0, start)
- * can pair with or reshape anything at or after `start` (no special
- * characters before the seam). Position bookkeeping matches a full parse:
- * the subject reads the true buffer, so lookbacks across the seam see the
- * real bytes. */
-void markdown_core_parse_inlines_from(
-    markdown_core_parser *parser,
-    markdown_core_node *parent,
-    markdown_core_map *refmap,
-    int options,
-    markdown_core_bufsize start
-);
-
 /** Where a parsed reference definition's spellings sit in the input chunk,
  * so the caller can capture them as concrete records: [0, label_end)
  * spells `[label]:`, [url_start, url_end) the destination exactly as

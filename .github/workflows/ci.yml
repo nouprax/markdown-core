@@ -51,6 +51,8 @@ jobs:
                   pnpm audit:ci
                   pnpm audit:tests
                   pnpm audit:surface
+                  pnpm audit:source-lists
+                  pnpm audit:ast-projections
 
     health-check-c:
         name: Health Check - C
@@ -1227,7 +1229,7 @@ jobs:
     # compile an instrumented tree, which the test layer forbids by contract.
     # It sits beside Tests and Benchmarks as a third parallel aggregate.
     #
-    # c-host and swift-macos run on macOS because llvm-cov must match the clang
+    # swift-macos runs on macOS because llvm-cov must match the clang
     # that produced the profile, and the Xcode toolchain ships the pair; the
     # recorded ledger and measured-file floors come from that same toolchain.
     coverage:
@@ -1238,11 +1240,6 @@ jobs:
             fail-fast: false
             matrix:
                 include:
-                    - platform: c-host
-                      label: C / Host
-                      os: macos-latest
-                      needs-java: false
-                      needs-emsdk: false
                     - platform: swift-macos
                       label: Swift / macOS
                       os: macos-latest

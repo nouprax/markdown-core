@@ -67,7 +67,7 @@ public struct MarkupWalker: Sendable {
             case .exit(let node, let scope):
                 try visit(.exiting, node, scope)
             case .enter(let node):
-                let scope = document.scope(of: node)
+                let scope = node.scope
                 try visit(.entering, node, scope)
                 stack.append(.exit(node, scope))
                 var visitor = ChildrenVisitor()
@@ -79,7 +79,7 @@ public struct MarkupWalker: Sendable {
     }
 }
 
-private struct ChildrenVisitor: MarkupVisitor {
+struct ChildrenVisitor: MarkupVisitor {
     mutating func visit(_ node: Document) -> [any Markup] { node.content }
 
     mutating func visit(_ node: BlockQuote) -> [any Markup] { node.content }

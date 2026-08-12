@@ -90,6 +90,26 @@ int markdown_core_extensions_set_directive_name(markdown_core_node *node, const 
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_extensions_get_directive_attributes(markdown_core_node *node);
 
+/** A directive's attribute list as the node holds it: source order, one entry
+ * per name, with the grammar's merge rules already applied by the parser.
+ * `present` separates an absent `{...}` from an empty one, which a count of
+ * zero cannot. The views borrow from the node. */
+MARKDOWN_CORE_EXPORT
+bool markdown_core_extensions_directive_attributes_present(const markdown_core_node *node);
+
+MARKDOWN_CORE_EXPORT
+size_t markdown_core_extensions_directive_attribute_count(const markdown_core_node *node);
+
+MARKDOWN_CORE_EXPORT
+bool markdown_core_extensions_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    const uint8_t **key,
+    size_t *key_length,
+    const uint8_t **value,
+    size_t *value_length
+);
+
 /** Sets directive attributes from a JSON object containing only string keys and string values.
  * The object is parsed and normalized. Returns 1 on success and 0 on error; failure leaves the
  * node unchanged.

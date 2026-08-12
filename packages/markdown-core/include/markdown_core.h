@@ -23,24 +23,13 @@
  * any number of threads are safe by construction; no warmup, external lock,
  * or explicit init call is required.
  *
- * Distinct documents and sessions: parse, traversal, dump, and free of
- * *different* documents, and every operation on *different* sessions, may
- * run fully concurrently. A parse call or session shares no mutable state
- * with any other.
+ * Distinct documents: parse, traversal, dump, edit, and free of *different*
+ * documents may run fully concurrently. No two documents share mutable state.
  *
- * A single session: calls on one session must be externally synchronized
- * (one writer at a time). Between mutating calls (edit, commit, free), the
- * session's document view, its nodes, and lookups are safe for concurrent
- * reads from any thread. The document view borrowed from a session is valid
- * until the session's next commit or free: edits only advance the stored
- * text and never touch the committed tree, so the borrowed view (and node
- * scopes resolved through it) stays valid across
- * markdown_core_session_edit. Deltas and ordered delta-entry tables are
- * caller-owned plain data: they survive the session and are released with
- * markdown_core_delta_free and markdown_core_delta_entries_free,
- * respectively.
+ * Deltas are caller-owned plain data: they outlive both documents they
+ * describe and are released with markdown_core_delta_free.
  *
- * A single document: after markdown_core_document_parse returns, the document
+ * A single document: after markdown_core_document_new returns, the document
  * and its nodes are logically immutable through this API. Concurrent
  * read-only access (traversal, accessors, dump) to the same document from
  * multiple threads is safe. markdown_core_document_free is the only mutating
@@ -81,18 +70,29 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
-typedef struct markdown_core_session markdown_core_session;
 typedef struct markdown_core_delta markdown_core_delta;
 
-/** Session-assigned node identity: unique within a session, never reused,
- * stable across incremental commits while the node remains the same kind of
- * thing at the same place. 0 is never a valid id. */
+/** What an edit returns: the successor document and the delta between the
+ * document it was called on and that successor. A value, not a handle —
+ * release the two members, there is nothing else to free. */
+typedef struct markdown_core_commit {
+    markdown_core_document *document;
+    markdown_core_delta *delta;
+} markdown_core_commit;
+
+/** Node identity, assigned once per series and never reused. Stable across
+ * edits while the node remains the same kind of thing at the same place. 0 is
+ * never a valid id. */
 typedef uint64_t markdown_core_node_id;
 
-typedef struct markdown_core_string_view {
+/** Bytes and a length. Every string this API HANDS OUT borrows from the
+ * document that owns it and ends with that document — the ownership section
+ * above states that once, for all of them. Every string HANDED IN is copied,
+ * so the caller keeps its own. */
+typedef struct markdown_core_string {
     const uint8_t *data;
     size_t length;
-} markdown_core_string_view;
+} markdown_core_string;
 
 typedef struct markdown_core_position {
     int32_t line;
@@ -104,27 +104,26 @@ typedef struct markdown_core_scope {
     markdown_core_position end;
 } markdown_core_scope;
 
-/** One canonical-preorder row in a document scope table. */
-typedef struct markdown_core_scope_entry {
-    markdown_core_node_id id;
-    uint64_t revision;
-    markdown_core_scope scope;
-} markdown_core_scope_entry;
+/** Which components of a node's observable projection differ (9.1).
+ *
+ * There is no lifecycle tag. A retired node has no parts in `after`, so its
+ * `parts` is ZERO, and that is how a consumer tells a deletion from a change.
+ * A created node differs from absence in every part it has, so it carries all
+ * of them. */
+typedef enum markdown_core_diff_part {
+    MARKDOWN_CORE_DIFF_VALUE = 1u << 0,
+    MARKDOWN_CORE_DIFF_TEXT = 1u << 1,
+    MARKDOWN_CORE_DIFF_CHILDREN = 1u << 2,
+    MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 3
+} markdown_core_diff_part;
 
-typedef enum markdown_core_delta_change_kind {
-    MARKDOWN_CORE_DELTA_CHANGE_ADDED = 0,
-    MARKDOWN_CORE_DELTA_CHANGE_CHANGED = 1,
-    MARKDOWN_CORE_DELTA_CHANGE_BUBBLED = 2
-} markdown_core_delta_change_kind;
-
-/** One surviving delta node in children-before-parents materialization
- * order. */
-typedef struct markdown_core_delta_entry {
-    markdown_core_node_id id;
-    markdown_core_node_id parent;
-    /** One of markdown_core_delta_change_kind, stored at a fixed ABI width. */
-    uint32_t change;
-} markdown_core_delta_entry;
+/** One node whose projection differs between the delta's two documents. */
+typedef struct markdown_core_diff {
+    markdown_core_node_id markup;
+    /** A bitwise OR of markdown_core_diff_part at a fixed ABI width; zero
+     * means the node is retired. */
+    uint32_t parts;
+} markdown_core_diff;
 
 typedef struct markdown_core_parse_options {
     bool smart_punctuation;
@@ -226,22 +225,11 @@ typedef struct markdown_core_optional_bool {
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
-/**
- * Parses exactly `length` UTF-8 bytes. `options == NULL` selects the defaults.
- * The returned document owns all nodes and borrowed string views. On failure,
- * NULL is returned and `*error` is set when `error` is non-NULL.
- */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_parse(
-    const uint8_t *source,
-    size_t length,
-    const markdown_core_parse_options *options,
-    markdown_core_error **error
-);
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
-MARKDOWN_CORE_API markdown_core_string_view markdown_core_error_get_message(const markdown_core_error *error);
+MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
 MARKDOWN_CORE_API bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
@@ -267,13 +255,13 @@ MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(
 );
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *info,
-    markdown_core_string_view *language,
-    markdown_core_string_view *literal,
+    markdown_core_string *info,
+    markdown_core_string *language,
+    markdown_core_string *literal,
     bool *fenced,
     bool *closed
 );
-MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string_view *literal);
+MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 /** For HTMLBlock and HTML nodes: true when the literal is one complete
  * comment — after surrounding whitespace it opens with `<!--` and its first
  * `-->` is the terminal bytes. Comment-prefixed html with a same-line tail
@@ -283,7 +271,7 @@ MARKDOWN_CORE_API bool markdown_core_node_html_comment(const markdown_core_node 
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *literal
+    markdown_core_string *literal
 );
 MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
 MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
@@ -292,66 +280,118 @@ MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
     markdown_core_table_alignment *alignment
 );
 MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
+/** A directive's placement and name, and whether it was written with an
+ * attribute container at all. `has_attributes` is what separates `:a` from
+ * `:a{}`; the entries themselves come from the two accessors below. */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
-    markdown_core_string_view *name,
-    markdown_core_string_view *attributes
+    markdown_core_string *name,
+    bool *has_attributes
+);
+/**
+ * A directive's attributes, as the string-to-string map the grammar defines.
+ *
+ * One entry per name, in source order, with the merge rules already applied:
+ * a later `k=` replaces an earlier one, `.a .b` accumulates into one `class`,
+ * `#a #b` keeps the last. There is no duplicate name to represent, which is
+ * why a map is the whole of it and no serialization sits in between.
+ */
+MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_count(const markdown_core_node *node, size_t *count);
+MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_string *key,
+    markdown_core_string *value
 );
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 /** A link reference definition's label as written, and the destination and
  * title it defines. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_definition_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *label,
+    markdown_core_string *destination,
+    markdown_core_string *title
 );
 
 /** A reference's label as written and the form it was written in. It has no
  * destination: that belongs to the definition the label resolves to. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *label,
+    markdown_core_string *label,
     markdown_core_reference_form *form
 );
 
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *destination,
-    markdown_core_string_view *title
+    markdown_core_string *destination,
+    markdown_core_string *title
 );
 MARKDOWN_CORE_API bool markdown_core_node_image_properties(
     const markdown_core_node *node,
-    markdown_core_string_view *source,
-    markdown_core_string_view *title
+    markdown_core_string *source,
+    markdown_core_string *title
 );
-MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string_view *id);
+MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string *id);
 MARKDOWN_CORE_API bool markdown_core_node_cross_link_reference(
     const markdown_core_node *node,
-    markdown_core_string_view *reference
+    markdown_core_string *reference
 );
 MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
     const markdown_core_node *node,
-    markdown_core_string_view *reference
+    markdown_core_string *reference
 );
 
-/**
- * Allocates one immutable `(id, revision, absolute scope)` row for every
- * canonical node in document preorder. One streaming traversal builds the
- * complete table in O(n) time with O(depth) traversal state. The table
- * remains valid independently of the document; free it with
- * markdown_core_scope_table_free. On every failure, each non-null output is
- * reset (`*output` to NULL and `*count` to zero), so callers may use one
- * unconditional cleanup path.
+/*
+ * Diagnostics
+ * ===========
+ *
+ * What an editor underlines. There is exactly one thing to underline, and
+ * that is not a placeholder for a longer list to come.
+ *
+ * Markdown has no parse errors: every byte sequence is a valid document, and
+ * the constructs an author most often gets "wrong" are all defined outcomes
+ * of the standard semantics rather than failures. An unclosed fence runs to
+ * the end of the document; a link reference with no definition is the text
+ * the author typed; a short table row is autocompleted. Reporting any of
+ * those would be reporting Markdown itself.
+ *
+ * A directive's attribute block is the exception, because it is this
+ * repository's own grammar rather than Markdown's: `{...}` that does not
+ * parse is not a construct with a defined fallback meaning, it is a mistake,
+ * and the parse degrades the braces to literal text where the author plainly
+ * wanted attributes. That degradation is invisible in the tree — the node
+ * simply has no attributes — so without a diagnostic an editor cannot tell
+ * "no attributes were written" from "the attributes were rejected".
  */
-MARKDOWN_CORE_API bool markdown_core_document_scope_table(
+
+/** Why a diagnostic was raised. */
+typedef enum markdown_core_diagnostic_code {
+    /** A directive's `{...}` attribute block did not parse, so its braces
+     * stayed literal text. The scope covers the block, brace to brace. */
+    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES = 1
+} markdown_core_diagnostic_code;
+
+/** One thing to underline: what, and where.
+ *
+ * No message. A message is a string an editor shows a human, which means it
+ * is localized, and localizing it here would put one English sentence in the
+ * library and four copies of the decision to ignore it in the bindings. The
+ * code says what happened; the wording belongs to whoever is speaking to the
+ * user. */
+typedef struct markdown_core_diagnostic {
+    markdown_core_diagnostic_code code;
+    markdown_core_scope scope;
+} markdown_core_diagnostic;
+
+/** Every diagnostic of this document, in source order. Returns the count and
+ * points `*diagnostics` at the document's own array, which borrows from the
+ * document and ends with it — nothing to free. A clean document reports zero
+ * and leaves `*diagnostics` NULL. */
+MARKDOWN_CORE_API size_t markdown_core_document_diagnostics(
     const markdown_core_document *document,
-    markdown_core_scope_entry **output,
-    size_t *count,
-    markdown_core_error **error
+    const markdown_core_diagnostic **diagnostics
 );
-MARKDOWN_CORE_API void markdown_core_scope_table_free(markdown_core_scope_entry *output);
 
 /** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(
@@ -363,153 +403,71 @@ MARKDOWN_CORE_API bool markdown_core_document_dump(
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /*
- * Incremental sessions
- * ====================
+ * Editing
+ * =======
  *
- * A session owns one Markdown text and its living AST. Apply edits (append
- * is an edit at end-of-text), then commit: the session reparses, reuses node
- * identity wherever the content is unchanged, and reports exactly what
- * changed. After any sequence of edits and commits the document is
- * semantically identical to a one-shot parse of the same final text.
+ * A document owns one Markdown text and its AST. `edit` hands it new text and
+ * returns the document that text describes, together with what changed. There
+ * is nothing pending and nothing to commit.
  *
- * The stored text is the raw bytes exactly as edited; NUL and invalid UTF-8
- * are replaced with U+FFFD during parsing, per line, exactly as
- * markdown_core_document_parse does. A streamed append may therefore
- * complete a multi-byte character whose first bytes arrived earlier.
+ * The text is the raw bytes exactly as given. UTF-8 is ASSUMED AND NEVER
+ * VALIDATED: nothing is scanned, nothing is replaced, and nothing is rejected.
+ * NUL is replaced with U+FFFD during parsing because CommonMark requires it of
+ * canonical text, and nothing else is.
  *
- * Commits are transactional: on failure the session stays valid at its
- * previous revision and the commit may be retried (applied edits are
- * retained — the text advances, the tree does not).
+ * An edit that fails reports the error and ENDS the document it was called on:
+ * it must not be queried, walked, or edited again. The caller holds the text,
+ * so recovery is building a document from it again. There is no restoration
+ * and no retry.
  */
 
-/** Opens an empty session at revision 0. `options == NULL` selects the
- * defaults; options are immutable for the session lifetime. */
-MARKDOWN_CORE_API markdown_core_session *markdown_core_session_open(
+/**
+ * `Document(markdown, options)` — the one entry point. `options == NULL`
+ * selects the defaults and they are fixed for this document's whole series:
+ * a commit takes text and not options. The returned document owns all nodes
+ * and borrowed string views. On failure, NULL is returned and `*error` is set
+ * when `error` is non-NULL.
+ */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
+    markdown_core_string markdown,
     const markdown_core_parse_options *options,
     markdown_core_error **error
 );
-MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session);
 
-/** Replaces bytes [byte_start, byte_end) of the stored text with
- * `bytes[0..length)`. Append passes byte_start == byte_end ==
- * markdown_core_session_length. Edits only update the text; parsing happens
- * at commit. */
-MARKDOWN_CORE_API bool markdown_core_session_edit(
-    markdown_core_session *session,
-    size_t byte_start,
-    size_t byte_end,
-    const uint8_t *bytes,
-    size_t length,
+/** `document.edit(markdown)` — hand the document new text and get back the
+ * document that text describes, plus what changed. There is nothing pending to
+ * commit, so the operation is an edit, not a commit.
+ *
+ * READS the receiver and takes nothing: it keeps everything it owns, stays
+ * usable, and is freed by whoever holds it. Editing one document twice gives
+ * two lines of descent, distinguished by their revisions; nodes from two
+ * lines are not comparable, exactly as nodes from two documents are not. The
+ * caller owns `out->document` and `out->delta`. */
+MARKDOWN_CORE_API bool markdown_core_document_edit(
+    const markdown_core_document *document,
+    markdown_core_string markdown,
+    markdown_core_commit *out,
     markdown_core_error **error
 );
 
-/** Reparses the pending text and advances the revision. When `changes` is
- * non-NULL it receives a caller-owned delta (release with
- * markdown_core_delta_free). */
-MARKDOWN_CORE_API bool markdown_core_session_commit(
-    markdown_core_session *session,
-    markdown_core_delta **changes,
-    markdown_core_error **error
-);
+/** The moment this document was produced, from the host's monotonic clock,
+ * and strictly greater than its predecessor's; a fresh parse is zero. It is
+ * not a count of edits: two successors of one document need different
+ * revisions, or a node each changed differently would carry one (id,
+ * revision) with two contents. */
+MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
-/** Borrowed view of the last committed document; valid until the session's
- * next commit or free (edits never touch the committed tree). */
-MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
-MARKDOWN_CORE_API uint64_t markdown_core_session_revision(const markdown_core_session *session);
-
-/** Per-session random salt; nodes from different sessions never share
- * identity even when ids collide numerically. */
-MARKDOWN_CORE_API uint64_t markdown_core_session_lineage(const markdown_core_session *session);
-MARKDOWN_CORE_API size_t markdown_core_session_length(const markdown_core_session *session);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_session_node_by_id(
-    const markdown_core_session *session,
-    markdown_core_node_id id
-);
-
-/*
- * Footnote queries
- * ----------------
- *
- * The tree is source-faithful: definitions stay at their source position
- * whether referenced or not, and references always carry the label exactly
- * as written. Numbering, first-use order, resolution state, and
- * back-reference ordinals are answered from a session-maintained index.
- * Labels match case-folded with collapsed whitespace, and the earliest
- * definition of a label in document order wins. When a commit changes only
- * an answer below (an ordinal shift, a resolution flip), the affected nodes
- * are reported `changed` with a revision bump and identical dump content.
- */
-
-/** Answers for one footnote node.
- * For a FootnoteReference: `definition` is the winning definition's id (0
- * while unresolved), `number` its 1-based first-use ordinal (0 while
- * unresolved), `reference_ordinal` the reference's 1-based position among
- * the label's references in document order, and `reference_count` how many
- * references share the label.
- * For a FootnoteDefinition: `definition` is the id of the label's winning
- * definition (its own id unless an earlier definition shadows it),
- * `number`/`reference_count` describe the label (0 when unreferenced), and
- * `reference_ordinal` is 0. */
-typedef struct markdown_core_footnote_info {
-    markdown_core_node_id definition;
-    uint64_t number;
-    uint64_t reference_ordinal;
-    uint64_t reference_count;
-} markdown_core_footnote_info;
-
-/** Answers for one reference node — the facts that hold between a reference
- * and its definition and therefore live in neither.
- *
- * `definition` is the winning ReferenceDefinition's id, and 0 when the label
- * resolves to nothing. Asked of a ReferenceDefinition it answers the same
- * question about that node's own label: its own id unless an earlier
- * definition shadows it.
- *
- * A reference carries no destination: read it from the winning definition
- * through markdown_core_node_reference_definition_properties. An edit that
- * only retargets a definition therefore changes this answer and leaves every
- * reference node untouched. */
-typedef struct markdown_core_reference_info {
-    markdown_core_node_id definition;
-} markdown_core_reference_info;
-
-/** Fills `info` for the reference node with the given id at the current
- * revision. Returns false (with `info` zeroed) when the id does not name a
- * reference or reference definition of this session. */
-MARKDOWN_CORE_API bool markdown_core_session_reference_info(
-    const markdown_core_session *session,
-    markdown_core_node_id id,
-    markdown_core_reference_info *info
-);
-
-/** Fills `info` for the footnote node with the given id at the current
- * revision. Returns false (with `info` zeroed) when the id does not name a
- * footnote reference or definition of this session. */
-MARKDOWN_CORE_API bool markdown_core_session_footnote_info(
-    const markdown_core_session *session,
-    markdown_core_node_id id,
-    markdown_core_footnote_info *info
-);
-
-/** Borrows the ids of the referenced (winning) definitions in first-use
- * order — the order a renderer lists them in. Valid until the next mutating
- * call on the session. */
-MARKDOWN_CORE_API size_t
-markdown_core_session_footnotes(const markdown_core_session *session, const markdown_core_node_id **ids);
-
-/** Borrows the ids of the references that resolve to `definition`, in
- * document order — the renderer's back-reference targets. Empty unless
- * `definition` is a referenced winning definition. Valid until the next
- * mutating call on the session. */
-MARKDOWN_CORE_API size_t markdown_core_session_footnote_references(
-    const markdown_core_session *session,
-    markdown_core_node_id definition,
-    const markdown_core_node_id **ids
-);
+/** Per-series random salt; nodes from different parses never share identity
+ * even when ids collide numerically. A SERIES is one document and every
+ * document its edits produce, so an edit inherits its predecessor's salt;
+ * ids restart at 1 for each new series, which is what makes the salt
+ * load-bearing rather than decorative. */
+MARKDOWN_CORE_API uint64_t markdown_core_document_series(const markdown_core_document *document);
+MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *document);
 
 /** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
  * commit revision at which the node's own fields, child list, or any
- * descendant last changed — two nodes of one session with equal (id,
+ * descendant last changed — two nodes of one series with equal (id,
  * revision) have identical content. A pure positional shift never changes a
  * node's revision. */
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
@@ -518,44 +476,35 @@ MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_n
 /** Canonical parent, or NULL for the root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
 
-/** Delta accessors. The four arrays are disjoint: `added` and `removed`
- * list nodes that appeared/disappeared, `changed` lists nodes whose own
- * fields or direct child list changed, and `bubbled` lists ancestors whose
- * revision advanced only because a descendant changed. Ids of removed nodes
- * are retired and never reused. */
+/** Delta accessors. */
 MARKDOWN_CORE_API void markdown_core_delta_revisions(
     const markdown_core_delta *changes,
     uint64_t *before,
     uint64_t *after
 );
-MARKDOWN_CORE_API size_t
-markdown_core_delta_added(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_removed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_changed(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-MARKDOWN_CORE_API size_t
-markdown_core_delta_bubbled(const markdown_core_delta *changes, const markdown_core_node_id **ids);
-
 /**
- * Allocates the `added ∪ changed ∪ bubbled` entries in deterministic
- * children-before-parents order, so an immutable mirror can rebuild every
- * row in one pass. `parent` is the row's canonical parent id, or 0 for the
- * document root; every non-root parent is itself present later in the table.
- * `session` must be the delta's originating session and must still be at its
- * `after` revision. The table is independent of both inputs after return and
- * is built in O(k) expected time and O(k) temporary space for k delta ids,
- * without walking unaffected nodes. On every failure, each non-null output
- * is reset (`*output` to NULL and `*count` to zero).
+ * Every node whose projection differs, IN ORDER: the new document's postorder
+ * over the surviving nodes, so a node always appears after all of its own
+ * children, and a retired node (`parts` zero) EMITTED WHERE IT WAS FOUND —
+ * inside its former parent's run, and so before that parent's own row, but
+ * after any surviving sibling that precedes it.
+ *
+ * That order is the answer, not a convention. A consumer materializing
+ * immutable values bottom-up reads the list once, front to back: every child
+ * it needs is already built by the time it reaches a parent, and a parent's
+ * dead children are gone before it re-reads that parent's child list. There is
+ * no separate ordered-entry table and no id-to-node index, because a list that
+ * is already in order carries its own position (9.1).
+ *
+ * A retired node needs no position of its own — deletion is addressed by id,
+ * and ids are never reused — so what this ordering buys is the single pass:
+ * the diff walk writes each row at the moment it decides it.
+ *
+ * The rows belong to the delta and live as long as it does.
  */
-MARKDOWN_CORE_API bool markdown_core_session_ordered_delta_entries(
-    const markdown_core_session *session,
-    const markdown_core_delta *changes,
-    markdown_core_delta_entry **output,
-    size_t *count,
-    markdown_core_error **error
-);
-MARKDOWN_CORE_API void markdown_core_delta_entries_free(markdown_core_delta_entry *output);
+MARKDOWN_CORE_API size_t
+markdown_core_delta_diffs(const markdown_core_delta *changes, const markdown_core_diff **diffs);
+
 MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus

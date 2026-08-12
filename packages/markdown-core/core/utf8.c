@@ -15,11 +15,6 @@ static const int8_t utf8proc_utf8class[256] = {
     2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static void encode_unknown(markdown_core_strbuf *buf) {
-    static const uint8_t repl[] = {239, 191, 189};
-    markdown_core_strbuf_put(buf, repl, 3);
-}
-
 static int utf8proc_charlen(const uint8_t *str, markdown_core_bufsize str_len) {
     int length, i;
 
@@ -46,115 +41,9 @@ static int utf8proc_charlen(const uint8_t *str, markdown_core_bufsize str_len) {
     return length;
 }
 
-// Validate a single UTF-8 character according to RFC 3629.
-static int utf8proc_valid(const uint8_t *str, markdown_core_bufsize str_len) {
-    int length = utf8proc_utf8class[str[0]];
-
-    if (!length) {
-        return -1;
-    }
-
-    if ((markdown_core_bufsize)length > str_len) {
-        return -str_len;
-    }
-
-    switch (length) {
-    case 2:
-        if ((str[1] & 0xC0) != 0x80) {
-            return -1;
-        }
-        if (str[0] < 0xC2) {
-            // Overlong
-            return -length;
-        }
-        break;
-
-    case 3:
-        if ((str[1] & 0xC0) != 0x80) {
-            return -1;
-        }
-        if ((str[2] & 0xC0) != 0x80) {
-            return -2;
-        }
-        if (str[0] == 0xE0) {
-            if (str[1] < 0xA0) {
-                // Overlong
-                return -length;
-            }
-        } else if (str[0] == 0xED) {
-            if (str[1] >= 0xA0) {
-                // Surrogate
-                return -length;
-            }
-        }
-        break;
-
-    case 4:
-        if ((str[1] & 0xC0) != 0x80) {
-            return -1;
-        }
-        if ((str[2] & 0xC0) != 0x80) {
-            return -2;
-        }
-        if ((str[3] & 0xC0) != 0x80) {
-            return -3;
-        }
-        if (str[0] == 0xF0) {
-            if (str[1] < 0x90) {
-                // Overlong
-                return -length;
-            }
-        } else if (str[0] >= 0xF4) {
-            if (str[0] > 0xF4 || str[1] >= 0x90) {
-                // Above 0x10FFFF
-                return -length;
-            }
-        }
-        break;
-    }
-
-    return length;
-}
-
-void markdown_core_utf8proc_check(markdown_core_strbuf *ob, const uint8_t *line, markdown_core_bufsize size) {
-    markdown_core_bufsize i = 0;
-
-    while (i < size) {
-        markdown_core_bufsize org = i;
-        int charlen = 0;
-
-        while (i < size) {
-            if (line[i] < 0x80 && line[i] != 0) {
-                i++;
-            } else if (line[i] >= 0x80) {
-                charlen = utf8proc_valid(line + i, size - i);
-                if (charlen < 0) {
-                    charlen = -charlen;
-                    break;
-                }
-                i += charlen;
-            } else if (line[i] == 0) {
-                // ASCII NUL is technically valid but rejected
-                // for security reasons.
-                charlen = 1;
-                break;
-            }
-        }
-
-        if (i > org) {
-            markdown_core_strbuf_put(ob, line + org, i - org);
-        }
-
-        if (i >= size) {
-            break;
-        } else {
-            // Invalid UTF-8
-            encode_unknown(ob);
-            i += charlen;
-        }
-    }
-}
-
+// Decodes one UTF-8 character and returns its length. It does not validate:
+// UTF-8 is assumed (incremental-canonical-ast.md 7.1), and the function that
+// did validate, utf8proc_valid, is deleted.
 int markdown_core_utf8proc_iterate(const uint8_t *str, markdown_core_bufsize str_len, int32_t *dst) {
     int length;
     int32_t uc = -1;
@@ -215,15 +104,12 @@ void markdown_core_utf8proc_encode_char(int32_t uc, markdown_core_strbuf *buf) {
         dst[1] = 0x80 + ((uc >> 6) & 0x3F);
         dst[2] = 0x80 + (uc & 0x3F);
         len = 3;
-    } else if (uc < 0x110000) {
+    } else {
         dst[0] = (uint8_t)(0xF0 + (uc >> 18));
         dst[1] = 0x80 + ((uc >> 12) & 0x3F);
         dst[2] = 0x80 + ((uc >> 6) & 0x3F);
         dst[3] = 0x80 + (uc & 0x3F);
         len = 4;
-    } else {
-        encode_unknown(buf);
-        return;
     }
 
     markdown_core_strbuf_put(buf, dst, len);
@@ -237,12 +123,19 @@ void markdown_core_utf8proc_case_fold(markdown_core_strbuf *dest, const uint8_t 
     while (len > 0) {
         markdown_core_bufsize char_len = markdown_core_utf8proc_iterate(str, len, &c);
 
-        if (char_len >= 0) {
-#include "case_fold_switch.inc"
-        } else {
-            encode_unknown(dest);
-            char_len = -char_len;
+        if (char_len <= 0) {
+            /* THE BUFFER STOPS INSIDE A CHARACTER, which is not a statement
+             * about validity: a lead byte announcing more bytes than remain is
+             * a TRUNCATED FINAL CODE POINT, and 8.2 makes that a legal final
+             * document — a stream may simply stop there. There is no complete
+             * character left to fold, so the remainder passes through as it
+             * was written. Nothing here guards against input that is not
+             * UTF-8; input is UTF-8 (7.1). */
+            markdown_core_strbuf_put(dest, str, len);
+            break;
         }
+
+#include "case_fold_switch.inc"
 
         str += char_len;
         len -= char_len;

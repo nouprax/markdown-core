@@ -1,4 +1,4 @@
-@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmName("MarkdownCoreKt")
 @file:kotlin.jvm.JvmMultifileClass
 
 package com.nouprax.markdown.core

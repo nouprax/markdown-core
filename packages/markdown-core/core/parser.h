@@ -23,8 +23,8 @@ struct markdown_core_parser {
      * only once every block is closed, asks whether `[^x]` names one. A
      * reference to a label nobody defines is not a footnote at all — it is the
      * literal text the author typed — so this answer decides a node's type,
-     * and it has to be the whole document's answer even when a session
-     * reparses one paragraph of it. That is why the map is the session's, not
+     * and it has to be the whole document's answer even when an edit
+     * reparses one paragraph of it. That is why the map is the document's, not
      * the parse's: see markdown_core_footnote_definition_create for why it is
      * a second map rather than a discriminated column of `refmap`. */
     struct markdown_core_map *footnote_defs;
@@ -104,6 +104,20 @@ struct markdown_core_parser {
      * A paragraph is a leaf, so at most one is ever open and one array on the
      * parser suffices — no node grows a field. It is not an asymptotic cost:
      * three ints per line describing a buffer that already holds the line. */
+    /* Diagnostics raised while parsing, in source order. Kept as plain
+     * ints because core cannot see the facade's types; the document
+     * converts them when it takes the tree. One code exists today
+     * (a directive's attribute block that did not parse), and the vector
+     * stays empty for every document that has none. */
+    struct markdown_core_parser_diagnostic {
+        int code;
+        int start_line;
+        int start_column;
+        int end_line;
+        int end_column;
+    } *diagnostics;
+    size_t diagnostic_count;
+    size_t diagnostic_capacity;
     struct markdown_core_line_mark {
         markdown_core_bufsize content_offset;
         int line;
@@ -141,11 +155,18 @@ markdown_core_bufsize markdown_core_line_mark_extent(
     markdown_core_bufsize *column
 );
 
-/** Returns a parser whose parse ended (root handed off or freed) to its
- * post-construction state for another parse, keeping the line buffers'
- * capacity, an attached (empty) reference map, and the extension
- * attachments. Allocation failure poisons the parser like a failed reset. */
-void markdown_core_parser_renew(markdown_core_parser *parser);
+/** Records one diagnostic at the given extent. A lost diagnostic is not a
+ * lost parse: the tree is unaffected and the document is still correct, it
+ * is only missing an underline, so this reports nothing on allocation
+ * failure rather than poisoning a parse that otherwise succeeded. */
+void markdown_core_parser_record_diagnostic(
+    markdown_core_parser *parser,
+    int code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column
+);
 
 /** Applies the core list-item continuation rule to the current line.
  * Extension-owned list items use this to stay in lockstep with plain list

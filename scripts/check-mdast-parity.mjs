@@ -27,7 +27,7 @@ import remarkDirective from "remark-directive";
 import remarkMath from "remark-math";
 
 import { readExamples } from "./lib/fixture-corpus.mjs";
-import { dropEmptyText, fromMdast, MDAST_COMPARED, renderDumpAttributes } from "./lib/mdast-oracle.mjs";
+import { dropEmptyText, fromMdast, MDAST_COMPARED } from "./lib/mdast-oracle.mjs";
 import { liftFootnoteDefinitions, parseCanonicalDump, render } from "./lib/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -72,12 +72,12 @@ function project(node) {
             node.kind === "Image" && key === "destination"
                 ? (node.fields.destination ?? node.fields.source)
                 : node.fields[key];
-        // The dump prints a directive's attributes as a JSON object; the mdast
-        // side has already rendered its own. One rendering reaches the
-        // comparison, so key order and the two spellings of "none" cannot read
-        // as a difference.
-        if (key === "attributes" && typeof value === "string" && value.startsWith("{")) {
-            value = renderDumpAttributes(value);
+        // Both sides spell a directive's attributes as sorted `key="value"`
+        // pairs now; the dump brackets the group so it reads as one field, and
+        // spells an empty container `[]` where the oracle spells it "null".
+        if (key === "attributes" && typeof value === "string" && value.startsWith("[")) {
+            const inner = value.slice(1, -1);
+            value = inner === "" ? "null" : inner;
         }
         if (value === undefined || value === "") value = key === "literal" ? "" : "null";
         fields[key] = String(value);

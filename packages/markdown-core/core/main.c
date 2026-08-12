@@ -64,13 +64,12 @@ static bool attach_extension(markdown_core_parser *parser, const char *name) {
 }
 
 static bool print_document(markdown_core_node *document) {
-    markdown_core_document facade_document = {document};
     markdown_core_error *error = NULL;
     uint8_t *dump = NULL;
     size_t length = 0;
-    markdown_core_string_view message;
+    markdown_core_string message;
 
-    if (!markdown_core_document_dump(&facade_document, &dump, &length, &error)) {
+    if (!markdown_core_ast_dump_root(document, &dump, &length, &error)) {
         message = markdown_core_error_get_message(error);
         fprintf(
             stderr,
@@ -93,8 +92,7 @@ int main(int argc, char *argv[]) {
     markdown_core_parser *parser = NULL;
     size_t bytes;
     markdown_core_node *document = NULL;
-    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE |
-                  MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+    int options = MARKDOWN_CORE_OPT_SMART | MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
     bool gfm_profile = false;
     int res = 1;
 
@@ -127,12 +125,12 @@ int main(int argc, char *argv[]) {
             i++;
             if (strcmp(argv[i], "gfm") == 0) {
                 gfm_profile = true;
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES;
             } else if (strcmp(argv[i], "gfm-smart") == 0) {
                 gfm_profile = true;
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_SMART;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_SMART;
             } else if (strcmp(argv[i], "gfm-extended") == 0) {
-                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8 | MARKDOWN_CORE_OPT_DIRECTIVE;
+                options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_DIRECTIVE;
             } else if (strcmp(argv[i], "default") != 0) {
                 fprintf(stderr, "Unknown profile %s\n", argv[i]);
                 goto failure;
@@ -148,7 +146,7 @@ int main(int argc, char *argv[]) {
     parser = markdown_core_parser_new(options);
 
     // Attachment order is priority, and `table` goes last for the reason given
-    // in extensions/session.c: its row opener matches any line inside an open
+    // in extensions/document.c: its row opener matches any line inside an open
     // table, so every narrower claim has to come first. The others here are
     // cmark-gfm's own; the repository's own extensions are off under the gfm
     // profile so a comparison against upstream compares the same language.

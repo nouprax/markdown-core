@@ -70,7 +70,7 @@ printf '%s\n' \
 printf '%s\n' \
     'import MarkdownCore' \
     '' \
-    'let document = try Document.parse("## archived consumer")' \
+    'let document = try Document("## archived consumer")' \
     'guard (document.content.first as? Heading)?.level == 2 else { fatalError("parse failed") }' \
     'print(document.dump())' >"$consumer/Sources/Consumer/main.swift"
 

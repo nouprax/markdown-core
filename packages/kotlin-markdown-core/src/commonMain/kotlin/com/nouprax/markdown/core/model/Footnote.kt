@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class FootnoteDefinition internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val label: String,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
@@ -16,6 +17,7 @@ public class FootnoteDefinition internal constructor(
 public class FootnoteReference internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val label: String,
 ) : Markup {
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)

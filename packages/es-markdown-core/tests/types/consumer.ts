@@ -1,6 +1,5 @@
 import {
     Document,
-    MarkupSession,
     MarkupDumper,
     visit,
     MarkupWalker,
@@ -10,8 +9,10 @@ import {
     type DirectiveBlock,
     type DirectiveLabel,
     type CrossLink,
+    DiagnosticCode,
+    type Diagnostic,
+    type Diff,
     type Embed,
-    type FootnoteInfo,
     type Heading,
     type Markup,
     type MarkupID,
@@ -23,7 +24,7 @@ import {
 } from "@nouprax/es-markdown-core";
 import type { Document as ParsedDocument } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# typed", { tables: true });
+const document = Document("# typed", { tables: true });
 const parsedDocument: ParsedDocument = document;
 const diagnostic: string = document.dump();
 const explicitDiagnostic: string = MarkupDumper.dump(document);
@@ -32,7 +33,7 @@ void diagnostic;
 void explicitDiagnostic;
 void subtreeDiagnostic;
 void parsedDocument;
-// @ts-expect-error Document values are created only by Document.parse
+// @ts-expect-error a document is parsed from text, not constructed empty
 new Document();
 const visitor: MarkupVisitor<string> = {
     visitDocument: (node) => node.kind,
@@ -92,39 +93,38 @@ new MarkupWalker().walk(document, callableVisitor);
 document.content[0] = document;
 // @ts-expect-error diagnostic methods cannot be replaced
 document.dump = () => "replacement";
-// @ts-expect-error the scope mediator cannot be replaced
-document.scope = () => {
-    throw new Error("replacement");
-};
-// @ts-expect-error nodes do not store scopes
-void document.content[1].scope;
+// @ts-expect-error a node's extent is read-only, like every other field
+document.content[1].scope = { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } };
 
 const identity: MarkupID = document.id;
-const lineage: bigint = identity.lineage;
+const series: bigint = identity.series;
 const rawValue: number = identity.rawValue;
 const revision: number = document.revision;
-const documentScope: Scope = document.scope(document);
-void lineage;
+const documentScope: Scope = document.scope;
+const nodeScope: Scope = document.content[1]!.scope;
+void nodeScope;
+void series;
 void rawValue;
 void revision;
 void documentScope;
 
-const session = new MarkupSession({ tables: true });
-const snapshot: ParsedDocument = session.document;
-const commit: Commit = session.commit();
+const commit: Commit = document.edit("# typed again");
+const successor: ParsedDocument = commit.document;
 const delta: Delta = commit.delta;
-const added: readonly MarkupID[] = delta.added;
-const currentValue: Markup | null = session.node(document.id);
-const info: FootnoteInfo | null = session.footnote(document.id);
-const sessionLineage: bigint = session.lineage;
-void snapshot;
-void added;
+const diffs: readonly Diff[] = delta.diffs;
+const retired: boolean = diffs[0]!.parts.retired;
+const currentValue: Markup | null = successor.node(document.id);
+const diagnostics: readonly Diagnostic[] = successor.diagnostics;
+const attributeCode: DiagnosticCode = DiagnosticCode.directiveAttributes;
+void attributeCode;
+void successor;
+void diffs;
+void retired;
 void currentValue;
-void info;
-void sessionLineage;
-// @ts-expect-error session options are immutable for the session lifetime
-session.options.tables = false;
-session.close();
+void diagnostics;
+// @ts-expect-error options are immutable for a document's whole series
+document.options.tables = false;
+successor.close();
 
 declare const table: Table;
 const rowMarkup: Markup = table.header;

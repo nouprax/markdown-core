@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class Image internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val source: String?,
     public val title: String?,
     public val content: kotlin.collections.List<Markup>,

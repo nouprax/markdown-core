@@ -26,19 +26,15 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
 
 void markdown_core_iter_free(markdown_core_iter *iter) { iter->mem->free(iter->mem, iter); }
 
-static bool S_is_leaf(markdown_core_node *node) {
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_SOFT_BREAK:
-    case MARKDOWN_CORE_NODE_LINE_BREAK:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_HTML:
-        return 1;
-    }
-    return 0;
+void markdown_core_iter_reset(
+    markdown_core_iter *iter,
+    markdown_core_node *current,
+    markdown_core_event_type event_type
+) {
+    iter->cur.ev_type = event_type;
+    iter->cur.node = current;
+    iter->next.ev_type = event_type;
+    iter->next.node = current;
 }
 
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
@@ -53,7 +49,14 @@ markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) {
     }
 
     /* roll forward to next item, setting both fields */
-    if (ev_type == MARKDOWN_CORE_EVENT_ENTER && !S_is_leaf(node)) {
+    /* EVERY node is entered and exited. Upstream skipped the exit for eight
+     * node types it called leaves, which is a renderer's distinction -- a text
+     * node has no closing tag, so the event was waste for every renderer cmark
+     * ships. It was never a structural one: a non-leaf type with no children
+     * got an exit anyway, so the rule was "my type is on a list", not "nothing
+     * is below me". A consumer asking the structural question -- am I finished
+     * with this node -- had to carry that list around to ask it. */
+    if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
         if (node->first_child == NULL) {
             /* stay on this node but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
@@ -104,13 +107,19 @@ int markdown_core_node_consolidate_texts(markdown_core_node *root) {
             markdown_core_strbuf_put(&buf, cur->as.literal.data, cur->as.literal.len);
             tmp = cur->next;
             while (tmp && tmp->type == MARKDOWN_CORE_NODE_TEXT) {
-                markdown_core_iter_next(iter); // advance pointer
                 markdown_core_strbuf_put(&buf, tmp->as.literal.data, tmp->as.literal.len);
                 cur->end_column = tmp->end_column;
                 next = tmp->next;
                 markdown_core_node_free(tmp);
                 tmp = next;
             }
+            /* Every node the iterator could still be pointing at has just been
+             * freed, so the successor it computed before handing us this ENTER
+             * is stale. Re-seat on `cur`, the one node in the run that
+             * survives: the walk recomputes from a sibling chain that now ends
+             * the run at `cur`, and the re-delivered ENTER falls straight
+             * through the guard above because `cur->next` is no longer TEXT. */
+            markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_ENTER);
             markdown_core_chunk_free(iter->mem, &cur->as.literal);
             cur->as.literal = markdown_core_chunk_buf_detach(&buf);
             if (!cur->as.literal.data) {

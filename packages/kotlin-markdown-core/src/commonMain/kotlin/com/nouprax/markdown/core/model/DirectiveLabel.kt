@@ -10,6 +10,7 @@ package com.nouprax.markdown.core
 public class DirectiveLabel internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)

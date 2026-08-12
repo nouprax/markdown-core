@@ -7,32 +7,6 @@
 
 #define DELIMITER_INITIAL_CAPACITY 16u
 
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-#define DELIMITER_DIAGNOSTIC_ADD(engine, field, value) ((engine)->diagnostics.field += (uint64_t)(value))
-/* Re-validate after every mutating operation, so a broken chain invariant
- * fails deterministically at the mutation that broke it. The driver owns
- * the reaction (markdown_core_delimiter_engine_invariant_failed). Pushes
- * are the one O(n)-per-op hot spot — validating each of n pushes is
- * quadratic — so past the invariant suite's working size they sample at
- * every 256th record; every other mutation validates unconditionally. */
-static void delimiter_invariant_check(const markdown_core_delimiter_engine *engine, const char *site) {
-    if (!markdown_core_delimiter_engine_validate(engine)) {
-        markdown_core_delimiter_engine_invariant_failed(site);
-    }
-}
-#define DELIMITER_CHECK(engine, site) delimiter_invariant_check((engine), (site))
-#define DELIMITER_CHECK_PUSH(engine, site)                                                                             \
-    do {                                                                                                               \
-        if ((engine)->count <= 4096 || ((engine)->count & 0xFFu) == 0) {                                               \
-            delimiter_invariant_check((engine), (site));                                                               \
-        }                                                                                                              \
-    } while (0)
-#else
-#define DELIMITER_DIAGNOSTIC_ADD(engine, field, value) ((void)0)
-#define DELIMITER_CHECK(engine, site) ((void)0)
-#define DELIMITER_CHECK_PUSH(engine, site) ((void)0)
-#endif
-
 static markdown_core_delimiter_id delimiter_id_pack(uint32_t ordinal, uint32_t generation) {
     return ((markdown_core_delimiter_id)ordinal << MARKDOWN_CORE_DELIMITER_ID_GENERATION_BITS) |
            (generation & MARKDOWN_CORE_DELIMITER_ID_GENERATION_MASK);
@@ -79,7 +53,6 @@ markdown_core_inline_config *markdown_core_inline_config_new(
     }
     config->mem = mem;
     memcpy(config->special_chars, base_special_chars, sizeof(config->special_chars));
-    memcpy(config->seam_barrier_chars, base_special_chars, sizeof(config->seam_barrier_chars));
     memcpy(config->skip_chars, base_skip_chars, sizeof(config->skip_chars));
     return config;
 }
@@ -110,7 +83,6 @@ void markdown_core_inline_config_free(markdown_core_inline_config *config) {
     }
     for (i = 0; i < 256; i++) {
         config->mem->free(config->mem, config->dispatch[i].items);
-        config->mem->free(config->mem, config->seam_dispatch[i].items);
         config->mem->free(config->mem, config->close_dispatch[i].items);
     }
     config->mem->free(config->mem, config);
@@ -157,16 +129,6 @@ markdown_core_inline_attachment *markdown_core_inline_config_find_attachment(
     return NULL;
 }
 
-static int extension_uses_conditional_seam(const markdown_core_extension *extension, unsigned char character) {
-    size_t i;
-    for (i = 0; i < extension->inline_seam_probe_char_count; i++) {
-        if (extension->inline_seam_probe_chars[i] == character) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
     markdown_core_inline_config *config,
     markdown_core_extension *extension,
@@ -174,7 +136,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
 ) {
     markdown_core_inline_attachment *attachment;
     size_t dispatch_additions[256] = {0};
-    size_t seam_additions[256] = {0};
     size_t close_additions[256] = {0};
     size_t i;
     size_t j;
@@ -188,10 +149,7 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
     if ((extension->delimiter_rule_count && (!extension->delimiter_rules || !extension->insert_inline_from_delim)) ||
         (extension->special_inline_char_count && !extension->match_inline) ||
         (extension->special_inline_char_count && !extension->special_inline_chars) ||
-        (extension->flanking_skip_char_count && !extension->flanking_skip_chars) ||
-        (extension->inline_seam_barrier_char_count && !extension->inline_seam_barrier_chars) ||
-        (extension->inline_seam_probe_char_count &&
-         (!extension->inline_seam_probe_chars || !extension->inline_seam_probe))) {
+        (extension->flanking_skip_char_count && !extension->flanking_skip_chars)) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
     if (extension->delimiter_rule_count > UINT16_MAX ||
@@ -206,22 +164,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
                 return MARKDOWN_CORE_DELIMITER_INVALID;
             }
         }
-    }
-    for (i = 0; i < extension->inline_seam_probe_char_count; i++) {
-        int registered = 0;
-        unsigned char c = extension->inline_seam_probe_chars[i];
-        for (j = 0; j < extension->special_inline_char_count; j++) {
-            registered |= extension->special_inline_chars[j] == c;
-        }
-        for (j = 0; j < i; j++) {
-            if (extension->inline_seam_probe_chars[j] == c) {
-                return MARKDOWN_CORE_DELIMITER_INVALID;
-            }
-        }
-        if (!registered) {
-            return MARKDOWN_CORE_DELIMITER_INVALID;
-        }
-        seam_additions[c]++;
     }
     for (i = 0; i < extension->delimiter_rule_count; i++) {
         const markdown_core_delimiter_rule *rule = &extension->delimiter_rules[i];
@@ -271,16 +213,6 @@ markdown_core_delimiter_result markdown_core_inline_attachment_prepare(
             }
             bucket->items = (markdown_core_inline_attachment **)grown;
         }
-        if (seam_additions[i]) {
-            markdown_core_inline_dispatch *bucket = &config->seam_dispatch[i];
-            void *grown =
-                reserve_pointer_slots(config->mem, bucket->items, &bucket->capacity, bucket->count + seam_additions[i]);
-            if (!grown) {
-                markdown_core_inline_attachment_discard(config, attachment);
-                return MARKDOWN_CORE_DELIMITER_OOM;
-            }
-            bucket->items = (markdown_core_inline_attachment **)grown;
-        }
         if (close_additions[i]) {
             markdown_core_inline_close_dispatch *bucket = &config->close_dispatch[i];
             void *grown = reserve_pointer_slots(
@@ -318,12 +250,6 @@ void markdown_core_inline_attachment_commit(
         markdown_core_inline_dispatch *bucket = &config->dispatch[c];
         bucket->items[bucket->count++] = attachment;
         config->special_chars[c] = 1;
-        if (extension_uses_conditional_seam(attachment->extension, c)) {
-            markdown_core_inline_dispatch *seam_bucket = &config->seam_dispatch[c];
-            seam_bucket->items[seam_bucket->count++] = attachment;
-        } else {
-            config->seam_barrier_chars[c] = 1;
-        }
     }
     for (i = 0; i < attachment->rule_count; i++) {
         markdown_core_delimiter_binding *binding = &attachment->rules[i];
@@ -332,14 +258,10 @@ void markdown_core_inline_attachment_commit(
             markdown_core_inline_close_dispatch *bucket = &config->close_dispatch[c];
             bucket->items[bucket->count++] = binding;
             config->special_chars[c] = 1;
-            config->seam_barrier_chars[c] = 1;
         }
     }
     for (i = 0; i < attachment->extension->flanking_skip_char_count; i++) {
         config->skip_chars[attachment->extension->flanking_skip_chars[i]] = 1;
-    }
-    for (i = 0; i < attachment->extension->inline_seam_barrier_char_count; i++) {
-        config->seam_barrier_chars[attachment->extension->inline_seam_barrier_chars[i]] = 1;
     }
 }
 
@@ -383,7 +305,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     engine->lane_count = lane_count;
     engine->capture = capture;
     engine->last_claim_order = 0;
-    DELIMITER_CHECK(engine, "begin");
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 
@@ -427,7 +348,6 @@ static int ensure_record_capacity(markdown_core_delimiter_engine *engine) {
      * grown region is defined here, once per growth. */
     memset(engine->records + engine->capacity, 0, (capacity - engine->capacity) * sizeof(*engine->records));
     engine->capacity = capacity;
-    DELIMITER_DIAGNOSTIC_ADD(engine, capacity_growths, 1);
     return 1;
 }
 
@@ -547,13 +467,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     if (claim_order) {
         engine->last_claim_order = claim_order;
     }
-    DELIMITER_DIAGNOSTIC_ADD(engine, pushes, 1);
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-    if (engine->count > engine->diagnostics.peak_live_records) {
-        engine->diagnostics.peak_live_records = engine->count;
-    }
-#endif
-    DELIMITER_CHECK_PUSH(engine, "push");
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 
@@ -617,7 +530,6 @@ static void remove_record(markdown_core_delimiter_engine *engine, markdown_core_
         lane->tail = record->previous_rule;
     }
     record->active = 0;
-    DELIMITER_DIAGNOSTIC_ADD(engine, unlinks, 1);
 }
 
 static int pair_is_eligible(
@@ -714,8 +626,6 @@ static markdown_core_delimiter_result reduce_pair(
     if (result != MARKDOWN_CORE_DELIMITER_OK) {
         return result;
     }
-    DELIMITER_DIAGNOSTIC_ADD(engine, reductions, 1);
-    DELIMITER_DIAGNOSTIC_ADD(engine, run_bytes_consumed, use_length * 2);
 
     /* Consumption follows the reduction shape. RUN and ENDPOINTS reducers
      * consume exactly when they return OK — the core emphasis and quote
@@ -760,11 +670,9 @@ static void truncate_to_mark(markdown_core_delimiter_engine *engine, markdown_co
     if (mark.count > engine->count) {
         return;
     }
-    DELIMITER_DIAGNOSTIC_ADD(engine, reclaimed_records, engine->count - mark.count);
     for (i = engine->count; i > mark.count; i--) {
         markdown_core_delimiter_record *record = &engine->records[i - 1];
         markdown_core_delimiter_lane *lane = &engine->lanes[record->binding->lane];
-        DELIMITER_DIAGNOSTIC_ADD(engine, truncate_visits, 1);
         lane->tail = record->push_previous_rule;
         lane->open_top = record->open_top_before;
         /* Reclaiming the slot retires every id minted for it: the bump
@@ -818,7 +726,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_truncate(
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
     truncate_to_mark(engine, mark);
-    DELIMITER_CHECK(engine, "truncate");
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 
@@ -838,7 +745,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
     if (!engine->count || mark.count == engine->count) {
         return MARKDOWN_CORE_DELIMITER_OK;
     }
-    DELIMITER_DIAGNOSTIC_ADD(engine, process_calls, 1);
     epoch = ++engine->process_epoch;
     if (!epoch) {
         size_t i;
@@ -869,7 +775,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
             opener = closer_record->previous_rule;
             while (opener >= floor) {
                 markdown_core_delimiter_record *opener_record = record_at(engine, opener);
-                DELIMITER_DIAGNOSTIC_ADD(engine, opener_candidate_visits, 1);
                 if (pair_is_eligible(opener_record, closer_record)) {
                     break;
                 }
@@ -882,7 +787,6 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
                 if (result != MARKDOWN_CORE_DELIMITER_OK) {
                     break;
                 }
-                DELIMITER_CHECK(engine, "reduce");
                 if (reduction == MARKDOWN_CORE_DELIMITER_REDUCE_RUN && record_at(engine, closer)->active) {
                     next = closer;
                 } else {
@@ -892,126 +796,11 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
                 lane->floor[klass] = closer;
                 if (!closer_record->can_open) {
                     remove_record(engine, closer);
-                    DELIMITER_CHECK(engine, "retire");
                 }
             }
         }
         closer = next;
     }
     truncate_to_mark(engine, mark);
-    DELIMITER_CHECK(engine, "process");
     return result;
 }
-
-#ifdef MARKDOWN_CORE_DELIMITER_DIAGNOSTICS
-const markdown_core_delimiter_diagnostics *markdown_core_delimiter_engine_diagnostics(
-    const markdown_core_delimiter_engine *engine
-) {
-    return &engine->diagnostics;
-}
-
-int markdown_core_delimiter_engine_validate(const markdown_core_delimiter_engine *engine) {
-    markdown_core_delimiter_id global_previous = 0;
-    markdown_core_bufsize previous_source_end = 0;
-    uint64_t previous_claim_order = 0;
-    size_t i;
-
-    if (!engine || engine->count > engine->capacity || engine->count > MARKDOWN_CORE_DELIMITER_MAX_RECORDS ||
-        (engine->count && (!engine->records || !engine->lanes)) || (engine->lane_count && !engine->lanes)) {
-        return 0;
-    }
-
-    for (i = 0; i < engine->count; i++) {
-        markdown_core_delimiter_id id = delimiter_id_pack((uint32_t)(i + 1), engine->records[i].generation);
-        const markdown_core_delimiter_record *record = &engine->records[i];
-        const markdown_core_delimiter_record *related;
-
-        if (!record->active) {
-            continue;
-        }
-        if (!record->binding || !record->binding->rule || !record->binding->reduce ||
-            record->binding->lane >= engine->lane_count || record->source_start < 0 ||
-            record->source_end <= record->source_start ||
-            record->original_length != record->source_end - record->source_start || record->remaining_length <= 0 ||
-            record->remaining_length > record->original_length || record->previous != global_previous ||
-            (!record->can_open && !record->can_close) ||
-            (record->binding->rule->close_probe && record->can_open && record->can_close) ||
-            (record->binding->rule->close_probe && record->can_open && !record->claim_order) ||
-            (record->binding->rule->close_probe && record->can_close && record->claim_order) ||
-            (!record->binding->rule->close_probe && record->claim_order) ||
-            (global_previous && record->source_start < previous_source_end) ||
-            (record->claim_order && record->claim_order <= previous_claim_order)) {
-            return 0;
-        }
-        if (record->previous) {
-            related = record_at(engine, record->previous);
-            if (!related || !related->active || record->previous >= id || related->next != id) {
-                return 0;
-            }
-        }
-        if (record->next) {
-            related = record_at(engine, record->next);
-            if (!related || !related->active || record->next <= id || related->previous != id) {
-                return 0;
-            }
-        } else if (engine->tail != id) {
-            return 0;
-        }
-        if (record->previous_rule) {
-            related = record_at(engine, record->previous_rule);
-            if (!related || !related->active || record->previous_rule >= id ||
-                related->binding->lane != record->binding->lane || related->next_rule != id) {
-                return 0;
-            }
-        }
-        if (record->next_rule) {
-            related = record_at(engine, record->next_rule);
-            if (!related || !related->active || record->next_rule <= id ||
-                related->binding->lane != record->binding->lane || related->previous_rule != id) {
-                return 0;
-            }
-        } else if (engine->lanes[record->binding->lane].tail != id) {
-            return 0;
-        }
-        global_previous = id;
-        previous_source_end = record->source_end;
-        if (record->claim_order) {
-            previous_claim_order = record->claim_order;
-        }
-    }
-
-    if (global_previous != engine->tail || previous_claim_order > engine->last_claim_order ||
-        (engine->tail && record_at(engine, engine->tail)->next)) {
-        return 0;
-    }
-
-    if (!engine->lanes) {
-        return engine->count == 0 && engine->tail == 0;
-    }
-    for (i = 0; i < engine->lane_count; i++) {
-        markdown_core_delimiter_id tail = engine->lanes[i].tail;
-        markdown_core_delimiter_id opener = engine->lanes[i].open_top;
-        const markdown_core_delimiter_record *record;
-        if (tail) {
-            record = record_at(engine, tail);
-            if (!record || !record->active || record->binding->lane != i || record->next_rule) {
-                return 0;
-            }
-        }
-        /* The open stack may carry tombstones — records a reduction
-         * removed that no touch point has lazily popped yet — so activity
-         * is not required of its entries; shape is: every entry down the
-         * stack is a can-open close-probe record of this lane, strictly
-         * descending. */
-        while (opener) {
-            record = record_at(engine, opener);
-            if (!record || !record->can_open || !record->binding->rule->close_probe || record->binding->lane != i ||
-                record->previous_open >= opener) {
-                return 0;
-            }
-            opener = record->previous_open;
-        }
-    }
-    return 1;
-}
-#endif

@@ -170,6 +170,13 @@ static void markdown_core_parser_dispose(markdown_core_parser *parser) {
     markdown_core_map_free(parser->refmap);
     markdown_core_map_free(parser->footnote_defs);
 
+    if (parser->diagnostics) {
+        parser->mem->free(parser->mem, parser->diagnostics);
+        parser->diagnostics = NULL;
+        parser->diagnostic_count = 0;
+        parser->diagnostic_capacity = 0;
+    }
+
     if (parser->line_marks) {
         parser->mem->free(parser->mem, parser->line_marks);
         parser->line_marks = NULL;
@@ -208,57 +215,6 @@ static void markdown_core_parser_reset(markdown_core_parser *parser) {
     /* A reset that could not rebuild its structures poisons the parser: feed
      * becomes a no-op and finish reports failure. */
     if (!parser->root || !S_definition_maps_ready(parser) || parser->curline.oom) {
-        parser->oom = true;
-    }
-}
-
-/* Like markdown_core_parser_reset, but keeps the allocations one parse hands
- * back intact for the next: the line buffers' capacity, the definition maps
- * when the caller left them attached (a consumed map is replaced by a fresh
- * one), and the extension attachments. A kept map must be empty — the caller
- * either never inserted into it or took it away. Failure poisons the parser
- * exactly like a failed reset. */
-void markdown_core_parser_renew(markdown_core_parser *parser) {
-    markdown_core_llist *saved_exts = parser->extensions;
-    markdown_core_inline_config *saved_inline_config = parser->inline_config;
-    markdown_core_delimiter_engine saved_inline_delimiters = parser->inline_delimiters;
-    int saved_options = parser->options;
-    markdown_core_mem *saved_mem = parser->mem;
-    markdown_core_map *saved_refmap = parser->refmap;
-    markdown_core_map *saved_footnote_defs = parser->footnote_defs;
-    markdown_core_strbuf saved_curline = parser->curline;
-    markdown_core_strbuf saved_linebuf = parser->linebuf;
-
-    if (parser->root) {
-        markdown_core_node_free(parser->root);
-    }
-
-    if (parser->line_marks) {
-        parser->mem->free(parser->mem, parser->line_marks);
-    }
-
-    memset(parser, 0, sizeof(markdown_core_parser));
-    parser->mem = saved_mem;
-
-    parser->curline = saved_curline;
-    parser->linebuf = saved_linebuf;
-    markdown_core_strbuf_clear(&parser->curline);
-    markdown_core_strbuf_clear(&parser->linebuf);
-
-    markdown_core_node *document = make_document(parser->mem);
-
-    parser->refmap = saved_refmap ? saved_refmap : markdown_core_reference_map_new(parser->mem);
-    parser->footnote_defs =
-        saved_footnote_defs ? saved_footnote_defs : markdown_core_footnote_definition_map_new(parser->mem);
-    parser->root = document;
-    parser->current = document;
-
-    parser->extensions = saved_exts;
-    parser->inline_config = saved_inline_config;
-    parser->inline_delimiters = saved_inline_delimiters;
-    parser->options = saved_options;
-
-    if (!parser->root || !S_definition_maps_ready(parser) || parser->curline.oom || parser->linebuf.oom) {
         parser->oom = true;
     }
 }
@@ -469,6 +425,35 @@ markdown_core_bufsize markdown_core_line_mark_extent(
     return end - start;
 }
 
+void markdown_core_parser_record_diagnostic(
+    markdown_core_parser *parser,
+    int code,
+    int start_line,
+    int start_column,
+    int end_line,
+    int end_column
+) {
+    struct markdown_core_parser_diagnostic *grown;
+    size_t capacity;
+
+    if (parser->diagnostic_count == parser->diagnostic_capacity) {
+        capacity = parser->diagnostic_capacity ? parser->diagnostic_capacity * 2 : 4;
+        grown = (struct markdown_core_parser_diagnostic *)
+                    parser->mem->realloc(parser->mem, parser->diagnostics, capacity * sizeof(*grown));
+        if (!grown) {
+            return;
+        }
+        parser->diagnostics = grown;
+        parser->diagnostic_capacity = capacity;
+    }
+    parser->diagnostics[parser->diagnostic_count].code = code;
+    parser->diagnostics[parser->diagnostic_count].start_line = start_line;
+    parser->diagnostics[parser->diagnostic_count].start_column = start_column;
+    parser->diagnostics[parser->diagnostic_count].end_line = end_line;
+    parser->diagnostics[parser->diagnostic_count].end_column = end_column;
+    parser->diagnostic_count++;
+}
+
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
     markdown_core_bufsize i;
     unsigned char c;
@@ -515,12 +500,12 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
 }
 
 /* The document-child anchor a definition retracts with: the direct document
- * child containing `b`. Sessions reparse whole document children at a
+ * child containing `b`. An edit reparses whole document children at a
  * time, so a
  * definition stamped with its anchor is re-harvested exactly when its bytes
  * are reparsed. Anchors are stamped as node pointers here and rewritten to
- * node ids once the session's adoption walk has assigned them; the map is
- * parse-local everywhere else, so the stamp is inert outside sessions. */
+ * node ids once the commit's adoption walk has assigned them; the map is
+ * parse-local everywhere else, so the stamp is inert outside an edit. */
 static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *anchor = b;
     while (anchor->parent && anchor->parent != parser->root) {
@@ -555,7 +540,25 @@ static void S_content_position(
     }
     mark = &parser->line_marks[*cursor];
     *line = mark->line;
-    *column = mark->column + (int)(offset - mark->content_offset);
+    /* Through the extent helper, and NOT through `mark->column`.
+     *
+     * `column` is the block parser's tab-expanded counter, which cmark calls
+     * a VIRTUAL column (src/blocks.c:867) and never turns into a position:
+     * every node position in this engine is a byte column, from
+     * `add_child(first_nonspace + 1)` to a finalized `end_column`. Writing
+     * the expanded one here made a node placed through a mark speak a
+     * language no node beside it spoke — on a definition followed by a
+     * TAB-indented continuation the paragraph came out `2:5..2:10` around
+     * its own Text child at `2:5..2:13`, a child overrunning its parent.
+     * Four spaces in place of the tab expand to the same number and hid it,
+     * which is why no fixture caught it. The helper is also where the
+     * stand-in pad of a mid-tab lazy continuation is undone, and the `+ 1`
+     * is the zero-based record column becoming a one-based node position. */
+    {
+        markdown_core_bufsize record_column;
+        markdown_core_line_mark_extent(mark, offset, offset, &record_column);
+        *column = (int)record_column + 1;
+    }
 }
 
 /* Captures one reference-definition spelling as concrete records on `node`:
@@ -711,7 +714,7 @@ static void S_emit_definition(
      * continuation as an indented code block.
      *
      * Before definitions had nodes, a definition-only paragraph vanished and
-     * the session kept a sentinel clean entry to stand in for the anchor the
+     * the document kept a sentinel clean entry to stand in for the anchor the
      * tree no longer had; the node is now that anchor. */
     if (start == 0) {
         node->flags |= b->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
@@ -785,7 +788,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
      * position inside it is computed from this start, so they were all off by
      * the definitions' lines. The defect predates the ReferenceDefinition
      * node; it was invisible while a definition left nothing to overlap with,
-     * and neither parity oracle compares positions. The session's restart
+     * and neither parity oracle compares positions. The restart
      * reparses from the surviving line and got this right, which is how the
      * equivalence gate found it. */
     if (consumed) {
@@ -796,7 +799,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
          * a line that arrived while it was already open, and reparsing from
          * there does not reproduce it — an indented continuation reads as a
          * code block instead. Moving the start without dropping the claim is
-         * what made the session restart mid-definition. */
+         * what made the parse restart mid-definition. */
         b->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
     markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
@@ -1031,26 +1034,12 @@ static void S_parse_node_inlines(
     /* Both definition maps attribute to the same unit: a lookup in either is
      * a dependency of the block whose inlines are being parsed. One test arms
      * both, because a watcher attaches its sink to both maps or to neither
-     * (session.c, watch_definition_lookups) — so a watched reference map is
+     * (document.c, watch_definition_lookups) — so a watched reference map is
      * proof that the footnote map is there. */
     if (refmap && refmap->lookup_sink) {
         markdown_core_node *unit = S_lookup_attribution(cur);
         refmap->lookup_unit = unit;
         parser->footnote_defs->lookup_unit = unit;
-    }
-    /* A session-staged leaf may carry an inline seam in user_data (offset+1):
-     * bytes before it are an inert, already-materialized prefix whose nodes
-     * the commit transplants later, so inline parsing starts at the seam.
-     * One-shot parses never set user_data. */
-    if (cur->user_data) {
-        markdown_core_parse_inlines_from(
-            parser,
-            cur,
-            refmap,
-            options,
-            (markdown_core_bufsize)((uintptr_t)cur->user_data - 1)
-        );
-        return;
     }
     markdown_core_parse_inlines(parser, cur, refmap, options);
 }
@@ -2250,11 +2239,13 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
 
     markdown_core_strbuf_clear(&parser->curline);
 
-    if (parser->options & MARKDOWN_CORE_OPT_VALIDATE_UTF8) {
-        markdown_core_utf8proc_check(&parser->curline, buffer, bytes);
-    } else {
-        markdown_core_strbuf_put(&parser->curline, buffer, bytes);
-    }
+    /* The line's bytes, as authored. UTF-8 is ASSUMED AND NEVER VALIDATED
+     * (incremental-canonical-ast.md 7.1): there is no scan here, nothing is
+     * replaced, and a sequence that is not UTF-8 is opaque payload this engine
+     * carries and never interprets. The pass that used to sit here rewrote
+     * such a sequence as U+FFFD, which is a lossy parse — it produces not a
+     * degraded document but a different one. */
+    markdown_core_strbuf_put(&parser->curline, buffer, bytes);
 
     bytes = parser->curline.size;
 
@@ -2338,12 +2329,9 @@ finished:
 /* Runs the block-local postprocess pipeline for one unit: text
  * consolidation, extension block postprocess hooks in attachment order,
  * and HTML-comment stripping. The caller precomputes its traversal successor
- * because a postprocessor may replace the unit. Returns the surviving node. */
-static markdown_core_node *S_postprocess_unit(
-    markdown_core_parser *parser,
-    markdown_core_node *unit,
-    bool owns_inlines
-) {
+ * because a postprocessor may replace the unit; the replacement takes the
+ * unit's place in the tree itself, so nothing is handed back. */
+static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
     markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
 
@@ -2387,22 +2375,29 @@ static markdown_core_node *S_postprocess_unit(
             }
         }
     }
-
-    return unit;
 }
 
 /* Drives S_postprocess_unit over a bounded subtree in document order.
  * Inline-owning units are pipeline leaves: their inline subtrees are handled
  * by the unit pass itself, so traversal never descends into them. Successors
  * are computed before a unit runs because the pipeline may replace, free, or
- * flatten the unit node. Returns the node occupying `first`'s position after
- * processing; callers use this when the bounded root itself may be replaced. */
-static markdown_core_node *S_postprocess_subtree(
+ * flatten the unit node; a replacement splices itself into the tree, so no
+ * caller has to be told about it.
+ *
+ * Deliberately does NOT stamp `subtree_hash`. Stamping was folded into this
+ * walk once, and it worked and was cheaper (+2.6% against +11.2% on
+ * multiple_duplicate_references) -- but it took three shapes to do it: a
+ * pipeline leaf stamped as it was processed, a container stamped as its last
+ * child completed, and the root stamped by the caller because this walk stops
+ * below its boundary. Correctness then depended on those three agreeing about
+ * who covers whom, which is the same "some nodes stamped, some not" split that
+ * produced the unstamped-inlines bug in the first place. One trailing pass
+ * over the settled tree is worth the difference. */
+static void S_postprocess_subtree(
     markdown_core_parser *parser,
     markdown_core_node *boundary,
     markdown_core_node *first
 ) {
-    markdown_core_node *result = first;
     markdown_core_node *node = first;
 
     while (node) {
@@ -2420,45 +2415,15 @@ static markdown_core_node *S_postprocess_subtree(
             }
         }
 
-        {
-            markdown_core_node *processed = S_postprocess_unit(parser, node, owns_inlines);
-            if (node == first) {
-                result = processed;
-            }
-        }
+        S_postprocess_unit(parser, node, owns_inlines);
         node = next;
     }
-    return result;
 }
 
 static void S_postprocess_blocks(markdown_core_parser *parser) {
     if (parser->root->first_child) {
         S_postprocess_subtree(parser, parser->root, parser->root->first_child);
     }
-}
-
-markdown_core_node *markdown_core_parser_refine_unit(
-    markdown_core_parser *parser,
-    markdown_core_map *refmap,
-    markdown_core_node *unit
-) {
-    markdown_core_iter *iter = markdown_core_iter_new(unit);
-    markdown_core_node *cur;
-    markdown_core_event_type ev_type;
-
-    if (!iter) {
-        parser->oom = true;
-        return unit;
-    }
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (ev_type == MARKDOWN_CORE_EVENT_ENTER && contains_inlines(cur)) {
-            S_parse_node_inlines(parser, cur, refmap, parser->options);
-        }
-    }
-    markdown_core_iter_free(iter);
-
-    return S_postprocess_subtree(parser, unit, unit);
 }
 
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {
@@ -2488,6 +2453,31 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
         parser->root = NULL;
         return NULL;
     }
+
+    /* WHERE THE TREE IS FINGERPRINTED: one pass, over the settled tree, after
+     * every pass that could still move a node.
+     *
+     * Stamping used to ride along on process_inlines' walk, on the argument
+     * that the walk was already running. That walk cannot do the job, twice
+     * over. It never sees an inline node at all: it creates a unit's inline
+     * children on that unit's ENTER, and the iterator settles its successor
+     * before the caller gets the event, so the children appear behind the walk
+     * and are never entered. Every inline node kept hash 0, so a unit's hash
+     * mixed nothing but zeros and collapsed to a function of kind and child
+     * count -- precisely the discrimination diff.c's prefix sweep needs it to
+     * have. And it ran before S_postprocess_blocks, which merges adjacent
+     * text, splits text for autolinks and replaces whole units, so whatever it
+     * did compute described a tree that no longer existed by the time the diff
+     * read it. One cause behind both: it stamped too early.
+     *
+     * It costs a traversal -- ~6% of parse time on the throughput corpus and
+     * ~11% on multiple_duplicate_references, which is nearly all blocks and so
+     * pays for every node. Folding it into S_postprocess_subtree instead is
+     * measurably cheaper (+2.6%) and was rejected: it takes three stamping
+     * shapes to cover the tree that way, and a rule about which shape owns
+     * which node is the thing that failed here already. Placed after the
+     * failure check, so a tree that is about to be freed is never walked. */
+    markdown_core_node_stamp_tree(parser->root);
 
     res = parser->root;
     parser->root = NULL;

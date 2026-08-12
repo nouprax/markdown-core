@@ -28,13 +28,11 @@ if (!chrome) throw new Error("browser suite requires Chrome/Chromium; set CHROME
 const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body id="result">RUNNING<script type="module">
   try {
     const api = await import('/index.js');
-    const parsed = api.Document.parse('# Browser 🌍');
-    const session = new api.MarkupSession();
-    session.append('# Brow');
-    session.commit();
-    session.append('ser 🌍');
-    const streamed = session.commit().document.dump();
-    session.close();
+    const parsed = api.Document('# Browser 🌍');
+    let streaming = api.Document('# Brow');
+    streaming = streaming.edit('# Browser 🌍').document;
+    const streamed = streaming.dump();
+    streaming.close();
     const valid = parsed.content[0].kind === 'heading' &&
       parsed.content[0].content[0].literal === 'Browser 🌍' &&
       streamed === parsed.dump() &&

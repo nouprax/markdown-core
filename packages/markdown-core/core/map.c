@@ -309,42 +309,67 @@ static int sort_map(markdown_core_map *map) {
     return 1;
 }
 
-/* Splices `entry` into its label bucket in ascending document order and
- * keeps the index slot pointing at the bucket head (the winner). Returns 0
- * when the index could not take the label. */
-static int bucket_attach(markdown_core_map *map, markdown_core_map_entry *entry) {
+/* Splices `entry` in front of the bucket head, which for a circular list is
+ * the tail position. O(1), and the only splice there is: nothing here
+ * searches for a slot, because no caller ever has a middle one to offer. */
+static void bucket_splice(markdown_core_map_entry *head, markdown_core_map_entry *entry) {
+    entry->bucket_prev = head->bucket_prev;
+    entry->bucket_next = head;
+    head->bucket_prev->bucket_next = entry;
+    head->bucket_prev = entry;
+}
+
+static void bucket_alone(markdown_core_map_entry *entry) {
+    entry->bucket_next = entry;
+    entry->bucket_prev = entry;
+}
+
+/* `entry` is OLDER than every definition of its label, so it becomes the
+ * winner and the index slot moves to it. The full index build is the caller:
+ * it walks the live chain newest-first, so every entry it offers is a new
+ * minimum. Returns 0 when the index could not take the label. */
+static int bucket_prepend(markdown_core_map *map, markdown_core_map_entry *entry) {
     markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
     markdown_core_map_entry *head =
         (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
-    markdown_core_map_entry *cur;
 
     if (!head) {
-        entry->bucket_next = NULL;
+        bucket_alone(entry);
         return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 0, NULL);
     }
-    if (entry->order <= head->order) {
-        entry->bucket_next = head;
-        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 1, NULL);
+    bucket_splice(head, entry);
+    return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 1, NULL);
+}
+
+/* `entry` is NEWER than every definition of its label, so it becomes the
+ * tail and the winner does not change — which is why this touches the index
+ * only when the label is new. The incremental add is the caller: its order is
+ * the largest ever stamped. Returns 0 when the index could not take the
+ * label. */
+static int bucket_append(markdown_core_map *map, markdown_core_map_entry *entry) {
+    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
+    markdown_core_map_entry *head =
+        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
+
+    if (!head) {
+        bucket_alone(entry);
+        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 0, NULL);
     }
-    cur = head;
-    while (cur->bucket_next && cur->bucket_next->order < entry->order) {
-        cur = cur->bucket_next;
-    }
-    entry->bucket_next = cur->bucket_next;
-    cur->bucket_next = entry;
+    bucket_splice(head, entry);
     return 1;
 }
 
 /* Hash path: label -> bucket head. The live chain is newest-first with
- * monotonic orders, so the descending traversal hits bucket_attach's prepend
- * fast path and the build stays O(entries) even when one label repeats. */
+ * monotonic orders, so every entry this offers is a new minimum for its
+ * label — which is the claim bucket_prepend is named after, and which is now
+ * carried by the choice of function rather than by a branch inside one. */
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
     if (!markdown_core_key_index_init(&map->index, map->mem)) {
         return 0;
     }
     for (ref = map->refs; ref; ref = ref->next) {
-        if (!bucket_attach(map, ref)) {
+        if (!bucket_prepend(map, ref)) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
@@ -454,6 +479,7 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
     entry->start_line = map->pending_line;
     entry->from_vanished_clean = false;
     entry->bucket_next = NULL;
+    entry->bucket_prev = NULL;
     entry->next = map->refs;
     entry->prev = NULL;
     if (map->refs) {
@@ -465,7 +491,7 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
     if (!map->prepared) {
         return;
     }
-    if (!map->indexed || !bucket_attach(map, entry)) {
+    if (!map->indexed || !bucket_append(map, entry)) {
         /* The sorted array cannot absorb inserts (and a failed index attach
          * must not leave the label partially visible); drop the structures
          * and let the next lookup rebuild them. */
@@ -474,44 +500,43 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
 }
 
 /* Unlinks `entry` from its bucket and keeps the index slot on the winner.
- * Returns 0 when the index state could not be kept coherent. */
+ * O(1): the chain is circular and doubly linked, so neither the predecessor
+ * nor the successor has to be found. Returns 0 when the index state could not
+ * be kept coherent. */
 static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry) {
     markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
     markdown_core_map_entry *head =
         (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
-    markdown_core_map_entry *cur;
+    markdown_core_map_entry *successor;
 
     if (!head) {
         return 0;
     }
-    if (head == entry) {
-        if (!markdown_core_key_index_remove(&map->index, entry->label, label_len)) {
-            return 0;
-        }
-        if (!entry->bucket_next) {
-            return 1;
-        }
-        /* Re-elect the next-oldest definition; its label bytes key the slot
-         * from now on. The freshly vacated run guarantees room, and the
-         * insert's own growth path covers the remaining corner cases. */
-        return markdown_core_key_index_insert(
-            &map->index,
-            entry->bucket_next->label,
-            (markdown_core_bufsize)strlen((char *)entry->bucket_next->label),
-            entry->bucket_next,
-            0,
-            NULL
-        );
+    successor = entry->bucket_next == entry ? NULL : entry->bucket_next;
+    entry->bucket_prev->bucket_next = entry->bucket_next;
+    entry->bucket_next->bucket_prev = entry->bucket_prev;
+    entry->bucket_next = NULL;
+    entry->bucket_prev = NULL;
+    if (head != entry) {
+        return 1;
     }
-    cur = head;
-    while (cur->bucket_next && cur->bucket_next != entry) {
-        cur = cur->bucket_next;
-    }
-    if (cur->bucket_next != entry) {
+    if (!markdown_core_key_index_remove(&map->index, entry->label, label_len)) {
         return 0;
     }
-    cur->bucket_next = entry->bucket_next;
-    return 1;
+    if (!successor) {
+        return 1;
+    }
+    /* Re-elect the next-oldest definition; its label bytes key the slot
+     * from now on. The freshly vacated run guarantees room, and the
+     * insert's own growth path covers the remaining corner cases. */
+    return markdown_core_key_index_insert(
+        &map->index,
+        successor->label,
+        (markdown_core_bufsize)strlen((char *)successor->label),
+        successor,
+        0,
+        NULL
+    );
 }
 
 void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_entry *until) {

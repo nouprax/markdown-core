@@ -11,99 +11,45 @@
 extern "C" {
 #endif
 
-/** Persistent stored-byte substrate (incremental-canonical-ast.md 7.1, 8.1).
+/** The stored bytes (incremental-canonical-ast.md 7.1, 8.1).
  *
- * A markdown_core_source is an immutable value: a frozen profile plus the
- * exact committed bytes, held as a persistent balanced tree whose leaves are
- * windows into refcounted immutable buffers. Applying an edit batch builds a
- * new source that shares every unedited subtree with its predecessor; the
- * old source stays valid and readable until released, however many
- * successors exist. Nothing here is public API, but it is no longer dark:
- * the session owns its bytes here, and the contiguous store this replaced is
- * gone. (An earlier revision of this comment scheduled that adoption for the
- * M7 flip. Nothing else did — no gate, no contract clause, and not the
- * delivery plan's M7 section — and M3 needs it, because the ordered indices
- * only reduce to queries over a sequence that is persistent.)
+ * A markdown_core_source owns one growable buffer holding the document's exact
+ * bytes. It is mutable and singly owned: applying an edit splices the buffer
+ * in place.
  *
- * Two bounds are declared here because acceptance gates assert them:
+ * It was a persistent AVL rope of windows into refcounted immutable buffers,
+ * so that an apply built a successor sharing every unedited subtree and
+ * predecessors stayed readable however many successors existed. Nothing
+ * needed a predecessor. One document is published at a time — the view it reuses
+ * in place at every commit — so no caller can hold one (4.2), and a consumer
+ * that wants a revision to outlive its commit takes a value copy, which the
+ * bindings already do. The two bounds declared here for that design, an
+ * amplification limit on retained buffer bytes and a leaf-merge limit on
+ * append copying, described sharing that no longer happens.
  *
- * - Appending at end-of-source path-copies O(log n) tree nodes and copies at
- *   most MARKDOWN_CORE_SOURCE_LEAF_MERGE_LIMIT stored bytes beyond the
- *   replacement itself; the retained prefix is never copied (14.3.5).
- * - The buffer bytes a source retains never exceed
- *   MARKDOWN_CORE_SOURCE_MAX_AMPLIFICATION times its logical length: a leaf
- *   window that would reference less than 1/MAX_AMPLIFICATION of its buffer
- *   is copied into a right-sized buffer instead of sharing (14.3.5). Tree
- *   node overhead is additional and proportional to the leaf count, never to
- *   the bytes of any predecessor.
+ * What replaces them is one property, and it is the one an editor cares
+ * about: **a trace of N appends copies O(N) bytes, not O(N^2)**, because the
+ * buffer grows geometrically. A splice in the middle moves the tail after it.
+ * That is a walk, and 11.1 no longer treats a size-dependent term as a
+ * violation on its own.
  *
- * Under MARKDOWN_CORE_SOURCE_STRICT_UTF8 the stored bytes are valid UTF-8
- * except for at most one truncated final code point — a well-formed prefix
- * at end-of-source that a continuation byte would complete (7.1). The
- * exception is positional: the same prefix followed by any further byte is a
- * profile violation. There is no pending or awaiting-continuation state; a
- * document ending mid-character is a legal final document. Validation is
- * incremental: an apply examines only the bytes of each edit plus a bounded
- * neighbourhood of its junctions, never the whole document, and reports the
- * bytes it examined so a gate can hold it to that.
- *
- * No production caller selects that profile. The session stores
- * PERMISSIVE_BYTES for the reasons stated at its constructor, and no public
- * entry point exposes a profile argument, so every source outside the test
- * runners is permissive. That is a deliberate keep and not the dead code
- * specs/coverage/policy.json rule 6 forbids parking: 7.1 defines the profile
- * as a frozen member of Source, 8.1 makes a violation a commit failure, and
- * 14.3 gate 6 requires the asymmetric boundary be observable from both sides
- * — four rows, of which the fourth is "the same three inputs under
- * PERMISSIVE_BYTES all succeed", which is only a statement if the strict side
- * exists to differ from. The validator therefore has a declared consumer and
- * a gate that fails when it is removed; rule 6 is about code no input can
- * reach, and every line of this one is reached by the gate the contract asks
- * for. What is still owed is the public profile argument (8.1), which belongs
- * with the session-facing work, not with the substrate.
- *
- * Ownership: sources are refcounted values confined to one thread, like the
- * session state they will serve. All allocation goes through the
- * markdown_core_mem the source was created with; allocation failure surfaces
- * as NULL with MARKDOWN_CORE_SOURCE_NO_MEMORY and never publishes a partial
- * source (8.1).
- *
- * Arithmetic note: interior lengths are sums over simultaneously live
- * allocations, so their sum cannot wrap size_t on any platform where those
- * objects fit in the address space, and they carry no overflow guards — a
- * branch no input can take is untestable, and the coverage gate treats
- * untestable branches as defects.
- *
- * A replacement length is not such a sum. It is a caller's number, and the
- * session hands it straight through from public API, so a caller may name a
- * length no allocation could ever have produced — and it becomes one buffer,
- * sized as a header plus that payload. `markdown_core_source_apply` therefore
- * refuses a replacement the buffer header cannot be added to, before reading
- * any byte, reporting NO_MEMORY because no allocator can satisfy the request
- * and leaving the predecessor retained and readable.
- *
- * That one condition is the whole guard, and the boundary is worth stating
- * because it has been drawn wrongly twice. It is checked per replacement and
- * not over the batch, and it is checked against the buffer header rather than
- * against the resulting document length: both of those alternatives need a
- * replacement larger than SIZE_MAX minus an address space before they bind,
- * and a buffer that large fails to allocate, producing the same NULL and the
- * same NO_MEMORY one step later. Guarding them would add branches no input
- * can observe. Guarding the header sum is different in kind — that sum wraps
- * to a *small* number, the allocation succeeds, and the copy runs.
+ * Ownership: a source is confined to one thread, like the document state it
+ * serves. All allocation goes through the markdown_core_mem it was created
+ * with. Allocation failure surfaces before any byte moves — an apply reserves
+ * what it needs while the source is still untouched — so a failed apply
+ * leaves the source exactly as it was, which is what 8.1's "nothing is
+ * published on failure" costs now that there is no successor to discard.
  */
 
-/** Which byte sequences a source may store (7.1). Frozen at creation. */
-typedef enum markdown_core_source_profile {
-    MARKDOWN_CORE_SOURCE_STRICT_UTF8,
-    MARKDOWN_CORE_SOURCE_PERMISSIVE_BYTES
-} markdown_core_source_profile;
+/* A source stored any byte sequence under one of two profiles, and the
+ * profile selected whether it validated UTF-8. Both are gone: UTF-8 is
+ * assumed and never validated (incremental-canonical-ast.md 7.1), so there
+ * was one behaviour under two names and a validator no caller reached. */
 
 /** Why a constructor or apply returned NULL (or that it succeeded). */
 typedef enum markdown_core_source_status {
     MARKDOWN_CORE_SOURCE_OK,
     MARKDOWN_CORE_SOURCE_INVALID_SPAN,
-    MARKDOWN_CORE_SOURCE_INVALID_UTF8,
     MARKDOWN_CORE_SOURCE_NO_MEMORY
 } markdown_core_source_status;
 
@@ -128,37 +74,29 @@ typedef struct markdown_core_source_edit {
  * caller passes. They exist so the storage bounds above are gates instead of
  * prose: a gate zeroes a struct, runs a trace, and asserts the counts. */
 typedef struct markdown_core_source_stats {
-    size_t bytes_copied;    /* payload bytes memcpy'd into fresh buffers */
-    size_t buffers_created; /* immutable buffers allocated */
-    size_t nodes_created;   /* tree nodes allocated */
-    size_t validated_bytes; /* bytes examined by profile validation */
+    size_t bytes_copied;    /* payload bytes copied or moved */
+    size_t buffers_created; /* buffer growths */
 } markdown_core_source_stats;
 
 typedef struct markdown_core_source markdown_core_source;
 
-/** Creates a source owning a copy of `bytes[0..length)`. Under STRICT_UTF8
- * the bytes must be valid UTF-8 except for an optional truncated final code
- * point; a violation returns NULL with MARKDOWN_CORE_SOURCE_INVALID_UTF8.
- * `bytes` may be NULL when `length` is 0. `stats` and `status` are required:
- * a caller that does not care passes a scratch struct, and the constructor
- * never branches on their presence. */
+/** Creates a source owning a copy of `bytes[0..length)`. `bytes` may be NULL
+ * when `length` is 0. `stats` and `status` are required: a caller that does
+ * not care passes a scratch struct, and the constructor never branches on
+ * their presence. */
 markdown_core_source *markdown_core_source_new(
     markdown_core_mem *mem,
-    markdown_core_source_profile profile,
     const uint8_t *bytes,
     size_t length,
     markdown_core_source_stats *stats,
     markdown_core_source_status *status
 );
 
-void markdown_core_source_retain(markdown_core_source *source);
 void markdown_core_source_release(markdown_core_source *source);
 
-markdown_core_source_profile markdown_core_source_profile_of(const markdown_core_source *source);
 size_t markdown_core_source_length(const markdown_core_source *source);
 
-/** Applies `edits` to `source` and returns the successor source, sharing
- * every unedited subtree. `source` is not modified and stays readable.
+/** Applies `edits` to `source` in place.
  *
  * The edit list must be canonical: ascending by span start and
  * non-overlapping (edits[i].span.end <= edits[i+1].span.start), each span
@@ -166,11 +104,11 @@ size_t markdown_core_source_length(const markdown_core_source *source);
  * MARKDOWN_CORE_SOURCE_INVALID_SPAN. Normalizing a convenience batch into
  * this form is the caller's job (8.1); the primitive stays deterministic.
  *
- * Under STRICT_UTF8 the candidate bytes are validated at every junction; a
- * violation fails with MARKDOWN_CORE_SOURCE_INVALID_UTF8. On any failure
- * nothing is published: the return is NULL and `source` is untouched. */
-markdown_core_source *markdown_core_source_apply(
-    const markdown_core_source *source,
+ * On failure it returns false having moved no byte: every span is validated
+ * and the buffer reserved before the splice, so the only failure after that
+ * point would be one no allocator can produce. */
+bool markdown_core_source_apply(
+    markdown_core_source *source,
     const markdown_core_source_edit *edits,
     size_t edit_count,
     markdown_core_source_stats *stats,
@@ -188,23 +126,14 @@ void markdown_core_source_copy_bytes(const markdown_core_source *source, size_t 
  * begins at `offset`, and `*run_length` its length. `offset` must be inside
  * the source; there is no out-of-range arm, because no caller has one to
  * exercise and an unreachable branch is a defect here rather than caution.
- * A run never spans two leaves, so a caller that needs more bytes calls
- * again at offset + *run_length. O(log n) per call: there are no parent
- * pointers, so successive runs re-descend from the root. */
+ * The bytes are contiguous, so one call answers to the end of the source and
+ * a caller that loops finds nothing left to ask for. The loop is kept at the
+ * call sites: it costs nothing here and it is what a chunked substrate would
+ * need if one ever came back. */
 const uint8_t *markdown_core_source_run_at(const markdown_core_source *source, size_t offset, size_t *run_length);
 
 /** The stored byte at `offset`, which must be inside the source. */
 uint8_t markdown_core_source_byte_at(const markdown_core_source *source, size_t offset);
-
-/** Sums the capacities of the distinct buffers the source retains — the
- * physical bytes the amplification bound above is stated over. Diagnostic
- * accessor for gates; cost is quadratic in the leaf count. Returns false on
- * allocation failure of its scratch set. */
-bool markdown_core_source_retained_bytes(const markdown_core_source *source, markdown_core_mem *mem, size_t *out);
-
-/** The declared bounds the gates assert; see the header comment. */
-#define MARKDOWN_CORE_SOURCE_MAX_AMPLIFICATION 4
-#define MARKDOWN_CORE_SOURCE_LEAF_MERGE_LIMIT 128
 
 #ifdef __cplusplus
 }

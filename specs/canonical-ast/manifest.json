@@ -297,8 +297,7 @@
                     "scope.zero",
                     "children.empty",
                     "children.populated",
-                    "escaping.empty-string",
-                    "escaping.json"
+                    "escaping.empty-string"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }

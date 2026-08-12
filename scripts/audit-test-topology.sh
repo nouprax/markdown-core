@@ -70,7 +70,11 @@ if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
 fi
 
 tests_all=$("ctest" --test-dir "$BUILD_DIR" -N | sed -n 's/^  Test *#[0-9]*: //p')
-for label in api facade conformance consumer spec equivalence extensions regression pathological complexity fuzz packaging benchmark; do
+# No timing label. A ratio across two sizes is a property of the host, not of
+# the code, and it cannot survive the engine being rewritten in another
+# language — the absolute numbers would all be re-baselined. `benchmark` still
+# reports; nothing gates on a clock.
+for label in api facade conformance consumer spec equivalence extensions regression pathological fuzz packaging benchmark; do
     count=$(ctest --test-dir "$BUILD_DIR" -N -L "^${label}$" | sed -n 's/^Total Tests: //p')
     if [ "${count:-0}" -lt 1 ]; then
         fail "no CTest tests carry label '$label'"
@@ -92,11 +96,11 @@ else
 fi
 
 for preset in correctness-asan correctness-ubsan correctness-tsan; do
-    if ctest --preset "$preset" -N | grep -q 'pathological_complexity_'; then
-        fail "$preset includes timing-based complexity gates"
+    if ctest --preset "$preset" -N | grep -qE 'benchmark_'; then
+        fail "$preset includes timed workloads"
     fi
 done
-note "sanitizer presets exclude timing-based complexity gates"
+note "sanitizer presets exclude timed workloads"
 
 conformance_list=$(ctest --test-dir "$BUILD_DIR" -N -L '^conformance$' | sed -n 's/^  Test *#[0-9]*: //p')
 if [ "$conformance_list" != "facade_native
@@ -114,37 +118,29 @@ else
 fi
 
 runner_dir="$BUILD_DIR/packages/markdown-core/tests"
-for case_name in $("$runner_dir/pathological_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_${case_name}$" \
-        || fail "pathological case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/delimiter_engine_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_delimiter_engine_${case_name}$" \
-        || fail "delimiter-engine case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/complexity_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_complexity_${case_name}$" \
-        || fail "complexity case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/stress_runner" --list); do
-    echo "$tests_all" | grep -q "^pathological_stress_${case_name}$" \
-        || fail "stress case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/fallback_runner" --list); do
-    echo "$tests_all" | grep -q "^regression_fallback_${case_name}$" \
-        || fail "fallback case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/equivalence_runner" --list); do
-    echo "$tests_all" | grep -q "^equivalence_${case_name}$" \
-        || fail "equivalence case '$case_name' is not registered in CTest"
-done
-for case_name in $("$runner_dir/concrete_runner" --list); do
-    echo "$tests_all" | grep -q "^regression_concrete_${case_name}$" \
-        || fail "concrete case '$case_name' is not registered in CTest"
-done
-for workload in $("$runner_dir/bench_runner" --list); do
-    echo "$tests_all" | grep -q "^benchmark_${workload}$" \
-        || fail "benchmark workload '$workload' is not registered in CTest"
+# runner:prefix. A MISSING runner is a failure, not a skip: `$(missing --list)`
+# is the empty string, the loop body never runs, and the check passes while
+# checking nothing. complexity_runner sat in this list for many commits after
+# it was deleted, doing exactly that.
+for pair in \
+    pathological_runner:pathological_ \
+    stress_runner:pathological_stress_ \
+    equivalence_runner:equivalence_ \
+    concrete_runner:regression_concrete_ \
+    bench_runner:benchmark_; do
+    runner=${pair%%:*}
+    prefix=${pair#*:}
+    if [ ! -x "$runner_dir/$runner" ]; then
+        fail "$runner is in the discovery list but was not built; add it back or drop it from this list"
+    fi
+    cases=$("$runner_dir/$runner" --list)
+    if [ -z "$cases" ]; then
+        fail "$runner --list is empty"
+    fi
+    for case_name in $cases; do
+        echo "$tests_all" | grep -q "^${prefix}${case_name}$" \
+            || fail "$runner case '$case_name' is not registered in CTest"
+    done
 done
 note "runner discovery matches CTest registration"
 

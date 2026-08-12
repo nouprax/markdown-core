@@ -164,7 +164,7 @@ for (const testCase of cases) {
     for (const kind of result.unmapped) unmappedKinds.add(kind);
     const registered = expected.get(testCase.input);
     if (result.upstream !== result.ours) {
-        if (registered) reproduced.add(registered.id);
+        if (registered) reproduced.add(testCase.input);
         else divergent.push({ ...testCase, ...result });
     } else if (registered) {
         divergent.push({ ...testCase, settled: registered, ...result });
@@ -176,7 +176,12 @@ for (const testCase of cases) {
 // no longer reachable, which is the same rot as one that stopped reproducing.
 if (corpusOverride < 0 && limit === Infinity) {
     for (const [input, entry] of expected) {
-        if (!reproduced.has(entry.id)) {
+        // Keyed by INPUT, not by id. Keyed by id, one input that still
+        // diverges vouched for every other input registered under the same
+        // id, so a registration that had stopped being true sat there
+        // excusing a comparison nobody ran — which is the exact failure the
+        // delta block above refuses.
+        if (!reproduced.has(input)) {
             divergent.push({ line: "specs/upstream-parity/deltas.json", input, unreachable: entry });
         }
     }
@@ -187,7 +192,9 @@ process.stdout.write(
         `cmark-gfm ${policy.upstream.version}\n`
 );
 process.stdout.write(`  registered deltas: ${policy.deltas.map((d) => d.id).join(", ")}\n`);
-process.stdout.write(`  registered divergences: ${String(reproduced.size)}/${String(expected.size)} reproduced\n`);
+process.stdout.write(
+    `  registered divergences: ${String(reproduced.size)}/${String(expected.size)} inputs reproduced\n`
+);
 
 if (unmappedKinds.size) {
     // Two unmapped kinds render alike and would compare equal, so this reads as

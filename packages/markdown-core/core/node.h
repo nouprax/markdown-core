@@ -65,7 +65,7 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Set at seal time (session commit): start_line holds a delta from the
+    // Set at seal time (commit): start_line holds a delta from the
     // raw parent's resolved start line (root keeps its absolute), end_line a
     // delta from the node's own absolute start line; columns stay line-local.
     // The parser and raw one-shot parses keep absolute lines and never set
@@ -79,7 +79,6 @@ enum markdown_core_node__internal_flags {
      * container that closed at its fence sets the flag instead, because the
      * property is about how the block ended and not about what kind it is. */
     MARKDOWN_CORE_NODE__ENDS_ON_CURRENT_LINE = (1 << 6),
-    MARKDOWN_CORE_NODE__SEALED_RELATIVE = (1 << 3),
 
     // The node currently owns raw inline source that the core refine pipeline
     // must parse into its complete child list. This is parser lifecycle
@@ -131,15 +130,28 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    // Session-assigned identity: `id` is unique within the owning session and
+    // Commit-assigned identity: `id` is unique within the owning series and
     // stable across incremental commits while the node remains "the same
-    // thing"; `last_changed_rev` is the session revision at which the node's
+    // thing"; `last_changed_rev` is the document revision at which the node's
     // own fields, child list, or any descendant last changed. Both stay 0 for
-    // parses that never pass through a session's adoption walk.
+    // parses that never pass through a commit's adoption walk.
     uint64_t id;
     uint64_t last_changed_rev;
-
-    void *user_data;
+    // A cheap order-sensitive fingerprint of this node's subtree: its
+    // type, its literal bytes when it has any, and its children's hashes.
+    //
+    // IT IS A PROPERTY OF THE NODE, a pure function of the document text,
+    // stamped when the walk leaves the node for the last time -- not a thing
+    // some later pass derives. Calling it "the matcher's digest" is what led
+    // it to live in the diff, where it grew a which-pass-pays-for-it question
+    // and a has-this-tree-been-done flag; as a node property it has neither.
+    //
+    // The diff reads it to decide WHICH nodes pair, and nothing else: a paired
+    // node's changes are still found by comparing it field by field and
+    // walking its children. So a collision, or a field the hash does not
+    // cover, can only produce worse identity matching; it can never make the
+    // delta miss a change. That is what makes the bounded literal sample safe.
+    uint64_t subtree_hash;
 
     // The concrete marker records of this node's own ownership region
     // (concrete_records.h), lazily allocated by the block phase and owned by
@@ -193,6 +205,21 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
  * They exist so a delimiter reduction does not repeat an O(depth) defensive
  * ancestor walk for every node it creates or moves.
  */
+/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
+ * children already carry. Called on the node's EXIT during the stamping walk
+ * of the finished tree, so every child is complete and already stamped. */
+/** Mixes one scalar into a running subtree hash. */
+uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
+
+/** Mixes a byte range into a running subtree hash: its LENGTH plus a bounded
+ * sample of both ends, never every byte — see the note on `subtree_hash`. */
+uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length);
+
+void markdown_core_node_stamp(markdown_core_node *node);
+
+/** Stamps every node of `root`'s subtree, each as the walk leaves it. */
+void markdown_core_node_stamp_tree(markdown_core_node *root);
+
 void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
 void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);
 void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling);

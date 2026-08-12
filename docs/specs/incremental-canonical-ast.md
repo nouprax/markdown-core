@@ -87,22 +87,21 @@ both, and no complexity gate below survives it.
 - **Concrete offsets are relative to the grammar-owned region that gets
   reparsed as a unit, never to the document.** A token, trivia run, or
   recovery record therefore never becomes a leaf of a document-wide structure,
-  and an edit elsewhere can never touch one. This is what keeps the `O(log n)`
-  extent resolution of 7.2 counting the same units it counted before the CST
-  existed.
+  and an edit elsewhere can never touch one. This is what keeps extent
+  resolution (7.2) answering over the same material it answered over before the
+  CST existed.
 - **A container's typed semantic child edge stays separately addressable from
   its concrete child order.** Projecting that edge is proportional to the edge,
-  not to the container's token count, which is what 11.1 and 14.7 require of
-  ordinary traversal and what 9.4 requires of `Document.index`; a concrete
-  ordinal is not a `ChildOrdinal`. The persistent sequence 6.2 requires is that
-  typed edge, not the concrete order. Recovering the concrete order by merging
+  not to the container's token count, which is what 11.1 requires of ordinary
+  traversal and what 9.4 requires of `Document.index`; a concrete
+  ordinal is not a `ChildOrdinal`. The sequence 6.2 names is that typed edge,
+  not the concrete order. Recovering the concrete order by merging
   on those relative offsets — paid only by the `concrete` interface — is the
   expected way to keep both.
 
 Under these two rules the CST is a memory trade and not a complexity one: it
 multiplies the record count inside a reparsed region by a small constant and
-enters no other term. 14.7 requires that constant to be reported rather than
-absorbed into a timing number.
+enters no other term.
 
 The CST is concrete syntax with exactly one document-wide input: the set of
 labels the document defines. `canonical-ast.md` makes an undefined `[^x]`
@@ -204,19 +203,35 @@ surfaces.
 
 | Superseded contract | This contract |
 | --- | --- |
-| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys, `O(1)` equality, and unchanged subtrees the core reuses rather than rebuilds — so no binding API may require a delta |
+| The delta is the update path, and reference identity across snapshots is an optional fast path | Three stated integration paths (2.1); handing over the document is complete on its own — stable keys and `O(1)` equality — so no binding API may require a delta |
 | A public node cannot retain its exact immutable document owner | A public node is a lightweight read-only view retaining the exact immutable `Document` that resolves its fields |
-| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained and remains readable after later commits and session close |
-| One node `revision` conflates local and descendant changes, and its old meaning was the subtree one | `track.revision` is a `MarkupRevision` pair; `.self` and `.subtree` have distinct meanings and no scalar spelling conflates them |
-| The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a six-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
+| A session snapshot may become unusable after the next commit, and a retained snapshot must be `materialize()`d while still current | Every returned `Document` is immediately self-contained, with no materialization step; `commit` supersedes the document it was called on, and there is no session |
+| The commit delta is four disjoint node-ID arrays, plus a second ordered-entry API that merges three of them because that merged form is what bindings actually consume | The commit delta is one postorder `diffs` list, and that is the only form; each entry is a `MarkupID` plus a five-flag `DiffParts` bitmask, and `bubbled` becomes the `DESCENDANT` flag |
 | A node's changed part is not reported, so a consumer re-reads the whole node | Each diff entry carries the closed set of parts that changed, at zero per-node storage cost |
-| Absolute source position is a whole-snapshot materialization | Absolute position is an `O(log n)` query against stable extents; a position-only shift produces no diff entry at all |
-| Footnote and reference indexes are live-session queries | One `Document` pins persistent semantic relation indexes and derives every answer by `MarkupID` |
-| The initial empty session may use revision zero | Every public identity and revision is positive; zero is invalid |
+| Absolute source position is a whole-snapshot materialization | Absolute position is a query against stable extents; a position-only shift produces no diff entry at all |
+| Footnote and reference indexes are live-session queries | One `Document` owns the semantic relation indexes and derives every answer by `MarkupID`; there is no session to query |
+| The initial empty session may use revision zero | There is no empty document and no open step: `Document(markdown, options)` publishes the first one, and every public identity and revision is positive; zero is invalid |
 
 `canonical-ast.md`, `sessions-and-deltas.md`, public headers, bindings,
 fixtures, and examples must adopt this contract atomically. A package cannot
 advertise this capability while exposing the superseded four-array API.
+
+**"Atomically" binds the COMMIT, not the release.** The rule is that no state
+exists in which one artifact speaks this contract and another speaks the old
+one — which is a statement about what a single change contains, and it is
+satisfied by one commit that moves all six together. It is NOT a statement
+about ordering, and nothing in this contract or in 16 places the surface
+change anywhere in particular. An earlier reading took it the other way and
+scheduled the public surface last, on the ground that it could not move until
+everything under it was built. That inference does not follow: a capability
+this contract requires but the engine cannot yet answer is absent, not
+mis-shaped, and the surface it will one day occupy is not a reason to keep the
+wrong one in the meantime.
+
+Two flips are needed and they have different blast radii, which is the
+practical reason to keep them apart: moving ownership — identity, revisions,
+the delta shape, and where a parser answer is asked — leaves the goldens
+untouched, while moving coordinates rewrites them. Each is one commit.
 
 ## 2. One parser model, two public interfaces
 
@@ -246,8 +261,8 @@ Commit {
 AST type returned by one-shot parsing. Its retained concrete owner is exposed
 through the `concrete` interface; it is not a third `Commit` member or a
 separately published tree. `Commit.delta` is an immutable exact-base
-description of what changed between the session's immediately preceding
-published document and `Commit.document`.
+description of what changed between the document `commit` was called on and
+`Commit.document`.
 
 A consumer may ignore or discard `Delta` and derive all of its state from
 `Commit.document`. Doing so cannot change parser output, identity, revisions,
@@ -315,8 +330,12 @@ and edits its own structure. Cost: 11.2; shapes: section 10.
 **C — read the delta for location only.** The consumer keeps no mirror and
 only needs to know *where* the document changed: a side-by-side editor
 highlighting the preview region a keystroke affected, a telemetry probe, a
-test assertion. It reads the entries and resolves `Document.scope` against the
-retained old document and the new one.
+test assertion. It reads the entries, resolves `Document.scope` against the
+document it was handed. It is not handed a predecessor to resolve against, and
+it is not handed a byte-level edit script (9.2): a consumer that wants to
+compare against what it rendered last keeps what it rendered last (4.2), and a
+consumer that wants the changed byte span holds both texts and can find it
+(4.2).
 
 B is why `Delta` is public, and it is the ordinary path below the C API, where
 there is no framework to diff on the consumer's behalf. A is why `Delta` is
@@ -330,35 +349,40 @@ inherits and must not throw away.
 - **Identity.** `MarkupID` is a stable, hashable, serializable key, usable
   unmodified as a SwiftUI `ForEach(id:)`, a Compose `key()`, or a React `key`.
   It survives edits elsewhere and is never reused after retirement (5.2).
-- **`O(1)` equality.** Node equality and hashing are `(MarkupID,
-  revision.subtree)` for whole-subtree equality and `(MarkupID, revision.self)`
-  for local equality: two-word comparisons, allocation-free, safe in a render
-  hot path. Equal means the values are identical; storage layout produces no
-  false negatives.
-- **Instance reuse.** The core reuses an unchanged subtree rather than
-  rebuilding it, so the next document holds the same node, not merely an equal
-  one. This is what makes the structural sharing below a memory fact rather
-  than a hope, and it is stated of the core because that is where it is true.
+- **`O(1)` equality.** Node equality and hashing are `(MarkupID, revision)`,
+  which is whole-subtree equality: a two-word comparison, allocation-free, safe
+  in a render hot path. Equal means the values are identical; storage layout
+  produces no false negatives.
+A third property stood here — **instance reuse**, that the core reuses an
+unchanged subtree "so the next document holds the same node, not merely an
+equal one" — and a fourth, **structural sharing**, that adjacent documents
+share every unchanged node so retaining the previous one costs the changed
+frontier and not a second tree. **Both are removed, and the first was also
+false.**
 
-  It is deliberately *not* required of a binding's node views. In Swift an
-  idiomatic view is a `struct`, and a value type has no identity to compare —
-  there the requirement would not be hard to meet, it would be meaningless. And
-  in a language whose views are references, a binding that constructs a fresh
-  wrapper on each `node(id)` call destroys the property regardless of what the
-  core did, so keeping it would oblige every binding to cache wrappers and
-  manage their lifetimes.
+Nobody can tell. Every consumer that exists reads INTEGERS: the ES binding
+tests `!touched.has(rawId)` and then `existing.revision !== revision`, the
+Swift binding compares `lhs.id == rhs.id && lhs.revision == rhs.revision` over
+`struct`s where reference equality does not apply, and the Kotlin binding
+receives a serialized byte stream in which instance identity cannot survive by
+construction. `session.commit()` hands back one document, reused in place, so
+there is no predecessor to share with; and the engine's own full-commit path
+frees the committed tree and parses a fresh one, so on that path the core does
+NOT hold the same node — the clause was not merely unobservable, it did not
+describe the implementation.
 
-  The short-circuit a framework actually runs is the `O(1)` equality above,
-  which behaves identically for a `struct`, a `data class`, and a JavaScript
-  object. A binding whose views are references may offer identity as an extra
-  one-word check; none is obliged to.
-- **Structural sharing.** Adjacent documents share every unchanged node, so
-  retaining the previous document to diff against costs the changed frontier,
-  not a second tree.
+Instance reuse's own justification named the substitute: "a consumer walking
+`diffs` skips an unchanged subtree on the two-word comparison" — and a
+two-word comparison is a comparison of values.
 
-The last two also serve path B: a consumer walking `diffs` can skip an
-unchanged subtree on the two-word comparison alone, and retaining the old
-document to compare against is cheap.
+**The property underneath, which is real and which a consumer does observe, is
+5.2 rule 1: nothing outside a reparsed region is matched at all.** That is
+about the MATCHER'S SCOPE, and its consequence is the size of `diffs`: a
+one-paragraph insertion at the front of a thousand-paragraph document reports
+five nodes when the matcher's scope is the reparsed region and two thousand
+when it is the whole document. That difference is published, it is what a
+`ForEach(id:)` or a `key()` re-renders on, and it holds however the engine
+allocates.
 
 The cost of the path-A diff is stated in 11.3. It is not `O(changed)` — no
 top-down value diff can be — but every comparison it performs is `O(1)`, and a
@@ -433,8 +457,9 @@ boundary would have to move, not be worked around.
 
 Composition is cheap to own because the parser hands it working primitives:
 stable `MarkupID`s to key its own structures by (5.2); immutable
-self-contained documents with structural sharing, so it can hold many units at
-once and no unit's commit can invalidate another's (4.2, 14.4.7); and
+self-contained documents, so it can hold many units at once and no unit's
+commit can invalidate another's (4.2, 14.4.7) — many separate documents, which
+needs no sharing between them; and
 per-document parser answers, so it knows exactly what remains unresolved
 (6.3).
 
@@ -481,11 +506,10 @@ forbids a design is only worth having if the alternative is concrete.
 - The composition layer walks the host AST and, at each `Embed` occurrence,
   splices a subtree built from the target's current `Document`, recording
   `(host MarkupID, target DocumentVersion)`.
-- The sub-editor submits its `SourceEdit`s to the **target's** session, in the
-  target's own byte coordinates, and resolves its ranges against the target's
-  own document. There is no shared coordinate space to map through, which is
-  why no proxy extent, forwarding source identity, or host-space projection is
-  needed anywhere.
+- The sub-editor edits the **target's** document with the target's own text and
+  resolves its ranges against the target's own document. There is no shared
+  coordinate space to map through, which is why no proxy extent, forwarding
+  source identity, or host-space projection is needed anywhere.
 - Committing the target changes the target's document only. **The host's bytes
   did not change, so the host commits nothing** and its AST, identities, and
   revisions are untouched. The composition layer reflows the region it built
@@ -549,20 +573,15 @@ Markup {
     MarkupKind kind
     MarkupTrack track
     typed Scalar fields
-    typed CanonicalText fields
+    typed Utf8Text fields
     typed optional/singular child fields
     at most one typed [Markup] child list
 }
 
 MarkupTrack {
-    MarkupID       identity
-    MarkupRevision revision
-    SourceExtent   extent
-}
-
-MarkupRevision {
-    Revision self       // this node's own local projection
-    Revision subtree    // that, plus everything reachable below it
+    MarkupID     identity
+    Revision     revision
+    SourceExtent extent
 }
 ```
 
@@ -583,17 +602,15 @@ answer store is not among them: it is private storage behind the queries of
 `Document` is itself a `Markup`: it carries a `MarkupID`, and it appears in
 `diffs` like any other node. A top-level insertion or removal is `CHILDREN`
 on the document, which is the only node that owns that sequence, and the
-ancestor spine of 9.1 terminates there. Its `revision.subtree` is not a
-restatement of `DocumentVersion`: a commit that changes bytes without
-changing the AST (7.1) advances the version and leaves the root revision
-alone.
+ancestor spine of 9.1 terminates there. Its `revision` is not a restatement of
+`DocumentVersion`: a commit that changes bytes without changing the AST (7.1)
+advances the version and leaves the root revision alone.
 
 `node.track.identity` is the sole public node identity. `track.revision` is
-always the pair and never a single number: no scalar member conflates local
-with subtree change, which is the ambiguity section 1 removes. No wrapper
-identity is layered around `MarkupID`.
+one `Revision`, covering the node and everything below it. No wrapper identity
+is layered around `MarkupID`.
 
-`MarkupTrack` is deliberately small — an identity, a revision pair, and an
+`MarkupTrack` is deliberately small — an identity, a revision, and an
 extent — and no more may be added.
 Per-field, per-text, per-edge, per-source, and per-answer revision stamps
 must not be stored on the node.
@@ -610,12 +627,12 @@ that exact AST revision. These concepts are distinct:
 
 - logical continuity: `MarkupID`;
 - exact view identity: `(DocumentVersion, MarkupID)`; and
-- selected-value equality: `(MarkupID, revision.self)` for the node's local
-  projection, `(MarkupID, revision.subtree)` for its whole subtree.
+- selected-value equality: `(MarkupID, revision)`, for the node together with
+  its whole subtree.
 
-An old node view resolves only through its retained old `Document`. It cannot
-be passed to a new document as an exact view merely because its `MarkupID`
-survived. A caller resolves logical continuity explicitly:
+A node view belongs to the exact `Document` it came from and cannot be passed
+to a later one as an exact view merely because its `MarkupID` survived. A
+caller resolves logical continuity explicitly:
 
 ```text
 Document.version          -> DocumentVersion
@@ -666,27 +683,44 @@ The tree need not copy every descendant wrapper into each parent:
 
 When only a descendant field changes, an implementation may share every
 unchanged ancestor's local record and child sequence. A persistent aggregate
-trace index may advance `revision.subtree` without copying all ancestor
+trace index may advance an ancestor's `revision` without copying all ancestor
 payloads.
 
-### 4.2 Self-contained document revisions
+### 4.2 Self-contained documents
 
 Every published `Document` must be:
 
 - immutable;
 - self-contained when returned;
 - safe for concurrent reads according to its binding's value contract;
-- independent of later session commits;
-- usable after the session closes;
+- usable after the session closes; and
 - able to resolve every live `MarkupID`, parser-owned site, extent, text,
-  child edge, parser answer, and absolute source coordinate it exposes; and
-- structurally shareable with adjacent immutable revisions.
+  child edge, parser answer, and absolute source coordinate it exposes.
 
 Lazy indexes are allowed only when their computation depends entirely on
-immutable values owned by that `Document`. A retained document must never
-call into the live session, consult its current source, or fail because the
-session advanced. There is no `materialize()` step and no window during which
-a retained snapshot is only conditionally usable.
+immutable values owned by that `Document`. It must never call into a live
+session, consult a session's current source, or fail because a session
+advanced. There is no `materialize()` step.
+
+**Two clauses are removed: that a document be independent of later session
+commits, and that it be structurally shareable with adjacent immutable
+revisions.**
+
+The first is unreachable and the second is what it was built for. A session
+hands out one document — `Document.current`, the view it reuses in place at
+every commit — so a caller cannot hold a predecessor to be independent OF.
+The one document a caller does own outright comes from a one-shot parse, which
+takes the substrate with it and whose session is already gone; that is the
+"usable after the session closes" bullet above, and it is exercised. Bindings
+that want a revision to outlive its commit take a value copy, which is what
+they do: a decoded snapshot answers from its own values and refuses a node
+from another revision.
+
+Structural sharing was there to make the unreachable clause cheap. It bought
+persistence in the source and in whatever index resolves 7.2, with the
+refcounting, path copying and retained-bytes bounds that go with it, for a
+predecessor no consumer can name. What survives is what a consumer can hold:
+one immutable document at a time, valid for as long as it is held.
 
 ## 5. Identity and revisions
 
@@ -700,10 +734,10 @@ DocumentVersion {
 ```
 
 A `DocumentDomain` is the scope that node identities and revisions live in. It
-is unique to one document lineage and includes the schema, source profile,
-parse options, and source profile that can affect AST truth. Changing
-one of those inputs starts a fresh domain; it is not an ordinary same-lineage
-update.
+is unique to one document series and includes the schema and the parse
+options that can affect AST truth. Changing one of those inputs starts a fresh
+domain; it is not an ordinary same-series update. `SourceProfile` used to be
+named here — twice, by an old typo — and it is gone with the type (7.1).
 
 A domain is opaque and is only ever compared for equality. A consumer never
 constructs or inspects one.
@@ -779,9 +813,9 @@ public identity on its own.
 
 There is one counter, and one scalar type for it. `Revision` is positive and
 strictly monotonic within a domain; every stamp in this contract is a value
-drawn from it, and `revision.self` and `revision.subtree` each record the
-revision at which that projection last changed. Nothing has a private revision
-space, and no type exists for a per-source, per-field, or per-edge revision.
+drawn from it, and a node's `revision` records the revision at which its
+projection last changed. Nothing has a private revision space, and no type
+exists for a per-source, per-field, or per-edge revision.
 
 - zero is invalid;
 - a canonical no-op publishes nothing, so no stamp moves;
@@ -793,7 +827,7 @@ Because every stamp is a document revision, stamps are comparable, and the
 comparison a consumer actually wants costs `O(1)`:
 
 ```text
-markup.track.revision.subtree > remembered.revision
+markup.track.revision > remembered.revision
 ```
 
 answers "did this subtree change since I last looked" with no diff and no
@@ -808,7 +842,7 @@ required, and none may be added.
 
 ### 5.4 Node aggregate traces
 
-`revision.self` covers the node's local canonical projection:
+A node's `revision` covers its local canonical projection:
 
 - kind;
 - scalar and text field values;
@@ -816,100 +850,93 @@ required, and none may be added.
 - parser answers addressed to this node, derived through its pinned relation
   indexes; and
 - stable source shape/provenance, excluding revision-relative numeric
-  coordinates.
+  coordinates,
 
-`revision.subtree` covers `revision.self` plus the recursively reachable child
-semantic projections.
+plus the recursively reachable child semantic projections.
 
-These are equality and pruning aids, not the update mechanism. Two views with
-equal `(MarkupID, revision.self)` have identical local values; equal
-`(MarkupID, revision.subtree)` have identical subtrees. `revision.subtree`
-advancing is exactly the membership condition of section 9.1, and
-`revision.self` advancing is exactly the condition for a flag other than
-`DESCENDANT`. Section 9 is how a consumer learns *that* something changed;
-these stamps are how it cheaply confirms that something did not.
+This is an equality and pruning aid, not the update mechanism. Two views with
+equal `(MarkupID, revision)` have identical subtrees, and the stamp advancing
+is exactly the membership condition of section 9.1. Section 9 is how a
+consumer learns *that* something changed; this stamp is how it cheaply
+confirms that something did not.
+
+There is one stamp, not a local/subtree pair, and the pair may not be
+reintroduced. Splitting it would publish exactly one extra bit — whether the
+change was at the node or below it — and section 9.1 already publishes that
+bit as `DESCENDANT` versus any other flag, on the commits that changed
+something rather than on every node forever. This is section 4's rule about
+per-field and per-edge stamps applied to the case it had skipped: the finer
+distinction belongs in the diff, not in storage every node pays for.
 
 ## 6. Tracked AST values
 
 ### 6.1 Scalar and text fields
 
-```text
-CanonicalText {
-    Utf8Text value
-    TextMap  map
-}
-
-TextMap = [SpanPair]       // ascending, non-overlapping, covers `value`
-
-SpanPair {
-    Span canonical         // into this field's `value`
-    Span source            // relative to the owning node's SourceExtent
-}
-```
+A node's text field is a `Utf8Text`: canonical UTF-8, and nothing beside it.
 
 Scalar fields are plain typed values. Optional `none` is a real field value,
 not an absent node; a presence change is an ordinary field change.
 
-`CanonicalText.value` is canonical UTF-8 text. `CanonicalText.map` relates
-each stretch of it to the source bytes that produced it, one `Span` (8.1) per
-side. An entry carries no text of its own: unlike a run in a text-layout or
-attributed-string API, it is a correspondence, not a slice of content.
+**A text field carries no map back to the source bytes that produced it.**
+An earlier revision of this section paired every text field with a
+`TextMap` — ascending span pairs relating each stretch of canonical text to
+the source it was decoded from — and spent this section justifying the
+node-relative spans, the "equal length is not the test" rule for interior
+addressing, and the ban on storing content in an entry. All of it is removed,
+and the reason is that no consumer ever asked to see the bytes behind decoded
+text.
 
-The source side is measured from the owning node's `SourceExtent`, not from
-the document. It has to be. `TEXT_MAP` is a projection part compared by value
-(9.1), so absolute offsets would make a prefix insertion differ on every later
-text field in the document — one entry per suffix node, which is exactly what
-7.3 forbids and what 14.5.1 tests for. Node-relative spans put the shift where
-7.3 already puts every other coordinate: in the `O(log n)` resolution of a
-stable extent, and in no projection value at all. A consumer that wants the
-source bytes resolves the node's extent once through `Document.scope` and adds
-the pair's offsets to it; a consumer that only wants the correspondence — the
-common case, since the canonical side is what it is mapping from — needs no
-resolution.
+What consumers do ask for is the reverse lookup: from a node, the input row
+and column it was written at. That is `Document.scope` (7.2), it is a
+projection from the stored-byte substrate, and it needs no correspondence
+between a decoded character and the bytes that produced it. The requirement
+that put a CST under this contract at all is LOCAL DIAGNOSTICS on the
+constructs that can be malformed — a directive's header, an embed's
+reference — and a diagnostic names a source span. It never names a decoded
+character's provenance.
 
-The two spaces are not the same and do not advance at the same rate: `value`
-holds decoded text, the source holds what was authored, and they diverge
-wherever Markdown transforms bytes. `&amp;` is five source bytes and one
-canonical byte; `\*` is two and one; `&#x1F600;` is nine and four; with smart
-punctuation `--` is two and three. Source bytes that produce no canonical
-output at all, such as an escape's backslash, fall between pairs.
+Three facts make the map vacuous where it would have been read:
 
-Both spans are therefore stored, rather than one span and a shared length.
-Neither side's length derives from the other, and neither derives from the
-neighbouring entries, because the canonical side is contiguous while the
-source side may have gaps. When a pair's two spans hold *identical bytes* the
-correspondence inside it is byte for byte and a consumer may address any
-interior position; otherwise the pair corresponds only as a unit.
+- `CrossLink.reference` and `Embed.reference` are source-faithful by
+  `canonical-ast.md`, and `FootnoteReference.label` is written as in source.
+  For the constructs the diagnostics requirement names, the map is the
+  identity;
+- of the kinds that carried a text field, all but `Text` hold their bytes
+  verbatim or reassembled without decoding — a code block, a raw HTML node
+  and a formula reproduce what was authored. Only `Text` resolves entities,
+  escapes and smart punctuation, and a diagnostic never points at a `Text`;
+- twenty-seven of the thirty-four kinds already live with no map at all.
+  `Link.destination`, `CodeBlock.info`, every `label` and `name` and
+  `attributes` are decoded scalars whose source span is the sub-node extent
+  7.2 defers, and the answer there has always been that a consumer resolves
+  the owning node's extent and searches within it. The map drew a line
+  between seven kinds and twenty-seven that no requirement drew.
 
-Equal length is not the test, and using it would be unsound. With smart
-punctuation `...` is three source bytes and `…` is three UTF-8 bytes, and
-`---` and `—` are three and three: the lengths agree while no interior position
-corresponds, so a consumer addressing into one would land inside a UTF-8
-scalar. Comparing the bytes costs `O(len)` on two slices the consumer already
-holds, and is paid only when interior addressing is actually wanted.
+The cost of keeping it was not the storage. `TEXT_MAP` was a projection part
+compared by value (9.1), so it entered every revision computation, and its
+spans had to be node-relative for the sole reason that absolute ones would
+make a prefix insertion differ on every later text field in the document —
+the shape 7.3 exists to forbid. That is a second coordinate space, maintained
+per node, tied to a first. This contract removed exactly that shape from node
+positions; it does not reintroduce it one layer down for a reader that does
+not exist.
 
-No entry carries the text it maps, and none may be added. A consumer that
-wants the bytes takes them itself: `value` for the canonical side, and the
-document's `Source.content` for the source side, sliced by the pair's span
-offset by the node's resolved extent. `O(1)` persistent slicing is required of
-both (7.1 and below), so the slice is a view, not a copy. Storing the content
-in the map instead would keep a second copy of every text field in the
-document and defeat the structural sharing the rest of this contract rests
-on — and what to do with those slices, including composing them with anything
-else, is consumer work (3).
+A consumer that one day needs the correspondence gets it the way the other
+twenty-seven kinds already do, and if that proves insufficient the answer is
+the sub-node extent 7.2 defers — one mechanism, for all thirty-four kinds,
+driven by a stated need.
 
-Equal canonical text with a changed escape/entity mapping — `&amp;` rewritten
-as `&#x26;`, five source bytes becoming six for the same one canonical byte —
-is a `TEXT_MAP` change, not a `TEXT` change (9.1). The rewrite has to change a
-span for the part to fire: `&amp;` to `&#38;` is five bytes for five, so both
-maps are identical and 9.1 reports nothing, which is correct. A pair records a
-correspondence and not how it arose, so provenance that leaves both spans
-unchanged is not observable and no field may be added to make it so.
+Text storage must support localized replacement, and repeated tail appends
+must not copy the complete prefix each commit — a streaming feed is the whole
+reason the second sentence is here, and geometric growth is enough for it.
 
-Text storage must support persistent slicing and localized replacement.
-Repeated tail appends must not copy the complete prefix each commit. A tiny
-retained slice must not accidentally retain an unbounded source buffer beyond
-the binding's documented amplification limit.
+**Two further requirements are removed: that the storage support PERSISTENT
+slicing, and that a tiny retained slice not retain an unbounded source buffer
+beyond a documented amplification limit.** The second is a hazard only of the
+first: it describes a slice that is a window into a shared immutable buffer,
+which is a thing only a persistent store has. And the first was written for
+the predecessor-reading document 4.2 removed. A store that owns its bytes
+outright has no slice to amplify.
 
 ### 6.2 Typed child edges
 
@@ -921,12 +948,15 @@ already names the edge, and 9.3 depends on that to keep `CHILDREN`
 unparameterized. Child kind legality remains statically or dynamically
 checked by the canonical AST schema.
 
-The child sequence must be persistent: localized insert/remove/replace
-operations path-copy only the affected persistent frontier plus inserted or
-removed members. A copy-on-write array costs `O(width)` per commit and shares
-nothing, which neither the bounds of 9.1 nor the unchanged-ancestor sharing of
-4.1 survives. Dense positions and private order labels do not escape as stable
-identity.
+**A persistence requirement stood here** — that the child sequence path-copy
+only the affected frontier, with a copy-on-write array rejected as `O(width)`
+per commit. It is removed, for 11.2's own reason: nothing in this contract
+reaches a consumer that can observe how a commit stores what it publishes. It
+was also never built, and its dichotomy was false — the engine uses neither a
+persistent sequence nor a copy-on-write array but an `O(1)` splice into a
+mutable list, which meets the published requirement by a third route the
+clause did not contemplate. What is required is the published `CHILDREN`
+membership and order of 9.1; the storage is private (2).
 
 ### 6.3 Parser answers
 
@@ -981,9 +1011,7 @@ by reparsing. A sequence-preserving commit whose relations do not change
 shares the exact persistent index roots even when the session patches its
 private site pointers. When relations do change, the new generation
 path-copies only the affected sites, buckets, and ordered runs. It must never
-copy or persist one answer value per semantic node merely to keep the old
-document readable; the old document remains valid because it retains its old
-index roots and derives its old answers from them.
+copy or persist one answer value per semantic node.
 
 Only projected semantic nodes participate. Public answer keys and values use
 `MarkupID`; concrete token identities, trivia, `MissingToken`,
@@ -1019,15 +1047,14 @@ Their record types and answer types are defined in `sessions-and-deltas.md`,
 which section 16 requires to move from the current session scope to this
 contract's immutable published-document ownership. A one-shot document and an
 incrementally committed document must expose the same answers, and a retained
-old `Document` must keep answering its old values after later commits and
-session close (4.2). Each parser-owned site has a stable typed identity.
+`Document` must keep answering its own values after its session closes (4.2). Each parser-owned site has a stable typed identity.
 Negative results are explicit immutable values so a later definition
 insertion can be discovered without pretending "nothing was read."
 
 The public surface names no type for these indexes. The queries of 4.1 are the
 capability, and how the immutable owner accelerates them is private
-structure (2) — the same split 7.1 makes when it keeps the `O(log n)`
-coordinate index out of `Source`. The `concrete` interface exposes neither
+structure (2) — the same split 7.1 makes when it keeps the coordinate index
+out of `Source`. The `concrete` interface exposes neither
 the relation indexes nor their storage. A public store member would be readable
 by no one in any case: every answer is reached by semantic identity, and
 nothing can be projected from the store itself. It carries no separate public
@@ -1038,19 +1065,23 @@ names.
 Grouping the relation indexes behind one private handle on the
 published-document owner
 is the expected implementation, and this contract does not constrain the
-layout inside it. They share a lifetime, a refcount, and one share-or-copy
-decision per commit; the record kinds differ enough — a normalized label map
-with duplicate buckets and a deterministic winner, a first-use ordering with
+layout inside it. The record kinds differ enough — a normalized label map with
+duplicate buckets and a deterministic winner, a first-use ordering with
 per-reference ordinals, and ordered occurrence and reverse-reference lists —
 that each keeps its own structure within the bundle.
 
-Those structures must be persistent across adjacent revisions, for the reason
-6.1 and 6.2 give for text and child sequences. A commit that changes no
-relation structure of a given kind shares it with its predecessor outright;
-one that changes a relation path-copies only the affected part. Rebuilding an
-index per commit would make every commit `O(document)` in the relation
-population and defeat 11.1 — and a streamed document would pay that once per
-chunk.
+**A persistence requirement stood here** — that those structures be persistent
+across adjacent revisions, sharing outright with a predecessor when nothing
+changed and path-copying only the affected part when something did, "because
+rebuilding an index per commit would make every commit `O(document)` in the
+relation population and defeat 11.1". **It is removed, and both of its grounds
+were already gone when it was written down here**: it cited 6.1's persistence
+requirement, which is deleted above, and 11.1's bound, which is deleted with
+its section. This section states the disposing rule itself a few paragraphs
+below — enabling, disabling, filling, compacting, or rebalancing an index
+cannot change a `Document`, a revision, or a `Delta` — so no consumer can tell
+a shared index from a rebuilt one. The engine rebuilds them, and does so
+inside the cost the gates measure.
 
 A relation change may change one or more query results. The commit compares
 old and new answers only for identities reached through the affected relation
@@ -1108,58 +1139,82 @@ parse the target.
 
 ```text
 Source {
-    SourceProfile profile
-    [byte]        content
+    [byte] content
 }
-
-SourceProfile =
-    STRICT_UTF8       // valid UTF-8, except for one truncated final code point
-  | PERMISSIVE_BYTES  // any byte sequence may be stored
 ```
 
-The index that makes 7.2 resolve in `O(log n)` is private storage, not a
-member of `Source`: the capability is public, the structure is not (2).
+Whatever index makes 7.2 resolve is private storage, not a member of `Source`:
+the capability is public, the structure is not (2). 7.2 no longer names one,
+and no longer states a bound over it.
 
-The source owns the exact committed stored bytes, including bytes that are not
-valid UTF-8 when the selected source profile permits them. Canonical Markdown
-decoding and recovery are deterministic functions of those bytes and the
-frozen profile.
+The source owns the exact committed stored bytes. Canonical Markdown decoding
+and recovery are deterministic functions of those bytes and nothing else.
 
-`STRICT_UTF8` accepts exactly one deviation from validity: a **truncated final
-code point** — a well-formed UTF-8 prefix at end-of-source that some
-continuation byte would complete. Any other invalid sequence, including a
-truncated code point anywhere but at the end, is a profile violation and
-fails the commit under 8.1.
+**UTF-8 IS ASSUMED AND NEVER VALIDATED.** It is an obligation of the caller,
+not a precondition this engine enforces. The engine does not scan the input,
+does not replace an invalid sequence, and does not reject one.
 
-The exception is load-bearing, not a courtesy. Edits name byte ranges, and a
-streamed chunk may carry the first half of a multi-byte character with the
-rest arriving in a later chunk (8.1, 8.2). Rejecting that intermediate state
-would make streaming legal only under `PERMISSIVE_BYTES`, and 8.2's rule that
-streaming is ordinary editing with no separate path would become conditional
-on the profile — which is exactly the special-casing that section forbids.
-Accepting a complete invalid sequence instead would erase the difference
-between the two profiles, since both would then store anything.
+The store is byte-exact, and that much IS required of it: it holds what it is
+given and hands the same bytes back, which is what 8.1's byte coordinates
+address, what 14.3.1 compares against a fresh parse, and what lets a streamed
+chunk end mid-character (8.2). That is a property of the STORE. It is not a
+promise about what the PARSE does with bytes that are not UTF-8 — see below.
 
-A truncated final code point parses as `PERMISSIVE_BYTES` would parse it: the
-incomplete bytes decode to U+FFFD for that commit. A commit that completes the
-character reparses the whole character and produces the same AST as a fresh
-parse of the resulting bytes, which is what 13 already requires of every chunk
-partition.
+That is a decision about WHERE the question is answered, and the answer is
+"not here". Validating would mean rejecting, and rejecting a document because
+of one byte in it is a policy this engine has no standing to set. Replacing
+would mean a LOSSY PARSE, which is worse than either: the result is not a
+degraded document but a DIFFERENT one, and it can be a plausible one — a GBK
+document read as UTF-8 has pairs that are invalid, and pairs like `0xC4 0xA1`
+that are accidentally well-formed and decode to a wrong character with nothing
+to report. Neither is the engine's call, and declining to make it is
+the whole of the decision.
 
-**Such a document is legal as a final document, not only as an intermediate
-one.** There is no finalize operation to reject it: 8.2 forbids one, a session
-may be closed at any commit, and a caller may simply parse `0xE2 0x82` and
-stop. So `STRICT_UTF8` guarantees "valid UTF-8, except that the last code
-point may be truncated" at every moment of a document's life, and never the
-stronger property its name suggests. A consumer that needs whole-character
-validity tests `Source.content` itself; the parser does not hold a document
-back waiting for bytes that may never arrive, because doing so would be the
-provisional state 8.2 forbids.
+**The guarantee is stated over legal input only: valid UTF-8 in, valid UTF-8
+out.** Input that is not UTF-8 has no defined behaviour here — not a
+guaranteed degradation, not a documented failure mode, not a supported
+encoding. It is out of scope, and every clause that tried to describe what
+happens to it is void.
 
-That is the honest cost of the exception, and it is the smaller one. The
-alternative — rejecting the truncated tail — makes streaming legal only under
-`PERMISSIVE_BYTES` and makes 8.2's "streaming is ordinary editing" conditional
-on the profile, which is the special-casing that section exists to forbid.
+**AND NOTHING IS DONE ABOUT IT — no check, no guard, no gate.** The engine is
+written as though input that is not UTF-8 does not exist, because within this
+contract it does not. Proving it and disproving it are the same mistake: both
+are work spent on a case the contract declines to have. A gate over it is the
+sharpest form — twenty-two API assertions used to pin what an overlong
+encoding came back as, and when validation was deleted they were inverted to
+pin byte-for-byte survival, defended in their own comment by "nothing else in
+the suite states it, and neither external parity oracle can." That is the
+argument against them, not for them: a gate no requirement states does not
+protect a requirement, it mints one. They are removed, and so is the last code
+that branched on validity.
+
+**A truncated final code point is not that case.** A lead byte announcing more
+bytes than the buffer holds is a legal final document (8.2) — a stream may stop
+there — and the code that handles it is handling BUFFER EXHAUSTION, not
+policing UTF-8. The distinction matters in both directions: removing that
+handling on the grounds that "input is UTF-8" would loop forever on input that
+is.
+
+**`SourceProfile` is removed with them.** A source stored bytes under one of
+two profiles, `STRICT_UTF8` or `PERMISSIVE_BYTES`, and the profile selected
+whether an edit's neighbourhood was validated and a violation failed the
+commit. With no validation there is one behaviour under two names, and the
+truncated-final-code-point exception it was built around — a well-formed
+prefix at end-of-source that a later chunk completes — needs no exception to
+state: a source stores what arrives, and a chunk boundary is not a fact about
+the document. 8.2's rule that streaming is ordinary editing with no separate
+path is now unconditional rather than conditional on a profile, which is what
+that section wanted in the first place.
+
+**U+0000 is unaffected.** A NUL is valid UTF-8; the replacement CommonMark
+requires of it is a rule about canonical text, not a statement about which
+bytes may be stored, and it stays.
+
+This is not a deviation from the C engine's ancestry — it restores it. cmark
+validates only on request and its default is to pass an invalid sequence
+through untouched; goldmark reads bytes and assumes UTF-8 without checking.
+Turning validation on unconditionally is what this project had done, without
+recording why, and `UPSTREAM.md` now records the return.
 
 The source carries no revision of its own: every published document has
 different stored bytes from its predecessor, because a commit whose normalized
@@ -1168,7 +1223,7 @@ edits leave the bytes unchanged is a no-op that reuses the current document
 
 An edit that changes bytes without changing the canonical AST — trailing
 whitespace, for instance — therefore advances `DocumentVersion` and produces
-an empty `diffs`. Old documents retain their exact old bytes.
+an empty `diffs`.
 
 ### 7.2 Stable extents and lazy coordinates
 
@@ -1244,20 +1299,30 @@ of it. A `MarkupID` names a `Markup` that exists separately; there is no
 An extent that no longer exists resolves to `none`; the parser never silently
 retargets it by current dense ordinal.
 
-Resolution must be `O(log n)` in the number of source-bearing units and must
-not require a whole-document materialization pass. A persistent aggregate
-sequence keyed by private order-maintenance labels, carrying subtree byte
-sums, satisfies this: an edit path-copies `O(log n)` nodes, and every other
-node's absolute coordinate is recomputed on demand from the same tree.
+**What resolution must satisfy is stated over the OUTPUT, and the mechanism is
+not prescribed.** An extent resolves to the place its bytes are at, and a
+change anywhere else in the document does not change what any other extent
+resolves to. A node therefore holds no coordinate, which is the whole of 7.3
+and the whole of what a consumer can observe.
 
-That sequence is one document-wide sequence of leaf source-bearing units, and
-a container addresses a range of it. It must not be one sequence per
-container. The distinction is the whole bound: Markdown nesting has no depth
-limit — `>` repeated a thousand times is a legal thousand-deep `BlockQuote`
-chain — so resolving a node by summing a prefix at every level of its spine
-costs `O(depth * log width)`, which is `O(log n)` only when depth happens to
-be. A thousand-deep spine measures a thousand steps where the document-wide
-sequence measures ten.
+An earlier revision of this section prescribed the mechanism as well: it
+required resolution in `O(log n)` over the source-bearing units, and named a
+persistent aggregate sequence keyed by private order-maintenance labels and
+carrying subtree byte sums as the structure that satisfies it. That
+requirement is removed, and the reason is that **it was never traced to a
+consumer.** The property a consumer asks for is that an edit affect only the
+nodes the edit relates to, and that is delivered by 9.1 — position is not a
+component of `proj`, so a positional shift emits nothing whatever work
+produced it. An implementation that walks the document to re-derive positions
+after an edit satisfies every observable requirement in this contract; it is
+merely slower, and how much slower is a question of measured milliseconds
+rather than of contract.
+
+What the prescription cost, when it was followed, is recorded in
+`docs/reviews/2026-08-07-requirement-audit.md`: a document-wide per-byte
+ownership partition, the sequence over it, an aggregate tree over that, the
+persistence of that tree, and the label space that keys it — none of which any
+stated requirement reaches.
 
 Every `CoordinateProfile` is deterministic and schema-versioned. `NATIVE` is
 data, never a callback or platform object.
@@ -1270,79 +1335,87 @@ identity, canonical semantic field content, or a diff entry.
 A prefix insertion:
 
 - preserves every later node's `MarkupID`;
-- preserves their `revision.self` and `revision.subtree`;
+- preserves their `revision`;
 - preserves parse and derived answer values;
 - changes the numeric coordinates obtained by resolving their stable extents;
   and
 - **emits no diff entry for any of them**.
 
-The parser must not rewrite every later node, field, or extent merely to store
-new absolute offsets, and must not manufacture diff entries to describe a
-shift. Old documents continue to resolve their old positions exactly.
+The parser must not manufacture diff entries to describe a shift.
+
+A stronger sentence stood here: that the parser must not rewrite every later
+node, field, or extent merely to store new absolute offsets. **That half is
+removed**, because it is a requirement on the WORK and 11.1 now permits the
+work by name — "a commit that walks the document to re-derive what it must
+publish satisfies the frontier requirement exactly; it costs a walk". A
+suffix walk that re-derives every later node's stored offsets satisfies every
+bullet above it, because position is not a component of `proj` (9.1) and the
+shift therefore emits nothing. Whether such a walk is fast enough is a
+measurement. What survives is the list above and the second must-not: what a
+consumer OBSERVES.
 
 A consumer that has chosen to materialize absolute coordinates into its own
-state remaps them from `Delta.edits` (section 9.2) — the normalized form
-of the edits it submitted itself. That cost belongs to the consumer that chose
-to denormalize, is proportional to what it chose to hold, and is not
+state re-resolves them, or diffs the two texts it holds itself (9.2). That cost
+belongs to the consumer that chose to denormalize, is proportional to what it chose to hold, and is not
 observable by any consumer that resolves coordinates on demand. There is no
 coordinate event family, remap contract, remap side channel, or coordinate
 route.
 
 ## 8. Ordinary edits and commits
 
-### 8.1 Source edit primitive
+### 8.1 Spans
+
+`Span` is a half-open run of stored bytes. It is a coordinate type; there is no
+edit primitive, because an edit hands over whole text.
 
 ```text
-SourceEdit {
-    Span   span         // the half-open run to replace
-    [byte] replacement  // the bytes that take its place
-}
-
 Span {
     Offset start
     Offset end
 }
 
-Session {
-    edit(SourceEdit)
-    commit()       -> Commit
-    commit([byte]) -> Commit    // optional binding convenience, below
+Document {
+    commit([byte]) -> Commit
 }
 ```
 
-`span` is a half-open run of *stored bytes* in the session's current pending
-source. It is not a `Scope`: a scope is a revision-relative,
-profile-dependent query result resolved against a published document, and an
-edit must name storage in the pending one. The two stay distinct types so a
+There is no session and no byte-range edit. A document is created from text and
+options, and `edit` hands it new text and SUPERSEDES it (4.2, and
+`sessions-and-deltas.md`). `Span` stays as a coordinate type — what a resolved
+position is expressed in — and nothing submits one.
+
+`span` is a half-open run of *stored bytes*. It is not a `Scope`: a scope is a revision-relative query result resolved
+against a published document, and an edit must name storage in the pending
+one. The two stay distinct types so a
 resolved scope cannot be fed back in as an edit, and `Span` is built from
 `Offset` rather than `EncodedOffset` so a projected coordinate cannot be
 either (7.2).
 
-Byte granularity is also what lets a
-streamed chunk deliver the first half of a multi-byte character and a later
-chunk complete it (8.2), and it is the only space that stays well defined
-under a storage profile that permits bytes which are not valid UTF-8 (7.1).
+Byte granularity is also what lets a streamed chunk deliver the first half of
+a multi-byte character and a later chunk complete it (8.2) — a boundary a
+coordinate space counted in scalars cannot name at all.
 
 Edits name the current pending source coordinate space. A binding may expose
 single-edit and batch conveniences, but they normalize to one deterministic
-non-overlapping edit set before parsing. Overlap, overflow, stale source base,
-or a source-profile violation fails without publishing a partial source or
-AST. Under `STRICT_UTF8` a truncated final code point is not a violation
-(7.1); it is the one intermediate state streaming needs, and the next chunk
-resolves it.
+non-overlapping edit set before parsing. Overlap, overflow, or a stale source
+base fails without publishing a partial source or AST. Bytes ending in a
+truncated code point are not a failure at all: the substrate stores what it is
+given (7.1), and the next chunk continues it.
 
-Edits do not directly mutate a published `Document`. `commit` applies pending
-edits to a private source candidate, parses and validates one complete
-candidate AST, computes its `Delta`, and publishes both atomically.
+A commit does not mutate a published `Document`; it supersedes one. `commit`
+takes whole text, determines the difference between it and the document's own
+stored bytes, parses and validates one complete candidate AST, and publishes
+the successor and its `Delta` atomically.
 
-A binding may additionally offer `commit(source)`, which normalizes the
-difference between the given bytes and the session's stored bytes into the
-same deterministic edit set. It is a convenience over the same primitive, for
-a host that owns the whole text rather than the edit — a two-way text binding,
-a document reloaded from disk, a remote replacement. It must produce the
-identical document, identity, and delta as the equivalent explicit edits, and
-it costs one byte-level diff of the two buffers, so a host that already knows
-its edit should submit that edit instead.
+`commit(source)` used to be described here as an optional binding convenience
+over an explicit-edit primitive, "for a host that owns the whole text rather
+than the edit", with the note that a host which already knows its edit should
+submit that edit instead. **It is now the only form**, and the note is
+inverted: a host that knows its edit applies it to the string it already holds.
+What that costs is one byte-level scan of two buffers, which is linear in the
+document and negligible beside the parse — and what it buys is that 8.2's ban
+on a streaming-only path holds by construction, because there is one operation
+and streaming is calling it again.
 
 ### 8.2 Streaming is ordinary editing
 
@@ -1356,10 +1429,9 @@ finalize opcode, revision domain, cache class, invalidation branch, or parser
 algorithm. Chunk partition and commit scheduling may affect performance and
 intermediate valid ASTs, but not final canonical output.
 
-A chunk boundary that falls inside a multi-byte character is the one place
-this needs saying twice. Both profiles accept the truncated tail — under
-`STRICT_UTF8` by the single exception of 7.1 — and both decode it to U+FFFD
-for that commit. This is not a provisional AST: the document is an ordinary
+A chunk boundary that falls inside a multi-byte character needs no case. The
+substrate stores the truncated tail like any other bytes and the parse carries
+it through (7.1). This is not a provisional AST: the document is an ordinary
 complete document that happens to describe bytes ending mid-character, it is
 exactly what a fresh parse of those same bytes produces, and it stays valid
 and readable forever whether or not another chunk arrives. The completing
@@ -1368,16 +1440,14 @@ equivalence covers it.
 
 ## 9. Delta
 
-A document has exactly two authored levels: its bytes, and the nodes parsed
-from them. A delta is the difference between two documents at both levels, and
-nothing else.
+A delta is the difference between two documents' NODES, and nothing else. The
+byte level is the caller's: it handed over both texts (9.2).
 
 ```text
 Delta {
     DocumentVersion before   // which two documents
     DocumentVersion after
     [Diff]          diffs    // how their nodes differ  (9.1)
-    [SourceEdit]    edits    // how their bytes differ  (9.2)
 }
 
 Diff {
@@ -1386,7 +1456,7 @@ Diff {
 }
 
 DiffPart =
-    VALUE | TEXT | TEXT_MAP | CHILDREN | ANSWERS | DESCENDANT
+    VALUE | TEXT | CHILDREN | DESCENDANT
 ```
 
 9.1 gives each part its meaning and 9.3 the rule that closes the set.
@@ -1402,8 +1472,15 @@ member: `before` pins the domain, and the domain pins the schema (5.1).
 `Delta` is plain immutable caller-owned data. It is not an AST, an alternate
 root, a log a consumer must replay, a subscriber registry, a renderer change
 list, or correctness state required by `Document`. It retains no consumer
-value and no mutable parser session, and it remains valid after the session
-advances or closes.
+value and no mutable parser session.
+
+*It used to say "and it remains valid after the session advances or closes."
+That was asserted in the contract freeze (`54b2810`) and no consumer was ever
+named for it. Under supersession a delta names nodes in the SUCCESSOR document
+— the one `Commit` just handed the caller — so a consumer that frees that
+document and then reads the delta is holding names for a tree that is gone.
+The clause was doing no work, and it was the argument against putting anything
+document-shaped in a row.*
 
 `Delta` is read by paths B and C of 2.1. Path A never reads it, and nothing in
 this contract requires it: a consumer that drops every delta and re-derives
@@ -1418,21 +1495,29 @@ changes it. What a path-B consumer mutates is its own state, addressed by
 Write `proj(n)` for a node's observable projection, split into parts:
 
 ```text
-proj(n) = (VALUE, TEXT, TEXT_MAP, CHILDREN, ANSWERS, DESCENDANT)
+proj(n) = (VALUE, TEXT, CHILDREN, DESCENDANT)
 
 VALUE       kind, scalar fields, singular child edges, source shape
 TEXT        canonical text bytes
-TEXT_MAP    raw-source to canonical-text segment mapping, node-relative (6.1)
 CHILDREN    the list-valued child edge: membership and order
-ANSWERS     this node's parser answers, asked of the document (4.1)
 DESCENDANT  the projections of everything below it
 ```
 
-`ANSWERS` includes every node-addressed semantic query value and, on the root
-`Document`, every document-wide ordered answer. It does not include concrete
-recovery, syntax diagnostics, relation-index layout, or cache state. Thus a
-change to `Document.footnotes()` has a stable address even if no ordinary
-node field changed, while lazily filling the index emits nothing.
+**`proj` is the TREE, and parser answers are not in it.** There used to be an
+`ANSWERS` part carrying every node-addressed query value, so that a commit
+which changed only a footnote's number reported that node even though nothing
+about its bytes or its fields had moved.
+
+It is removed, on two counts. Nothing shipped ever read those answers -- no
+binding calls `footnote_info`, `footnotes`, `footnote_references` or
+`reference_info` -- so there was no consumer being kept in step. And it was
+expensive in a way that had nothing to do with its own cost: an answer like
+"which definition wins" is a FORWARD REFERENCE, decided by definitions that
+may appear anywhere later in the document, so it could not be decided while
+pairing a node with its predecessor. That forced the delta to be assembled by
+a separate full-tree pass after both verdicts were in. Removing the part let
+the diff walk emit each row at the moment it classifies it, and deleted that
+pass along with the per-node scratch field it read.
 
 Absence is a projection value: `proj(n) = ⊥` when `n` is not live in that
 document. Then, for every `n` live in `before` or `after`:
@@ -1447,22 +1532,67 @@ parts(n)     =  { p : proj_before(n).p ≠ proj_after(n).p }
 That is the entire definition of `diffs`. Everything below is a consequence
 of it, not an additional rule.
 
+**`diffs` IS ORDERED, AND THE ORDER IS PART OF THE ANSWER: every node appears
+after all of its own children.** A path-B consumer building immutable values
+bottom-up therefore reads the list once, front to back, and every child it
+needs is already built. That is the whole reason the order is specified; it is
+not a stability convention.
+
+The order is the `after` tree's postorder, with one rule for the nodes that
+are not in it: **a retired node is emitted where it was found**, inside its
+former parent's run and so before that parent's own row. A consumer therefore
+drops a parent's dead children before it re-reads that parent's child list. A
+retired node needs no position of its own — deletion is addressed by id — so
+what this ordering buys is the single pass: the diff walk writes each row at
+the moment it decides it, and there is no second traversal.
+
+*This rule was briefly changed to "all retired rows first", on the grounds
+that the single pass was unavailable anyway. It was unavailable because of
+`ANSWERS` (9.1), and `ANSWERS` is gone.*
+
+**This is why there is no separate ordered-entry table.** It existed because
+`diffs` used to be four unordered id sets, so tree position had to be
+reconstructed after the fact: entries allocated on demand, keyed through a hash
+over all four arrays, parent-linked, and topologically sorted. A list that is
+already in order carries its own position.
+
+**And the `MarkupID` → node index goes too, which is a correction.** An
+earlier revision of this section kept it, on the grounds that a node-addressed
+answer takes an id "because that is what a consumer holds". That is exactly
+backwards. A consumer holding an id also holds the TREE, and it is already
+walking it — that is what requirement 3 means. It meets every node on that
+walk and matches the ids it cares about as it goes: a highlighter passes the
+id set and the AST to its renderer and lights up the node whose id matches.
+The match happens on the consumer's side, against a set it already has.
+
+So the engine never has to answer `MarkupID` → node, and it must not build an
+index on every commit to be able to. `Diff` carries the id and nothing else,
+and the node-addressed queries (4.1) take THE NODE — the caller has it in hand
+when it asks. `reference_info`'s first act used to be resolving an id back to
+a node the caller was standing on.
+
+An id remains what 5.2 says it is: a NAME. It names a node the consumer will
+meet on its own walk, and it stays valid across commits, which no pointer
+does. Naming is the whole job; resolution was never part of it.
+
 **A retired node has no parts in `after`, so `parts` is empty.** That is why
 there is no lifecycle tag: a consumer distinguishes the case with
 `Document.node`, which returns `none` for exactly those nodes. A created node
 differs from `⊥` in every part it has, so it carries all of them.
 
-**`DESCENDANT ∈ parts(n)` exactly when some node below `n` differs**, which is
-exactly when `n`'s `revision.subtree` advanced (5.4). The ancestor spine of
+**`DESCENDANT ∈ parts(n)` exactly when some node below `n` differs.** Either
+that or a differing part of `n`'s own projection advances `n`'s `revision`
+(5.4), so a node in `diffs` is exactly a node whose stamp moved; which of the
+two it was is what the flags say and the stamp does not. The ancestor spine of
 every change is therefore in `diffs`, because those ancestors' projections
 genuinely differ — their `DESCENDANT` part changed. A consumer that
 materializes a parent-linked structure needs precisely that; a consumer that
 keys a flat map skips a `DESCENDANT`-only entry with one flag test.
 
 **A node whose only change is its absolute source position emits nothing**,
-because position is not in `proj` at all. `TEXT_MAP` is the one part that
-could have smuggled it in, and 6.1 keeps its source spans node-relative for
-exactly this reason.
+because position is not in `proj` at all. Nothing in `proj` is measured in
+source coordinates, which is what makes that statement structural rather than
+a property to be maintained: 6.1 removed the one part that had been.
 
 **A node whose CST changed but whose projection did not emits nothing**, for
 the same reason a compaction does: `proj` is the whole membership test, and a
@@ -1489,43 +1619,29 @@ bounded by `O(changed * depth)` and independent of document width and size.
 There is no padding, sentinel, or whole-index entry: a projection either
 differs or it does not.
 
-### 9.2 `edits`: the byte-level difference
+### 9.2 There is no byte-level difference in a `Delta`
 
-`edits` is a normalized, non-overlapping, ascending edit script from `before`'s
-stored bytes to `after`'s stored bytes, expressed in `before`'s coordinate
-space. The session uses the caller's own edits, normalized.
+A `Delta` used to carry `edits`, a normalized edit script from `before`'s
+stored bytes to `after`'s. **It is removed, and `SourceEdit` with it.**
 
-Unlike `diffs` it is not required to be minimal, and it is not a pure
-function of the two byte strings: two routes to the same document may carry
-different but equally valid `edits`. A consumer must treat it as *an* edit
-script, not *the* edit script.
+The clause that justified it named three consumers that "do not already know"
+the change — a host that handed over a whole replacement buffer, a component
+downstream of the editor, and a side-by-side view highlighting the source pane.
+Those consumers are real. What is no longer real is the reason the engine was
+the right place to answer them: **it was free.** A session accumulated the
+caller's own submitted ranges, so reporting them back cost nothing.
 
-It is here for the consumers that do not already know it. An editor that
-submitted the edit does; these do not:
+An edit hands over whole text (8.1). Nobody submits a range, so the engine has
+nothing to report — it would have to REDISCOVER the change by scanning the two
+byte strings, which is exactly what a consumer that wants it would do, at
+exactly the same cost, from two strings it already holds. Putting that scan in
+the engine bills every caller for a service only some of them use, and it was
+never implemented: `SourceEdit` appeared in this contract and in no line of
+code.
 
-- a host that called `commit(source)` (8.1) handed over a whole replacement
-  buffer and never computed a range — the session did, and `edits` is the only
-  place that result exists;
-- a component downstream of the editor — a preview pane, an outline, a
-  collaborating peer, an indexer — did not submit the edit at all; and
-- a side-by-side editor showing *where* the document changed needs both
-  halves: `diffs` locates it in the preview pane, `edits` locates it in the
-  source pane.
+A `Delta` reports what changed in the AST. Bytes are the caller's.
 
-For a consumer that has materialized absolute coordinates, replaying `edits`
-in one ascending prefix-sum walk over its held entries costs
-`O(|edits| + held)` against `O(held * log n)` for re-resolving each through
-`Document.scope`. That is a constant-factor win, not an enabling one — the
-coordinates are always recoverable from the document — and it is worth having
-only because the session normalized this script before parsing, so producing
-it costs nothing.
-
-`edits` carries the replacing bytes, not the replaced ones, so it is not an
-inverse: a consumer that needs the old bytes reads them from the retained old
-document, which still owns them exactly (7.1). It carries no node identity and
-describes no consumer state.
-
-### 9.3 Why these six parts and no more
+### 9.3 Why these four parts and no more
 
 `DiffPart` is closed, and the rule that closes it is a cost rule, not a
 taxonomy:
@@ -1533,8 +1649,7 @@ taxonomy:
 > a part exists if and only if a consumer that ignored it would either be
 > wrong, or pay more than `O(1)`.
 
-`TEXT` and `TEXT_MAP` are `O(length)`. `CHILDREN` is `O(width)`. `ANSWERS`
-is the cost of a parser answer query (4.1). A consumer that ignored `DESCENDANT`
+`TEXT` is `O(length)`. `CHILDREN` is `O(width)`. A consumer that ignored `DESCENDANT`
 while materializing a parent-linked structure would be *wrong*: it would
 retain an ancestor holding a stale child, and a value-diffing UI below it
 would never reach the change. Everything else about a node — its kind, its
@@ -1545,18 +1660,18 @@ vocabulary in every binding forever.
 
 Two facts about the canonical node inventory remove the parameters:
 
-- no canonical node has two text-valued fields, so `TEXT` and `TEXT_MAP` need
-  no field address. This is a rule about the inventory, not an accident of it:
-  **at most one field per kind is a `CanonicalText`** — the kind's content
-  text, spelled `literal` — and every other string field is a plain scalar
-  carrying decoded characters and no `TextMap`. Seven kinds carry one; the
-  rest carry none and therefore never carry these two parts. Without that rule
-  the claim is false, because `Link` and `Image` each pair a destination with
-  a title and `ReferenceDefinition` carries both beside its label, and
-  CommonMark resolves escapes and entities inside all of them. Naming the
-  source span of one of those scalars is the sub-node extent 7.2 defers; until
-  it exists, a consumer that needs it resolves the owning node's extent and
-  searches within it; and
+- no canonical node has two text-valued fields, so `TEXT` needs no field
+  address. This is a rule about the inventory, not an accident of it: **at
+  most one field per kind is a `Utf8Text`** — the kind's content text, spelled
+  `literal` — and every other string field is a plain scalar carrying decoded
+  characters. Seven kinds carry one; the rest carry none and therefore never
+  carry this part. Without that rule the claim is false, because `Link` and
+  `Image` each pair a destination with a title and `ReferenceDefinition`
+  carries both beside its label, and CommonMark resolves escapes and entities
+  inside all of them. Naming the source span of any decoded field — the
+  content text included — is the sub-node extent 7.2 defers; until it exists,
+  a consumer that needs it resolves the owning node's extent and searches
+  within it; and
 - no canonical node has two list-valued child edges — `Table` pairs one
   singular `header` with one list `rows`, `DirectiveBlock` pairs one singular
   `label` with one list `content`, and every other kind has at most one of
@@ -1571,14 +1686,16 @@ is separated from its neighbour by a blank line, so it is a fold over the item
 sequence rather than a reading of the list's own bytes. Two things follow, and
 both are normative. A grandchild edit that flips tightness emits `VALUE` on
 the `List` and not only `DESCENDANT`, which is the one exception to the shape
-14.5.11 otherwise describes. And the fold must be maintained as an aggregate
-on the persistent item sequence — "some item is loose" is a monoid, so it
-rides the `O(log W)` path copy 6.2 already pays — because recomputing it by
-walking the items would make an `O(1)` edit cost `O(W)` and break 14.5.11's
-bound for every list in the document. No other field in the inventory has this
+14.5.11 otherwise describes. An earlier revision also required the fold to be
+maintained as an aggregate on a persistent item sequence, "riding the
+`O(log W)` path copy 6.2 already pays" — **that requirement is removed with
+the path copy it named** (6.2). What the contract requires is the published
+answer: `tight` is correct, and 14.5.11's bound is on what a commit PUBLISHES.
+How the answer is derived is private storage (2), and whether a given
+derivation is fast enough is a measurement (11.1). No other field in the inventory has this
 shape; a future one that does inherits both rules.
 
-`parts` is consequently a six-flag bitmask, a `Diff` is a `MarkupID` plus one
+`parts` is consequently a five-flag bitmask, a `Diff` is a `MarkupID` plus one
 byte, and `diffs` is a flat array with no variable-size records and no
 pointer chasing. The parser always reports every part that differs; filtering
 is a local predicate on data the consumer is already iterating, so there is no
@@ -1693,8 +1810,8 @@ block plus a
 suffix, because nothing about it changed.
 
 **Materialized absolute coordinates.** The consumer that stores absolute
-offsets for `K` nodes remaps them from `edits` in `O(edits + K)` and
-reprojects only the entries that also appear in `diffs`. The consumer that
+offsets for `K` nodes re-resolves them, and reprojects only the entries that
+also appear in `diffs`. The consumer that
 instead calls `Document.scope` on demand pays nothing for a shift. Which of
 the two happens is a consumer decision, and the parser is not told which.
 
@@ -1733,22 +1850,46 @@ parser is not told.
 
 ### 11.1 Parser commit cost
 
-`session.commit()` is measured independently of any consumer:
+**The requirement is about the FRONTIER, not the work.** A commit must leave
+unchanged every node the edit does not relate to: the nodes whose projection
+differs are the ones `Delta` reports (9.1), and a consumer comparing values —
+a pull-style UI diffing its own component tree — sees exactly those. That is
+what "an edit affects only the edited part" means, and it is a statement about
+what a commit PUBLISHES.
 
-- edited stored bytes and persistent source paths;
+**It is not a statement about what a commit DOES.** An earlier revision of this
+section required `session.commit()` to cost a bound independent of document
+size, and that requirement is removed: it appeared here as an assertion, with
+no consumer traced to it anywhere in this contract, and every clause below
+that was justified by "what makes the bound hold" inherited the same standing.
+A commit that walks the document to re-derive what it must publish satisfies
+the frontier requirement exactly; it costs a walk. Whether a given walk is too
+slow is a measurement, and a measurement is not a clause — what this contract
+may no longer do is treat a size-dependent term as a violation on its own.
+
+What remains genuinely required is that no commit be QUADRATIC in the document,
+and that the published frontier be bounded by the edit rather than by the
+document. `session.commit()` is measured independently of any consumer:
+
+- edited stored bytes;
 - reparsed grammar ownership regions;
 - concrete token/trivia records created, retained, and copied;
 - definition-set updates and mention-index probes (6.3, step 0);
 - identity-matching frontier;
 - changed canonical AST records and trace stamps;
 - semantic relation-index maintenance;
-- persistent relation-index records and bytes path-copied;
+- relation-index records and bytes copied;
 - persistent nodes/bytes copied; and
 - `Delta` construction.
 
 The unit a localized edit reparses is the **ownership region**, and it is
-defined rather than left to taste, because §0's rule that concrete offsets are
-region-relative is parameterized on it and so is every constant below.
+defined rather than left to taste — but the reason is CORRECTNESS and not
+cost. Inline syntax is non-local within a leaf, so a leaf cannot be reparsed
+in fragments and still produce the tree a fresh parse would; a container's
+marker material is what decides whether its children are its children at all.
+The region is the smallest span that can be reparsed alone and give the same
+answer. That it is also the smallest span a commit needs to touch is a
+consequence, not the definition.
 
 A region is one of:
 
@@ -1777,11 +1918,13 @@ Inline containers are never regions. `Emphasis`, `Strong`, `Strikethrough`,
 label are materialized during the surrounding leaf's parse, so they stay inside
 it rather than copying and reparsing the same bytes.
 
-Regions nest, and a region's concrete offsets are relative to that region.
-That is what makes the bound hold: an edit inside a paragraph rewrites the
-paragraph's concrete records and nothing else, and every enclosing `ListItem`,
-`List`, and `BlockQuote` keeps its marker records untouched however deep the
-nesting runs.
+Regions nest, and a region's concrete offsets are relative to that region, so
+an edit inside a paragraph rewrites the paragraph's concrete records and
+nothing else while every enclosing `ListItem`, `List`, and `BlockQuote` keeps
+its marker records untouched however deep the nesting runs. This is worth
+having and it is not what makes anything hold: records that were rewritten
+would still be correct, because a record is not part of `proj` (9.1) and
+rewriting one publishes nothing.
 
 An edit may legitimately widen from its innermost region to an enclosing one —
 an edit inside an unclosed fence, a raw HTML block, or a directive region
@@ -1789,11 +1932,25 @@ reparses forward to the end of that construct, and an edit that changes a
 block boundary reparses the neighbours that boundary joins or splits. It must
 not repeat a whole-document parse once per changed node.
 
-Structural edits path-copy `O(log n)` persistent sequence nodes plus the
-inserted or removed members. `|diffs|` is the changed frontier plus its
-deduplicated ancestor spine (9.1), bounded by `O(changed * depth)` and
-independent of document width and size: a one-block insertion into a document
-of any size produces its own entry plus one per enclosing container.
+`|diffs|` is the changed frontier plus its deduplicated ancestor spine (9.1),
+bounded by `O(changed * depth)` and independent of document width and size: a
+one-block insertion into a document of any size produces its own entry plus one
+per enclosing container. **That is the bound this section is about**, and it is
+about what is published. `|diffs|` and delta application must be independent
+of unrelated document nodes.
+
+Two things are required of ORDINARY ACCESS rather than of a commit, and they
+are requirements because a consumer pays them on every read: projecting a
+`Document` or `Markup` value allocates nothing in the core and walks no CST,
+and a semantic traversal steps over no syntax-only token. Both are zero, not
+bounded — they are what §0's separately addressable typed child edge buys, and
+a projection that walks the concrete tree to answer a semantic question has
+given that away.
+
+A sentence here required structural edits to path-copy `O(log n)` persistent
+sequence nodes. It is removed with the rest: nothing in this contract reaches a
+consumer that can observe how a commit stores what it publishes, and 7.2 no
+longer prescribes a persistent sequence to path-copy.
 
 Two implementation constraints follow from that bound and are easy to violate.
 `DESCENDANT` must be discovered by walking **up** from the changed frontier,
@@ -1815,30 +1972,25 @@ addressable typed child edge of §0 buys. CST capture adds work only where the
 existing parse recognizes or preserves concrete material; it must not add a
 second whole-document AST-construction pass.
 
-Introducing the CST must not move any bound in this section. Because concrete
-offsets are region-relative (§0), a token is never a leaf of a document-wide
-structure and no edit elsewhere can reach one: regions reparsed, persistent
-nodes copied, extent-resolution descents, and `|diffs|` are the same with the
-CST as without it, and the concrete material shows up only as a constant
-factor on the records created inside the reparsed region. 14.7 measures that
-factor against an AST-only baseline on the same trace; a design in which it
-also multiplies a size-dependent term fails this section, whatever its timing
-on a small fixture.
+Introducing the CST must not move the FRONTIER this section bounds. Because
+concrete offsets are region-relative (§0), a token is never a leaf of a
+document-wide structure and no edit elsewhere can reach one: regions reparsed
+and `|diffs|` are the same with the CST as without it, and the concrete
+material shows up only as a constant factor on the records created inside the
+reparsed region.
 
 A change that a concrete difference alone would have propagated — trivia,
 delimiter spelling — still costs its region's reparse, which is unavoidable
 and localized, and then publishes nothing (9.1). The projection comparison
 that discards it is proportional to the region, not to the document.
 
-Retaining an old document must not turn an answer-preserving localized commit
-into `O(total answers)` copying. No answer snapshot is copied at all. If an
-edit changes `k` relation sites, buckets, or ordered runs, publication copies
-their persistent paths and payloads in `O(k log n)` (or a tighter
-structure-specific bound), while sharing every unaffected relation structure.
-A truly global renumbering may still require `O(affected)` answer comparisons,
-trace updates, and diff entries because those observable query results
-genuinely changed; it does not require materializing those results in the
-document.
+A commit must not copy one answer value per semantic node. A truly global
+renumbering may still require `O(affected)` answer comparisons, trace updates,
+and diff entries, because those observable query results genuinely changed; it
+does not require materializing those results in the document. The paragraph
+that stood here stated this as a bound on copying persistent paths so that an
+old document could keep its answers, which is 4.2's removed clause wearing a
+cost.
 
 ### 11.2 Delta application cost
 
@@ -1905,8 +2057,8 @@ slice, or `Delta`.
 
 Routine private storage compaction preserves every public identity, revision,
 and AST value, and emits no diff entry. It is not a semantic commit.
-Cross-domain import or profile/schema change produces a fresh document
-stream; a consumer detects it by the `before` comparison of section 9.6 and
+Cross-domain import or a schema or parse-option change produces a fresh
+document stream; a consumer detects it by the `before` comparison of section 9.6 and
 rebuilds.
 
 ## 13. Fresh-parse and chunk equivalence
@@ -1951,10 +2103,10 @@ identity rules, or the diff list.
    route/interest/target/contract/acknowledgement types, and compatibility
    accessors.
 4. There is no reactive/mirror AST, alternate root, or second field truth.
-5. Retained documents remain readable after later commits and session close,
-   with no materialization step.
+5. Retained documents remain readable after session close, with no
+   materialization step.
 6. `Delta` has exactly the four members of section 9, `Diff` has exactly
-   two, and `DiffPart` has exactly six variants. Audits reject a lifecycle
+   two, and `DiffPart` has exactly five variants. Audits reject a lifecycle
    tag, a parent member, a position member, a per-field address, a schema
    member, a separate ordered-entry API, and any parameterized `DiffPart`.
 7. A document containing embed and cross-link occurrences parses identically
@@ -1989,9 +2141,8 @@ identity rules, or the diff list.
     type, value, cache, revision, or update surface in Markdown Core.
 13. One-shot, incremental, cache-disabled, and lazily indexed one-shot
     documents expose equal parser answers for equal semantic projections.
-    Retained old documents keep their old answers after later commits and
-    session close. A document a session commits from carries a prepared
-    relation index at publication (6.3).
+    A document a session commits from carries a prepared relation index at
+    publication (6.3).
 14. Public answer APIs accept and return semantic identities only. Concrete
     tokens and recovery nodes have no parser answers, and syntax diagnostics
     are unchanged when semantic relation indexes are disabled or rebuilt.
@@ -2006,38 +2157,21 @@ identity rules, or the diff list.
    answer-only changes advance exactly their specified stamps.
 5. A -> B -> A advances the affected stamps strictly without identity reuse.
 6. Canonical no-op reuses the exact document and revisions.
-7. Old node views resolve only through their retained old document; a
+7. A node view resolves only through the document it came from; a
    foreign-domain identity traps.
 
 ### 14.3 Source and storage gates
 
-1. Arbitrary legal stored-byte edits remain fresh-parse equivalent under the
-   frozen decode/recovery profile.
+1. Arbitrary legal stored-byte edits remain fresh-parse equivalent.
 2. Stored-byte, scalar, UTF-16, line/column, and binding-native projections
-   resolve exactly for old and new retained documents.
-3. `Document.scope` is `O(log n)` on a pinned large document and requires no
-   whole-document pass; prefix insertion does not rewrite later nodes or
-   extents.
-4. Text and child collections path-copy only their changed persistent
-   frontier plus inserted/removed content.
-5. Long append traces avoid prefix-sum copying; tiny retained slices respect
-   the declared memory amplification bound.
-6. The `STRICT_UTF8` acceptance boundary is tested from both sides, because it
-   is asymmetric and gates 1 and 14.8 pass without it — gate 1 exercises only
-   *legal* edits, and 14.8 compares only final outputs, so an implementation
-   that rejected every incomplete chunk, or one that accepted every invalid
-   sequence, would satisfy both. Under `STRICT_UTF8`:
-   - a commit whose bytes end in a truncated final code point **succeeds**,
-     publishes a document that decodes that tail to U+FFFD, and stays readable
-     with no further commit;
-   - a commit whose bytes contain a complete invalid sequence **fails**,
-     publishing neither source nor AST (8.1);
-   - a commit whose bytes contain a truncated code point followed by any
-     further byte **fails**, since the exception is positional and covers only
-     end-of-source; and
-   - the same three inputs under `PERMISSIVE_BYTES` all succeed, which is what
-     makes the two profiles observably different.
-7. Splitting one multi-byte character across two commits under `STRICT_UTF8`
+   resolve exactly on the published document.
+3. `Document.scope` answers exactly on a pinned large document, and a prefix
+   insertion changes what no later node PUBLISHES — no diff entry, no changed
+   projection. What it costs to answer is measured, not bounded here.
+4. Text and child collections change only their changed frontier plus
+   inserted/removed content.
+5. Long append traces do not degrade quadratically.
+7. Splitting one multi-byte character across two commits
    produces, after the completing commit, the document a fresh parse of the
    final bytes produces (13), and the intermediate document remains valid and
    readable after the session closes.
@@ -2051,17 +2185,19 @@ For each binding, against a pinned document and an adjacent commit:
 2. Node equality and hashing are the two-word tuples of 2.1, allocation-free,
    and equal implies value-identical with no false negative from storage
    layout or rebalancing.
-3. The core reuses every unchanged subtree in the next document, verified by
-   reference at the C level. At a binding, the equality of gate 2 reports that
-   subtree unchanged whether or not that binding's views carry identity at all.
+3. An edit reports a `diffs` list whose size follows the REPARSED REGION and
+   not the document: the same one-node insertion at the front of a document
+   and of one a thousand times larger names the same handful of nodes. This
+   is 5.2 rule 1 as a gate, and it replaces one that required the core to
+   reuse every unchanged subtree "verified by reference at the C level" — an
+   assertion no consumer could read, no test implemented, and the engine's own
+   full-commit path contradicts.
 4. A top-down value diff of the two documents reports exactly the nodes whose
    subtree projection differs — no false negatives against a fresh comparison,
    and no descent into a subtree whose root compared equal.
-5. Retaining the previous document to diff against costs the changed frontier
-   in additional live memory, not a second tree.
-6. A virtualized container holding `V` visible rows performs `O(V)`
+5. A virtualized container holding `V` visible rows performs `O(V)`
    comparisons per commit, independent of document size.
-7. A commit on one session produces no commit, no delta, and no changed value
+6. A commit on one session produces no commit, no delta, and no changed value
    in any other session's document. A host document holding an `Embed`
    occurrence is reference-identical across any number of target commits, so
    nothing in the host can invalidate a view (3.1).
@@ -2110,8 +2246,10 @@ For a pinned large document:
 13. A concrete-only edit publishes an empty `diffs`: trailing whitespace, and
     a delimiter respelled from `*x*` to `_x_`. Both reparse their region and
     neither emits an entry or a spine.
-14. A prefix insertion leaves every later `TEXT_MAP` equal, and the later
-    nodes' `Document.scope` results move by exactly the inserted length.
+14. A prefix insertion emits no entry for any later node, and the later
+    nodes' `Document.scope` results move by exactly the inserted length. No
+    projection part is measured in source coordinates, so there is nothing a
+    prefix insertion could make differ.
 15. Inserting a definition emits `ANSWERS` on exactly the identities whose
     answers changed and converts exactly the bracketed forms that now resolve;
     the blocks reparsed and `|diffs|` are the same for a document of any size.
@@ -2133,50 +2271,27 @@ For randomized edit traces against a randomized consumer projection:
 6. A consumer that resolves coordinates on demand performs zero work for a
    pure prefix insertion elsewhere.
 
-### 14.7 Complexity gates
-
-Pinned large-document traces report:
-
-- `|diffs|`, entries by kind, and parts by kind;
-- semantic-node and syntax-only-token counts, record bytes, and allocations;
-- persistent nodes/bytes copied by the parser;
-- reparsed regions and identity-matching frontier;
-- relation-index probes, affected units, and persistent index bytes
-  path-copied;
-- semantic-projection allocations and full-CST walks, both required to be
-  zero for ordinary node access and traversal, and syntax-only tokens stepped
-  over by a semantic traversal, required to be zero;
-- every term above measured a second time against an AST-only baseline that
-  captures no syntax-only record on the same trace, with the CST permitted to
-  move only the records-created term (11.1);
-- delta application work, separated into the `O(|diffs|)` term and the
-  consumer's own projection work; and
-- rebuild cost, labeled and measured separately.
-
-`|diffs|` and delta application must be independent of unrelated document
-nodes. Framework-diff traces are reported separately and measured against
-11.3, never against `|diffs|`.
-
-The migration pins the existing representative, large-document, extension,
-and adversarial parser benchmarks before the C-layer AST is extended. The
-same workloads then report one-shot parse time, localized commit time, peak
-memory, concrete-record bytes, zero-copy semantic traversal, and commits with
-an old document retained. A result that preserves asymptotic bounds by adding
-an unconditional second parse, full AST materialization, full relation-index
-copy, or full-sized node per punctuation token fails this gate regardless of
-its timing on a small fixture.
+**14.7 was the complexity gates, and it is removed.** It reported persistent
+nodes and bytes copied, persistent index bytes path-copied, and every term a
+second time against an AST-only baseline "with the CST permitted to move only
+the records-created term (11.1)" — measurements of a bound 11.1 no longer
+states, taken over a persistence 7.2 no longer prescribes. What it required
+rather than reported has moved to 11.1, beside the frontier it belongs to:
+`|diffs|` and delta application independent of unrelated nodes, and zero
+allocations and zero CST walks on ordinary access. Benchmarks stay; they are
+measurements, and a measurement that no clause reads is a number, not a gate.
 
 ### 14.8 Streaming gates
 
 1. Run human typing, paste, IME, remote, and LLM chunk traces through only
    ordinary byte edits and `commit`.
 2. Randomize chunk boundaries and commit cadence, including boundaries that
-   fall inside a multi-byte character, under both source profiles. Every such
+   fall inside a multi-byte character. Every such
    commit succeeds, and the trace is also run to completion *without* the
    completing chunk, since a stream may simply stop there (7.1).
 3. Compare every final document with a fresh parse — including a final
    document whose bytes end in a truncated code point, which is a legal
-   `STRICT_UTF8` document and must compare equal to a fresh parse of exactly
+   document and must compare equal to a fresh parse of exactly
    those bytes.
 4. Compare consumer state with a fresh projection under applied deltas,
    concatenated deltas, and discarded deltas.
@@ -2191,7 +2306,6 @@ section says otherwise. `byte` and `integer` are primitives.
 
 | Type | What it is | Defined |
 | --- | --- | --- |
-| `CanonicalText` | a node's text field: canonical UTF-8 plus its map back to source | 6.1 |
 | `ChildOrdinal` | zero-based position within one child list; a non-negative integer | here |
 | `Commit` | what `Session.commit()` returns: `{document, delta}` | 2 |
 | `ConcreteID` | stable identity of one concrete node or token: `(domain, ordinal)` | 0 |
@@ -2204,7 +2318,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Delta` | the difference between two documents, at both of a document's levels | 9 |
 | `Diff` | one node whose projection differs, plus which parts differ | 9 |
 | `DiffPart` | closed vocabulary of which part of a node differs | 9.1 |
-| `DiffParts` | a set of `DiffPart`; a six-flag bitmask | 9.1 |
+| `DiffParts` | a set of `DiffPart`; a five-flag bitmask | 9.1 |
 | `Document` | one immutable parsed unit; the semantic projection's public root | 4 |
 | `DocumentDomain` | the opaque scope that identities and revisions live in | 5.1 |
 | `DocumentVersion` | which published document: `(domain, revision)` | 5.1 |
@@ -2215,8 +2329,7 @@ section says otherwise. `byte` and `integer` are primitives.
 | `MarkupID` | stable identity of one logical node: `(domain, ordinal)` | 5.2 |
 | `MarkupKind` | which canonical node kind a `Markup` is | canonical-ast.md |
 | `MarkupOrdinal` | positive integer, unique within one domain, never reused | here |
-| `MarkupRevision` | a node's revision pair: `(self, subtree)` | 4 |
-| `MarkupTrack` | a node's identity, revision pair, and extent | 4 |
+| `MarkupTrack` | a node's identity, revision, and extent | 4 |
 | `Offset` | zero-based byte offset; the context names which buffer | here |
 | `ParseOptions` | the parse-time options that can affect AST truth | canonical-ast.md |
 | `Position` | one endpoint of a `Scope`; widened per coordinate profile | canonical-ast.md, 7.2 |
@@ -2226,21 +2339,17 @@ section says otherwise. `byte` and `integer` are primitives.
 | `Scope` | a resolved source region: `(start: Position, end: Position)` | canonical-ast.md |
 | `Session` | the single mutable owner of one document's pending source | 8.1 |
 | `Source` | a document's committed bytes and how they are read | 7.1 |
-| `SourceEdit` | one byte-level edit: a span to replace, and its replacement | 8.1 |
 | `SourceExtent` | one source extent, identity only: `(domain, ordinal)` | 7.2 |
-| `SourceProfile` | closed selector for which byte sequences may be stored | 7.1 |
 | `Span` | a half-open run of bytes: `(start, end)` of `Offset` | 8.1 |
-| `SpanPair` | one entry of a `TextMap`: a canonical span and its node-relative source span | 6.1 |
-| `TextMap` | relates a field's canonical text to the source bytes that produced it | 6.1 |
 | `UnexpectedToken` | a token the grammar did not admit at that position | 0 |
-| `Utf8Text` | canonical UTF-8 text; the value half of `CanonicalText` | here |
+| `Utf8Text` | a node's text field: canonical UTF-8, and nothing beside it | 6.1 |
 
 Every scalar above, in one place. These are the definitions; they get no
 section of their own because there is nothing more to say about them.
 
 ```text
 ChildOrdinal     = non-negative integer  // position within one child list
-DiffParts        = set of DiffPart       // a six-flag bitmask
+DiffParts        = set of DiffPart       // a five-flag bitmask
 DocumentDomain   = opaque token          // compared for equality, never read
 EncodedOffset    = non-negative integer  // in a projected coordinate space
 ExtentOrdinal    = positive integer      // unique within one domain

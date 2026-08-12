@@ -1,4 +1,4 @@
-@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmName("MarkdownCoreKt")
 @file:kotlin.jvm.JvmMultifileClass
 
 package com.nouprax.markdown.core
@@ -20,7 +20,7 @@ public object MarkupDumper {
         document: Document,
         node: Markup,
     ): String {
-        val origin = document.scope(node).start.line
+        val origin = node.scope.start.line
         val offset = if (origin > 0) origin - 1 else 0
         val visitor = DumpVisitor()
         val remainingChildren = mutableListOf<Int>()
@@ -261,13 +261,19 @@ private fun record(
 private fun directiveFields(
     mode: PlacementMode,
     name: String,
-    attributes: String?,
+    attributes: Map<String, String>?,
 ): kotlin.collections.List<String> =
     listOf(
         "mode=${mode.token()}",
         "name=${jsonString(name)}",
-        "attributes=${optionalString(attributes)}",
+        "attributes=${directiveAttributes(attributes)}",
     )
+
+/** Pair by pair, like every other field: `null` for no container at all and
+ * nothing after `attributes=` for an empty one. Sorted by name, because four
+ * dumpers have to agree byte for byte and Swift's map is unordered. */
+private fun directiveAttributes(attributes: Map<String, String>?): String =
+    attributes?.keys?.sorted()?.joinToString(" ", "[", "]") { "$it=${jsonString(attributes.getValue(it))}" } ?: "null"
 
 private fun scopeText(
     value: Scope,

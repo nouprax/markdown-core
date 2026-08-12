@@ -1,4 +1,14 @@
 #!/bin/sh
+
+# The public surface is NOT pinned here. A list of declarations copied into
+# this file is not a test: its only failure mode is "someone changed a
+# declaration", which the diff of that declaration already shows, and it
+# reports pure reordering as drift — `lineageBits` becoming `seriesBits` and
+# `consuming func edit` becoming `func edit` each broke it with the set of
+# names unchanged, and an earlier pattern once matched the word "constructor"
+# inside a doc comment. What belongs here is what a diff CANNOT show: that the
+# real gates are still switched on, and that a contract holding across four
+# platforms still holds.
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -77,52 +87,15 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 }
 NODE
 
-# The model and walker stay mutation-free; the session directory is the one
-# deliberate exception (append/replace are its reviewed edit surface) and is
-# pinned exactly below instead.
+# The model and walker stay mutation-free. There is no exception directory any
+# more: the session's append/replace surface is gone, and a document is edited
+# into a successor rather than mutated. (The exclusion that used to sit here
+# named a directory that no longer exists, which is a filter that quietly
+# filters nothing.)
 if grep -R -n -E \
     'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
-    --exclude-dir=Session \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports mutation, renderer, or native implementation details"
-fi
-session_surface=$(grep -R -h -o -E \
-    'public (mutating func|final class|struct|func|var|let|init|typealias|private\(set\) var)[^{=]*' \
-    packages/swift-markdown-core/Sources/MarkdownCore/Session | sed -E 's/[[:space:]]+$//' | sort -u)
-expected_session_surface='public final class MarkupSession
-public func append(_ text: String) throws
-public func commit() throws -> Commit
-public func footnote(of id: MarkupID) -> FootnoteInfo?
-public func footnotes() -> [FootnoteDefinition]
-public func materialize()
-public func node(for id: MarkupID) -> (any Markup)?
-public func references(of definition: MarkupID) -> [FootnoteReference]
-public func replace(_ range: Range<Int>, with text: String) throws
-public func scope(of node: some Markup) -> Scope
-public init(options: ParseOptions
-public let added: [MarkupID]
-public let afterRevision: UInt64
-public let beforeRevision: UInt64
-public let bubbled: [MarkupID]
-public let changed: [MarkupID]
-public let definition: MarkupID?
-public let delta: Delta
-public let document: Document
-public let lineage: UInt64
-public let number: Int?
-public let options: ParseOptions
-public let referenceCount: Int
-public let referenceOrdinal: Int?
-public let removed: [MarkupID]
-public private(set) var document: Document
-public struct Commit: Sendable
-public struct Delta: Sendable, Hashable
-public struct FootnoteInfo: Sendable, Hashable
-public var length: Int
-public var revision: UInt64'
-if [ "$session_surface" != "$expected_session_surface" ]; then
-    printf '%s\n' "$session_surface" >&2
-    fail "Swift session surface drifted from the reviewed pin"
 fi
 grep -q 'public enum MarkupDumper' packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift \
     && grep -q 'public static func dump(_ document: Document)' \
@@ -174,13 +147,6 @@ grep -q 'visitor: MarkupVisitor<Unit>' \
 grep -Fq '// Targets: [linuxX64, macosArm64]' \
     packages/kotlin-markdown-core/api/kotlin-markdown-core.klib.api \
     || fail "Kotlin KLIB ABI snapshot does not cover both published Native targets"
-test -s packages/kotlin-markdown-core/jvm-abi.txt \
-    || fail "Java-source-visible Kotlin/JVM ABI snapshot is missing"
-if grep -q -E \
-    'CSession|HostNativeLibrary|JvmNative|JvmSession|ScopeEntry|ScopeResolver|WireDecoder|WireKind|WireReader' \
-    packages/kotlin-markdown-core/jvm-abi.txt; then
-    fail "Kotlin/JVM implementation types leaked into the Java ABI snapshot"
-fi
 grep -q 'officialClasses' packages/kotlin-markdown-core/build.gradle.kts \
     && grep -q 'verifyJvmImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
     && grep -q 'verifyAndroidImplementationHidden' packages/kotlin-markdown-core/build.gradle.kts \
@@ -234,66 +200,38 @@ const inventories = new Map([
         )].map((match) => match[1]),
     ],
 ]);
+// The four inventories are held to EACH OTHER, and the count comes from the
+// first of them. A literal count here was a fourth copy of the same fact, and
+// changing the JNI surface left it stale in three files at once.
 let expected;
 for (const [label, names] of inventories) {
-    if (names.length !== 13 || new Set(names).size !== 13) {
-        throw new Error(`${label} must contain exactly 13 unique JNI methods`);
+    if (names.length === 0 || new Set(names).size !== names.length) {
+        throw new Error(`${label} must list at least one JNI method, each exactly once`);
     }
     const sorted = names.toSorted();
     expected ??= sorted;
     if (sorted.join("\n") !== expected.join("\n")) {
-        throw new Error(`${label} differs from the reviewed JvmNative inventory`);
+        throw new Error(
+            `${label} differs from the other JvmNative inventories: ` +
+                `[${sorted.join(", ")}] vs [${expected.join(", ")}]`
+        );
     }
 }
 NODE
-# The model and walker stay mutation-free; the session directory is the one
-# deliberate exception (append/replace are its reviewed edit surface) and is
-# pinned exactly below instead.
+# The model and walker stay mutation-free. There is no exception directory any
+# more: the session's append/replace surface is gone, and a document is edited
+# into a successor rather than mutated.
 if grep -R -n -E \
     'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
-    --exclude-dir=session \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports mutation, renderer, or native implementation details"
 fi
-kotlin_session_surface=$(grep -R -h -o -E \
-    'public (fun|val|var|class|object) [A-Za-z.]+' \
-    packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/session | sort -u)
-expected_kotlin_session_surface='public class Commit
-public class Delta
-public class FootnoteInfo
-public class MarkupSession
-public fun MarkupSession.footnote
-public fun MarkupSession.footnotes
-public fun MarkupSession.references
-public fun afterRevisionBits
-public fun append
-public fun beforeRevisionBits
-public fun commit
-public fun lineageBits
-public fun node
-public fun replace
-public fun revisionBits
-public val added
-public val afterRevision
-public val beforeRevision
-public val bubbled
-public val changed
-public val definition
-public val delta
-public val document
-public val length
-public val lineage
-public val number
-public val options
-public val referenceCount
-public val referenceOrdinal
-public val removed
-public val revision
-public var document'
-if [ "$kotlin_session_surface" != "$expected_kotlin_session_surface" ]; then
-    printf '%s\n' "$kotlin_session_surface" >&2
-    fail "Kotlin session surface drifted from the reviewed pin"
-fi
+# The Kotlin public surface is pinned by kotlinx binary-compatibility-validator
+# in api/jvm/kotlin-markdown-core.api and api/kotlin-markdown-core.klib.api,
+# with full JVM signatures over every file and a task that regenerates them.
+# A name-only grep over three of those files re-derived a strict subset of the
+# same thing by hand, and cost a manual edit every time alphabetical order
+# shifted under it.
 grep -q 'public object MarkupDumper' \
     packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupDumper.kt \
     && grep -q 'public fun dump(document: Document): String' \
@@ -312,65 +250,22 @@ test "$(grep -c 'public fun visit' packages/kotlin-markdown-core/src/commonMain/
     -eq "$markup_kind_count" \
     || fail "Kotlin MarkupVisitor is not exhaustive over all $markup_kind_count Markup kinds"
 
-if grep -R -E -n 'readonly children' packages/es-markdown-core/src/model; then
-    fail "ES exposes generic children"
+# A generic CHILD LIST, which is what this forbids — every kind names its own
+# edges. `DiffParts.children` is a boolean saying that a node's child list
+# differs, and an unanchored `children` pattern reported it as a violation.
+if grep -R -E -n 'readonly children[[:space:]]*:[[:space:]]*readonly' packages/es-markdown-core/src/model; then
+    fail "ES exposes a generic child list"
 fi
-# Node values carry identity, never positions; scopes are document-mediated.
-if grep -R -n 'readonly scope: Scope' packages/es-markdown-core/src/model; then
-    fail "ES node values store scopes"
+# Every node value carries its own extent, declared once on the base every
+# kind extends. A document-mediated lookup is the shape this replaced.
+grep -q 'readonly scope: Scope;' packages/es-markdown-core/src/model/base.ts \
+    || fail "ES node values do not carry their own scope"
+if grep -R -n 'scope: (node' packages/es-markdown-core/src; then
+    fail "ES resolves scopes through the document instead of off the node"
 fi
 grep -q 'static dump(document: Document, node: Markup = document)' packages/es-markdown-core/src/markup-dumper.ts \
-    && grep -q 'readonly scope: (node: Markup) => Scope' packages/es-markdown-core/src/model/document.ts \
     && grep -q 'readonly dump: () => string' packages/es-markdown-core/src/model/document.ts \
     || fail "ES does not expose the reviewed Document diagnostic dump API"
-es_session_surface=$(
-    {
-        grep -R -h -E '^export (class|interface|function) [A-Za-z]+' packages/es-markdown-core/src/session
-        grep -h -E '^    [a-zA-Z].*[{;]$' \
-            packages/es-markdown-core/src/session/markup-session.ts \
-            packages/es-markdown-core/src/session/commit.ts \
-            packages/es-markdown-core/src/session/footnote-info.ts \
-            | grep -v '^    private '
-    } | sed -E 's/ \{$//; s/;$//; s/^    //' | sort -u
-)
-expected_es_session_surface='append(text: string): void
-close(): void
-commit(): Commit
-constructor(options: ParseOptions = {})
-export class MarkupSession
-export class ScopeResolver
-export function adopt(value: DocumentValue, resolver: ScopeResolver): Document
-export function relink(previous: Markup, revision: number, replacements: ChildReplacements): Markup
-export interface Commit
-export interface Delta
-export interface FootnoteInfo
-export interface ScopeEntry
-footnote(id: MarkupID): FootnoteInfo | null
-footnotes(): FootnoteDefinition[]
-get document(): Document
-get length(): number
-get revision(): number
-node(id: MarkupID): Markup | null
-readonly added: readonly MarkupID[]
-readonly afterRevision: number
-readonly beforeRevision: number
-readonly bubbled: readonly MarkupID[]
-readonly changed: readonly MarkupID[]
-readonly definition: MarkupID | null
-readonly delta: Delta
-readonly document: Document
-readonly lineage: bigint
-readonly number: number | null
-readonly options: Readonly<Required<ParseOptions>>
-readonly referenceCount: number
-readonly referenceOrdinal: number | null
-readonly removed: readonly MarkupID[]
-references(definition: MarkupID): FootnoteReference[]
-replace(byteStart: number, byteEnd: number, replacement: string): void'
-if [ "$es_session_surface" != "$expected_es_session_surface" ]; then
-    printf '%s\n' "$es_session_surface" >&2
-    fail "ES session surface drifted from the reviewed pin"
-fi
 grep -q 'TableRow extends MarkupBase<"tableRow">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'TableCell extends MarkupBase<"tableCell">' packages/es-markdown-core/src/model/table.ts \
     && grep -q 'visitTableRow(this:' packages/es-markdown-core/src/markup-visitor.ts \
@@ -401,14 +296,14 @@ if (rootExport?.types !== "./dist/index.d.ts" || rootExport?.import !== "./dist/
 }
 const runtime = fs.readFileSync(runtimePath, "utf8");
 const runtimeExports = [
-    ...[...runtime.matchAll(/^export (?:class|const) ([A-Za-z0-9_]+)/gm)].map(
+    ...[...runtime.matchAll(/^export (?:class|const|function) ([A-Za-z0-9_]+)/gm)].map(
         (match) => match[1]
     ),
     ...[...runtime.matchAll(/^export \{ ([^}]+) \} from /gm)].flatMap((match) =>
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Document", "MarkupDumper", "MarkupSession", "MarkupWalker", "ParseError", "WalkEvent", "visit"].sort();
+const expectedRuntime = ["DiagnosticCode", "Document", "MarkupDumper", "MarkupWalker", "ParseError", "WalkEvent", "visit"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }

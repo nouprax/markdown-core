@@ -335,6 +335,21 @@ typedef markdown_core_node *(*markdown_core_postprocess_block_func)(
     markdown_core_node *block
 );
 
+/* Mixes this node's extension-owned VALUE-bearing scalars into `h` and
+ * returns the result. An extension that registers a node type whose content
+ * lives outside the core union MUST implement this: the diff pairs nodes on
+ * `subtree_hash`, so two nodes the hash cannot tell apart are paired, and the
+ * newcomer is handed the survivor's identity. Mix whatever
+ * markdown_core_ast_parts_changed compares for the type — a directive's name
+ * and attributes, a table's alignments, a row's header bit, a formula's mode.
+ * Use markdown_core_hash_mix and markdown_core_hash_bytes so every type is
+ * sampled the same way. */
+typedef uint64_t (*markdown_core_hash_value_func)(
+    markdown_core_extension *extension,
+    const markdown_core_node *node,
+    uint64_t h
+);
+
 typedef void (*markdown_core_alloc_opaque_func)(
     markdown_core_extension *extension,
     markdown_core_mem *mem,

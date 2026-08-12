@@ -26,7 +26,7 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
 /* Footnote definitions live in a map of their own, never alongside link
  * reference definitions. Sharing one map would put `[x]:` and `[^x]:` in the
  * same label bucket, where a single winner has to stand for two independent
- * definedness answers; the session's commit reconciler compares that winner
+ * definedness answers; the commit reconciler compares that winner
  * before and after, so one kind's flip can hide behind the other's presence
  * and leave the units that read it un-reparsed. Two maps make the collision
  * unrepresentable rather than filtered.
@@ -34,7 +34,7 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem);
  * The entry type stays markdown_core_reference with an empty url and title. A
  * footnote reference resolves to a node, not to a destination, so there is no
  * payload to carry — but keeping the shape means the label normalization, the
- * winner election, the free function, and the session's whole definition
+ * winner election, the free function, and the document's whole definition
  * coordination chain run over either map unchanged. One mechanism, two
  * instances; a leaner entry would have bought a second one.
  *

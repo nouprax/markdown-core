@@ -3,9 +3,12 @@ package com.nouprax.markdown.core
 public class DirectiveBlock internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val mode: PlacementMode,
     public val name: String,
-    public val attributes: String?,
+    /** The directive's attribute map in source order, or null when no
+     * `{...}` container was written; an empty container is an empty map. */
+    public val attributes: Map<String, String>?,
     public val label: DirectiveLabel?,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {

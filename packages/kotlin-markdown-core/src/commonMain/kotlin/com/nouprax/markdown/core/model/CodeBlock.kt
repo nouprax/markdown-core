@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class CodeBlock internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val mode: PlacementMode,
     public val info: String?,
     public val language: String?,

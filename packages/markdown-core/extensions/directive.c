@@ -1,3 +1,4 @@
+#include "../include/markdown_core.h"
 #include "directive.h"
 
 #include <assert.h>
@@ -809,6 +810,62 @@ const char *markdown_core_extensions_get_directive_attributes(markdown_core_node
     return render_attributes_json(node, directive);
 }
 
+/* The attribute list as the node holds it: source order, one entry per name.
+ * The parser has already applied the grammar's merge rules -- a later `k=`
+ * replaces an earlier one, `.a .b` accumulates into one `class`, `#a #b`
+ * keeps the last -- so these pairs ARE the map, and nothing downstream has to
+ * reconstruct it from a rendering. */
+bool markdown_core_extensions_directive_attributes_present(const markdown_core_node *node) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    return directive != NULL && directive->has_attributes != 0;
+}
+
+size_t markdown_core_extensions_directive_attribute_count(const markdown_core_node *node) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    const directive_attribute *attribute;
+    size_t count = 0;
+
+    if (!directive || !directive->has_attributes) {
+        return 0;
+    }
+    for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+        if (attribute->active) {
+            count++;
+        }
+    }
+    return count;
+}
+
+bool markdown_core_extensions_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    const uint8_t **key,
+    size_t *key_length,
+    const uint8_t **value,
+    size_t *value_length
+) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    const directive_attribute *attribute;
+
+    if (!directive || !directive->has_attributes || !key || !key_length || !value || !value_length) {
+        return false;
+    }
+    for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+        if (!attribute->active) {
+            continue;
+        }
+        if (index == 0) {
+            *key = attribute->name.data;
+            *key_length = attribute->name.len < 0 ? 0 : (size_t)attribute->name.len;
+            *value = attribute->value.data;
+            *value_length = attribute->value.len < 0 ? 0 : (size_t)attribute->value.len;
+            return true;
+        }
+        index--;
+    }
+    return false;
+}
+
 int markdown_core_extensions_set_directive_attributes(markdown_core_node *node, const char *attributes) {
     node_directive *directive = get_directive(node);
     directive_attribute *parsed = NULL;
@@ -902,10 +959,11 @@ static markdown_core_bufsize scan_attr_name(
     while (pos < len) {
         int32_t code = 0;
         markdown_core_bufsize width = markdown_core_utf8proc_iterate(data + pos, len - pos, &code);
-        /* Bounds guard, not a grammar rule: with UTF-8 validation on — which
-         * every parse path here enables — the buffer holds no invalid
-         * sequence and this cannot fire. It stays because advancing by a
-         * non-positive width would not terminate. */
+        /* Bounds, not validity. `iterate` reports a non-positive width when
+         * the buffer stops inside a character — a truncated final code point,
+         * which 8.2 makes a legal final document — and advancing by it would
+         * not terminate. This is not a guard against input that is not UTF-8;
+         * input is UTF-8 (7.1) and nothing here checks. */
         if (width <= 0) {
             break;
         }
@@ -1147,6 +1205,7 @@ static void free_parsed_directive(markdown_core_mem *mem, parsed_directive *pars
 }
 
 static int parse_directive_suffix(
+    markdown_core_parser *parser,
     markdown_core_mem *mem,
     unsigned char *data,
     markdown_core_bufsize len,
@@ -1189,6 +1248,27 @@ static int parse_directive_suffix(
             pos = after_attributes;
         } else if (parsed->oom) {
             return 0;
+        } else if (parser) {
+            /* The author wrote `{`, and what follows is not attributes. The
+             * braces stay literal text — and for the block form the whole
+             * construct stops being a directive, because the leftover braces
+             * fail the blank-rest-of-line check. Nothing in the tree says
+             * that happened: it is a paragraph that happens to begin with
+             * colons. This is the one place the parse degrades silently, so
+             * it is the one place an editor has to be told. */
+            markdown_core_bufsize last = len;
+            while (last > pos && (data[last - 1] == '\n' || data[last - 1] == '\r' || data[last - 1] == ' ' ||
+                                  data[last - 1] == '\t')) {
+                last--;
+            }
+            markdown_core_parser_record_diagnostic(
+                parser,
+                MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                markdown_core_parser_get_line_number(parser),
+                (int)pos + 1,
+                markdown_core_parser_get_line_number(parser),
+                (int)last
+            );
         }
     }
 
@@ -1486,6 +1566,31 @@ static markdown_core_node *match_colon_directive(
                 parser->oom = true;
                 return NULL;
             }
+            {
+                /* Same degradation, narrower blast radius: here only the
+                 * braces are rejected and the text after them parses
+                 * normally, so the extent is the `{` alone. It cannot reach
+                 * the closing brace either — `scan_attributes_raw` is one of
+                 * the two things that can have failed, and when it is, there
+                 * is no closing brace to have found.
+                 *
+                 * The column is derived, not queried: the cursor still sits
+                 * on the directive's `:`. An inline column is `offset + 1 +
+                 * column_offset + block_offset` (inlines.c:2400), so the
+                 * brace's column is the cursor's plus the offset between
+                 * them — sound because a directive's name and its `{` are on
+                 * one line by grammar. */
+                int base = markdown_core_inline_parser_get_column(inline_parser) -
+                           markdown_core_inline_parser_get_offset(inline_parser);
+                markdown_core_parser_record_diagnostic(
+                    parser,
+                    MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES,
+                    markdown_core_inline_parser_get_line(inline_parser),
+                    (int)pos + base,
+                    markdown_core_inline_parser_get_line(inline_parser),
+                    (int)pos + base
+                );
+            }
             return make_name_only_directive(extension, parser, inline_parser, chunk->data + name_start, name_len, pos);
         }
         node = make_directive_node(extension, parser, chunk->data + name_start, name_len, 0, 0, 0, 0);
@@ -1585,6 +1690,7 @@ static markdown_core_node *open_directive_block(
     }
 
     if (!parse_directive_suffix(
+            parser,
             parser->mem,
             input,
             (markdown_core_bufsize)len,
@@ -1973,6 +2079,42 @@ static const markdown_core_delimiter_rule directive_delimiter_rules[] = {
 // directive openers and standalone directives.
 static const unsigned char directive_special_chars[] = {':'};
 
+/* A directive's name and attributes are its VALUE, and both live in the
+ * opaque payload: without them `:a[x]` and `:b[x]` hash alike, and inserting
+ * one above the other moves the id onto the newcomer. */
+static uint64_t directive_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {
+    const node_directive *directive = (const node_directive *)node->as.opaque;
+    (void)extension;
+    if (!is_directive_node((markdown_core_node *)node) || !directive) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    h = markdown_core_hash_bytes(h, directive->name.data, directive->name.len < 0 ? 0 : (size_t)directive->name.len);
+    // The attribute LIST, not attributes_json: that is a lazy render, still
+    // empty while the tree is being stamped, and forcing it here would put an
+    // allocation on every parse of every directive. Same entries in the same
+    // order under the same active rule, so it separates exactly what the
+    // rendered form separates.
+    {
+        const directive_attribute *attribute;
+        for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+            if (!attribute->active) {
+                continue;
+            }
+            h = markdown_core_hash_bytes(
+                h,
+                attribute->name.data,
+                attribute->name.len < 0 ? 0 : (size_t)attribute->name.len
+            );
+            h = markdown_core_hash_bytes(
+                h,
+                attribute->value.data,
+                attribute->value.len < 0 ? 0 : (size_t)attribute->value.len
+            );
+        }
+    }
+    return h;
+}
+
 static const markdown_core_extension directive_extension = {
     .name = "directive",
     .match_inline = match,
@@ -1987,6 +2129,7 @@ static const markdown_core_extension directive_extension = {
     .accepts_lines = accepts_lines,
     .alloc_opaque = directive_opaque_alloc,
     .free_opaque = directive_opaque_free,
+    .hash_value = directive_hash_value,
     .special_inline_chars = directive_special_chars,
     .special_inline_char_count = sizeof(directive_special_chars),
 };

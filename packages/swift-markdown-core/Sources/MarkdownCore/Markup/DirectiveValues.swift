@@ -3,21 +3,37 @@ import MarkdownCoreC
 struct DirectiveValues {
     let mode: PlacementMode
     let name: String
-    let attributes: String?
+    let attributes: [String: String]?
 
     init(from node: OpaquePointer) {
         var nativeMode = MARKDOWN_CORE_PLACEMENT_EMBEDDED
-        var nativeName = markdown_core_string_view()
-        var nativeAttributes = markdown_core_string_view()
+        var nativeName = markdown_core_string()
+        var present = false
         markdown_core_node_directive_properties(
             node,
             &nativeMode,
             &nativeName,
-            &nativeAttributes
+            &present
         )
         mode = PlacementMode(from: nativeMode)
         name = nativeName.requiredString
-        attributes = nativeAttributes.optionalString
+        guard present else {
+            attributes = nil
+            return
+        }
+        // The grammar has no duplicate name to represent — a later `k=`
+        // replaces the earlier one, `.a .b` accumulates into one `class` —
+        // so the pairs the engine holds ARE the map.
+        var count = 0
+        markdown_core_node_directive_attribute_count(node, &count)
+        var pairs: [String: String] = Dictionary(minimumCapacity: count)
+        for index in 0..<count {
+            var key = markdown_core_string()
+            var value = markdown_core_string()
+            guard markdown_core_node_directive_attribute_at(node, index, &key, &value) else { break }
+            pairs[key.requiredString] = value.requiredString
+        }
+        attributes = pairs
     }
 
     /// Binds the directive's optional first `DirectiveLabel` child to its

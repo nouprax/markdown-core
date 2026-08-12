@@ -53,7 +53,7 @@ function auditJavadocContent(file) {
         "index.html",
         /com\.nouprax\.markdown\.core\/index\.html$/u,
         /com\.nouprax\.markdown\.core\/-document\/index\.html$/u,
-        /com\.nouprax\.markdown\.core\/-markup-session\/index\.html$/u,
+        /com\.nouprax\.markdown\.core\/-commit\/index\.html$/u,
         /com\.nouprax\.markdown\.core\/-markup-walker\/index\.html$/u
     ]) {
         assert.ok(

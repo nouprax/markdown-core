@@ -161,33 +161,20 @@ jobs:
                           "large_document",
                           "deep_nesting",
                           "deep_one_shot_parse",
-                          "deep_first_commit",
-                          "deep_scope_materialization",
+                          "deep_edit",
+                          "deep_document_build",
                       ]);
                       const allowedBoundaries = new Map([
                           ["c", new Set(["native_parse"])],
-                          [
-                              "swift",
-                              new Set([
-                                  "native_parse_and_value_copy",
-                                  "native_session_scope_materialization",
-                              ]),
-                          ],
+                          ["swift", new Set(["native_parse_and_value_copy"])],
                           [
                               "kotlin",
                               new Set([
                                   "jni_parse_and_value_copy",
-                                  "jni_session_first_commit_and_delta_decode",
-                                  "jni_session_scope_materialization",
+                                  "jni_edit_and_delta_decode",
                               ]),
                           ],
-                          [
-                              "es",
-                              new Set([
-                                  "wasm_parse_and_value_copy",
-                                  "wasm_session_scope_materialization",
-                              ]),
-                          ],
+                          ["es", new Set(["wasm_parse_and_value_copy"])],
                       ]);
                       const allowedSizes = new Set([
                           "c-shared-library",

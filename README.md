@@ -17,11 +17,12 @@ divergence history, and license relationship.
 
 ## Usage
 
-All platform APIs have one synchronous parse entry point: `Document.parse` in
-Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C. Parsing
-produces a complete AST. The Swift, Kotlin, and ECMAScript bindings copy that
-AST into platform values and retain no native parser handle after the parse
-returns; the C API exposes an owned document with borrowed node views.
+All platform APIs have one synchronous entry point, and it is the document
+itself: `Document(markdown, options)` in Swift, Kotlin, and ECMAScript, and
+`markdown_core_document_new` in C. Parsing produces a complete AST. The Swift,
+Kotlin, and ECMAScript bindings copy that AST into platform values; the
+document keeps the native parse only so that `edit` can hold identities stable
+across revisions, and releasing it never invalidates a value it produced.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -42,7 +43,7 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 ```swift
 import MarkdownCore
 
-let document = try Document.parse(
+let document = try Document(
     "# Hello",
     options: ParseOptions(directives: false)
 )
@@ -70,7 +71,7 @@ kotlin {
 import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.ParseOptions
 
-val document = Document.parse(
+val document = Document(
     "# Hello",
     ParseOptions(directives = false),
 )
@@ -94,7 +95,7 @@ pnpm add @nouprax/es-markdown-core
 ```js
 import { Document, MarkupDumper, MarkupWalker } from "@nouprax/es-markdown-core";
 
-const document = Document.parse("# Hello", { directives: false });
+const document = Document("# Hello", { directives: false });
 new MarkupWalker().walk(document, (event, node, scope) => {
   console.log(event, node.kind, scope.start.line);
 });
@@ -135,86 +136,78 @@ read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
-## Incremental sessions
+## Editing
 
-A session owns one Markdown text and its living AST. Apply byte-range edits
-(appending a streamed token is an edit at end-of-text), then commit: the
-engine reparses only the stale region around the edits, at a per-commit cost
-proportional to that region — for typical documents, independent of total
-document size. Non-local shapes degrade gracefully and stay linear in the
-document, never worse than a small multiple of one full parse per commit:
-streaming into one enormous paragraph reparses that paragraph's inlines
-each commit, an edit inside an unclosed fence, raw-HTML block, or directive
-reparses forward to end of input, and changing a link-reference definition
-re-resolves the references that used it. Every commit produces an immutable
-document snapshot that structurally shares unchanged nodes with the previous
-snapshot, plus a delta of four disjoint stable-id sets: nodes the commit
-added, removed, or changed, and ancestors whose revision bubbled only
-because a descendant changed. Applying all four to a mirror of the previous
-revision (materialize added and changed, relink bubbled, evict removed)
-reproduces the new tree exactly — mirrors that skip bubbled keep stale
-ancestor revisions after descendant-only edits. After any sequence of
-commits the document is byte-for-byte dump-equal to a from-scratch parse of
-the same text.
+There is no session type. A document is created from text and options, and
+`edit` hands it new text: it returns the document that text describes plus the
+delta between the two. Options are fixed for a document's whole series —
+changing what the parser means is a new document, not an edit.
 
-The session type is `MarkupSession` in Swift, Kotlin, and ECMAScript, and
-`markdown_core_session_*` in C:
+**The stability an application needs is on the TREE, not in the delta.** An id
+keeps naming the same node until that node is removed, an unchanged node keeps
+its exact revision, and a pure positional shift is not a change — so equality
+is O(1) over (id, revision) and an id goes unmodified into a SwiftUI
+`ForEach(id:)`, a Compose `key()`, or a React `key`. A complete application
+hands the edited document to its reactive framework and never reads a delta.
+After any sequence of edits the document is byte-for-byte dump-equal to a
+from-scratch parse of the same text.
+
+A delta answers a different question: WHERE did it change. It is one list, in
+the new document's postorder: every node whose projection differs appears
+after all of its own children, and a retired node appears where it was found,
+before its former parent's row. Each row says which parts differ — value,
+text, children, descendant — and a row with no parts is a node that no longer
+exists. `descendant` alone means "nothing of this node's own changed, something
+below it did", so a side-by-side editor highlighting what a keystroke affected
+lights the run that changed rather than the section containing it. The other
+reader is a consumer holding state it must edit in place rather than
+re-derive: a display list, a text-measurement cache, an LSP token array.
 
 ```swift
-let session = try MarkupSession()
-try session.append("# Hello\n")
-var commit = try session.commit()
-try session.append("world ")
-try session.append("again\n")
-commit = try session.commit()          // one incremental reparse
-print(commit.delta.changed)            // stable MarkupID values
+let document = try Document("# Hello\n")
+let commit = try document.edit("# Hello\nworld again\n")
+print(commit.delta.diffs)              // stable MarkupID values plus parts
 ```
 
 ```kotlin
-MarkupSession().use { session ->
-    session.append("# Hello\nworld\n")
-    var commit = session.commit()
-    session.replace(2, 7, "Goodbye")   // byte range in the stored text
-    commit = session.commit()
-    println(commit.delta.changed)      // stable MarkupID values
+Document("# Hello\nworld\n").use { document ->
+    val commit = document.edit("# Goodbye\nworld\n")
+    commit.document.use { println(commit.delta.diffs) }
 }
 ```
 
 ```js
-const session = new MarkupSession();
-session.append("# Hello\nworld\n");
-let { document, delta } = session.commit();
-session.replace(2, 7, "Goodbye");      // byte range in the stored text
-({ document, delta } = session.commit());
-session.close();
+const document = Document("# Hello\nworld\n");
+const { document: next, delta } = document.edit("# Goodbye\nworld\n");
+next.close();
 ```
 
 ```c
-markdown_core_session *session = markdown_core_session_open(NULL, NULL);
-markdown_core_session_edit(session, 0, 0, (const uint8_t *)"# Hello\n", 8, NULL);
-markdown_core_delta *delta = NULL;
-markdown_core_session_commit(session, &delta, NULL);
-const markdown_core_document *document = markdown_core_session_document(session);
-/* delta ids via markdown_core_delta_added/removed/changed/bubbled */
-markdown_core_delta_free(delta);
-markdown_core_session_free(session);
+markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
+markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
+markdown_core_string edited = {(const uint8_t *)"# Goodbye\n", 10};
+markdown_core_commit commit;
+markdown_core_document_edit(&document, edited, &commit, NULL);
+/* rows via markdown_core_delta_diffs; each carries an id and its parts */
+markdown_core_delta_free(commit.delta);
+markdown_core_document_free(commit.document);
 ```
 
-In C the committed document is a borrowed view, valid until the next commit
-or free; deltas are caller-owned. Node identity is stable across commits: a
-`MarkupID` keeps addressing the same node until that node is removed, and
-`node(id)` resolves ids against the latest snapshot. Sessions also answer footnote queries (numbering,
-resolution, first-use order, back-references) directly. Any number of
-sessions may run concurrently; there is no shared or global parser state.
-One-shot `Document.parse` is unchanged and keeps its v1 memory profile.
+`edit` SUPERSEDES the document it is called on: the native parse moves to the
+successor. Values already extracted from the predecessor — its nodes, scopes,
+diagnostics, and dump — stay valid forever, because they are values. Any
+number of documents may be parsed and edited concurrently; there is no shared
+or global parser state.
 
-The language-neutral contract — identity and ordering rules, delta
-semantics, and the incremental cost model — is specified in
-[`docs/specs/sessions-and-deltas.md`](docs/specs/sessions-and-deltas.md).
-The reviewed, intentionally breaking target for a future self-contained,
-field-tracked AST and complete commit change index is frozen separately in
-[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md);
-it is a design contract, not a claim about the currently shipped API.
+Every document also reports `diagnostics`: everything an editor should
+underline, which for Markdown is one thing — a directive's `{...}` attribute
+block that did not parse. Every other "wrong" construct is a defined outcome
+of the standard semantics rather than a failure, and reporting those would be
+reporting Markdown itself.
+
+The language-neutral contract — identity and ordering rules, delta semantics,
+and the incremental cost model — is specified in
+[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md).
 
 ## Repository layout
 

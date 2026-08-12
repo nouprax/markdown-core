@@ -1,113 +1,61 @@
-@file:kotlin.jvm.JvmName("FootnoteQueriesKt")
+@file:kotlin.jvm.JvmName("MarkdownCoreKt")
 @file:kotlin.jvm.JvmMultifileClass
 
 package com.nouprax.markdown.core
 
 import java.io.InputStream
+import java.lang.ref.Cleaner
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.jvm.JvmSynthetic
 
 /** Loads the JNI bridge for this target before any [JvmNative] call. */
+@JvmSynthetic
 internal expect fun ensureNativeLoaded()
 
 @JvmSynthetic
-internal actual fun cParse(
+internal actual fun cOpen(
     source: ByteArray,
     options: ParseOptions,
 ): ByteArray {
     ensureNativeLoaded()
-    return JvmNative.parse(source, options.toNativeMask())
+    return JvmNative.open(source, options.toNativeMask())
 }
 
 @JvmSynthetic
-internal actual fun openCSession(options: ParseOptions): CSessionHandle {
-    ensureNativeLoaded()
-    val handle = JvmNative.sessionOpen(options.toNativeMask())
-    if (handle == 0L) {
-        throw OutOfMemoryError("native session allocation failed")
-    }
-    return handle
-}
+internal actual fun CDocumentHandle.edit(source: ByteArray): ByteArray = JvmNative.edit(this, source)
 
 @JvmSynthetic
-internal actual fun CSessionHandle.free(): Unit = JvmNative.sessionFree(this)
+internal actual fun CDocumentHandle.release(): Unit = JvmNative.release(this)
+
+/** One Cleaner for the process: its thread is started on first use and is
+ * shared by every document, which is what the class is for. */
+private val cleaner: Cleaner by lazy { Cleaner.create() }
 
 @JvmSynthetic
-internal actual fun CSessionHandle.lineage(): ULong = JvmNative.sessionLineage(this).toULong()
-
-@JvmSynthetic
-internal actual fun CSessionHandle.revision(): ULong = JvmNative.sessionRevision(this).toULong()
-
-@JvmSynthetic
-internal actual fun CSessionHandle.length(): Long = JvmNative.sessionLength(this)
-
-@JvmSynthetic
-internal actual fun CSessionHandle.rootId(): ULong = JvmNative.sessionRoot(this).toULong()
-
-@JvmSynthetic
-internal actual fun CSessionHandle.edit(
-    byteStart: Long,
-    byteEnd: Long,
-    replacement: ByteArray,
-): ByteArray = JvmNative.sessionEdit(this, byteStart, byteEnd, replacement)
-
-@JvmSynthetic
-internal actual fun CSessionHandle.commit(): ByteArray = JvmNative.sessionCommit(this)
-
-@JvmSynthetic
-internal actual fun CSessionHandle.scopes(): ByteArray = JvmNative.sessionScopes(this)
-
-@JvmSynthetic
-internal actual fun CSessionHandle.footnoteInfo(id: ULong): ByteArray = JvmNative.sessionFootnoteInfo(this, id.toLong())
-
-@JvmSynthetic
-internal actual fun CSessionHandle.footnotes(): ByteArray = JvmNative.sessionFootnotes(this)
-
-@JvmSynthetic
-internal actual fun CSessionHandle.footnoteReferences(definition: ULong): ByteArray =
-    JvmNative.sessionFootnoteReferences(this, definition.toLong())
+internal actual fun attachNativeCleanup(
+    owner: Any,
+    release: () -> Unit,
+): Any? =
+    // The Runnable holds `release` and never `owner`; one that reached its
+    // owner would keep that owner reachable and never run. The Cleanable is
+    // handed back only because the shared signature has to serve
+    // Kotlin/Native; the JVM's registration is live whether anyone holds it
+    // or not.
+    cleaner.register(owner) { release() }
 
 private object JvmNative {
-    external fun parse(
+    external fun open(
         source: ByteArray,
         optionsMask: Int,
     ): ByteArray
 
-    external fun sessionOpen(optionsMask: Int): Long
-
-    external fun sessionFree(handle: Long)
-
-    external fun sessionLineage(handle: Long): Long
-
-    external fun sessionRevision(handle: Long): Long
-
-    external fun sessionLength(handle: Long): Long
-
-    external fun sessionRoot(handle: Long): Long
-
-    external fun sessionEdit(
+    external fun edit(
         handle: Long,
-        byteStart: Long,
-        byteEnd: Long,
-        replacement: ByteArray,
+        source: ByteArray,
     ): ByteArray
 
-    external fun sessionCommit(handle: Long): ByteArray
-
-    external fun sessionScopes(handle: Long): ByteArray
-
-    external fun sessionFootnoteInfo(
-        handle: Long,
-        id: Long,
-    ): ByteArray
-
-    external fun sessionFootnotes(handle: Long): ByteArray
-
-    external fun sessionFootnoteReferences(
-        handle: Long,
-        definition: Long,
-    ): ByteArray
+    external fun release(handle: Long)
 }
 
 /**

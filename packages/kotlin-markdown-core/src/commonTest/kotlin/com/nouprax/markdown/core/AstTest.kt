@@ -4,7 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AstTest {
@@ -18,7 +17,7 @@ class AstTest {
                 "\$\$\ny\n\$\$\n",
                 "[full][target] and [target][] and [target] plus ![alt][target]\n\n[target]: /ref \"ref title\"\n",
             )
-        val documents = sources.map { Document.parse(it) }
+        val documents = sources.map { Document(it) }
         val values = documents.flatMap(::flatten)
         assertEquals(
             setOf(
@@ -59,13 +58,13 @@ class AstTest {
             ),
             values.mapNotNullTo(mutableSetOf()) { it::class.simpleName },
         )
-        assertTrue(documents.all { it.scope(it).start == Position(1, 1) })
+        assertTrue(documents.all { it.scope.start == Position(1, 1) })
     }
 
     @Test
     fun fieldsNullabilityAndTypedTableNodesAreMapped() {
         val document =
-            Document.parse(
+            Document(
                 "3. item\n\n- [x] task\n\n| a |\n| :-: |\n| b |\n\n[link](/go) ![alt](/image \"title\")\n",
             )
         val ordered = document.content[0] as List
@@ -77,9 +76,9 @@ class AstTest {
         assertTrue(table.header.isHeader)
         assertTrue(table.rows.all { !it.isHeader })
         assertTrue(
-            document
-                .scope(table.header.cells.single())
-                .start.line > 0,
+            table.header.cells
+                .single()
+                .scope.start.line > 0,
         )
         val paragraph = document.content[3] as Paragraph
         val link = paragraph.content[0] as Link
@@ -93,7 +92,7 @@ class AstTest {
     @Test
     fun referenceNodesCarryTheirLabelFormAndDefinition() {
         val document =
-            Document.parse(
+            Document(
                 "[full][target] and [target][] and [target] plus ![alt][target]\n\n[target]: /ref \"ref title\"\n",
             )
         val paragraph = document.content[0] as Paragraph
@@ -131,7 +130,7 @@ class AstTest {
 
     @Test
     fun walkerDispatchesTableRowsAndCellsAsMarkup() {
-        val document = Document.parse("| a |\n| --- |\n| b |\n")
+        val document = Document("| a |\n| --- |\n| b |\n")
         val visitor = RecordingVisitor()
         MarkupWalker.walk(document, visitor)
         assertEquals(
@@ -147,7 +146,7 @@ class AstTest {
                 ":::note[Title]\nBody\n:::\n\n" +
                 "::plain\n\n" +
                 "::empty[]\n"
-        val document = Document.parse(source)
+        val document = Document(source)
         val paragraph = document.content[0] as Paragraph
         val directives = paragraph.content.filterIsInstance<Directive>()
         val populated = directives[0].label
@@ -169,7 +168,7 @@ class AstTest {
         assertTrue(emptyBlockLabel.content.isEmpty())
 
         val visitor = RecordingVisitor()
-        MarkupWalker.walk(Document.parse(":badge[label]\n"), visitor)
+        MarkupWalker.walk(Document(":badge[label]\n"), visitor)
         assertEquals(
             listOf("Document", "Paragraph", "Directive", "DirectiveLabel", "Text"),
             visitor.visited,
@@ -178,25 +177,25 @@ class AstTest {
 
     @Test
     fun directiveLabelRelinksAsOneStableMarkupChild() {
-        val source = ":::note[Title]\nBody\n:::\n"
-        MarkupSession().use { session ->
-            session.append(source)
-            val first = session.commit()
-            val firstBlock = first.document.content.single() as DirectiveBlock
-            val firstLabel = assertNotNull(firstBlock.label)
+        val first = Document(":::note[Title]\nBody\n:::\n")
+        val firstBlock = first.content.single() as DirectiveBlock
+        val firstLabel = assertNotNull(firstBlock.label)
 
-            val bodyStart = source.indexOf("Body")
-            session.replace(bodyStart, bodyStart + "Body".length, "Changed")
-            val second = session.commit()
-            val secondBlock = second.document.content.single() as DirectiveBlock
-            assertSame(firstLabel, secondBlock.label)
-            assertSame(firstLabel, session.node(firstLabel.id))
+        first.edit(":::note[Title]\nChanged\n:::\n").document.use { second ->
+            val secondBlock = second.content.single() as DirectiveBlock
+            val secondLabel = assertNotNull(secondBlock.label)
+            // The label did not change, so it keeps its identity and compares
+            // equal — which is what a reactive framework reads. It is NOT the
+            // same object: a document's projection is a function of its text,
+            // not of how the caller reached it.
+            assertEquals<Markup>(firstLabel, secondLabel)
+            assertEquals<Markup>(secondLabel, assertNotNull(second.node(firstLabel.id)))
         }
     }
 
     @Test
     fun subtreeDumpsRebaseScopesToTheSubtreeOrigin() {
-        val document = Document.parse("Lead\n\n# Heading\n")
+        val document = Document("Lead\n\n# Heading\n")
         // The document-rooted subtree form is the plain dump.
         assertEquals(document.dump(), MarkupDumper.dump(document, document))
         assertEquals(document.dump(), document.dump(document))
@@ -210,7 +209,7 @@ class AstTest {
 
     @Test
     fun subtreeDumpsPrintPositionFreeMarkersUnchanged() {
-        val document = Document.parse("Lead\n\nhard  \nbreak\n")
+        val document = Document("Lead\n\nhard  \nbreak\n")
         val paragraph = document.content[1]
         val subtree = document.dump(paragraph)
         assertTrue(subtree.startsWith("Paragraph scope=1:1..2:"), subtree)
@@ -221,7 +220,7 @@ class AstTest {
     fun allManifestCasesMatchTheSharedCanonicalAstSpec() {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
-            val document = Document.parse(testCase.source, testCase.options)
+            val document = Document(testCase.source, testCase.options)
             assertEquals(testCase.expected, MarkupDumper.dump(document), testCase.name)
             assertEquals(testCase.expected, document.dump(), testCase.name)
         }

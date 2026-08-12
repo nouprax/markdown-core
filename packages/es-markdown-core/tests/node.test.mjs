@@ -4,7 +4,7 @@ import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
-    const document = Document.parse("# Heading\n\nBody\n");
+    const document = Document("# Heading\n\nBody\n");
     assert.equal(
         visit(document.content[0], {
             ...kindVisitor,
@@ -18,24 +18,41 @@ test("api: synchronous parse, typed visitor dispatch, and walker", () => {
     assert.equal(events.at(-1), `${WalkEvent.exiting}-document`);
 });
 
+test("api: the walker's typed-visitor overload dispatches once per node in preorder", () => {
+    // The scope-free overload: no events, no scopes, one exhaustive visitor
+    // call per node in preorder. Table rows and cells are first-class here,
+    // which is what a consumer relying on exhaustive dispatch depends on.
+    const document = Document("| a |\n| --- |\n| b |\n");
+    const visited = [];
+    new MarkupWalker().walk(document, {
+        ...kindVisitor,
+        visitDocument: (node) => visited.push(node.kind),
+        visitTable: (node) => visited.push(node.kind),
+        visitTableRow: (node) => visited.push(node.kind),
+        visitTableCell: (node) => visited.push(node.kind),
+        visitText: (node) => visited.push(node.kind)
+    });
+    assert.deepEqual(visited, ["document", "table", "tableRow", "tableCell", "text", "tableRow", "tableCell", "text"]);
+});
+
 test("api: options gate extensions", () => {
     const markdown = "| a |\n| --- |\n| b |\n";
-    assert.equal(Document.parse(markdown).content[0].kind, "table");
-    assert.equal(Document.parse(markdown, { tables: false }).content[0].kind, "paragraph");
+    assert.equal(Document(markdown).content[0].kind, "table");
+    assert.equal(Document(markdown, { tables: false }).content[0].kind, "paragraph");
 
     const directive = "Use :note[text].\n";
-    assert.equal(Document.parse(directive).dump().includes("Directive"), true);
-    assert.equal(Document.parse(directive, { directives: false }).dump().includes("Directive"), false);
+    assert.equal(Document(directive).dump().includes("Directive"), true);
+    assert.equal(Document(directive, { directives: false }).dump().includes("Directive"), false);
 
     const source = "before [[folder/note#^block|display]] and ![[folder/note#^block|display]] after\n";
-    const paragraph = Document.parse(source).content[0];
+    const paragraph = Document(source).content[0];
     assert.equal(paragraph.content[1].kind, "crossLink");
     assert.equal(paragraph.content[1].reference, "folder/note#^block|display");
     assert.equal(paragraph.content[3].kind, "embed");
     assert.equal(paragraph.content[3].reference, "folder/note#^block|display");
-    const linksDisabled = Document.parse(source, { crossLinks: false }).content[0];
+    const linksDisabled = Document(source, { crossLinks: false }).content[0];
     assert.equal(linksDisabled.content[1].kind, "embed");
-    const embedsDisabled = Document.parse(source, { embeds: false }).content[0];
+    const embedsDisabled = Document(source, { embeds: false }).content[0];
     assert.equal(embedsDisabled.content[1].kind, "crossLink");
 });
 
@@ -56,7 +73,7 @@ test("api: formulas gates every formula syntax", () => {
         "```",
         ""
     ].join("\n");
-    const enabled = Document.parse(markdown);
+    const enabled = Document(markdown);
     assert.deepEqual(
         enabled.content.map((node) => node.kind),
         ["paragraph", "formulaBlock", "formulaBlock", "formulaBlock"]
@@ -66,67 +83,72 @@ test("api: formulas gates every formula syntax", () => {
         ["d", "l"]
     );
 
-    const disabled = Document.parse(markdown, { formulas: false });
+    const disabled = Document(markdown, { formulas: false });
     assert.equal(disabled.dump().includes("Formula"), false);
     assert.equal(disabled.content.at(-1).kind, "codeBlock");
 });
 
 test("ast: typed fields are copied from direct WASM accessors", () => {
-    const document = Document.parse("3. item\n\n| a |\n| :-: |\n| b |\n");
+    const document = Document("3. item\n\n| a |\n| :-: |\n| b |\n");
     assert.equal(document.content[0].flavor, "ordered");
     assert.equal(document.content[0].start, 3);
     assert.deepEqual(document.content[1].alignments, ["center"]);
 });
 
 test("ast: the document mediates the canonical diagnostic dump", () => {
-    const document = Document.parse("Lead\n\n# Heading\n");
+    const document = Document("Lead\n\n# Heading\n");
     assert.equal(document.dump(), MarkupDumper.dump(document));
     // A subtree dump prints scopes with the subtree as origin.
     assert.match(MarkupDumper.dump(document, document.content[1]), /^Heading scope=1:1\.\.1:9 level=1/);
+    // The mediators are non-enumerable; the data — scope included — is not.
     assert.equal(Object.keys(document).includes("dump"), false);
-    assert.equal(Object.keys(document).includes("scope"), false);
+    assert.equal(Object.keys(document).includes("scope"), true);
 });
 
-test("ast: nodes carry identity instead of positions", () => {
-    const document = Document.parse("# Heading\n");
-    assert.equal(typeof document.id.lineage, "bigint");
+test("ast: nodes carry identity and their own extent", () => {
+    const document = Document("Lead\n\n# Heading\n");
+    assert.equal(typeof document.id.series, "bigint");
     assert.equal(typeof document.id.rawValue, "number");
     assert.equal(typeof document.revision, "number");
-    assert.equal("scope" in document.content[0], false);
-    assert.equal(document.scope(document.content[0]).start.line, 1);
+    // The extent is a property OF the node, read without a lookup and
+    // without the document that produced it.
+    assert.deepEqual(document.content[1].scope, {
+        start: { line: 3, column: 1 },
+        end: { line: 3, column: 9 }
+    });
     // Separate parses never share identity.
-    assert.notEqual(Document.parse("# Heading\n").id.lineage, document.id.lineage);
+    assert.notEqual(Document("# Heading\n").id.series, document.id.series);
 });
 
 test("unicode: UTF-8 survives native document release", () => {
-    const document = Document.parse("héllo 🚀 中文\n");
+    const document = Document("héllo 🚀 中文\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
-    for (let index = 0; index < 300; index += 1) Document.parse("# copy\n");
+    for (let index = 0; index < 300; index += 1) Document("# copy\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
 test("errors: empty input is valid and arguments are checked", () => {
-    assert.deepEqual(Document.parse("").content, []);
-    assert.throws(() => Document.parse(null), TypeError);
-    assert.throws(() => Document.parse("x", { tables: "yes" }), TypeError);
-    assert.throws(() => Document.parse("x", { tables: null }), TypeError);
+    assert.deepEqual(Document("").content, []);
+    assert.throws(() => Document(null), TypeError);
+    assert.throws(() => Document("x", { tables: "yes" }), TypeError);
+    assert.throws(() => Document("x", { tables: null }), TypeError);
     assert.throws(() => new Document(), TypeError);
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
-    const document = Document.parse("text\n");
+    const document = Document("text\n");
     assert.equal(Object.isFrozen(document), false);
     assert.equal(Object.isFrozen(document.content), false);
 });
 
 test("robustness: large documents copy completely before native release", () => {
     const unit = "## Section\n\nParagraph with **strong**, [link](https://example.com), and 🚀.\n\n";
-    assert.equal(Document.parse(unit.repeat(5_000)).content.length, 10_000);
+    assert.equal(Document(unit.repeat(5_000)).content.length, 10_000);
 });
 
 test("robustness: deep block quote nesting remains traversable", () => {
     const depth = 128;
-    let node = Document.parse("> ".repeat(depth) + "leaf\n").content[0];
+    let node = Document("> ".repeat(depth) + "leaf\n").content[0];
     for (let index = 0; index < depth; index += 1) {
         assert.equal(node.kind, "blockQuote");
         node = node.content[0];
@@ -136,7 +158,7 @@ test("robustness: deep block quote nesting remains traversable", () => {
 
 test("robustness: repeated parse and release remains stable", () => {
     for (let index = 0; index < 2_000; index += 1) {
-        assert.equal(Document.parse("# Copy\n\n- [x] item 🚀\n").content.length, 2);
+        assert.equal(Document("# Copy\n\n- [x] item 🚀\n").content.length, 2);
     }
 });
 
@@ -171,7 +193,7 @@ test("robustness: worker threads own isolated engine instances", async () => {
         }
     ];
     const jobs = sources.flatMap((source) => variants.map((options) => ({ source, options })));
-    const references = jobs.map(({ source, options }) => Document.parse(source, options).dump());
+    const references = jobs.map(({ source, options }) => Document(source, options).dump());
 
     const workers = Array.from(
         { length: 4 },
@@ -187,4 +209,45 @@ test("robustness: worker threads own isolated engine instances", async () => {
     for (const dumps of await Promise.all(workers)) {
         assert.deepEqual(dumps, references);
     }
+
+    // The same corpus reached by line-by-line EDITS instead of one-shot
+    // parses, still one WASM instance per thread: incremental state is per
+    // instance, so four threads editing at once must land on the same trees
+    // a one-shot parse produces.
+    const editors = Array.from(
+        { length: 4 },
+        () =>
+            new Promise((resolve, reject) => {
+                const worker = new Worker(new URL("./worker-edit.mjs", import.meta.url), {
+                    workerData: { jobs }
+                });
+                worker.once("message", resolve);
+                worker.once("error", reject);
+            })
+    );
+    for (const dumps of await Promise.all(editors)) {
+        assert.deepEqual(dumps, references);
+    }
+});
+
+test("robustness: worker threads never mint the same document series", async () => {
+    const { Worker } = await import("node:worker_threads");
+    // Each worker is a fresh WASM instance whose allocator state and coarse
+    // clocks repeat exactly across threads, so only host entropy can keep
+    // their salts apart. If it cannot, two unrelated documents' identities
+    // compare equal — raw values restart at 1 for every series.
+    const series = await Promise.all(
+        Array.from(
+            { length: 8 },
+            () =>
+                new Promise((resolve, reject) => {
+                    const worker = new Worker(new URL("./worker-series.mjs", import.meta.url));
+                    worker.once("message", resolve);
+                    worker.once("error", reject);
+                })
+        )
+    );
+    assert.equal(series.length, 8);
+    assert.ok(series.every((value) => value !== "0"));
+    assert.equal(new Set(series).size, 8);
 });

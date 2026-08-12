@@ -69,7 +69,7 @@ public object MarkupWalker {
 
                 is EnterFrame -> {
                     val node = frame.node
-                    val scope = document.scope(node)
+                    val scope = node.scope
                     visit(WalkEvent.ENTERING, node, scope)
                     stack.addLast(ExitFrame(node, scope))
                     val children = node.childValues()

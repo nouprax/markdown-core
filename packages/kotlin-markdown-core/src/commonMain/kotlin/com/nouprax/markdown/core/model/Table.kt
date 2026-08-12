@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 public class TableCell internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val content: kotlin.collections.List<Markup>,
 ) : Markup {
     override fun <Result> accept(visitor: MarkupVisitor<Result>): Result = visitor.visit(this)
@@ -15,6 +16,7 @@ public class TableCell internal constructor(
 public class TableRow internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val isHeader: Boolean,
     public val cells: kotlin.collections.List<TableCell>,
 ) : Markup {
@@ -28,6 +30,7 @@ public class TableRow internal constructor(
 public class Table internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
+    override val scope: Scope,
     public val alignments: kotlin.collections.List<TableAlignment>,
     public val header: TableRow,
     public val rows: kotlin.collections.List<TableRow>,

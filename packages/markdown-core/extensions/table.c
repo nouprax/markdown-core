@@ -556,7 +556,10 @@ static markdown_core_node *try_opening_table_header(
          * begin a document child on a clean line: it must not remain an
          * incremental restart point, sealing qualifier included. */
         parent_container->start_line = parser->line_marks[parser->line_mark_count - 1].line;
-        parent_container->start_column = parser->line_marks[parser->line_mark_count - 1].column;
+        /* The byte column, not the mark's tab-expanded one: every node
+         * position in the engine is byte-based, and the two disagree the
+         * moment a tab precedes the row. */
+        parent_container->start_column = (int)parser->line_marks[parser->line_mark_count - 1].byte_offset + 1;
         parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 
@@ -941,6 +944,33 @@ static void opaque_free(markdown_core_extension *self, markdown_core_mem *mem, m
     }
 }
 
+/* A table's alignments and a row's header bit are what
+ * markdown_core_ast_parts_changed compares for these kinds, and they live
+ * here rather than in the core union -- so without this the diff pairs a
+ * left-aligned table with a right-aligned one and hands over the id. */
+static uint64_t table_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {
+    (void)extension;
+    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+        const node_table *table = (const node_table *)node->as.opaque;
+        uint16_t column;
+        if (!table) {
+            return markdown_core_hash_mix(h, 0);
+        }
+        h = markdown_core_hash_mix(h, (uint64_t)table->n_columns);
+        if (table->alignments) {
+            for (column = 0; column < table->n_columns; column++) {
+                h = markdown_core_hash_mix(h, (uint64_t)table->alignments[column]);
+            }
+        }
+        return h;
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        const node_table_row *row = (const node_table_row *)node->as.opaque;
+        return markdown_core_hash_mix(h, row && row->is_header ? 1u : 0u);
+    }
+    return h;
+}
+
 static const markdown_core_extension table_extension = {
     .name = "table",
     .last_block_matches = matches,
@@ -951,6 +981,7 @@ static const markdown_core_extension table_extension = {
     .prepare_inline_domain = prepare_inline_domain,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .hash_value = table_hash_value,
 };
 
 markdown_core_extension *markdown_core_table_extension(void) {

@@ -188,12 +188,6 @@ export function renderAttributes(attributes) {
     return entries.map(([key, value]) => `${key}=${JSON.stringify(String(value))}`).join(" ");
 }
 
-/** The canonical dump's `attributes` field, rendered the same way. */
-export function renderDumpAttributes(field) {
-    if (field === undefined || field === "null") return "null";
-    return renderAttributes(JSON.parse(field));
-}
-
 export function dropEmptyText(node) {
     node.children = node.children.filter((child) => {
         if (child.kind === "Text" && child.fields.literal === "") return false;

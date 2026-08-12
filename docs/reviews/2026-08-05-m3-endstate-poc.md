@@ -1,5 +1,18 @@
 # M3 end-state PoC — the substrate fork, and what a dumped scope is
 
+> **PARTLY SUPERSEDED — 2026-08-07.** This PoC scored its options against
+> "does the sum of the remaining milestones land on ... O(edit) commit cost",
+> and that question is void: `O(edit)` commit cost was §11.1's asserted
+> requirement, removed on 2026-08-07 because no consumer was ever traced to
+> it, and the sixty-commit landing built on it was reverted. Read
+> [`2026-08-07-requirement-audit.md`](2026-08-07-requirement-audit.md) before
+> acting on anything here that names extents, a unit sequence, order labels,
+> or per-byte ownership. What SURVIVES and shipped is the substrate finding —
+> one store for the session's bytes, `core/text.c` deleted — and the
+> measurement that a dumped scope is not always a place, which is now
+> ratcheted by `scripts/audit-scope-sanity.mjs` against a dump-spelling cure
+> rather than against extents.
+
 Date: 2026-08-05. Base: `main` at `dc36cb3` (the merge of #94, closing the engine
 hardening slice).
 

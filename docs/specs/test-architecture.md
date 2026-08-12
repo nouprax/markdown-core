@@ -155,7 +155,7 @@ Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
 `sessions` 覆盖 M4 binding 契约:streaming/clean-boundary/kind-change 的
-id-stability、(lineage, id, revision) 等值语义、空 delta 纯位移、scope
+id-stability、(series, id, revision) 等值语义、空 delta 纯位移、scope
 惰性物化的存活性、footnote queries,以及模拟真实 LLM 消费端的
 conflated-streaming 驱动(多 turn、不规律 render tick、20-30 token 量级
 消息混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界换行之间)、
@@ -202,8 +202,7 @@ CI 必须分别调用 correctness 与 conformance 平台入口；确需按功能
 这些 filters 新建 pnpm suite task 或另建 case 清单。
 
 C 数据驱动 runner 自身提供第二级 discovery:`spec_runner --list/--example/--section`、
-`pathological_runner --list/--case`、`complexity_runner --list/--case`、
-`delimiter_engine_runner --list/--case`、
+`pathological_runner --list/--case`、`concrete_runner --list/--case`、
 `bench_runner --list/--workload`、`concurrency_runner --case`(三个固定 case:
 `first_parse`/`stress`/`lifecycle`,逐一注册为 CTest 测试)。CMake 中注册的
 case 清单由 `scripts/audit-test-topology.sh` 与 runner `--list` 输出强制一致。
@@ -332,7 +331,6 @@ source 输入都到达不了的代码，是缺陷或死代码，需要决策，*
 
 | 平台 | 产出者 | 报告格式 |
 | --- | --- | --- |
-| `c-host` | `scripts/coverage-c-host.sh`（CMake `coverage` preset + llvm-cov） | llvm-cov export |
 | `swift-macos` | `scripts/coverage-swift-macos.sh`（SwiftPM `--enable-code-coverage`） | llvm-cov export |
 | `kotlin-jvm` | `scripts/coverage-kotlin-jvm.sh`（JaCoCo，JVM target） | JaCoCo XML |
 | `es-node` | `scripts/coverage-es-node.sh`（Node 内置 coverage） | LCOV |

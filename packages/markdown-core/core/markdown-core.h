@@ -231,20 +231,15 @@ MARKDOWN_CORE_EXPORT markdown_core_node *markdown_core_node_last_child(markdown_
  *         markdown_core_iter_free(iter);
  *     }
  *
- * Iterators will never return `EXIT` events for leaf nodes, which are nodes
- * of type:
+ * Every node is entered and exited, whatever its type and whether or not it
+ * has children: an `ENTER` is always answered by an `EXIT`.
  *
- * * MARKDOWN_CORE_NODE_HTML_BLOCK
- * * MARKDOWN_CORE_NODE_THEMATIC_BREAK
- * * MARKDOWN_CORE_NODE_CODE_BLOCK
- * * MARKDOWN_CORE_NODE_TEXT
- * * MARKDOWN_CORE_NODE_SOFT_BREAK
- * * MARKDOWN_CORE_NODE_LINE_BREAK
- * * MARKDOWN_CORE_NODE_CODE
- * * MARKDOWN_CORE_NODE_HTML
- *
- * Nodes must only be modified after an `EXIT` event, or an `ENTER` event for
- * leaf nodes.
+ * Nodes must only be modified after an `EXIT` event. `EXIT` is the walk's
+ * last event for the node, so by then the iterator's next step has been
+ * computed from nodes that outlive it. A consumer that frees or unlinks
+ * anything else -- a sibling, a subtree it does not own -- must say where the
+ * walk resumes rather than assume; that is what the iterator's reset entry is
+ * for (iterator.h).
  */
 
 typedef enum {
@@ -445,17 +440,17 @@ void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer,
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 
-/** Session staging, first half of a split markdown_core_parser_finish:
+/** Commit staging, first half of a split markdown_core_parser_finish:
  * flushes any buffered partial line and finalizes every open block without
  * running the inline phase. Afterwards the tree is block-complete and the
- * parser's reference map holds every harvested definition, so a session can
+ * parser's reference map holds every harvested definition, so a commit can
  * inspect and reconcile definitions before deciding to run (or abandon) the
  * inline phase.
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);
 
-/** Session staging, second half of a split markdown_core_parser_finish: runs
+/** Commit staging, second half of a split markdown_core_parser_finish: runs
  * the inline phase and the per-block postprocess pipeline over the finalized
  * tree, then detaches and returns it. Unlike markdown_core_parser_finish the
  * parser is not reset and no longer owns its reference map afterwards: the
@@ -465,21 +460,6 @@ void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser);
-
-struct markdown_core_map;
-
-/** Session staging for one inline-owning unit: parses the unit's inline
- * content against `refmap` and runs the block-local postprocess pipeline.
- * The parser-local compiled grammar is always active. Returns the node the
- * unit became (normally the unit itself); allocation loss is reported through
- * the parser's and the map's sticky flags, exactly like a full refine.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_node *markdown_core_parser_refine_unit(
-    markdown_core_parser *parser,
-    struct markdown_core_map *refmap,
-    markdown_core_node *unit
-);
 
 /** Parse a CommonMark document in 'buffer' of length 'len'.
  * Returns a pointer to a tree of nodes.  The memory allocated for
@@ -501,10 +481,12 @@ markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t
  * ### Options affecting parsing
  */
 
-/** Validate UTF-8 in the input before parsing, replacing illegal
- * sequences with the replacement character U+FFFD.
- */
-#define MARKDOWN_CORE_OPT_VALIDATE_UTF8 (1 << 9)
+/* (1 << 9) was MARKDOWN_CORE_OPT_VALIDATE_UTF8, which replaced every byte
+ * sequence that was not valid UTF-8 with U+FFFD. UTF-8 is assumed and never
+ * validated (incremental-canonical-ast.md 7.1): validating means rejecting,
+ * which is not this engine's policy to set, and replacing means a lossy parse,
+ * which produces a different document rather than a degraded one. The bit is
+ * left unused rather than reassigned, because callers pass these by value. */
 
 /** Convert straight quotes to curly, --- to em dashes, -- to en dashes.
  */
