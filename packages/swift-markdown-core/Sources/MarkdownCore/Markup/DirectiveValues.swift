@@ -16,7 +16,7 @@ struct DirectiveValues {
             &present
         )
         mode = PlacementMode(from: nativeMode)
-        name = nativeName.requiredString
+        name = nativeName.string
         guard present else {
             attributes = nil
             return
@@ -31,7 +31,7 @@ struct DirectiveValues {
             var key = markdown_core_string()
             var value = markdown_core_string()
             guard markdown_core_node_directive_attribute_at(node, index, &key, &value) else { break }
-            pairs[key.requiredString] = value.requiredString
+            pairs[key.string] = value.string
         }
         attributes = pairs
     }

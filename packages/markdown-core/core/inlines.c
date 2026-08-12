@@ -260,8 +260,12 @@ static markdown_core_chunk markdown_core_clean_autolink(subject *subj, markdown_
     markdown_core_chunk_trim(url);
 
     if (url->len == 0) {
-        markdown_core_chunk result = MARKDOWN_CORE_CHUNK_EMPTY;
-        return result;
+        /* No autolink the scanner accepts is empty — `<>` and `<a>` are not
+         * autolinks at all — so this is unreachable today. It returns the
+         * empty STRING rather than the empty chunk anyway, so that a link's
+         * destination is non-NULL by construction on every path and not by
+         * luck: the bindings type it as non-optional on that guarantee. */
+        return markdown_core_chunk_literal("");
     }
 
     if (is_email) {
@@ -289,7 +293,11 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(
         return NULL;
     }
     link->as.link.url = markdown_core_clean_autolink(subj, &url, is_email);
-    link->as.link.title = markdown_core_chunk_literal("");
+    /* No title, and the node is calloc'd, so the field is already the empty
+     * chunk. Left unset deliberately: an autolink has nowhere to write a
+     * title, and a NULL chunk is how the tree says "not written" — the same
+     * distinction `[t](/u "")` and `[t](/u)` already carry. Assigning the ""
+     * literal here reported a title the author never wrote. */
     link->start_line = link->end_line = subj->line;
     /* The two offsets are not optional here, however long they were
      * missing. A content offset is a position in the buffer the inline
@@ -1073,8 +1081,12 @@ markdown_core_chunk markdown_core_clean_url(markdown_core_mem *mem, markdown_cor
     markdown_core_chunk_trim(url);
 
     if (url->len == 0) {
-        markdown_core_chunk result = MARKDOWN_CORE_CHUNK_EMPTY;
-        return result;
+        /* Written and empty, not absent. Both callers reach here only with a
+         * destination the author wrote — `[t]()`, `[t](<>)`, or a
+         * definition's `<>` — so this is the empty STRING. NULL is reserved
+         * for "not written", which is what lets a consumer tell `[t](/u "")`
+         * from `[t](/u)`; a destination has no unwritten case. */
+        return markdown_core_chunk_literal("");
     }
 
     markdown_core_houdini_unescape_html_f(&buf, url->data, url->len);

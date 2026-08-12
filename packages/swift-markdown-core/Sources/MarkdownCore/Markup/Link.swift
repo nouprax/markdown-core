@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A hyperlink whose children are its inline caption.
 public struct Link: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -14,9 +14,16 @@ public struct Link: Markup {
     /// deliberately absent from `==` — position is not content — so an edit
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
-    /// The link destination URL, if present.
-    public let destination: String?
-    /// The optional link title.
+    /// The link destination, empty when the parentheses were written empty.
+    ///
+    /// Not optional: an inline link always writes its `(…)`, so there is no
+    /// unwritten case to distinguish. `[a]()` and `[a](<>)` both give `""`.
+    public let destination: String
+    /// The title in quotes after the destination.
+    ///
+    /// Nil when none is written, the empty string when one is written empty:
+    /// `[a](/u)` gives nil and `[a](/u "")` gives `""`. An autolink writes no
+    /// title, so it gives nil like any other link.
     public let title: String?
     /// The link's inline caption content in source order.
     public let content: [any Markup]
@@ -35,8 +42,8 @@ extension Link {
             id: track.id,
             revision: track.revision,
             scope: track.scope,
-            destination: destination.optionalString,
-            title: title.optionalString,
+            destination: destination.string,
+            title: title.optional,
             content: builder.children(node)
         )
     }

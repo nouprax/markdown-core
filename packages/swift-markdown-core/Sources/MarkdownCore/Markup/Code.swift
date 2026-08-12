@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// An inline code span.
 public struct Code: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -15,7 +15,9 @@ public struct Code: Markup {
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
     /// Whether the construct is `embedded` in surrounding inline content or
-    /// stands alone as its own block; always `embedded` for code spans.
+    /// stands alone as its own block.
+    ///
+    /// Always `embedded` for code spans.
     public let mode: PlacementMode
     /// The code span's literal text.
     public let literal: String
@@ -36,7 +38,7 @@ extension Code {
             revision: track.revision,
             scope: track.scope,
             mode: .embedded,
-            literal: literal.requiredString
+            literal: literal.string
         )
     }
 }

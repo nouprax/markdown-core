@@ -517,7 +517,7 @@ final class com.nouprax.markdown.core/Image : com.nouprax.markdown.core/Markup {
     final val scope // com.nouprax.markdown.core/Image.scope|{}scope[0]
         final fun <get-scope>(): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Image.scope.<get-scope>|<get-scope>(){}[0]
     final val source // com.nouprax.markdown.core/Image.source|{}source[0]
-        final fun <get-source>(): kotlin/String? // com.nouprax.markdown.core/Image.source.<get-source>|<get-source>(){}[0]
+        final fun <get-source>(): kotlin/String // com.nouprax.markdown.core/Image.source.<get-source>|<get-source>(){}[0]
     final val title // com.nouprax.markdown.core/Image.title|{}title[0]
         final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/Image.title.<get-title>|<get-title>(){}[0]
 
@@ -562,7 +562,7 @@ final class com.nouprax.markdown.core/Link : com.nouprax.markdown.core/Markup { 
     final val content // com.nouprax.markdown.core/Link.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/Link.content.<get-content>|<get-content>(){}[0]
     final val destination // com.nouprax.markdown.core/Link.destination|{}destination[0]
-        final fun <get-destination>(): kotlin/String? // com.nouprax.markdown.core/Link.destination.<get-destination>|<get-destination>(){}[0]
+        final fun <get-destination>(): kotlin/String // com.nouprax.markdown.core/Link.destination.<get-destination>|<get-destination>(){}[0]
     final val id // com.nouprax.markdown.core/Link.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Link.id.<get-id>|<get-id>(){}[0]
     final val revision // com.nouprax.markdown.core/Link.revision|{}revision[0]
@@ -672,14 +672,12 @@ final class com.nouprax.markdown.core/Paragraph : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/ParseException : kotlin/RuntimeException { // com.nouprax.markdown.core/ParseException|null[0]
-    constructor <init>(com.nouprax.markdown.core/ParseErrorCode, kotlin/String, com.nouprax.markdown.core/Scope?) // com.nouprax.markdown.core/ParseException.<init>|<init>(com.nouprax.markdown.core.ParseErrorCode;kotlin.String;com.nouprax.markdown.core.Scope?){}[0]
+    constructor <init>(com.nouprax.markdown.core/ParseErrorCode, kotlin/String) // com.nouprax.markdown.core/ParseException.<init>|<init>(com.nouprax.markdown.core.ParseErrorCode;kotlin.String){}[0]
 
     final val code // com.nouprax.markdown.core/ParseException.code|{}code[0]
         final fun <get-code>(): com.nouprax.markdown.core/ParseErrorCode // com.nouprax.markdown.core/ParseException.code.<get-code>|<get-code>(){}[0]
     final val message // com.nouprax.markdown.core/ParseException.message|{}message[0]
         final fun <get-message>(): kotlin/String // com.nouprax.markdown.core/ParseException.message.<get-message>|<get-message>(){}[0]
-    final val scope // com.nouprax.markdown.core/ParseException.scope|{}scope[0]
-        final fun <get-scope>(): com.nouprax.markdown.core/Scope? // com.nouprax.markdown.core/ParseException.scope.<get-scope>|<get-scope>(){}[0]
 }
 
 final class com.nouprax.markdown.core/ParseOptions { // com.nouprax.markdown.core/ParseOptions|null[0]
@@ -740,7 +738,7 @@ final class com.nouprax.markdown.core/Position { // com.nouprax.markdown.core/Po
 
 final class com.nouprax.markdown.core/ReferenceDefinition : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ReferenceDefinition|null[0]
     final val destination // com.nouprax.markdown.core/ReferenceDefinition.destination|{}destination[0]
-        final fun <get-destination>(): kotlin/String? // com.nouprax.markdown.core/ReferenceDefinition.destination.<get-destination>|<get-destination>(){}[0]
+        final fun <get-destination>(): kotlin/String // com.nouprax.markdown.core/ReferenceDefinition.destination.<get-destination>|<get-destination>(){}[0]
     final val id // com.nouprax.markdown.core/ReferenceDefinition.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/ReferenceDefinition.id.<get-id>|<get-id>(){}[0]
     final val label // com.nouprax.markdown.core/ReferenceDefinition.label|{}label[0]

@@ -28,6 +28,19 @@ import type { Table, TableCell, TableRow } from "./model/table.js";
 import type { Text } from "./model/text.js";
 import type { ThematicBreak } from "./model/thematic-break.js";
 
+/**
+ * Typed double dispatch over the closed set of markup kinds: one method per
+ * concrete node type, selected by {@link visit}.
+ *
+ * One name per kind rather than the single overloaded `visit` the Swift and
+ * Kotlin bindings spell, because distinct names are what make the set
+ * exhaustive here: a missing method is a compile error, so a kind added to
+ * {@link Markup} fails every visitor that has not handled it.
+ *
+ * Every method declares `this: void`. A visitor may be any object, a
+ * callable one included, but a method reaches its own state through the
+ * scope it closes over and never through `this`.
+ */
 export interface MarkupVisitor<Result> {
     visitDocument(this: void, node: Document): Result;
     visitBlockQuote(this: void, node: BlockQuote): Result;
@@ -65,6 +78,15 @@ export interface MarkupVisitor<Result> {
     visitEmbed(this: void, node: Embed): Result;
 }
 
+/**
+ * Hands one node to the method for its kind and returns what that method
+ * returned.
+ *
+ * A single step and not a traversal: the node's children are not visited.
+ * Descending is {@link MarkupWalker}'s work. A value that is not markup
+ * throws here rather than returning `undefined`, so a JavaScript caller
+ * passing something the types would have rejected learns it at the dispatch.
+ */
 export function visit<Result>(node: Markup, visitor: MarkupVisitor<Result>): Result {
     switch (node.kind) {
         case "document":

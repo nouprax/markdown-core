@@ -1,5 +1,6 @@
 import type { MarkupBase } from "./base.js";
 
+/** A block of raw HTML, passed through unparsed. */
 export interface HTMLBlock extends MarkupBase<"htmlBlock"> {
     readonly literal: string;
     /** True when the literal is one complete comment, so consumers without an

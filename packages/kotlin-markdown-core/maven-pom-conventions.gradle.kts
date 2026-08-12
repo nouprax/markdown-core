@@ -23,7 +23,14 @@ configure<PublishingExtension> {
             name.set(pomName)
             description.set(pomDescription)
             url.set("https://github.com/nouprax/markdown-core")
+            // Both, not either: this project's own work is MIT and the
+            // cmark-derived engine stays BSD-2-Clause, so a consumer is bound
+            // by the two together. LICENSE carries the full notices.
             licenses {
+                license {
+                    name.set("MIT")
+                    url.set("https://github.com/nouprax/markdown-core/blob/main/LICENSE")
+                }
                 license {
                     name.set("BSD-2-Clause")
                     url.set("https://github.com/nouprax/markdown-core/blob/main/COPYING")

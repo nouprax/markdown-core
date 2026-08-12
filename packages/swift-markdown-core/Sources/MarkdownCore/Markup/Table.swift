@@ -10,7 +10,7 @@ public enum TableAlignment: String, Sendable {
 
 /// A pipe table (the tables extension) with one header row.
 public struct Table: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -62,9 +62,9 @@ extension Table {
     }
 }
 
-/// One row of a `Table`.
+/// One row of a ``Table``.
 public struct TableRow: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -100,9 +100,9 @@ extension TableRow {
     }
 }
 
-/// One cell of a `TableRow`.
+/// One cell of a ``TableRow``.
 public struct TableCell: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64

@@ -5,16 +5,20 @@ public enum WalkEvent: Sendable {
 }
 
 /// A read-only depth-first traversal that supplies each event with the
-/// node's resolved absolute scope. Traversal is iterative: documents walk
-/// at any nesting depth that parses.
+/// node's absolute scope.
+///
+/// Traversal is iterative: documents walk at any nesting depth that
+/// parses.
 public struct MarkupWalker: Sendable {
     /// Creates a walker; walkers are stateless and reusable.
     public init() {}
 
     /// Walks the document depth-first and dispatches each node to `visitor`
-    /// once in preorder. This overload is structural and never resolves
-    /// scopes, so it can traverse a retained snapshot even if that snapshot
-    /// was superseded before scope materialization.
+    /// once, in preorder.
+    ///
+    /// No `.exiting` callback and no scope argument: only the closure
+    /// overloads report exits, and a visitor reads ``Markup/scope`` off the
+    /// node it was handed.
     public func walk<V: MarkupVisitor>(
         _ document: Document,
         visitor: inout V
@@ -30,7 +34,7 @@ public struct MarkupWalker: Sendable {
     }
 
     /// Walks the document depth-first, supplying each event with the node's
-    /// resolved absolute scope.
+    /// absolute scope.
     public func walk(
         _ document: Document,
         visit: (WalkEvent, any Markup, Scope) throws -> Void

@@ -6,9 +6,9 @@ public enum ListFlavor: String, Sendable {
     case ordered
 }
 
-/// A bullet or ordered list of `ListItem` values.
+/// A bullet or ordered list of ``ListItem`` values.
 public struct List: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -58,9 +58,9 @@ extension List {
     }
 }
 
-/// One item of a `List`.
+/// One item of a ``List``.
 public struct ListItem: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64

@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A soft line break: a newline that renders as collapsible whitespace.
 public struct SoftBreak: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64

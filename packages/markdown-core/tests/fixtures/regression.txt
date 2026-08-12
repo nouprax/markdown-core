@@ -516,7 +516,7 @@ cmark-gfm keeps the scanned title in its map here (the registered
 [foo]
 .
 Document scope=1:1..4:5 children=3
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
 ├── Paragraph scope=2:1..2:10 children=1
 │   └── Text scope=2:1..2:10 literal="\"title\" ok" children=0
 └── Paragraph scope=4:1..4:5 children=1
@@ -570,7 +570,7 @@ here had ever caught it.
 →text *here*
 .
 Document scope=1:1..2:12 children=2
-├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title="" children=0
+├── ReferenceDefinition scope=1:1..1:11 label="foo" destination="/url" title=null children=0
 └── Paragraph scope=2:2..2:12 children=2
     ├── Text scope=2:2..2:6 literal="text " children=0
     └── Emphasis scope=2:7..2:12 children=1
@@ -595,7 +595,7 @@ Document scope=1:1..2:29 children=1
     ├── Text scope=1:1..1:3 literal="aaa" children=0
     ├── SoftBreak scope=0:0..0:0 children=0
     ├── Text scope=2:1..2:4 literal="bbb " children=0
-    ├── Link scope=2:5..2:25 destination="https://example.com" title="" children=1
+    ├── Link scope=2:5..2:25 destination="https://example.com" title=null children=1
     │   └── Text scope=2:6..2:24 literal="https://example.com" children=0
     └── Text scope=2:26..2:29 literal=" ccc" children=0
 ````````````````````````````````

@@ -73,32 +73,43 @@ typedef struct markdown_core_error markdown_core_error;
 typedef struct markdown_core_delta markdown_core_delta;
 
 /** What an edit returns: the successor document and the delta between the
- * document it was called on and that successor. A value, not a handle —
- * release the two members, there is nothing else to free. */
+ * document it was called on and that successor.
+ *
+ * A value, not a handle — release the two members, there is nothing else to
+ * free. */
 typedef struct markdown_core_commit {
     markdown_core_document *document;
     markdown_core_delta *delta;
 } markdown_core_commit;
 
-/** Node identity, assigned once per series and never reused. Stable across
- * edits while the node remains the same kind of thing at the same place. 0 is
- * never a valid id. */
+/** Node identity, assigned once per series and never reused.
+ *
+ * Stable across edits while the node remains the same kind of thing at the
+ * same place. 0 is never a valid id. */
 typedef uint64_t markdown_core_node_id;
 
-/** Bytes and a length. Every string this API HANDS OUT borrows from the
- * document that owns it and ends with that document — the ownership section
- * above states that once, for all of them. Every string HANDED IN is copied,
- * so the caller keeps its own. */
+/** Bytes and a length.
+ *
+ * Every string this API HANDS OUT borrows from the document that owns it and
+ * ends with that document — the ownership section above states that once,
+ * for all of them. Every string HANDED IN is copied, so the caller keeps its
+ * own. */
 typedef struct markdown_core_string {
     const uint8_t *data;
     size_t length;
 } markdown_core_string;
 
+/** A one-based line/column source coordinate. */
 typedef struct markdown_core_position {
     int32_t line;
     int32_t column;
 } markdown_core_position;
 
+/** An absolute source extent: first and last coordinate, both INCLUSIVE, and
+ * covering the construct's own markers rather than its content alone.
+ *
+ * A heading's scope starts at its `#`, a fenced code block's ends on the
+ * closing fence. */
 typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
@@ -111,9 +122,25 @@ typedef struct markdown_core_scope {
  * A created node differs from absence in every part it has, so it carries all
  * of them. */
 typedef enum markdown_core_diff_part {
+    /** One of the node's own fields differs, string-valued ones included.
+     *
+     * A link's destination and title, a reference's label, a directive's name
+     * and attributes are all VALUE, not TEXT. Never a kind change — paired
+     * nodes always share a kind, because a changed kind is a retirement and
+     * a creation rather than a difference. */
     MARKDOWN_CORE_DIFF_VALUE = 1u << 0,
+    /** The node's canonical text differs.
+     *
+     * Only the text-bearing kinds carry this part at all: Text, Code,
+     * CodeBlock, HTML, HTMLBlock, Formula, and FormulaBlock. */
     MARKDOWN_CORE_DIFF_TEXT = 1u << 1,
+    /** The node's own child list differs. */
     MARKDOWN_CORE_DIFF_CHILDREN = 1u << 2,
+    /** Something below the node differs.
+     *
+     * Reported together with whatever of the node's own differs, never
+     * instead of it, and carried by every node above a change — so a subtree
+     * whose root the delta does not name holds no change at all. */
     MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 3
 } markdown_core_diff_part;
 
@@ -125,19 +152,49 @@ typedef struct markdown_core_diff {
     uint32_t parts;
 } markdown_core_diff;
 
+/** The parser's feature switches.
+ *
+ * Every one of them defaults to ON, so a zeroed struct is not the default
+ * configuration but its opposite: start from markdown_core_parse_options_init
+ * and clear what you do not want. */
 typedef struct markdown_core_parse_options {
+    /** Straight quotes, dashes, and ellipses become their typographic forms. */
     bool smart_punctuation;
+    /** `[^label]` references and the `[^label]:` definitions they resolve to,
+     * both under this one switch. */
     bool footnotes;
+    /** Pipe tables. */
     bool tables;
+    /** `~struck~` and `~~struck~~`; the closer must match the opener's tilde
+     * count. */
     bool strikethrough;
+    /** Bare URLs and email addresses become links; `<https://x>` is
+     * CommonMark's own and is not gated here. */
     bool autolinks;
+    /** `[ ]` and `[x]` markers at the head of a list item. */
     bool task_lists;
+    /** Formula spans and blocks: dollar and LaTeX delimiters, and `formula`
+     * fenced blocks. */
     bool formulas;
+    /** The directive grammar: `:name` inline, `::name` leaf and `:::name`
+     * container at the head of a line, each with its `[label]` and
+     * `{attributes}`. */
     bool directives;
+    /** `[[reference]]`. */
     bool cross_links;
+    /** `![[reference]]`. */
     bool embeds;
 } markdown_core_parse_options;
 
+/** Why a call failed.
+ *
+ * Never a verdict on the Markdown — every byte sequence is a valid document,
+ * as the Diagnostics section below explains — so what is left is:
+ *
+ * - a rejected argument
+ * - an allocation that did not succeed
+ * - an engine invariant that did not hold
+ */
 typedef enum markdown_core_error_code {
     MARKDOWN_CORE_ERROR_NONE = 0,
     MARKDOWN_CORE_ERROR_INVALID_ARGUMENT = 1,
@@ -145,6 +202,10 @@ typedef enum markdown_core_error_code {
     MARKDOWN_CORE_ERROR_INTERNAL = 3
 } markdown_core_error_code;
 
+/** What a node is.
+ *
+ * MARKDOWN_CORE_KIND_NONE names no node: it is what a NULL node answers, and
+ * nothing in a tree carries it. */
 typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_NONE = 0,
     MARKDOWN_CORE_KIND_DOCUMENT,
@@ -192,19 +253,36 @@ typedef enum markdown_core_list_flavor {
     MARKDOWN_CORE_LIST_FLAVOR_ORDERED = 2
 } markdown_core_list_flavor;
 
-/** How a reference was written. The three resolve identically and differ
- * only in source form, which the tree keeps because it is what was written. */
+/** How a reference was written.
+ *
+ * The three resolve identically and differ only in source form, which the
+ * tree keeps because it is what was written. */
 typedef enum markdown_core_reference_form {
+    /** `[text][label]`: caption and label both written out. */
     MARKDOWN_CORE_REFERENCE_FULL = 0,
+    /** `[label][]`: the label doubles as the caption. */
     MARKDOWN_CORE_REFERENCE_COLLAPSED = 1,
+    /** `[label]`: no second bracket pair at all. */
     MARKDOWN_CORE_REFERENCE_SHORTCUT = 2
 } markdown_core_reference_form;
 
+/** Whether a construct is embedded in surrounding inline content or stands
+ * alone.
+ *
+ * Placement is not containment and cannot be read off the parent: a
+ * standalone formula is still written inside a paragraph. */
 typedef enum markdown_core_placement_mode {
     MARKDOWN_CORE_PLACEMENT_EMBEDDED = 1,
     MARKDOWN_CORE_PLACEMENT_STANDALONE = 2
 } markdown_core_placement_mode;
 
+/** A table column's alignment, as the colons in the delimiter row declare it.
+ *
+ * - `:---` left
+ * - `:--:` center
+ * - `---:` right
+ *
+ * NONE is a column that declared nothing, not a fourth alignment. */
 typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_NONE = 0,
     MARKDOWN_CORE_TABLE_ALIGNMENT_LEFT = 1,
@@ -212,11 +290,25 @@ typedef enum markdown_core_table_alignment {
     MARKDOWN_CORE_TABLE_ALIGNMENT_RIGHT = 3
 } markdown_core_table_alignment;
 
+/** An int64 that may be absent; `value` is meaningful only when `has_value`
+ * is set.
+ *
+ * No sentinel would do in its place: an ordered list may legitimately start
+ * at 0, and `0` has to stay distinguishable from "this list has no start
+ * number". */
 typedef struct markdown_core_optional_i64 {
     bool has_value;
     int64_t value;
 } markdown_core_optional_i64;
 
+/** A bool that may be absent, which is three states and not two.
+ *
+ * A list item's checkbox is:
+ *
+ * - ABSENT when the item is not a task item at all
+ * - false when the box is empty
+ * - true when it is ticked
+ */
 typedef struct markdown_core_optional_bool {
     bool has_value;
     bool value;
@@ -225,34 +317,87 @@ typedef struct markdown_core_optional_bool {
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
+/** NULL is allowed. */
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
+/** The root of the document's tree: kind DOCUMENT, scoped to the whole text.
+ *
+ * NULL only for a NULL document — a document that exists has a root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
+/** MARKDOWN_CORE_ERROR_NONE for a NULL error, so the code can be read before
+ * the pointer is checked. */
 MARKDOWN_CORE_API markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error);
+/** The engine's account of the failure.
+ *
+ * It borrows from the error rather than from a document and ends with
+ * markdown_core_error_free; a NULL error gives an empty view. */
 MARKDOWN_CORE_API markdown_core_string markdown_core_error_get_message(const markdown_core_error *error);
-MARKDOWN_CORE_API bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope);
 MARKDOWN_CORE_API void markdown_core_error_free(markdown_core_error *error);
 
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
+/** The kind's canonical name, the spelling the dump prints: "BlockQuote",
+ * "HTMLBlock", "FootnoteDefinition".
+ *
+ * A static string belonging to the library and not to any document — it
+ * outlives every document and is never freed. "None" for a value outside the
+ * enum. */
 MARKDOWN_CORE_API const char *markdown_core_node_kind_name(markdown_core_node_kind kind);
+/** The node's extent, stored on the node: the read is O(1) and walks no
+ * ancestors.
+ *
+ * All zeros for a NULL node. */
 MARKDOWN_CORE_API markdown_core_scope markdown_core_node_scope(const markdown_core_node *node);
 
-/** Canonical traversal follows the refined AST's direct semantic edges. */
+/** Canonical traversal follows the refined AST's direct semantic edges.
+ *
+ * Children come in source order, so first child then next sibling reads a
+ * node's content in the order it was written. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
+/** Counts by walking the child list rather than reading a stored number, so a
+ * caller that wants the count and the children should get both from one walk.
+ *
+ * Zero for a NULL node. */
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
+/*
+ * Node accessors
+ * ==============
+ *
+ * Each of the accessors below answers for one kind, or for the small family of
+ * kinds that shares the field. Each returns false when the node is NULL, when
+ * it is not one of those kinds, or when an out-parameter is NULL — and every
+ * out-parameter is then left untouched, so asking a node for a field it does
+ * not have costs nothing and needs no kind test in front of it. The one that
+ * answers with a node rather than a bool, markdown_core_node_directive_label,
+ * returns NULL in those same cases. What the comments here add is what the
+ * out-parameters hold when the answer is true.
+ */
+
+/** `*level` is 1 through 6. */
 MARKDOWN_CORE_API bool markdown_core_node_heading_level(const markdown_core_node *node, int32_t *level);
+/** `*start` carries a value only for an ordered list, the only flavor with a
+ * number to start from, and `*tight` is whether the list renders without
+ * paragraph spacing between its items. */
 MARKDOWN_CORE_API bool markdown_core_node_list_properties(
     const markdown_core_node *node,
     markdown_core_list_flavor *flavor,
     markdown_core_optional_i64 *start,
     bool *tight
 );
+/** True for any list item, task-list or not: a plain item is answered as a
+ * checkbox that is absent, not as a failure. */
 MARKDOWN_CORE_API bool markdown_core_node_list_item_checked(
     const markdown_core_node *node,
     markdown_core_optional_bool *checked
 );
+/** `*info` is the whole info string after the opening fence and `*language`
+ * its first word — a view INTO `*info`, not a copy of it.
+ *
+ * Both have NULL `data` when there is no info string to read them from.
+ * `*fenced` separates a fenced block from an indented one, and `*closed` is
+ * whether a fenced block ever met its closing fence: an unclosed fence runs to
+ * the end of the document, and an indented block is closed by definition. */
 MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     const markdown_core_node *node,
     markdown_core_string *info,
@@ -261,28 +406,49 @@ MARKDOWN_CORE_API bool markdown_core_node_code_block_properties(
     bool *fenced,
     bool *closed
 );
+/** The literal bytes of a Text, Code, HTML, or HTMLBlock node, and false for
+ * every other kind.
+ *
+ * CodeBlock, Formula, and FormulaBlock hold text of their own but answer
+ * through markdown_core_node_code_block_properties and
+ * markdown_core_node_formula_properties. */
 MARKDOWN_CORE_API bool markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal);
 /** For HTMLBlock and HTML nodes: true when the literal is one complete
- * comment — after surrounding whitespace it opens with `<!--` and its first
- * `-->` is the terminal bytes. Comment-prefixed html with a same-line tail
- * is not a comment. Derived purely from the literal, so consumers on
- * platforms without an html parser can skip comment material by this bit. */
+ * comment.
+ *
+ * After surrounding whitespace it opens with `<!--` and its first `-->` is
+ * the terminal bytes. Comment-prefixed html with a same-line tail is not a
+ * comment. Derived purely from the literal, so consumers on platforms without
+ * an html parser can skip comment material by this bit. */
 MARKDOWN_CORE_API bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comment);
+/** `*literal` is the formula source between the delimiters.
+ *
+ * `*mode` is which delimiters those were and not where the node sits: an
+ * inline formula written `$$...$$` reports standalone, while a formula block
+ * is standalone always. */
 MARKDOWN_CORE_API bool markdown_core_node_formula_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string *literal
 );
+/** The number of columns the delimiter row declares.
+ *
+ * Every row of the table has exactly that many cells: a short row is
+ * completed with empty ones and a long row is cut. */
 MARKDOWN_CORE_API bool markdown_core_node_table_column_count(const markdown_core_node *node, size_t *count);
+/** False when `index` is not less than the column count. */
 MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
     const markdown_core_node *node,
     size_t index,
     markdown_core_table_alignment *alignment
 );
+/** Exactly one row of a table is its header, and it is the first. */
 MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
 /** A directive's placement and name, and whether it was written with an
- * attribute container at all. `has_attributes` is what separates `:a` from
- * `:a{}`; the entries themselves come from the two accessors below. */
+ * attribute container at all.
+ *
+ * `has_attributes` is what separates `:a` from `:a{}`; the entries themselves
+ * come from the two accessors below. */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
@@ -293,17 +459,25 @@ MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
  * A directive's attributes, as the string-to-string map the grammar defines.
  *
  * One entry per name, in source order, with the merge rules already applied:
- * a later `k=` replaces an earlier one, `.a .b` accumulates into one `class`,
- * `#a #b` keeps the last. There is no duplicate name to represent, which is
- * why a map is the whole of it and no serialization sits in between.
+ *
+ * - a later `k=` replaces an earlier one
+ * - `.a .b` accumulates into one `class`
+ * - `#a #b` keeps the last
+ *
+ * There is no duplicate name to represent, which is why a map is the whole of
+ * it and no serialization sits in between.
  */
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_count(const markdown_core_node *node, size_t *count);
+/** False when `index` is not less than the count. */
 MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(
     const markdown_core_node *node,
     size_t index,
     markdown_core_string *key,
     markdown_core_string *value
 );
+/** The directive's label node, or NULL when the directive declares no label.
+ *
+ * That is not an empty `[]`, which is a label node whose content is empty. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 /** A link reference definition's label as written, and the destination and
  * title it defines. */
@@ -314,29 +488,51 @@ MARKDOWN_CORE_API bool markdown_core_node_reference_definition_properties(
     markdown_core_string *title
 );
 
-/** A reference's label as written and the form it was written in. It has no
- * destination: that belongs to the definition the label resolves to. */
+/** A reference's label as written and the form it was written in.
+ *
+ * It has no destination: that belongs to the definition the label resolves
+ * to. */
 MARKDOWN_CORE_API bool markdown_core_node_reference_properties(
     const markdown_core_node *node,
     markdown_core_string *label,
     markdown_core_reference_form *form
 );
 
+/** The link's destination and title.
+ *
+ * NULL `data` means the author wrote nothing; non-NULL `data` of zero length
+ * means they wrote it empty. A title has both cases — `[a](/u)` gives NULL,
+ * `[a](/u "")` gives the empty string — while a destination has only the
+ * second, because an inline link always writes its `(…)`: `[a]()` and
+ * `[a](<>)` both give the empty string and never NULL. The link's caption is
+ * its child content, not a field here. */
 MARKDOWN_CORE_API bool markdown_core_node_link_properties(
     const markdown_core_node *node,
     markdown_core_string *destination,
     markdown_core_string *title
 );
+/** The image's source and title, on a link's terms.
+ *
+ * Its alt text is the node's inline children, parsed like any other content,
+ * not a string here. */
 MARKDOWN_CORE_API bool markdown_core_node_image_properties(
     const markdown_core_node *node,
     markdown_core_string *source,
     markdown_core_string *title
 );
+/** The label between `[^` and `]`, delimiters excluded and exactly as written.
+ *
+ * Matching a reference to its definition case-folds, trims, and collapses
+ * inner whitespace, the bytes here are not normalized. Answers for both
+ * kinds. */
 MARKDOWN_CORE_API bool markdown_core_node_footnote_id(const markdown_core_node *node, markdown_core_string *id);
+/** The reference between `[[` and `]]`, exactly the bytes that were written:
+ * nothing is trimmed, resolved, or normalized. */
 MARKDOWN_CORE_API bool markdown_core_node_cross_link_reference(
     const markdown_core_node *node,
     markdown_core_string *reference
 );
+/** The reference between `![[` and `]]`, on a cross-link's terms. */
 MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
     const markdown_core_node *node,
     markdown_core_string *reference
@@ -368,7 +564,9 @@ MARKDOWN_CORE_API bool markdown_core_node_embed_reference(
 /** Why a diagnostic was raised. */
 typedef enum markdown_core_diagnostic_code {
     /** A directive's `{...}` attribute block did not parse, so its braces
-     * stayed literal text. The scope covers the block, brace to brace. */
+     * stayed literal text.
+     *
+     * The scope covers the block, brace to brace. */
     MARKDOWN_CORE_DIAGNOSTIC_DIRECTIVE_ATTRIBUTES = 1
 } markdown_core_diagnostic_code;
 
@@ -384,16 +582,20 @@ typedef struct markdown_core_diagnostic {
     markdown_core_scope scope;
 } markdown_core_diagnostic;
 
-/** Every diagnostic of this document, in source order. Returns the count and
- * points `*diagnostics` at the document's own array, which borrows from the
- * document and ends with it — nothing to free. A clean document reports zero
- * and leaves `*diagnostics` NULL. */
+/** Every diagnostic of this document, in source order.
+ *
+ * Returns the count and points `*diagnostics` at the document's own array,
+ * which borrows from the document and ends with it — nothing to free. A clean
+ * document reports zero and leaves `*diagnostics` NULL. */
 MARKDOWN_CORE_API size_t markdown_core_document_diagnostics(
     const markdown_core_document *document,
     const markdown_core_diagnostic **diagnostics
 );
 
-/** Allocates the canonical file-tree dump. Free it with markdown_core_dump_free. */
+/** Allocates the canonical file-tree dump.
+ *
+ * Free it with markdown_core_dump_free. A failed dump produces no buffer, so
+ * there is nothing to release but the error. */
 MARKDOWN_CORE_API bool markdown_core_document_dump(
     const markdown_core_document *document,
     uint8_t **output,
@@ -415,18 +617,18 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * NUL is replaced with U+FFFD during parsing because CommonMark requires it of
  * canonical text, and nothing else is.
  *
- * An edit that fails reports the error and ENDS the document it was called on:
- * it must not be queried, walked, or edited again. The caller holds the text,
- * so recovery is building a document from it again. There is no restoration
- * and no retry.
+ * An edit that fails reports the error and leaves the document it was called
+ * on UNTOUCHED: nothing partial is produced, both members of `out` are NULL,
+ * and that same document can be queried, walked, and edited again.
  */
 
 /**
- * `Document(markdown, options)` — the one entry point. `options == NULL`
- * selects the defaults and they are fixed for this document's whole series:
- * a commit takes text and not options. The returned document owns all nodes
- * and borrowed string views. On failure, NULL is returned and `*error` is set
- * when `error` is non-NULL.
+ * `Document(markdown, options)` — the one entry point.
+ *
+ * `options == NULL` selects the defaults and they are fixed for this
+ * document's whole series: a commit takes text and not options. The returned
+ * document owns all nodes and borrowed string views. On failure, NULL is
+ * returned and `*error` is set when `error` is non-NULL.
  */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     markdown_core_string markdown,
@@ -435,8 +637,10 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
 );
 
 /** `document.edit(markdown)` — hand the document new text and get back the
- * document that text describes, plus what changed. There is nothing pending to
- * commit, so the operation is an edit, not a commit.
+ * document that text describes, plus what changed.
+ *
+ * There is nothing pending to commit, so the operation is an edit, not a
+ * commit.
  *
  * READS the receiver and takes nothing: it keeps everything it owns, stays
  * usable, and is freed by whoever holds it. Editing one document twice gives
@@ -451,25 +655,29 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
 );
 
 /** The moment this document was produced, from the host's monotonic clock,
- * and strictly greater than its predecessor's; a fresh parse is zero. It is
- * not a count of edits: two successors of one document need different
+ * and strictly greater than its predecessor's; a fresh parse is zero.
+ *
+ * It is not a count of edits: two successors of one document need different
  * revisions, or a node each changed differently would carry one (id,
  * revision) with two contents. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
 /** Per-series random salt; nodes from different parses never share identity
- * even when ids collide numerically. A SERIES is one document and every
- * document its edits produce, so an edit inherits its predecessor's salt;
- * ids restart at 1 for each new series, which is what makes the salt
- * load-bearing rather than decorative. */
+ * even when ids collide numerically.
+ *
+ * A SERIES is one document and every document its edits produce, so an edit
+ * inherits its predecessor's salt; ids restart at 1 for each new series,
+ * which is what makes the salt load-bearing rather than decorative. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_series(const markdown_core_document *document);
+/** The length of the document's text in bytes, not in characters. */
 MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *document);
 
-/** Identity accessors. `id` is 0 only for a NULL node; `revision` is the
- * commit revision at which the node's own fields, child list, or any
- * descendant last changed — two nodes of one series with equal (id,
- * revision) have identical content. A pure positional shift never changes a
- * node's revision. */
+/** Identity accessors.
+ *
+ * `id` is 0 only for a NULL node; `revision` is the commit revision at which
+ * the node's own fields, child list, or any descendant last changed — two
+ * nodes of one series with equal (id, revision) have identical content. A
+ * pure positional shift never changes a node's revision. */
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
 MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_node *node);
 
@@ -505,6 +713,7 @@ MARKDOWN_CORE_API void markdown_core_delta_revisions(
 MARKDOWN_CORE_API size_t
 markdown_core_delta_diffs(const markdown_core_delta *changes, const markdown_core_diff **diffs);
 
+/** NULL is allowed. */
 MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus

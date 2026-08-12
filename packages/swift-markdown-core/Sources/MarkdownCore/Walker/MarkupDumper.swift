@@ -10,9 +10,10 @@ public enum MarkupDumper {
     }
 
     /// Returns the canonical diagnostic dump for the subtree rooted at
-    /// `node`. Scopes print with the subtree as origin: the root's start
-    /// line becomes line 1. Position-free markers (0:0..0:0) print
-    /// unchanged.
+    /// `node`.
+    ///
+    /// Scopes print with the subtree as origin: the root's start line
+    /// becomes line 1. Position-free markers (0:0..0:0) print unchanged.
     public static func dump(_ document: Document, of node: some Markup) -> String {
         let origin = node.scope.start.line
         let offset = origin > 0 ? origin - 1 : 0
@@ -115,8 +116,8 @@ private struct DumpVisitor: MarkupVisitor {
             "CodeBlock",
             fields: [
                 "mode=\(node.mode.rawValue)",
-                "info=\(optionalString(node.info))",
-                "language=\(optionalString(node.language))",
+                "info=\(optional(node.info))",
+                "language=\(optional(node.language))",
                 "literal=\(jsonString(node.literal))",
                 "fenced=\(boolean(node.fenced))",
                 "closed=\(boolean(node.closed))",
@@ -218,8 +219,8 @@ private struct DumpVisitor: MarkupVisitor {
         record(
             "Link",
             fields: [
-                "destination=\(optionalString(node.destination))",
-                "title=\(optionalString(node.title))",
+                "destination=\(optional(node.destination))",
+                "title=\(optional(node.title))",
             ],
             children: node.content.count
         )
@@ -228,7 +229,7 @@ private struct DumpVisitor: MarkupVisitor {
     mutating func visit(_ node: Image) -> DumpRecord {
         record(
             "Image",
-            fields: ["source=\(optionalString(node.source))", "title=\(optionalString(node.title))"],
+            fields: ["source=\(optional(node.source))", "title=\(optional(node.title))"],
             children: node.content.count
         )
     }
@@ -250,8 +251,8 @@ private struct DumpVisitor: MarkupVisitor {
             "ReferenceDefinition",
             fields: [
                 "label=\(jsonString(node.label))",
-                "destination=\(optionalString(node.destination))",
-                "title=\(optionalString(node.title))",
+                "destination=\(optional(node.destination))",
+                "title=\(optional(node.title))",
             ]
         )
     }
@@ -314,14 +315,16 @@ private struct DumpVisitor: MarkupVisitor {
 
 private func boolean(_ value: Bool) -> String { value ? "true" : "false" }
 
-private func optionalString(_ value: String?) -> String {
+private func optional(_ value: String?) -> String {
     value.map(jsonString) ?? "null"
 }
 
 /// Pair by pair, like every other field: `null` for no container at all and
-/// nothing after `attributes=` for an empty one. Swift's Dictionary is
-/// unordered, so the dump sorts by name; the ordered form belongs to the
-/// engine, which is what the cross-platform goldens compare.
+/// nothing after `attributes=` for an empty one.
+///
+/// Swift's Dictionary is unordered, so the dump sorts by name; the ordered
+/// form belongs to the engine, which is what the cross-platform goldens
+/// compare.
 private func directiveAttributes(_ value: [String: String]?) -> String {
     guard let value else { return "null" }
     let pairs = value.sorted { $0.key < $1.key }.map { "\($0.key)=\(jsonString($0.value))" }

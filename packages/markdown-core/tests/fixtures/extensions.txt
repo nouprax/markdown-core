@@ -456,7 +456,7 @@ Document scope=1:1..7:50 children=3
 │           ├── LinkReference scope=5:20..5:39 label="Freedom Planet 2" form=collapsed children=1
 │           │   └── Text scope=5:21..5:36 literal="Freedom Planet 2" children=0
 │           └── Text scope=5:40..5:55 literal=" in a table row." children=0
-└── ReferenceDefinition scope=7:1..7:50 label="Freedom Planet 2" destination="http://www.freedomplanet2.com/" title="" children=0
+└── ReferenceDefinition scope=7:1..7:50 label="Freedom Planet 2" destination="http://www.freedomplanet2.com/" title=null children=0
 ````````````````````````````````
 
 ### Sequential cells
@@ -700,7 +700,7 @@ Document scope=1:1..63:32 children=32
 │   └── Link scope=1:21..1:38 destination="https://google.com" title=null children=1
 │       └── Text scope=1:21..1:38 literal="https://google.com" children=0
 ├── Paragraph scope=3:1..3:43 children=3
-│   ├── Link scope=3:1..3:22 destination="http://google.com/å" title="" children=1
+│   ├── Link scope=3:1..3:22 destination="http://google.com/å" title=null children=1
 │   │   └── Text scope=3:2..3:21 literal="http://google.com/å" children=0
 │   ├── Text scope=3:23..3:23 literal=" " children=0
 │   └── Link scope=3:24..3:43 destination="http://google.com/å" title=null children=1

@@ -33,10 +33,12 @@ export class MarkupDumper {
     private constructor() {}
 
     /**
-     * Returns the canonical diagnostic dump for the subtree rooted at
-     * `node` (the whole document by default). A non-document subtree prints
-     * scopes with the subtree as origin: the root's start line becomes line
-     * 1. Position-free markers (0:0..0:0) print unchanged.
+     * Returns the canonical diagnostic dump for the subtree rooted at `node`
+     * (the whole document by default).
+     *
+     * A non-document subtree prints scopes with the subtree as origin: the
+     * root's start line becomes line 1. Position-free markers (0:0..0:0)
+     * print unchanged.
      */
     static dump(document: Document, node: Markup = document): string {
         const origin = node.scope.start.line;

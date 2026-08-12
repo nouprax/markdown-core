@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A block of raw HTML, passed through unparsed.
 public struct HTMLBlock: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -34,17 +34,19 @@ extension HTMLBlock {
             revision: track.revision,
             scope: track.scope,
             comment: node.htmlComment,
-            literal: literal.requiredString
+            literal: literal.string
         )
     }
 }
 
 extension OpaquePointer {
     /// The one-complete-comment bit, read from the parser rather than derived
-    /// again here. The rule — after surrounding whitespace the literal opens
-    /// with `<!--` and its first `-->` is the terminal bytes — belongs to the
-    /// engine, and a projection that re-derives it is a second definition
-    /// that can disagree with the first.
+    /// again here.
+    ///
+    /// The rule — after surrounding whitespace the literal opens with `<!--`
+    /// and its first `-->` is the terminal bytes — belongs to the engine, and
+    /// a projection that re-derives it is a second definition that can
+    /// disagree with the first.
     var htmlComment: Bool {
         var comment = false
         markdown_core_node_html_comment(self, &comment)

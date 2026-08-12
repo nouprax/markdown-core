@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// Emphasized (typically italic) inline content.
 public struct Emphasis: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64

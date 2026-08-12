@@ -1,18 +1,21 @@
 import MarkdownCoreC
 
-/// How a reference was written. The three resolve identically and differ only
-/// in source form, which the tree keeps because it is what was written.
+/// How a reference was written.
+///
+/// The three resolve identically and differ only in source form, which the
+/// tree keeps because it is what was written.
 public enum ReferenceForm: Sendable, Hashable {
     case full
     case collapsed
     case shortcut
 }
 
-/// A link reference definition, at the position it was written. The
-/// destination is stated here, once, rather than copied into every reference
-/// that resolves to it.
+/// A link reference definition, at the position it was written.
+///
+/// The destination is stated here, once, rather than copied into every
+/// reference that resolves to it.
 public struct ReferenceDefinition: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -27,7 +30,10 @@ public struct ReferenceDefinition: Markup {
     /// The label between `[` and `]`, exactly as written.
     public let label: String
     /// The destination this definition assigns to its label.
-    public let destination: String?
+    ///
+    /// Not optional: a definition that writes no destination is not a
+    /// definition at all. `[foo]: <>` gives `""`.
+    public let destination: String
     /// The optional title.
     public let title: String?
 
@@ -35,12 +41,14 @@ public struct ReferenceDefinition: Markup {
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 }
 
-/// `[text][label]`, `[label][]`, or `[label]`. It carries no destination:
-/// which definition the label resolves to is an answer, asked of the document
-/// rather than read off the node. ``Link`` stays the inline form `[a](/u)`,
-/// whose destination is written in the source.
+/// `[text][label]`, `[label][]`, or `[label]`.
+///
+/// It carries no destination: which definition the label resolves to is an
+/// answer, asked of the document rather than read off the node. ``Link``
+/// stays the inline form `[a](/u)`, whose destination is written in the
+/// source.
 public struct LinkReference: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -65,7 +73,7 @@ public struct LinkReference: Markup {
 
 /// `![alt][label]` and its collapsed and shortcut forms.
 public struct ImageReference: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -109,9 +117,9 @@ extension ReferenceDefinition {
             id: track.id,
             revision: track.revision,
             scope: track.scope,
-            label: label.requiredString,
-            destination: destination.optionalString,
-            title: title.optionalString
+            label: label.string,
+            destination: destination.string,
+            title: title.optional
         )
     }
 }
@@ -126,7 +134,7 @@ extension LinkReference {
             id: track.id,
             revision: track.revision,
             scope: track.scope,
-            label: label.requiredString,
+            label: label.string,
             form: ReferenceForm(form),
             content: builder.children(node)
         )
@@ -143,7 +151,7 @@ extension ImageReference {
             id: track.id,
             revision: track.revision,
             scope: track.scope,
-            label: label.requiredString,
+            label: label.string,
             form: ReferenceForm(form),
             content: builder.children(node)
         )

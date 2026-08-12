@@ -7,6 +7,8 @@ import type { MarkupID } from "./model/markup-id.js";
 import type { ParseOptions } from "./parse-options.js";
 import { CDocument, decoder, normalizeOptions } from "./runtime/c-document.js";
 
+/** The document type, named the same as the function below so that `Document`
+ * is both the annotation and the call that builds one. */
 export type Document = DocumentValue;
 
 const diffPartFlags = { value: 1, text: 2, children: 4, descendant: 8 } as const;
@@ -32,7 +34,7 @@ function diagnosticCode(raw: number): DiagnosticCode {
  *
  * `close` remains the way to release promptly; this is what keeps a dropped
  * document from leaking, and it is never a reason not to close one. The
- * registry holds the `CDocument` and never the value it belongs to: a
+ * registry holds the {@link CDocument} and never the value it belongs to: a
  * cleanup that could reach its own document would keep that document
  * reachable, and then it would never run.
  */

@@ -659,10 +659,20 @@ static void S_emit_definition(
     }
     if (harvested) {
         node->as.definition.url = markdown_core_chunk_borrow(&harvested->url, 0, harvested->url.len);
-        node->as.definition.title = markdown_core_chunk_borrow(&harvested->title, 0, harvested->title.len);
-        if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.url) ||
-            !markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.title)) {
+        if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.url)) {
             parser->oom = true;
+        }
+        /* The title only when one was written. `markdown_core_clean_title`
+         * hands back the empty CHUNK for a definition that has none, and
+         * copying that through `to_cstr` would mint an empty STRING —
+         * collapsing the distinction the inline forms already keep, where
+         * `[t](/u "")` is a written empty title and `[t](/u)` is no title.
+         * The node is calloc'd, so leaving it alone is the empty chunk. */
+        if (harvested->title.data) {
+            node->as.definition.title = markdown_core_chunk_borrow(&harvested->title, 0, harvested->title.len);
+            if (!markdown_core_chunk_to_cstr(parser->mem, &node->as.definition.title)) {
+                parser->oom = true;
+            }
         }
     }
     S_content_position(parser, b, start, cursor, &node->start_line, &node->start_column);

@@ -27,6 +27,16 @@ import type { Table, TableCell, TableRow } from "./table.js";
 import type { Text } from "./text.js";
 import type { ThematicBreak } from "./thematic-break.js";
 
+/**
+ * Every node kind, as one closed union discriminated by `kind`.
+ *
+ * Narrowing on `kind` gives a node its own fields, and a switch that has
+ * handled every kind narrows what is left to `never` — which is how {@link visit}
+ * and {@link MarkupWalker} fail to compile against a kind added later instead of
+ * falling through it. {@link Document} is a member because the root is a node like
+ * any other; it never appears as anyone's child. What all of them carry, and
+ * what equality means over it, is {@link MarkupBase}.
+ */
 export type Markup =
     | Document
     | BlockQuote

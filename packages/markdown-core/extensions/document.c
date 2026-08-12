@@ -590,9 +590,10 @@ markdown_core_document *markdown_core_document_new(
  * It is `edit` and not `commit` because there is nothing pending to commit.
  * A commit is what you do to changes a document has been accumulating, and
  * there is no document and no accumulation: you hand over text and get back
- * the document it describes, plus what changed. The receiver is SUPERSEDED —
- * released here and `*document` cleared on every path — so a caller cannot
- * hold both. */
+ * the document it describes, plus what changed. The receiver is READ, not
+ * consumed: it is the diff's input, it keeps every byte it owns, and it
+ * remains the caller's to free. Editing it twice is therefore legal and
+ * gives two lines of descent, told apart by their revisions. */
 bool markdown_core_document_edit(
     const markdown_core_document *document,
     markdown_core_string markdown,

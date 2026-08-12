@@ -20,23 +20,29 @@ import kotlin.jvm.JvmSynthetic
  */
 public sealed interface Markup {
     /**
-     * Session-scoped identity: stable across incremental commits while the
-     * node remains the same kind of thing at the same place.
+     * Series-scoped identity, unique within the series and never reused;
+     * see [MarkupID].
+     *
+     * Stable across incremental commits while the node remains the same kind
+     * of thing at the same place.
      */
     public val id: MarkupID
 
     /**
      * The commit revision at which this node's own fields, child list, or
-     * any descendant last changed. A pure positional shift caused by an edit
-     * elsewhere never changes a node's revision.
+     * any descendant last changed.
+     *
+     * A pure positional shift caused by an edit elsewhere never changes a
+     * node's revision.
      */
     public val revision: ULong
 
     /**
      * The node's absolute source extent, both bounds inclusive of the
-     * construct's own markers. A property OF the node, not of a lookup: a
-     * document is an immutable projection of one text, so a node in it does
-     * not move.
+     * construct's own markers.
+     *
+     * A property OF the node, not of a lookup: a document is an immutable
+     * projection of one text, so a node in it does not move.
      */
     public val scope: Scope
 

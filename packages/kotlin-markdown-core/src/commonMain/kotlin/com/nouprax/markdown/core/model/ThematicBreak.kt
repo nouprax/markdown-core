@@ -1,5 +1,6 @@
 package com.nouprax.markdown.core
 
+/** A thematic break (horizontal rule). */
 public class ThematicBreak internal constructor(
     override val id: MarkupID,
     override val revision: ULong,

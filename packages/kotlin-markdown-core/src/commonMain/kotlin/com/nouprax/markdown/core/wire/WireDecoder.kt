@@ -117,9 +117,8 @@ private fun WireReader.error(): ParseException {
             else -> ParseErrorCode.INTERNAL
         }
     val message = requiredString()
-    val errorScope = if (boolean()) scope() else null
     require(finished) { "invalid native error payload" }
-    return ParseException(code, message, errorScope)
+    return ParseException(code, message)
 }
 
 private class WireReader(
@@ -379,11 +378,11 @@ private fun WireReader.record(
         }
 
         WireKind.LINK -> {
-            Link(id, revision, scope, string(), string(), children(mirror))
+            Link(id, revision, scope, requiredString(), string(), children(mirror))
         }
 
         WireKind.IMAGE -> {
-            Image(id, revision, scope, string(), string(), children(mirror))
+            Image(id, revision, scope, requiredString(), string(), children(mirror))
         }
 
         WireKind.DIRECTIVE -> {
@@ -403,7 +402,7 @@ private fun WireReader.record(
         }
 
         WireKind.REFERENCE_DEFINITION -> {
-            ReferenceDefinition(id, revision, scope, requiredString(), string(), string())
+            ReferenceDefinition(id, revision, scope, requiredString(), requiredString(), string())
         }
 
         WireKind.LINK_REFERENCE -> {

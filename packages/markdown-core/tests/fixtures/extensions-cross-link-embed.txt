@@ -212,7 +212,7 @@ not open a cross-link.
 [bar\\]
 .
 Document scope=1:1..3:7 children=2
-├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" destination="/uri" title="" children=0
+├── ReferenceDefinition scope=1:1..1:13 label="bar\\\\" destination="/uri" title=null children=0
 └── Paragraph scope=3:1..3:7 children=1
     └── LinkReference scope=3:1..3:7 label="bar\\\\" form=shortcut children=1
         └── Text scope=3:2..3:6 literal="bar\\" children=0

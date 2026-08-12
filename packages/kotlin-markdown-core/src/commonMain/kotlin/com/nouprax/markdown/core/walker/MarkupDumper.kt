@@ -11,10 +11,15 @@ public object MarkupDumper {
 
     /**
      * Returns the canonical diagnostic dump for the subtree rooted at
-     * [node]. Scopes print with the subtree as origin: the root's start
-     * line becomes line 1, later lines shift by the same amount, and
-     * columns are line-local and unchanged. Position-free markers
-     * (`0:0..0:0`) print unchanged.
+     * [node].
+     *
+     * Scopes print with the subtree as origin:
+     *
+     * - the root's start line becomes line 1
+     * - later lines shift by the same amount
+     * - columns are line-local and unchanged
+     *
+     * Position-free markers (`0:0..0:0`) print unchanged.
      */
     public fun dump(
         document: Document,
@@ -270,8 +275,10 @@ private fun directiveFields(
     )
 
 /** Pair by pair, like every other field: `null` for no container at all and
- * nothing after `attributes=` for an empty one. Sorted by name, because four
- * dumpers have to agree byte for byte and Swift's map is unordered. */
+ * nothing after `attributes=` for an empty one.
+ *
+ * Sorted by name, because four dumpers have to agree byte for byte and
+ * Swift's map is unordered. */
 private fun directiveAttributes(attributes: Map<String, String>?): String =
     attributes?.keys?.sorted()?.joinToString(" ", "[", "]") { "$it=${jsonString(attributes.getValue(it))}" } ?: "null"
 

@@ -21,15 +21,23 @@ public class Commit internal constructor(
  * it has, so it carries all of them.
  */
 public class DiffParts internal constructor(
-    /** The raw bit pattern, as the engine reports it. A signed Int and not an
-     * unsigned one: four bits are defined, and an unsigned property would
-     * reach Java only through a name Java cannot write. */
+    /** The raw bit pattern, as the engine reports it.
+     *
+     * A signed Int and not an unsigned one: four bits are defined, and an
+     * unsigned property would reach Java only through a name Java cannot
+     * write. */
     public val rawValue: Int,
 ) {
     /** True when this entry reports a node that no longer exists. */
     public val isRetired: Boolean get() = rawValue == 0
 
-    /** True when the node's kind or one of its scalar fields differs. */
+    /** True when one of the node's own fields differs, string-valued ones
+     * included.
+     *
+     * A link's destination and title, a reference's label, a directive's
+     * name and attributes are all [value], not [text]. Never a kind change —
+     * paired nodes always share a kind, because a changed kind is a
+     * retirement and a creation rather than a difference. */
     public val value: Boolean get() = has(VALUE)
 
     /** True when the node's canonical text differs. */
@@ -38,9 +46,11 @@ public class DiffParts internal constructor(
     /** True when the node's own child list differs. */
     public val children: Boolean get() = has(CHILDREN)
 
-    /** True when something below the node differs. Carried by every ancestor
-     * of a change, so a renderer can stop at the first node whose own parts
-     * are all false. */
+    /** True when something below the node differs.
+     *
+     * Reported together with whatever of the node's own differs, never
+     * instead of it. Every node above a change carries some part, so a
+     * subtree whose root the delta does not name holds no change at all. */
     public val descendant: Boolean get() = has(DESCENDANT)
 
     private fun has(bit: Int): Boolean = rawValue and bit != 0

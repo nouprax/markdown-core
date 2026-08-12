@@ -36,7 +36,6 @@ export interface NativeExports extends WebAssembly.Exports {
     es_error_code(error: number): number;
     /** Writes the error's four absolute scope coordinates to `output`;
      * answers 0 when the error carries no scope. */
-    es_error_scope(error: number, output: number): number;
     es_error_free(error: number): void;
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;

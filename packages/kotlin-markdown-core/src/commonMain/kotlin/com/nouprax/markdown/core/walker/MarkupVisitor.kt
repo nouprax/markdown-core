@@ -1,5 +1,10 @@
 package com.nouprax.markdown.core
 
+/**
+ * Typed double-dispatch over the closed set of markup node kinds.
+ *
+ * One [visit] overload per concrete node type, selected by [Markup.accept].
+ */
 public interface MarkupVisitor<Result> {
     public fun visit(node: Document): Result
 

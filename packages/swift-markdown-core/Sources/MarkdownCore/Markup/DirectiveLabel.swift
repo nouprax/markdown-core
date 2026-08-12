@@ -1,11 +1,11 @@
 import MarkdownCoreC
 
-/// The inline label owned by a `Directive` or `DirectiveBlock`.
+/// The inline label owned by a ``Directive`` or ``DirectiveBlock``.
 ///
 /// A missing label is represented by a nil directive property. An explicit
-/// empty `[]` is a `DirectiveLabel` whose `content` is empty.
+/// empty `[]` is a ``DirectiveLabel`` whose ``content`` is empty.
 public struct DirectiveLabel: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
