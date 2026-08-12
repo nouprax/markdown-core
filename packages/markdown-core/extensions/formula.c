@@ -810,6 +810,22 @@ static const markdown_core_delimiter_rule formula_delimiter_rules[] = {
 
 static const unsigned char formula_special_chars[] = {'$', '\\'};
 
+/* A formula's mode is its VALUE and its literal its TEXT, and both live in
+ * the opaque payload rather than the core union. */
+static uint64_t formula_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {
+    const node_formula *formula = (const node_formula *)node->as.opaque;
+    (void)extension;
+    if (!is_formula_node((markdown_core_node *)node) || !formula) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    h = markdown_core_hash_mix(h, (uint64_t)formula->mode);
+    return markdown_core_hash_bytes(
+        h,
+        formula->literal.data,
+        formula->literal.len < 0 ? 0 : (size_t)formula->literal.len
+    );
+}
+
 static const markdown_core_extension formula_extension = {
     .name = "formula",
     .match_inline = match,
@@ -820,6 +836,7 @@ static const markdown_core_extension formula_extension = {
     .accepts_lines = accepts_lines,
     .alloc_opaque = formula_opaque_alloc,
     .free_opaque = formula_opaque_free,
+    .hash_value = formula_hash_value,
     .insert_inline_from_delim = insert_formula,
     .materialize_inline = materialize_inline,
     .delimiter_rules = formula_delimiter_rules,

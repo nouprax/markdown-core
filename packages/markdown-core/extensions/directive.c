@@ -2023,6 +2023,42 @@ static const markdown_core_delimiter_rule directive_delimiter_rules[] = {
 // directive openers and standalone directives.
 static const unsigned char directive_special_chars[] = {':'};
 
+/* A directive's name and attributes are its VALUE, and both live in the
+ * opaque payload: without them `:a[x]` and `:b[x]` hash alike, and inserting
+ * one above the other moves the id onto the newcomer. */
+static uint64_t directive_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {
+    const node_directive *directive = (const node_directive *)node->as.opaque;
+    (void)extension;
+    if (!is_directive_node((markdown_core_node *)node) || !directive) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    h = markdown_core_hash_bytes(h, directive->name.data, directive->name.len < 0 ? 0 : (size_t)directive->name.len);
+    // The attribute LIST, not attributes_json: that is a lazy render, still
+    // empty while the tree is being stamped, and forcing it here would put an
+    // allocation on every parse of every directive. Same entries in the same
+    // order under the same active rule, so it separates exactly what the
+    // rendered form separates.
+    {
+        const directive_attribute *attribute;
+        for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+            if (!attribute->active) {
+                continue;
+            }
+            h = markdown_core_hash_bytes(
+                h,
+                attribute->name.data,
+                attribute->name.len < 0 ? 0 : (size_t)attribute->name.len
+            );
+            h = markdown_core_hash_bytes(
+                h,
+                attribute->value.data,
+                attribute->value.len < 0 ? 0 : (size_t)attribute->value.len
+            );
+        }
+    }
+    return h;
+}
+
 static const markdown_core_extension directive_extension = {
     .name = "directive",
     .match_inline = match,
@@ -2037,6 +2073,7 @@ static const markdown_core_extension directive_extension = {
     .accepts_lines = accepts_lines,
     .alloc_opaque = directive_opaque_alloc,
     .free_opaque = directive_opaque_free,
+    .hash_value = directive_hash_value,
     .special_inline_chars = directive_special_chars,
     .special_inline_char_count = sizeof(directive_special_chars),
 };

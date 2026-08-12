@@ -2064,6 +2064,67 @@ static void document_head_insertion_pairs_on_value(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+/* THE SAME TRAP, for every type whose telling-apart value lives behind the
+ * extension that registered it. Each pair differs only in that value, so
+ * without markdown_core_extension.hash_value they hash alike and the sweep
+ * hands the newcomer the survivor's id. */
+static void document_head_insertion_pairs_on_extension_value(test_batch_runner *runner) {
+    static const struct {
+        const char *name;
+        const char *before;
+        const char *after;
+    } cases[] = {
+        {"table alignment", "| a |\n| :-- |\n| b |\n", "| a |\n| --: |\n| b |\n\n| a |\n| :-- |\n| b |\n"},
+        {"directive name", ":::alpha\nbody\n:::\n", ":::bravo\nbody\n:::\n\n:::alpha\nbody\n:::\n"},
+        {"directive attributes", ":::note{a=1}\nbody\n:::\n", ":::note{a=2}\nbody\n:::\n\n:::note{a=1}\nbody\n:::\n"},
+        {"formula literal", "$$\nalpha\n$$\n", "$$\nbeta\n$$\n\n$$\nalpha\n$$\n"},
+        {"cross-link target", "[[alpha]]\n", "[[beta]]\n\n[[alpha]]\n"},
+        {"embed target", "![[alpha]]\n", "![[beta]]\n\n![[alpha]]\n"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        markdown_core_error *error = NULL;
+        markdown_core_document *document =
+            markdown_core_document_new(mc_sv(cases[i].before, strlen(cases[i].before)), NULL, &error);
+        markdown_core_node_id first_id = 0;
+        uint64_t first_rev = 0;
+
+        OK(runner, document != NULL, "%s: baseline opens", cases[i].name);
+        if (!document) {
+            markdown_core_error_free(error);
+            continue;
+        }
+        {
+            const markdown_core_node *block = markdown_core_node_get_first_child(markdown_core_document_root(document));
+            first_id = block ? markdown_core_node_get_id(block) : 0;
+            first_rev = block ? markdown_core_node_get_revision(block) : 0;
+        }
+        OK(runner,
+           mc_edit(&document, mc_sv(cases[i].after, strlen(cases[i].after)), NULL, &error),
+           "%s: inserting the near-identical block above it commits",
+           cases[i].name);
+        {
+            const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+            const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
+            OK(runner,
+               first && markdown_core_node_get_id(first) != first_id,
+               "%s: the inserted block is minted fresh",
+               cases[i].name);
+            OK(runner,
+               second && markdown_core_node_get_id(second) == first_id,
+               "%s: the surviving block keeps its id",
+               cases[i].name);
+            OK(runner,
+               second && markdown_core_node_get_revision(second) == first_rev,
+               "%s: the survivor is unchanged, so its revision does not move",
+               cases[i].name);
+        }
+        markdown_core_document_free(document);
+        markdown_core_error_free(error);
+    }
+}
+
 static void document_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -2833,6 +2894,7 @@ int main(void) {
     document_append_id_stability(runner);
     document_head_insertion_id_stability(runner);
     document_head_insertion_pairs_on_value(runner);
+    document_head_insertion_pairs_on_extension_value(runner);
     subtree_hash_completeness(runner);
     document_series_entropy(runner);
     document_suffix_id_stability(runner);

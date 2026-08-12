@@ -208,6 +208,13 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE
 /** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
  * children already carry. Called on the node's EXIT during the stamping walk
  * of the finished tree, so every child is complete and already stamped. */
+/** Mixes one scalar into a running subtree hash. */
+uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
+
+/** Mixes a byte range into a running subtree hash: its LENGTH plus a bounded
+ * sample of both ends, never every byte — see the note on `subtree_hash`. */
+uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length);
+
 void markdown_core_node_stamp(markdown_core_node *node);
 
 /** Stamps every node of `root`'s subtree, each as the walk leaves it. */

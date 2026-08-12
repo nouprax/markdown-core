@@ -849,33 +849,38 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 // the reason stated on the field (node.h).
 #define MARKDOWN_CORE_HASH_SAMPLE 32u
 
-static uint64_t hash_mix(uint64_t h, uint64_t value) {
+uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value) {
     h = (h ^ value) * 0x100000001b3ull;
     return h ^ (h >> 29);
 }
 
-static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
-    size_t length;
+uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length) {
     size_t head;
     size_t tail;
     size_t i;
 
-    if (!chunk->data || chunk->len < 0) {
-        return hash_mix(h, 0);
+    if (!data) {
+        return markdown_core_hash_mix(h, 0);
     }
-    length = (size_t)chunk->len;
     head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
     tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
     h = (h ^ (uint64_t)length) * 0x100000001b3ull;
     for (i = 0; i < head; i++) {
-        h ^= chunk->data[i];
+        h ^= data[i];
         h *= 0x100000001b3ull;
     }
     for (i = 0; i < tail; i++) {
-        h ^= chunk->data[length - tail + i];
+        h ^= data[length - tail + i];
         h *= 0x100000001b3ull;
     }
     return h;
+}
+
+static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
+    if (!chunk->data || chunk->len < 0) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    return markdown_core_hash_bytes(h, chunk->data, (size_t)chunk->len);
 }
 
 /* WHAT GOES IN, and why this list and not another: the scalars below are
@@ -888,16 +893,16 @@ static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
  * a paired node is still compared field by field; what was wrong was which
  * node the consumer's row state stayed attached to.
  *
- * Extension-owned values are still absent: a directive's name and
- * attributes, a table's alignments, a row's header bit and a formula's mode
- * live behind the extension that registered the type, whose constants core
- * cannot see. Those remain what the field comment on node.h describes -- a
- * source of worse pairing, never of a missed change. */
+ * Values core cannot reach are mixed by the extension that owns them,
+ * through `hash_value` -- a directive's name and attributes, a table's
+ * alignments, a row's header bit, a formula's mode. An extension that
+ * registers a node type and does not implement it leaves its own nodes
+ * pairing on type and children alone. */
 void markdown_core_node_stamp(markdown_core_node *node) {
     uint64_t h = 0xcbf29ce484222325ull;
     markdown_core_node *child;
 
-    h = hash_mix(h, (uint64_t)node->type);
+    h = markdown_core_hash_mix(h, (uint64_t)node->type);
     switch (node->type) {
     // The raw type, not the facade kind: this runs on every node of every
     // parse, and for these the union member IS the literal chunk.
@@ -917,25 +922,25 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         h = hash_chunk(h, &node->as.code.literal);
         h = hash_chunk(h, &node->as.code.info);
-        h = hash_mix(h, (uint64_t)(node->as.code.fenced != 0));
-        h = hash_mix(h, (uint64_t)(node->as.code.fence_closed != 0));
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fenced != 0));
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fence_closed != 0));
         break;
     case MARKDOWN_CORE_NODE_HEADING:
-        h = hash_mix(h, (uint64_t)node->as.heading.level);
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.heading.level);
         break;
     case MARKDOWN_CORE_NODE_LIST:
-        h = hash_mix(h, (uint64_t)node->as.list.list_type);
-        h = hash_mix(h, (uint64_t)(node->as.list.tight != 0));
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.list.list_type);
+        h = markdown_core_hash_mix(h, (uint64_t)(node->as.list.tight != 0));
         // The start ordinal is the list's only when it is ordered; a bullet
         // list has none, which is what the facade reports.
         if (node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST) {
-            h = hash_mix(h, (uint64_t)node->as.list.start);
+            h = markdown_core_hash_mix(h, (uint64_t)node->as.list.start);
         }
         break;
     // The checkbox is an extension's, present only where one claimed the
     // item; `extension` is the same gate the facade uses, minus its strcmp.
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        h = hash_mix(h, node->extension ? (uint64_t)(node->as.list.checked != 0) + 1u : 0u);
+        h = markdown_core_hash_mix(h, node->extension ? (uint64_t)(node->as.list.checked != 0) + 1u : 0u);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
@@ -950,13 +955,20 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_LINK_REFERENCE:
     case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
         h = hash_chunk(h, &node->as.reference.label);
-        h = hash_mix(h, (uint64_t)node->as.reference.form);
+        h = markdown_core_hash_mix(h, (uint64_t)node->as.reference.form);
         break;
     default:
         break;
     }
+    // Whatever the core union cannot reach: a directive's name and
+    // attributes, a table's alignments, a row's header bit, a formula's
+    // mode. The extension that registered the type is the only thing that
+    // can read them, so it is the thing that mixes them.
+    if (node->extension && node->extension->hash_value) {
+        h = node->extension->hash_value(node->extension, node, h);
+    }
     for (child = node->first_child; child; child = child->next) {
-        h = hash_mix(h, child->subtree_hash);
+        h = markdown_core_hash_mix(h, child->subtree_hash);
         if (child == node->last_child) {
             break;
         }

@@ -53,6 +53,20 @@ static const markdown_core_delimiter_rule cross_reference_delimiter_rules[] = {
     },
 };
 
+/* The reference text is the whole of a cross-link's or an embed's content. */
+static uint64_t cross_reference_hash_value(
+    markdown_core_extension *extension,
+    const markdown_core_node *node,
+    uint64_t h
+) {
+    const markdown_core_chunk *value = markdown_core_cross_reference_value((markdown_core_node *)node);
+    (void)extension;
+    if (!value) {
+        return markdown_core_hash_mix(h, 0);
+    }
+    return markdown_core_hash_bytes(h, value->data, value->len < 0 ? 0 : (size_t)value->len);
+}
+
 static const markdown_core_extension cross_link_extension = {
     .name = "cross_link",
     .match_inline = match,
@@ -62,6 +76,7 @@ static const markdown_core_extension cross_link_extension = {
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .hash_value = cross_reference_hash_value,
     .materialize_inline = materialize_inline,
     .special_inline_chars = cross_link_special_chars,
     .special_inline_char_count = sizeof(cross_link_special_chars),
@@ -76,6 +91,7 @@ static const markdown_core_extension embed_extension = {
     .get_type_string = get_type_string,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .hash_value = cross_reference_hash_value,
     .materialize_inline = materialize_inline,
     .special_inline_chars = embed_special_chars,
     .special_inline_char_count = sizeof(embed_special_chars),
