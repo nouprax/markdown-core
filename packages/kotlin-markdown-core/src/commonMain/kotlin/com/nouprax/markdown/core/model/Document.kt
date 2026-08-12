@@ -67,9 +67,10 @@ public class Document private constructor(
     @JvmOverloads
     public constructor(markdown: String, options: ParseOptions = ParseOptions()) : this(open(markdown, options))
 
-    /** The native parse, or zero once something has taken it. Every path that
-     * ends the parse — [close], an [edit] that supersedes it, the platform's
-     * reclaim — goes through this one exchange, and only the first wins. */
+    /** The native parse, or zero once something has taken it. Both paths that
+     * END the parse — [close] and the platform's reclaim — go through this
+     * one exchange, and only the first wins. [edit] is not one of them: it
+     * READS the parse and leaves it here. */
     private val handle = AtomicLong(built.handle)
 
     // Held so the platform's reclaim registration outlives this constructor;
@@ -124,13 +125,14 @@ public class Document private constructor(
      * Hands this document new text and returns the document that text
      * describes, together with what changed.
      *
-     * SUPERSEDES the receiver: the native parse moves to the successor, so
-     * this document must not be edited again. Its already-extracted values,
-     * scopes, and diagnostics stay valid forever, because they are values.
+     * Reads the receiver and takes nothing from it: this document stays
+     * usable and may be edited again. Editing it twice gives two lines of
+     * descent, told apart by their revisions — and, like nodes from two
+     * separate parses, nodes from two lines are not comparable.
      */
     public fun edit(markdown: String): Commit {
-        val owned = handle.exchange(0L)
-        check(owned != 0L) { "the document was superseded by an earlier edit, or closed" }
+        val owned = handle.load()
+        check(owned != 0L) { "the document is closed" }
         val carriedOptions = options
         val (successor, delta) =
             decodeWireEdit(owned.edit(markdown.encodeToByteArray())) {

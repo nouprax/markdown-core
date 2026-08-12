@@ -93,14 +93,15 @@ int32_t es_document_edit(
     uintptr_t *out,
     markdown_core_error **error
 ) {
-    markdown_core_document *owned = document;
     markdown_core_commit commit;
     markdown_core_string markdown;
 
     markdown.data = bytes;
     markdown.length = length;
     memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_edit(&owned, markdown, &commit, error)) {
+    // The edit reads `document` and takes nothing; the JS handle keeps it and
+    // `es_document_free` is what releases it.
+    if (!markdown_core_document_edit(document, markdown, &commit, error)) {
         return 0;
     }
     out[0] = (uintptr_t)commit.document;

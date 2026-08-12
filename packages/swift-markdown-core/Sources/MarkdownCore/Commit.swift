@@ -3,7 +3,7 @@ import MarkdownCoreC
 /// What `Document.edit(_:)` returns: the document the new text describes, and
 /// what changed on the way there.
 public struct Commit: Sendable {
-    /// The new document. The one it was produced from is superseded.
+    /// The new document. The one it was produced from is untouched.
     public let document: Document
     /// What differs between the two.
     public let delta: Delta

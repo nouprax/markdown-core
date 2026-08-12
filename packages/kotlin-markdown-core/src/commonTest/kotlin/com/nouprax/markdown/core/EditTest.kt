@@ -197,10 +197,20 @@ class EditTest {
     }
 
     @Test
-    fun anEditedOrClosedDocumentRefusesASecondEdit() {
-        val edited = Document("One\n")
-        edited.edit("Two\n").document.close()
-        assertFailsWith<IllegalStateException> { edited.edit("Three\n") }
+    fun aDocumentMayBeEditedTwiceAndOnlyAClosedOneRefuses() {
+        // An edit READS its receiver, so the receiver survives it. Editing
+        // one document twice gives two lines of descent: same predecessor,
+        // same starting identities, different revisions.
+        val base = Document("One\n")
+        val first = base.edit("Two\n")
+        val second = base.edit("Three\n")
+        assertEquals("Two", assertIs<Text>(assertIs<Paragraph>(first.document.content[0]).content[0]).literal)
+        assertEquals("Three", assertIs<Text>(assertIs<Paragraph>(second.document.content[0]).content[0]).literal)
+        assertTrue(first.document.revision != second.document.revision)
+        assertTrue(first.document.revision > base.revision && second.document.revision > base.revision)
+        first.document.close()
+        second.document.close()
+        base.close()
 
         val closed = Document("One\n")
         closed.close()

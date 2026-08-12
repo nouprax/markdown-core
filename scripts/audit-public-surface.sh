@@ -97,11 +97,11 @@ document_surface=$(grep -R -h -o -E \
     packages/swift-markdown-core/Sources/MarkdownCore/Document.swift \
     packages/swift-markdown-core/Sources/MarkdownCore/Commit.swift \
     packages/swift-markdown-core/Sources/MarkdownCore/Diagnostic.swift | sed -E 's/[[:space:]]+$//' | sort -u)
-expected_document_surface='public consuming func edit(_ markdown: String) throws -> Commit
-public enum DiagnosticCode: Int32, Sendable, Hashable
+expected_document_surface='public enum DiagnosticCode: Int32, Sendable, Hashable
 public enum ParseErrorCode: Int32, Sendable
 public final class Document: Markup, @unchecked Sendable
 public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
+public func edit(_ markdown: String) throws -> Commit
 public func hash(into hasher: inout Hasher)
 public func node(_ id: MarkupID) -> (any Markup)?
 public init(

@@ -97,32 +97,6 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
     return parser;
 }
 
-markdown_core_parser *markdown_core_document_acquire_parser(
-    markdown_core_document *document,
-    markdown_core_error **error
-) {
-    markdown_core_parser *parser = document->warm_parser;
-    if (parser) {
-        document->warm_parser = NULL;
-        return parser;
-    }
-    return markdown_core_document_new_parser(document, error);
-}
-
-void markdown_core_document_release_parser(markdown_core_document *document, markdown_core_parser *parser) {
-    if (!parser) {
-        return;
-    }
-    if (!parser->oom && !parser->internal_error && !document->warm_parser) {
-        markdown_core_parser_renew(parser);
-        if (!parser->oom && !parser->internal_error) {
-            document->warm_parser = parser;
-            return;
-        }
-    }
-    markdown_core_parser_free(parser);
-}
-
 void markdown_core_document_resolve_definition_owners(markdown_core_map *map) {
     markdown_core_map_entry *entry;
     for (entry = map->refs; entry; entry = entry->next) {
@@ -166,7 +140,7 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
     int last_line_length;
     size_t s;
 
-    parser = markdown_core_document_acquire_parser(document, error);
+    parser = markdown_core_document_new_parser(document, error);
     if (!parser) {
         return false;
     }
@@ -230,7 +204,7 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
             document->diagnostic_count = parser->diagnostic_count;
         }
     }
-    markdown_core_document_release_parser(document, parser);
+    markdown_core_parser_free(parser);
     for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
         // The sink's context is this call's stack frame; the maps outlive it.
         // Both are present: a parse that lost one is poisoned and returns no
@@ -316,59 +290,70 @@ static bool document_set_text(markdown_core_document *doc, markdown_core_string 
     return true;
 }
 
-/* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
+/* THE SERIES CLOCK. One cell per series, shared by every document in it and
+ * released with the last of them.
  *
- *     new   = Document(markdown, options)
- *     delta = diff(prev, new)
+ * It exists because two successors of ONE predecessor must not share a
+ * revision: a node that each of them changed differently would otherwise
+ * carry one (id, revision) with two contents, which the contract says cannot
+ * happen. Copying `prev->revision + 1` into both gives them the same number;
+ * a moment from the host clock gives them different numbers ALMOST always,
+ * and almost is not a contract -- the concurrency runner caught two threads
+ * inside one microsecond on its first run under a sanitizer. So the number
+ * comes from a counter they share and advance atomically.
  *
- * That is the whole of a commit. There is no incremental path, no pending
- * edit, no reuse of the previous tree: the previous document is INPUT to the
- * diff and nothing else, and it is untouched by this call. */
-static markdown_core_document *document_build(
-    const markdown_core_parse_options *options,
-    markdown_core_string markdown,
-    const markdown_core_document *prev,
-    markdown_core_mem *mem,
-    bool pooled,
-    markdown_core_delta **changes_out,
-    markdown_core_error **error
-) {
-    markdown_core_document *doc;
-    markdown_core_delta *changes = NULL;
+ * The atomics are compiler builtins, not <stdatomic.h>: this engine is built
+ * as C99 on four toolchains, and MSVC's C11 atomics are not there yet. */
+#if defined(_MSC_VER)
+#include <intrin.h>
+static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
+    return (uint64_t)_InterlockedExchangeAdd64((volatile long long *)slot, (long long)amount);
+}
+static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+    return (uint32_t)_InterlockedExchangeAdd((volatile long *)slot, (long)amount);
+}
+#elif defined(__GNUC__) || defined(__clang__)
+static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
+    return __atomic_fetch_add(slot, amount, __ATOMIC_SEQ_CST);
+}
+static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+    return __atomic_fetch_add(slot, amount, __ATOMIC_SEQ_CST);
+}
+#else
+/* No builtins: single-threaded targets only, where the plain read-modify-write
+ * is already indivisible with respect to anything that could observe it. */
+static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
+    uint64_t previous = *slot;
+    *slot = previous + amount;
+    return previous;
+}
+static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+    uint32_t previous = *slot;
+    *slot = (uint32_t)((int32_t)previous + amount);
+    return previous;
+}
+#endif
 
-    doc = markdown_core_document_alloc(options, mem, pooled, error);
-    if (!doc) {
-        return NULL;
+static markdown_core_series_clock *series_clock_new(void) {
+    markdown_core_series_clock *clock = (markdown_core_series_clock *)calloc(1, sizeof(*clock));
+    if (clock) {
+        clock->next_revision = 1;
+        clock->refcount = 1;
     }
-    if (prev) {
-        doc->series = prev->series;
-        doc->next_id = prev->next_id;
-        doc->revision = prev->revision + 1;
+    return clock;
+}
+
+static markdown_core_series_clock *series_clock_retain(markdown_core_series_clock *clock) {
+    if (clock) {
+        series_fetch_add32(&clock->refcount, 1);
     }
-    if (markdown.length && !document_set_text(doc, markdown, error)) {
-        markdown_core_document_free(doc);
-        return NULL;
+    return clock;
+}
+
+static void series_clock_release(markdown_core_series_clock *clock) {
+    if (clock && series_fetch_add32(&clock->refcount, -1) == 1) {
+        free(clock);
     }
-    if (changes_out) {
-        changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
-        if (!changes) {
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
-            markdown_core_document_free(doc);
-            return NULL;
-        }
-        changes->series = doc->series;
-        changes->before = prev ? prev->revision : 0;
-        changes->after = doc->revision;
-    }
-    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, changes, error)) {
-        markdown_core_delta_free(changes);
-        markdown_core_document_free(doc);
-        return NULL;
-    }
-    if (changes_out) {
-        *changes_out = changes;
-    }
-    return doc;
 }
 
 // One 64-bit read from the host CSPRNG. Documents stay free of any library-
@@ -402,6 +387,66 @@ static bool document_host_entropy(uint64_t *value) {
 }
 
 // --- public API -------------------------------------------------------------
+
+/* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
+ *
+ *     new   = Document(markdown, options)
+ *     delta = diff(prev, new)
+ *
+ * That is the whole of a commit. There is no incremental path, no pending
+ * edit, no reuse of the previous tree: the previous document is INPUT to the
+ * diff and nothing else, and it is untouched by this call. */
+static markdown_core_document *document_build(
+    const markdown_core_parse_options *options,
+    markdown_core_string markdown,
+    const markdown_core_document *prev,
+    markdown_core_mem *mem,
+    bool pooled,
+    markdown_core_delta **changes_out,
+    markdown_core_error **error
+) {
+    markdown_core_document *doc;
+    markdown_core_delta *changes = NULL;
+
+    doc = markdown_core_document_alloc(options, mem, pooled, error);
+    if (!doc) {
+        return NULL;
+    }
+    if (prev) {
+        doc->series = prev->series;
+        doc->next_id = prev->next_id;
+        // The series' own counter, advanced once per successor: no two
+        // successors of one predecessor can come away with the same number,
+        // however they are scheduled.
+        series_clock_release(doc->clock);
+        doc->clock = series_clock_retain(prev->clock);
+        doc->revision = doc->clock ? series_fetch_add(&doc->clock->next_revision, 1) : prev->revision + 1;
+    }
+    if (markdown.length && !document_set_text(doc, markdown, error)) {
+        markdown_core_document_free(doc);
+        return NULL;
+    }
+    if (changes_out) {
+        changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
+        if (!changes) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
+            markdown_core_document_free(doc);
+            return NULL;
+        }
+        changes->series = doc->series;
+        changes->before = prev ? prev->revision : 0;
+        changes->after = doc->revision;
+    }
+    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, changes, error)) {
+        markdown_core_delta_free(changes);
+        markdown_core_document_free(doc);
+        return NULL;
+    }
+    if (changes_out) {
+        *changes_out = changes;
+    }
+    return doc;
+}
 
 /* Allocates a document and its empty source. No parse; document_build does
  * that once, with the text in hand. */
@@ -466,6 +511,7 @@ static markdown_core_document *markdown_core_document_alloc(
     }
     document->next_id = 1;
     document->revision = 0;
+    document->clock = series_clock_new();
 
     // The address/time/clock mix alone is deterministic for the first
     // document of lockstep-started isolated runtimes (one WASM instance per
@@ -501,11 +547,9 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (document->root) {
         markdown_core_node_free(document->root);
     }
+    series_clock_release(document->clock);
     markdown_core_source_release(document->source);
     release_definition_tables(document->mem, document->definitions);
-    if (document->warm_parser) {
-        markdown_core_parser_free(document->warm_parser);
-    }
     free(document);
 }
 
@@ -550,12 +594,11 @@ markdown_core_document *markdown_core_document_new(
  * released here and `*document` cleared on every path — so a caller cannot
  * hold both. */
 bool markdown_core_document_edit(
-    markdown_core_document **document,
+    const markdown_core_document *document,
     markdown_core_string markdown,
     markdown_core_commit *out,
     markdown_core_error **error
 ) {
-    markdown_core_document *old;
     markdown_core_document *nw;
     markdown_core_delta *delta = NULL;
 
@@ -564,7 +607,7 @@ bool markdown_core_document_edit(
         out->document = NULL;
         out->delta = NULL;
     }
-    if (!document || !*document) {
+    if (!document) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
         return false;
     }
@@ -576,31 +619,23 @@ bool markdown_core_document_edit(
         );
         return false;
     }
-    old = *document;
-    // The successor gets its OWN allocator. `old->mem` is the arena's own
-    // face when the predecessor is pooled, and releasing the predecessor
-    // releases that arena — so building into it and then releasing would free
-    // the document this call returns.
+    // The receiver is READ, never taken: it is the diff's input and nothing
+    // else, it keeps every byte it owns, and the caller frees it when the
+    // caller is done with it. That is what lets a document be shared across
+    // threads without a lock and edited more than once — two successors of
+    // one predecessor are two lines of descent, told apart by their moments.
     nw = document_build(
-        &old->options,
+        &document->options,
         markdown,
-        old,
+        document,
         markdown_core_mem_default(),
-        old->arena != NULL,
+        document->arena != NULL,
         out ? &delta : NULL,
         error
     );
     if (!nw) {
-        // "Cleared on every path" is the contract, and a failed build is one
-        // of those paths: every binding has already relinquished ownership by
-        // the time this returns, so leaving the predecessor addressable here
-        // leaks it with nobody left able to free it.
-        markdown_core_document_free(old);
-        *document = NULL;
         return false;
     }
-    markdown_core_document_free(old);
-    *document = NULL;
     if (out) {
         out->document = nw;
         out->delta = delta;

@@ -218,10 +218,21 @@ test("edits: a superseded document keeps answering from its own values", () => {
     assert.equal(flatten(first).length, 5);
 });
 
-test("edits: an edited or closed document refuses a second edit", () => {
-    const edited = Document("One\n");
-    edited.edit("Two\n").document.close();
-    assert.throws(() => edited.edit("Three\n"), /released/);
+test("edits: a document may be edited twice, and only a closed one refuses", () => {
+    // An edit READS its receiver, so the receiver survives it. Editing one
+    // document twice gives two lines of descent: same predecessor, same
+    // starting identities, different revisions.
+    const base = Document("One\n");
+    const first = base.edit("Two\n");
+    const second = base.edit("Three\n");
+    assert.equal(first.document.content[0].content[0].literal, "Two");
+    assert.equal(second.document.content[0].content[0].literal, "Three");
+    assert.notEqual(first.document.revision, second.document.revision);
+    assert.ok(first.document.revision > base.revision);
+    assert.ok(second.document.revision > base.revision);
+    first.document.close();
+    second.document.close();
+    base.close();
 
     const closed = Document("One\n");
     closed.close();

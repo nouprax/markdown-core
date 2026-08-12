@@ -168,12 +168,6 @@ void markdown_core_parser_record_diagnostic(
     int end_column
 );
 
-/** Returns a parser whose parse ended (root handed off or freed) to its
- * post-construction state for another parse, keeping the line buffers'
- * capacity, an attached (empty) reference map, and the extension
- * attachments. Allocation failure poisons the parser like a failed reset. */
-void markdown_core_parser_renew(markdown_core_parser *parser);
-
 /** Applies the core list-item continuation rule to the current line.
  * Extension-owned list items use this to stay in lockstep with plain list
  * items. */

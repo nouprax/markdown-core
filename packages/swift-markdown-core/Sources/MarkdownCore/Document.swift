@@ -121,11 +121,6 @@ public final class Document: Markup, @unchecked Sendable {
     /// Every node of this document by identity, so an answer addressed by
     /// `MarkupID` can hand back the node value rather than the bare id.
     private let index: [UInt64: any Markup]
-    /// Set when `edit(_:)` has handed the native document to its successor.
-    /// The successor frees it; this one must not, and must not be read
-    /// through either.
-    private var superseded = false
-
     /// Parses `markdown` and returns a self-contained document; throws
     /// `ParseError` when the engine rejects the input or cannot allocate.
     public init(_ markdown: String, options: ParseOptions = .init()) throws {
@@ -172,36 +167,28 @@ public final class Document: Markup, @unchecked Sendable {
     }
 
     deinit {
-        if !superseded {
-            markdown_core_document_free(handle)
-        }
+        markdown_core_document_free(handle)
     }
 
     /// Hands this document new text and returns the document that text
     /// describes, together with what changed.
     ///
-    /// SUPERSEDES the receiver. The native parse moves to the successor, so
-    /// this document must not be edited again; its already-extracted node
-    /// values stay valid forever, because they are values.
+    /// Reads the receiver and takes nothing from it: this document stays
+    /// usable and may be edited again. Editing it twice gives two lines of
+    /// descent, told apart by their revisions — and, like nodes from two
+    /// separate parses, nodes from two lines are not comparable.
     ///
-    /// `consuming` states that in the type system for the common case. It
-    /// cannot state it for every case — this is a class, so a second
-    /// reference reaches the same instance — which is why a superseded
-    /// document also traps at runtime rather than trusting the annotation.
-    public consuming func edit(_ markdown: String) throws -> Commit {
-        precondition(!superseded, "document was superseded by an earlier edit")
-        var mutable: OpaquePointer? = handle
+    /// There is nothing to synchronize. Every stored property is a `let` and
+    /// the native document is only READ here, so concurrent callers cannot
+    /// race: what made this unsafe before was handing the native parse away.
+    public func edit(_ markdown: String) throws -> Commit {
         var out = markdown_core_commit()
         var nativeError: OpaquePointer?
         var source = markdown
         let succeeded = source.withUTF8 { buffer -> Bool in
             let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
-            return markdown_core_document_edit(&mutable, text, &out, &nativeError)
+            return markdown_core_document_edit(handle, text, &out, &nativeError)
         }
-        // The native edit clears the receiver on every path, success or not,
-        // so the native document is gone either way and this instance must
-        // stop owning it before anything else can throw.
-        superseded = true
         guard succeeded, let next = out.document else {
             defer { markdown_core_error_free(nativeError) }
             throw ParseError(from: nativeError)

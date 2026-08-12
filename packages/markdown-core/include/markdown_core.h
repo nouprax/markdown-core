@@ -438,16 +438,23 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
  * document that text describes, plus what changed. There is nothing pending to
  * commit, so the operation is an edit, not a commit.
  *
- * SUPERSEDES the receiver: `*document` is cleared on every path and must not
- * be used again. The caller owns `out->document` and `out->delta`. */
+ * READS the receiver and takes nothing: it keeps everything it owns, stays
+ * usable, and is freed by whoever holds it. Editing one document twice gives
+ * two lines of descent, distinguished by their revisions; nodes from two
+ * lines are not comparable, exactly as nodes from two documents are not. The
+ * caller owns `out->document` and `out->delta`. */
 MARKDOWN_CORE_API bool markdown_core_document_edit(
-    markdown_core_document **document,
+    const markdown_core_document *document,
     markdown_core_string markdown,
     markdown_core_commit *out,
     markdown_core_error **error
 );
 
-/** How many edits this document has survived; a fresh parse is zero. */
+/** The moment this document was produced, from the host's monotonic clock,
+ * and strictly greater than its predecessor's; a fresh parse is zero. It is
+ * not a count of edits: two successors of one document need different
+ * revisions, or a node each changed differently would carry one (id,
+ * revision) with two contents. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
 /** Per-series random salt; nodes from different parses never share identity

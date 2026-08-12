@@ -277,16 +277,14 @@ int er_replay_commit(er_replay *replay) {
     {
         markdown_core_commit out;
         memset(&out, 0, sizeof(out));
-        if (!markdown_core_document_edit(
-                &replay->document,
-                mc_sv(replay->shadow.bytes, replay->shadow.length),
-                &out,
-                &error
-            )) {
+        markdown_core_document *previous = replay->document;
+        if (!markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &out, &error)) {
+            markdown_core_document_free(previous);
             replay->document = NULL;
             markdown_core_error_free(error);
             return er_fail(replay, "commit failed");
         }
+        markdown_core_document_free(previous);
         replay->document = out.document;
         changes = out.delta;
     }
@@ -500,10 +498,12 @@ bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_
 
 bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error) {
     markdown_core_commit commit;
+    markdown_core_document *previous = doc->document;
     memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_edit(&doc->document, mc_sv(doc->text, doc->length), &commit, error)) {
+    if (!markdown_core_document_edit(previous, mc_sv(doc->text, doc->length), &commit, error)) {
         return false;
     }
+    markdown_core_document_free(previous);
     doc->document = commit.document;
     if (delta) {
         *delta = commit.delta;

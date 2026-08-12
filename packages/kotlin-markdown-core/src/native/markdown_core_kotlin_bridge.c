@@ -567,7 +567,7 @@ bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t le
     text.data = source;
     text.length = length;
     memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_edit(&document, text, &commit, &error)) {
+    if (!markdown_core_document_edit(document, text, &commit, &error)) {
         put_error(&buffer, error);
         return finish(&buffer, output, output_length);
     }

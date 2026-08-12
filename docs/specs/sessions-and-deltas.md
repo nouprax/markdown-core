@@ -38,11 +38,11 @@ the ONE entry point — the former one-shot parse and the former session open ar
 the same operation, and each call gets its own `DocumentDomain`, so identities
 from different calls never compare equal.
 
-**`commit` SUPERSEDES its receiver.** The document it was called on must not be
-queried, walked, or committed again; it may only be released. A consumer that
-wants a revision to outlive its commit takes a value copy, which is what the
-bindings already do. This is what lets the engine reuse the previous tree in
-place, and it is why nothing here promises a predecessor.
+**`commit` READS its receiver and takes nothing.** The document it was called
+on keeps everything it owns, stays queryable and walkable, and may be
+committed again; it is released by whoever holds it. Two commits from one
+receiver are two lines of descent, told apart by their revisions, and nodes
+from two lines are no more comparable than nodes from two documents.
 
 **`commit` takes text, not options.** Options are fixed when the document is
 created and are immutable for its whole series. A `DocumentDomain` therefore
@@ -132,7 +132,7 @@ The canonical entry point on Swift, Kotlin, and ES is `Document`:
 | Operation | Contract |
 | --- | --- |
 | `Document(markdown, options)` | options are immutable for the document's whole series |
-| `commit(markdown)` | returns `Commit { document, delta }` and SUPERSEDES the receiver |
+| `commit(markdown)` | returns `Commit { document, delta }`; the receiver is read, not taken |
 | `version` | this document's `DocumentVersion` |
 | `node(for:)` / `parent(of:)` / `index(of:)` | resolve an identity in this document |
 | `scope(of:profile:)` | resolve a stable extent to a `Scope` |

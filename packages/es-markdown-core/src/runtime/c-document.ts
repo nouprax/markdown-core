@@ -127,8 +127,9 @@ export class CDocument {
      * moment the call is made.
      */
     edit(source: string): { readonly document: CDocument; readonly delta: number } {
+        // The native edit reads this document and takes nothing: the handle
+        // stays this object's, and `close` is what releases it.
         const owned = this.requirePointer();
-        this.pointer = 0;
         const scratch = decoder.scratchPointer;
         const commit = withSource(source, (bytes, length) => {
             const view = decoder.dataView();

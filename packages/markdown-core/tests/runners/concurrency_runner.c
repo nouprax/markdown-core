@@ -482,11 +482,14 @@ static int document_stream_once(
     for (offset = 0; offset < length; offset++) {
         markdown_core_commit out;
         memset(&out, 0, sizeof(out));
-        if (!markdown_core_document_edit(document_ref, mc_sv(input, offset + 1), &out, &error)) {
+        markdown_core_document *previous = *document_ref;
+        if (!markdown_core_document_edit(previous, mc_sv(input, offset + 1), &out, &error)) {
+            markdown_core_document_free(previous);
             *document_ref = NULL;
             markdown_core_error_free(error);
             return 1;
         }
+        markdown_core_document_free(previous);
         *document_ref = out.document;
         markdown_core_delta_free(out.delta);
     }
@@ -601,6 +604,124 @@ static THREAD_RETURN document_reader_main(void *argument) {
         markdown_core_dump_free(dump);
     }
     return THREAD_RESULT;
+}
+
+/* SHARED RECEIVER. An edit reads its document and takes nothing from it, so
+ * one document can be edited by several threads at once. What every thread
+ * must get back is the SAME DIFF -- the same set of changes over the same
+ * content -- because the change set is a function of (old content, new
+ * content) and of nothing else. The revisions differ, and must: two
+ * successors of one predecessor are two lines of descent, and a node each of
+ * them changed differently would otherwise carry one (id, revision) with two
+ * contents.
+ *
+ * The receiver is never written here, which is the whole claim. TSan is what
+ * checks it. */
+typedef struct shared_edit_worker {
+    barrier *start;
+    const markdown_core_document *base;
+    const char *text;
+    uint8_t *dump;
+    size_t dump_length;
+    uint64_t revision;
+    size_t diff_count;
+    int failed;
+} shared_edit_worker;
+
+static THREAD_RETURN shared_edit_worker_main(void *argument) {
+    shared_edit_worker *worker = (shared_edit_worker *)argument;
+    markdown_core_commit out;
+    markdown_core_error *error = NULL;
+    const markdown_core_diff *rows = NULL;
+
+    memset(&out, 0, sizeof(out));
+    barrier_wait(worker->start);
+    if (!markdown_core_document_edit(worker->base, mc_sv(worker->text, strlen(worker->text)), &out, &error)) {
+        markdown_core_error_free(error);
+        worker->failed = 1;
+        return THREAD_RESULT;
+    }
+    worker->revision = markdown_core_document_revision(out.document);
+    worker->diff_count = markdown_core_delta_diffs(out.delta, &rows);
+    if (!markdown_core_document_dump(out.document, &worker->dump, &worker->dump_length, NULL)) {
+        worker->failed = 1;
+    }
+    markdown_core_delta_free(out.delta);
+    markdown_core_document_free(out.document);
+    return THREAD_RESULT;
+}
+
+static int case_shared_edit(void) {
+    static shared_edit_worker workers[THREAD_COUNT];
+    thread_handle handles[THREAD_COUNT];
+    barrier start;
+    markdown_core_error *error = NULL;
+    markdown_core_document *base = NULL;
+    static const char before[] = "# Title\n\nAlpha\n\nBravo\n";
+    static const char after[] = "# Title\n\nAlpha changed\n\nBravo\n";
+    int failures = 0;
+    int index;
+
+    base = markdown_core_document_new(mc_sv(before, sizeof(before) - 1), NULL, &error);
+    if (!base) {
+        fprintf(stderr, "shared_edit: base document failed to open\n");
+        markdown_core_error_free(error);
+        return 1;
+    }
+    barrier_init(&start, THREAD_COUNT);
+    for (index = 0; index < THREAD_COUNT; index++) {
+        memset(&workers[index], 0, sizeof(workers[index]));
+        workers[index].start = &start;
+        workers[index].base = base;
+        workers[index].text = after;
+        if (thread_spawn(&handles[index], shared_edit_worker_main, &workers[index])) {
+            fprintf(stderr, "shared_edit: failed to spawn thread %d\n", index);
+            markdown_core_document_free(base);
+            return 1;
+        }
+    }
+    for (index = 0; index < THREAD_COUNT; index++) {
+        thread_join(handles[index]);
+    }
+
+    for (index = 0; index < THREAD_COUNT; index++) {
+        if (workers[index].failed || !workers[index].dump) {
+            fprintf(stderr, "shared_edit: thread %d reported a violation\n", index);
+            failures += 1;
+            continue;
+        }
+        // Same text in, same tree and same change set out, on every thread.
+        if (workers[index].dump_length != workers[0].dump_length ||
+            memcmp(workers[index].dump, workers[0].dump, workers[index].dump_length) != 0) {
+            fprintf(stderr, "shared_edit: thread %d produced a different tree\n", index);
+            failures += 1;
+        }
+        if (workers[index].diff_count != workers[0].diff_count) {
+            fprintf(stderr, "shared_edit: thread %d produced a different change set\n", index);
+            failures += 1;
+        }
+        // And a revision of its own: no two successors may share one.
+        for (int other = 0; other < index; other++) {
+            if (workers[other].revision == workers[index].revision) {
+                fprintf(stderr, "shared_edit: threads %d and %d share a revision\n", other, index);
+                failures += 1;
+            }
+        }
+        if (workers[index].revision <= markdown_core_document_revision(base)) {
+            fprintf(stderr, "shared_edit: thread %d did not advance the revision\n", index);
+            failures += 1;
+        }
+    }
+    // The receiver survived every one of them.
+    if (markdown_core_document_root(base) == NULL) {
+        fprintf(stderr, "shared_edit: the shared receiver did not survive\n");
+        failures += 1;
+    }
+    for (index = 0; index < THREAD_COUNT; index++) {
+        markdown_core_dump_free(workers[index].dump);
+    }
+    markdown_core_document_free(base);
+    return failures;
 }
 
 static int case_documents(void) {
@@ -880,6 +1001,9 @@ int main(int argc, char **argv) {
     }
     if (strcmp(case_name, "documents") == 0) {
         return case_documents();
+    }
+    if (strcmp(case_name, "shared_edit") == 0) {
+        return case_shared_edit();
     }
     if (strcmp(case_name, "dump_small_stack") == 0) {
         return case_dump_small_stack();

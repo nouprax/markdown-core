@@ -198,6 +198,15 @@ typedef struct {
     ptrdiff_t delta;
 } markdown_core_edit_summary;
 
+/* One per series, shared by every document in it: see the note in
+ * document.c. Holds the revision counter that keeps two successors of one
+ * predecessor apart, and the reference count that ends it with the last
+ * document that came from it. */
+typedef struct markdown_core_series_clock {
+    volatile uint64_t next_revision;
+    volatile uint32_t refcount;
+} markdown_core_series_clock;
+
 struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
@@ -217,6 +226,7 @@ struct markdown_core_document {
     uint64_t next_id; // monotonic, starts at 1, never reused
     uint64_t series;
     uint64_t revision;
+    markdown_core_series_clock *clock;
     // The definition tables (see markdown_core_definition_table).
     markdown_core_definition_table definitions[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     // Persistent unit-id -> looked-up-labels tables backing per-unit re-runs
@@ -231,11 +241,6 @@ struct markdown_core_document {
     markdown_core_edit_summary pending;
     int total_lines;      // parser line count of the committed text
     int last_line_length; // parser's final-line length of the committed text
-    // One warm parser held between commits: staged parses are
-    // per-commit, but the parser shell (struct, line buffers, empty
-    // reference map, extension attachments) is commit-invariant, so
-    // commits skip rebuilding it. NULL when no healthy parser came back.
-    markdown_core_parser *warm_parser;
     // When pooled, every document-owned allocation flows through this arena
     // (document->mem is its allocator face) and teardown is a wholesale
     // release. NULL for unpooled documents: the one-shot parse (its detached
@@ -302,16 +307,11 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
 
 /** Takes the document's warm parser when one is held, else creates one like
  * markdown_core_document_new_parser. Defined in document.c. */
-markdown_core_parser *markdown_core_document_acquire_parser(
-    markdown_core_document *document,
-    markdown_core_error **error
-);
 
 /** Hands a parser back after its parse ended: a healthy one is renewed and
  * held warm for the next commit, a poisoned one (or a second hand-back) is
  * freed. The parser's definition maps must be its own or NULL — never the
  * document's. Defined in document.c. */
-void markdown_core_document_release_parser(markdown_core_document *document, markdown_core_parser *parser);
 
 /** Rewrites every definition owner stamped as a node pointer during the
  * just-adopted parse to that node's document id (owner 0 stays 0: the region

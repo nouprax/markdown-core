@@ -61,11 +61,18 @@ static inline bool mc_edit(
     markdown_core_error **error
 ) {
     markdown_core_commit out;
+    markdown_core_document *previous = *document;
     memset(&out, 0, sizeof(out));
-    if (!markdown_core_document_edit(document, markdown, &out, error)) {
+    // The engine reads the receiver and takes nothing; this helper keeps the
+    // replace-in-place shape every test was written against by doing the
+    // release itself. A test that wants two lines of descent calls the
+    // engine directly.
+    if (!markdown_core_document_edit(previous, markdown, &out, error)) {
+        markdown_core_document_free(previous);
         *document = NULL;
         return false;
     }
+    markdown_core_document_free(previous);
     *document = out.document;
     if (delta) {
         *delta = out.delta;

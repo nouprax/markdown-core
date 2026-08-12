@@ -205,6 +205,11 @@ markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --
 # with per-byte commits must never interfere, and one document's document
 # must support concurrent read-only access between mutating calls.
 markdown_core_add_test(facade_concurrent_documents facade 600 concurrency_runner --case documents)
+# One document, every thread editing it at once with the SAME text: the change
+# set is a function of content, so every thread must come back with the same
+# tree and the same diff -- and with a revision of its own, because two
+# successors of one predecessor are two lines of descent.
+markdown_core_add_test(facade_concurrent_shared_edit facade 600 concurrency_runner --case shared_edit)
 
 # regression: registry lifecycle stays immutable across parse/free cycles
 # and facade failure paths.

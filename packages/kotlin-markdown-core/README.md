@@ -127,9 +127,12 @@ commit.document.use { next ->
 }
 ```
 
-`edit` SUPERSEDES the receiver: the native parse moves to the successor, so the
-document it was called on must not be edited again. Its already-extracted
-values stay valid forever, because they are values.
+`edit` READS the receiver and takes nothing: the document it was called on
+keeps everything it owns, stays usable, and may be edited again. Editing one
+document twice gives two lines of descent, told apart by their revisions —
+and, like nodes from two separate parses, nodes from two lines are not
+comparable. Release a document when you are done with it; its
+already-extracted values stay valid forever, because they are values.
 
 ### Most applications never read the delta
 
