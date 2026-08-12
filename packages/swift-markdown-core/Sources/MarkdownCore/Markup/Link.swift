@@ -19,7 +19,11 @@ public struct Link: Markup {
     /// Not optional: an inline link always writes its `(…)`, so there is no
     /// unwritten case to distinguish. `[a]()` and `[a](<>)` both give `""`.
     public let destination: String
-    /// The optional link title.
+    /// The title in quotes after the destination.
+    ///
+    /// Nil when none is written, the empty string when one is written empty:
+    /// `[a](/u)` gives nil and `[a](/u "")` gives `""`. An autolink writes no
+    /// title, so it gives nil like any other link.
     public let title: String?
     /// The link's inline caption content in source order.
     public let content: [any Markup]

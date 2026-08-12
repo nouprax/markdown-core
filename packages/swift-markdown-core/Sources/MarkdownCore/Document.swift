@@ -66,8 +66,12 @@ public enum ParseErrorCode: Int32, Sendable {
     case `internal` = 3
 }
 
-/// A native parse or edit failure, carrying the engine's message and,
-/// when the input position is known, the failing scope.
+/// A native parse or edit failure: a category and the engine's message.
+///
+/// No scope. These are the parse failing to RUN, never a verdict on the
+/// Markdown, so none of them is attributable to an extent of the input. The
+/// failure that is — a directive's `{…}` that did not parse — is a
+/// ``Diagnostic``, whose scope is not optional.
 public struct ParseError: Error, Sendable, CustomStringConvertible {
     /// The failure category.
     public let code: ParseErrorCode

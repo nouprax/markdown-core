@@ -20,8 +20,9 @@ public class Link internal constructor(
     /** The title in quotes after the destination, its quotes dropped and the
      * same unescaping applied.
      *
-     * Null when none is written, with one exception worth guarding against:
-     * a `<…>` autolink reports the empty string. */
+     * Null when none is written, the empty string when one is written empty:
+     * `[a](/u)` gives null and `[a](/u "")` gives `""`. An autolink writes no
+     * title, so it gives null like any other link. */
     public val title: String?,
     /** The link's inline caption content in source order. */
     public val content: kotlin.collections.List<Markup>,

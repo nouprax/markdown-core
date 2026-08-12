@@ -17,8 +17,9 @@ export interface Link extends MarkupBase<"link"> {
     readonly destination: string;
     /** The title in quotes after the destination, unescaped the same way.
      *
-     * Null when none is written, with one exception worth guarding against: a
-     * `<…>` autolink reports the empty string rather than null. */
+     * Null when none is written, the empty string when one is written empty:
+     * `[a](/u)` gives null and `[a](/u "")` gives `""`. An autolink writes no
+     * title, so it gives null like any other link. */
     readonly title: string | null;
     /** The link's inline caption content in source order. */
     readonly content: readonly Markup[];

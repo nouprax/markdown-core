@@ -9,8 +9,10 @@ package com.nouprax.markdown.core
 public enum class ReferenceForm {
     /** `[text][label]`. */
     FULL,
+
     /** `[label][]`. */
     COLLAPSED,
+
     /** `[label]`. */
     SHORTCUT,
 }
