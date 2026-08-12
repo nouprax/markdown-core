@@ -1,7 +1,9 @@
 import Foundation
 import MarkdownCoreC
 
-/// The feature switches for one parse or session, fixed for its lifetime.
+/// The feature switches for one document and every document its edits
+/// produce, fixed when the first one is parsed.
+///
 /// Every option defaults to `true`.
 public struct ParseOptions: Sendable, Hashable {
     /// Replaces straight quotes, dashes, and ellipses with typographic forms.
@@ -10,16 +12,21 @@ public struct ParseOptions: Sendable, Hashable {
     public let footnotes: Bool
     /// Parses pipe tables.
     public let tables: Bool
-    /// Parses `~~strikethrough~~` spans.
+    /// Parses `~struck~` and `~~struck~~`; the closer must match the
+    /// opener's tilde count.
     public let strikethrough: Bool
     /// Recognizes bare URLs and email addresses as links.
+    ///
+    /// `<https://x>` is CommonMark's own autolink and is not gated here.
     public let autolinks: Bool
     /// Parses `[ ]`/`[x]` task-list item markers.
     public let taskLists: Bool
     /// Parses formula spans and blocks, including dollar and LaTeX delimiters
     /// and `formula` fenced blocks.
     public let formulas: Bool
-    /// Parses inline and container directives.
+    /// Parses the directive grammar: `:name` inline, `::name` leaf and
+    /// `:::name` container at the head of a line, each with its `[label]`
+    /// and `{attributes}`.
     public let directives: Bool
     /// Parses cross-links written as `[[reference]]`.
     public let crossLinks: Bool
@@ -52,22 +59,20 @@ public struct ParseOptions: Sendable, Hashable {
     }
 }
 
-/// The category of a native parse or session failure.
+/// The category of a native parse or edit failure.
 public enum ParseErrorCode: Int32, Sendable {
     case invalidArgument = 1
     case allocationFailed = 2
     case `internal` = 3
 }
 
-/// A native parse or session failure, carrying the engine's message and,
+/// A native parse or edit failure, carrying the engine's message and,
 /// when the input position is known, the failing scope.
 public struct ParseError: Error, Sendable, CustomStringConvertible {
     /// The failure category.
     public let code: ParseErrorCode
     /// The engine's actionable description of the failure.
     public let message: String
-    /// The failing input extent, when the engine could attribute one.
-    public let scope: Scope?
 
     /// The engine's message, so string interpolation prints it directly.
     public var description: String { message }
@@ -75,7 +80,7 @@ public struct ParseError: Error, Sendable, CustomStringConvertible {
 
 extension ParseError: LocalizedError {
     /// The native parser's actionable message — the same text as
-    /// `description` — so Foundation error presentation (alerts, logs,
+    /// ``description`` — so Foundation error presentation (alerts, logs,
     /// `NSError` bridging) never degrades to a bare domain and code.
     public var errorDescription: String? { message }
 }
@@ -91,24 +96,25 @@ extension ParseError: LocalizedError {
 /// There is no session type. A document is created from text and options;
 /// editing hands it new text and returns the next document with the delta
 /// between them. Options are fixed for a document's whole series — changing
-/// what the parser means is a new `Document`, not an edit, and there is no
+/// what the parser means is a new ``Document``, not an edit, and there is no
 /// delta to be had across it.
 ///
 /// The node values are ordinary Swift values with no reference back here:
 /// hold them, copy them, put them in a view model. What this class owns is
-/// the native parse, which `edit(_:)` needs in order to keep identities
+/// the native parse, which ``edit(_:)`` needs in order to keep identities
 /// stable across revisions.
 public final class Document: Markup, @unchecked Sendable {
-    /// The node's identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The revision at which this document's content last changed.
+    /// The commit revision at which this document's content last changed.
     public let revision: UInt64
     /// The document's absolute source extent: the whole text.
     public let scope: Scope
     /// The document's top-level blocks in source order.
     public let content: [any Markup]
-    /// Everything an editor should underline, in source order. Empty for
-    /// almost every document; see `DiagnosticCode`.
+    /// Everything an editor should underline, in source order.
+    ///
+    /// Empty for almost every document; see ``DiagnosticCode``.
     public let diagnostics: [Diagnostic]
     /// The options this document and its whole series were parsed under.
     public let options: ParseOptions
@@ -119,10 +125,10 @@ public final class Document: Markup, @unchecked Sendable {
 
     let handle: OpaquePointer
     /// Every node of this document by identity, so an answer addressed by
-    /// `MarkupID` can hand back the node value rather than the bare id.
+    /// ``MarkupID`` can hand back the node value rather than the bare id.
     private let index: [UInt64: any Markup]
     /// Parses `markdown` and returns a self-contained document; throws
-    /// `ParseError` when the engine rejects the input or cannot allocate.
+    /// ``ParseError`` when the engine rejects the input or cannot allocate.
     public init(_ markdown: String, options: ParseOptions = .init()) throws {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?
@@ -140,7 +146,7 @@ public final class Document: Markup, @unchecked Sendable {
         let series = markdown_core_document_series(handle)
         guard let root = markdown_core_document_root(handle) else {
             markdown_core_document_free(handle)
-            throw ParseError(code: .internal, message: "parse produced no document root", scope: nil)
+            throw ParseError(code: .internal, message: "parse produced no document root")
         }
         id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
@@ -156,7 +162,7 @@ public final class Document: Markup, @unchecked Sendable {
         let series = markdown_core_document_series(handle)
         guard let root = markdown_core_document_root(handle) else {
             markdown_core_document_free(handle)
-            throw ParseError(code: .internal, message: "edit produced no document root", scope: nil)
+            throw ParseError(code: .internal, message: "edit produced no document root")
         }
         id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
@@ -204,9 +210,11 @@ public final class Document: Markup, @unchecked Sendable {
     }
 
     /// This document's node for `id`, or nil when no node has that identity
-    /// here. Passing an identity from another parse is nil, not a trap: a
-    /// caller holding an id from a superseded revision is asking exactly
-    /// this question.
+    /// here.
+    ///
+    /// Passing an identity from another parse is nil, not a trap: a caller
+    /// holding an id from a superseded revision is asking exactly this
+    /// question.
     public func node(_ id: MarkupID) -> (any Markup)? {
         guard id.series == self.id.series else { return nil }
         // The root answers for itself. It is a `Markup` like any other and a
@@ -219,8 +227,8 @@ public final class Document: Markup, @unchecked Sendable {
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
-    /// Two documents are equal exactly when they share `id` and `revision`,
-    /// the same rule every other `Markup` node follows.
+    /// Two documents are equal exactly when they share ``id`` and ``revision``,
+    /// the same rule every other ``Markup`` node follows.
     public static func == (lhs: Document, rhs: Document) -> Bool {
         lhs.id == rhs.id && lhs.revision == rhs.revision
     }
@@ -310,9 +318,11 @@ extension ParseOptions {
     }
 }
 
-/// Builds one platform value from one native node. `children` hands back the
-/// values already built for that node's children, which is what lets the
-/// build run bottom-up over an explicit stack instead of down the call stack.
+/// Builds one platform value from one native node.
+///
+/// `children` hands back the values already built for that node's children,
+/// which is what lets the build run bottom-up over an explicit stack instead
+/// of down the call stack.
 struct MarkupBuilder {
     let series: UInt64
     let children: (OpaquePointer) -> [any Markup]

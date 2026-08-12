@@ -467,10 +467,9 @@ public final class com/nouprax/markdown/core/ParseErrorCode : java/lang/Enum {
 }
 
 public final class com/nouprax/markdown/core/ParseException : java/lang/RuntimeException {
-	public fun <init> (Lcom/nouprax/markdown/core/ParseErrorCode;Ljava/lang/String;Lcom/nouprax/markdown/core/Scope;)V
+	public fun <init> (Lcom/nouprax/markdown/core/ParseErrorCode;Ljava/lang/String;)V
 	public final fun getCode ()Lcom/nouprax/markdown/core/ParseErrorCode;
 	public fun getMessage ()Ljava/lang/String;
-	public final fun getScope ()Lcom/nouprax/markdown/core/Scope;
 }
 
 public final class com/nouprax/markdown/core/ParseOptions {

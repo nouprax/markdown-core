@@ -102,26 +102,7 @@ export class NodeDecoder {
         if (!error) return new ParseError("internal", "markdown parsing failed");
         const code = errorCode(this.native.es_error_code(error));
         const message = this.readString(error, stringField.errorMessage) ?? "markdown parsing failed";
-        return new ParseError(code, message, this.errorScope(error));
-    }
-
-    /** The native error's absolute scope; null when the error carries none.
-     * (No engine path emits a scoped error today, so this stays null at
-     * runtime — parity plumbing with the Swift and Kotlin bridges.) */
-    private errorScope(error: number): Scope | null {
-        this.requireLive();
-        if (!this.native.es_error_scope(error, this.scratch)) return null;
-        const view = this.dataView();
-        return {
-            start: {
-                line: view.getInt32(this.scratch, true),
-                column: view.getInt32(this.scratch + 4, true)
-            },
-            end: {
-                line: view.getInt32(this.scratch + 8, true),
-                column: view.getInt32(this.scratch + 12, true)
-            }
-        };
+        return new ParseError(code, message);
     }
 
     toSafeNumber(value: bigint, field: string): number {
@@ -313,7 +294,7 @@ export class NodeDecoder {
                     id,
                     revision,
                     scope,
-                    destination: this.readString(node, stringField.linkDestination),
+                    destination: this.requiredString(node, stringField.linkDestination),
                     title: this.readString(node, stringField.linkTitle),
                     content: children
                 };
@@ -323,7 +304,7 @@ export class NodeDecoder {
                     id,
                     revision,
                     scope,
-                    source: this.readString(node, stringField.imageSource),
+                    source: this.requiredString(node, stringField.imageSource),
                     title: this.readString(node, stringField.imageTitle),
                     content: children
                 };
@@ -361,7 +342,7 @@ export class NodeDecoder {
                     revision,
                     scope,
                     label: this.requiredString(node, stringField.definitionLabel),
-                    destination: this.readString(node, stringField.definitionDestination),
+                    destination: this.requiredString(node, stringField.definitionDestination),
                     title: this.readString(node, stringField.definitionTitle)
                 };
             case "linkReference":

@@ -330,5 +330,9 @@ attestation, and post-publication verification. Release notes start from
 
 ## License
 
-Markdown Core preserves all applicable upstream copyright and license notices.
-See [LICENSE](LICENSE), [COPYING](COPYING), and [UPSTREAM.md](UPSTREAM.md).
+Markdown Core's own work is MIT. The cmark-derived engine it inherits remains
+BSD-2-Clause and the bundled CommonMark specification text remains CC-BY-SA
+4.0, so the combined work is `MIT AND BSD-2-Clause`. Every upstream copyright
+and license notice is preserved in [LICENSE](LICENSE); [COPYING](COPYING) is
+the same file under cmark's traditional name. [UPSTREAM.md](UPSTREAM.md)
+records the exact baseline this project forked from.

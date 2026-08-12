@@ -1,5 +1,12 @@
 package com.nouprax.markdown.core
 
+/**
+ * A hard line break, written as two or more trailing spaces or as a trailing
+ * backslash.
+ *
+ * It renders as an explicit new line, where a [SoftBreak] renders as
+ * collapsible whitespace.
+ */
 public class LineBreak internal constructor(
     override val id: MarkupID,
     override val revision: ULong,

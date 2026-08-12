@@ -18,11 +18,14 @@
 #include <node.h>
 #include <parser.h>
 
+/* No scope. An error here is the parse failing to RUN — a rejected argument,
+ * a failed allocation, a broken invariant — and none of those is attributable
+ * to an extent of the input. What IS attributable, a directive's `{...}` that
+ * did not parse, is a markdown_core_diagnostic and carries a scope that is
+ * not optional. */
 struct markdown_core_error {
     markdown_core_error_code code;
     char *message;
-    bool has_scope;
-    markdown_core_scope scope;
 };
 
 typedef struct dump_buffer {
@@ -117,14 +120,6 @@ markdown_core_string markdown_core_error_get_message(const markdown_core_error *
         view.length = strlen(error->message);
     }
     return view;
-}
-
-bool markdown_core_error_get_scope(const markdown_core_error *error, markdown_core_scope *scope) {
-    if (!error || !error->has_scope || !scope) {
-        return false;
-    }
-    *scope = error->scope;
-    return true;
 }
 
 void markdown_core_error_free(markdown_core_error *error) {

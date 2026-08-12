@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A run of literal inline text.
 public struct Text: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -26,6 +26,6 @@ extension Text {
         let track = builder.track(of: node)
         var literal = markdown_core_string()
         markdown_core_node_literal(node, &literal)
-        self.init(id: track.id, revision: track.revision, scope: track.scope, literal: literal.requiredString)
+        self.init(id: track.id, revision: track.revision, scope: track.scope, literal: literal.string)
     }
 }

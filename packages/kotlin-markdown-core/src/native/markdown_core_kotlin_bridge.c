@@ -130,8 +130,6 @@ static void put_magic(bridge_buffer *buffer) {
 
 /* Consumes (frees) the error. */
 static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
-    markdown_core_scope scope;
-    bool has_scope = error != NULL && markdown_core_error_get_scope(error, &scope);
     put_u8(buffer, 1);
     put_i32(buffer, error == NULL ? MARKDOWN_CORE_ERROR_INTERNAL : markdown_core_error_get_code(error));
     if (error == NULL) {
@@ -139,10 +137,6 @@ static void put_error(bridge_buffer *buffer, markdown_core_error *error) {
         put_string(buffer, fallback, true);
     } else {
         put_string(buffer, markdown_core_error_get_message(error), true);
-    }
-    put_u8(buffer, has_scope ? 1 : 0);
-    if (has_scope) {
-        put_scope(buffer, scope);
     }
     markdown_core_error_free(error);
 }

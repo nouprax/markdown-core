@@ -61,7 +61,6 @@ const exported = [
     "es_node_revision",
     "es_node_html_comment",
     "es_error_code",
-    "es_error_scope",
     "es_error_free",
     "es_node_kind",
     "es_node_first_child",

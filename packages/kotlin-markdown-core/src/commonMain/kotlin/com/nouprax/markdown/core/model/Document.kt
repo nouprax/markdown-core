@@ -49,7 +49,7 @@ private fun open(
  * There is no session type. A document is created from text and options;
  * [edit] hands it new text and returns the next document with the delta
  * between them. Options are fixed for a document's whole series — changing
- * what the parser means is a new `Document`, not an edit, and there is no
+ * what the parser means is a new [Document], not an edit, and there is no
  * delta to be had across it.
  *
  * The node values are ordinary immutable values with no reference back here:
@@ -63,14 +63,18 @@ public class Document private constructor(
     private val built: Built,
 ) : Markup,
     AutoCloseable {
-    /** Parses [markdown]. */
+    /** Parses [markdown].
+     *
+     * Throws [ParseException] when the engine rejects the call or cannot
+     * allocate. */
     @JvmOverloads
     public constructor(markdown: String, options: ParseOptions = ParseOptions()) : this(open(markdown, options))
 
-    /** The native parse, or zero once something has taken it. Both paths that
-     * END the parse — [close] and the platform's reclaim — go through this
-     * one exchange, and only the first wins. [edit] is not one of them: it
-     * READS the parse and leaves it here. */
+    /** The native parse, or zero once something has taken it.
+     *
+     * Both paths that END the parse — [close] and the platform's reclaim —
+     * go through this one exchange, and only the first wins. [edit] is not
+     * one of them: it READS the parse and leaves it here. */
     private val handle = AtomicLong(built.handle)
 
     // Held so the platform's reclaim registration outlives this constructor;
@@ -93,6 +97,7 @@ public class Document private constructor(
 
     override val revision: ULong get() = built.revision
 
+    /** The document's extent is the whole text. */
     override val scope: Scope get() = built.scope
 
     /** The options this document and its whole series were parsed under. */
@@ -101,13 +106,16 @@ public class Document private constructor(
     /** The document's top-level blocks in source order. */
     public val content: kotlin.collections.List<Markup> get() = built.content
 
-    /** Everything an editor should underline, in source order. Empty for
-     * almost every document; see [DiagnosticCode]. */
+    /** Everything an editor should underline, in source order.
+     *
+     * Empty for almost every document; see [DiagnosticCode]. */
     public val diagnostics: kotlin.collections.List<Diagnostic> get() = built.diagnostics
 
     /**
-     * Per-series random salt; nodes from different parses never compare equal
-     * even when their raw ids collide numerically.
+     * Per-series random salt.
+     *
+     * Nodes from different parses never compare equal even when their raw
+     * ids collide numerically.
      */
     public val series: ULong get() = id.series
 
@@ -129,6 +137,9 @@ public class Document private constructor(
      * usable and may be edited again. Editing it twice gives two lines of
      * descent, told apart by their revisions — and, like nodes from two
      * separate parses, nodes from two lines are not comparable.
+     *
+     * Throws [ParseException] when the engine fails, and
+     * [IllegalStateException] once this document has been [close]d.
      */
     public fun edit(markdown: String): Commit {
         val owned = handle.load()
@@ -151,7 +162,9 @@ public class Document private constructor(
 
     /**
      * This document's node for [id], or null when no node has that identity
-     * here. An identity from another parse is null, not a failure: a caller
+     * here.
+     *
+     * An identity from another parse is null, not a failure: a caller
      * holding an id from a superseded revision is asking exactly this.
      */
     public fun node(id: MarkupID): Markup? =
@@ -175,10 +188,12 @@ public class Document private constructor(
     public fun dump(node: Markup): String = MarkupDumper.dump(this, node)
 
     /**
-     * Releases the native parse. Idempotent, and unnecessary after [edit],
-     * which hands the parse to the successor. Every value this document
-     * already produced — its content, scopes, diagnostics, and dump — stays
-     * usable afterwards, because none of them borrow from the parse.
+     * Releases the native parse.
+     *
+     * Idempotent, and unnecessary after [edit], which hands the parse to the
+     * successor. Every value this document already produced — its content,
+     * scopes, diagnostics, and dump — stays usable afterwards, because none
+     * of them borrow from the parse.
      */
     override fun close() {
         val owned = handle.exchange(0L)

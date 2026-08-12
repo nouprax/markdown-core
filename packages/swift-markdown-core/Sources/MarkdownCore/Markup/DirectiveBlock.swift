@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A container directive block (`:::name[label]{attributes}`).
 public struct DirectiveBlock: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -15,14 +15,16 @@ public struct DirectiveBlock: Markup {
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
     /// Whether the construct is `embedded` in surrounding inline content or
-    /// stands alone as its own block; always `standalone` for directive
-    /// blocks.
+    /// stands alone as its own block.
+    ///
+    /// Always `standalone` for directive blocks.
     public let mode: PlacementMode
     /// The directive's name.
     public let name: String
-    /// The raw attribute text between the braces, if any.
     /// The directive's attribute map in the grammar's own terms, or nil when
-    /// no `{...}` container was written. An empty container is an empty map.
+    /// no `{...}` container was written.
+    ///
+    /// An empty container is an empty map.
     public let attributes: [String: String]?
     /// The directive's label; nil when the directive declares no label —
     /// distinct from an explicit empty `[]`.

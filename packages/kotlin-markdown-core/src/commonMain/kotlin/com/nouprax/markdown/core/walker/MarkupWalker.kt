@@ -1,5 +1,6 @@
 package com.nouprax.markdown.core
 
+/** Whether a walk callback fires on entering or leaving a node. */
 public enum class WalkEvent {
     ENTERING,
     EXITING,
@@ -16,13 +17,21 @@ private class ExitFrame(
     val scope: Scope,
 ) : WalkFrame
 
+/**
+ * A read-only depth-first traversal of a document's nodes.
+ *
+ * Traversal is iterative, over an explicit frame stack rather than the call
+ * stack, so a document walks at any nesting depth that parses.
+ */
 public object MarkupWalker {
     /**
      * Walks the document depth-first, dispatching each node to [visitor] in
-     * preorder. Scope-free by construction: a structural visitor neither
-     * pays scope materialization nor depends on the snapshot's resolver
-     * state, so a retained snapshot traverses regardless of whether it ever
-     * resolved scopes.
+     * preorder.
+     *
+     * Scope-free by construction: a structural visitor neither pays scope
+     * materialization nor depends on the snapshot's resolver state, so a
+     * retained snapshot traverses regardless of whether it ever resolved
+     * scopes.
      */
     public fun walk(
         document: Document,

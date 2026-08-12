@@ -9,7 +9,7 @@ import type { Scope } from "../values.js";
  * short table row — are all defined outcomes of the standard semantics
  * rather than failures. Reporting those would be reporting Markdown itself.
  *
- * A value and a type under one name, like `WalkEvent`: a consumer compares
+ * A value and a type under one name, like {@link WalkEvent}: a consumer compares
  * `diagnostic.code` against `DiagnosticCode.directiveAttributes` at runtime,
  * which a bare union of string literals cannot offer. It is not a TypeScript
  * `enum` keyword, which emits a namespace object this ESM package would then
@@ -23,6 +23,7 @@ import type { Scope } from "../values.js";
  * "no attributes were written" from "the attributes were rejected".
  */
 export const DiagnosticCode = {
+    /** A directive's `{...}` attribute block did not parse. */
     directiveAttributes: "directiveAttributes"
 } as const;
 

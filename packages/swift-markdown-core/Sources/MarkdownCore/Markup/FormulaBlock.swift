@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// A standalone formula block (the math extension).
 public struct FormulaBlock: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -14,8 +14,10 @@ public struct FormulaBlock: Markup {
     /// deliberately absent from `==` — position is not content — so an edit
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
-    /// Whether the construct is `embedded` in surrounding inline content or
-    /// stands alone as its own block.
+    /// Always `standalone`.
+    ///
+    /// A formula embedded in inline content is a ``Formula``, a different
+    /// kind.
     public let mode: PlacementMode
     /// The formula source between the delimiters.
     public let literal: String
@@ -35,7 +37,7 @@ extension FormulaBlock {
             revision: track.revision,
             scope: track.scope,
             mode: PlacementMode(from: mode),
-            literal: literal.requiredString
+            literal: literal.string
         )
     }
 }

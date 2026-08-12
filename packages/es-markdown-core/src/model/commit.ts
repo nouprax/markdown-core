@@ -19,15 +19,23 @@ export interface Commit {
 export interface DiffParts {
     /** True when the node no longer exists. */
     readonly retired: boolean;
-    /** True when the node's kind or one of its scalar fields differs. */
+    /** True when one of the node's own fields differs, string-valued ones
+     * included.
+     *
+     * A link's destination and title, a reference's label, a directive's name
+     * and attributes are all `value`, not `text`. Never a kind change —
+     * paired nodes always share a kind, because a changed kind is a
+     * retirement and a creation rather than a difference. */
     readonly value: boolean;
     /** True when the node's canonical text differs. */
     readonly text: boolean;
     /** True when the node's own child list differs. */
     readonly children: boolean;
-    /** True when something below the node differs. Carried by every ancestor
-     * of a change, so a renderer can stop at the first node whose own parts
-     * are all false. */
+    /** True when something below the node differs.
+     *
+     * Reported together with whatever of the node's own differs, never
+     * instead of it. Every node above a change carries some part, so a
+     * subtree whose root the delta does not name holds no change at all. */
     readonly descendant: boolean;
 }
 

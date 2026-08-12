@@ -29,11 +29,12 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
-/// Series-scoped node identity: `rawValue` is unique within the owning series
-/// and never reused; `series` is that series' random salt, so nodes from
-/// different series (including separate one-shot parses) never share an
-/// identity. Stable across edits while the node remains the same kind of
-/// thing at the same place.
+/// Series-scoped node identity, stable across edits while the node remains the
+/// same kind of thing at the same place.
+///
+/// ``rawValue`` is unique within the owning series and never reused;
+/// ``series`` is that series' random salt, so nodes from different series
+/// (including separate one-shot parses) never share an identity.
 ///
 /// A SERIES is one document and every document its edits produce. Raw values
 /// restart at 1 for each new series, so the salt is the only thing keeping
@@ -53,6 +54,7 @@ public struct MarkupID: Sendable, Hashable {
 }
 
 /// Identity, revision, and extent: what every kind carries whatever it is.
+///
 /// The contract calls this the node's `MarkupTrack`.
 struct MarkupTrack {
     let id: MarkupID
@@ -64,29 +66,33 @@ struct MarkupTrack {
 ///
 /// Nodes are immutable values. Equality and hashing are O(1) and
 /// allocation-free: two nodes are equal exactly when they have the same
-/// `id` and the same `revision`, which the engine guarantees implies
+/// ``id`` and the same ``revision``, which the engine guarantees implies
 /// identical AST content (fields and descendants).
 ///
-/// `scope` is on every node and is deliberately NOT part of that: absolute
+/// ``scope`` is on every node and is deliberately NOT part of that: absolute
 /// source position is not content, so two nodes differing only in where they
 /// sit are equal. That is what lets an edit above a node leave every reactive
 /// comparison below it untouched.
 public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
+    /// The node's series-scoped identity; see ``MarkupID``.
     var id: MarkupID { get }
 
     /// The commit revision at which this node's own fields, child list, or
-    /// any descendant last changed. A pure positional shift caused by an
-    /// edit elsewhere never changes a node's revision.
+    /// any descendant last changed.
+    ///
+    /// A pure positional shift caused by an edit elsewhere never changes a
+    /// node's revision.
     var revision: UInt64 { get }
 
     /// The node's absolute source extent, O(1) and stored on the value.
     var scope: Scope { get }
 
+    /// Dispatches this node to `visitor`'s matching `visit` overload.
     func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result
 }
 
 extension Markup {
-    /// Two nodes are equal exactly when they share `id` and `revision`,
+    /// Two nodes are equal exactly when they share ``id`` and ``revision``,
     /// which the engine guarantees implies identical content.
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id && lhs.revision == rhs.revision

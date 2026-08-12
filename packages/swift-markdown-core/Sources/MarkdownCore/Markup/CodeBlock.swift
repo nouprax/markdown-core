@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// An indented or fenced code block.
 public struct CodeBlock: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -15,7 +15,9 @@ public struct CodeBlock: Markup {
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
     /// Whether the construct is `embedded` in surrounding inline content or
-    /// stands alone as its own block; always `standalone` for code blocks.
+    /// stands alone as its own block.
+    ///
+    /// Always `standalone` for code blocks.
     public let mode: PlacementMode
     /// The full info string after the opening fence, if any.
     public let info: String?
@@ -25,8 +27,9 @@ public struct CodeBlock: Markup {
     public let literal: String
     /// Whether the block was fenced rather than indented.
     public let fenced: Bool
-    /// Whether a fenced block's closing fence was present; streaming input
-    /// parsed mid-block reports `false`.
+    /// Whether a fenced block's closing fence was present.
+    ///
+    /// Streaming input parsed mid-block reports `false`.
     public let closed: Bool
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.
@@ -56,9 +59,9 @@ extension CodeBlock {
             revision: track.revision,
             scope: track.scope,
             mode: .standalone,
-            info: info.optionalString,
-            language: language.optionalString,
-            literal: literal.requiredString,
+            info: info.optional,
+            language: language.optional,
+            literal: literal.string,
             fenced: fenced,
             closed: closed
         )

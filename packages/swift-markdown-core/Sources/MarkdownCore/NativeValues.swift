@@ -3,20 +3,12 @@ import MarkdownCoreC
 extension ParseError {
     init(from error: OpaquePointer?) {
         guard let error else {
-            self.init(code: .internal, message: "markdown parsing failed", scope: nil)
+            self.init(code: .internal, message: "markdown parsing failed")
             return
         }
         let rawCode = markdown_core_error_get_code(error).rawValue
         let code = ParseErrorCode(rawValue: Int32(rawCode)) ?? .internal
-        var nativeScope = markdown_core_scope()
-        let parsedScope =
-            markdown_core_error_get_scope(error, &nativeScope)
-            ? Scope(from: nativeScope) : nil
-        self.init(
-            code: code,
-            message: markdown_core_error_get_message(error).requiredString,
-            scope: parsedScope
-        )
+        self.init(code: code, message: markdown_core_error_get_message(error).string)
     }
 }
 
@@ -30,7 +22,7 @@ extension Scope {
 }
 
 extension markdown_core_string {
-    var requiredString: String {
+    var string: String {
         guard let data else { return "" }
         // Well-formed by construction, not by validation: every entry point
         // into this package takes a Swift `String`, so the bytes the facade
@@ -42,8 +34,8 @@ extension markdown_core_string {
         return String(decoding: UnsafeBufferPointer(start: data, count: length), as: UTF8.self)
     }
 
-    var optionalString: String? {
-        data == nil ? nil : requiredString
+    var optional: String? {
+        data == nil ? nil : string
     }
 }
 

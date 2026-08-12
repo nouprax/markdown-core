@@ -176,18 +176,6 @@ int32_t es_node_html_comment(const markdown_core_node *node) {
 
 int32_t es_error_code(const markdown_core_error *error) { return (int32_t)markdown_core_error_get_code(error); }
 
-int32_t es_error_scope(const markdown_core_error *error, int32_t *coordinates) {
-    markdown_core_scope scope;
-    if (!markdown_core_error_get_scope(error, &scope)) {
-        return 0;
-    }
-    coordinates[0] = scope.start.line;
-    coordinates[1] = scope.start.column;
-    coordinates[2] = scope.end.line;
-    coordinates[3] = scope.end.column;
-    return 1;
-}
-
 void es_error_free(markdown_core_error *error) { markdown_core_error_free(error); }
 
 int32_t es_node_kind(const markdown_core_node *node) { return (int32_t)markdown_core_node_get_kind(node); }

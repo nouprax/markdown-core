@@ -2,7 +2,7 @@ import MarkdownCoreC
 
 /// An image whose children are its inline description.
 public struct Image: Markup {
-    /// The node's session-scoped identity; see `MarkupID`.
+    /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
     /// The commit revision at which this node's content last changed.
     public let revision: UInt64
@@ -14,8 +14,11 @@ public struct Image: Markup {
     /// deliberately absent from `==` — position is not content — so an edit
     /// above this node leaves every reactive comparison below it untouched.
     public let scope: Scope
-    /// The image source URL, if present.
-    public let source: String?
+    /// The image source, empty when the parentheses were written empty.
+    ///
+    /// Not optional: an inline image always writes its `(…)`, so there is no
+    /// unwritten case to distinguish. `![a]()` gives `""`.
+    public let source: String
     /// The optional image title.
     public let title: String?
     /// The image's parsed alt-text inline content in source order.
@@ -35,8 +38,8 @@ extension Image {
             id: track.id,
             revision: track.revision,
             scope: track.scope,
-            source: source.optionalString,
-            title: title.optionalString,
+            source: source.string,
+            title: title.optional,
             content: builder.children(node)
         )
     }

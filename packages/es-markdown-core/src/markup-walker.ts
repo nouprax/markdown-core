@@ -3,6 +3,14 @@ import type { Markup } from "./model/markup.js";
 import { visit, type MarkupVisitor } from "./markup-visitor.js";
 import type { Scope } from "./values.js";
 
+/**
+ * Whether a walk callback fires on the way into a node or on the way out.
+ *
+ * Every node produces both, in that order: `entering` in preorder, and
+ * `exiting` once the last of its descendants has exited. A leaf gets the two
+ * back to back. The pairs therefore nest exactly, which is what lets a
+ * consumer keep a stack instead of a parent map.
+ */
 export const WalkEvent = {
     entering: "entering",
     exiting: "exiting"
@@ -10,6 +18,10 @@ export const WalkEvent = {
 
 export type WalkEvent = (typeof WalkEvent)[keyof typeof WalkEvent];
 
+/** Returning is the callback's only reply.
+ *
+ * There is no way to prune a subtree mid-walk, so a consumer that wants only
+ * some nodes tests for them and returns. A throw leaves `walk` at once. */
 export type WalkCallback = (event: WalkEvent, node: Markup, scope: Scope) => void;
 
 interface Frame {
@@ -17,12 +29,22 @@ interface Frame {
     readonly node: Markup;
 }
 
+/**
+ * A read-only depth-first traversal, iterative rather than recursive:
+ * nesting depth is input-controlled, so a document that parsed also walks,
+ * whatever its depth.
+ *
+ * An instance holds nothing — the frame stack belongs to the call — so one
+ * walker serves any number of walks, including one begun inside another's
+ * callback.
+ */
 export class MarkupWalker {
     /**
      * Walks the document depth-first, dispatching each node to `visitor` in
-     * preorder. Scope-free by construction: a structural visitor neither
-     * pays scope materialization nor depends on anything but the values it
-     * is handed.
+     * preorder.
+     *
+     * Scope-free by construction: a structural visitor neither pays scope
+     * materialization nor depends on anything but the values it is handed.
      */
     walk(document: Document, visitor: MarkupVisitor<void>): void;
     /** Walks the document depth-first, supplying each event with the node's
@@ -71,9 +93,10 @@ export class MarkupWalker {
 }
 
 /** `visitDocument` is required on every complete visitor and absent from
- * every Markup value and plain callback. Visitors may carry arbitrary state
- * and may themselves be callable objects, so visitor shape takes precedence
- * whenever the overload domains overlap. */
+ * every Markup value and plain callback.
+ *
+ * Visitors may carry arbitrary state and may themselves be callable objects,
+ * so visitor shape takes precedence whenever the overload domains overlap. */
 function isVisitor(value: Markup | WalkCallback | MarkupVisitor<void>): value is MarkupVisitor<void> {
     return (
         (typeof value === "object" || typeof value === "function") &&

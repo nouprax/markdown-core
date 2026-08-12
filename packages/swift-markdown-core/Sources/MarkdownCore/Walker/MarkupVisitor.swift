@@ -1,7 +1,12 @@
-/// Typed double-dispatch over the closed set of markup node kinds: one
-/// `visit` overload per concrete node type, selected by
-/// `Markup.accept(_:)`.
+/// Typed double-dispatch over the closed set of markup node kinds.
+///
+/// One `visit` overload per concrete node type, selected by
+/// ``Markup/accept(_:)``.
 public protocol MarkupVisitor {
+    /// ``MarkupWalker``'s visitor walk requires this to be `Void`.
+    ///
+    /// A visitor that returns anything else is driven by calling
+    /// ``Markup/accept(_:)`` directly.
     associatedtype Result
     mutating func visit(_ node: Document) -> Result
     mutating func visit(_ node: BlockQuote) -> Result

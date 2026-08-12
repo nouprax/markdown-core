@@ -21,7 +21,8 @@ public enum class DiagnosticCode {
      * mistake with no defined fallback meaning, and the parse degrades them to
      * literal text. That degradation is invisible in the tree — the node
      * simply has no attributes — so without this an editor cannot tell "no
-     * attributes were written" from "the attributes were rejected".
+     * attributes were written" from "the attributes were rejected". The
+     * [Diagnostic.scope] covers the block, brace to brace.
      */
     DIRECTIVE_ATTRIBUTES,
 }

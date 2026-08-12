@@ -1,5 +1,11 @@
 package com.nouprax.markdown.core
 
+/**
+ * A soft line break: a source newline that renders as collapsible whitespace
+ * rather than as a new line.
+ *
+ * [LineBreak] is the hard form.
+ */
 public class SoftBreak internal constructor(
     override val id: MarkupID,
     override val revision: ULong,

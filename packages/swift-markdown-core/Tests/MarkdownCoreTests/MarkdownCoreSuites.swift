@@ -106,8 +106,7 @@ import Testing
         // that is invisible until a user is looking at the alert.
         let error = ParseError(
             code: .invalidArgument,
-            message: "markdown must not be null when length is nonzero",
-            scope: nil
+            message: "markdown must not be null when length is nonzero"
         )
         #expect(String(describing: error) == error.message)
         #expect(error.localizedDescription == error.message)
