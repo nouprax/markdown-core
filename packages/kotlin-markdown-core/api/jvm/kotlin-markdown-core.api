@@ -101,7 +101,7 @@ public final class com/nouprax/markdown/core/DiffParts {
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getAttributes ()Ljava/lang/String;
+	public final fun getAttributes ()Ljava/util/Map;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;
 	public final fun getMode ()Lcom/nouprax/markdown/core/PlacementMode;
@@ -115,7 +115,7 @@ public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/co
 public final class com/nouprax/markdown/core/DirectiveBlock : com/nouprax/markdown/core/Markup {
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getAttributes ()Ljava/lang/String;
+	public final fun getAttributes ()Ljava/util/Map;
 	public final fun getContent ()Ljava/util/List;
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
 	public final fun getLabel ()Lcom/nouprax/markdown/core/DirectiveLabel;

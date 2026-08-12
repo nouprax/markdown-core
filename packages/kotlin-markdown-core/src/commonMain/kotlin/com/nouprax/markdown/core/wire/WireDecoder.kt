@@ -159,6 +159,21 @@ private class WireReader(
 
     fun requiredString(): String = requireNotNull(string()) { "missing native field" }
 
+    /** A directive's attribute map: a presence byte, a count, then the pairs.
+     * The grammar has no duplicate name to represent, so the pairs ARE the
+     * map and nothing has to be parsed back out of a rendering. */
+    fun directiveAttributes(): Map<String, String>? {
+        if (byte().toInt() == 0) return null
+        val count = int()
+        require(count >= 0) { "invalid native bridge attribute count" }
+        val attributes = LinkedHashMap<String, String>(count)
+        repeat(count) {
+            val key = requiredString()
+            attributes[key] = requiredString()
+        }
+        return attributes
+    }
+
     /** The form a reference was written in, as the bridge encodes it. */
     fun referenceForm(): ReferenceForm =
         when (val raw = byte().toInt()) {
@@ -456,7 +471,7 @@ private fun WireReader.readDirective(
 ): Directive {
     val mode = placement()
     val name = requiredString()
-    val attributes = string()
+    val attributes = directiveAttributes()
     val directChildren = children(mirror)
     require(directChildren.size <= 1 && directChildren.all { it is DirectiveLabel }) {
         "inline directive contains a non-label child"
@@ -473,7 +488,7 @@ private fun WireReader.readDirectiveBlock(
 ): DirectiveBlock {
     val mode = placement()
     val name = requiredString()
-    val attributes = string()
+    val attributes = directiveAttributes()
     val directChildren = children(mirror)
     val label = directChildren.firstOrNull() as? DirectiveLabel
     val contentStart = if (label == null) 0 else 1

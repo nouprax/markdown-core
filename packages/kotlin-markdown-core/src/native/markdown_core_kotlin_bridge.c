@@ -298,10 +298,27 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
         markdown_core_placement_mode mode;
-        markdown_core_node_directive_properties(node, &mode, &first, &second);
+        bool has_attributes = false;
+        size_t count = 0;
+        size_t index;
+        markdown_core_node_directive_properties(node, &mode, &first, &has_attributes);
         put_i32(buffer, (int32_t)mode);
         put_string(buffer, first, true);
-        put_string(buffer, second, second.data != NULL);
+        // The attribute map: a presence byte, a count, then the pairs in the
+        // order the engine holds them. No serialized form travels the wire,
+        // because there is none -- the value IS the map.
+        put_u8(buffer, has_attributes ? 1u : 0u);
+        if (has_attributes) {
+            markdown_core_node_directive_attribute_count(node, &count);
+            put_u32(buffer, (uint32_t)count);
+            for (index = 0; index < count; index++) {
+                if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
+                    break;
+                }
+                put_string(buffer, first, true);
+                put_string(buffer, second, true);
+            }
+        }
         put_child_ids(buffer, node);
         break;
     }

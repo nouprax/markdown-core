@@ -500,30 +500,49 @@ export class NodeDecoder {
     ): {
         readonly mode: PlacementMode;
         readonly name: string;
-        readonly attributes: string | null;
+        readonly attributes: Readonly<Record<string, string>> | null;
         readonly label: Extract<Markup, { kind: "directiveLabel" }> | null;
         readonly content: readonly Markup[];
     } {
-        // One packed crossing for every directive field; scratch layout
-        // mirrors `es_node_directive_properties`.
+        // One packed crossing for mode, name, presence and count; scratch
+        // layout mirrors `es_node_directive_properties`. Everything is read
+        // out before the pair loop, which reuses the same scratch block.
         this.requireLive();
         this.native.es_node_directive_properties(node, this.scratch);
         const view = this.dataView();
+        const mode = this.placement(view.getInt32(this.scratch, true));
+        const present = view.getUint32(this.scratch + 4, true) !== 0;
         const name = this.scratchString(view, 8);
         if (name === null) throw new Error("native parser returned a missing string");
+        const count = this.count(view.getUint32(this.scratch + 16, true), "directive attribute count");
+        const attributes = present ? this.directiveAttributes(node, count) : null;
         const firstChild = children[0];
         const label = firstChild?.kind === "directiveLabel" ? firstChild : null;
         const content = label === null ? children : children.slice(1);
         if (content.some((child) => child.kind === "directiveLabel")) {
             throw new Error("native parser returned a misplaced directive label");
         }
-        return {
-            mode: this.placement(view.getInt32(this.scratch, true)),
-            name,
-            attributes: this.scratchString(view, 16),
-            label,
-            content
-        };
+        return { mode, name, attributes, label, content };
+    }
+
+    /** The attribute pairs, one crossing each, in the source order the engine
+     * holds them. The grammar has no duplicate name to represent, so a plain
+     * object IS the value rather than a rendering of it. */
+    private directiveAttributes(node: number, count: number): Record<string, string> {
+        const attributes: Record<string, string> = {};
+        for (let index = 0; index < count; index += 1) {
+            if (!this.native.es_node_directive_attribute_at(node, index, this.scratch)) {
+                throw new Error("native parser returned fewer directive attributes than it counted");
+            }
+            const view = this.dataView();
+            const key = this.scratchString(view, 0);
+            const value = this.scratchString(view, 8);
+            if (key === null || value === null) {
+                throw new Error("native parser returned a missing string");
+            }
+            attributes[key] = value;
+        }
+        return attributes;
     }
 
     childPointers(node: number): number[] {

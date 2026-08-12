@@ -680,7 +680,7 @@ static int case_directive_long_label(pc_context *context) {
     const markdown_core_node *label_text;
     markdown_core_placement_mode mode;
     markdown_core_string name;
-    markdown_core_string attributes;
+    bool has_attributes = false;
     markdown_core_string literal;
     char *expected = NULL;
 
@@ -695,7 +695,7 @@ static int case_directive_long_label(pc_context *context) {
     }
     directive = pc_first_directive(context);
     if (markdown_core_node_get_kind(directive) != MARKDOWN_CORE_KIND_DIRECTIVE ||
-        !markdown_core_node_directive_properties(directive, &mode, &name, &attributes) || name.length != 4 ||
+        !markdown_core_node_directive_properties(directive, &mode, &name, &has_attributes) || name.length != 4 ||
         memcmp(name.data, "long", 4) != 0 || mode != MARKDOWN_CORE_PLACEMENT_EMBEDDED) {
         fprintf(stderr, "directive name/label/mode properties are wrong\n");
         return -1;
@@ -723,10 +723,11 @@ static int case_directive_long_attributes(pc_context *context) {
     const markdown_core_node *directive;
     markdown_core_placement_mode mode;
     markdown_core_string name;
-    markdown_core_string attributes;
+    markdown_core_string key;
+    markdown_core_string attribute;
+    bool has_attributes = false;
+    size_t count = 0;
     char *value;
-    char *expected;
-    size_t expected_length;
     int result = -1;
 
     if (pc_build(context, ":long{data-x=\"", "a", 5000, "\"}") != 0) {
@@ -739,8 +740,8 @@ static int case_directive_long_attributes(pc_context *context) {
         return -1;
     }
     directive = pc_first_directive(context);
-    if (!markdown_core_node_directive_properties(directive, &mode, &name, &attributes) || name.length != 4 ||
-        memcmp(name.data, "long", 4) != 0) {
+    if (!markdown_core_node_directive_properties(directive, &mode, &name, &has_attributes) || name.length != 4 ||
+        memcmp(name.data, "long", 4) != 0 || !has_attributes) {
         fprintf(stderr, "directive name properties are wrong\n");
         return -1;
     }
@@ -748,19 +749,15 @@ static int case_directive_long_attributes(pc_context *context) {
     if (!value) {
         return -1;
     }
-    expected_length = strlen("{\"data-x\":\"\"}") + 5000;
-    expected = (char *)malloc(expected_length + 1);
-    if (expected) {
-        snprintf(expected, expected_length + 1, "{\"data-x\":\"%s\"}", value);
-        if (attributes.data && attributes.length == expected_length &&
-            memcmp(attributes.data, expected, expected_length) == 0) {
-            result = 0;
-        } else {
-            fprintf(stderr, "directive attributes JSON is wrong\n");
-        }
+    markdown_core_node_directive_attribute_count(directive, &count);
+    if (count == 1 && markdown_core_node_directive_attribute_at(directive, 0, &key, &attribute) &&
+        key.length == strlen("data-x") && memcmp(key.data, "data-x", key.length) == 0 && attribute.length == 5000 &&
+        memcmp(attribute.data, value, 5000) == 0) {
+        result = 0;
+    } else {
+        fprintf(stderr, "directive attributes are wrong\n");
     }
     free(value);
-    free(expected);
     return result;
 }
 

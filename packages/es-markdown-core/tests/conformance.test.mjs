@@ -98,7 +98,7 @@ test("conformance: directive labels preserve missing, empty, and populated state
     const block = document.content[3];
 
     assert.equal(missing.label, null);
-    assert.equal(missing.attributes, '{"id":"1"}');
+    assert.deepEqual(missing.attributes, { id: "1" });
     assert.equal(empty.label.kind, "directiveLabel");
     assert.deepEqual(empty.label.content, []);
     assert.equal(label.label.kind, "directiveLabel");

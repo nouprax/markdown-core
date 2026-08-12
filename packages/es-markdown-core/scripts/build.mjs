@@ -76,6 +76,7 @@ const exported = [
     "es_node_table_alignment",
     "es_node_table_row_header",
     "es_node_directive_properties",
+    "es_node_directive_attribute_at",
     "es_string",
     "es_node_reference_form"
 ].map((name) => `_${name}`);

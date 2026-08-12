@@ -261,13 +261,19 @@ private fun record(
 private fun directiveFields(
     mode: PlacementMode,
     name: String,
-    attributes: String?,
+    attributes: Map<String, String>?,
 ): kotlin.collections.List<String> =
     listOf(
         "mode=${mode.token()}",
         "name=${jsonString(name)}",
-        "attributes=${optionalString(attributes)}",
+        "attributes=${directiveAttributes(attributes)}",
     )
+
+/** Pair by pair, like every other field: `null` for no container at all and
+ * nothing after `attributes=` for an empty one. Sorted by name, because four
+ * dumpers have to agree byte for byte and Swift's map is unordered. */
+private fun directiveAttributes(attributes: Map<String, String>?): String =
+    attributes?.keys?.sorted()?.joinToString(" ", "[", "]") { "$it=${jsonString(attributes.getValue(it))}" } ?: "null"
 
 private fun scopeText(
     value: Scope,

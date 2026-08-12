@@ -745,7 +745,7 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
     const markdown_core_node *block_empty_label;
     markdown_core_placement_mode mode;
     markdown_core_string name;
-    markdown_core_string attributes;
+    bool has_attributes = false;
     markdown_core_iter *iter;
     markdown_core_event_type event;
     markdown_core_scope scope;
@@ -763,7 +763,7 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
     block_empty = markdown_core_node_get_next_sibling(block_absent);
 
     OK(runner,
-       markdown_core_node_directive_properties(inline_absent, &mode, &name, &attributes),
+       markdown_core_node_directive_properties(inline_absent, &mode, &name, &has_attributes),
        "inline directive without a label exposes properties");
     OK(runner,
        markdown_core_node_directive_label(inline_absent) == NULL &&
@@ -771,7 +771,7 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
        "inline absent label has no DirectiveLabel child");
 
     OK(runner,
-       markdown_core_node_directive_properties(inline_empty, &mode, &name, &attributes),
+       markdown_core_node_directive_properties(inline_empty, &mode, &name, &has_attributes),
        "inline directive with an empty label exposes properties");
     inline_empty_label = markdown_core_node_directive_label(inline_empty);
     OK(runner,
@@ -787,7 +787,7 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
     OK(runner, scope.start.column < scope.end.column, "inline explicit-empty label has a positive source range");
 
     OK(runner,
-       markdown_core_node_directive_properties(block_absent, &mode, &name, &attributes),
+       markdown_core_node_directive_properties(block_absent, &mode, &name, &has_attributes),
        "block directive without a label exposes properties");
     OK(runner,
        markdown_core_node_directive_label(block_absent) == NULL &&
@@ -795,7 +795,7 @@ static void directive_empty_label_representation(test_batch_runner *runner) {
        "block absent label has no DirectiveLabel child");
 
     OK(runner,
-       markdown_core_node_directive_properties(block_empty, &mode, &name, &attributes),
+       markdown_core_node_directive_properties(block_empty, &mode, &name, &has_attributes),
        "block directive with an empty label exposes properties");
     block_empty_label = markdown_core_node_directive_label(block_empty);
     OK(runner,

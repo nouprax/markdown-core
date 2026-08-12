@@ -272,7 +272,7 @@ final class com.nouprax.markdown.core/DiffParts { // com.nouprax.markdown.core/D
 
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
     final val attributes // com.nouprax.markdown.core/Directive.attributes|{}attributes[0]
-        final fun <get-attributes>(): kotlin/String? // com.nouprax.markdown.core/Directive.attributes.<get-attributes>|<get-attributes>(){}[0]
+        final fun <get-attributes>(): kotlin.collections/Map<kotlin/String, kotlin/String>? // com.nouprax.markdown.core/Directive.attributes.<get-attributes>|<get-attributes>(){}[0]
     final val id // com.nouprax.markdown.core/Directive.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Directive.id.<get-id>|<get-id>(){}[0]
     final val label // com.nouprax.markdown.core/Directive.label|{}label[0]
@@ -293,7 +293,7 @@ final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Mark
 
 final class com.nouprax.markdown.core/DirectiveBlock : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/DirectiveBlock|null[0]
     final val attributes // com.nouprax.markdown.core/DirectiveBlock.attributes|{}attributes[0]
-        final fun <get-attributes>(): kotlin/String? // com.nouprax.markdown.core/DirectiveBlock.attributes.<get-attributes>|<get-attributes>(){}[0]
+        final fun <get-attributes>(): kotlin.collections/Map<kotlin/String, kotlin/String>? // com.nouprax.markdown.core/DirectiveBlock.attributes.<get-attributes>|<get-attributes>(){}[0]
     final val content // com.nouprax.markdown.core/DirectiveBlock.content|{}content[0]
         final fun <get-content>(): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/DirectiveBlock.content.<get-content>|<get-content>(){}[0]
     final val id // com.nouprax.markdown.core/DirectiveBlock.id|{}id[0]

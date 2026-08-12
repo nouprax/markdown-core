@@ -113,19 +113,27 @@ paragraph. The invariants for other nodes are:
 | `Formula` | `embedded` or `standalone` |
 | `FormulaBlock` | `standalone` |
 
-### Directive attributes JSON
+### Directive attributes
 
-Directive `attributes` is an optional `String` containing the normalized JSON
-representation of a generic directive attribute list. Every member name and
-value is a JSON string. Non-string values and nested objects or arrays are
-invalid. `null` means no attributes container was present; `"{}"` means an
-explicit empty map.
+Directive `attributes` is an optional string-to-string map: `Record<string,
+string>` in ECMAScript, `[String: String]?` in Swift, `Map<String, String>?`
+in Kotlin, and a count plus an indexed pair accessor in C. `null` means no
+attribute container was present; an empty map means an explicit empty one.
 
-Markdown source uses `{key=value}` attribute-list syntax, not JSON syntax.
-Bare attributes and unquoted, single-quoted, or double-quoted values are
-supported. Values that look like booleans or numbers remain strings. JSON
-serialization is deterministic and is the value passed to consumers for
-decoding.
+There is no serialization in between. The grammar has no duplicate name to
+represent — a later `k=` replaces an earlier one, `.a .b` accumulates into a
+single `class`, `#a #b` keeps the last — so the pairs the parser holds ARE
+the value, and no consumer has to decode a rendering to use them. The engine
+keeps source order; a binding's own container may or may not, and equality
+compares contents, not order. The canonical dump prints the pairs SORTED BY
+NAME inside brackets (`attributes=[a="2" class="one two"]`, `attributes=[]`,
+`attributes=null`) so that four dumpers agree byte for byte.
+
+Markdown source uses `{key=value}` attribute-list syntax, following
+micromark-extension-directive. Bare attributes and unquoted, single-quoted,
+or double-quoted values are supported. Values that look like booleans or
+numbers remain strings; a value that happens to contain JSON is a string that
+contains JSON, and nothing parses it.
 
 An `=` promises a value, and a bare attribute is not the same thing as one with
 an empty value: `{a}` is valid and `{a=}` is not. Whitespace, including a line
@@ -201,7 +209,7 @@ error rather than silently dropping a value.
 | `Table` | `alignments: [TableAlignment]`, `header: TableRow`, `rows: [TableRow]` | one alignment per column; header is non-optional |
 | `TableRow` | `isHeader: Bool`, `cells: [TableCell]` | `isHeader` is true only for `Table.header` and false for entries in `Table.rows` |
 | `TableCell` | `content: [Markup]` | inline content |
-| `DirectiveBlock` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is normalized string-map JSON object text; mode is `standalone`; label is the optional first canonical child; content is block; null label and explicit empty label remain distinct |
+| `DirectiveBlock` | `mode`, `name: String`, `attributes: Map<String, String>?`, `label: DirectiveLabel?`, `content: [Markup]` | attributes is the string-to-string map, null when no container was written; mode is `standalone`; label is the optional first canonical child; content is block; null label and explicit empty label remain distinct |
 | `DirectiveLabel` | `content: [Markup]` | complete inline child list; scope covers the full `[...]`; an explicit `[]` is a present node with empty content |
 | `FootnoteDefinition` | `label: String`, `content: [Markup]` | label is written between `[^` and `]`; non-empty; block content; stays at its source position whether referenced or not |
 | `ReferenceDefinition` | `label: String`, `destination: String?`, `title: String?` | a link reference definition at the position it was written; label is written between `[` and `]`; leaf; stays whether referenced or not |
@@ -218,7 +226,7 @@ error rather than silently dropping a value.
 | `Image` | `source: String?`, `title: String?`, `content: [Markup]` | the inline form `![a](/u)`; content is parsed alt-text inline content |
 | `LinkReference` | `label: String`, `form: ReferenceForm`, `content: [Markup]` | `[text][label]`, `[label][]`, `[label]`; carries no destination — which definition the label resolves to is a query; inline content |
 | `ImageReference` | `label: String`, `form: ReferenceForm`, `content: [Markup]` | as `LinkReference`, for `![alt][label]` and its collapsed and shortcut forms |
-| `Directive` | `mode`, `name: String`, `attributes: String?`, `label: DirectiveLabel?` | attributes is normalized string-map JSON object text; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
+| `Directive` | `mode`, `name: String`, `attributes: Map<String, String>?`, `label: DirectiveLabel?` | attributes is the string-to-string map, null when no container was written; mode is `embedded`; label is the only possible canonical child; null label and explicit empty label remain distinct |
 | `FootnoteReference` | `label: String` | label is written as in source; non-empty; leaf; exists only where the document defines the label — an undefined `[^x]` is `Text` |
 | `CrossLink` | `reference: String` | source-faithful non-empty reference from `[[reference]]`; leaf; has no in-document definition, so it is never undefined |
 | `Embed` | `reference: String` | source-faithful non-empty reference from `![[reference]]`; leaf; as `CrossLink` |

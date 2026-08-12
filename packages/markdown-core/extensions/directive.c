@@ -810,6 +810,62 @@ const char *markdown_core_extensions_get_directive_attributes(markdown_core_node
     return render_attributes_json(node, directive);
 }
 
+/* The attribute list as the node holds it: source order, one entry per name.
+ * The parser has already applied the grammar's merge rules -- a later `k=`
+ * replaces an earlier one, `.a .b` accumulates into one `class`, `#a #b`
+ * keeps the last -- so these pairs ARE the map, and nothing downstream has to
+ * reconstruct it from a rendering. */
+bool markdown_core_extensions_directive_attributes_present(const markdown_core_node *node) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    return directive != NULL && directive->has_attributes != 0;
+}
+
+size_t markdown_core_extensions_directive_attribute_count(const markdown_core_node *node) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    const directive_attribute *attribute;
+    size_t count = 0;
+
+    if (!directive || !directive->has_attributes) {
+        return 0;
+    }
+    for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+        if (attribute->active) {
+            count++;
+        }
+    }
+    return count;
+}
+
+bool markdown_core_extensions_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    const uint8_t **key,
+    size_t *key_length,
+    const uint8_t **value,
+    size_t *value_length
+) {
+    const node_directive *directive = get_directive((markdown_core_node *)node);
+    const directive_attribute *attribute;
+
+    if (!directive || !directive->has_attributes || !key || !key_length || !value || !value_length) {
+        return false;
+    }
+    for (attribute = directive->attributes; attribute; attribute = attribute->next) {
+        if (!attribute->active) {
+            continue;
+        }
+        if (index == 0) {
+            *key = attribute->name.data;
+            *key_length = attribute->name.len < 0 ? 0 : (size_t)attribute->name.len;
+            *value = attribute->value.data;
+            *value_length = attribute->value.len < 0 ? 0 : (size_t)attribute->value.len;
+            return true;
+        }
+        index--;
+    }
+    return false;
+}
+
 int markdown_core_extensions_set_directive_attributes(markdown_core_node *node, const char *attributes) {
     node_directive *directive = get_directive(node);
     directive_attribute *parsed = NULL;

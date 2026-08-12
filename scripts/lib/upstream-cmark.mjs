@@ -133,7 +133,11 @@ export function parseCanonicalDump(dump) {
         const depth = marker < 0 ? 1 : marker / 4 + 1;
         const body = marker < 0 ? line.trim() : line.slice(marker + 4).trim();
         const fields = {};
-        for (const field of body.matchAll(/([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|[^\s]+)/g)) {
+        // A bracketed group is ONE field even when it contains spaces: a
+        // directive's attributes print as `[k="v" k2="v w"]`.
+        for (const field of body.matchAll(
+            /([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]|[^\s]+)/g
+        )) {
             fields[field[1]] = field[2].startsWith('"') ? JSON.parse(field[2]) : field[2];
         }
         const node = { kind: body.split(" ")[0], fields, children: [] };

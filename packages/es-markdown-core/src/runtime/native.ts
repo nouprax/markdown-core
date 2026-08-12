@@ -58,6 +58,9 @@ export interface NativeExports extends WebAssembly.Exports {
      * (data, length) view pairs to `output` in one crossing. Label topology
      * is carried exclusively by canonical child records. */
     es_node_directive_properties(node: number, output: number): void;
+    /** Writes one attribute pair to `output` as u32 key data, u32 key length,
+     * u32 value data, u32 value length; 0 when the index is out of range. */
+    es_node_directive_attribute_at(node: number, index: number, output: number): number;
     es_string(object: number, field: number, dataOutput: number, lengthOutput: number): void;
 }
 

@@ -280,11 +280,29 @@ MARKDOWN_CORE_API bool markdown_core_node_table_alignment_at(
     markdown_core_table_alignment *alignment
 );
 MARKDOWN_CORE_API bool markdown_core_node_table_row_is_header(const markdown_core_node *node, bool *is_header);
+/** A directive's placement and name, and whether it was written with an
+ * attribute container at all. `has_attributes` is what separates `:a` from
+ * `:a{}`; the entries themselves come from the two accessors below. */
 MARKDOWN_CORE_API bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string *name,
-    markdown_core_string *attributes
+    bool *has_attributes
+);
+/**
+ * A directive's attributes, as the string-to-string map the grammar defines.
+ *
+ * One entry per name, in source order, with the merge rules already applied:
+ * a later `k=` replaces an earlier one, `.a .b` accumulates into one `class`,
+ * `#a #b` keeps the last. There is no duplicate name to represent, which is
+ * why a map is the whole of it and no serialization sits in between.
+ */
+MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_count(const markdown_core_node *node, size_t *count);
+MARKDOWN_CORE_API bool markdown_core_node_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_string *key,
+    markdown_core_string *value
 );
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_directive_label(const markdown_core_node *node);
 /** A link reference definition's label as written, and the destination and

@@ -302,12 +302,12 @@ private struct DumpVisitor: MarkupVisitor {
     private func directiveFields(
         _ mode: PlacementMode,
         _ name: String,
-        _ attributes: String?
+        _ attributes: [String: String]?
     ) -> [String] {
         [
             "mode=\(mode.rawValue)",
             "name=\(jsonString(name))",
-            "attributes=\(optionalString(attributes))",
+            "attributes=\(directiveAttributes(attributes))",
         ]
     }
 }
@@ -316,6 +316,16 @@ private func boolean(_ value: Bool) -> String { value ? "true" : "false" }
 
 private func optionalString(_ value: String?) -> String {
     value.map(jsonString) ?? "null"
+}
+
+/// Pair by pair, like every other field: `null` for no container at all and
+/// nothing after `attributes=` for an empty one. Swift's Dictionary is
+/// unordered, so the dump sorts by name; the ordered form belongs to the
+/// engine, which is what the cross-platform goldens compare.
+private func directiveAttributes(_ value: [String: String]?) -> String {
+    guard let value else { return "null" }
+    let pairs = value.sorted { $0.key < $1.key }.map { "\($0.key)=\(jsonString($0.value))" }
+    return "[" + pairs.joined(separator: " ") + "]"
 }
 
 private func jsonString(_ value: String) -> String {

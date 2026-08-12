@@ -653,15 +653,18 @@ bool markdown_core_node_html_comment(const markdown_core_node *node, bool *comme
     return true;
 }
 
+static bool is_directive_kind(const markdown_core_node *node) {
+    return node && (node->type == MARKDOWN_CORE_NODE_DIRECTIVE || node->type == MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK);
+}
+
 bool markdown_core_node_directive_properties(
     const markdown_core_node *node,
     markdown_core_placement_mode *mode,
     markdown_core_string *name,
-    markdown_core_string *attributes
+    bool *has_attributes
 ) {
     const char *value;
-    if (!node || !mode || !name || !attributes ||
-        (node->type != MARKDOWN_CORE_NODE_DIRECTIVE && node->type != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
+    if (!node || !mode || !name || !has_attributes || !is_directive_kind(node)) {
         return false;
     }
     *mode = node->type == MARKDOWN_CORE_NODE_DIRECTIVE ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
@@ -669,9 +672,46 @@ bool markdown_core_node_directive_properties(
     value = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
     name->data = (const uint8_t *)value;
     name->length = value ? strlen(value) : 0;
-    value = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
-    attributes->data = (const uint8_t *)value;
-    attributes->length = value ? strlen(value) : 0;
+    *has_attributes = markdown_core_extensions_directive_attributes_present(node);
+    return true;
+}
+
+bool markdown_core_node_directive_attribute_count(const markdown_core_node *node, size_t *count) {
+    if (!node || !count || !is_directive_kind(node)) {
+        return false;
+    }
+    *count = markdown_core_extensions_directive_attribute_count(node);
+    return true;
+}
+
+bool markdown_core_node_directive_attribute_at(
+    const markdown_core_node *node,
+    size_t index,
+    markdown_core_string *key,
+    markdown_core_string *value
+) {
+    const uint8_t *key_data = NULL;
+    const uint8_t *value_data = NULL;
+    size_t key_length = 0;
+    size_t value_length = 0;
+
+    if (!node || !key || !value || !is_directive_kind(node)) {
+        return false;
+    }
+    if (!markdown_core_extensions_directive_attribute_at(
+            node,
+            index,
+            &key_data,
+            &key_length,
+            &value_data,
+            &value_length
+        )) {
+        return false;
+    }
+    key->data = key_data;
+    key->length = key_length;
+    value->data = value_data;
+    value->length = value_length;
     return true;
 }
 
@@ -888,6 +928,14 @@ static void buffer_json_string(dump_buffer *buffer, markdown_core_string value) 
     buffer_cstr(buffer, "\"");
 }
 
+/* Byte-lexicographic, shorter first on a common prefix. Attribute names are
+ * unique, so this is a total order over them. */
+static bool string_before(markdown_core_string left, markdown_core_string right) {
+    size_t shortest = left.length < right.length ? left.length : right.length;
+    int order = shortest ? memcmp(left.data, right.data, shortest) : 0;
+    return order != 0 ? order < 0 : left.length < right.length;
+}
+
 static void buffer_optional_string(dump_buffer *buffer, markdown_core_string value) {
     if (!value.data) {
         buffer_cstr(buffer, "null");
@@ -1010,15 +1058,69 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_cstr(buffer, x ? "true" : "false");
         break;
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-    case MARKDOWN_CORE_KIND_DIRECTIVE:
-        markdown_core_node_directive_properties(node, &mode, &a, &b);
+    case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        bool present = false;
+        size_t count = 0;
+        size_t index;
+        markdown_core_string previous = {NULL, 0};
+        markdown_core_node_directive_properties(node, &mode, &a, &present);
         buffer_cstr(buffer, " mode=");
         buffer_cstr(buffer, mode_name(mode));
         buffer_cstr(buffer, " name=");
         buffer_json_string(buffer, a);
+        // Pair by pair, the way every other field prints: `null` for no
+        // container at all, nothing after `attributes=` for an empty one, and
+        // no serialization format inside a diagnostic dump.
+        //
+        // SORTED BY NAME, not in source order. Four dumpers have to agree
+        // byte for byte, and Swift's map is unordered -- so the order the
+        // engine holds belongs to the VALUE, and the dump takes the one order
+        // every platform can reproduce.
         buffer_cstr(buffer, " attributes=");
-        buffer_optional_string(buffer, b);
+        if (!present) {
+            buffer_cstr(buffer, "null");
+            break;
+        }
+        // Bracketed, like the table's `alignments=[...]`: a value may contain
+        // spaces, so the group needs a delimiter for the field to be one
+        // field -- and an attribute named `children` must not read as the
+        // record's own `children=`.
+        buffer_cstr(buffer, "[");
+        markdown_core_node_directive_attribute_count(node, &count);
+        for (index = 0; index < count; index++) {
+            size_t candidate;
+            size_t chosen = count;
+            markdown_core_string best = {NULL, 0};
+            // Selection sort over the pairs: a directive has a handful of
+            // attributes, and this needs no allocation on the dump path.
+            for (candidate = 0; candidate < count; candidate++) {
+                if (!markdown_core_node_directive_attribute_at(node, candidate, &a, &b)) {
+                    continue;
+                }
+                if (index > 0 && !(string_before(previous, a))) {
+                    continue;
+                }
+                if (chosen != count && !string_before(a, best)) {
+                    continue;
+                }
+                chosen = candidate;
+                best = a;
+            }
+            if (chosen == count) {
+                break;
+            }
+            markdown_core_node_directive_attribute_at(node, chosen, &a, &b);
+            if (index > 0) {
+                buffer_cstr(buffer, " ");
+            }
+            buffer_bytes(buffer, a.data, a.length);
+            buffer_cstr(buffer, "=");
+            buffer_json_string(buffer, b);
+            previous = a;
+        }
+        buffer_cstr(buffer, "]");
         break;
+    }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
     case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
         markdown_core_node_footnote_id(node, &a);

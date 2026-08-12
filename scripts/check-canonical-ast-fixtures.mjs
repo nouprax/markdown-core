@@ -97,8 +97,8 @@ const stateValidators = {
     "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
     "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
-    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{\}" /m.test(tree),
-    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{.+\}" /m.test(tree),
+    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
+    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
     "directive.label.null": (tree) =>
         dumpNodes(tree).some((node) => isDirective(node) && node.children[0]?.kind !== "DirectiveLabel"),
     "directive.label.empty": (tree) =>
@@ -116,7 +116,9 @@ const stateValidators = {
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    "escaping.json": (tree) => /attributes="\{\\"/.test(tree),
+    // A value that happens to CONTAIN JSON still escapes as a quoted string;
+    // the dump itself no longer wraps the map in one.
+    "escaping.json": (tree) => /attributes=\[[^\]]*="\{\\"/.test(tree),
     "htmlComment.true": (tree) => / comment=true literal=/.test(tree),
     "htmlComment.false": (tree) => / comment=false literal=/.test(tree)
 };
@@ -227,7 +229,12 @@ for (const testCase of manifest.cases ?? []) {
         const kind = match[1];
         actualKinds.add(kind);
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
-        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""');
+        // Strings first, then bracketed groups: a directive's attributes are
+        // ONE field whose contents are themselves `name="value"` pairs, and
+        // an attribute named `children` must not read as the record's own.
+        const lineWithoutStrings = line
+            .replace(/"(?:\\.|[^"\\])*"/g, '""')
+            .replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         const dumpFields = {
             Document: [],

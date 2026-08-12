@@ -26,11 +26,11 @@ enum es_string_field {
 
 typedef struct {
     int32_t mode;
-    uint32_t reserved;
+    uint32_t has_attributes;
     uint32_t name_data;
     uint32_t name_length;
-    uint32_t attributes_data;
-    uint32_t attributes_length;
+    uint32_t attribute_count;
+    uint32_t reserved;
 } es_directive_properties_layout;
 
 #define ES_LAYOUT_ASSERT(name, condition) typedef char name[(condition) ? 1 : -1]
@@ -50,8 +50,8 @@ ES_LAYOUT_ASSERT(es_directive_properties_size_is_24, sizeof(es_directive_propert
 ES_LAYOUT_ASSERT(es_directive_properties_mode_starts_at_0, offsetof(es_directive_properties_layout, mode) == 0);
 ES_LAYOUT_ASSERT(es_directive_properties_name_starts_at_8, offsetof(es_directive_properties_layout, name_data) == 8);
 ES_LAYOUT_ASSERT(
-    es_directive_properties_attributes_starts_at_16,
-    offsetof(es_directive_properties_layout, attributes_data) == 16
+    es_directive_properties_count_starts_at_16,
+    offsetof(es_directive_properties_layout, attribute_count) == 16
 );
 #undef ES_LAYOUT_ASSERT
 
@@ -277,21 +277,43 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
     return value;
 }
 
-// Layout (24 bytes): i32 mode, reserved u32, then the name and attributes
-// string views. Label presence and content come from the canonical child
-// topology, exactly like every other typed child relation.
+// Layout (24 bytes): i32 mode, u32 has-attributes, the name string view, and
+// the attribute count. The entries themselves come from
+// es_node_directive_attribute_at, one crossing per pair, because a map is
+// what they are -- there is no serialized form to hand over in one piece.
+// Label presence and content come from the canonical child topology, exactly
+// like every other typed child relation.
 void es_node_directive_properties(const markdown_core_node *node, void *out) {
     markdown_core_placement_mode mode;
-    markdown_core_string name, attributes;
+    markdown_core_string name;
+    bool has_attributes = false;
+    size_t count = 0;
     es_directive_properties_layout *properties = (es_directive_properties_layout *)out;
 
-    markdown_core_node_directive_properties(node, &mode, &name, &attributes);
+    markdown_core_node_directive_properties(node, &mode, &name, &has_attributes);
+    markdown_core_node_directive_attribute_count(node, &count);
     properties->mode = (int32_t)mode;
-    properties->reserved = 0;
+    properties->has_attributes = has_attributes ? 1u : 0u;
     properties->name_data = (uint32_t)(uintptr_t)name.data;
     properties->name_length = (uint32_t)name.length;
-    properties->attributes_data = (uint32_t)(uintptr_t)attributes.data;
-    properties->attributes_length = (uint32_t)attributes.length;
+    properties->attribute_count = (uint32_t)count;
+    properties->reserved = 0;
+}
+
+/* One attribute pair into the shared scratch: u32 key data, u32 key length,
+ * u32 value data, u32 value length. */
+int32_t es_node_directive_attribute_at(const markdown_core_node *node, size_t index, void *out) {
+    markdown_core_string key = {NULL, 0}, value = {NULL, 0};
+    uint32_t *slots = (uint32_t *)out;
+
+    if (!markdown_core_node_directive_attribute_at(node, index, &key, &value)) {
+        return 0;
+    }
+    slots[0] = (uint32_t)(uintptr_t)key.data;
+    slots[1] = (uint32_t)key.length;
+    slots[2] = (uint32_t)(uintptr_t)value.data;
+    slots[3] = (uint32_t)value.length;
+    return 1;
 }
 
 void es_string(const void *object, int32_t field, uintptr_t *data, size_t *length) {

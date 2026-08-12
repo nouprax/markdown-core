@@ -21,7 +21,9 @@ public struct DirectiveBlock: Markup {
     /// The directive's name.
     public let name: String
     /// The raw attribute text between the braces, if any.
-    public let attributes: String?
+    /// The directive's attribute map in the grammar's own terms, or nil when
+    /// no `{...}` container was written. An empty container is an empty map.
+    public let attributes: [String: String]?
     /// The directive's label; nil when the directive declares no label —
     /// distinct from an explicit empty `[]`.
     public let label: DirectiveLabel?

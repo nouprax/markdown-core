@@ -6,7 +6,9 @@ import type { Markup } from "./markup.js";
 export interface DirectiveBlock extends MarkupBase<"directiveBlock"> {
     readonly mode: PlacementMode;
     readonly name: string;
-    readonly attributes: string | null;
+    /** The directive's attribute map, in source order, or null when no
+     * `{...}` container was written. An empty container is an empty map. */
+    readonly attributes: Readonly<Record<string, string>> | null;
     readonly label: DirectiveLabel | null;
     readonly content: readonly Markup[];
 }
