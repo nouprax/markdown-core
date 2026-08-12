@@ -854,6 +854,45 @@ static uint64_t hash_mix(uint64_t h, uint64_t value) {
     return h ^ (h >> 29);
 }
 
+static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
+    size_t length;
+    size_t head;
+    size_t tail;
+    size_t i;
+
+    if (!chunk->data || chunk->len < 0) {
+        return hash_mix(h, 0);
+    }
+    length = (size_t)chunk->len;
+    head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
+    tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
+    h = (h ^ (uint64_t)length) * 0x100000001b3ull;
+    for (i = 0; i < head; i++) {
+        h ^= chunk->data[i];
+        h *= 0x100000001b3ull;
+    }
+    for (i = 0; i < tail; i++) {
+        h ^= chunk->data[length - tail + i];
+        h *= 0x100000001b3ull;
+    }
+    return h;
+}
+
+/* WHAT GOES IN, and why this list and not another: the scalars below are
+ * exactly the ones markdown_core_ast_parts_changed (extensions/ast.c) reads
+ * to decide that two nodes of the same kind differ in VALUE. A field it
+ * compares and this omits is a field on which two different nodes hash
+ * equal, and the prefix sweep in diff.c then PAIRS them -- which is how an
+ * inserted `## Same` in front of an existing `# Same` took the H1's id and
+ * left the surviving H1 to be minted fresh. The delta stayed honest, because
+ * a paired node is still compared field by field; what was wrong was which
+ * node the consumer's row state stayed attached to.
+ *
+ * Extension-owned values are still absent: a directive's name and
+ * attributes, a table's alignments, a row's header bit and a formula's mode
+ * live behind the extension that registered the type, whose constants core
+ * cannot see. Those remain what the field comment on node.h describes -- a
+ * source of worse pairing, never of a missed change. */
 void markdown_core_node_stamp(markdown_core_node *node) {
     uint64_t h = 0xcbf29ce484222325ull;
     markdown_core_node *child;
@@ -866,22 +905,52 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    // A footnote's label is its own literal, and it is what tells two
+    // otherwise identical definitions apart.
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+        h = hash_chunk(h, &node->as.literal);
+        break;
+    // `as.literal` aliases `as.code.info`, so reading it here hashed a code
+    // block's INFO STRING while meaning its body: two blocks sharing a fence
+    // language hashed equal however far apart their contents were.
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        if (node->as.literal.data) {
-            size_t length = (size_t)node->as.literal.len;
-            size_t head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
-            size_t tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
-            size_t i;
-            h = (h ^ (uint64_t)length) * 0x100000001b3ull;
-            for (i = 0; i < head; i++) {
-                h ^= node->as.literal.data[i];
-                h *= 0x100000001b3ull;
-            }
-            for (i = 0; i < tail; i++) {
-                h ^= node->as.literal.data[length - tail + i];
-                h *= 0x100000001b3ull;
-            }
+        h = hash_chunk(h, &node->as.code.literal);
+        h = hash_chunk(h, &node->as.code.info);
+        h = hash_mix(h, (uint64_t)(node->as.code.fenced != 0));
+        h = hash_mix(h, (uint64_t)(node->as.code.fence_closed != 0));
+        break;
+    case MARKDOWN_CORE_NODE_HEADING:
+        h = hash_mix(h, (uint64_t)node->as.heading.level);
+        break;
+    case MARKDOWN_CORE_NODE_LIST:
+        h = hash_mix(h, (uint64_t)node->as.list.list_type);
+        h = hash_mix(h, (uint64_t)(node->as.list.tight != 0));
+        // The start ordinal is the list's only when it is ordered; a bullet
+        // list has none, which is what the facade reports.
+        if (node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST) {
+            h = hash_mix(h, (uint64_t)node->as.list.start);
         }
+        break;
+    // The checkbox is an extension's, present only where one claimed the
+    // item; `extension` is the same gate the facade uses, minus its strcmp.
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        h = hash_mix(h, node->extension ? (uint64_t)(node->as.list.checked != 0) + 1u : 0u);
+        break;
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        h = hash_chunk(h, &node->as.link.url);
+        h = hash_chunk(h, &node->as.link.title);
+        break;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        h = hash_chunk(h, &node->as.definition.label);
+        h = hash_chunk(h, &node->as.definition.url);
+        h = hash_chunk(h, &node->as.definition.title);
+        break;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        h = hash_chunk(h, &node->as.reference.label);
+        h = hash_mix(h, (uint64_t)node->as.reference.form);
         break;
     default:
         break;

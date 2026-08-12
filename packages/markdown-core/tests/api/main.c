@@ -1992,6 +1992,78 @@ static void document_head_insertion_id_stability(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+/* THE PREFIX SWEEP PAIRS ON subtree_hash, so a field the hash omits is a
+ * field two different nodes collide on -- and the sweep then hands the
+ * survivor's id to the newcomer. Insert `## Same` in front of `# Same`: the
+ * heading level is what tells them apart, and if it is not hashed the H2
+ * takes the H1's id while the H1 is minted fresh. Same shape for a fenced
+ * block whose info matches but whose body does not. */
+static void document_head_insertion_pairs_on_value(test_batch_runner *runner) {
+    static const char h1[] = "# Same\n";
+    static const char h2_then_h1[] = "## Same\n\n# Same\n";
+    static const char one_block[] = "```js\nalpha\n```\n";
+    static const char two_blocks[] = "```js\nbeta\n```\n\n```js\nalpha\n```\n";
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_new(mc_sv(h1, strlen(h1)), NULL, &error);
+    markdown_core_node_id heading_id = 0;
+    uint64_t heading_rev = 0;
+
+    OK(runner, document != NULL, "value-pairing document opens");
+    if (!document) {
+        markdown_core_error_free(error);
+        return;
+    }
+    {
+        const markdown_core_node *h = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        heading_id = h ? markdown_core_node_get_id(h) : 0;
+        heading_rev = h ? markdown_core_node_get_revision(h) : 0;
+        INT_EQ(runner, h ? h->as.heading.level : 0, 1, "baseline heading is an H1");
+    }
+
+    OK(runner,
+       mc_edit(&document, mc_sv(h2_then_h1, strlen(h2_then_h1)), NULL, &error),
+       "inserting a same-text H2 above the H1 commits");
+    {
+        const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
+        OK(runner, first && second, "both headings are present after the insert");
+        if (first && second) {
+            INT_EQ(runner, first->as.heading.level, 2, "the inserted heading is the H2");
+            INT_EQ(runner, second->as.heading.level, 1, "the surviving heading is the H1");
+            OK(runner,
+               markdown_core_node_get_id(first) != heading_id,
+               "the INSERTED heading is minted fresh, not handed the survivor's id");
+            OK(runner, markdown_core_node_get_id(second) == heading_id, "the SURVIVING heading keeps its id");
+            OK(runner,
+               markdown_core_node_get_revision(second) == heading_rev,
+               "the surviving heading is unchanged, so its revision does not move");
+        }
+    }
+    markdown_core_document_free(document);
+    document = markdown_core_document_new(mc_sv(one_block, strlen(one_block)), NULL, &error);
+    OK(runner, document != NULL, "same-info code document opens");
+    if (!document) {
+        markdown_core_error_free(error);
+        return;
+    }
+    {
+        const markdown_core_node *block = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        markdown_core_node_id block_id = block ? markdown_core_node_get_id(block) : 0;
+        OK(runner,
+           mc_edit(&document, mc_sv(two_blocks, strlen(two_blocks)), NULL, &error),
+           "inserting a same-info code block above it commits");
+        {
+            const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+            const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
+            OK(runner,
+               second && markdown_core_node_get_id(second) == block_id,
+               "the id follows the block whose BODY survived, not the shared info string");
+        }
+    }
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
 static void document_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -2760,6 +2832,7 @@ int main(void) {
     document_streaming_equivalence(runner);
     document_append_id_stability(runner);
     document_head_insertion_id_stability(runner);
+    document_head_insertion_pairs_on_value(runner);
     subtree_hash_completeness(runner);
     document_series_entropy(runner);
     document_suffix_id_stability(runner);
