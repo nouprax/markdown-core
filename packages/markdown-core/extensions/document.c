@@ -591,6 +591,12 @@ bool markdown_core_document_edit(
         error
     );
     if (!nw) {
+        // "Cleared on every path" is the contract, and a failed build is one
+        // of those paths: every binding has already relinquished ownership by
+        // the time this returns, so leaving the predecessor addressable here
+        // leaks it with nobody left able to free it.
+        markdown_core_document_free(old);
+        *document = NULL;
         return false;
     }
     markdown_core_document_free(old);

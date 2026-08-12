@@ -131,11 +131,9 @@ public final class Document: Markup, @unchecked Sendable {
     public init(_ markdown: String, options: ParseOptions = .init()) throws {
         var nativeOptions = options.native
         var nativeError: OpaquePointer?
-        let handle = try markdown.withCString { cString -> OpaquePointer in
-            let text = markdown_core_string(
-                data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
-                length: strlen(cString)
-            )
+        var source = markdown
+        let handle = try source.withUTF8 { buffer -> OpaquePointer in
+            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
             guard let handle = markdown_core_document_new(text, &nativeOptions, &nativeError) else {
                 defer { markdown_core_error_free(nativeError) }
                 throw ParseError(from: nativeError)
@@ -195,11 +193,9 @@ public final class Document: Markup, @unchecked Sendable {
         var mutable: OpaquePointer? = handle
         var out = markdown_core_commit()
         var nativeError: OpaquePointer?
-        let succeeded = markdown.withCString { cString -> Bool in
-            let text = markdown_core_string(
-                data: UnsafeRawPointer(cString).assumingMemoryBound(to: UInt8.self),
-                length: strlen(cString)
-            )
+        var source = markdown
+        let succeeded = source.withUTF8 { buffer -> Bool in
+            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
             return markdown_core_document_edit(&mutable, text, &out, &nativeError)
         }
         // The native edit clears the receiver on every path, success or not,
