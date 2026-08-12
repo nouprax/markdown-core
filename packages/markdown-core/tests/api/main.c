@@ -1451,9 +1451,6 @@ static void test_feed_across_line_ending(test_batch_runner *runner) {
     markdown_core_node_free(document);
 }
 
-#if !defined(_WIN32) || defined(__CYGWIN__)
-#include <sys/time.h>
-
 /* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
  * that holds an id and the tree already has the node, because it meets it on
  * the walk it was doing anyway (requirement 3). These tests hold ids across an
@@ -1480,6 +1477,10 @@ static const markdown_core_node *node_by_id(const markdown_core_node *root, mark
         node = markdown_core_node_get_next_sibling(node);
     }
 }
+
+#if !defined(_WIN32) || defined(__CYGWIN__)
+#include <sys/time.h>
+
 static struct timeval _before, _after;
 static int _timing;
 #define START_TIMING() gettimeofday(&_before, NULL)

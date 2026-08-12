@@ -45,6 +45,33 @@
 #include "markdown_core.h"
 #include "commit_compat.h"
 
+/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
+ * that holds an id and the tree already has the node, because it meets it on
+ * the walk it was doing anyway (requirement 3). These tests hold ids across an
+ * edit exactly like a highlighter does, so they find nodes the same way. */
+static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    if (!root || id == 0) {
+        return NULL;
+    }
+    for (;;) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node != root && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        if (node == root) {
+            return NULL;
+        }
+        node = markdown_core_node_get_next_sibling(node);
+    }
+}
+
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -107,32 +134,6 @@ static void thread_join(thread_handle handle) {
 #else
 #include <pthread.h>
 
-/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
- * that holds an id and the tree already has the node, because it meets it on
- * the walk it was doing anyway (requirement 3). These tests hold ids across an
- * edit exactly like a highlighter does, so they find nodes the same way. */
-static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
-    const markdown_core_node *node = root;
-    if (!root || id == 0) {
-        return NULL;
-    }
-    for (;;) {
-        if (markdown_core_node_get_id(node) == id) {
-            return node;
-        }
-        if (markdown_core_node_get_first_child(node)) {
-            node = markdown_core_node_get_first_child(node);
-            continue;
-        }
-        while (node != root && !markdown_core_node_get_next_sibling(node)) {
-            node = markdown_core_node_get_parent(node);
-        }
-        if (node == root) {
-            return NULL;
-        }
-        node = markdown_core_node_get_next_sibling(node);
-    }
-}
 typedef pthread_t thread_handle;
 typedef struct barrier {
     pthread_mutex_t lock;
