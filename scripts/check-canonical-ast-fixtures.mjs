@@ -232,9 +232,7 @@ for (const testCase of manifest.cases ?? []) {
         // Strings first, then bracketed groups: a directive's attributes are
         // ONE field whose contents are themselves `name="value"` pairs, and
         // an attribute named `children` must not read as the record's own.
-        const lineWithoutStrings = line
-            .replace(/"(?:\\.|[^"\\])*"/g, '""')
-            .replace(/=\[[^\]]*\]/g, "=[]");
+        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         const dumpFields = {
             Document: [],

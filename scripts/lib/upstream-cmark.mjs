@@ -135,9 +135,7 @@ export function parseCanonicalDump(dump) {
         const fields = {};
         // A bracketed group is ONE field even when it contains spaces: a
         // directive's attributes print as `[k="v" k2="v w"]`.
-        for (const field of body.matchAll(
-            /([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]|[^\s]+)/g
-        )) {
+        for (const field of body.matchAll(/([a-zA-Z]+)=("(?:[^"\\]|\\.)*"|\[(?:"(?:[^"\\]|\\.)*"|[^\]])*\]|[^\s]+)/g)) {
             fields[field[1]] = field[2].startsWith('"') ? JSON.parse(field[2]) : field[2];
         }
         const node = { kind: body.split(" ")[0], fields, children: [] };
