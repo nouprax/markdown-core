@@ -316,8 +316,10 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
     let touched = 0;
 
     const tick = () => {
+        const previous = document;
         const commit = document.edit(streamed);
         document = commit.document;
+        previous.close();
         ticks += 1;
         touched += commit.delta.diffs.length;
         const reference = Document(streamed);

@@ -133,8 +133,10 @@ for (const testCase of canonicalManifest.cases) {
         let previous = new Map();
         for (const chunk of lineChunks(testCase.source)) {
             replayed += chunk;
+            const editing = document;
             const commit = document.edit(replayed);
             document = commit.document;
+            editing.close();
 
             // Equivalence: the edited document dumps byte-equal to a
             // one-shot parse of the same text.

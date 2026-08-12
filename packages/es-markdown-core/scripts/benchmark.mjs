@@ -55,7 +55,13 @@ function benchmarkStream(workload, unit, units) {
         let streamed = "";
         for (let index = 0; index < units; index += 1) {
             streamed += unit;
+            const previous = document;
             document = document.edit(streamed).document;
+            // The edit reads its receiver and takes nothing, so the loop is
+            // what ends the predecessor. The registry is not a backstop here:
+            // a native parse costs WASM linear memory, which is invisible to
+            // the JavaScript collector, so nothing would make it run.
+            previous.close();
         }
         document.close();
     }
@@ -88,7 +94,9 @@ function benchmarkFanOut(workload, width) {
     function replay(from) {
         let document = from;
         for (let index = 0; index < 20; index += 1) {
+            const previous = document;
             document = document.edit(sources[index % 2]).document;
+            previous.close();
         }
         return document;
     }

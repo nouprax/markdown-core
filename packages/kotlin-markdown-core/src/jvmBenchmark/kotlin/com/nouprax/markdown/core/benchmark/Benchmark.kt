@@ -176,7 +176,12 @@ private fun streamBenchmark(
             var streamed = ""
             for (chunk in chunks) {
                 streamed += chunk
+                val previous = document
                 document = document.edit(streamed).document
+                // The edit reads its receiver and takes nothing, so the loop
+                // ends the predecessor. The Cleaner is not a backstop here: a
+                // native parse costs memory the JVM collector cannot see.
+                previous.close()
             }
             document.scope
             document.close()
