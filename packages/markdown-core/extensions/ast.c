@@ -1060,7 +1060,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
         bool present = false;
-        size_t count = 0;
+        size_t attribute_count = 0;
         size_t index;
         markdown_core_string previous = {NULL, 0};
         markdown_core_node_directive_properties(node, &mode, &a, &present);
@@ -1086,27 +1086,27 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         // field -- and an attribute named `children` must not read as the
         // record's own `children=`.
         buffer_cstr(buffer, "[");
-        markdown_core_node_directive_attribute_count(node, &count);
-        for (index = 0; index < count; index++) {
+        markdown_core_node_directive_attribute_count(node, &attribute_count);
+        for (index = 0; index < attribute_count; index++) {
             size_t candidate;
-            size_t chosen = count;
+            size_t chosen = attribute_count;
             markdown_core_string best = {NULL, 0};
             // Selection sort over the pairs: a directive has a handful of
             // attributes, and this needs no allocation on the dump path.
-            for (candidate = 0; candidate < count; candidate++) {
+            for (candidate = 0; candidate < attribute_count; candidate++) {
                 if (!markdown_core_node_directive_attribute_at(node, candidate, &a, &b)) {
                     continue;
                 }
                 if (index > 0 && !(string_before(previous, a))) {
                     continue;
                 }
-                if (chosen != count && !string_before(a, best)) {
+                if (chosen != attribute_count && !string_before(a, best)) {
                     continue;
                 }
                 chosen = candidate;
                 best = a;
             }
-            if (chosen == count) {
+            if (chosen == attribute_count) {
                 break;
             }
             markdown_core_node_directive_attribute_at(node, chosen, &a, &b);
