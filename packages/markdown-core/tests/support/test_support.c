@@ -7,8 +7,9 @@
 #include <windows.h>
 #else
 #include <time.h>
-#include "commit_compat.h"
 #endif
+
+#include "commit_compat.h"
 
 /* File IO -------------------------------------------------------------- */
 

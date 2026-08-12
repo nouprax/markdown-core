@@ -11,6 +11,7 @@
 
 #include "harness.h"
 #include "cplusplus.h"
+#include "commit_compat.h"
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
@@ -1452,7 +1453,6 @@ static void test_feed_across_line_ending(test_batch_runner *runner) {
 
 #if !defined(_WIN32) || defined(__CYGWIN__)
 #include <sys/time.h>
-#include "commit_compat.h"
 
 /* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
  * that holds an id and the tree already has the node, because it meets it on

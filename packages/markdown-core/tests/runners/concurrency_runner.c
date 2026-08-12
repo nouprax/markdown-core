@@ -43,6 +43,7 @@
 #include <string.h>
 
 #include "markdown_core.h"
+#include "commit_compat.h"
 
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
@@ -105,7 +106,6 @@ static void thread_join(thread_handle handle) {
 #define THREAD_RESULT 0u
 #else
 #include <pthread.h>
-#include "commit_compat.h"
 
 /* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
  * that holds an id and the tree already has the node, because it meets it on
