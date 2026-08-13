@@ -49,8 +49,8 @@ report that. A consumer that draws anything positional — gutter numbers,
 underlines, a scroll anchor, a source map — must read it from the NEW
 document's node even for one it skipped as unchanged.
 
-The package exposes parsing, editing, and read-only AST traversal, not
-rendering or mutation.
+The package exposes parsing, the two document mutations (edit and append),
+and read-only AST traversal — not rendering, and not in-place tree mutation.
 
 Every node carries its own `scope` — its absolute start and end line and
 column — read in O(1) off the value. It is deliberately not part of `==`:
@@ -83,37 +83,55 @@ the complete document or a focused subtree (subtree scopes print with the
 subtree as origin) — intended for logs, snapshots, and debugging rather than
 persistence or data interchange.
 
-## Edit
+## Edit and Append
 
-There is no session type. A document is created from text and options, and
-`edit(_:)` hands it new text: it returns the document that text describes.
-Options are fixed for a document's whole series — changing what the parser
-means is a new `Document`, not an edit.
+There is no session type. A document is the live head of a CHAIN: `edit(_:)`
+hands it whole new text, `append(_:)` adds text at the end, and each returns
+the next head. Options are fixed for the chain's whole series — changing what
+the parser means is a new `Document`, not a mutation.
 
 ```swift
-let document = try Document("# Title\n\nHello")
-let edited = try document.edit("# Title\n\nHello world")
+var document = try Document("# Title\n\nHel")
+document = try document.append("lo")  // any split is legal, mid-word included
+document = try document.edit("# Title\n\nHello world")
 // The paragraph kept its identity; only its text advanced a revision.
 ```
 
-`edit` READS the receiver and takes nothing: the document it was called on
-keeps everything it owns, stays usable, and may be edited again. Editing one
-document twice gives two lines of descent, told apart by their revisions —
-and, like nodes from two separate parses, nodes from two lines are not
-comparable. Release a document when you are done with it; its
-already-extracted values stay valid forever, because they are values.
+The chain contract in one sentence: a mutation advances the chain and
+supersedes its receiver — old heads stop mutating, decoded values live
+forever. In detail: both mutations follow one rule (same chain, same series,
+revision strictly +1 on the chain's own counter); mutating a superseded
+document throws a deterministic error and disturbs nothing; and every read on
+a superseded document — its values, scopes, `dump()`, `node(_:)`,
+`diagnostics` — keeps answering from the state decoded when it was built,
+long after the rest of the chain is gone. A failed `edit` supersedes nothing:
+the receiver stays the head. A failed `append` poisons the chain — "the chain
+is done": only reads and release remain, and recovery is a new chain built
+from text the caller still holds. Appending an empty string is still a
+mutation: the chain advances over an identical projection.
+
+Streaming is `document = try document.append(chunk)` per message — never
+re-send accumulated text. Per-tick work is O(changed), not O(document): a
+node the append did not reach keeps its id, revision, and positions, and the
+binding reuses its already-decoded value whole — subtree and all — rather
+than rebuilding it, so decode work is proportional to what the append
+changed plus the open frontier it grew.
 
 Hand the returned document to SwiftUI and stop. The stability a reactive
 framework needs is on the TREE: an unchanged node keeps its `id` and its
 `revision`, `==` is O(1) over that pair, and `id` goes unmodified into
 `ForEach(id:)`. What changed is on the tree too: a node that changed at this
-edit — in its own fields, its child list, or somewhere below — carries the
-new document's `revision`, and a node that kept its revision is, subtree
+mutation — in its own fields, its child list, or somewhere below — carries
+the new document's `revision`, and a node that kept its revision is, subtree
 included, exactly what it was.
 
-A document is immutable and `Sendable`; concurrent reads of one document are
-safe from any thread. `document.node(_:)` answers this document's value for an
-id, and `document.diagnostics` lists everything an editor should underline —
-which, for Markdown, is one thing: a directive's `{...}` attribute block that
-did not parse. Every other "wrong" construct is a defined outcome of the
-standard semantics, not a failure.
+Threading is the chain's one rule. A mutation is an exclusive operation on
+its chain: all access to any document on the chain must happen before the
+mutation begins or after it returns, and two mutations must be serialized by
+the caller. Between mutations, concurrent reads of any document on the chain
+— live head or superseded — are safe from any thread, and decoded values are
+pure `Sendable` values, always safe everywhere. `document.node(_:)` answers
+this document's value for an id, and `document.diagnostics` lists everything
+an editor should underline — which, for Markdown, is one thing: a directive's
+`{...}` attribute block that did not parse. Every other "wrong" construct is
+a defined outcome of the standard semantics, not a failure.
