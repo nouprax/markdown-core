@@ -1,13 +1,10 @@
 package consumer;
 
-import com.nouprax.markdown.core.Commit;
-import com.nouprax.markdown.core.Diff;
 import com.nouprax.markdown.core.Document;
 import com.nouprax.markdown.core.Markup;
 import com.nouprax.markdown.core.MarkupDumper;
 import com.nouprax.markdown.core.MarkupID;
 import com.nouprax.markdown.core.ParseOptions;
-import java.util.List;
 
 public final class Main {
     private Main() {}
@@ -44,25 +41,21 @@ public final class Main {
             throw new IllegalStateException("an unedited parse is revision zero");
         }
 
-        // Editing and deltas from plain Java.
-        Commit commit = document.edit("héllo 🚀 world\n");
-        try (Document next = commit.getDocument()) {
-            if (commit.getDelta().beforeRevisionBits() != document.revisionBits()
-                    || commit.getDelta().afterRevisionBits() != next.revisionBits()) {
-                throw new IllegalStateException("delta revision bits must bracket the edit");
+        // Editing from plain Java: (id, revision) is the entire update
+        // protocol, so what changed is read off the successor tree itself.
+        try (Document next = document.edit("héllo 🚀 world\n")) {
+            if (next.revisionBits() == document.revisionBits()) {
+                throw new IllegalStateException("a text change must advance the document revision");
             }
-            List<Diff> diffs = commit.getDelta().getDiffs();
-            if (diffs.isEmpty()) {
-                throw new IllegalStateException("a text change must report a delta");
+            Markup grown = next.getContent().get(0);
+            if (!grown.getId().equals(paragraph.getId())) {
+                throw new IllegalStateException("the surviving paragraph must keep its id across the edit");
             }
-            Diff last = diffs.get(diffs.size() - 1);
-            if (!last.getMarkup().equals(next.getId()) || !last.getParts().getDescendant()) {
-                throw new IllegalStateException("the document root must close a postorder delta");
+            if (grown.revisionBits() != next.revisionBits()) {
+                throw new IllegalStateException("a changed node must carry the new document revision");
             }
-            for (Diff diff : diffs) {
-                if (!diff.getParts().isRetired() && next.node(diff.getMarkup()) == null) {
-                    throw new IllegalStateException("every surviving delta id must resolve");
-                }
+            if (next.node(paragraph.getId()) == null) {
+                throw new IllegalStateException("a held id must resolve in the successor");
             }
             next.getScope();
         }
