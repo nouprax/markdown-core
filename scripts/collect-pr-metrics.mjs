@@ -35,8 +35,8 @@ const allowedWorkloads = new Set([
 const allowedBoundaries = new Map([
     ["c", new Set(["native_parse"])],
     ["swift", new Set(["native_parse_and_value_copy"])],
-    ["kotlin", new Set(["jni_parse_and_value_copy", "jni_edit_and_decode"])],
-    ["es", new Set(["wasm_parse_and_value_copy"])]
+    ["kotlin", new Set(["jni_parse_and_value_copy", "jni_edit_and_decode", "jni_append_and_reuse_decode"])],
+    ["es", new Set(["wasm_parse_and_value_copy", "wasm_append_and_reuse_decode"])]
 ]);
 
 async function filesBelow(root) {
