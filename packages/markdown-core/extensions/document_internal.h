@@ -53,6 +53,11 @@ typedef struct markdown_core_chain {
     uint64_t generation;    /* the live head's generation; mutations bump it */
     uint64_t next_revision; /* strictly +1 per mutation, whichever kind */
     uint64_t series;        /* the salt every document on the chain shares */
+    /* The chain's base allocator: every successor builds over it, so a chain
+     * opened over an injected allocator stays observable to the injection —
+     * mutations do not silently fall back to the default. Borrowed; the
+     * opener guarantees it outlives the chain. */
+    markdown_core_mem *mem;
     /* A failed append is "the chain is done": nothing further may mutate it,
      * the caller holds the text, and recovery is a rebuild. */
     bool poisoned;

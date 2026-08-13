@@ -285,6 +285,7 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
+              chain_poison
               capture_growth_ceiling
               inline_shape
               inline_smart
@@ -486,6 +487,15 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/structure.md"
     --generated
     256)
+markdown_core_add_test(
+    fuzz_append_streams
+    fuzz
+    240
+    fuzz_smoke_runner
+    --generated
+    0
+    --append-streams
+    64)
 markdown_core_add_test(
     fuzz_script_smoke
     fuzz

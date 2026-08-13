@@ -63,6 +63,7 @@
 #include <markdown_core.h>
 
 #include "ast_internal.h"
+#include "document_internal.h"
 #include "buffer.h"
 #include "concrete.h"
 #include "concrete_records.h"
@@ -2941,6 +2942,67 @@ static int case_capture_oom_sweep(void) {
     return 0;
 }
 
+/* --- chain_poison --------------------------------------------------------- */
+
+/* D5 under systematic allocation loss: sweep the failure across the whole
+ * append pipeline, and whichever allocation dies the outcome must be exactly
+ * one of two states — the append succeeded whole, or it failed and POISONED
+ * the chain, after which every further mutation fails deterministically (the
+ * guards fire before any allocation, so the errors are deterministic even
+ * under the failing allocator) and only free remains. */
+static int case_chain_poison(void) {
+    static const char seed[] = "alpha [x] and *emph*\n\n[x]: /url\n";
+    long fail_at;
+    bool exhausted = false;
+
+    for (fail_at = 1; fail_at < 100000 && !exhausted; fail_at++) {
+        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
+        markdown_core_error *error = NULL;
+        markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, true, &error);
+        markdown_core_document *next;
+        if (!head) {
+            /* The loss fell inside the open: not this case's subject. */
+            markdown_core_error_free(error);
+            continue;
+        }
+        next = markdown_core_document_append(head, mc_sv(seed, sizeof(seed) - 1), &error);
+        if (next) {
+            /* Success must be whole: the chain stays usable, and once the
+             * countdown outlives the pipeline the sweep has covered every
+             * ordinal. */
+            if (sweep.countdown > 0) {
+                exhausted = true;
+            }
+            markdown_core_document_free(next);
+            markdown_core_document_free(head);
+            continue;
+        }
+        markdown_core_error_free(error);
+        error = NULL;
+        if (markdown_core_document_append(head, mc_sv("x", 1), &error) != NULL || !error ||
+            markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
+            fprintf(stderr, "chain_poison: a poisoned chain accepted an append at allocation %ld\n", fail_at);
+            markdown_core_error_free(error);
+            markdown_core_document_free(head);
+            return -1;
+        }
+        markdown_core_error_free(error);
+        error = NULL;
+        if (markdown_core_document_edit(head, mc_sv("y", 1), &error) != NULL || !error) {
+            fprintf(stderr, "chain_poison: a poisoned chain accepted an edit at allocation %ld\n", fail_at);
+            markdown_core_document_free(head);
+            return -1;
+        }
+        markdown_core_error_free(error);
+        markdown_core_document_free(head);
+    }
+    if (!exhausted) {
+        fprintf(stderr, "chain_poison: the sweep never outlived the pipeline\n");
+        return -1;
+    }
+    return 0;
+}
+
 /* --- capture_growth_ceiling --------------------------------------------- */
 
 /* The append's refusal at the capacity wrap point, driven directly: a
@@ -4509,6 +4571,7 @@ static const concrete_case CASES[] = {
     {"capture_document", case_capture_document},
     {"capture_equivalence", case_capture_equivalence},
     {"capture_oom_sweep", case_capture_oom_sweep},
+    {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
     {"inline_shape", case_inline_shape},
     {"inline_smart", case_inline_smart},

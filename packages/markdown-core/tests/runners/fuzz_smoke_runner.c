@@ -161,10 +161,68 @@ static uint8_t *script_generate(ts_prng *prng, size_t *length, int tokens) {
     return script;
 }
 
+/* fuzz_appends (streaming plan §7): random byte soups streamed through the
+ * REAL append mutation at random, deliberately arbitrary splits — mid-UTF-8,
+ * mid-CRLF, mid-anything — with the shared harness's full per-mutation
+ * verification (double walk + dump against a one-shot parse) at every step.
+ * The soup mixes markdown-ish tokens with raw words so definitions, fences,
+ * and tables actually form and dissolve mid-stream. */
+static int append_stream(ts_prng *prng, int round, const char *label) {
+    er_replay replay;
+    markdown_core_parse_options options;
+    size_t total = 64 + (size_t)(ts_prng_next(prng) % 2048);
+    uint8_t *soup = (uint8_t *)malloc(total + 1);
+    size_t at = 0;
+    size_t offset = 0;
+    int result = -1;
+
+    if (!soup) {
+        return -1;
+    }
+    while (at < total) {
+        if (ts_prng_next(prng) % 3 == 0) {
+            uint64_t word = ts_prng_next(prng);
+            size_t remaining = total - at < 8 ? total - at : 8;
+            memcpy(soup + at, &word, remaining);
+            at += remaining;
+        } else {
+            size_t pick = (size_t)(ts_prng_next(prng) % (sizeof(SCRIPT_TOKENS) - 1));
+            soup[at++] = (uint8_t)SCRIPT_TOKENS[pick];
+        }
+    }
+    soup[total] = 0;
+
+    markdown_core_parse_options_init(&options);
+    /* Round parity toggles footnotes+tables so both option worlds stream. */
+    options.footnotes = round % 2 == 0;
+    options.tables = round % 2 == 0;
+    if (er_replay_open(&replay, label, &options, script_report, NULL) != 0) {
+        er_replay_close(&replay);
+        free(soup);
+        return -1;
+    }
+    while (offset < total) {
+        size_t step = 1 + (size_t)(ts_prng_next(prng) % 24);
+        if (step > total - offset) {
+            step = total - offset;
+        }
+        if (er_replay_append(&replay, soup + offset, step) != 0) {
+            goto done;
+        }
+        offset += step;
+    }
+    result = 0;
+done:
+    er_replay_close(&replay);
+    free(soup);
+    return result;
+}
+
 int main(int argc, char **argv) {
     int i;
     size_t generated = 256;
     size_t script_generated = 0;
+    size_t append_streams = 0;
     size_t failures = 0;
     ts_prng prng;
 
@@ -199,10 +257,12 @@ int main(int argc, char **argv) {
             free(bytes);
         } else if (strcmp(argv[i], "--script-generated") == 0 && i + 1 < argc) {
             script_generated = (size_t)atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--append-streams") == 0 && i + 1 < argc) {
+            append_streams = (size_t)atoi(argv[++i]);
         } else {
             fputs(
                 "usage: fuzz_smoke_runner [--corpus FILE]... [--generated COUNT]"
-                " [--script FILE]... [--script-generated COUNT]\n",
+                " [--script FILE]... [--script-generated COUNT] [--append-streams COUNT]\n",
                 stderr
             );
             return 2;
@@ -246,6 +306,14 @@ int main(int argc, char **argv) {
             failures++;
         }
         free(script);
+    }
+
+    for (i = 0; (size_t)i < append_streams; i++) {
+        char label[64];
+        snprintf(label, sizeof(label), "append-stream[%d]", i);
+        if (append_stream(&prng, i, label) != 0) {
+            failures++;
+        }
     }
 
     if (failures) {

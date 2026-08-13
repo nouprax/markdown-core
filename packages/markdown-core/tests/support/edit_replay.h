@@ -81,6 +81,11 @@ int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *b
  * a one-shot parse of the shadow text. */
 int er_replay_commit(er_replay *replay);
 
+/* Appends bytes through the real append mutation — any split is legal,
+ * mid-UTF-8 and mid-line included — appends the same bytes to the shadow,
+ * and runs the same per-mutation verification a commit runs. */
+int er_replay_append(er_replay *replay, const uint8_t *bytes, size_t length);
+
 /* Deterministic edit-script interpreter: replays `script` as a document edit
  * sequence with full per-commit verification, then commits once more at the
  * end.  Every byte is meaningful, so a coverage-guided fuzzer can drive it

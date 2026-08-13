@@ -2715,6 +2715,88 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+/* THE CHAIN CONTRACT, through the public surface alone: both mutations
+ * supersede their receiver, the revision line is strictly +1 per mutation
+ * whichever kind, a stale handle's mutation fails deterministically and
+ * disturbs nothing, an empty append still advances the chain, and
+ * superseded handles free in any order. The poison path needs allocation
+ * injection and lives in the concrete runner's sweep instead. */
+static void document_chain_supersession(test_batch_runner *runner) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *head = markdown_core_document_new(mc_sv("alpha", 5), NULL, &error);
+    markdown_core_document *second = NULL;
+    markdown_core_document *third = NULL;
+    markdown_core_document *fourth = NULL;
+
+    OK(runner, head != NULL, "chain opens");
+    if (!head) {
+        markdown_core_error_free(error);
+        return;
+    }
+    OK(runner, markdown_core_document_revision(head) == 0, "a fresh parse is revision zero");
+
+    second = markdown_core_document_append(head, mc_sv(" beta\n", 6), &error);
+    OK(runner, second != NULL, "append succeeds on the head");
+    OK(runner, second && markdown_core_document_revision(second) == 1, "append advances the revision by one");
+    OK(runner,
+       second && markdown_core_document_series(second) == markdown_core_document_series(head),
+       "append stays in the series");
+
+    {
+        markdown_core_document *stale = markdown_core_document_append(head, mc_sv("x", 1), &error);
+        OK(runner, stale == NULL && error != NULL, "a stale append fails deterministically");
+        OK(runner,
+           markdown_core_error_get_code(error) == MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+           "the stale append reports invalid argument");
+        markdown_core_error_free(error);
+        error = NULL;
+    }
+    {
+        markdown_core_document *stale = markdown_core_document_edit(head, mc_sv("y", 1), &error);
+        OK(runner, stale == NULL && error != NULL, "a stale edit fails deterministically");
+        markdown_core_error_free(error);
+        error = NULL;
+    }
+
+    /* The failed stale mutations disturbed nothing: the live head mutates,
+     * and the revision line continues +1 with an EDIT — same rule, same
+     * counter, whichever mutation. */
+    third = markdown_core_document_edit(second, mc_sv("# gamma\n", 8), &error);
+    OK(runner, third != NULL, "the live head still mutates after stale attempts");
+    OK(runner, third && markdown_core_document_revision(third) == 2, "edit advances the same revision line");
+
+    /* An empty append is a mutation: the chain advances, the projection does
+     * not. */
+    fourth = markdown_core_document_append(third, mc_sv(NULL, 0), &error);
+    OK(runner, fourth != NULL, "an empty append succeeds");
+    OK(runner, fourth && markdown_core_document_revision(fourth) == 3, "an empty append advances the revision");
+    if (third && fourth) {
+        uint8_t *before_dump = NULL;
+        uint8_t *after_dump = NULL;
+        size_t before_length = 0;
+        size_t after_length = 0;
+        OK(runner,
+           markdown_core_document_dump(third, &before_dump, &before_length, NULL) &&
+               markdown_core_document_dump(fourth, &after_dump, &after_length, NULL) && before_length == after_length &&
+               memcmp(before_dump, after_dump, before_length) == 0,
+           "an empty append leaves the projection byte-identical");
+        markdown_core_dump_free(before_dump);
+        markdown_core_dump_free(after_dump);
+    }
+
+    OK(runner,
+       markdown_core_document_append(NULL, mc_sv("x", 1), &error) == NULL && error != NULL,
+       "a NULL receiver is a deterministic error");
+    markdown_core_error_free(error);
+    error = NULL;
+
+    /* Superseded handles free in any order; the chain outlives them all. */
+    markdown_core_document_free(head);
+    markdown_core_document_free(third);
+    markdown_core_document_free(second);
+    markdown_core_document_free(fourth);
+}
+
 /* Reference resolution is a function of definedness alone: whether a mention
  * resolves depends on its label being defined, never on how many mentions
  * resolved before it. The engine inherited an expansion budget from upstream
@@ -2900,6 +2982,7 @@ int main(void) {
     document_directive_label_edit_identity(runner);
     document_directive_empty_label_transitions(runner);
     document_block_directive_label_lookup(runner);
+    document_chain_supersession(runner);
     document_reference_resolution_is_unbudgeted(runner);
     document_scope_shift_invariance(runner);
 

@@ -253,12 +253,13 @@ static uint32_t chain_fetch_add32(volatile uint32_t *slot, int32_t amount) {
 }
 #endif
 
-static markdown_core_chain *chain_new(void) {
+static markdown_core_chain *chain_new(markdown_core_mem *mem) {
     markdown_core_chain *chain = (markdown_core_chain *)calloc(1, sizeof(*chain));
     if (chain) {
         chain->refcount = 1;
         chain->generation = 1;
         chain->next_revision = 1;
+        chain->mem = mem;
     }
     return chain;
 }
@@ -340,7 +341,7 @@ static markdown_core_document *document_build(
         doc->revision = prev->chain->next_revision;
         doc->generation = 0; /* not a head until the build succeeds */
     } else {
-        doc->chain = chain_new();
+        doc->chain = chain_new(mem);
         if (!doc->chain) {
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
             markdown_core_document_free(doc);
@@ -567,14 +568,7 @@ markdown_core_document *markdown_core_document_edit(
     if (!mutation_permitted(document, markdown, error)) {
         return NULL;
     }
-    return document_build(
-        &document->options,
-        markdown,
-        document,
-        markdown_core_mem_default(),
-        document->arena != NULL,
-        error
-    );
+    return document_build(&document->options, markdown, document, document->chain->mem, document->arena != NULL, error);
 }
 
 /* APPEND: the trailing mutation, the streaming plan's hot path. Any byte
@@ -628,14 +622,8 @@ markdown_core_document *markdown_core_document_append(
     whole.data = joined;
     whole.length = total;
 
-    successor = document_build(
-        &document->options,
-        whole,
-        document,
-        markdown_core_mem_default(),
-        document->arena != NULL,
-        error
-    );
+    successor =
+        document_build(&document->options, whole, document, document->chain->mem, document->arena != NULL, error);
     free(joined);
     if (!successor) {
         document->chain->poisoned = true;
