@@ -1088,6 +1088,27 @@ win and the safest.
   superseded parts of `extensions/session.c` and `extensions/incremental.c` go
   with the old surface.
 
+#### Recorded growth
+
+Rule 3 of `specs/coverage/policy.json` allows an entry to grow when an intended
+change moves which code the corpus reaches. Each such increase is named here.
+
+- **`kotlin-markdown-core/src/jvmSharedMain/.../CBridge.jvmShared.kt`, new at
+  4 lines / 1 function / 0 branches.** Two causes, both intended. The source
+  set is newly MEASURED: JaCoCo always analysed its classes, because they
+  compile into the JVM target's output, but neither the report nor the gate
+  listed it as a source root, so the file was reported under a path the gate
+  could not resolve. It is a source root now. And its content changed:
+  `java.lang.ref.Cleaner` is API 33 and this artifact ships to API 21, so both
+  JVM targets now run a phantom-reference queue drained by one daemon thread.
+  What is unpinned is that thread's own frames — the interrupt arm, the arm
+  that keeps one failed release from ending the thread, and the entry point
+  JaCoCo attributes to the method reference. Those execute on the reclaim
+  thread, whose probe writes the dumping thread is not guaranteed to see, so a
+  test that reached them would report flakily rather than pin anything. Rule 4
+  applies: this shrinks when the behaviour is pinned, not when the code is
+  executed.
+
 ### External oracles and what they have found
 
 Two gates now check Markdown Core's semantics against authorities outside the

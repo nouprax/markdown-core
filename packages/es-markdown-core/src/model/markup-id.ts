@@ -12,7 +12,9 @@
  *
  * Two ids are the same identity exactly when their `series` and `rawValue`
  * are equal. Within one series the same identity is always the same object,
- * so ids are usable as `Map` keys and React-style list keys.
+ * so ids a document handed out are usable as `Map` keys and React-style list
+ * keys. An id rebuilt from JSON or `structuredClone` is a new object with the
+ * same fields: `document.node` accepts it, reference equality does not.
  */
 export interface MarkupID {
     /**

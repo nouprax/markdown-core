@@ -33,5 +33,6 @@ exec node scripts/check-coverage.mjs \
     --format jacoco \
     --input "$report" \
     --source-root packages/kotlin-markdown-core/src/commonMain/kotlin \
+    --source-root packages/kotlin-markdown-core/src/jvmSharedMain/kotlin \
     --source-root packages/kotlin-markdown-core/src/jvmMain/kotlin \
     "$@"

@@ -174,20 +174,36 @@ internal val hostNativeLibraryResourcePath: String?
         }
 
 /**
- * A directory only this process can name.
+ * A directory only this user can reach.
  *
- * `Files.createTempDirectory` is the obvious call and `java.nio.file` reached
- * Android only in API 26, so this source set — which the Android artifact
- * compiles — stays on the `java.io` surface that has been there since API 1.
- * `mkdir` refusing an existing name is what makes the directory exclusively
- * ours, and a random name is what keeps another process from predicting the
- * path a library is about to be loaded from.
+ * A shared temp directory is about to hold a library this process will load as
+ * code, so the permissions are the boundary — an unguessable name is not one.
+ * `Files.createTempDirectory` would create it owner-only in one step, but
+ * `java.nio.file` reached Android only in API 26 and the Android artifact
+ * compiles this source set, so the mode is set after the fact on the `java.io`
+ * surface that has been there since API 1.
+ *
+ * That leaves a window between `mkdir` and the mode change in which the
+ * directory carries the umask's permissions. Nothing of another user's can
+ * survive it: the directory is verified empty once it is locked down, and a
+ * name that lost the race is abandoned rather than reused.
  */
 private fun createPrivateTemporaryDirectory(): File {
     val base = File(System.getProperty("java.io.tmpdir") ?: ".")
     repeat(4) {
         val directory = File(base, "markdown-core-${UUID.randomUUID()}")
-        if (directory.mkdir()) return directory
+        // mkdir refuses a name that already exists, so winning it means the
+        // directory is this call's.
+        if (!directory.mkdir()) return@repeat
+        val ownerOnly =
+            directory.setReadable(false, false) &&
+                directory.setWritable(false, false) &&
+                directory.setExecutable(false, false) &&
+                directory.setReadable(true, true) &&
+                directory.setWritable(true, true) &&
+                directory.setExecutable(true, true)
+        if (ownerOnly && directory.list()?.isEmpty() == true) return directory
+        directory.delete()
     }
     throw IllegalStateException("could not create a private directory for Markdown Core's native library")
 }

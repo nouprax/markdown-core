@@ -42,8 +42,10 @@ mutation.
 The tree is a value all the way down, so `JSON.stringify` serializes it,
 `structuredClone` copies it, and `postMessage` carries it to a worker. Nothing
 on a node needs a custom serializer: `MarkupID.series` is 16 hex digits rather
-than a `bigint` precisely so that a parsed-back id is the same id, comparable
-with `===` and accepted by `document.node()`.
+than a `bigint` so that an id survives the trip intact. What comes back is a
+new object carrying the same two fields, not the interned one — so hand it to
+`document.node(id)` or compare the fields. Reference equality and `Map`
+lookups work for the ids a live document handed you, and not for revived ones.
 
 Every node carries an identity: `id` (a `MarkupID` of the owning series
 salt plus a raw value, always the same object for the same identity) and

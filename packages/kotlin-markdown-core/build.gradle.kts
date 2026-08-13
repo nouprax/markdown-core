@@ -1024,7 +1024,13 @@ tasks.register<JacocoReport>("jvmCoverageReport") {
         correctness.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
         conformance.map { it.extensions.getByType<JacocoTaskExtension>().destinationFile!! },
     )
-    sourceDirectories.setFrom(files("src/commonMain/kotlin", "src/jvmMain/kotlin"))
+    // Every source set that compiles into the measured classes, jvmSharedMain
+    // included: it holds the JNI entry points and the loader, and leaving it
+    // out did not stop JaCoCo analysing its classes — it only left the report
+    // naming a file the gate could not resolve.
+    sourceDirectories.setFrom(
+        files("src/commonMain/kotlin", "src/jvmSharedMain/kotlin", "src/jvmMain/kotlin"),
+    )
     classDirectories.setFrom(jvmMainCompilation.output.classesDirs)
     reports {
         xml.required.set(true)
@@ -1142,12 +1148,38 @@ fun VerifyJavaImplementationHidden.useJavaCompiler(
  * shipped in an artifact advertising API 21. The SDK ships the answer in
  * `api-versions.xml`, so the check is a lookup, not a heuristic.
  *
- * Constant-pool class entries only. A call, a field access, a `new`, a cast
- * and a supertype all reduce to one, and one is exactly what the failure looks
- * like at runtime: a class the verifier cannot resolve.
+ * Two sources, because a type can reach the pool by either. A call, a field
+ * access, a `new`, a cast and a supertype all become a class entry — that is
+ * what the runtime failure looks like, a class the verifier cannot resolve.
+ * A type named only in a descriptor never becomes one: a method that returns a
+ * newer platform type and whose body returns null puts that type in a UTF-8
+ * entry and nowhere else, and it is still API the artifact declares. So the
+ * UTF-8 entries are read for descriptor forms too. Matching against the SDK's
+ * own class list is what keeps that from over-reaching: a UTF-8 run has to
+ * name a real platform type to count.
  */
 @CacheableTask
 abstract class VerifyAndroidApiFloor : DefaultTask() {
+    private companion object {
+        /**
+         * The one family this reads that never reaches a device.
+         *
+         * Kotlin compiles lambdas and string concatenation to `invokedynamic`,
+         * whose bootstrap metadata names `MethodHandle`, `MethodType` and
+         * `CallSite` — all API 26 — in almost every class here. D8 rewrites
+         * every one of them into concrete classes below API 26, and does so
+         * unconditionally rather than as the core-library desugaring this
+         * project does not enable. Reading JVM bytecode rather than DEX is
+         * what makes them visible at all.
+         *
+         * The cost is real and bounded: an explicit `MethodHandles.lookup()`
+         * would be waved through. Nothing here has one, and the families D8
+         * only desugars on request — `java.time`, `java.util.stream`,
+         * `java.util.function` — stay checked.
+         */
+        const val DESUGARED_PREFIX = "java/lang/invoke/"
+    }
+
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val libraryClasses: ConfigurableFileCollection
@@ -1183,6 +1215,9 @@ abstract class VerifyAndroidApiFloor : DefaultTask() {
                             .removeSuffix(".class")
                             .replace(File.separatorChar, '/')
                     for (referenced in referencedClasses(classFile.readBytes())) {
+                        if (referenced.startsWith(DESUGARED_PREFIX)) {
+                            continue
+                        }
                         val level = introducedIn[referenced] ?: continue
                         if (level > floor) {
                             violations
@@ -1268,13 +1303,26 @@ abstract class VerifyAndroidApiFloor : DefaultTask() {
             }
             slot += 1
         }
-        return nameSlots
+        val referenced = mutableSetOf<String>()
+        nameSlots
             .mapNotNull { text[it] }
             // An array type carries its own class entry; the platform answers
             // for the element type.
             .map { it.trimStart('[') }
-            .map { if (it.startsWith("L") && it.endsWith(";")) it.substring(1, it.length - 1) else it }
-            .toSet()
+            .mapTo(referenced) {
+                if (it.startsWith("L") && it.endsWith(";")) it.substring(1, it.length - 1) else it
+            }
+        // Descriptors and generic signatures live in UTF-8 entries and name
+        // their types the same way: `Lpkg/Name;`, or `Lpkg/Name<` once type
+        // arguments follow.
+        val descriptor = Regex("L([A-Za-z0-9_/\$]+)[;<]")
+        for (entry in text) {
+            if (entry == null) {
+                continue
+            }
+            descriptor.findAll(entry).forEach { referenced += it.groupValues[1] }
+        }
+        return referenced
     }
 }
 
