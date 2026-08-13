@@ -6,22 +6,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* MKC4 wire: every payload opens with the magic and a status byte (0 =
+/* MKC5 wire: every payload opens with the magic and a status byte (0 =
  * success data follows, 1 = an error record follows). A success payload
  * carries the document handle, its series, and the root's id, revision and
- * extent, then the tree, then — for an edit — the delta, then the
- * diagnostics.
+ * extent, then the tree, then the diagnostics — the same shape for an open
+ * and for an edit, because an edit's answer is simply the next document.
  *
  * Every payload carries the WHOLE tree, children before parents, which is the
- * order a decoder assembles immutable values in. An edit payload adds the
- * delta after it: the two revisions and one (id, parts) row per differing
- * node, in the order the facade defines.
+ * order a decoder assembles immutable values in. There is no delta section:
+ * what changed is asked of the tree itself, because a node's revision is the
+ * document revision at which its own fields, child list, or any descendant
+ * last changed — (id, revision) is the entire update protocol.
  *
  * Node records carry (kind, id, revision, scope, fields, child-id lists). The
  * scope is in the record because it belongs to the node; it had a table of its
- * own only to serve a decoder that skipped nodes the delta did not name, and
- * that decoder is gone — it made a document's projection a function of how it
- * was reached rather than of its text. */
+ * own only to serve a decoder that skipped unchanged nodes, and that decoder
+ * is gone — it made a document's projection a function of how it was reached
+ * rather than of its text. */
 
 typedef struct bridge_buffer {
     uint8_t *data;
@@ -124,7 +125,7 @@ static void put_string(bridge_buffer *buffer, markdown_core_string value, bool p
 }
 
 static void put_magic(bridge_buffer *buffer) {
-    static const uint8_t magic[] = {'M', 'K', 'C', '4'};
+    static const uint8_t magic[] = {'M', 'K', 'C', '5'};
     put_bytes(buffer, magic, sizeof(magic));
 }
 
@@ -432,35 +433,6 @@ static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root) {
     }
 }
 
-/* The delta rows: an id and its parts, nothing else.
- *
- * They used to carry the node's record, so that a decoder could rebuild only
- * what the delta named and keep its previous value for everything else. That
- * reuse is gone: it made a document's projection depend on how it was reached
- * rather than on its text. The tree above is complete, so a row needs only to
- * say WHICH node differs and HOW — which is all a highlighter ever wanted. */
-static void encode_delta(bridge_buffer *buffer, const markdown_core_delta *changes) {
-    uint64_t before = 0;
-    uint64_t after = 0;
-    const markdown_core_diff *rows = NULL;
-    size_t count;
-    size_t index;
-
-    markdown_core_delta_revisions(changes, &before, &after);
-    put_u64(buffer, before);
-    put_u64(buffer, after);
-    count = markdown_core_delta_diffs(changes, &rows);
-    if (count > INT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    put_i32(buffer, (int32_t)count);
-    for (index = 0; index < count; ++index) {
-        put_u64(buffer, rows[index].markup);
-        put_u32(buffer, rows[index].parts);
-    }
-}
-
 static void encode_diagnostics(bridge_buffer *buffer, const markdown_core_document *document) {
     const markdown_core_diagnostic *rows = NULL;
     size_t count = markdown_core_document_diagnostics(document, &rows);
@@ -557,7 +529,7 @@ bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t op
 bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
                                uint8_t **output, size_t *output_length) {
     markdown_core_document *document = document_of(handle);
-    markdown_core_commit commit;
+    markdown_core_document *successor;
     markdown_core_error *error = NULL;
     markdown_core_string text;
     const markdown_core_node *root;
@@ -572,20 +544,19 @@ bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t le
     put_magic(&buffer);
     text.data = source;
     text.length = length;
-    memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_edit(document, text, &commit, &error)) {
+    successor = markdown_core_document_edit(document, text, &error);
+    if (successor == NULL) {
         put_error(&buffer, error);
         return finish(&buffer, output, output_length);
     }
-    root = put_header(&buffer, commit.document);
+    root = put_header(&buffer, successor);
     if (root != NULL) {
         encode_tree(&buffer, root);
-        encode_delta(&buffer, commit.delta);
-        encode_diagnostics(&buffer, commit.document);
+        encode_diagnostics(&buffer, successor);
     }
-    markdown_core_delta_free(commit.delta);
     if (buffer.failed) {
-        markdown_core_document_free(commit.document);
+        /* The handle never reaches the caller, so this call owns it. */
+        markdown_core_document_free(successor);
     }
     return finish(&buffer, output, output_length);
 }

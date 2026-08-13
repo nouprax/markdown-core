@@ -192,13 +192,6 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/CodeBlock.hashCode|hashCode(){}[0]
 }
 
-final class com.nouprax.markdown.core/Commit { // com.nouprax.markdown.core/Commit|null[0]
-    final val delta // com.nouprax.markdown.core/Commit.delta|{}delta[0]
-        final fun <get-delta>(): com.nouprax.markdown.core/Delta // com.nouprax.markdown.core/Commit.delta.<get-delta>|<get-delta>(){}[0]
-    final val document // com.nouprax.markdown.core/Commit.document|{}document[0]
-        final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Commit.document.<get-document>|<get-document>(){}[0]
-}
-
 final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/CrossLink|null[0]
     constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, com.nouprax.markdown.core/Scope, kotlin/String) // com.nouprax.markdown.core/CrossLink.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;com.nouprax.markdown.core.Scope;kotlin.String){}[0]
 
@@ -216,20 +209,6 @@ final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Mark
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/CrossLink.hashCode|hashCode(){}[0]
 }
 
-final class com.nouprax.markdown.core/Delta { // com.nouprax.markdown.core/Delta|null[0]
-    final val afterRevision // com.nouprax.markdown.core/Delta.afterRevision|{}afterRevision[0]
-        final fun <get-afterRevision>(): kotlin/ULong // com.nouprax.markdown.core/Delta.afterRevision.<get-afterRevision>|<get-afterRevision>(){}[0]
-    final val beforeRevision // com.nouprax.markdown.core/Delta.beforeRevision|{}beforeRevision[0]
-        final fun <get-beforeRevision>(): kotlin/ULong // com.nouprax.markdown.core/Delta.beforeRevision.<get-beforeRevision>|<get-beforeRevision>(){}[0]
-    final val diffs // com.nouprax.markdown.core/Delta.diffs|{}diffs[0]
-        final fun <get-diffs>(): kotlin.collections/List<com.nouprax.markdown.core/Diff> // com.nouprax.markdown.core/Delta.diffs.<get-diffs>|<get-diffs>(){}[0]
-
-    final fun afterRevisionBits(): kotlin/Long // com.nouprax.markdown.core/Delta.afterRevisionBits|afterRevisionBits(){}[0]
-    final fun beforeRevisionBits(): kotlin/Long // com.nouprax.markdown.core/Delta.beforeRevisionBits|beforeRevisionBits(){}[0]
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Delta.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Delta.hashCode|hashCode(){}[0]
-}
-
 final class com.nouprax.markdown.core/Diagnostic { // com.nouprax.markdown.core/Diagnostic|null[0]
     final val code // com.nouprax.markdown.core/Diagnostic.code|{}code[0]
         final fun <get-code>(): com.nouprax.markdown.core/DiagnosticCode // com.nouprax.markdown.core/Diagnostic.code.<get-code>|<get-code>(){}[0]
@@ -239,35 +218,6 @@ final class com.nouprax.markdown.core/Diagnostic { // com.nouprax.markdown.core/
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Diagnostic.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Diagnostic.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Diagnostic.toString|toString(){}[0]
-}
-
-final class com.nouprax.markdown.core/Diff { // com.nouprax.markdown.core/Diff|null[0]
-    final val markup // com.nouprax.markdown.core/Diff.markup|{}markup[0]
-        final fun <get-markup>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Diff.markup.<get-markup>|<get-markup>(){}[0]
-    final val parts // com.nouprax.markdown.core/Diff.parts|{}parts[0]
-        final fun <get-parts>(): com.nouprax.markdown.core/DiffParts // com.nouprax.markdown.core/Diff.parts.<get-parts>|<get-parts>(){}[0]
-
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Diff.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Diff.hashCode|hashCode(){}[0]
-}
-
-final class com.nouprax.markdown.core/DiffParts { // com.nouprax.markdown.core/DiffParts|null[0]
-    final val children // com.nouprax.markdown.core/DiffParts.children|{}children[0]
-        final fun <get-children>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.children.<get-children>|<get-children>(){}[0]
-    final val descendant // com.nouprax.markdown.core/DiffParts.descendant|{}descendant[0]
-        final fun <get-descendant>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.descendant.<get-descendant>|<get-descendant>(){}[0]
-    final val isRetired // com.nouprax.markdown.core/DiffParts.isRetired|{}isRetired[0]
-        final fun <get-isRetired>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.isRetired.<get-isRetired>|<get-isRetired>(){}[0]
-    final val rawValue // com.nouprax.markdown.core/DiffParts.rawValue|{}rawValue[0]
-        final fun <get-rawValue>(): kotlin/Int // com.nouprax.markdown.core/DiffParts.rawValue.<get-rawValue>|<get-rawValue>(){}[0]
-    final val text // com.nouprax.markdown.core/DiffParts.text|{}text[0]
-        final fun <get-text>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.text.<get-text>|<get-text>(){}[0]
-    final val value // com.nouprax.markdown.core/DiffParts.value|{}value[0]
-        final fun <get-value>(): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.value.<get-value>|<get-value>(){}[0]
-
-    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/DiffParts.equals|equals(kotlin.Any?){}[0]
-    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/DiffParts.hashCode|hashCode(){}[0]
-    final fun toString(): kotlin/String // com.nouprax.markdown.core/DiffParts.toString|toString(){}[0]
 }
 
 final class com.nouprax.markdown.core/Directive : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Directive|null[0]
@@ -351,7 +301,7 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
     final fun dump(): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(){}[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(com.nouprax.markdown.core.Markup){}[0]
-    final fun edit(kotlin/String): com.nouprax.markdown.core/Commit // com.nouprax.markdown.core/Document.edit|edit(kotlin.String){}[0]
+    final fun edit(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Document.edit|edit(kotlin.String){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Document.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Document.hashCode|hashCode(){}[0]
     final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.MarkupID){}[0]

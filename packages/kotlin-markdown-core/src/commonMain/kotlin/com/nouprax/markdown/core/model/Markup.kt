@@ -29,7 +29,7 @@ public sealed interface Markup {
     public val id: MarkupID
 
     /**
-     * The commit revision at which this node's own fields, child list, or
+     * The document revision at which this node's own fields, child list, or
      * any descendant last changed.
      *
      * A pure positional shift caused by an edit elsewhere never changes a

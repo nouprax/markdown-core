@@ -71,7 +71,7 @@ because position is not content. The package exposes parsing, editing, and
 read-only AST traversal, not rendering or mutation.
 
 `Document` owns a native parse and is `AutoCloseable`: `use { }` it, and
-`use { }` the one `edit` hands back too — a commit leaves two parses open. A
+`use { }` the one `edit` hands back too — an edit leaves two parses open. A
 document that is never closed is released when it becomes unreachable, but
 that is a backstop, not the contract. Everything it produced — content, scopes,
 diagnostics, dump — is a value and stays usable afterwards.
@@ -109,21 +109,21 @@ println(MarkupDumper.dump(document))
 ## Edit
 
 There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes plus the
-`Delta` between the two. Options are fixed for a document's whole series —
-changing what the parser means is a new `Document`, not an edit.
+`edit` hands it new text: it returns the document that text describes. Options
+are fixed for a document's whole series — changing what the parser means is a
+new `Document`, not an edit.
 
 ```kotlin
 val document = Document("# Title\n\nHello")
-val commit = document.edit("# Title\n\nHello world")
-commit.document.use { next ->
+val next = document.edit("# Title\n\nHello world")
+next.use {
     // The paragraph kept its identity, and its unchanged sibling compares
     // equal down to the last field. Neither is the SAME object — a document
     // is decoded from its own text, not carried over from the caller's last
     // one — and `scope` may still place them somewhere new, because an edit
     // above moves every position below it without changing any content.
-    check(next.content[1].id == document.content[1].id)
-    check(next.content[0] == document.content[0])
+    check(it.content[1].id == document.content[1].id)
+    check(it.content[0] == document.content[0])
 }
 document.close()
 ```
@@ -135,37 +135,30 @@ and, like nodes from two separate parses, nodes from two lines are not
 comparable. Release a document when you are done with it; its
 already-extracted values stay valid forever, because they are values.
 
-### Most applications never read the delta
+### What changed is asked of the tree
 
-Hand `commit.document` to Compose and stop. The stability a reactive framework
-needs is on the TREE, not in the delta: an unchanged node keeps its `id` and
-its `revision`, equality is O(1) over that pair, and `id` goes unmodified into
-a `key()`. Nothing in this package requires a delta to obtain, retain, walk, or
-compare a document.
+Hand the new document to Compose and stop. The stability a reactive framework
+needs is on the TREE: an unchanged node keeps its `id` and its `revision`,
+equality is O(1) over that pair, and `id` goes unmodified into a `key()`.
 
-### The delta is for saying WHERE, and for state you keep yourself
-
-`Delta` is one list, in the new document's postorder: every node whose
-projection differs appears after all of its own children, and a retired node
-appears where it was found — before its former parent's row. Each row says
-which parts differ — `value`, `text`, `children`, `descendant` — and a row whose
-`parts.isRetired` is a node that no longer exists.
-
-`descendant` alone means "nothing of this node's own changed, something below
-it did", which is what lets a highlighter light the run that actually changed
-instead of the section containing it:
+There is nothing else to read. A node's `revision` is the document revision at
+which its own fields, child list, or any descendant last changed, so `(id,
+revision)` is the entire update protocol: a node that kept its pair is
+unchanged all the way down, and a consumer that wants to know WHERE an edit
+landed — a highlighter, a display list, an LSP token array — walks the new
+tree and prunes there:
 
 ```kotlin
-for (diff in commit.delta.diffs) {
-    if (diff.parts.descendant && !diff.parts.value && !diff.parts.text) continue
-    val node = commit.document.node(diff.markup) ?: continue
+fun repaint(previous: Document, next: Document, node: Markup) {
+    if (previous.node(node.id)?.revision == node.revision) return // unchanged, subtree included
     highlight(node.scope)
+    // recurse into the children for the run that actually changed
 }
 ```
 
-The other reader is a consumer holding state it must edit in place rather than
-re-derive — a display list, a text-measurement cache, an LSP token array. It
-walks the same list and edits its own structure.
+A node the predecessor does not answer for is new; an id the successor no
+longer answers for (`next.node(id) == null`) is retired. Creation and
+retirement are presence questions, not a list to read.
 
 Streaming consumers edit on the render tick rather than on every socket
 message, so the parse rate follows the display and not the socket.

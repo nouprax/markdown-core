@@ -5,7 +5,7 @@ package com.nouprax.markdown.core
 
 import kotlin.jvm.JvmSynthetic
 
-private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x34)
+private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
 
 private fun reader(bytes: ByteArray): WireReader {
     val reader = WireReader(bytes)
@@ -24,7 +24,9 @@ private fun reader(bytes: ByteArray): WireReader {
 }
 
 /**
- * Decodes one payload: the whole tree, then — for an edit — the delta.
+ * Decodes one payload: the whole tree, then the diagnostics. An open and an
+ * edit answer in the same shape, because an edit's answer is simply the next
+ * document.
  *
  * Every record's child ids resolve against entries this same pass decoded,
  * because the tree arrives children-before-parents. Nothing is carried over
@@ -35,9 +37,9 @@ private fun reader(bytes: ByteArray): WireReader {
  * this file's own, so no wire type crosses a file boundary — which is what
  * keeps the whole wire layer out of the Java-visible surface.
  */
-private fun <Result> decode(
+@JvmSynthetic
+internal fun <Result> decodeWire(
     bytes: ByteArray,
-    edit: Boolean,
     build: (
         handle: Long,
         id: MarkupID,
@@ -47,7 +49,7 @@ private fun <Result> decode(
         index: Map<ULong, Markup>,
         diagnostics: kotlin.collections.List<Diagnostic>,
     ) -> Result,
-): Pair<Result, Delta?> {
+): Result {
     val reader = reader(bytes)
     val handle = reader.long()
     val series = reader.ulong()
@@ -57,7 +59,6 @@ private fun <Result> decode(
     val index = HashMap<ULong, Markup>()
     val root = RootSink()
     reader.treeBody(series, rootId, index, root)
-    val delta = if (edit) reader.deltaBody(series) else null
     val diagnostics = reader.diagnostics()
     require(reader.finished) { "trailing bytes after a native payload" }
     return build(
@@ -68,38 +69,7 @@ private fun <Result> decode(
         checkNotNull(root.content) { "a payload carried no document root" },
         index,
         diagnostics,
-    ) to delta
-}
-
-@JvmSynthetic
-internal fun <Result> decodeWireOpen(
-    bytes: ByteArray,
-    build: (
-        Long,
-        MarkupID,
-        ULong,
-        Scope,
-        kotlin.collections.List<Markup>,
-        Map<ULong, Markup>,
-        kotlin.collections.List<Diagnostic>,
-    ) -> Result,
-): Result = decode(bytes, edit = false, build).first
-
-@JvmSynthetic
-internal fun <Result> decodeWireEdit(
-    bytes: ByteArray,
-    build: (
-        Long,
-        MarkupID,
-        ULong,
-        Scope,
-        kotlin.collections.List<Markup>,
-        Map<ULong, Markup>,
-        kotlin.collections.List<Diagnostic>,
-    ) -> Result,
-): Pair<Result, Delta> {
-    val (result, delta) = decode(bytes, edit = true, build)
-    return result to checkNotNull(delta) { "an edit payload carried no delta" }
+    )
 }
 
 /** Catches the one record that is not an index entry. The root has no parent
@@ -202,14 +172,6 @@ private class WireReader(
         }
 }
 
-private fun <Entry> WireReader.scopeMap(transform: (ULong, Scope) -> Entry): Map<ULong, Entry> {
-    val count = int()
-    require(count >= 0) { "invalid native scope count" }
-    return buildMap(capacity = count) {
-        repeat(count) { put(ulong(), transform(ulong(), scope())) }
-    }
-}
-
 private fun WireReader.diagnostics(): kotlin.collections.List<Diagnostic> {
     val count = int()
     require(count >= 0) { "invalid native diagnostic count" }
@@ -246,21 +208,6 @@ private fun WireReader.treeBody(
         index[id.rawValue] = record(kind, id, revision, scope, index)
     }
     requireNotNull(root.content) { "native payload carried no document root" }
-}
-
-/** One (id, parts) row per differing node, in the order the facade defines.
- * The rows name what changed; they do not carry it, because the tree above
- * carries everything. */
-private fun WireReader.deltaBody(series: ULong): Delta {
-    val beforeRevision = ulong()
-    val afterRevision = ulong()
-    val count = int()
-    require(count >= 0) { "invalid native diff count" }
-    return Delta(
-        beforeRevision,
-        afterRevision,
-        immutableList(count) { Diff(MarkupID(series, ulong()), DiffParts(int())) },
-    )
 }
 
 private fun WireReader.record(

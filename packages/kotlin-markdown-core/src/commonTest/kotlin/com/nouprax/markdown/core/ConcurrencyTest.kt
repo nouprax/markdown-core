@@ -59,9 +59,9 @@ class ConcurrencyTest {
                                         for (character in source) {
                                             streamed += character
                                         }
-                                        document = document.edit(streamed).document
+                                        document = document.edit(streamed)
                                         if (round + 1 < 24) {
-                                            document = document.edit("").document
+                                            document = document.edit("")
                                         }
                                     }
                                     document.use { it.dump() }

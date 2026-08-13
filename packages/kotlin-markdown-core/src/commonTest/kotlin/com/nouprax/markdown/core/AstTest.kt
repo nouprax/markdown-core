@@ -181,7 +181,7 @@ class AstTest {
         val firstBlock = first.content.single() as DirectiveBlock
         val firstLabel = assertNotNull(firstBlock.label)
 
-        first.edit(":::note[Title]\nChanged\n:::\n").document.use { second ->
+        first.edit(":::note[Title]\nChanged\n:::\n").use { second ->
             val secondBlock = second.content.single() as DirectiveBlock
             val secondLabel = assertNotNull(secondBlock.label)
             // The label did not change, so it keeps its identity and compares

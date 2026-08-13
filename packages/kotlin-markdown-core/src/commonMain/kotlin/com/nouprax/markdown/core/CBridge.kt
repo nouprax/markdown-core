@@ -11,7 +11,7 @@ import kotlin.jvm.JvmSynthetic
  */
 internal typealias CDocumentHandle = Long
 
-/** Parses [source] and returns the MKC4 payload describing the document. */
+/** Parses [source] and returns the MKC5 payload describing the document. */
 @JvmSynthetic
 internal expect fun cOpen(
     source: ByteArray,
@@ -19,7 +19,7 @@ internal expect fun cOpen(
 ): ByteArray
 
 /**
- * Hands [source] to the document behind this handle and returns the MKC4
+ * Hands [source] to the document behind this handle and returns the MKC5
  * payload describing its successor. READS this handle and takes nothing: it
  * stays valid and editable, and the successor's own handle arrives inside the
  * payload.
