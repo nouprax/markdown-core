@@ -56,7 +56,7 @@ function benchmarkStream(workload, unit, units) {
         for (let index = 0; index < units; index += 1) {
             streamed += unit;
             const previous = document;
-            document = document.edit(streamed).document;
+            document = document.edit(streamed);
             // The edit reads its receiver and takes nothing, so the loop is
             // what ends the predecessor. The registry is not a backstop here:
             // a native parse costs WASM linear memory, which is invisible to
@@ -76,8 +76,8 @@ function benchmarkStream(workload, unit, units) {
     timings.sort((left, right) => left - right);
     const medianNanoseconds = Math.round(timings[2] * 1e6);
     console.log(
-        `benchmark runtime=es boundary=wasm_edit_and_delta_decode workload=${workload} ` +
-            `workload_version=1 bytes=${Buffer.byteLength(unit) * units} commits=${units} ` +
+        `benchmark runtime=es boundary=wasm_edit_and_decode workload=${workload} ` +
+            `workload_version=1 bytes=${Buffer.byteLength(unit) * units} edits=${units} ` +
             `warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );
@@ -85,9 +85,8 @@ function benchmarkStream(workload, unit, units) {
 
 function benchmarkFanOut(workload, width) {
     // One-byte edits alternating in the first paragraph of a document with
-    // `width` root children: every commit reparses the whole text and
-    // decodes the whole committed tree, so a narrow edit costs what a wide
-    // document costs.
+    // `width` root children: every edit reparses the whole text and decodes
+    // the whole new tree, so a narrow edit costs what a wide document costs.
     const body = "a\n\n".repeat(width);
     const sources = ["a" + body.slice(1), "b" + body.slice(1)];
 
@@ -95,7 +94,7 @@ function benchmarkFanOut(workload, width) {
         let document = from;
         for (let index = 0; index < 20; index += 1) {
             const previous = document;
-            document = document.edit(sources[index % 2]).document;
+            document = document.edit(sources[index % 2]);
             previous.close();
         }
         return document;
@@ -112,8 +111,8 @@ function benchmarkFanOut(workload, width) {
     timings.sort((left, right) => left - right);
     const medianNanoseconds = Math.round(timings[2] * 1e6);
     console.log(
-        `benchmark runtime=es boundary=wasm_edit_and_delta_decode workload=${workload} ` +
-            `workload_version=1 bytes=${width * 3} commits=1 warmup=1 repeats=5 ` +
+        `benchmark runtime=es boundary=wasm_edit_and_decode workload=${workload} ` +
+            `workload_version=1 bytes=${width * 3} edits=1 warmup=1 repeats=5 ` +
             `median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );

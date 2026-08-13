@@ -124,18 +124,23 @@ for (const testCase of canonicalManifest.cases) {
 }
 
 // Edit replay of the shared canonical AST corpus: every per-line revision
-// must dump byte-equal to a one-shot parse of the same text, and the delta
-// must be exactly the difference between consecutive mirrors.
+// must dump byte-equal to a one-shot parse of the same text, and the
+// (id, revision) update protocol must hold against a cumulative ledger —
+// the same double walk the C harness runs (tests/support/edit_replay.c).
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: edit replay of canonical AST case ${testCase.name}`, () => {
         let document = Document("", testCase.parseOptions);
         let replayed = "";
-        let previous = new Map();
+        // Cumulative across the whole replay: rawValue -> {revision, alive}.
+        // Retired entries stay forever, which is what makes a resurrection
+        // detectable at any later step, not just the very next one.
+        const ledger = new Map();
+        // The empty parse seeds the ledger: every node it has is a mint.
+        let previousNodes = verifyTree(document, ledger, new Map(), testCase.name);
         for (const chunk of lineChunks(testCase.source)) {
             replayed += chunk;
             const editing = document;
-            const commit = document.edit(replayed);
-            document = commit.document;
+            document = document.edit(replayed);
             editing.close();
 
             // Equivalence: the edited document dumps byte-equal to a
@@ -144,28 +149,96 @@ for (const testCase of canonicalManifest.cases) {
             assert.equal(document.dump(), reference.dump(), testCase.name);
             reference.close();
 
-            // Delta integrity: no id is named twice, every node the delta
-            // does not name kept its exact revision, and every retired id is
-            // gone from the tree.
-            const delta = commit.delta;
-            const named = delta.diffs.map((diff) => diff.markup.rawValue);
-            assert.equal(new Set(named).size, named.length, testCase.name);
-            const namedSet = new Set(named);
-            const current = new Map();
-            for (const node of flatten(document)) {
-                current.set(node.id.rawValue, node.revision);
-                if (!namedSet.has(node.id.rawValue)) {
-                    assert.equal(node.revision, previous.get(node.id.rawValue), testCase.name);
-                }
-            }
-            for (const diff of delta.diffs) {
-                if (diff.parts.retired) assert.equal(current.has(diff.markup.rawValue), false, testCase.name);
-            }
-            previous = current;
+            previousNodes = verifyTree(document, ledger, previousNodes, testCase.name);
         }
         assert.equal(document.dump(), testCase.expected, testCase.name);
         document.close();
     });
+}
+
+/**
+ * One visit carries the whole per-node contract, mirroring the C harness's
+ * er_walk_visit: no id appears twice in one tree, a retired id never comes
+ * back, a child's revision never exceeds its parent's, a minted id carries
+ * the new document revision, a survivor's revision is its last sighting or
+ * the new document revision, and revisions never regress. The subtree form
+ * of the (id, revision) promise — equal pair means an equal subtree —
+ * follows from these node-local checks by induction: an unchanged parent
+ * pins its child id list, the child-below-parent revision bound forces each
+ * child's revision to be an old value, the two-value rule then forces it to
+ * be the child's own last sighting, and the child's own visit compares its
+ * projection.
+ *
+ * Returns this tree's rawValue -> node map, the next walk's predecessor.
+ */
+function verifyTree(document, ledger, previousNodes, name) {
+    // Any content change stamps the root, so whenever there is a fresh
+    // revision for a node to carry, the root's revision is it.
+    const successorRevision = document.revision;
+    const seen = new Set();
+    const currentNodes = new Map();
+    const parents = [];
+    new MarkupWalker().walk(document, (event, node) => {
+        if (event === WalkEvent.exiting) {
+            parents.pop();
+            return;
+        }
+        const parent = parents[parents.length - 1];
+        parents.push(node);
+        const raw = node.id.rawValue;
+        assert.ok(raw > 0, `${name}: a tree node has no id`);
+        if (parent !== undefined) {
+            assert.ok(node.revision <= parent.revision, `${name}: a child's revision exceeds its parent's`);
+        }
+        assert.equal(seen.has(raw), false, `${name}: one id appears twice in one tree`);
+        seen.add(raw);
+        currentNodes.set(raw, node);
+        const entry = ledger.get(raw);
+        if (entry === undefined) {
+            assert.equal(node.revision, successorRevision, `${name}: a minted node lacks the new document revision`);
+            ledger.set(raw, { revision: node.revision, alive: true });
+            return;
+        }
+        assert.ok(entry.alive, `${name}: a retired id came back`);
+        assert.ok(node.revision >= entry.revision, `${name}: a node's revision went backwards`);
+        if (node.revision !== entry.revision) {
+            assert.equal(node.revision, successorRevision, `${name}: a changed node lacks the new document revision`);
+        } else {
+            const before = previousNodes.get(raw);
+            assert.notEqual(before, undefined, `${name}: a live ledger id is missing from the predecessor tree`);
+            assert.deepEqual(projection(node), projection(before), `${name}: a node changed without a revision bump`);
+        }
+        entry.revision = node.revision;
+    });
+    // Retire the absentees; the ledger remembers them forever.
+    for (const [raw, entry] of ledger) {
+        if (entry.alive && !seen.has(raw)) entry.alive = false;
+    }
+    return currentNodes;
+}
+
+/**
+ * A node's own projection: every enumerable field except its extent, with
+ * nested nodes reduced to their ids. Scope is position, not content — a pure
+ * shift moves it without a revision bump — and child nodes are compared at
+ * their own visit, so here they count as their identity alone.
+ */
+function projection(node) {
+    return Object.fromEntries(
+        Object.entries(node)
+            .filter(([key]) => key !== "scope")
+            .map(([key, value]) => [key, dereferenced(value)])
+    );
+}
+
+function dereferenced(value) {
+    if (Array.isArray(value)) return value.map(dereferenced);
+    if (isMarkup(value)) return value.id.rawValue;
+    return value;
+}
+
+function isMarkup(value) {
+    return typeof value === "object" && value !== null && "kind" in value && "id" in value && "revision" in value;
 }
 
 function lineChunks(source) {

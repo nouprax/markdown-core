@@ -54,8 +54,8 @@ with the same `id` and `revision` are guaranteed to have identical content.
 
 Identity says nothing about POSITION. Every node carries its own `scope` — its
 absolute start/end line and column, read straight off the value — but an edit
-that shifts text moves positions without changing any node's content, and the
-delta deliberately does not report that. A consumer that draws anything
+that shifts text moves positions without changing any node's content, and
+revisions deliberately do not report that. A consumer that draws anything
 positional — gutter numbers, underlines, a scroll anchor, a source map — must
 read it from the NEW document's node even for one it skipped as unchanged.
 
@@ -88,13 +88,13 @@ and debugging rather than persistence or data interchange.
 ## Edit
 
 There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes plus the
-`Delta` between the two. Options are fixed for a document's whole series —
-changing what the parser means is a new document, not an edit.
+`edit` hands it new text: it returns the document that text describes. Options
+are fixed for a document's whole series — changing what the parser means is a
+new document, not an edit.
 
 ```js
 const document = Document("# Title\n\nHello");
-const { document: next, delta } = document.edit("# Title\n\nHello world");
+const next = document.edit("# Title\n\nHello world");
 // The heading did not change, so it compares equal — same id, same revision.
 // Its `scope` may still place it somewhere new.
 console.log(next.content[0].id === document.content[0].id); // true
@@ -108,37 +108,30 @@ and, like nodes from two separate parses, nodes from two lines are not
 comparable. Release a document when you are done with it; its
 already-extracted values stay valid forever, because they are values.
 
-### Most applications never read the delta
+### What changed is asked of the new tree
 
-Hand `commit.document` to React and stop. The stability a reactive framework
-needs is on the TREE, not in the delta: an unchanged node keeps its `id` and
-its `revision`, `MarkupID` is interned so `a.id === b.id` is O(1), and `id`
-goes unmodified into a `key`. Nothing in this package requires a delta to
-obtain, retain, walk, or compare a document.
+There is no change list riding along with an edit; `(id, revision)` is the
+whole update protocol. The stability a reactive framework needs is on the
+TREE: an unchanged node keeps its `id` and its `revision`, `MarkupID` is
+interned so `a.id === b.id` is O(1), and `id` goes unmodified into a `key`.
+Hand the new document to React and stop.
 
-### The delta is for saying WHERE, and for state you keep yourself
-
-`Delta` is one list, in the new document's postorder: every node whose
-projection differs appears after all of its own children, and a retired node
-appears where it was found — before its former parent's row. Each row says
-which parts differ — `value`, `text`, `children`, `descendant` — and a row whose
-`parts.retired` is a node that no longer exists.
-
-`descendant` alone means "nothing of this node's own changed, something below
-it did", which is what lets a highlighter light the run that actually changed
-instead of the section containing it:
+A node's `revision` covers its whole subtree — it is the revision at which
+the node's own fields, child list, or any descendant last changed — so equal
+`id` and `revision` proves two subtrees identical without descending. A
+consumer holding state it must edit in place rather than re-derive — a
+display list, a text-measurement cache, an LSP token array — walks the new
+tree top-down, compares each node's pair to the one it kept, and prunes
+every subtree the pair proves unchanged:
 
 ```js
-for (const diff of delta.diffs) {
-    if (diff.parts.descendant && !diff.parts.value && !diff.parts.text) continue;
-    const node = next.node(diff.markup);
-    if (node !== null) highlight(node.scope);
-}
+const reconcile = (kept, node) => {
+  if (kept.get(node.id) === node.revision) return; // identical subtree
+  kept.set(node.id, node.revision);
+  redraw(node);
+  for (const child of node.content ?? []) reconcile(kept, child);
+};
 ```
-
-The other reader is a consumer holding state it must edit in place rather than
-re-derive — a display list, a text-measurement cache, an LSP token array. It
-walks the same list and edits its own structure.
 
 Streaming consumers edit on the render tick rather than on every socket
 message, so the parse rate follows the display and not the socket:
@@ -150,10 +143,10 @@ socket.onmessage = ({ data }) => {
   streamed += data;
 };
 const ticker = setInterval(() => {
-  const commit = document.edit(streamed);
+  const next = document.edit(streamed);
   document.close();
-  document = commit.document;
-  render(document, commit.delta);
+  document = next;
+  render(document);
 }, 100);
 ```
 

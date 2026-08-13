@@ -10,7 +10,7 @@ const dumps = workerData.jobs.map(({ source, options }) => {
     for (const chunk of source.split(/(?<=\n)/)) {
         streamed += chunk;
         const previous = document;
-        document = document.edit(streamed).document;
+        document = document.edit(streamed);
         previous.close();
     }
     const dump = document.dump();

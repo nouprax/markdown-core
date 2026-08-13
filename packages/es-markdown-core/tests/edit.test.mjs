@@ -2,32 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { DiagnosticCode, Document, MarkupWalker, WalkEvent } from "../dist/index.js";
 
-/**
- * Asserts the delta's own ordering contract: every surviving node appears
- * after all of its own children, so a consumer materializing immutable
- * values bottom-up reads the list once, front to back.
- */
-function assertPostorder(delta, document) {
-    const position = new Map();
-    delta.diffs.forEach((diff, index) => {
-        if (!diff.parts.retired) position.set(diff.markup.rawValue, index);
-    });
-    const stack = [];
-    new MarkupWalker().walk(document, (event, node) => {
-        if (event === WalkEvent.entering) {
-            const parent = stack[stack.length - 1];
-            const above = parent === undefined ? undefined : position.get(parent);
-            const below = position.get(node.id.rawValue);
-            if (above !== undefined && below !== undefined) {
-                assert.ok(below < above, `child ${node.id.rawValue} follows its parent`);
-            }
-            stack.push(node.id.rawValue);
-        } else {
-            stack.pop();
-        }
-    });
-}
-
 function flatten(document) {
     const nodes = [];
     new MarkupWalker().walk(document, (event, node) => {
@@ -36,14 +10,24 @@ function flatten(document) {
     return nodes;
 }
 
+/**
+ * The nodes an edit stamped: everything in `successor` whose revision is
+ * newer than the whole predecessor tree. The predecessor's root revision
+ * bounds its every node, because a child's revision never exceeds its
+ * parent's — so a node above that bound was stamped by this edit, and a node
+ * at or below it was carried.
+ */
+function stamped(successor, predecessorRevision) {
+    return flatten(successor).filter((node) => node.revision > predecessorRevision);
+}
+
 test("edits: extending the trailing text keeps its identity and bumps its revision", () => {
     const first = Document("# Title\n\nHello");
     const firstHeading = first.content[0];
     const firstParagraph = first.content[1];
     const firstText = firstParagraph.content[0];
 
-    const commit = first.edit("# Title\n\nHello world");
-    const second = commit.document;
+    const second = first.edit("# Title\n\nHello world");
     const secondHeading = second.content[0];
     const secondParagraph = second.content[1];
     const secondText = secondParagraph.content[0];
@@ -52,19 +36,23 @@ test("edits: extending the trailing text keeps its identity and bumps its revisi
     assert.equal(secondParagraph.id, firstParagraph.id);
     assert.equal(secondText.id, firstText.id);
     assert.ok(secondText.revision > firstText.revision);
-    // The heading settled before the edit: not named at all, and equal to
-    // its predecessor down to the last field. It is not the SAME object —
-    // every node is decoded every time — and nothing should need it to be:
-    // what a reactive consumer compares is the (id, revision) pair.
+    // The heading settled before the edit: equal to its predecessor down to
+    // the last field. It is not the SAME object — every node is decoded
+    // every time — and nothing should need it to be: what a reactive
+    // consumer compares is the (id, revision) pair.
     assert.equal(secondHeading.id, firstHeading.id);
     assert.equal(secondHeading.revision, firstHeading.revision);
     assert.deepEqual(secondHeading, firstHeading);
 
-    const named = new Set(commit.delta.diffs.map((diff) => diff.markup));
-    assert.equal(named.has(firstHeading.id), false);
-    assert.equal(named.has(secondText.id), true);
-    assert.ok(commit.delta.diffs.every((diff) => !diff.parts.retired));
-    assert.ok(commit.delta.diffs.find((diff) => diff.markup === secondText.id).parts.text);
+    // The edit stamped the text and everything above it — and only that.
+    // The stamp is what says "changed"; the heading keeps its old revision.
+    const touched = new Set(stamped(second, first.revision).map((node) => node.id));
+    assert.equal(touched.has(secondHeading.id), false);
+    assert.equal(touched.has(secondText.id), true);
+    // Nothing was removed: every predecessor identity is still present.
+    for (const node of flatten(first)) {
+        assert.notEqual(second.node(node.id), null);
+    }
     second.close();
 });
 
@@ -73,8 +61,7 @@ test("edits: a clean-boundary insert at the top leaves downstream identity intac
     const downstreamBefore = before.content.map((node) => [node.id, node.revision]);
     const thirdBefore = before.content[2];
 
-    const commit = before.edit("# New\n\nFirst\n\nSecond\n\nThird\n");
-    const after = commit.document;
+    const after = before.edit("# New\n\nFirst\n\nSecond\n\nThird\n");
 
     assert.equal(after.content.length, 4);
     const inserted = after.content[0];
@@ -83,16 +70,11 @@ test("edits: a clean-boundary insert at the top leaves downstream identity intac
         assert.equal(node.revision, downstreamBefore[index][1]);
     });
 
-    // A created node differs from absence in every part it has: a heading
-    // has a value and children, and no text of its own.
-    const insertedDiff = commit.delta.diffs.find((diff) => diff.markup === inserted.id);
-    assert.deepEqual(insertedDiff.parts, {
-        retired: false,
-        value: true,
-        text: false,
-        children: true,
-        descendant: true
-    });
+    // A created node is a fresh identity carrying the new document revision.
+    assert.ok(downstreamBefore.every(([id]) => id !== inserted.id));
+    assert.equal(before.node(inserted.id), null);
+    assert.equal(inserted.revision, after.revision);
+    assert.ok(inserted.revision > before.revision);
 
     // Downstream nodes shifted by two lines: same identity, same revision,
     // new extent. Each value states where it is, so the predecessor's value
@@ -113,20 +95,12 @@ test("edits: a kind change retires the old identity and mints a new one", () => 
     const before = Document("text\n");
     const paragraph = before.content[0];
 
-    const commit = before.edit("# text\n");
-    const after = commit.document;
+    const after = before.edit("# text\n");
     const heading = after.content[0];
     assert.notEqual(heading.id.rawValue, paragraph.id.rawValue);
-
-    const rows = commit.delta.diffs;
-    assert.ok(rows.some((diff) => diff.markup.rawValue === paragraph.id.rawValue && diff.parts.retired));
-    assert.ok(rows.some((diff) => diff.markup === heading.id && !diff.parts.retired));
-    // A retired node is emitted WHERE IT WAS FOUND — inside its former
-    // parent's run, before what replaced it there and before that parent's
-    // own row.
-    const at = (rawValue) => rows.findIndex((diff) => diff.markup.rawValue === rawValue);
-    assert.ok(at(paragraph.id.rawValue) < at(heading.id.rawValue));
-    assert.ok(at(heading.id.rawValue) < at(after.id.rawValue));
+    // The minted node carries the new document revision; the retired one is
+    // simply gone from the tree.
+    assert.equal(heading.revision, after.revision);
     assert.equal(after.node(paragraph.id), null);
     after.close();
 });
@@ -141,25 +115,26 @@ test("edits: equality is series-salted identity plus revision", () => {
     // An id from another series is not this document's to answer.
     assert.equal(first.node(second.content[0].id), null);
     assert.equal(first.node(first.content[0].id), first.content[0]);
-    // The root answers for itself, which is what a delta naming it needs.
+    // The root answers for itself, like every node under it.
     assert.equal(first.node(first.id), first);
     first.close();
     second.close();
 });
 
-test("edits: a blank-line-only edit reports an empty delta yet shifts scopes", () => {
+test("edits: a blank-line-only edit changes no node yet shifts scopes", () => {
     const before = Document("Alpha\n\n\n\nOmega\n");
     const omegaBefore = before.content[1];
     assert.equal(omegaBefore.scope.start.line, 5);
+    const pairsBefore = flatten(before).map((node) => [node.id, node.revision]);
 
-    // Delete two of the blank lines: no node's content changes.
-    const commit = before.edit("Alpha\n\nOmega\n");
-    const after = commit.document;
-    assert.equal(commit.delta.diffs.length, 0);
-    assert.ok(commit.delta.afterRevision > commit.delta.beforeRevision);
-    // Nothing was named, so every top-level block kept its revision — and
-    // moved, which the delta does not report because position is not
-    // content.
+    // Delete two of the blank lines: no node's content changes, so every
+    // node — the root included — keeps its exact identity and revision.
+    // Position is not content, and revisions do not report it.
+    const after = before.edit("Alpha\n\nOmega\n");
+    assert.deepEqual(
+        flatten(after).map((node) => [node.id, node.revision]),
+        pairsBefore
+    );
     assert.equal(after.content[1].id, omegaBefore.id);
     assert.equal(after.content[1].revision, omegaBefore.revision);
     assert.equal(after.content[1].scope.start.line, 3);
@@ -169,38 +144,32 @@ test("edits: a blank-line-only edit reports an empty delta yet shifts scopes", (
     after.close();
 });
 
-test("edits: a deep rebuild names children before parents in one postorder pass", () => {
+test("edits: a deep rebuild stamps the changed spine and nothing else", () => {
     const depth = 512;
     const stable = "Stable\n\n";
     const prefix = "> ".repeat(depth);
     const before = Document(stable + prefix + "alpha\n");
     const stableBefore = before.content[0];
 
-    const commit = before.edit(stable + prefix + "bravo\n");
-    const after = commit.document;
+    const after = before.edit(stable + prefix + "bravo\n");
 
-    assert.ok(commit.delta.diffs.length >= depth);
-    assertPostorder(commit.delta, after);
     // The settled paragraph is untouched, so it survives byte for byte.
     assert.deepEqual(after.content[0], stableBefore);
 
-    // Exactly one node's own projection differs — the innermost text — and
-    // every one of its ancestors carries `descendant` and nothing else,
-    // which is what lets a renderer stop at the first node whose own parts
-    // are all false.
+    // One text changed, and a revision covers a node's whole subtree, so the
+    // stamp reaches every ancestor: the innermost text, the chain of quotes,
+    // and the root all carry the new document revision, while the settled
+    // paragraph's subtree keeps its old one.
     let innermost = after.content[1];
     while (innermost.kind === "blockQuote") innermost = innermost.content[0];
     const text = innermost.content[0];
     assert.equal(text.literal, "bravo");
-    const ownChanges = commit.delta.diffs.filter(
-        (diff) => diff.parts.value || diff.parts.text || diff.parts.children || diff.parts.retired
-    );
-    assert.deepEqual(
-        ownChanges.map((diff) => diff.markup),
-        [text.id]
-    );
-    // The chain, the paragraph it ends in, and the document above it.
-    assert.equal(commit.delta.diffs.length, depth + 3);
+    assert.equal(text.revision, after.revision);
+    const touched = stamped(after, before.revision);
+    assert.ok(touched.length >= depth);
+    const touchedIds = new Set(touched.map((node) => node.id));
+    assert.equal(touchedIds.has(after.content[0].id), false);
+    assert.equal(touchedIds.has(after.id), true);
     after.close();
 });
 
@@ -209,10 +178,10 @@ test("edits: a superseded document keeps answering from its own values", () => {
     const two = first.content[1];
     assert.equal(two.scope.start.line, 3);
 
-    // Editing hands the native parse to the successor, which is then
-    // released. The predecessor's values, scopes, diagnostics, and dump were
-    // all extracted at parse time and owe that parse nothing.
-    first.edit("Zero\n\nOne\n\nTwo\n").document.close();
+    // Editing reads the receiver and takes nothing; here even the successor
+    // is closed at once. The predecessor's values, scopes, diagnostics, and
+    // dump were all extracted at parse time and owe nobody anything.
+    first.edit("Zero\n\nOne\n\nTwo\n").close();
     assert.equal(two.scope.start.line, 3);
     assert.ok(first.dump().includes("Paragraph"));
     assert.equal(flatten(first).length, 5);
@@ -225,13 +194,13 @@ test("edits: a document may be edited twice, and only a closed one refuses", () 
     const base = Document("One\n");
     const first = base.edit("Two\n");
     const second = base.edit("Three\n");
-    assert.equal(first.document.content[0].content[0].literal, "Two");
-    assert.equal(second.document.content[0].content[0].literal, "Three");
-    assert.notEqual(first.document.revision, second.document.revision);
-    assert.ok(first.document.revision > base.revision);
-    assert.ok(second.document.revision > base.revision);
-    first.document.close();
-    second.document.close();
+    assert.equal(first.content[0].content[0].literal, "Two");
+    assert.equal(second.content[0].content[0].literal, "Three");
+    assert.notEqual(first.revision, second.revision);
+    assert.ok(first.revision > base.revision);
+    assert.ok(second.revision > base.revision);
+    first.close();
+    second.close();
     base.close();
 
     const closed = Document("One\n");
@@ -257,7 +226,7 @@ test("edits: diagnostics travel with the document that raised them", () => {
         end: { line: 1, column: 14 }
     });
 
-    const after = before.edit(":::note{a=1}\nbody\n:::\n").document;
+    const after = before.edit(":::note{a=1}\nbody\n:::\n");
     assert.equal(after.diagnostics.length, 0);
     // The predecessor keeps reporting its own: diagnostics are values it
     // copied out at parse time, like every other part of it.
@@ -269,7 +238,7 @@ test("edits: options are fixed for a series and reported by every revision", () 
     const before = Document("| a |\n| --- |\n| b |\n", { tables: false });
     assert.equal(before.options.tables, false);
     assert.equal(before.content[0].kind, "paragraph");
-    const after = before.edit("| a |\n| --- |\n| c |\n").document;
+    const after = before.edit("| a |\n| --- |\n| c |\n");
     assert.equal(after.options.tables, false);
     assert.equal(after.content[0].kind, "paragraph");
     after.close();
@@ -284,7 +253,7 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
     const turns = [
         "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
             "and the heading keeps its identity from the first render on.\n\n" +
-            "Deltas stay proportional to what changed, so a renderer " +
+            "Update traffic stays proportional to what changed, so a renderer " +
             "reconciles by id instead of walking the whole tree.\n\n" +
             "> Snapshots are values: whatever a tick captured stays valid " +
             "while the socket races ahead.",
@@ -317,15 +286,16 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
 
     const tick = () => {
         const previous = document;
-        const commit = document.edit(streamed);
-        document = commit.document;
-        previous.close();
+        document = document.edit(streamed);
         ticks += 1;
-        touched += commit.delta.diffs.length;
+        // What this tick stamped, measured off the new tree itself: the
+        // nodes carrying the new document revision — the same proxy the
+        // Swift and Kotlin mirrors of this test count.
+        touched += stamped(document, previous.revision).length;
+        previous.close();
         const reference = Document(streamed);
         assert.equal(document.dump(), reference.dump());
         reference.close();
-        assertPostorder(commit.delta, document);
         for (const [index, id, revision] of frozen) {
             assert.equal(document.content[index].id, id);
             assert.equal(document.content[index].revision, revision);
@@ -357,9 +327,9 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
     assert.equal(document.dump(), reference.dump());
     reference.close();
 
-    // Near-O(n) pipeline: total delta traffic stays within one row per final
-    // node plus bounded frontier churn per tick. A full rebuild per tick
-    // would be on the order of ticks * nodes.
+    // Near-O(n) pipeline: total stamped-node traffic stays within one node
+    // per final node plus bounded frontier churn per tick. A full rebuild
+    // per tick would be on the order of ticks * nodes.
     assert.ok(touched < flatten(document).length + 16 * ticks);
     document.close();
 });

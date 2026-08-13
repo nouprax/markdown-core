@@ -3,15 +3,12 @@ import {
     MarkupDumper,
     visit,
     MarkupWalker,
-    type Commit,
-    type Delta,
     type Directive,
     type DirectiveBlock,
     type DirectiveLabel,
     type CrossLink,
     DiagnosticCode,
     type Diagnostic,
-    type Diff,
     type Embed,
     type Heading,
     type Markup,
@@ -108,18 +105,13 @@ void rawValue;
 void revision;
 void documentScope;
 
-const commit: Commit = document.edit("# typed again");
-const successor: ParsedDocument = commit.document;
-const delta: Delta = commit.delta;
-const diffs: readonly Diff[] = delta.diffs;
-const retired: boolean = diffs[0]!.parts.retired;
+const successor: ParsedDocument = document.edit("# typed again");
+const successorRevision: number = successor.revision;
 const currentValue: Markup | null = successor.node(document.id);
 const diagnostics: readonly Diagnostic[] = successor.diagnostics;
 const attributeCode: DiagnosticCode = DiagnosticCode.directiveAttributes;
 void attributeCode;
-void successor;
-void diffs;
-void retired;
+void successorRevision;
 void currentValue;
 void diagnostics;
 // @ts-expect-error options are immutable for a document's whole series

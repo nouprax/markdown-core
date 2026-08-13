@@ -30,7 +30,7 @@ const html = `<!doctype html><meta charset="utf-8"><title>RUNNING</title><body i
     const api = await import('/index.js');
     const parsed = api.Document('# Browser 🌍');
     let streaming = api.Document('# Brow');
-    streaming = streaming.edit('# Browser 🌍').document;
+    streaming = streaming.edit('# Browser 🌍');
     const streamed = streaming.dump();
     streaming.close();
     const valid = parsed.content[0].kind === 'heading' &&

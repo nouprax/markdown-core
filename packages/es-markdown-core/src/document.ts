@@ -1,5 +1,4 @@
 import { MarkupDumper } from "./markup-dumper.js";
-import type { Commit, Delta, Diff, DiffParts } from "./model/commit.js";
 import { DiagnosticCode, type Diagnostic } from "./model/diagnostic.js";
 import type { Document as DocumentValue } from "./model/document.js";
 import type { Markup } from "./model/markup.js";
@@ -10,18 +9,6 @@ import { CDocument, decoder, normalizeOptions } from "./runtime/c-document.js";
 /** The document type, named the same as the function below so that `Document`
  * is both the annotation and the call that builds one. */
 export type Document = DocumentValue;
-
-const diffPartFlags = { value: 1, text: 2, children: 4, descendant: 8 } as const;
-
-function diffParts(raw: number): DiffParts {
-    return {
-        retired: raw === 0,
-        value: (raw & diffPartFlags.value) !== 0,
-        text: (raw & diffPartFlags.text) !== 0,
-        children: (raw & diffPartFlags.children) !== 0,
-        descendant: (raw & diffPartFlags.descendant) !== 0
-    };
-}
 
 function diagnosticCode(raw: number): DiagnosticCode {
     if (raw !== 1) throw new Error(`the native parser reported an unknown diagnostic code ${raw}`);
@@ -48,12 +35,17 @@ interface Built {
     readonly identities: Map<number, MarkupID>;
 }
 
-function identity(state: Built, rawValue: number): MarkupID {
+/**
+ * Interns `rawValue` into `state`'s map, consulting `predecessors` first: an
+ * id names the same node across the whole series, so the `MarkupID` a
+ * consumer held before an edit is the very object the new tree hands back.
+ */
+function identity(state: Built, predecessors: ReadonlyMap<number, MarkupID> | null, rawValue: number): MarkupID {
     const existing = state.identities.get(rawValue);
     if (existing) return existing;
-    const created: MarkupID = { series: state.series, rawValue };
-    state.identities.set(rawValue, created);
-    return created;
+    const interned = predecessors?.get(rawValue) ?? { series: state.series, rawValue };
+    state.identities.set(rawValue, interned);
+    return interned;
 }
 
 /**
@@ -63,15 +55,20 @@ function identity(state: Built, rawValue: number): MarkupID {
  * its text and its options, not of how the caller reached it. An unchanged
  * node still compares equal to its predecessor, which is what a reactive
  * consumer reads — the id/revision pair, not object identity.
+ *
+ * `predecessors` is the previous revision's interning map, consulted only for
+ * the duration of the decode walk and then dropped whole: an id the new tree
+ * does not present never enters the successor's map, which is what keeps the
+ * map bounded over a long series with no eviction bookkeeping.
  */
-function build(state: Built): Document {
+function build(state: Built, predecessors: ReadonlyMap<number, MarkupID> | null = null): Document {
     const index = new Map<number, Markup>();
     const diagnostics: readonly Diagnostic[] = state.handle.diagnostics().map((row) => ({
         code: diagnosticCode(row.code),
         scope: row.scope
     }));
     const document = decoder.decodeDocument(state.handle.rootPointer(), {
-        ids: (rawValue) => identity(state, rawValue),
+        ids: (rawValue) => identity(state, predecessors, rawValue),
         adopt: (value) => {
             const adopted = {
                 kind: value.kind,
@@ -125,36 +122,22 @@ function owning<Result>(handle: CDocument, body: () => Result): Result {
     }
 }
 
-function edit(state: Built, markdown: string): Commit {
-    const { document: handle, delta: deltaPointer } = state.handle.edit(markdown);
-    try {
-        return owning(handle, () => {
-            const raw = handle.readDelta(deltaPointer);
-            const delta: Delta = {
-                beforeRevision: raw.beforeRevision,
-                afterRevision: raw.afterRevision,
-                diffs: raw.diffs.map((row): Diff => ({
-                    markup: identity(state, row.rawValue),
-                    parts: diffParts(row.parts)
-                }))
-            };
-            const successor: Built = {
+function edit(state: Built, markdown: string): Document {
+    const handle = state.handle.edit(markdown);
+    return owning(handle, () =>
+        build(
+            {
                 handle,
                 options: state.options,
                 series: state.series,
-                // Identity interning carries over: an id names the same node
-                // across the whole series, so the `MarkupID` a consumer held
-                // before the edit is the one the new tree hands back.
-                identities: new Map(state.identities)
-            };
-            for (const row of raw.diffs) {
-                if (row.parts === 0) successor.identities.delete(row.rawValue);
-            }
-            return { document: build(successor), delta };
-        });
-    } finally {
-        handle.deltaFree(deltaPointer);
-    }
+                // Fresh, not copied: the decode walk repopulates it through
+                // `identity`, so it holds exactly the ids the new tree
+                // presents and nothing a past revision retired.
+                identities: new Map()
+            },
+            state.identities
+        )
+    );
 }
 
 /**
@@ -162,10 +145,11 @@ function edit(state: Built, markdown: string): Commit {
  * the owner of the native parse it came from, and the only entry point.
  *
  * There is no session type. A document is created from text and options;
- * `edit` hands it new text and returns the next document with the delta
- * between them. Options are fixed for a document's whole series — changing
- * what the parser means is a new document, not an edit, and there is no
- * delta to be had across it.
+ * `edit` hands it new text and returns the document that text describes.
+ * What changed is asked of the new tree itself — a node's id names the same
+ * thing across the edit, and its revision says when its content last changed.
+ * Options are fixed for a document's whole series — changing what the parser
+ * means is a new document, not an edit.
  */
 export function Document(markdown: string, options: ParseOptions = {}): Document {
     const normalized = normalizeOptions(options);
