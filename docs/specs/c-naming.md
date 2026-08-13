@@ -70,8 +70,9 @@ together with their `.re` sources; re2c is not run at build time. The GNU
 symbol-version node in `core/exports/markdown_core.map` is renamed only at a
 C ABI break, because renaming it retags every exported symbol and forces
 consumers of shipped shared libraries to relink. The inherited
-`MARKDOWN_CORE_1.0` name held until `markdown_core_document_edit` changed
-its signature incompatibly (the delta removal), which renamed the node to
-`MARKDOWN_CORE_2.0` so binaries built against the old ABI fail to resolve at
+`MARKDOWN_CORE_1.0` name held through the 2.x releases until
+`markdown_core_document_edit` changed its signature incompatibly (the delta
+removal), which renamed the node to `MARKDOWN_CORE_3.0` — the major the
+change ships in — so binaries built against the old ABI fail to resolve at
 load instead of calling a four-argument function through a three-argument
 symbol; the node now keeps that name until the next break.

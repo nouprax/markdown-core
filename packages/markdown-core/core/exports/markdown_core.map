@@ -1,4 +1,4 @@
-MARKDOWN_CORE_2.0 {
+MARKDOWN_CORE_3.0 {
   global:
     markdown_core_parse_options_init;
     markdown_core_document_new;
