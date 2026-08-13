@@ -47,7 +47,6 @@ struct markdown_core_map_entry {
      * line: its start is a safe restart point the tree no longer records,
      * so the document indexes it as a sentinel clean entry. */
     bool from_vanished_clean;
-    size_t size; /* reference expansion accounting */
 };
 
 typedef struct markdown_core_map_entry markdown_core_map_entry;
@@ -87,8 +86,6 @@ struct markdown_core_map {
     markdown_core_map_lookup_sink lookup_sink; /* NULL outside an edit */
     void *lookup_context;
     void *lookup_unit; /* attribution target for the current inline parse */
-    size_t ref_size;
-    size_t max_ref_size;
     int prepared;
     int indexed;
     /* Sticky flag: a definition or lookup structure was lost to allocation
@@ -129,7 +126,7 @@ int markdown_core_key_index_remove(
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_func free);
 void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
-/* Links a freshly created entry (label/size filled by the caller) into the
+/* Links a freshly created entry (label filled by the caller) into the
  * map: stamps the next document order and the pending owner, pushes it onto
  * the live chain, and keeps any prepared lookup structure coherent. */
 void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry);

@@ -67,7 +67,6 @@ void markdown_core_reference_create(
     if (lost) {
         map->oom = 1;
     }
-    ref->entry.size = ref->url.len + ref->title.len;
 
     markdown_core_map_add(map, &ref->entry);
 }
@@ -88,12 +87,10 @@ void markdown_core_footnote_definition_create(
     if (!ref) {
         return;
     }
-    /* url, title, and therefore `size`, stay zero: a footnote reference
-     * expands to nothing at the reference site, so these definitions never
-     * draw on the reference expansion budget. The empty chunks also make the
-     * shared payload comparison a tautology, which is the right answer —
-     * identical footnote labels *are* identical definitions as far as any
-     * reference can tell. */
+    /* url and title stay zero: a footnote reference expands to nothing at
+     * the reference site. The empty chunks also make the shared payload
+     * comparison a tautology, which is the right answer — identical footnote
+     * labels *are* identical definitions as far as any reference can tell. */
     map->pending_owner = owner;
     map->pending_line = start_line;
     markdown_core_map_add(map, &ref->entry);

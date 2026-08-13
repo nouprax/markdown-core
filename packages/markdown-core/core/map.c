@@ -462,14 +462,6 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     }
     map->mem->free(map->mem, norm);
 
-    if (r != NULL) {
-        /* Check for expansion limit */
-        if (r->size > map->max_ref_size - map->ref_size) {
-            return NULL;
-        }
-        map->ref_size += r->size;
-    }
-
     return r;
 }
 
@@ -662,6 +654,5 @@ markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_m
     }
     map->mem = mem;
     map->free = free;
-    map->max_ref_size = UINT_MAX;
     return map;
 }

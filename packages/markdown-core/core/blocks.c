@@ -1205,16 +1205,6 @@ void markdown_core_parser_finalize_blocks(markdown_core_parser *parser) {
     }
 
     finalize(parser, parser->root);
-
-    // Limit total size of extra content created from reference links to
-    // document size to avoid superlinear growth. Always allow 100KB.
-    if (parser->refmap) {
-        if (parser->total_size > 100000) {
-            parser->refmap->max_ref_size = parser->total_size;
-        } else {
-            parser->refmap->max_ref_size = 100000;
-        }
-    }
 }
 
 markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t len, int options) {

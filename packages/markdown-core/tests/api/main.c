@@ -2715,6 +2715,66 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
+/* Reference resolution is a function of definedness alone: whether a mention
+ * resolves depends on its label being defined, never on how many mentions
+ * resolved before it. The engine inherited an expansion budget from upstream
+ * cmark-gfm that charged every resolution against a document-size cap and
+ * made later lookups fail once it ran out — protecting an output
+ * amplification this engine cannot have, since a mention stores only its
+ * label and never materializes the winner's url or title. This document's
+ * one definition carries a title that alone exceeded the old budget's 100KB
+ * floor on the second resolution, so under the budget the trailing mentions
+ * were literal text; all three must resolve. */
+static void document_reference_resolution_is_unbudgeted(test_batch_runner *runner) {
+    enum { TITLE_LENGTH = 60000 };
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+    mc_text mctext = {NULL, 0, 0};
+    static const char head[] = "[a]: /u \"";
+    static const char tail[] = "\"\n\n[a] and [a] and [a]\n";
+    int resolved = 0;
+    char *title = (char *)malloc(TITLE_LENGTH);
+
+    OK(runner, title != NULL, "unbudgeted title allocates");
+    if (!title) {
+        return;
+    }
+    memset(title, 't', TITLE_LENGTH);
+    OK(runner,
+       mc_text_splice(&mctext, 0, 0, head, sizeof(head) - 1) &&
+           mc_text_splice(&mctext, mctext.length, mctext.length, title, TITLE_LENGTH) &&
+           mc_text_splice(&mctext, mctext.length, mctext.length, tail, sizeof(tail) - 1),
+       "unbudgeted document assembles");
+    free(title);
+
+    document = markdown_core_document_new(mc_sv(mctext.bytes, mctext.length), NULL, &error);
+    OK(runner, document != NULL, "unbudgeted document parses");
+    if (document) {
+        const markdown_core_node *root = markdown_core_document_root(document);
+        const markdown_core_node *node = root;
+        for (;;) {
+            if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_LINK_REFERENCE) {
+                resolved++;
+            }
+            if (markdown_core_node_get_first_child(node)) {
+                node = markdown_core_node_get_first_child(node);
+                continue;
+            }
+            while (node != root && !markdown_core_node_get_next_sibling(node)) {
+                node = markdown_core_node_get_parent(node);
+            }
+            if (node == root) {
+                break;
+            }
+            node = markdown_core_node_get_next_sibling(node);
+        }
+        INT_EQ(runner, resolved, 3, "every mention resolves, however many resolved before it");
+    }
+    mc_text_free(&mctext);
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
 static void document_scope_shift_invariance(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -2840,6 +2900,7 @@ int main(void) {
     document_directive_label_edit_identity(runner);
     document_directive_empty_label_transitions(runner);
     document_block_directive_label_lookup(runner);
+    document_reference_resolution_is_unbudgeted(runner);
     document_scope_shift_invariance(runner);
 
     test_print_summary(runner);
