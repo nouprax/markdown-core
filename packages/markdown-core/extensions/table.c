@@ -552,15 +552,12 @@ static markdown_core_node *try_opening_table_header(
         /* The prefix lines belong to the split-off paragraph now, so the
          * retyped node's span starts where its header row was spelled —
          * the buffer's last line, whose mark carries the tab-expanded
-         * column node positions use. The table's first line still does not
-         * begin a document child on a clean line: it must not remain an
-         * incremental restart point, sealing qualifier included. */
+         * column node positions use. */
         parent_container->start_line = parser->line_marks[parser->line_mark_count - 1].line;
         /* The byte column, not the mark's tab-expanded one: every node
          * position in the engine is byte-based, and the two disagree the
          * moment a tab precedes the row. */
         parent_container->start_column = (int)parser->line_marks[parser->line_mark_count - 1].byte_offset + 1;
-        parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 
     /* The paragraph is already rewritten into a table node here.  On
@@ -945,7 +942,7 @@ static void opaque_free(markdown_core_extension *self, markdown_core_mem *mem, m
 }
 
 /* A table's alignments and a row's header bit are what
- * markdown_core_ast_parts_changed compares for these kinds, and they live
+ * markdown_core_ast_projection_changed compares for these kinds, and they live
  * here rather than in the core union -- so without this the diff pairs a
  * left-aligned table with a right-aligned one and hands over the id. */
 static uint64_t table_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {

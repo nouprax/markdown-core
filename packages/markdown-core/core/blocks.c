@@ -499,21 +499,6 @@ static bool S_ends_with_blank_line(markdown_core_node *node) {
     }
 }
 
-/* The document-child anchor a definition retracts with: the direct document
- * child containing `b`. An edit reparses whole document children at a
- * time, so a
- * definition stamped with its anchor is re-harvested exactly when its bytes
- * are reparsed. Anchors are stamped as node pointers here and rewritten to
- * node ids once the commit's adoption walk has assigned them; the map is
- * parse-local everywhere else, so the stamp is inert outside an edit. */
-static markdown_core_node *S_definition_anchor(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_node *anchor = b;
-    while (anchor->parent && anchor->parent != parser->root) {
-        anchor = anchor->parent;
-    }
-    return anchor;
-}
-
 /* Maps an offset in the open paragraph's accumulated content back to the
  * source position those bytes came from. Marks ascend in `content_offset`,
  * and definitions are consumed front to back, so `*cursor` only ever moves
@@ -714,21 +699,6 @@ static void S_emit_definition(
     }
     S_content_position(parser, b, last > start ? last - 1 : start, cursor, &node->end_line, &node->end_column);
     node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-    /* Only the first definition inherits the paragraph's restart-anchor bits.
-     * Those bits say "reparsing from this line reproduces everything after
-     * it", and that held for the line the paragraph opened on — which is the
-     * line the first definition starts on. A later definition starts on a
-     * line that arrived while the paragraph was already open, and such a line
-     * can be the continuation of the definition above it: `[foo]:` on one
-     * line, its indented url on the next. Restarting there reads the
-     * continuation as an indented code block.
-     *
-     * Before definitions had nodes, a definition-only paragraph vanished and
-     * the document kept a sentinel clean entry to stand in for the anchor the
-     * tree no longer had; the node is now that anchor. */
-    if (start == 0) {
-        node->flags |= b->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
-    }
     if (!markdown_core_node_insert_before(b, node)) {
         /* Containment is proved by construction here, so a refusal means the
          * insert lost an allocation. Freeing the node keeps the failure from
@@ -736,20 +706,6 @@ static void S_emit_definition(
         parser->oom = true;
         markdown_core_node_free(node);
         return;
-    }
-
-    /* A definition now has a node of its own, so its map entry is owned by
-     * that node's document child rather than by the paragraph the bytes were
-     * harvested from. This is what the owner always meant — "retract this
-     * entry exactly when its bytes are reparsed" — and it was approximated by
-     * the harvesting paragraph only because the definition had nowhere else
-     * to live. A definition-only paragraph vanishing can no longer orphan an
-     * entry, since the node it now belongs to is the thing that survives. */
-    if (harvested) {
-        markdown_core_reference *entry = (markdown_core_reference *)harvested;
-        entry->entry.owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, node);
-        entry->entry.definition_node = (uint64_t)(uintptr_t)node;
-        entry->entry.start_line = node->start_line;
     }
 }
 
@@ -760,10 +716,6 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_bufsize consumed = 0;
     size_t mark_cursor = 0;
-    if (parser->refmap) {
-        parser->refmap->pending_owner = (uint64_t)(uintptr_t)S_definition_anchor(parser, b);
-        parser->refmap->pending_line = b->start_line;
-    }
     while (chunk.len && chunk.data[0] == '[') {
         /* The harvest pushes its entry at the head of the live chain, so the
          * head is this definition's exactly when the chain moved. A parse
@@ -803,38 +755,9 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
      * equivalence gate found it. */
     if (consumed) {
         S_content_position(parser, b, consumed, &mark_cursor, &b->start_line, &b->start_column);
-        /* The restart-anchor bits asserted that reparsing from the line the
-         * paragraph opened on reproduces it. That line now belongs to the
-         * first definition, which took the bits; the paragraph's new start is
-         * a line that arrived while it was already open, and reparsing from
-         * there does not reproduce it — an indented continuation reads as a
-         * code block instead. Moving the start without dropping the claim is
-         * what made the parse restart mid-definition. */
-        b->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
     markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
     return !is_blank(&b->content, 0);
-}
-
-/* When a definition-only paragraph is about to be freed, its own pointer can
- * no longer anchor the definitions it produced. Re-anchor them to the
- * previous surviving sibling (already finalized, so never itself about to
- * vanish), or to owner 0: the region before the first document child. Only a
- * top-level paragraph anchors to itself, so nested vanishing paragraphs
- * never reach this. Freshly added entries sit at the head of the live chain,
- * so the walk stops at the first entry with another owner. */
-static void S_reanchor_vanishing_definitions(markdown_core_parser *parser, markdown_core_node *b) {
-    uint64_t vanishing = (uint64_t)(uintptr_t)b;
-    uint64_t replacement = (uint64_t)(uintptr_t)b->prev;
-    markdown_core_map_entry *entry;
-
-    if (!parser->refmap) {
-        return;
-    }
-    for (entry = parser->refmap->refs; entry && entry->owner == vanishing; entry = entry->next) {
-        entry->owner = replacement;
-        entry->from_vanished_clean = (b->flags & MARKDOWN_CORE_NODE__CLEAN_START) != 0;
-    }
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
@@ -877,9 +800,6 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
         has_content = resolve_reference_link_definitions(parser, b);
         if (!has_content) {
             // remove blank node (former reference def)
-            if (b->parent == parser->root) {
-                S_reanchor_vanishing_definitions(parser, b);
-            }
             markdown_core_node_free(b);
         }
         break;
@@ -991,18 +911,6 @@ static markdown_core_node *add_child(
     }
     child->parent = parent;
 
-    /* Direct document children born on a clean line are incremental restart
-     * points; every other child attaches under (or next to) a block that was
-     * open when the line began and stays fused to it. A line that seals a
-     * definitions-only chain counts as clean, with the qualifier marking the
-     * anchor as conditional on the line's shape. */
-    if (parent == parser->root && parser->line_began_clean) {
-        child->flags |= MARKDOWN_CORE_NODE__CLEAN_START;
-        if (parser->line_defs_only) {
-            child->flags |= MARKDOWN_CORE_NODE__CLEAN_START_SEALING;
-        }
-    }
-
     if (parent->last_child) {
         parent->last_child->next = child;
         child->prev = parent->last_child;
@@ -1021,36 +929,12 @@ void markdown_core_parser_manage_extensions_special_characters(markdown_core_par
      */
 }
 
-/* The node a lookup observed during `node`'s inline parse is attributed to
- * the outermost inline-owning node of the parent chain (the unit the
- * per-block postprocess pipeline visits). */
-static markdown_core_node *S_lookup_attribution(markdown_core_node *node) {
-    markdown_core_node *unit = node;
-    markdown_core_node *up;
-    for (up = node->parent; up; up = up->parent) {
-        if (contains_inlines(up)) {
-            unit = up;
-        }
-    }
-    return unit;
-}
-
 static void S_parse_node_inlines(
     markdown_core_parser *parser,
     markdown_core_node *cur,
     markdown_core_map *refmap,
     int options
 ) {
-    /* Both definition maps attribute to the same unit: a lookup in either is
-     * a dependency of the block whose inlines are being parsed. One test arms
-     * both, because a watcher attaches its sink to both maps or to neither
-     * (document.c, watch_definition_lookups) — so a watched reference map is
-     * proof that the footnote map is there. */
-    if (refmap && refmap->lookup_sink) {
-        markdown_core_node *unit = S_lookup_attribution(cur);
-        refmap->lookup_unit = unit;
-        parser->footnote_defs->lookup_unit = unit;
-    }
     markdown_core_parse_inlines(parser, cur, refmap, options);
 }
 
@@ -1205,16 +1089,6 @@ void markdown_core_parser_finalize_blocks(markdown_core_parser *parser) {
     }
 
     finalize(parser, parser->root);
-
-    // Limit total size of extra content created from reference links to
-    // document size to avoid superlinear growth. Always allow 100KB.
-    if (parser->refmap) {
-        if (parser->total_size > 100000) {
-            parser->refmap->max_ref_size = parser->total_size;
-        } else {
-            parser->refmap->max_ref_size = 100000;
-        }
-    }
 }
 
 markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t len, int options) {
@@ -1447,27 +1321,6 @@ static void S_advance_offset(
 
 static bool S_last_child_is_open(markdown_core_node *container) {
     return container->last_child && (container->last_child->flags & MARKDOWN_CORE_NODE__OPEN);
-}
-
-/* True when the document's open chain is nonempty and consists solely of
- * footnote definitions: every inner block has already been closed (a blank
- * line finalizes a definition's trailing paragraph while the definition
- * itself stays open). Such a chain continues only on a blank or indented
- * line and holds no open paragraph a lazy continuation could ride, so a
- * line that fails every prefix closes the whole chain before anything above
- * can capture it. */
-static bool S_open_chain_defs_only(markdown_core_node *root) {
-    markdown_core_node *node = root->last_child;
-    if (!node || !(node->flags & MARKDOWN_CORE_NODE__OPEN)) {
-        return false;
-    }
-    while (node && (node->flags & MARKDOWN_CORE_NODE__OPEN)) {
-        if (S_type(node) != MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION) {
-            return false;
-        }
-        node = node->last_child;
-    }
-    return true;
 }
 
 static bool parse_block_quote_prefix(
@@ -1979,13 +1832,7 @@ static void open_new_blocks(
              * only harvested once its whole paragraph has accumulated. The
              * definition is defined from this point on either way — the inline
              * phase does not start until every block is closed. */
-            markdown_core_footnote_definition_create(
-                parser->footnote_defs,
-                &c,
-                (uint64_t)(uintptr_t)S_definition_anchor(parser, *container),
-                (*container)->start_line,
-                (uint64_t)(uintptr_t)*container
-            );
+            markdown_core_footnote_definition_create(parser->footnote_defs, &c);
         } else if (
             (!indented || cont_type == MARKDOWN_CORE_NODE_LIST) && parser->indent < 4 && depth < MAX_LIST_DEPTH &&
             (matched = parse_list_marker(
@@ -2288,24 +2135,11 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
     }
 
     parser->line_number++;
-    parser->line_began_clean = !S_last_child_is_open(parser->root);
-    parser->line_defs_only = !parser->line_began_clean && S_open_chain_defs_only(parser->root);
 
     last_matched_container = check_open_blocks(parser, &input, &all_matched);
 
     if (!last_matched_container) {
         goto finished;
-    }
-
-    /* A line that fails every prefix of a definitions-only chain seals it:
-     * the definitions close during this line, before its own content
-     * attaches, so direct document children restart as if the line had
-     * begun clean. The anchor is conditional on the line's sealing shape,
-     * which the qualifying flag records for restart planning. */
-    if (last_matched_container != parser->root) {
-        parser->line_defs_only = false;
-    } else if (parser->line_defs_only) {
-        parser->line_began_clean = true;
     }
 
     container = last_matched_container;
@@ -2343,7 +2177,6 @@ finished:
  * unit's place in the tree itself, so nothing is handed back. */
 static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
     markdown_core_llist *extensions;
-    markdown_core_node_internal_flags clean_start = unit->flags & MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
@@ -2376,11 +2209,7 @@ static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node 
         if (ext->postprocess_block) {
             markdown_core_node *processed = ext->postprocess_block(ext, parser, unit);
             if (processed) {
-                /* A replacement unit (formula promotion) still starts at the
-                 * replaced unit's first line, so it inherits the incremental
-                 * restart mark. */
                 unit = processed;
-                unit->flags |= clean_start;
                 owns_inlines = contains_inlines(unit);
             }
         }

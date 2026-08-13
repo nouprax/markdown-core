@@ -14,7 +14,7 @@ document (format documented in
 `tests/support/edit_replay.h`: two option bytes, then
 insert/delete/replace/commit operations) and verifies each commit through the
 shared replay harness — the document dump must equal a one-shot parse of the
-same text, the delta stream must account for every observable node change,
+same text, the identity double-walk must hold (no id resurrection, no revision regression),
 and footnote queries must match a fresh document. Verification failures abort,
 so the fuzzer preserves the failing script; replay one deterministically with
 `fuzz_smoke_runner --script FILE`.

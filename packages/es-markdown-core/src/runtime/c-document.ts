@@ -35,18 +35,6 @@ const utf8Encoder = new TextEncoder();
  */
 export const decoder: NodeDecoder = new NodeDecoder(native);
 
-/** One delta row: which node, and which parts of it differ. */
-export interface RawDiff {
-    readonly rawValue: number;
-    readonly parts: number;
-}
-
-export interface RawDelta {
-    readonly beforeRevision: number;
-    readonly afterRevision: number;
-    readonly diffs: readonly RawDiff[];
-}
-
 export interface RawDiagnostic {
     readonly code: number;
     readonly scope: Scope;
@@ -119,31 +107,24 @@ export class CDocument {
     }
 
     /**
-     * Hands this document new text and returns the successor together with
-     * the caller-owned delta pointer (release with `deltaFree`).
+     * Hands this document new text and returns the caller-owned successor;
+     * throws the native rejection.
      *
      * READS the receiver and takes nothing: the handle stays this object's,
      * it may be edited again, and `free` is still the only thing that
      * releases it.
      */
-    edit(source: string): { readonly document: CDocument; readonly delta: number } {
+    edit(source: string): CDocument {
         const owned = this.requirePointer();
         const scratch = decoder.scratchPointer;
-        const commit = withSource(source, (bytes, length) => {
-            const view = decoder.dataView();
-            view.setUint32(scratch, 0, true);
-            view.setUint32(scratch + 4, 0, true);
-            view.setUint32(scratch + 8, 0, true);
-            if (!native.es_document_edit(owned, bytes, length, scratch, scratch + 8)) {
-                throw takeError(decoder.dataView().getUint32(scratch + 8, true));
-            }
-            const after = decoder.dataView();
-            return { document: after.getUint32(scratch, true), delta: after.getUint32(scratch + 4, true) };
-        });
-        if (!commit.document || !commit.delta) {
-            throw new Error("the native edit succeeded without a document and a delta");
-        }
-        return { document: new CDocument(commit.document), delta: commit.delta };
+        return new CDocument(
+            withSource(source, (bytes, length) => {
+                decoder.dataView().setUint32(scratch, 0, true);
+                const document = native.es_document_edit(owned, bytes, length, scratch);
+                if (!document) throw takeError(decoder.dataView().getUint32(scratch, true));
+                return document;
+            })
+        );
     }
 
     rootPointer(): number {
@@ -192,43 +173,6 @@ export class CDocument {
         // arithmetic on.
         const raw = BigInt.asUintN(64, native.es_document_series(this.requirePointer()));
         return raw.toString(16).padStart(16, "0");
-    }
-
-    /** Reads one delta's rows, in the order the facade defines. */
-    readDelta(delta: number): RawDelta {
-        const scratch = decoder.scratchPointer;
-        const revisions = {
-            beforeRevision: decoder.toSafeNumber(native.es_delta_revision(delta, 0), "delta revision"),
-            afterRevision: decoder.toSafeNumber(native.es_delta_revision(delta, 1), "delta revision")
-        };
-        decoder.dataView().setUint32(scratch, 0, true);
-        const count = native.es_delta_diffs(delta, scratch);
-        if (!Number.isSafeInteger(count) || count < 0) {
-            throw new Error(`the native delta returned row count ${count}`);
-        }
-        const view = decoder.dataView();
-        const data = view.getUint32(scratch, true);
-        if (!data) {
-            if (count !== 0) throw new Error("the native delta returned an invalid row array");
-            return { ...revisions, diffs: [] };
-        }
-        const rowBytes = 16;
-        if (count * rowBytes > view.byteLength - data) {
-            throw new Error("the native delta returned an out-of-bounds row array");
-        }
-        const diffs: RawDiff[] = [];
-        for (let index = 0; index < count; index += 1) {
-            const row = data + index * rowBytes;
-            diffs.push({
-                rawValue: decoder.toSafeNumber(view.getBigUint64(row, true), "node id"),
-                parts: view.getUint32(row + 8, true)
-            });
-        }
-        return { ...revisions, diffs };
-    }
-
-    deltaFree(delta: number): void {
-        native.es_delta_free(delta);
     }
 
     /** Releases the native parse. Idempotent; an edit hands nothing away, so

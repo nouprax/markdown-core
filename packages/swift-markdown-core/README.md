@@ -44,7 +44,7 @@ an unchanged node compares equal across consecutive revisions, which is what a
 render cache keys on.
 
 Identity says nothing about POSITION. An edit that shifts text moves positions
-without changing any node's content, and the delta deliberately does not
+without changing any node's content, and revisions deliberately do not
 report that. A consumer that draws anything positional — gutter numbers,
 underlines, a scroll anchor, a source map — must read it from the NEW
 document's node even for one it skipped as unchanged.
@@ -86,13 +86,13 @@ persistence or data interchange.
 ## Edit
 
 There is no session type. A document is created from text and options, and
-`edit(_:)` hands it new text: it returns the document that text describes plus
-the `Delta` between the two. Options are fixed for a document's whole series —
-changing what the parser means is a new `Document`, not an edit.
+`edit(_:)` hands it new text: it returns the document that text describes.
+Options are fixed for a document's whole series — changing what the parser
+means is a new `Document`, not an edit.
 
 ```swift
 let document = try Document("# Title\n\nHello")
-let commit = try document.edit("# Title\n\nHello world")
+let edited = try document.edit("# Title\n\nHello world")
 // The paragraph kept its identity; only its text advanced a revision.
 ```
 
@@ -103,37 +103,13 @@ and, like nodes from two separate parses, nodes from two lines are not
 comparable. Release a document when you are done with it; its
 already-extracted values stay valid forever, because they are values.
 
-### Most applications never read the delta
-
-Hand `commit.document` to SwiftUI and stop. The stability a reactive
-framework needs is on the TREE, not in the delta: an unchanged node keeps its
-`id` and its `revision`, `==` is O(1) over that pair, and `id` goes unmodified
-into `ForEach(id:)`. Nothing in this package requires a delta to obtain,
-retain, walk, or compare a document.
-
-### The delta is for saying WHERE, and for state you keep yourself
-
-`Delta` is one list, in the new document's postorder: every node whose
-projection differs appears after all of its own children, and a retired node
-appears where it was found — before its former parent's row. Each row says
-WHICH parts differ — `value`, `text`, `children`, `descendant` — and a row with
-no parts is a node that no longer exists.
-
-`descendant` alone means "nothing of this node's own changed, something below
-it did", which is what lets a highlighter light the run that actually changed
-instead of the section containing it:
-
-```swift
-let commit = try document.edit(text)
-for diff in commit.delta.diffs where diff.parts != .descendant {
-    guard let node = commit.document.node(diff.markup) else { continue }
-    highlight(node.scope)
-}
-```
-
-The other reader is a consumer holding state it must edit in place rather than
-re-derive — a display list, a text-measurement cache, an LSP token array. It
-walks the same list and edits its own structure.
+Hand the returned document to SwiftUI and stop. The stability a reactive
+framework needs is on the TREE: an unchanged node keeps its `id` and its
+`revision`, `==` is O(1) over that pair, and `id` goes unmodified into
+`ForEach(id:)`. What changed is on the tree too: a node that changed at this
+edit — in its own fields, its child list, or somewhere below — carries the
+new document's `revision`, and a node that kept its revision is, subtree
+included, exactly what it was.
 
 A document is immutable and `Sendable`; concurrent reads of one document are
 safe from any thread. `document.node(_:)` answers this document's value for an

@@ -37,11 +37,6 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 	public fun revisionBits ()J
 }
 
-public final class com/nouprax/markdown/core/Commit {
-	public final fun getDelta ()Lcom/nouprax/markdown/core/Delta;
-	public final fun getDocument ()Lcom/nouprax/markdown/core/Document;
-}
-
 public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/core/Markup {
 	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
@@ -52,16 +47,6 @@ public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/co
 	public fun getScope ()Lcom/nouprax/markdown/core/Scope;
 	public fun hashCode ()I
 	public fun revisionBits ()J
-}
-
-public final class com/nouprax/markdown/core/Delta {
-	public final fun afterRevisionBits ()J
-	public final fun beforeRevisionBits ()J
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getAfterRevision-s-VKNKU ()J
-	public final fun getBeforeRevision-s-VKNKU ()J
-	public final fun getDiffs ()Ljava/util/List;
-	public fun hashCode ()I
 }
 
 public final class com/nouprax/markdown/core/Diagnostic {
@@ -77,25 +62,6 @@ public final class com/nouprax/markdown/core/DiagnosticCode : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/DiagnosticCode;
 	public static fun values ()[Lcom/nouprax/markdown/core/DiagnosticCode;
-}
-
-public final class com/nouprax/markdown/core/Diff {
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getMarkup ()Lcom/nouprax/markdown/core/MarkupID;
-	public final fun getParts ()Lcom/nouprax/markdown/core/DiffParts;
-	public fun hashCode ()I
-}
-
-public final class com/nouprax/markdown/core/DiffParts {
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getChildren ()Z
-	public final fun getDescendant ()Z
-	public final fun getRawValue ()I
-	public final fun getText ()Z
-	public final fun getValue ()Z
-	public fun hashCode ()I
-	public final fun isRetired ()Z
-	public fun toString ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Directive : com/nouprax/markdown/core/Markup {
@@ -146,7 +112,7 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public fun close ()V
 	public final fun dump ()Ljava/lang/String;
 	public final fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
-	public final fun edit (Ljava/lang/String;)Lcom/nouprax/markdown/core/Commit;
+	public final fun edit (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContent ()Ljava/util/List;
 	public final fun getDiagnostics ()Ljava/util/List;

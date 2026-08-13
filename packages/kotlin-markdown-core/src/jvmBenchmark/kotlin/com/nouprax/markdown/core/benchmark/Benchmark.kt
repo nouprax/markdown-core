@@ -119,15 +119,16 @@ private fun oneShotParseNs(source: String): Long {
     return elapsed
 }
 
-/** One localized edit of a deep chain: the delta decode, with the document it
- * edits prepared outside the clock. */
+/** One localized edit of a deep chain: the edit and the successor's whole
+ * tree decode, with the document it edits prepared outside the clock. */
 private fun deepEditNs(source: String): Long {
     val document = Document(source)
     val edited = source.dropLast("leaf\n".length) + "seed\n"
     lateinit var next: Document
-    val elapsed = measureNanoTime { next = document.edit(edited).document }
+    val elapsed = measureNanoTime { next = document.edit(edited) }
     consume(next)
     next.close()
+    document.close()
     return elapsed
 }
 
@@ -177,7 +178,7 @@ private fun streamBenchmark(
             for (chunk in chunks) {
                 streamed += chunk
                 val previous = document
-                document = document.edit(streamed).document
+                document = document.edit(streamed)
                 // The edit reads its receiver and takes nothing, so the loop
                 // ends the predecessor. Unreachability is not a backstop here:
                 // a native parse costs memory the JVM collector cannot see.
@@ -192,7 +193,7 @@ private fun streamBenchmark(
             .List(5) { stream() }
             .sorted()
     println(
-        "benchmark runtime=kotlin boundary=jni_edit_and_delta_decode workload=$workload " +
+        "benchmark runtime=kotlin boundary=jni_edit_and_decode workload=$workload " +
             "workload_version=1 bytes=${chunks.sumOf { it.encodeToByteArray().size }} " +
             "commits=${chunks.size} warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} ${memoryMetrics()}",
@@ -210,7 +211,7 @@ fun main() {
     )
     deepScalingBenchmark(
         "deep_edit",
-        "jni_edit_and_delta_decode",
+        "jni_edit_and_decode",
         ::deepEditNs,
     )
     deepBuildBenchmark(

@@ -5,7 +5,7 @@
  * (checking dump determinism), and free.  Seeded edit scripts additionally
  * drive incremental documents through the shared replay harness
  * (support/edit_replay.h), so every commit is checked against a one-shot
- * parse and the delta-mirror invariants.  No renderer is involved and no
+ * parse and the identity-ledger invariants.  No renderer is involved and no
  * network or random device is read; the same inputs are generated on every
  * run.  Long-running fuzz campaigns stay in the explicit AFL/libFuzzer
  * maintenance tasks (fuzz_document_edits consumes the same script format).
@@ -21,7 +21,6 @@
 
 #include "edit_replay.h"
 #include "test_support.h"
-#include "commit_compat.h"
 
 static size_t nodes_visited;
 

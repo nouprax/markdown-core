@@ -16,8 +16,7 @@ class EditTest {
         val firstParagraph = assertIs<Paragraph>(first.content[1])
         val firstText = assertIs<Text>(firstParagraph.content[0])
 
-        val commit = first.edit("# Title\n\nHello world")
-        commit.document.use { second ->
+        first.edit("# Title\n\nHello world").use { second ->
             val secondHeading = assertIs<Heading>(second.content[0])
             val secondParagraph = assertIs<Paragraph>(second.content[1])
             val secondText = assertIs<Text>(secondParagraph.content[0])
@@ -28,20 +27,13 @@ class EditTest {
             assertTrue(secondText.revision > firstText.revision)
             assertEquals<Markup>(firstHeading, secondHeading)
 
-            // The heading settled before the edit and is not named at all;
-            // the text it precedes is, and nothing is retired.
-            val named =
-                commit.delta.diffs
-                    .map { it.markup }
-                    .toSet()
-            assertTrue(firstHeading.id !in named)
-            assertTrue(secondText.id in named)
-            assertTrue(commit.delta.diffs.none { it.parts.isRetired })
-            assertTrue(
-                commit.delta.diffs
-                    .single { it.markup == secondText.id }
-                    .parts.text,
-            )
+            // The heading settled before the edit and keeps its exact
+            // revision; the changed text and the paragraph above it carry the
+            // new document revision — which is how "what changed" is asked of
+            // the tree itself.
+            assertEquals(firstHeading.revision, secondHeading.revision)
+            assertEquals(second.revision, secondText.revision)
+            assertEquals(second.revision, secondParagraph.revision)
         }
     }
 
@@ -51,8 +43,7 @@ class EditTest {
         val downstreamBefore = before.content.map { it.id to it.revision }
         val thirdBefore = assertIs<Paragraph>(before.content[2])
 
-        val commit = before.edit("# New\n\nFirst\n\nSecond\n\nThird\n")
-        commit.document.use { after ->
+        before.edit("# New\n\nFirst\n\nSecond\n\nThird\n").use { after ->
             assertEquals(4, after.content.size)
             val inserted = assertIs<Heading>(after.content[0])
             after.content.drop(1).forEachIndexed { index, node ->
@@ -60,13 +51,9 @@ class EditTest {
                 assertEquals(downstreamBefore[index].second, node.revision)
             }
 
-            // A created node differs from absence in every part it has: a
-            // heading has a value and children, and no text of its own.
-            val insertedDiff = commit.delta.diffs.single { it.markup == inserted.id }
-            assertTrue(insertedDiff.parts.value)
-            assertTrue(insertedDiff.parts.children)
-            assertTrue(insertedDiff.parts.descendant)
-            assertTrue(!insertedDiff.parts.text)
+            // A created node carries the new document revision, exactly like
+            // everything else this edit minted or changed.
+            assertEquals(after.revision, inserted.revision)
 
             // Downstream nodes shifted by two lines: equal values, new scopes.
             val third = assertIs<Paragraph>(after.content[3])
@@ -85,27 +72,18 @@ class EditTest {
         val before = Document("text\n")
         val paragraph = assertIs<Paragraph>(before.content[0])
 
-        val commit = before.edit("# text\n")
-        commit.document.use { after ->
+        before.edit("# text\n").use { after ->
             val heading = assertIs<Heading>(after.content[0])
             assertNotEquals(paragraph.id, heading.id)
 
-            val rows = commit.delta.diffs
-            assertTrue(rows.any { it.markup == paragraph.id && it.parts.isRetired })
-            assertTrue(rows.any { it.markup == heading.id && !it.parts.isRetired })
-            // A retired node is emitted WHERE IT WAS FOUND — inside its former
-            // parent's run, before what replaced it there and before that
-            // parent's own row.
-            assertTrue(
-                rows.indexOfFirst { it.markup == paragraph.id } <
-                    rows.indexOfFirst { it.markup == heading.id },
-            )
-            assertTrue(
-                rows.indexOfFirst { it.markup == heading.id } <
-                    rows.indexOfFirst { it.markup == after.id },
-            )
-            // The retired node is gone from the successor.
+            // The minted identity carries the new document revision, and
+            // retirement is a presence question: the old id is simply no
+            // longer this series' to answer.
+            assertEquals(after.revision, heading.revision)
             assertNull(after.node(paragraph.id))
+            // The predecessor still answers for it — retirement is the
+            // successor's fact, not a rewrite of history.
+            assertEquals(paragraph.id, before.node(paragraph.id)?.id)
         }
     }
 
@@ -126,17 +104,18 @@ class EditTest {
     }
 
     @Test
-    fun aBlankLineOnlyEditReportsAnEmptyDeltaYetShiftsScopes() {
+    fun aBlankLineOnlyEditChangesNoRevisionYetShiftsScopes() {
         val before = Document("Alpha\n\n\n\nOmega\n")
         val omegaBefore = assertIs<Paragraph>(before.content[1])
         assertEquals(5, omegaBefore.scope.start.line)
 
         // Delete two of the blank lines: no node's content changes.
-        val commit = before.edit("Alpha\n\nOmega\n")
-        commit.document.use { after ->
+        before.edit("Alpha\n\nOmega\n").use { after ->
             val omegaAfter = assertIs<Paragraph>(after.content[1])
-            assertTrue(commit.delta.diffs.isEmpty())
-            assertTrue(commit.delta.afterRevision > commit.delta.beforeRevision)
+            // Nothing changed anywhere, so even the root kept its exact
+            // revision — the tree's way of reporting an empty change set.
+            assertEquals(before.revision, after.revision)
+            assertEquals(before.id, after.id)
             // Equal, and at a different place: two nodes differing only in
             // where they sit are equal, because position is not content.
             assertEquals<Markup>(omegaBefore, omegaAfter)
@@ -147,35 +126,41 @@ class EditTest {
     }
 
     @Test
-    fun aDeepRebuildNamesChildrenBeforeParentsInOnePostorderPass() {
+    fun aDeepRebuildStampsEveryAncestorOfTheOneChangedText() {
         val depth = 512
         val stable = "Stable\n\n"
         val prefix = "> ".repeat(depth)
         val before = Document(stable + prefix + "alpha\n")
         val stableBefore = assertIs<Paragraph>(before.content.first())
 
-        val commit = before.edit(stable + prefix + "bravo\n")
-        commit.document.use { after ->
-            assertTrue(commit.delta.diffs.size >= depth)
-            assertPostorder(commit.delta, after)
+        before.edit(stable + prefix + "bravo\n").use { after ->
             assertEquals(stableBefore.id, after.content.first().id)
+            assertEquals(stableBefore.revision, after.content.first().revision)
             assertEquals(Document(stable + prefix + "bravo\n").dump(), after.dump())
 
-            // Exactly one node's own projection differs — the innermost text —
-            // and every one of its ancestors carries `descendant` and nothing
-            // else, which is what lets a renderer stop at the first node whose
-            // own parts are all false.
+            // One text changed, and a revision covers the whole subtree below
+            // its node: the changed text, the paragraph and every quote above
+            // it, and the document itself carry the new document revision,
+            // while the settled paragraph keeps its own — which is what lets
+            // a renderer prune at the first node whose revision did not move.
             var innermost: Markup = after.content.last()
             while (innermost is BlockQuote) {
+                assertEquals(after.revision, innermost.revision)
                 innermost = innermost.content.first()
             }
             val text = assertIs<Text>(assertIs<Paragraph>(innermost).content.first())
             assertEquals("bravo", text.literal)
-            val ownChanges = commit.delta.diffs.filter { it.parts.rawValue != 8 }
-            assertEquals(listOf(text.id), ownChanges.map { it.markup })
-            assertTrue(ownChanges.single().parts.text)
-            // The chain, the paragraph it ends in, and the document above it.
-            assertEquals(depth + 3, commit.delta.diffs.size)
+            assertEquals(after.revision, text.revision)
+            // The chain, the paragraph it ends in, its text, and the document:
+            // exactly depth + 3 nodes carry the new revision, and nothing else
+            // does.
+            var stamped = 0
+            MarkupWalker.walk(after) { event, node, _ ->
+                if (event == WalkEvent.ENTERING && node.revision == after.revision) {
+                    stamped += 1
+                }
+            }
+            assertEquals(depth + 3, stamped)
         }
     }
 
@@ -188,7 +173,7 @@ class EditTest {
         // Editing takes nothing from the predecessor. Its values, scopes,
         // diagnostics, and dump were all extracted at parse time and owe that
         // parse nothing.
-        first.edit("Zero\n\nOne\n\nTwo\n").document.close()
+        first.edit("Zero\n\nOne\n\nTwo\n").close()
         assertEquals(3, two.scope.start.line)
         assertTrue(first.dump().contains("Paragraph"))
         val recording = RecordingVisitor()
@@ -204,12 +189,12 @@ class EditTest {
         val base = Document("One\n")
         val first = base.edit("Two\n")
         val second = base.edit("Three\n")
-        assertEquals("Two", assertIs<Text>(assertIs<Paragraph>(first.document.content[0]).content[0]).literal)
-        assertEquals("Three", assertIs<Text>(assertIs<Paragraph>(second.document.content[0]).content[0]).literal)
-        assertTrue(first.document.revision != second.document.revision)
-        assertTrue(first.document.revision > base.revision && second.document.revision > base.revision)
-        first.document.close()
-        second.document.close()
+        assertEquals("Two", assertIs<Text>(assertIs<Paragraph>(first.content[0]).content[0]).literal)
+        assertEquals("Three", assertIs<Text>(assertIs<Paragraph>(second.content[0]).content[0]).literal)
+        assertTrue(first.revision != second.revision)
+        assertTrue(first.revision > base.revision && second.revision > base.revision)
+        first.close()
+        second.close()
         base.close()
 
         val closed = Document("One\n")
@@ -226,16 +211,15 @@ class EditTest {
     }
 
     @Test
-    fun documentsAndDeltasAreValuesAndIdsAreStableMapKeys() {
+    fun documentsAreValuesAndIdsAreStableMapKeys() {
         Document("").use { empty ->
             assertTrue(empty.content.isEmpty())
-            val commit = empty.edit("Alpha\n")
-            commit.document.use { document ->
+            empty.edit("Alpha\n").use { document ->
                 val paragraph = assertIs<Paragraph>(document.content[0])
                 val byId = hashMapOf(paragraph.id to "paragraph")
                 assertEquals(paragraph.id, document.node(paragraph.id)?.id)
-                // The root answers for itself, which is what a delta naming it
-                // needs.
+                // The root answers for itself, which is what a consumer
+                // reconciling by id needs when the top-level list changes.
                 assertEquals(document.id, document.node(document.id)?.id)
                 assertEquals("paragraph", byId[paragraph.id])
                 assertNull(document.node(MarkupID(document.series + 1UL, paragraph.id.rawValue)))
@@ -252,7 +236,7 @@ class EditTest {
         assertEquals(listOf(DiagnosticCode.DIRECTIVE_ATTRIBUTES), before.diagnostics.map { it.code })
         assertEquals(Scope(Position(1, 8), Position(1, 14)), before.diagnostics.single().scope)
 
-        before.edit(":::note{a=1}\nbody\n:::\n").document.use { after ->
+        before.edit(":::note{a=1}\nbody\n:::\n").use { after ->
             assertTrue(after.diagnostics.isEmpty())
         }
         // The predecessor keeps reporting its own: diagnostics are values it
@@ -304,12 +288,22 @@ class EditTest {
         var touched = 0
 
         fun tick() {
-            val commit = document.edit(streamed)
-            document = commit.document
+            val predecessorRevision = document.revision
+            document = document.edit(streamed)
             ticks += 1
-            touched += commit.delta.diffs.size
+            // The old delta row count, re-expressed on the tree: the nodes
+            // whose revision equals the new document revision are exactly the
+            // ones this tick changed or minted — and a root that kept its
+            // revision means the tick changed nothing anywhere.
+            if (document.revision != predecessorRevision) {
+                val stamped = document.revision
+                MarkupWalker.walk(document) { event, node, _ ->
+                    if (event == WalkEvent.ENTERING && node.revision == stamped) {
+                        touched += 1
+                    }
+                }
+            }
             assertEquals(Document(streamed).dump(), document.dump())
-            assertPostorder(commit.delta, document)
             for ((index, id, revision) in frozen) {
                 val node = document.content[index]
                 assertEquals(id, node.id)
@@ -346,9 +340,10 @@ class EditTest {
         assertTrue(ticks < messages)
         assertEquals(Document(turns.joinToString(separator = "")).dump(), document.dump())
 
-        // Near-O(n) pipeline: total delta traffic stays within one row per
-        // final node plus bounded frontier churn per tick. A full rebuild per
-        // tick would be on the order of ticks * nodes.
+        // Near-O(n) pipeline: the total count of nodes stamped with a new
+        // document revision stays within one per final node plus bounded
+        // frontier churn per tick. A full rebuild per tick would be on the
+        // order of ticks * nodes.
         var nodes = 0
         MarkupWalker.walk(document) { event, _, _ ->
             if (event == WalkEvent.ENTERING) {
@@ -357,40 +352,5 @@ class EditTest {
         }
         assertTrue(touched < nodes + 16 * ticks)
         document.close()
-    }
-}
-
-/**
- * Asserts the delta's own ordering contract: every surviving node appears
- * after all of its own children, so a consumer materializing immutable values
- * bottom-up reads the list once, front to back.
- */
-internal fun assertPostorder(
-    delta: Delta,
-    document: Document,
-) {
-    val position = mutableMapOf<MarkupID, Int>()
-    delta.diffs.forEachIndexed { index, diff ->
-        if (!diff.parts.isRetired) {
-            position[diff.markup] = index
-        }
-    }
-    val stack = ArrayDeque<MarkupID>()
-    MarkupWalker.walk(document) { event, node, _ ->
-        when (event) {
-            WalkEvent.ENTERING -> {
-                val parent = stack.lastOrNull()
-                val above = parent?.let { position[it] }
-                val below = position[node.id]
-                if (above != null && below != null) {
-                    assertTrue(below < above, "child ${node.id.rawValue} follows its parent")
-                }
-                stack.addLast(node.id)
-            }
-
-            WalkEvent.EXITING -> {
-                stack.removeLast()
-            }
-        }
     }
 }

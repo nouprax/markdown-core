@@ -26,7 +26,7 @@
 
 // A document is a purely local object: it owns its text, its committed tree,
 // and its definition tables, and shares nothing with any other document but
-// its series' revision counter. Every commit is one full parse of the new
+// its series' revision counter. Every edit is one full parse of the new
 // text plus a diff against the previous document (document_build below); the
 // equivalence suite pins that the result always equals a one-shot parse of
 // the same text.
@@ -97,48 +97,20 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
     return parser;
 }
 
-void markdown_core_document_resolve_definition_owners(markdown_core_map *map) {
-    markdown_core_map_entry *entry;
-    for (entry = map->refs; entry; entry = entry->next) {
-        if (entry->owner != 0) {
-            entry->owner = ((const markdown_core_node *)(uintptr_t)entry->owner)->id;
-        }
-        /* Unguarded, unlike `owner`: 0 is a real owner (the region before the
-         * first document child), while every entry that reaches adoption was
-         * stamped with the node it was written as. A definition whose node
-         * was lost to allocation failure fails the parse instead, so its
-         * entry never gets here. */
-        entry->definition_node = ((const markdown_core_node *)(uintptr_t)entry->definition_node)->id;
-    }
-}
-
-/* Frees a set of definition tables — the staged ones a failed full commit
- * abandons, or the committed ones it replaces. */
-static void release_definition_tables(markdown_core_mem *mem, markdown_core_definition_table *tables) {
-    size_t s;
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_map_free(tables[s].map);
-        if (tables[s].index) {
-            mem->free(mem, tables[s].index);
-        }
-        memset(&tables[s], 0, sizeof(tables[s]));
-    }
-}
-
 // Full staged reparse: parses the whole stored text with a fresh parser and
 // fresh definition maps, adopts ids from the previous tree, and replaces every
 // piece of document state at once. The staging never touches the committed
 // state, so any failure leaves the document valid at its previous revision.
-/* PARSE. A pure function of (bytes, options): it fills this document's tree,
- * definition maps and footnote index from its own stored text and reads
- * nothing else. No predecessor, no ids — identity is the diff's to assign. */
+/* PARSE. A pure function of (bytes, options): it fills this document's tree
+ * from its own stored text and reads nothing else. The parser's definition
+ * maps serve the parse's own inline phase and die with the parser: the tree
+ * carries every published answer. No predecessor, no ids — identity is the
+ * diff's to assign. */
 static bool document_parse_text(markdown_core_document *document, markdown_core_error **error) {
     markdown_core_parser *parser;
     markdown_core_node *root;
-    markdown_core_definition_table staged[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     int total_lines;
     int last_line_length;
-    size_t s;
 
     parser = markdown_core_document_new_parser(document, error);
     if (!parser) {
@@ -166,7 +138,7 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
     if (!root) {
         bool allocation_failed = parser->oom;
         bool internal_error = parser->internal_error;
-        markdown_core_parser_free(parser); // frees the staged maps with it
+        markdown_core_parser_free(parser); // frees the definition maps with it
         markdown_core_ast_set_error(
             error,
             allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
@@ -175,11 +147,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         );
         return false;
     }
-    memset(staged, 0, sizeof(staged));
-    staged[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map = parser->refmap;
-    staged[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].map = parser->footnote_defs;
-    parser->refmap = NULL;
-    parser->footnote_defs = NULL;
     /* The parser's diagnostics become this document's, converted from the
      * core-side record to the facade type. A conversion that cannot allocate
      * leaves the document with none: a missing underline is not a wrong
@@ -205,26 +172,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         }
     }
     markdown_core_parser_free(parser);
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        // The sink's context is this call's stack frame; the maps outlive it.
-        // Both are present: a parse that lost one is poisoned and returns no
-        // root, so this line is only reached with the tree in hand.
-        staged[s].map->lookup_sink = NULL;
-        staged[s].map->lookup_context = NULL;
-        staged[s].map->lookup_unit = NULL;
-    }
-    if (false) {
-        release_definition_tables(document->mem, staged);
-        markdown_core_node_free(root);
-        markdown_core_ast_set_error(
-            error,
-            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-            "could not record the document's reference lookups"
-        );
-        return false;
-    }
-
-    memcpy(document->definitions, staged, sizeof(staged));
     document->root = root;
     document->total_lines = total_lines;
     document->last_line_length = last_line_length;
@@ -233,30 +180,21 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
 
 /* DIFF. `new` has a tree and no identities; `old` may be NULL. This assigns
  * `new`'s identities from `old` — the one decision both requirements rest on
- * — and reports what changed. It reads no text and reparses nothing.
+ * — and stamps each node's revision. It reads no text and reparses nothing.
  *
  * A diff of the same two trees is the same diff. That is the invariant the
  * old `adopt` name hid, and keeping parse and diff apart is what makes it
- * statable: a tree is a pure function of (bytes, options), and a delta is a
- * pure function of two trees. */
+ * statable: a tree is a pure function of (bytes, options), and the identity
+ * assignment is a pure function of two trees. */
 bool markdown_core_document_diff(
     const markdown_core_document *old,
     markdown_core_document *nw,
-    markdown_core_delta *changes,
     markdown_core_error **error
 ) {
-    size_t s;
-
-    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision, changes)) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
+    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision)) {
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not match identities");
         return false;
     }
-    // Ids exist now, so definitions recorded against anchor node pointers can
-    // take their ids.
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_document_resolve_definition_owners(nw->definitions[s].map);
-    }
-
     return true;
 }
 
@@ -390,10 +328,10 @@ static bool document_host_entropy(uint64_t *value) {
 
 /* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
  *
- *     new   = Document(markdown, options)
- *     delta = diff(prev, new)
+ *     new = Document(markdown, options)
+ *     diff(prev, new)
  *
- * That is the whole of a commit. There is no incremental path, no pending
+ * That is the whole of an edit. There is no incremental path, no pending
  * edit, no reuse of the previous tree: the previous document is INPUT to the
  * diff and nothing else, and it is untouched by this call. */
 static markdown_core_document *document_build(
@@ -402,11 +340,9 @@ static markdown_core_document *document_build(
     const markdown_core_document *prev,
     markdown_core_mem *mem,
     bool pooled,
-    markdown_core_delta **changes_out,
     markdown_core_error **error
 ) {
     markdown_core_document *doc;
-    markdown_core_delta *changes = NULL;
 
     doc = markdown_core_document_alloc(options, mem, pooled, error);
     if (!doc) {
@@ -426,24 +362,9 @@ static markdown_core_document *document_build(
         markdown_core_document_free(doc);
         return NULL;
     }
-    if (changes_out) {
-        changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
-        if (!changes) {
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
-            markdown_core_document_free(doc);
-            return NULL;
-        }
-        changes->series = doc->series;
-        changes->before = prev ? prev->revision : 0;
-        changes->after = doc->revision;
-    }
-    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, changes, error)) {
-        markdown_core_delta_free(changes);
+    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, error)) {
         markdown_core_document_free(doc);
         return NULL;
-    }
-    if (changes_out) {
-        *changes_out = changes;
     }
     return doc;
 }
@@ -537,8 +458,8 @@ void markdown_core_document_free(markdown_core_document *document) {
     }
     document->mem->free(document->mem, document->diagnostics);
     if (document->arena) {
-        // Everything the document owns came from the arena (deltas and errors
-        // are caller-owned system allocations); one release replaces the
+        // Everything the document owns came from the arena (errors are
+        // caller-owned system allocations); one release replaces the
         // per-structure teardown below.
         markdown_core_arena_release(document->arena);
         free(document);
@@ -549,7 +470,6 @@ void markdown_core_document_free(markdown_core_document *document) {
     }
     series_clock_release(document->clock);
     markdown_core_source_release(document->source);
-    release_definition_tables(document->mem, document->definitions);
     free(document);
 }
 
@@ -560,7 +480,7 @@ markdown_core_document *markdown_core_document_open_with_mem(
     markdown_core_error **error
 ) {
     markdown_core_string empty = {NULL, 0};
-    return document_build(options, empty, NULL, mem, pooled, NULL, error);
+    return document_build(options, empty, NULL, mem, pooled, error);
 }
 
 /* `Document(markdown, options)` — the one entry point. */
@@ -578,39 +498,31 @@ markdown_core_document *markdown_core_document_new(
         );
         return NULL;
     }
-    return document_build(options, markdown, NULL, markdown_core_mem_default(), true, NULL, error);
+    return document_build(options, markdown, NULL, markdown_core_mem_default(), true, error);
 }
 
 /* EDIT: hand the document new text.
  *
- *     let new   = Document(markdown, document.options)
- *     let delta = diff(document, new)
- *     return Commit(new, delta)
+ *     let new = Document(markdown, document.options)
+ *     diff(document, new)
+ *     return new
  *
  * It is `edit` and not `commit` because there is nothing pending to commit.
  * A commit is what you do to changes a document has been accumulating, and
  * there is no document and no accumulation: you hand over text and get back
- * the document it describes, plus what changed. The receiver is READ, not
- * consumed: it is the diff's input, it keeps every byte it owns, and it
- * remains the caller's to free. Editing it twice is therefore legal and
- * gives two lines of descent, told apart by their revisions. */
-bool markdown_core_document_edit(
+ * the document it describes. The receiver is READ, not consumed: it is the
+ * diff's input, it keeps every byte it owns, and it remains the caller's to
+ * free. Editing it twice is therefore legal and gives two lines of descent,
+ * told apart by their revisions. */
+markdown_core_document *markdown_core_document_edit(
     const markdown_core_document *document,
     markdown_core_string markdown,
-    markdown_core_commit *out,
     markdown_core_error **error
 ) {
-    markdown_core_document *nw;
-    markdown_core_delta *delta = NULL;
-
     clear_error(error);
-    if (out) {
-        out->document = NULL;
-        out->delta = NULL;
-    }
     if (!document) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
-        return false;
+        return NULL;
     }
     if (!markdown.data && markdown.length != 0) {
         markdown_core_ast_set_error(
@@ -618,32 +530,21 @@ bool markdown_core_document_edit(
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "markdown must not be null when length is nonzero"
         );
-        return false;
+        return NULL;
     }
     // The receiver is READ, never taken: it is the diff's input and nothing
     // else, it keeps every byte it owns, and the caller frees it when the
     // caller is done with it. That is what lets a document be shared across
     // threads without a lock and edited more than once — two successors of
     // one predecessor are two lines of descent, told apart by their revisions.
-    nw = document_build(
+    return document_build(
         &document->options,
         markdown,
         document,
         markdown_core_mem_default(),
         document->arena != NULL,
-        out ? &delta : NULL,
         error
     );
-    if (!nw) {
-        return false;
-    }
-    if (out) {
-        out->document = nw;
-        out->delta = delta;
-    } else {
-        markdown_core_document_free(nw);
-    }
-    return true;
 }
 
 uint64_t markdown_core_document_revision(const markdown_core_document *document) {

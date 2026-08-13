@@ -9,8 +9,6 @@
 #include <time.h>
 #endif
 
-#include "commit_compat.h"
-
 /* File IO -------------------------------------------------------------- */
 
 uint8_t *ts_read_file(const char *path, size_t *length) {

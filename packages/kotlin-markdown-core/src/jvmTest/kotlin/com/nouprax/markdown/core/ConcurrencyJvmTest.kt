@@ -111,7 +111,7 @@ class ConcurrencyJvmTest {
                     fun advance(
                         previous: Document,
                         text: String,
-                    ): Document = previous.edit(text).document.also { previous.close() }
+                    ): Document = previous.edit(text).also { previous.close() }
 
                     var document = Document("")
                     repeat(25) { iteration ->

@@ -6,6 +6,19 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. `edit`
+  returns the successor document and nothing else — `markdown_core_commit`,
+  `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three
+  delta accessors are removed from C, and Commit/Delta/Diff types and every
+  delta decode path are removed from all three bindings. What changed is
+  asked of the new tree itself: a node's `revision` is subtree-covering (the
+  document revision at which its own fields, child list, or any descendant
+  last changed), so a consumer walks the new tree top-down and stops
+  descending wherever the (id, revision) pair is one it already holds —
+  (id, revision) is the entire update protocol. The Kotlin wire format drops
+  its delta section (MKC4 → MKC5). This clears the runway for the adopted
+  streaming plan (`docs/reviews/2026-08-12-streaming-plan.md`), where `edit`
+  and a new `append` become two mutations under one supersession rule.
 - Breaking (ECMAScript): `MarkupID.series` is a 16-digit lowercase hex string
   instead of a `bigint`, so a document is ordinary JSON. `JSON.stringify` threw
   on every tree before this — the salt was the one `bigint` on the public
@@ -20,8 +33,10 @@ promised to remain compatible between releases.
   `MarkupSession` in Swift, Kotlin, and ECMAScript and the whole
   `markdown_core_session_*` family are removed rather than deprecated: the
   former one-shot parse and the former session open are one call, and `edit`
-  hands a document new text and returns the document that text describes plus
-  the delta between the two. `edit` READS its receiver and takes nothing — the
+  hands a document new text and returns the document that text describes
+  (this same release also removes the delta — see the entry above; the two
+  changes ship together, so `edit` never returns one within a published
+  version). `edit` READS its receiver and takes nothing — the
   document it was called on keeps everything it owns, stays usable, and is
   freed by whoever holds it, so editing one document twice gives two lines of
   descent. Options are fixed for a document's whole series; changing them is a

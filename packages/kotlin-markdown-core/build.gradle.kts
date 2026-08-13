@@ -424,24 +424,18 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
             compile(
                 "PublicApiProbe",
                 """
-                import com.nouprax.markdown.core.Commit;
-                import com.nouprax.markdown.core.Diff;
                 import com.nouprax.markdown.core.Document;
-                import java.util.List;
 
                 final class PublicApiProbe {
                     Document parse() {
                         return new Document("visible");
                     }
 
-                    List<Diff> edit(Document document) {
-                        Commit commit = document.edit("visible again");
-                        commit.getDocument().close();
-                        return commit.getDelta().getDiffs();
-                    }
-
-                    boolean retired(Diff diff) {
-                        return diff.getParts().isRetired();
+                    long edit(Document document) {
+                        Document next = document.edit("visible again");
+                        long revision = next.revisionBits();
+                        next.close();
+                        return revision;
                     }
                 }
                 """.trimIndent(),
@@ -460,7 +454,6 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
                 "MarkdownCoreKt__CBridge_androidKt",
                 "MarkdownCoreKt__CBridge_jvmKt",
                 "MarkdownCoreKt__CBridge_jvmSharedKt",
-                "MarkdownCoreKt__CommitKt",
                 "MarkdownCoreKt__DiagnosticKt",
                 "MarkdownCoreKt__DocumentKt",
                 "MarkdownCoreKt__HTMLBlockKt",

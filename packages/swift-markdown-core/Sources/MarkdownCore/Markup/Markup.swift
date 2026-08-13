@@ -77,7 +77,7 @@ public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     /// The node's series-scoped identity; see ``MarkupID``.
     var id: MarkupID { get }
 
-    /// The commit revision at which this node's own fields, child list, or
+    /// The document revision at which this node's own fields, child list, or
     /// any descendant last changed.
     ///
     /// A pure positional shift caused by an edit elsewhere never changes a

@@ -5,27 +5,15 @@ export interface NativeExports extends WebAssembly.Exports {
     /** Parses `bytes` and returns the document, or 0 with `*errorOutput`
      * set. */
     es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
-    /** Hands `document` new text and takes nothing from it; `commitOutput`
-     * receives the successor document and the delta as two caller-owned
-     * pointers. */
-    es_document_edit(
-        document: number,
-        bytes: number,
-        length: number,
-        commitOutput: number,
-        errorOutput: number
-    ): number;
+    /** Hands `document` new text and takes nothing from it; returns the
+     * caller-owned successor document, or 0 with `*errorOutput` set. */
+    es_document_edit(document: number, bytes: number, length: number, errorOutput: number): number;
     es_document_free(document: number): void;
     es_document_series(document: number): bigint;
     /** Writes a pointer to the document's own diagnostic array — 20-byte
      * (code i32, scope 4×i32) rows that borrow from the document — and
      * returns the row count. */
     es_document_diagnostics(document: number, dataOutput: number): number;
-    es_delta_revision(delta: number, boundary: number): bigint;
-    /** Writes a pointer to the delta's own row array — 16-byte (id u64,
-     * parts u32) rows that borrow from the delta — and returns the count. */
-    es_delta_diffs(delta: number, dataOutput: number): number;
-    es_delta_free(delta: number): void;
     es_document_root(document: number): number;
     es_node_id(node: number): bigint;
     es_node_revision(node: number): bigint;

@@ -1,14 +1,15 @@
 /* Document equivalence suite: an incrementally edited document must always
  * dump byte-identically to a one-shot parse of the same final text, and its
- * deltas must account for every observable node change.
+ * identities must behave — ids never resurrect, revisions never regress,
+ * and an unchanged (id, revision) means an unchanged projection.
  *
  * Every replay drives the public facade only, through the shared document
  * replay harness (support/edit_replay.h): a shadow text buffer receives
  * the same edits as the document, so each commit can be checked against
- * markdown_core_document_new of the shadow bytes; a shadow id->revision
- * mirror is maintained purely from deltas and compared against a fresh
- * walk after every commit, which catches adoption bugs that dumps cannot
- * see.
+ * markdown_core_document_new of the shadow bytes; a double walk over the
+ * predecessor and successor trees checks the identity contract against a
+ * cumulative id ledger after every commit, which catches adoption bugs
+ * that dumps cannot see.
  *
  *   equivalence_runner --list
  *   equivalence_runner --case canonical --fixtures DIR NAME MASK [NAME MASK ...]
@@ -1041,7 +1042,7 @@ static int case_boundary_edits(void) {
  *     rather than by one, deciding whether the line seals the cluster.
  *
  * Every assertion is the harness's: each commit must dump byte-identically to
- * a one-shot parse of the same bytes, with the delta accounting for every
+ * a one-shot parse of the same bytes, with the identity double-walk run at every
  * changed node. Nothing here inspects the index, the splice, or the restart
  * point — those are internals, and section 13 of the incremental canonical AST
  * contract binds their replacement to exactly these equivalences. */

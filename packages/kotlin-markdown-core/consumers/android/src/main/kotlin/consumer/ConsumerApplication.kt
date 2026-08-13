@@ -8,10 +8,8 @@ class ConsumerApplication : Application() {
         super.onCreate()
         Document("Android consumer\n").use { document ->
             check(document.content.size == 1)
-            val commit = document.edit("Android consumer, edited\n")
-            commit.document.use { next ->
+            document.edit("Android consumer, edited\n").use { next ->
                 check(next.revision > document.revision)
-                check(commit.delta.diffs.isNotEmpty())
                 check(next.node(next.id) === next)
                 next.scope
             }

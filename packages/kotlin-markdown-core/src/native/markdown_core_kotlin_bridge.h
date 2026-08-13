@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /* Every payload-producing call returns false only when the payload itself
- * could not be allocated; structured failures travel inside the MKC4 payload
+ * could not be allocated; structured failures travel inside the MKC5 payload
  * as an error record. Payloads are caller-owned and released with
  * markdown_core_kotlin_free.
  *

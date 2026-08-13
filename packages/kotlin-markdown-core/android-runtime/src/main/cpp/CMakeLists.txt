@@ -31,8 +31,6 @@ add_library(
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/source.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/arena.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/diff.c"
-    "${MARKDOWN_CORE_EXTENSIONS_DIR}/diff.c"
-    "${MARKDOWN_CORE_EXTENSIONS_DIR}/delta.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/core-extensions.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/table.c"
     "${MARKDOWN_CORE_EXTENSIONS_DIR}/strikethrough.c"

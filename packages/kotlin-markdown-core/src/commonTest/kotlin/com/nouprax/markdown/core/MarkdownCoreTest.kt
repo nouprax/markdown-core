@@ -97,7 +97,7 @@ class ErrorsTest {
     @Test
     fun corruptedNativePayloadFailsInsteadOfProducingAPartialTree() {
         assertFailsWith<IllegalArgumentException> {
-            decodeWireOpen(byteArrayOf(0x4d, 0x4b, 0x43)) { _, _, _, _, _, _, _ ->
+            decodeWire(byteArrayOf(0x4d, 0x4b, 0x43)) { _, _, _, _, _, _, _ ->
                 error("a truncated payload reached the build step")
             }
         }

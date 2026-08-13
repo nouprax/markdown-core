@@ -1180,39 +1180,7 @@ static bool view_optional_equal(markdown_core_string a, markdown_core_string b) 
     return (a.data == NULL) == (b.data == NULL) && view_content_equal(a, b);
 }
 
-// Kinds whose canonical text bytes are the TEXT part of their projection
-// (9.1). Everything else a node carries -- levels, flavors, urls, labels,
-// alignments -- is a scalar field, and scalar fields are VALUE.
-static bool kind_has_text(markdown_core_node_kind kind) {
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_HTML_BLOCK:
-    case MARKDOWN_CORE_KIND_TEXT:
-    case MARKDOWN_CORE_KIND_HTML:
-    case MARKDOWN_CORE_KIND_CODE:
-    case MARKDOWN_CORE_KIND_CODE_BLOCK:
-    case MARKDOWN_CORE_KIND_FORMULA:
-    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
-        return true;
-    default:
-        return false;
-    }
-}
-
-uint32_t markdown_core_ast_parts_present(const markdown_core_node *node) {
-    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
-    uint32_t parts = MARKDOWN_CORE_DIFF_VALUE;
-    if (kind_has_text(kind)) {
-        parts |= MARKDOWN_CORE_DIFF_TEXT;
-    }
-    // An empty child list and no child list are indistinguishable to every
-    // consumer, so a childless node is not given the two list-valued parts.
-    if (node->first_child) {
-        parts |= MARKDOWN_CORE_DIFF_CHILDREN | MARKDOWN_CORE_DIFF_DESCENDANT;
-    }
-    return parts;
-}
-
-uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const markdown_core_node *b) {
+bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(a);
     markdown_core_string a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
     markdown_core_string b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
@@ -1357,7 +1325,7 @@ uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const mark
     default:
         break;
     }
-    return (value ? MARKDOWN_CORE_DIFF_VALUE : 0u) | (text ? MARKDOWN_CORE_DIFF_TEXT : 0u);
+    return value || text;
 }
 
 // Depth is input-controlled (nested block quotes nest one node per two input

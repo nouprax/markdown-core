@@ -24,7 +24,7 @@ private fun open(
     markdown: String,
     options: ParseOptions,
 ): Built =
-    decodeWireOpen(cOpen(markdown.encodeToByteArray(), options)) {
+    decodeWire(cOpen(markdown.encodeToByteArray(), options)) {
         handle,
         id,
         revision,
@@ -42,16 +42,16 @@ private fun open(
  *
  * ```kotlin
  * Document("# Title").use { document ->
- *     val commit = document.edit("# Renamed")
- *     commit.document.close()
+ *     document.edit("# Renamed").close()
  * }
  * ```
  *
  * There is no session type. A document is created from text and options;
- * [edit] hands it new text and returns the next document with the delta
- * between them. Options are fixed for a document's whole series — changing
- * what the parser means is a new [Document], not an edit, and there is no
- * delta to be had across it.
+ * [edit] hands it new text and returns the next document. Options are fixed
+ * for a document's whole series — changing what the parser means is a new
+ * [Document], not an edit. What changed is asked of the new tree: an
+ * unchanged node keeps its [Markup.id] and [Markup.revision], and a changed
+ * one carries the new document's revision.
  *
  * The node values are ordinary immutable values with no reference back here:
  * hold them, put them in a view model, hand them to another thread. What this
@@ -132,33 +132,37 @@ public class Document private constructor(
 
     /**
      * Hands this document new text and returns the document that text
-     * describes, together with what changed.
+     * describes.
      *
      * Reads the receiver and takes nothing from it: this document stays
      * usable and may be edited again. Editing it twice gives two lines of
      * descent, told apart by their revisions — and, like nodes from two
      * separate parses, nodes from two lines are not comparable.
      *
+     * What changed is asked of the returned tree, not of a delta: a node's
+     * [Markup.revision] is the document revision at which its own fields,
+     * child list, or any descendant last changed, so an unchanged node keeps
+     * its exact (id, revision) pair and a changed one carries the new
+     * document's revision.
+     *
      * Throws [ParseException] when the engine fails, and
      * [IllegalStateException] once this document has been [close]d.
      */
-    public fun edit(markdown: String): Commit {
+    public fun edit(markdown: String): Document {
         val owned = handle.load()
         check(owned != 0L) { "the document is closed" }
         val carriedOptions = options
-        val (successor, delta) =
-            decodeWireEdit(owned.edit(markdown.encodeToByteArray())) {
-                handle,
-                id,
-                revision,
-                scope,
-                content,
-                index,
-                diagnostics,
-                ->
-                Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
-            }
-        return Commit(successor, delta)
+        return decodeWire(owned.edit(markdown.encodeToByteArray())) {
+            handle,
+            id,
+            revision,
+            scope,
+            content,
+            index,
+            diagnostics,
+            ->
+            Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
+        }
     }
 
     /**
@@ -173,9 +177,10 @@ public class Document private constructor(
             id.series != this.id.series -> null
 
             // The root answers for itself. It is a Markup like any other, and
-            // a delta names it whenever the top-level block list changes, so a
-            // consumer reconciling by id reaches this call with the document's
-            // own id — while the mirror holds the descendants, not the root.
+            // its revision advances whenever the top-level block list changes,
+            // so a consumer reconciling by id reaches this call with the
+            // document's own id — while the index holds the descendants, not
+            // the root.
             id.rawValue == this.id.rawValue -> this
 
             else -> built.index[id.rawValue]

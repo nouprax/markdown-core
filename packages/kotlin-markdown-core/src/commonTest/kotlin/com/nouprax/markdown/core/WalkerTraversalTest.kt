@@ -8,7 +8,7 @@ class WalkerTraversalTest {
     @Test
     fun bothVisitorOverloadsTraverseASupersededDocument() {
         val first = Document("First\n\nSecond\n")
-        first.edit("First\n\nSecond\n\nThird\n").document.close()
+        first.edit("First\n\nSecond\n\nThird\n").close()
 
         // Editing left the predecessor's parse alone and the successor's is
         // now released. Both overloads still traverse the predecessor,
@@ -30,8 +30,8 @@ class WalkerTraversalTest {
     @Test
     fun adversarialNestingWalksAndDumpsBeyondTheCallStackBudget() {
         // 3072 nested quotes overflowed the recursive walker on the default
-        // JVM stack; the explicit frame stack must keep walking and the
-        // delta path of an edit working at 4096. Walking is
+        // JVM stack; the explicit frame stack must keep walking and an
+        // edit's decode working at 4096. Walking is
         // stack-bound but dumping is heap-bound — the canonical dump's
         // per-line prefixes make dump bytes quadratic in depth, beyond the
         // Android instrumentation heap at this depth — so full-depth
@@ -58,7 +58,7 @@ class WalkerTraversalTest {
         MarkupWalker.walk(document, structural)
         assertEquals(depth + 3, structural.visited.size)
 
-        document.edit("> ".repeat(depth) + "seed\n").document.use { second ->
+        document.edit("> ".repeat(depth) + "seed\n").use { second ->
             var seedSeen = false
             var secondEvents = 0
             MarkupWalker.walk(second) { event, node, _ ->
@@ -74,10 +74,10 @@ class WalkerTraversalTest {
 
     @Test
     fun aDeepEditDumpsIdenticallyToAOneShotParse() {
-        // Byte-for-byte dump equality for the deep delta path, at a depth
+        // Byte-for-byte dump equality for the deep edit path, at a depth
         // whose quadratic dump volume fits every platform's test heap.
         val depth = 512
-        Document("> ".repeat(depth) + "leaf\n").edit("> ".repeat(depth) + "seed\n").document.use { second ->
+        Document("> ".repeat(depth) + "leaf\n").edit("> ".repeat(depth) + "seed\n").use { second ->
             assertEquals(Document("> ".repeat(depth) + "seed\n").use { it.dump() }, second.dump())
         }
     }
@@ -89,7 +89,7 @@ class ScopeOwnershipTest {
         val retained: Document
         run {
             val first = Document("First\n\nSecond\n")
-            first.edit("First\n\nSecond\n\nThird\n").document.close()
+            first.edit("First\n\nSecond\n\nThird\n").close()
             retained = first
         }
         // There is nothing to materialize: a node carries its own scope from

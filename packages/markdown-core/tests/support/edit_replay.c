@@ -5,34 +5,6 @@
 #include <string.h>
 
 #include "test_support.h"
-#include "commit_compat.h"
-
-/* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
- * that holds an id and the tree already has the node, because it meets it on
- * the walk it was doing anyway (requirement 3). These tests hold ids across an
- * edit exactly like a highlighter does, so they find nodes the same way. */
-static const markdown_core_node *node_by_id(const markdown_core_node *root, markdown_core_node_id id) {
-    const markdown_core_node *node = root;
-    if (!root || id == 0) {
-        return NULL;
-    }
-    for (;;) {
-        if (markdown_core_node_get_id(node) == id) {
-            return node;
-        }
-        if (markdown_core_node_get_first_child(node)) {
-            node = markdown_core_node_get_first_child(node);
-            continue;
-        }
-        while (node != root && !markdown_core_node_get_next_sibling(node)) {
-            node = markdown_core_node_get_parent(node);
-        }
-        if (node == root) {
-            return NULL;
-        }
-        node = markdown_core_node_get_next_sibling(node);
-    }
-}
 
 static int er_fail(er_replay *replay, const char *message) {
     replay->report(replay->user, replay->context, message);
@@ -66,37 +38,417 @@ static int er_text_splice(er_text *text, size_t start, size_t end, const uint8_t
     return 0;
 }
 
-/* --- delta mirror ------------------------------------------------------- */
+/* --- id ledger ----------------------------------------------------------- */
 
-static er_mirror_entry *er_mirror_find(er_mirror *mirror, markdown_core_node_id id) {
-    size_t i;
-    for (i = 0; i < mirror->count; i++) {
-        if (mirror->entries[i].id == id) {
-            return &mirror->entries[i];
+static er_ledger_entry *er_ledger_find(er_ledger *ledger, markdown_core_node_id id) {
+    size_t lo = 0;
+    size_t hi = ledger->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (ledger->entries[mid].id < id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
         }
+    }
+    if (lo < ledger->count && ledger->entries[lo].id == id) {
+        return &ledger->entries[lo];
     }
     return NULL;
 }
 
-static int er_mirror_insert(er_mirror *mirror, markdown_core_node_id id, uint64_t revision) {
-    if (mirror->count == mirror->capacity) {
-        size_t capacity = mirror->capacity ? mirror->capacity * 2 : 64;
-        er_mirror_entry *grown = (er_mirror_entry *)realloc(mirror->entries, capacity * sizeof(*grown));
-        if (!grown) {
-            return -1;
+static er_ledger_entry *er_ledger_insert(er_ledger *ledger, markdown_core_node_id id) {
+    size_t lo = 0;
+    size_t hi = ledger->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (ledger->entries[mid].id < id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
         }
-        mirror->entries = grown;
-        mirror->capacity = capacity;
     }
-    mirror->entries[mirror->count].id = id;
-    mirror->entries[mirror->count].revision = revision;
-    mirror->count++;
+    if (ledger->count == ledger->capacity) {
+        size_t capacity = ledger->capacity ? ledger->capacity * 2 : 64;
+        er_ledger_entry *grown = (er_ledger_entry *)realloc(ledger->entries, capacity * sizeof(*grown));
+        if (!grown) {
+            return NULL;
+        }
+        ledger->entries = grown;
+        ledger->capacity = capacity;
+    }
+    memmove(ledger->entries + lo + 1, ledger->entries + lo, (ledger->count - lo) * sizeof(*ledger->entries));
+    ledger->count++;
+    ledger->entries[lo].id = id;
+    return &ledger->entries[lo];
+}
+
+/* --- own-projection comparison ------------------------------------------- */
+
+/* NULL-versus-empty matters: `[a](/u)` and `[a](/u "")` differ only in it. */
+static bool er_view_equal(markdown_core_string a, markdown_core_string b) {
+    if ((a.data == NULL) != (b.data == NULL) || a.length != b.length) {
+        return false;
+    }
+    return a.length == 0 || memcmp(a.data, b.data, a.length) == 0;
+}
+
+/* Whether two nodes' OWN projections are equal: kind, every typed field, and
+ * literal bytes — children and positions excluded. Positions are excluded
+ * because a pure positional shift never changes a node's revision; children
+ * are the walk's to compare by id.
+ *
+ * Deliberately independent of the engine's own field comparison (which is
+ * what the revision stamps under test are computed from): everything here
+ * goes through the public accessors, the same surface a consumer reads. */
+static bool er_projection_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    markdown_core_string a1 = {NULL, 0}, a2 = {NULL, 0}, a3 = {NULL, 0};
+    markdown_core_string b1 = {NULL, 0}, b2 = {NULL, 0}, b3 = {NULL, 0};
+
+    if (markdown_core_node_get_kind(a) != markdown_core_node_get_kind(b)) {
+        return false;
+    }
+    {
+        bool ra = markdown_core_node_literal(a, &a1);
+        bool rb = markdown_core_node_literal(b, &b1);
+        if (ra != rb || (ra && !er_view_equal(a1, b1))) {
+            return false;
+        }
+    }
+    {
+        int32_t la = 0, lb = 0;
+        bool ra = markdown_core_node_heading_level(a, &la);
+        bool rb = markdown_core_node_heading_level(b, &lb);
+        if (ra != rb || (ra && la != lb)) {
+            return false;
+        }
+    }
+    {
+        markdown_core_list_flavor fa, fb;
+        markdown_core_optional_i64 sa, sb;
+        bool ta = false, tb = false;
+        bool ra = markdown_core_node_list_properties(a, &fa, &sa, &ta);
+        bool rb = markdown_core_node_list_properties(b, &fb, &sb, &tb);
+        if (ra != rb) {
+            return false;
+        }
+        if (ra && !(fa == fb && ta == tb && sa.has_value == sb.has_value && (!sa.has_value || sa.value == sb.value))) {
+            return false;
+        }
+    }
+    {
+        markdown_core_optional_bool ca, cb;
+        bool ra = markdown_core_node_list_item_checked(a, &ca);
+        bool rb = markdown_core_node_list_item_checked(b, &cb);
+        if (ra != rb) {
+            return false;
+        }
+        if (ra && !(ca.has_value == cb.has_value && (!ca.has_value || ca.value == cb.value))) {
+            return false;
+        }
+    }
+    {
+        bool fenced_a = false, closed_a = false, fenced_b = false, closed_b = false;
+        markdown_core_string lang_a = {NULL, 0}, lang_b = {NULL, 0};
+        bool ra = markdown_core_node_code_block_properties(a, &a1, &lang_a, &a3, &fenced_a, &closed_a);
+        bool rb = markdown_core_node_code_block_properties(b, &b1, &lang_b, &b3, &fenced_b, &closed_b);
+        if (ra != rb) {
+            return false;
+        }
+        if (ra && !(fenced_a == fenced_b && closed_a == closed_b && er_view_equal(a1, b1) && er_view_equal(a3, b3))) {
+            return false;
+        }
+    }
+    {
+        markdown_core_placement_mode ma, mb;
+        bool ra = markdown_core_node_formula_properties(a, &ma, &a1);
+        bool rb = markdown_core_node_formula_properties(b, &mb, &b1);
+        if (ra != rb || (ra && (ma != mb || !er_view_equal(a1, b1)))) {
+            return false;
+        }
+    }
+    {
+        size_t ca = 0, cb = 0;
+        bool ra = markdown_core_node_table_column_count(a, &ca);
+        bool rb = markdown_core_node_table_column_count(b, &cb);
+        if (ra != rb || (ra && ca != cb)) {
+            return false;
+        }
+        if (ra) {
+            size_t i;
+            for (i = 0; i < ca; i++) {
+                markdown_core_table_alignment aa, ab;
+                if (!markdown_core_node_table_alignment_at(a, i, &aa) ||
+                    !markdown_core_node_table_alignment_at(b, i, &ab) || aa != ab) {
+                    return false;
+                }
+            }
+        }
+    }
+    {
+        bool ha = false, hb = false;
+        bool ra = markdown_core_node_table_row_is_header(a, &ha);
+        bool rb = markdown_core_node_table_row_is_header(b, &hb);
+        if (ra != rb || (ra && ha != hb)) {
+            return false;
+        }
+    }
+    {
+        markdown_core_placement_mode ma, mb;
+        bool has_a = false, has_b = false;
+        bool ra = markdown_core_node_directive_properties(a, &ma, &a1, &has_a);
+        bool rb = markdown_core_node_directive_properties(b, &mb, &b1, &has_b);
+        if (ra != rb) {
+            return false;
+        }
+        if (ra) {
+            size_t ca = 0, cb = 0;
+            size_t i;
+            if (ma != mb || has_a != has_b || !er_view_equal(a1, b1)) {
+                return false;
+            }
+            markdown_core_node_directive_attribute_count(a, &ca);
+            markdown_core_node_directive_attribute_count(b, &cb);
+            if (ca != cb) {
+                return false;
+            }
+            for (i = 0; i < ca; i++) {
+                markdown_core_string ka = {NULL, 0}, va = {NULL, 0}, kb = {NULL, 0}, vb = {NULL, 0};
+                if (!markdown_core_node_directive_attribute_at(a, i, &ka, &va) ||
+                    !markdown_core_node_directive_attribute_at(b, i, &kb, &vb) || !er_view_equal(ka, kb) ||
+                    !er_view_equal(va, vb)) {
+                    return false;
+                }
+            }
+        }
+    }
+    {
+        bool ra = markdown_core_node_reference_definition_properties(a, &a1, &a2, &a3);
+        bool rb = markdown_core_node_reference_definition_properties(b, &b1, &b2, &b3);
+        if (ra != rb || (ra && !(er_view_equal(a1, b1) && er_view_equal(a2, b2) && er_view_equal(a3, b3)))) {
+            return false;
+        }
+    }
+    {
+        markdown_core_reference_form fa, fb;
+        bool ra = markdown_core_node_reference_properties(a, &a1, &fa);
+        bool rb = markdown_core_node_reference_properties(b, &b1, &fb);
+        if (ra != rb || (ra && (fa != fb || !er_view_equal(a1, b1)))) {
+            return false;
+        }
+    }
+    {
+        bool ra = markdown_core_node_link_properties(a, &a1, &a2);
+        bool rb = markdown_core_node_link_properties(b, &b1, &b2);
+        if (ra != rb || (ra && !(er_view_equal(a1, b1) && er_view_equal(a2, b2)))) {
+            return false;
+        }
+    }
+    {
+        bool ra = markdown_core_node_image_properties(a, &a1, &a2);
+        bool rb = markdown_core_node_image_properties(b, &b1, &b2);
+        if (ra != rb || (ra && !(er_view_equal(a1, b1) && er_view_equal(a2, b2)))) {
+            return false;
+        }
+    }
+    {
+        bool ra = markdown_core_node_footnote_id(a, &a1);
+        bool rb = markdown_core_node_footnote_id(b, &b1);
+        if (ra != rb || (ra && !er_view_equal(a1, b1))) {
+            return false;
+        }
+    }
+    {
+        bool ra = markdown_core_node_cross_link_reference(a, &a1);
+        bool rb = markdown_core_node_cross_link_reference(b, &b1);
+        if (ra != rb || (ra && !er_view_equal(a1, b1))) {
+            return false;
+        }
+    }
+    {
+        bool ra = markdown_core_node_embed_reference(a, &a1);
+        bool rb = markdown_core_node_embed_reference(b, &b1);
+        if (ra != rb || (ra && !er_view_equal(a1, b1))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool er_child_ids_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    const markdown_core_node *ca = markdown_core_node_get_first_child(a);
+    const markdown_core_node *cb = markdown_core_node_get_first_child(b);
+    while (ca && cb) {
+        if (markdown_core_node_get_id(ca) != markdown_core_node_get_id(cb)) {
+            return false;
+        }
+        ca = markdown_core_node_get_next_sibling(ca);
+        cb = markdown_core_node_get_next_sibling(cb);
+    }
+    return !ca && !cb;
+}
+
+/* --- the double walk ------------------------------------------------------ */
+
+typedef struct er_prev_entry {
+    markdown_core_node_id id;
+    const markdown_core_node *node;
+} er_prev_entry;
+
+typedef struct er_prev_index {
+    er_prev_entry *entries;
+    size_t count;
+    size_t capacity;
+    bool failed;
+} er_prev_index;
+
+static int er_prev_collect(const markdown_core_node *node, void *context) {
+    er_prev_index *index = (er_prev_index *)context;
+    if (index->count == index->capacity) {
+        size_t capacity = index->capacity ? index->capacity * 2 : 64;
+        er_prev_entry *grown = (er_prev_entry *)realloc(index->entries, capacity * sizeof(*grown));
+        if (!grown) {
+            index->failed = true;
+            return 1;
+        }
+        index->entries = grown;
+        index->capacity = capacity;
+    }
+    index->entries[index->count].id = markdown_core_node_get_id(node);
+    index->entries[index->count].node = node;
+    index->count++;
     return 0;
 }
 
-static void er_mirror_remove(er_mirror *mirror, er_mirror_entry *entry) {
-    *entry = mirror->entries[mirror->count - 1];
-    mirror->count--;
+static int er_prev_entry_compare(const void *left, const void *right) {
+    markdown_core_node_id a = ((const er_prev_entry *)left)->id;
+    markdown_core_node_id b = ((const er_prev_entry *)right)->id;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+static const markdown_core_node *er_prev_find(const er_prev_index *index, markdown_core_node_id id) {
+    size_t lo = 0;
+    size_t hi = index->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (index->entries[mid].id < id) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo < index->count && index->entries[lo].id == id) {
+        return index->entries[lo].node;
+    }
+    return NULL;
+}
+
+typedef struct er_walk_state {
+    er_replay *replay;
+    const er_prev_index *previous;
+    uint64_t successor_revision;
+    int failed;
+} er_walk_state;
+
+/* One visit carries the whole per-node contract. The subtree form of the
+ * (id, revision) promise — equal pair means an equal subtree — follows from
+ * these node-local checks by induction: an unchanged parent pins its child id
+ * list, the child-below-parent revision bound forces each child's revision to
+ * be an old value, the two-value rule then forces it to be the child's own
+ * last sighting, and the child's own visit compares its projection. */
+static int er_walk_visit(const markdown_core_node *node, void *context) {
+    er_walk_state *state = (er_walk_state *)context;
+    er_replay *replay = state->replay;
+    er_ledger *ledger = &replay->ledger;
+    markdown_core_node_id id = markdown_core_node_get_id(node);
+    uint64_t revision = markdown_core_node_get_revision(node);
+    const markdown_core_node *parent = markdown_core_node_get_parent(node);
+    er_ledger_entry *entry;
+
+    state->failed = 1; /* every early return below is a failure */
+    if (id == 0) {
+        er_fail(replay, "a tree node has no id");
+        return 1;
+    }
+    if (parent && revision > markdown_core_node_get_revision(parent)) {
+        er_fail(replay, "a child's revision exceeds its parent's");
+        return 1;
+    }
+    entry = er_ledger_find(ledger, id);
+    if (entry && entry->seen == ledger->walk) {
+        er_fail(replay, "one id appears twice in one tree");
+        return 1;
+    }
+    if (!entry) {
+        if (revision != state->successor_revision) {
+            er_fail(replay, "a minted node does not carry the new document revision");
+            return 1;
+        }
+        entry = er_ledger_insert(ledger, id);
+        if (!entry) {
+            er_fail(replay, "ledger allocation failed");
+            return 1;
+        }
+    } else if (!entry->alive) {
+        er_fail(replay, "a retired id came back");
+        return 1;
+    } else {
+        if (revision < entry->revision) {
+            er_fail(replay, "a node's revision went backwards");
+            return 1;
+        }
+        if (revision != entry->revision && revision != state->successor_revision) {
+            er_fail(replay, "a changed node does not carry the new document revision");
+            return 1;
+        }
+        if (revision == entry->revision) {
+            const markdown_core_node *before = er_prev_find(state->previous, id);
+            if (!before) {
+                er_fail(replay, "a live ledger id is missing from the predecessor tree");
+                return 1;
+            }
+            if (!er_projection_equal(before, node)) {
+                er_fail(replay, "a node's projection changed without a revision bump");
+                return 1;
+            }
+            if (!er_child_ids_equal(before, node)) {
+                er_fail(replay, "a node's child list changed without a revision bump");
+                return 1;
+            }
+        }
+    }
+    entry->revision = revision;
+    entry->seen = ledger->walk;
+    entry->alive = true;
+    state->failed = 0;
+    return 0;
+}
+
+/* Walks `document`'s tree against the ledger. `previous` holds the
+ * predecessor's nodes (empty for the seeding walk); afterwards, live ledger
+ * entries the walk did not meet are retired. */
+static int er_verify_tree(er_replay *replay, const markdown_core_document *document, const er_prev_index *previous) {
+    er_walk_state state;
+    size_t i;
+
+    replay->ledger.walk++;
+    state.replay = replay;
+    state.previous = previous;
+    state.successor_revision = markdown_core_document_revision(document);
+    state.failed = 0;
+    if (ts_ast_walk(markdown_core_document_root(document), er_walk_visit, &state) < 0) {
+        return er_fail(replay, "identity walk failed to allocate");
+    }
+    if (state.failed) {
+        return -1;
+    }
+    for (i = 0; i < replay->ledger.count; i++) {
+        er_ledger_entry *entry = &replay->ledger.entries[i];
+        if (entry->alive && entry->seen != replay->ledger.walk) {
+            entry->alive = false;
+        }
+    }
+    return 0;
 }
 
 /* --- replay harness ------------------------------------------------------ */
@@ -109,6 +461,7 @@ int er_replay_open(
     void *user
 ) {
     markdown_core_error *error = NULL;
+    er_prev_index empty;
     memset(replay, 0, sizeof(*replay));
     replay->context = context;
     replay->options = options;
@@ -124,23 +477,15 @@ int er_replay_open(
     if (er_text_splice(&replay->shadow, 0, 0, NULL, 0) != 0) {
         return er_fail(replay, "shadow allocation failed");
     }
-    /* Revision 0 (empty document) seeds the mirror. */
-    {
-        const markdown_core_document *document = replay->document;
-        const markdown_core_node *root = markdown_core_document_root(document);
-        if (!root ||
-            er_mirror_insert(&replay->mirror, markdown_core_node_get_id(root), markdown_core_node_get_revision(root)) !=
-                0) {
-            return er_fail(replay, "empty document has no addressable root");
-        }
-    }
-    return 0;
+    /* The empty document seeds the ledger: every node it has is a mint. */
+    memset(&empty, 0, sizeof(empty));
+    return er_verify_tree(replay, replay->document, &empty);
 }
 
 void er_replay_close(er_replay *replay) {
     markdown_core_document_free(replay->document);
     free(replay->shadow.bytes);
-    free(replay->mirror.entries);
+    free(replay->ledger.entries);
     memset(replay, 0, sizeof(*replay));
 }
 
@@ -153,165 +498,50 @@ int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *b
     return 0;
 }
 
-/* THE PATH-B CONSUMER, and therefore the gate on what `diffs` promises: a
- * mirror keyed by MarkupID, maintained in ONE forward pass over the list.
- *
- * Everything it checks is a clause of 9.1 rather than a property of this
- * implementation: each node is named once; a retired row (parts zero) names
- * something the mirror already holds, and arrives before the parent whose
- * child it was; and a surviving node always follows its own children, so a
- * consumer that builds values bottom-up never reaches a parent early. */
-static int er_apply_delta(er_replay *replay, markdown_core_delta *changes, uint64_t expected_after) {
-    const markdown_core_diff *diffs = NULL;
-    size_t count;
-    size_t i;
-    size_t k;
-    uint64_t before;
-    uint64_t after;
-
-    markdown_core_delta_revisions(changes, &before, &after);
-    if (after != expected_after) {
-        return er_fail(replay, "delta revisions disagree with the document");
-    }
-
-    count = markdown_core_delta_diffs(changes, &diffs);
-    for (i = 0; i < count; i++) {
-        for (k = i + 1; k < count; k++) {
-            if (diffs[i].markup == diffs[k].markup) {
-                return er_fail(replay, "diffs name one node twice");
-            }
-        }
-    }
-
-    for (i = 0; i < count; i++) {
-        er_mirror_entry *entry = er_mirror_find(&replay->mirror, diffs[i].markup);
-        if (diffs[i].parts == 0) {
-            if (!entry) {
-                return er_fail(replay, "delta retired an id the mirror never saw");
-            }
-            er_mirror_remove(&replay->mirror, entry);
-            continue;
-        }
-        if (entry) {
-            entry->revision = after;
-        } else if (er_mirror_insert(&replay->mirror, diffs[i].markup, after) != 0) {
-            return er_fail(replay, "mirror allocation failed");
-        }
-    }
-
-    /* Children before parents: a surviving row whose canonical parent is also
-     * in the list must come first. Checked against the committed tree, which
-     * is the only place the parent relation lives. */
-    for (i = 0; i < count; i++) {
-        const markdown_core_node *node;
-        const markdown_core_node *parent;
-        markdown_core_node_id parent_id;
-        if (diffs[i].parts == 0) {
-            continue;
-        }
-        node = node_by_id(markdown_core_document_root(replay->document), diffs[i].markup);
-        if (!node) {
-            return er_fail(replay, "diffs name a surviving id the document does not have");
-        }
-        parent = markdown_core_node_get_parent(node);
-        if (!parent) {
-            continue;
-        }
-        parent_id = markdown_core_node_get_id(parent);
-        for (k = 0; k < i; k++) {
-            if (diffs[k].markup == parent_id) {
-                return er_fail(replay, "a parent was emitted before its own child");
-            }
-        }
-    }
-
-    return 0;
-}
-
-/* --- verified commit ----------------------------------------------------- */
-
-typedef struct er_walk_state {
-    er_replay *replay;
-    size_t seen;
-    int failed;
-} er_walk_state;
-
-static int er_walk_visit(const markdown_core_node *node, void *context) {
-    er_walk_state *state = (er_walk_state *)context;
-    er_replay *replay = state->replay;
-    markdown_core_node_id id = markdown_core_node_get_id(node);
-    er_mirror_entry *entry = er_mirror_find(&replay->mirror, id);
-
-    state->seen++;
-    if (!entry) {
-        er_fail(replay, "tree holds an id the delta stream never added");
-        state->failed = 1;
-        return 1;
-    }
-    if (entry->revision != markdown_core_node_get_revision(node)) {
-        er_fail(replay, "node revision changed without a delta notification");
-        state->failed = 1;
-        return 1;
-    }
-    if (node_by_id(markdown_core_document_root(replay->document), id) != node) {
-        er_fail(replay, "node_by_id disagrees with the committed tree");
-        state->failed = 1;
-        return 1;
-    }
-    return 0;
-}
-
 int er_replay_commit(er_replay *replay) {
     markdown_core_error *error = NULL;
-    markdown_core_delta *changes = NULL;
-    const markdown_core_document *document;
-    const markdown_core_node *root;
+    markdown_core_document *previous = replay->document;
+    markdown_core_document *successor;
     markdown_core_document *reference = NULL;
     uint8_t *edited_dump = NULL;
     uint8_t *reference_dump = NULL;
     size_t document_dump_length = 0;
     size_t reference_dump_length = 0;
-    er_walk_state state;
+    er_prev_index index;
     int result = -1;
 
-    {
-        markdown_core_commit out;
-        memset(&out, 0, sizeof(out));
-        markdown_core_document *previous = replay->document;
-        if (!markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &out, &error)) {
-            markdown_core_document_free(previous);
-            replay->document = NULL;
-            markdown_core_error_free(error);
-            return er_fail(replay, "commit failed");
-        }
+    successor = markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &error);
+    if (!successor) {
         markdown_core_document_free(previous);
-        replay->document = out.document;
-        changes = out.delta;
+        replay->document = NULL;
+        markdown_core_error_free(error);
+        return er_fail(replay, "commit failed");
     }
-    if (!changes) {
-        return er_fail(replay, "commit produced no delta");
+    /* The successor is adopted first so every failure path below leaves the
+     * replay closeable; the predecessor stays alive until the double walk
+     * has compared against it, and is released at `done`. */
+    replay->document = successor;
+
+    memset(&index, 0, sizeof(index));
+    if (markdown_core_document_series(successor) != markdown_core_document_series(previous)) {
+        er_fail(replay, "an edit changed the series");
+        goto done;
     }
-    if (er_apply_delta(replay, changes, markdown_core_document_revision(replay->document)) != 0) {
+    if (markdown_core_document_revision(successor) <= markdown_core_document_revision(previous)) {
+        er_fail(replay, "the document revision did not advance");
         goto done;
     }
 
-    document = replay->document;
-    root = markdown_core_document_root(document);
-    state.replay = replay;
-    state.seen = 0;
-    state.failed = 0;
-    if (ts_ast_walk(root, er_walk_visit, &state) < 0 || state.failed) {
-        if (!state.failed) {
-            er_fail(replay, "mirror walk failed to allocate");
-        }
+    if (ts_ast_walk(markdown_core_document_root(previous), er_prev_collect, &index) < 0 || index.failed) {
+        er_fail(replay, "predecessor index failed to allocate");
         goto done;
     }
-    if (state.seen != replay->mirror.count) {
-        er_fail(replay, "mirror holds ids that are no longer in the tree");
+    qsort(index.entries, index.count, sizeof(*index.entries), er_prev_entry_compare);
+    if (er_verify_tree(replay, successor, &index) != 0) {
         goto done;
     }
 
-    if (!markdown_core_document_dump(document, &edited_dump, &document_dump_length, &error)) {
+    if (!markdown_core_document_dump(successor, &edited_dump, &document_dump_length, &error)) {
         markdown_core_error_free(error);
         error = NULL;
         er_fail(replay, "document dump failed");
@@ -355,7 +585,8 @@ done:
     markdown_core_dump_free(edited_dump);
     markdown_core_dump_free(reference_dump);
     markdown_core_document_free(reference);
-    markdown_core_delta_free(changes);
+    markdown_core_document_free(previous);
+    free(index.entries);
     return result;
 }
 
@@ -413,6 +644,7 @@ int er_script_replay(const uint8_t *script, size_t length, const char *context, 
     }
 
     if (er_replay_open(&replay, context, &options, report, user) != 0) {
+        er_replay_close(&replay);
         return -1;
     }
 
@@ -464,57 +696,4 @@ int er_script_replay(const uint8_t *script, size_t length, const char *context, 
 done:
     er_replay_close(&replay);
     return result;
-}
-
-bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdown_core_error **error) {
-    memset(doc, 0, sizeof(*doc));
-    doc->document = markdown_core_document_new(mc_sv(NULL, 0), options, error);
-    return doc->document != NULL;
-}
-
-bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_t length) {
-    size_t tail;
-    if (start > end || end > doc->length) {
-        return false;
-    }
-    if (doc->length - (end - start) + length + 1 > doc->capacity) {
-        size_t want = (doc->length - (end - start) + length + 1) * 2;
-        char *grown = (char *)realloc(doc->text, want);
-        if (!grown) {
-            return false;
-        }
-        doc->text = grown;
-        doc->capacity = want;
-    }
-    tail = doc->length - end;
-    memmove(doc->text + start + length, doc->text + end, tail);
-    if (length) {
-        memcpy(doc->text + start, bytes, length);
-    }
-    doc->length = start + length + tail;
-    doc->text[doc->length] = 0;
-    return true;
-}
-
-bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error) {
-    markdown_core_commit commit;
-    markdown_core_document *previous = doc->document;
-    memset(&commit, 0, sizeof(commit));
-    if (!markdown_core_document_edit(previous, mc_sv(doc->text, doc->length), &commit, error)) {
-        return false;
-    }
-    markdown_core_document_free(previous);
-    doc->document = commit.document;
-    if (delta) {
-        *delta = commit.delta;
-    } else {
-        markdown_core_delta_free(commit.delta);
-    }
-    return true;
-}
-
-void mc_doc_close(mc_doc *doc) {
-    markdown_core_document_free(doc->document);
-    free(doc->text);
-    memset(doc, 0, sizeof(*doc));
 }

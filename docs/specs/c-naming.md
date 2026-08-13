@@ -55,7 +55,7 @@ cluster — node identity/traversal and error accessors (`node_get_id`,
 `node_get_kind`, `node_get_revision`, `node_get_parent`,
 `node_get_first_child`, `node_get_next_sibling`, `error_get_*`) — and uses
 bare `subject_attribute` names everywhere else (kind-specific property
-accessors, `delta_*`, `document_root`). This is
+accessors, `document_root`, `document_dump`). This is
 deliberate, not drift: the bare names for that cluster are occupied
 (`markdown_core_node_id` and `markdown_core_node_kind` are type names, and
 `node_first_child`/`node_parent` are the raw internal traversal functions),
@@ -67,7 +67,12 @@ re-litigate at the M4 freeze review unless the occupying names change.
 Historical migration documents keep the names that were current when they
 were written. Generated scanners (`scanners.c`, `ext_scanners.c`) are edited
 together with their `.re` sources; re2c is not run at build time. The GNU
-symbol-version node in `core/exports/markdown_core.map` intentionally keeps
-its inherited `MARKDOWN_CORE_1.0` name until the next C ABI break, because
-renaming it retags every exported symbol and would force consumers of shipped
-shared libraries to relink.
+symbol-version node in `core/exports/markdown_core.map` is renamed only at a
+C ABI break, because renaming it retags every exported symbol and forces
+consumers of shipped shared libraries to relink. The inherited
+`MARKDOWN_CORE_1.0` name held through the 2.x releases until
+`markdown_core_document_edit` changed its signature incompatibly (the delta
+removal), which renamed the node to `MARKDOWN_CORE_3.0` — the major the
+change ships in — so binaries built against the old ABI fail to resolve at
+load instead of calling a four-argument function through a three-argument
+symbol; the node now keeps that name until the next break.

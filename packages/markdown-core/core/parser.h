@@ -23,10 +23,9 @@ struct markdown_core_parser {
      * only once every block is closed, asks whether `[^x]` names one. A
      * reference to a label nobody defines is not a footnote at all — it is the
      * literal text the author typed — so this answer decides a node's type,
-     * and it has to be the whole document's answer even when an edit
-     * reparses one paragraph of it. That is why the map is the document's, not
-     * the parse's: see markdown_core_footnote_definition_create for why it is
-     * a second map rather than a discriminated column of `refmap`. */
+     * and it has to be the whole document's answer: see
+     * markdown_core_footnote_definition_create for why it is a second map
+     * rather than a discriminated column of `refmap`. */
     struct markdown_core_map *footnote_defs;
     /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
     struct markdown_core_node *root;
@@ -48,16 +47,6 @@ struct markdown_core_parser {
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
     bool blank;
-    /* True while processing a line that began with the document as the only
-     * open block; direct document children opened on such a line get
-     * MARKDOWN_CORE_NODE__CLEAN_START. */
-    bool line_began_clean;
-    /* True while processing a line whose open chain at line start consisted
-     * solely of footnote definitions and whose own shape failed every one of
-     * their prefixes (check_open_blocks stopped at the document): the line
-     * closes the whole chain, so its direct document children get
-     * CLEAN_START qualified by CLEAN_START_SEALING. */
-    bool line_defs_only;
     /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
      * markdown_core.h */
     bool partially_consumed_tab;

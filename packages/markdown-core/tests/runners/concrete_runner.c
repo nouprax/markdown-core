@@ -76,7 +76,7 @@
 #include "parser.h"
 #include "strikethrough.h"
 #include "table.h"
-#include "commit_compat.h"
+#include "test_support.h"
 
 /* The complete engine node inventory with each kind's expected region
  * class, verbatim from 11.1 — the gate asserts the exact class, not a
@@ -2444,7 +2444,7 @@ static int case_capture_document(void) {
             failed = 1;
         }
         (void)tail;
-        if (!mc_edit(&document, mc_sv(both, sizeof(both) - 1), NULL, NULL)) {
+        if (!mc_edit(&document, mc_sv(both, sizeof(both) - 1), NULL)) {
             markdown_core_document_free(document);
             fprintf(stderr, "capture_document: second commit failed\n");
             return -1;
@@ -2742,7 +2742,7 @@ static int case_capture_equivalence(void) {
                 break;
             }
         }
-        if (!mc_edit(&document, mc_sv(shadow.bytes, shadow.length), NULL, NULL)) {
+        if (!mc_edit(&document, mc_sv(shadow.bytes, shadow.length), NULL)) {
             fprintf(stderr, "capture_equivalence: commit %zu failed\n", step);
             failed = 1;
             break;
@@ -3826,7 +3826,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam first commit failed\n");
@@ -3846,7 +3846,7 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         if (!mc_text_splice(&text, 25, 36, replaced, sizeof(replaced) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam second commit failed\n");
@@ -3896,7 +3896,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
@@ -3909,7 +3909,7 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
-        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
@@ -3934,7 +3934,7 @@ static int case_inline_equivalence(void) {
         /* Flip it back: the same unit swaps again to the resolved shape. */
         if (!failed) {
             if (!mc_text_splice(&text, 43, 43, "[x]: /u\n", 8) ||
-                !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+                !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
                 mc_text_free(&text);
                 markdown_core_document_free(document);
                 fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
@@ -3997,7 +3997,7 @@ static int case_inline_equivalence(void) {
             return -1;
         }
         if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell first commit failed\n");
@@ -4017,7 +4017,7 @@ static int case_inline_equivalence(void) {
             failed = 1;
         }
         /* Delete the `[x]: /u\n` definition line. */
-        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL, NULL)) {
+        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
             mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");

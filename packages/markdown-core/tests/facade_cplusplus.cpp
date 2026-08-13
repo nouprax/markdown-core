@@ -1,7 +1,7 @@
 #include <markdown_core.h>
 
 #include <type_traits>
-#include "commit_compat.h"
+#include "test_support.h"
 
 static_assert(std::is_standard_layout<markdown_core_parse_options>::value, "parse options must cross the C++ boundary");
 static_assert(std::is_standard_layout<markdown_core_string>::value, "string views must cross the C++ boundary");

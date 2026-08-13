@@ -1,7 +1,5 @@
 #include <stdint.h>
 #include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "markdown_core.h"
 
@@ -40,9 +38,6 @@ ES_LAYOUT_ASSERT(es_scope_end_starts_at_8, offsetof(markdown_core_scope, end) ==
 ES_LAYOUT_ASSERT(es_position_size_is_8, sizeof(markdown_core_position) == 8);
 ES_LAYOUT_ASSERT(es_position_line_starts_at_0, offsetof(markdown_core_position, line) == 0);
 ES_LAYOUT_ASSERT(es_position_column_starts_at_4, offsetof(markdown_core_position, column) == 4);
-ES_LAYOUT_ASSERT(es_diff_size_is_16, sizeof(markdown_core_diff) == 16);
-ES_LAYOUT_ASSERT(es_diff_markup_starts_at_0, offsetof(markdown_core_diff, markup) == 0);
-ES_LAYOUT_ASSERT(es_diff_parts_starts_at_8, offsetof(markdown_core_diff, parts) == 8);
 ES_LAYOUT_ASSERT(es_diagnostic_size_is_20, sizeof(markdown_core_diagnostic) == 20);
 ES_LAYOUT_ASSERT(es_diagnostic_code_starts_at_0, offsetof(markdown_core_diagnostic, code) == 0);
 ES_LAYOUT_ASSERT(es_diagnostic_scope_starts_at_4, offsetof(markdown_core_diagnostic, scope) == 4);
@@ -84,29 +79,21 @@ markdown_core_document *es_document_open(
     return markdown_core_document_new(markdown, &options, error);
 }
 
-/* Hands `document` new text and takes nothing from it; `out` receives the
- * successor document and the delta, each caller-owned. */
-int32_t es_document_edit(
-    markdown_core_document *document,
+/* Hands `document` new text and takes nothing from it; returns the successor
+ * document, caller-owned, or NULL with `*error` set. The edit reads
+ * `document`: the JS handle keeps it, and `es_document_free` is what releases
+ * it. */
+markdown_core_document *es_document_edit(
+    const markdown_core_document *document,
     const uint8_t *bytes,
     size_t length,
-    uintptr_t *out,
     markdown_core_error **error
 ) {
-    markdown_core_commit commit;
     markdown_core_string markdown;
 
     markdown.data = bytes;
     markdown.length = length;
-    memset(&commit, 0, sizeof(commit));
-    // The edit reads `document` and takes nothing; the JS handle keeps it and
-    // `es_document_free` is what releases it.
-    if (!markdown_core_document_edit(document, markdown, &commit, error)) {
-        return 0;
-    }
-    out[0] = (uintptr_t)commit.document;
-    out[1] = (uintptr_t)commit.delta;
-    return 1;
+    return markdown_core_document_edit(document, markdown, error);
 }
 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }
@@ -123,30 +110,6 @@ size_t es_document_diagnostics(const markdown_core_document *document, uintptr_t
     *data = (uintptr_t)rows;
     return count;
 }
-
-uint64_t es_delta_revision(const markdown_core_delta *changes, int32_t boundary) {
-    uint64_t before = 0;
-    uint64_t after = 0;
-    markdown_core_delta_revisions(changes, &before, &after);
-    return boundary == 0 ? before : after;
-}
-
-/**
- * The delta's rows, handed back as the facade's own array: `(id, parts)` at
- * a 16-byte stride, borrowing from the delta and freed with it.
- *
- * No copy and no resolved node pointers: the value tree is rebuilt by the
- * decoder's own walk over the committed tree, and this array is only the
- * diff a consumer reads to locate what changed.
- */
-size_t es_delta_diffs(const markdown_core_delta *changes, uintptr_t *data) {
-    const markdown_core_diff *rows = NULL;
-    size_t count = markdown_core_delta_diffs(changes, &rows);
-    *data = (uintptr_t)rows;
-    return count;
-}
-
-void es_delta_free(markdown_core_delta *changes) { markdown_core_delta_free(changes); }
 
 const markdown_core_node *es_document_root(const markdown_core_document *document) {
     return markdown_core_document_root(document);

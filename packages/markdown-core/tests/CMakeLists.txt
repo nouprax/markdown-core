@@ -101,7 +101,7 @@ endif()
 
 # Shared native test support: fixture loading, in-process conversion, byte
 # comparison, deterministic diffs, PRNG, timing, and the document replay
-# harness (shadow text, delta mirror, per-commit equivalence verification).
+# harness (shadow text, identity ledger, per-commit equivalence verification).
 add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/edit_replay.c
                                               support/edit_replay.h)
 target_include_directories(
@@ -205,10 +205,10 @@ markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --
 # with per-byte commits must never interfere, and one document's document
 # must support concurrent read-only access between mutating calls.
 markdown_core_add_test(facade_concurrent_documents facade 600 concurrency_runner --case documents)
-# One document, every thread editing it at once with the SAME text: the change
-# set is a function of content, so every thread must come back with the same
-# tree and the same diff -- and with a revision of its own, because two
-# successors of one predecessor are two lines of descent.
+# One document, every thread editing it at once with the SAME text: the tree
+# is a function of content, so every thread must come back with the same
+# tree -- and with a revision of its own, because two successors of one
+# predecessor are two lines of descent.
 markdown_core_add_test(facade_concurrent_shared_edit facade 600 concurrency_runner --case shared_edit)
 
 # regression: registry lifecycle stays immutable across parse/free cycles
@@ -296,8 +296,8 @@ if(MARKDOWN_CORE_STATIC)
 endif()
 
 # equivalence: incrementally edited documents must dump byte-identically to a
-# one-shot parse of the same final text after every commit, and the delta
-# stream must account for every observable node change (mirror check).
+# one-shot parse of the same final text after every commit, and the identity
+# double-walk must hold (no id resurrection, no revision regression).
 markdown_core_add_test(
     equivalence_canonical
     equivalence
@@ -511,7 +511,8 @@ set(MARKDOWN_CORE_BENCH_WORKLOADS
     deep_nesting
     extensions
     large_table
-    adversarial)
+    adversarial
+    append_baseline)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

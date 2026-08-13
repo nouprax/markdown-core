@@ -35,7 +35,7 @@ const allowedWorkloads = new Set([
 const allowedBoundaries = new Map([
     ["c", new Set(["native_parse"])],
     ["swift", new Set(["native_parse_and_value_copy"])],
-    ["kotlin", new Set(["jni_parse_and_value_copy", "jni_edit_and_delta_decode"])],
+    ["kotlin", new Set(["jni_parse_and_value_copy", "jni_edit_and_decode"])],
     ["es", new Set(["wasm_parse_and_value_copy"])]
 ]);
 

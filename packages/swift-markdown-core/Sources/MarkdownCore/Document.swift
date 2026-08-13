@@ -94,14 +94,13 @@ extension ParseError: LocalizedError {
 ///
 /// ```swift
 /// let document = try Document("# Title")
-/// let commit = try document.edit("# Renamed")
+/// let renamed = try document.edit("# Renamed")
 /// ```
 ///
 /// There is no session type. A document is created from text and options;
-/// editing hands it new text and returns the next document with the delta
-/// between them. Options are fixed for a document's whole series — changing
-/// what the parser means is a new ``Document``, not an edit, and there is no
-/// delta to be had across it.
+/// editing hands it new text and returns the next document. Options are
+/// fixed for a document's whole series — changing what the parser means is a
+/// new ``Document``, not an edit.
 ///
 /// The node values are ordinary Swift values with no reference back here:
 /// hold them, copy them, put them in a view model. What this class owns is
@@ -110,7 +109,7 @@ extension ParseError: LocalizedError {
 public final class Document: Markup, @unchecked Sendable {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this document's content last changed.
+    /// The document revision at which this document's content last changed.
     public let revision: UInt64
     /// The document's absolute source extent: the whole text.
     public let scope: Scope
@@ -181,36 +180,32 @@ public final class Document: Markup, @unchecked Sendable {
     }
 
     /// Hands this document new text and returns the document that text
-    /// describes, together with what changed.
+    /// describes.
     ///
     /// Reads the receiver and takes nothing from it: this document stays
     /// usable and may be edited again. Editing it twice gives two lines of
     /// descent, told apart by their revisions — and, like nodes from two
     /// separate parses, nodes from two lines are not comparable.
     ///
-    /// There is nothing to synchronize. Every stored property is a `let` and
-    /// the native document is only READ here, so concurrent callers cannot
-    /// race: what made this unsafe before was handing the native parse away.
-    public func edit(_ markdown: String) throws -> Commit {
-        var out = markdown_core_commit()
+    /// There is nothing to synchronize. Every stored property is a `let`,
+    /// and the native parse a document owns is only ever READ — including
+    /// here, where the successor is built a parse of its own — so concurrent
+    /// callers cannot race, which is what `@unchecked Sendable` rests on.
+    public func edit(_ markdown: String) throws -> Document {
         var nativeError: OpaquePointer?
         var source = markdown
-        let succeeded = source.withUTF8 { buffer -> Bool in
+        let next = source.withUTF8 { buffer -> OpaquePointer? in
             let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
-            return markdown_core_document_edit(handle, text, &out, &nativeError)
+            return markdown_core_document_edit(handle, text, &nativeError)
         }
-        guard succeeded, let next = out.document else {
+        guard let next else {
             defer { markdown_core_error_free(nativeError) }
             throw ParseError(from: nativeError)
         }
-        let delta: Delta
-        if let changes = out.delta {
-            defer { markdown_core_delta_free(changes) }
-            delta = Delta(from: changes, series: markdown_core_document_series(next))
-        } else {
-            preconditionFailure("edit succeeded without a delta")
-        }
-        return Commit(document: try Document(adopting: next, options: options), delta: delta)
+        // Exactly one owner: the adopting initializer frees the native
+        // document itself on its only throwing path, so a failure here
+        // cannot leak it.
+        return try Document(adopting: next, options: options)
     }
 
     /// This document's node for `id`, or nil when no node has that identity
@@ -221,8 +216,8 @@ public final class Document: Markup, @unchecked Sendable {
     /// question.
     public func node(_ id: MarkupID) -> (any Markup)? {
         guard id.series == self.id.series else { return nil }
-        // The root answers for itself. It is a `Markup` like any other and a
-        // delta names it whenever the top-level block list changes, so a
+        // The root answers for itself. It is a `Markup` like any other and
+        // its revision moves whenever the top-level block list changes, so a
         // consumer reconciling by id reaches this call with the document's
         // own id — and the index holds the descendants, not the root.
         return id.rawValue == self.id.rawValue ? self : index[id.rawValue]

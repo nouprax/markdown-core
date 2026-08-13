@@ -884,7 +884,7 @@ static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
 }
 
 /* WHAT GOES IN, and why this list and not another: the scalars below are
- * exactly the ones markdown_core_ast_parts_changed (extensions/ast.c) reads
+ * exactly the ones markdown_core_ast_projection_changed (extensions/ast.c) reads
  * to decide that two nodes of the same kind differ in VALUE. A field it
  * compares and this omits is a field on which two different nodes hash
  * equal, and the prefix sweep in diff.c then PAIRS them -- which is how an

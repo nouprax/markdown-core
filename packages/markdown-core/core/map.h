@@ -9,45 +9,24 @@ extern "C" {
 
 /* A definition map keeps EVERY definition it is given (duplicates included).
  * Lookups resolve a label to its winner: the entry with the minimum document
- * order for that label. Entries may be added and removed at any time; there
- * is no freeze after the first lookup. */
+ * order for that label. Entries may be added at any time; there is no freeze
+ * after the first lookup. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next; /* every live entry, newest first */
-    struct markdown_core_map_entry *prev; /* back link: an edit unlinks stale entries in O(1) */
     /* Same-label chain, ascending document order, CIRCULAR and doubly
      * linked: the index slot names the head (the winner), so `head->bucket_prev`
      * names the tail without a field of its own. A lone entry links to itself.
      *
      * Circular because both ends are hot and neither insertion is a search.
      * A definition joins its label either as the new minimum (a full index
-     * build walks the live chain newest-first) or as the new maximum (an
-     * incremental add stamps the largest order there has ever been), and both
+     * build walks the live chain newest-first) or as the new maximum (a
+     * later add stamps the largest order there has ever been), and both
      * are "splice in front of the head" — the second one just does not move
-     * the head. Doubly linked because removal is equally hot: a reparse
-     * retracts a paragraph's definitions and the winner must be re-elected,
-     * which is the next node, not a search for it. */
+     * the head. */
     struct markdown_core_map_entry *bucket_next;
     struct markdown_core_map_entry *bucket_prev;
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
-    uint64_t owner; /* owning document-child id (0 = the head region) */
-    /* The ReferenceDefinition node this entry was written as: a node pointer
-     * during the parse, rewritten to that node's published id by the same walk
-     * that resolves `owner`. It is what makes "which definition does this
-     * reference resolve to" answerable from the map alone — the map already
-     * elects the winner per label and is already maintained incrementally, so
-     * the answer needs no second index and no per-commit rebuild. */
-    uint64_t definition_node;
-    /* Source line of the harvesting paragraph (absolute; a document keeps it in
-     * committed-text coordinates). Head-region entries (owner 0) classify by
-     * this line, so a restart inside a leading definition cluster retracts
-     * only the reparsed paragraphs instead of the whole region. */
-    int start_line;
-    /* The harvesting paragraph was fully consumed and had begun on a clean
-     * line: its start is a safe restart point the tree no longer records,
-     * so the document indexes it as a sentinel clean entry. */
-    bool from_vanished_clean;
-    size_t size; /* reference expansion accounting */
 };
 
 typedef struct markdown_core_map_entry markdown_core_map_entry;
@@ -70,25 +49,13 @@ struct markdown_core_map;
 
 typedef void (*markdown_core_map_free_func)(struct markdown_core_map *, markdown_core_map_entry *);
 
-/* Observes every lookup by its normalized label (hits, misses, and lookups
- * against an empty map alike: each one is an answer that a later definition
- * edit can change). `label` is NUL-terminated and only valid for the call. */
-typedef void (*markdown_core_map_lookup_sink)(void *context, void *unit, const unsigned char *label);
-
 struct markdown_core_map {
     markdown_core_mem *mem;
-    markdown_core_map_entry *refs;             /* every live entry, newest first */
-    markdown_core_map_entry **sorted;          /* fallback path: all entries by (label, order) */
-    markdown_core_key_index index;             /* hash path: label -> bucket head (winner) */
-    size_t size;                               /* live entry count, duplicates included */
-    uint64_t next_order;                       /* monotonic document-order allocator */
-    uint64_t pending_owner;                    /* stamped onto entries at add time */
-    int pending_line;                          /* stamped onto entries at add time */
-    markdown_core_map_lookup_sink lookup_sink; /* NULL outside an edit */
-    void *lookup_context;
-    void *lookup_unit; /* attribution target for the current inline parse */
-    size_t ref_size;
-    size_t max_ref_size;
+    markdown_core_map_entry *refs;    /* every live entry, newest first */
+    markdown_core_map_entry **sorted; /* fallback path: all entries by (label, order) */
+    markdown_core_key_index index;    /* hash path: label -> bucket head (winner) */
+    size_t size;                      /* live entry count, duplicates included */
+    uint64_t next_order;              /* monotonic document-order allocator */
     int prepared;
     int indexed;
     /* Sticky flag: a definition or lookup structure was lost to allocation
@@ -129,26 +96,10 @@ int markdown_core_key_index_remove(
 markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_map_free_func free);
 void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
-/* Links a freshly created entry (label/size filled by the caller) into the
- * map: stamps the next document order and the pending owner, pushes it onto
- * the live chain, and keeps any prepared lookup structure coherent. */
+/* Links a freshly created entry (label filled by the caller) into the
+ * map: stamps the next document order, pushes it onto the live chain, and
+ * keeps any prepared lookup structure coherent. */
 void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry);
-/* Removes and frees every entry stamped with `owner`. Winners for the
- * affected labels are re-elected automatically. */
-void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner);
-/* Removes and frees every entry newer than `until` (the head run of the live
- * chain added since the caller snapshotted map->refs; NULL empties the map).
- * Winners for the affected labels are re-elected automatically, and no path
- * through here allocates, so the removal itself cannot fail. */
-void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_entry *until);
-/* Returns a calloc'd array of the winning entry per distinct label (array
- * order unspecified) or NULL with map->oom set on allocation failure.
- * *count receives the number of distinct labels. */
-markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size_t *count);
-/* Forces the hash-indexed lookup path (dropping a prepared sorted fallback
- * first). Returns 0 when the index cannot be built; the map is then left
- * unprepared, and the next lookup rebuilds — nothing is lost. */
-int markdown_core_map_ensure_index(markdown_core_map *map);
 
 #ifdef __cplusplus
 }

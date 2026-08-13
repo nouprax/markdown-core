@@ -253,8 +253,7 @@ and never validates it, so bytes that were not UTF-8 going in are not UTF-8
 coming out. Seven kinds
 have one: `CodeBlock`, `HTMLBlock`, `FormulaBlock`, `Text`, `Code`, `HTML`,
 and `Formula`. The other twenty-seven have none; their content is a child
-sequence or nothing, and a kind with no textual value simply never carries the
-`TEXT` part of `incremental-canonical-ast.md` §9.1.
+sequence or nothing.
 
 **No text field carries a map back to the bytes that produced it**, and
 neither does any other string field: `Link.destination` and `Link.title`,
@@ -285,7 +284,7 @@ MarkupTrack {
 
 `MarkupID` pairs the owning document's opaque `DocumentDomain` with a positive
 ordinal: ordinals are unique within a domain, never reused after retirement,
-and stable across incremental commits while the node remains the same logical
+and stable across edits while the node remains the same logical
 node. Nodes from different domains never compare equal, and passing an
 identity from another domain is a programmer error that traps rather than a
 result value. A one-shot parse gets its own domain, as does any change to the
@@ -306,19 +305,21 @@ differ only in where they sit are equal — which is what lets an edit above a
 node leave every reactive comparison below it untouched.
 
 There is deliberately no second stamp for the node's own projection without
-its descendants. A consumer that needs to tell "this node changed" from
-"something below it changed" reads the diff parts of
-`incremental-canonical-ast.md` §9.1, where `DESCENDANT` is exactly the second
-case and any other flag is exactly the first. That is the same argument §4
-already uses to forbid per-field, per-text and per-edge stamps: the
-information is carried at zero per-node cost by a commit that actually changed
-something, so a stamp every node pays for is the wrong place to put it.
+its descendants, and no change list on the side: `(MarkupID, revision)` is
+the entire update protocol. A consumer that needs to tell "this node changed"
+from "something below it changed" derives it from what it already holds — the
+node's own decoded value and its child id list are unchanged in the first
+case and not in the second. That is the same argument §4 already uses to
+forbid per-field, per-text and per-edge stamps: a stamp every node pays for
+is the wrong place to put information only a changed node carries.
 
-Which identities survive an edit is decided by the anchored continuity rule of
-`incremental-canonical-ast.md` §5.2: identity never crosses a parent or a
-kind, nodes the edit does not overlap are matched positionally against stable
-old witnesses, and only the children the edit overlaps are matched by content.
-The full identity contract lives there.
+Which identities survive an edit is decided by a whole-tree pairing of the
+predecessor's tree against the new one: identity never crosses a parent or a
+kind (a changed kind is a retirement and a creation, never a pairing),
+leading and trailing children whose subtrees are identical pair first, and
+what falls between still pairs positionally while the kinds agree, so a node
+whose own text changed keeps its identity instead of being retired and
+recreated. Retired ids are never reused.
 
 ### Relationship to upstream cmark-gfm
 
@@ -439,15 +440,13 @@ out of the tree aligns it with the mdast model and keeps an edit from
 renumbering nodes it did not touch.
 
 Making definedness decide a node's type puts a document-scoped fact inside an
-inline parse, which an incremental parser has to answer without reading the
-whole document each time. It is answered by persistent definition tables — one
-for reference definitions, one for footnote definitions — that a commit
-retracts and re-registers over the lines it reparses, before it builds the CST
-for them; this is publication step 0 of `incremental-canonical-ast.md` §6.3,
-and it is why the CST's node inventory can depend on a document-wide relation
-without the publication order becoming circular. A label whose definedness
-flips re-refines exactly the units that read it, found through the mention
-index rather than by scanning. The two kinds get separate tables rather than
+inline parse. It is answered by two definition tables — one for reference
+definitions, one for footnote definitions — filled during the block pass,
+before any inline is refined, which is why the tree's node inventory can
+depend on a document-wide relation without the build order becoming circular.
+The only document-global inputs to an inline parse are the two tables'
+definedness sets: which normalized labels are defined, never which definition
+wins or what it says. The two kinds get separate tables rather than
 one keyed by label: `[x]:` and `[^x]:` would share a bucket, one kind's flip
 could hide behind the other's presence, and the units that read the hidden one
 would keep a stale tree.

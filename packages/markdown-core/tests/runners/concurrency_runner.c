@@ -43,7 +43,7 @@
 #include <string.h>
 
 #include "markdown_core.h"
-#include "commit_compat.h"
+#include "test_support.h"
 
 /* WHAT A CONSUMER DOES. There is no engine-side id->node index: a consumer
  * that holds an id and the tree already has the node, because it meets it on
@@ -466,7 +466,7 @@ typedef struct document_worker {
 } document_worker;
 
 // Clears the document text, then streams `input` byte-by-byte with a commit
-// (and discarded delta) per byte. Hands back a determinism-checked dump.
+// per byte. Hands back a determinism-checked dump.
 static int document_stream_once(
     markdown_core_document **document_ref,
     const char *input,
@@ -481,18 +481,14 @@ static int document_stream_once(
     // hands over grows by one byte per edit. It owns that text; the document
     // is handed the whole of it every time.
     for (offset = 0; offset < length; offset++) {
-        markdown_core_commit out;
-        memset(&out, 0, sizeof(out));
         markdown_core_document *previous = *document_ref;
-        if (!markdown_core_document_edit(previous, mc_sv(input, offset + 1), &out, &error)) {
-            markdown_core_document_free(previous);
-            *document_ref = NULL;
+        markdown_core_document *successor = markdown_core_document_edit(previous, mc_sv(input, offset + 1), &error);
+        markdown_core_document_free(previous);
+        *document_ref = successor;
+        if (!successor) {
             markdown_core_error_free(error);
             return 1;
         }
-        markdown_core_document_free(previous);
-        *document_ref = out.document;
-        markdown_core_delta_free(out.delta);
     }
 
     uint8_t *first = NULL;
@@ -609,12 +605,11 @@ static THREAD_RETURN document_reader_main(void *argument) {
 
 /* SHARED RECEIVER. An edit reads its document and takes nothing from it, so
  * one document can be edited by several threads at once. What every thread
- * must get back is the SAME DIFF -- the same set of changes over the same
- * content -- because the change set is a function of (old content, new
- * content) and of nothing else. The revisions differ, and must: two
- * successors of one predecessor are two lines of descent, and a node each of
- * them changed differently would otherwise carry one (id, revision) with two
- * contents.
+ * must get back is the SAME TREE over the same content, because the tree is
+ * a function of (bytes, options) and of nothing else. The revisions differ,
+ * and must: two successors of one predecessor are two lines of descent, and
+ * a node each of them changed differently would otherwise carry one
+ * (id, revision) with two contents.
  *
  * The receiver is never written here, which is the whole claim. TSan is what
  * checks it. */
@@ -625,30 +620,26 @@ typedef struct shared_edit_worker {
     uint8_t *dump;
     size_t dump_length;
     uint64_t revision;
-    size_t diff_count;
     int failed;
 } shared_edit_worker;
 
 static THREAD_RETURN shared_edit_worker_main(void *argument) {
     shared_edit_worker *worker = (shared_edit_worker *)argument;
-    markdown_core_commit out;
     markdown_core_error *error = NULL;
-    const markdown_core_diff *rows = NULL;
+    markdown_core_document *successor;
 
-    memset(&out, 0, sizeof(out));
     barrier_wait(worker->start);
-    if (!markdown_core_document_edit(worker->base, mc_sv(worker->text, strlen(worker->text)), &out, &error)) {
+    successor = markdown_core_document_edit(worker->base, mc_sv(worker->text, strlen(worker->text)), &error);
+    if (!successor) {
         markdown_core_error_free(error);
         worker->failed = 1;
         return THREAD_RESULT;
     }
-    worker->revision = markdown_core_document_revision(out.document);
-    worker->diff_count = markdown_core_delta_diffs(out.delta, &rows);
-    if (!markdown_core_document_dump(out.document, &worker->dump, &worker->dump_length, NULL)) {
+    worker->revision = markdown_core_document_revision(successor);
+    if (!markdown_core_document_dump(successor, &worker->dump, &worker->dump_length, NULL)) {
         worker->failed = 1;
     }
-    markdown_core_delta_free(out.delta);
-    markdown_core_document_free(out.document);
+    markdown_core_document_free(successor);
     return THREAD_RESULT;
 }
 
@@ -691,14 +682,10 @@ static int case_shared_edit(void) {
             failures += 1;
             continue;
         }
-        // Same text in, same tree and same change set out, on every thread.
+        // Same text in, same tree out, on every thread.
         if (workers[index].dump_length != workers[0].dump_length ||
             memcmp(workers[index].dump, workers[0].dump, workers[index].dump_length) != 0) {
             fprintf(stderr, "shared_edit: thread %d produced a different tree\n", index);
-            failures += 1;
-        }
-        if (workers[index].diff_count != workers[0].diff_count) {
-            fprintf(stderr, "shared_edit: thread %d produced a different change set\n", index);
             failures += 1;
         }
         // And a revision of its own: no two successors may share one.
@@ -791,7 +778,7 @@ static int case_documents(void) {
     size_t reference_length = 0;
     markdown_core_document_free(document);
     document = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
-    if (!document || !mc_edit(&document, mc_sv(shared_input, strlen(shared_input)), NULL, &error) ||
+    if (!document || !mc_edit(&document, mc_sv(shared_input, strlen(shared_input)), &error) ||
         !markdown_core_document_dump(document, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_free(document);
@@ -833,7 +820,7 @@ static int case_documents(void) {
         size_t length = 0;
         markdown_core_document_free(document);
         document = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
-        if (!document || !mc_edit(&document, mc_sv("tail\n\n", 6), NULL, &error) ||
+        if (!document || !mc_edit(&document, mc_sv("tail\n\n", 6), &error) ||
             !markdown_core_document_dump(document, &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "documents: post-read commit failed\n");

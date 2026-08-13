@@ -1,7 +1,6 @@
 import type { MarkupBase } from "./base.js";
 import type { Markup } from "./markup.js";
 import type { Diagnostic } from "./diagnostic.js";
-import type { Commit } from "./commit.js";
 import type { ParseOptions } from "../parse-options.js";
 
 /**
@@ -32,14 +31,19 @@ export interface Document extends MarkupBase<"document"> {
     readonly node: (id: Markup["id"]) => Markup | null;
     /**
      * Hands this document new text and returns the document that text
-     * describes, together with what changed.
+     * describes.
+     *
+     * What changed is asked of the new tree itself: a node's id names the
+     * same thing across the edit, and its revision says when its own fields,
+     * child list, or any descendant last changed — equal (id, revision)
+     * within a series means identical content.
      *
      * Reads the receiver and takes nothing from it: this document stays
      * usable and may be edited again. Editing it twice gives two lines of
      * descent, told apart by their revisions — and, like nodes from two
      * separate parses, nodes from two lines are not comparable.
      */
-    readonly edit: (markdown: string) => Commit;
+    readonly edit: (markdown: string) => Document;
     /**
      * Releases the native parse.
      *

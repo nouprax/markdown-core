@@ -11,7 +11,7 @@
 
 #include "harness.h"
 #include "cplusplus.h"
-#include "commit_compat.h"
+#include "test_support.h"
 
 #define UTF8_REPL "\xEF\xBF\xBD"
 
@@ -1205,8 +1205,8 @@ static void utf8(test_batch_runner *runner) {
  *     document, not an invalid one: a stream may stop mid-character and 8.2
  *     forbids a finalize step (14.8.2-3);
  *   - U+0000 becomes U+FFFD, because CommonMark requires it of canonical text
- *     and it is the one replacement this engine performs
- *     (documents-and-deltas.md).
+ *     and it is the one replacement this engine performs (the Editing
+ *     section of markdown_core.h).
  *
  * That the engine does not CRASH on arbitrary bytes is a separate requirement,
  * it is a safety one rather than a semantic one, and it belongs to the fuzzers
@@ -1746,51 +1746,20 @@ static char *dump_document_cstr(const markdown_core_document *document) {
     return copy;
 }
 
-/* `diffs` names every node once, and carries NO LIFECYCLE TAG (9.1). A
- * retired node is the one with no parts; a node whose own projection moved
- * carries at least one part other than DESCENDANT; a node that merely has a
- * changed descendant carries DESCENDANT alone. A created node differs from
- * absence in every part it has, which always includes VALUE -- so "created"
- * and "changed" are the same query here, and a consumer that needs to tell
- * them apart does it from its own state, not from the delta. */
-#define DELTA_OWN_PARTS ((long)(MARKDOWN_CORE_DIFF_VALUE | MARKDOWN_CORE_DIFF_TEXT | MARKDOWN_CORE_DIFF_CHILDREN))
-
-static long delta_parts(const markdown_core_delta *changes, markdown_core_node_id id) {
-    const markdown_core_diff *diffs = NULL;
-    size_t count = markdown_core_delta_diffs(changes, &diffs);
-    size_t i;
-    for (i = 0; i < count; i++) {
-        if (diffs[i].markup == id) {
-            return (long)diffs[i].parts;
-        }
-    }
-    return -1;
+/* With the delta gone, change claims are read off the tree itself: a node
+ * whose revision equals the new document revision changed (or was created)
+ * at this edit, an untouched node keeps its old revision, and a retired id
+ * is one the tree no longer holds. The old touched-versus-bubbled
+ * distinction has no per-node observable — a changed node and an ancestor
+ * of one both carry the new revision, because the revision is
+ * subtree-covering by contract. */
+static int id_changed_at(const markdown_core_document *document, markdown_core_node_id id) {
+    const markdown_core_node *node = node_by_id(markdown_core_document_root(document), id);
+    return node && markdown_core_node_get_revision(node) == markdown_core_document_revision(document);
 }
 
-static int delta_touched(const markdown_core_delta *changes, markdown_core_node_id id) {
-    long parts = delta_parts(changes, id);
-    return parts > 0 && (parts & DELTA_OWN_PARTS) != 0;
-}
-
-static int delta_bubbled_only(const markdown_core_delta *changes, markdown_core_node_id id) {
-    return delta_parts(changes, id) == (long)MARKDOWN_CORE_DIFF_DESCENDANT;
-}
-
-static int delta_retired(const markdown_core_delta *changes, markdown_core_node_id id) {
-    return delta_parts(changes, id) == 0;
-}
-
-static size_t delta_retired_count(const markdown_core_delta *changes) {
-    const markdown_core_diff *diffs = NULL;
-    size_t count = markdown_core_delta_diffs(changes, &diffs);
-    size_t retired = 0;
-    size_t i;
-    for (i = 0; i < count; i++) {
-        if (diffs[i].parts == 0) {
-            retired++;
-        }
-    }
-    return retired;
+static int id_retired(const markdown_core_document *document, markdown_core_node_id id) {
+    return node_by_id(markdown_core_document_root(document), id) == NULL;
 }
 
 static const char SESSION_RICH_SOURCE[] = "# Title\n"
@@ -1844,7 +1813,7 @@ static void document_streaming_equivalence(test_batch_runner *runner) {
         if (!mc_text_splice(&mctext, offset, offset, (const uint8_t *)SESSION_RICH_SOURCE + offset, 1)) {
             all_edits_ok = 0;
         }
-        if (!mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error)) {
+        if (!mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error)) {
             all_commits_ok = 0;
         }
     }
@@ -1951,7 +1920,7 @@ static void document_head_insertion_id_stability(test_batch_runner *runner) {
 
     OK(runner,
        mc_text_splice(&mctext, 0, 0, (const uint8_t *)body, sizeof(body) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "paragraph-run baseline commits");
     {
         const markdown_core_node *p = markdown_core_node_get_first_child(markdown_core_document_root(document));
@@ -1965,7 +1934,7 @@ static void document_head_insertion_id_stability(test_batch_runner *runner) {
 
     OK(runner,
        mc_text_splice(&mctext, 0, 0, (const uint8_t *)head, sizeof(head) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "head insertion before the run commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2022,7 +1991,7 @@ static void document_head_insertion_pairs_on_value(test_batch_runner *runner) {
     }
 
     OK(runner,
-       mc_edit(&document, mc_sv(h2_then_h1, strlen(h2_then_h1)), NULL, &error),
+       mc_edit(&document, mc_sv(h2_then_h1, strlen(h2_then_h1)), &error),
        "inserting a same-text H2 above the H1 commits");
     {
         const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
@@ -2051,7 +2020,7 @@ static void document_head_insertion_pairs_on_value(test_batch_runner *runner) {
         const markdown_core_node *block = markdown_core_node_get_first_child(markdown_core_document_root(document));
         markdown_core_node_id block_id = block ? markdown_core_node_get_id(block) : 0;
         OK(runner,
-           mc_edit(&document, mc_sv(two_blocks, strlen(two_blocks)), NULL, &error),
+           mc_edit(&document, mc_sv(two_blocks, strlen(two_blocks)), &error),
            "inserting a same-info code block above it commits");
         {
             const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
@@ -2102,7 +2071,7 @@ static void document_head_insertion_pairs_on_extension_value(test_batch_runner *
             first_rev = block ? markdown_core_node_get_revision(block) : 0;
         }
         OK(runner,
-           mc_edit(&document, mc_sv(cases[i].after, strlen(cases[i].after)), NULL, &error),
+           mc_edit(&document, mc_sv(cases[i].after, strlen(cases[i].after)), &error),
            "%s: inserting the near-identical block above it commits",
            cases[i].name);
         {
@@ -2132,9 +2101,8 @@ static void document_append_id_stability(test_batch_runner *runner) {
     mc_text mctext = {NULL, 0, 0};
     const char *part_one = "# Title\n\nHello ";
     const char *part_two = "world **bold**";
-    markdown_core_node_id heading_id, paragraph_id, text_id, root_id;
-    uint64_t heading_rev, root_rev_before;
-    markdown_core_delta *changes = NULL;
+    markdown_core_node_id heading_id, paragraph_id, text_id;
+    uint64_t heading_rev, root_rev_before, rev_before;
 
     OK(runner, document != NULL, "id-stability document opens");
     if (!document) {
@@ -2142,14 +2110,13 @@ static void document_append_id_stability(test_batch_runner *runner) {
     }
 
     mc_text_splice(&mctext, 0, 0, (const uint8_t *)part_one, strlen(part_one));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error), "first commit succeeds");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "first commit succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
         const markdown_core_node *heading = markdown_core_node_get_first_child(root);
         const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
-        root_id = markdown_core_node_get_id(root);
         heading_id = markdown_core_node_get_id(heading);
         heading_rev = markdown_core_node_get_revision(heading);
         paragraph_id = markdown_core_node_get_id(paragraph);
@@ -2159,6 +2126,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
         OK(runner, markdown_core_node_get_parent(heading) == root, "node_get_parent reaches the root");
     }
 
+    rev_before = markdown_core_document_revision(document);
     mc_text_splice(
         &mctext,
         markdown_core_document_length(document),
@@ -2166,8 +2134,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
         (const uint8_t *)part_two,
         strlen(part_two)
     );
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error), "second commit succeeds");
-    OK(runner, changes != NULL, "delta is produced on request");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "second commit succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2175,7 +2142,10 @@ static void document_append_id_stability(test_batch_runner *runner) {
         const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *strong = markdown_core_node_get_next_sibling(text);
-        uint64_t before = 0, after = 0;
+        // A revision is the MOMENT a document was produced, not a count of
+        // the edits behind it, so the pair only has to advance.
+        uint64_t after = markdown_core_document_revision(document);
+        OK(runner, after > rev_before, "the document revision advances");
 
         OK(runner, markdown_core_node_get_id(heading) == heading_id, "frontier append keeps the heading id");
         OK(runner, markdown_core_node_get_revision(heading) == heading_rev, "untouched heading keeps its revision");
@@ -2185,18 +2155,12 @@ static void document_append_id_stability(test_batch_runner *runner) {
            strong != NULL && markdown_core_node_get_kind(strong) == MARKDOWN_CORE_KIND_STRONG,
            "appended strong exists");
 
-        markdown_core_delta_revisions(changes, &before, &after);
-        // A revision is the MOMENT a document was produced, not a count of
-        // the edits behind it, so the pair only has to advance.
-        OK(runner, after > before, "the delta's revisions advance");
-        OK(runner, markdown_core_document_revision(document) == after, "document revision matches the delta");
-
-        OK(runner, delta_touched(changes, paragraph_id), "paragraph is reported changed");
-        OK(runner, delta_touched(changes, text_id), "grown text is reported changed");
-        OK(runner, !delta_touched(changes, heading_id), "heading is not reported changed");
-        OK(runner, delta_touched(changes, markdown_core_node_get_id(strong)), "strong is reported added");
-        OK(runner, delta_bubbled_only(changes, root_id), "root revision bubbles");
-        INT_EQ(runner, (int)delta_retired_count(changes), 0, "append removes nothing");
+        // With no delta, the change report IS the revision stamp: a changed
+        // or created node carries the new document revision, an untouched
+        // node keeps its old one, and a retired id is simply gone.
+        OK(runner, markdown_core_node_get_revision(paragraph) == after, "grown paragraph carries the new revision");
+        OK(runner, markdown_core_node_get_revision(text) == after, "grown text carries the new revision");
+        OK(runner, markdown_core_node_get_revision(strong) == after, "minted strong carries the new revision");
 
         OK(runner,
            markdown_core_node_get_revision(root) == after && root_rev_before < after,
@@ -2208,7 +2172,6 @@ static void document_append_id_stability(test_batch_runner *runner) {
         OK(runner, markdown_core_document_series(document) != 0, "document series is nonzero");
     }
 
-    markdown_core_delta_free(changes);
     mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
@@ -2263,7 +2226,7 @@ static void document_suffix_id_stability(test_batch_runner *runner) {
         return;
     }
     mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error), "suffix baseline commit succeeds");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "suffix baseline commit succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2278,9 +2241,7 @@ static void document_suffix_id_stability(test_batch_runner *runner) {
 
     /* Replace "one" (bytes 5..8) with "1!" — only the first paragraph. */
     mc_text_splice(&mctext, 5, 8, (const uint8_t *)"1!", 2);
-    OK(runner,
-       mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
-       "mid-document edit commit succeeds");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "mid-document edit commit succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2318,10 +2279,10 @@ static void document_utf8_split_append(test_batch_runner *runner) {
         char *streamed;
         mc_text_splice(&mctext, 0, 0, euro_doc, 3); /* 'p', ' ', 0xE2 */
         OK(runner,
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
            "commit with a dangling lead byte succeeds");
         mc_text_splice(&mctext, 3, 3, euro_doc + 3, 3);
-        OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error), "completing commit succeeds");
+        OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "completing commit succeeds");
         streamed = dump_document_cstr(document);
         if (streamed) {
             STR_EQ(runner, streamed, expected, "split multi-byte character parses whole");
@@ -2380,29 +2341,28 @@ static void document_directive_label_parent(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
-static void document_directive_label_delta_classification(test_batch_runner *runner) {
+static void document_directive_label_edit_identity(test_batch_runner *runner) {
     static const uint8_t source[] = ":x[abc]\n";
     static const uint8_t replacement = 'd';
     static const uint8_t reshaped[] = ":x[*adc*]\n";
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
-    markdown_core_delta *changes = NULL;
     markdown_core_node_id root_id = 0;
     markdown_core_node_id paragraph_id = 0;
     markdown_core_node_id directive_id = 0;
     markdown_core_node_id label_id = 0;
     markdown_core_node_id text_id = 0;
 
-    OK(runner, document != NULL, "directive delta document opens");
+    OK(runner, document != NULL, "directive identity document opens");
     if (!document) {
         markdown_core_error_free(error);
         return;
     }
     OK(runner,
        mc_text_splice(&mctext, 0, 0, source, sizeof(source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
-       "directive delta baseline commits");
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
+       "directive identity baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
@@ -2417,55 +2377,50 @@ static void document_directive_label_delta_classification(test_batch_runner *run
     }
 
     OK(runner,
-       mc_text_splice(&mctext, 4, 5, &replacement, 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+       mc_text_splice(&mctext, 4, 5, &replacement, 1) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "directive label literal edit commits");
-    OK(runner, delta_touched(changes, text_id), "edited label Text is changed");
-    OK(runner, !delta_touched(changes, label_id), "literal edit does not change the label's child list");
-    OK(runner, !delta_touched(changes, directive_id), "label literal edit does not change directive fields");
-    OK(runner, delta_bubbled_only(changes, label_id), "label literal edit bubbles through DirectiveLabel");
-    OK(runner, delta_bubbled_only(changes, directive_id), "label literal edit bubbles through the directive");
-    OK(runner, delta_bubbled_only(changes, paragraph_id), "label literal edit bubbles through the paragraph");
-    OK(runner, delta_bubbled_only(changes, root_id), "label literal edit bubbles through the document");
-    markdown_core_delta_free(changes);
-    changes = NULL;
+    // The literal edit keeps every id on the path and stamps the new
+    // revision up the ancestor chain — the revision is subtree-covering, so
+    // the chain from the edited Text to the root all reports the change.
+    OK(runner, id_changed_at(document, text_id), "edited label Text carries the new revision");
+    OK(runner, id_changed_at(document, label_id), "the change reaches DirectiveLabel's revision");
+    OK(runner, id_changed_at(document, directive_id), "the change reaches the directive's revision");
+    OK(runner, id_changed_at(document, paragraph_id), "the change reaches the paragraph's revision");
+    OK(runner, id_changed_at(document, root_id), "the change reaches the root's revision");
 
     OK(runner,
        mc_text_splice(&mctext, 0, sizeof(source) - 1, reshaped, sizeof(reshaped) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "directive label topology edit commits");
     OK(runner,
        node_by_id(markdown_core_document_root(document), label_id) != NULL,
        "label topology edit preserves DirectiveLabel identity");
-    OK(runner, delta_touched(changes, label_id), "label child topology change marks DirectiveLabel changed");
-    OK(runner, !delta_touched(changes, directive_id), "label topology does not change directive fields");
-    OK(runner, delta_bubbled_only(changes, directive_id), "label topology change bubbles through the directive");
+    OK(runner, id_changed_at(document, label_id), "label child topology change stamps DirectiveLabel");
+    OK(runner, id_retired(document, text_id), "the Text replaced by Emph retires its id");
 
-    markdown_core_delta_free(changes);
     mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
 }
 
-static void document_directive_empty_label_delta_classification(test_batch_runner *runner) {
+static void document_directive_empty_label_transitions(test_batch_runner *runner) {
     static const uint8_t inline_source[] = ":x{}\n";
     static const uint8_t block_source[] = "::x{}\n";
     static const uint8_t empty_label[] = "[]";
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
-    markdown_core_delta *changes = NULL;
     markdown_core_node_id directive_id = 0;
     markdown_core_node_id label_id = 0;
 
-    OK(runner, document != NULL, "inline empty-label delta document opens");
+    OK(runner, document != NULL, "inline empty-label document opens");
     if (!document) {
         markdown_core_error_free(error);
         return;
     }
     OK(runner,
        mc_text_splice(&mctext, 0, 0, inline_source, sizeof(inline_source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "inline absent-label baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2479,7 +2434,7 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
 
     OK(runner,
        mc_text_splice(&mctext, 2, 2, empty_label, sizeof(empty_label) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "inline absent-to-empty label edit commits");
     {
         const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
@@ -2490,14 +2445,11 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
                markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
            "inline absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
     }
-    OK(runner, delta_touched(changes, label_id), "inline absent-to-empty adds the DirectiveLabel");
-    OK(runner, delta_touched(changes, directive_id), "inline absent-to-empty marks the directive changed");
-    markdown_core_delta_free(changes);
-    changes = NULL;
+    OK(runner, id_changed_at(document, label_id), "the minted DirectiveLabel carries the new revision");
+    OK(runner, id_changed_at(document, directive_id), "inline absent-to-empty stamps the directive");
 
     OK(runner,
-       mc_text_splice(&mctext, 2, 4, NULL, 0) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+       mc_text_splice(&mctext, 2, 4, NULL, 0) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "inline empty-to-absent label edit commits");
     {
         const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
@@ -2505,22 +2457,20 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
            directive && markdown_core_node_directive_label(directive) == NULL,
            "inline empty-to-absent preserves directive identity and removes its label child");
     }
-    OK(runner, delta_retired(changes, label_id), "inline empty-to-absent removes the DirectiveLabel");
-    OK(runner, delta_touched(changes, directive_id), "inline empty-to-absent marks the directive changed");
-    markdown_core_delta_free(changes);
-    changes = NULL;
+    OK(runner, id_retired(document, label_id), "inline empty-to-absent retires the DirectiveLabel id");
+    OK(runner, id_changed_at(document, directive_id), "inline empty-to-absent stamps the directive");
     mc_text_free(&mctext);
     markdown_core_document_free(document);
     document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
 
-    OK(runner, document != NULL, "block empty-label delta document opens");
+    OK(runner, document != NULL, "block empty-label document opens");
     if (!document) {
         markdown_core_error_free(error);
         return;
     }
     OK(runner,
        mc_text_splice(&mctext, 0, 0, block_source, sizeof(block_source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "block absent-label baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2533,7 +2483,7 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
 
     OK(runner,
        mc_text_splice(&mctext, 3, 3, empty_label, sizeof(empty_label) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "block absent-to-empty label edit commits");
     {
         const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
@@ -2544,14 +2494,11 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
                markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
            "block absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
     }
-    OK(runner, delta_touched(changes, label_id), "block absent-to-empty adds the DirectiveLabel");
-    OK(runner, delta_touched(changes, directive_id), "block absent-to-empty marks the directive changed");
-    markdown_core_delta_free(changes);
-    changes = NULL;
+    OK(runner, id_changed_at(document, label_id), "the minted block DirectiveLabel carries the new revision");
+    OK(runner, id_changed_at(document, directive_id), "block absent-to-empty stamps the directive");
 
     OK(runner,
-       mc_text_splice(&mctext, 3, 5, NULL, 0) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+       mc_text_splice(&mctext, 3, 5, NULL, 0) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "block empty-to-absent label edit commits");
     {
         const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
@@ -2559,10 +2506,9 @@ static void document_directive_empty_label_delta_classification(test_batch_runne
            directive && markdown_core_node_directive_label(directive) == NULL,
            "block empty-to-absent preserves directive identity and removes its label child");
     }
-    OK(runner, delta_retired(changes, label_id), "block empty-to-absent removes the DirectiveLabel");
-    OK(runner, delta_touched(changes, directive_id), "block empty-to-absent marks the directive changed");
+    OK(runner, id_retired(document, label_id), "block empty-to-absent retires the DirectiveLabel id");
+    OK(runner, id_changed_at(document, directive_id), "block empty-to-absent stamps the directive");
 
-    markdown_core_delta_free(changes);
     mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
@@ -2580,7 +2526,6 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
     mc_text mctext = {NULL, 0, 0};
-    markdown_core_delta *changes = NULL;
     markdown_core_node_id directive_id = 0;
     markdown_core_node_id label_id = 0;
     markdown_core_node_id label_text_id = 0;
@@ -2605,7 +2550,7 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
     }
     OK(runner,
        mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source)) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "block-label lookup baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2667,7 +2612,7 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
         size_t offset = (size_t)(destination_at - source);
         OK(runner,
            mc_text_splice(&mctext, offset, offset + 2, replacement, sizeof(replacement) - 1) &&
-               mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+               mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
            "block-label reference definition edit commits");
     }
     {
@@ -2702,22 +2647,12 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
            directive && label && body && markdown_core_node_get_next_sibling(label) == body &&
                markdown_core_node_get_revision(body) == body_revision,
            "block-label reparse preserves the block body's identity and revision");
-        OK(runner, !delta_touched(changes, link_id), "the reference is not classified as changed");
-        OK(runner, !delta_touched(changes, label_id), "stable DirectiveLabel is not classified as changed");
-        OK(runner,
-           !delta_touched(changes, footnote_reference_id),
-           "unmodified block-label footnote is absent from changed delta");
-        OK(runner, !delta_bubbled_only(changes, label_id), "nothing bubbles through the DirectiveLabel");
-        OK(runner, !delta_bubbled_only(changes, directive_id), "nothing bubbles through the directive");
         label_revision = markdown_core_node_get_revision(label);
     }
 
-    markdown_core_delta_free(changes);
-    changes = NULL;
-
     OK(runner,
        mc_text_splice(&mctext, 0, 0, prefix, sizeof(prefix) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &changes, &error),
+           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
        "head insertion before a block directive commits");
     {
         const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
@@ -2775,7 +2710,66 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
            "head insertion preserves the block body's identity and revision");
     }
 
-    markdown_core_delta_free(changes);
+    mc_text_free(&mctext);
+    markdown_core_document_free(document);
+    markdown_core_error_free(error);
+}
+
+/* Reference resolution is a function of definedness alone: whether a mention
+ * resolves depends on its label being defined, never on how many mentions
+ * resolved before it. The engine inherited an expansion budget from upstream
+ * cmark-gfm that charged every resolution against a document-size cap and
+ * made later lookups fail once it ran out — protecting an output
+ * amplification this engine cannot have, since a mention stores only its
+ * label and never materializes the winner's url or title. This document's
+ * one definition carries a title that alone exceeded the old budget's 100KB
+ * floor on the second resolution, so under the budget the trailing mentions
+ * were literal text; all three must resolve. */
+static void document_reference_resolution_is_unbudgeted(test_batch_runner *runner) {
+    enum { TITLE_LENGTH = 60000 };
+    markdown_core_error *error = NULL;
+    markdown_core_document *document;
+    mc_text mctext = {NULL, 0, 0};
+    static const char head[] = "[a]: /u \"";
+    static const char tail[] = "\"\n\n[a] and [a] and [a]\n";
+    int resolved = 0;
+    char *title = (char *)malloc(TITLE_LENGTH);
+
+    OK(runner, title != NULL, "unbudgeted title allocates");
+    if (!title) {
+        return;
+    }
+    memset(title, 't', TITLE_LENGTH);
+    OK(runner,
+       mc_text_splice(&mctext, 0, 0, head, sizeof(head) - 1) &&
+           mc_text_splice(&mctext, mctext.length, mctext.length, title, TITLE_LENGTH) &&
+           mc_text_splice(&mctext, mctext.length, mctext.length, tail, sizeof(tail) - 1),
+       "unbudgeted document assembles");
+    free(title);
+
+    document = markdown_core_document_new(mc_sv(mctext.bytes, mctext.length), NULL, &error);
+    OK(runner, document != NULL, "unbudgeted document parses");
+    if (document) {
+        const markdown_core_node *root = markdown_core_document_root(document);
+        const markdown_core_node *node = root;
+        for (;;) {
+            if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_LINK_REFERENCE) {
+                resolved++;
+            }
+            if (markdown_core_node_get_first_child(node)) {
+                node = markdown_core_node_get_first_child(node);
+                continue;
+            }
+            while (node != root && !markdown_core_node_get_next_sibling(node)) {
+                node = markdown_core_node_get_parent(node);
+            }
+            if (node == root) {
+                break;
+            }
+            node = markdown_core_node_get_next_sibling(node);
+        }
+        INT_EQ(runner, resolved, 3, "every mention resolves, however many resolved before it");
+    }
     mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
@@ -2797,7 +2791,7 @@ static void document_scope_shift_invariance(test_batch_runner *runner) {
         return;
     }
     mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error), "scope baseline commit succeeds");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "scope baseline commit succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2818,7 +2812,7 @@ static void document_scope_shift_invariance(test_batch_runner *runner) {
     /* Insert a paragraph above: every downstream scope shifts by two lines
      * while ids and revisions stay put (shift-invariant equality). */
     mc_text_splice(&mctext, 0, 0, (const uint8_t *)prefix, strlen(prefix));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), NULL, &error), "scope shift commit succeeds");
+    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "scope shift commit succeeds");
 
     {
         const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(document), paragraph_id);
@@ -2903,9 +2897,10 @@ int main(void) {
     document_suffix_id_stability(runner);
     document_utf8_split_append(runner);
     document_directive_label_parent(runner);
-    document_directive_label_delta_classification(runner);
-    document_directive_empty_label_delta_classification(runner);
+    document_directive_label_edit_identity(runner);
+    document_directive_empty_label_transitions(runner);
     document_block_directive_label_lookup(runner);
+    document_reference_resolution_is_unbudgeted(runner);
     document_scope_shift_invariance(runner);
 
     test_print_summary(runner);

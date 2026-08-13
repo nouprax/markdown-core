@@ -22,7 +22,6 @@ export type { List, ListItem } from "./model/list.js";
 export type { MarkupBase } from "./model/base.js";
 export type { Markup } from "./model/markup.js";
 export type { MarkupID } from "./model/markup-id.js";
-export type { Commit, Delta, Diff, DiffParts } from "./model/commit.js";
 export type { Diagnostic } from "./model/diagnostic.js";
 export { DiagnosticCode } from "./model/diagnostic.js";
 export type { Paragraph } from "./model/paragraph.js";
