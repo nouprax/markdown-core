@@ -75,13 +75,7 @@ markdown_core_map *markdown_core_reference_map_new(markdown_core_mem *mem) {
     return markdown_core_map_new(mem, reference_free);
 }
 
-void markdown_core_footnote_definition_create(
-    markdown_core_map *map,
-    markdown_core_chunk *label,
-    uint64_t owner,
-    int start_line,
-    uint64_t definition_node
-) {
+void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_core_chunk *label) {
     markdown_core_reference *ref = definition_entry_new(map, label);
 
     if (!ref) {
@@ -91,10 +85,7 @@ void markdown_core_footnote_definition_create(
      * the reference site. The empty chunks also make the shared payload
      * comparison a tautology, which is the right answer — identical footnote
      * labels *are* identical definitions as far as any reference can tell. */
-    map->pending_owner = owner;
-    map->pending_line = start_line;
     markdown_core_map_add(map, &ref->entry);
-    ref->entry.definition_node = definition_node;
 }
 
 markdown_core_map *markdown_core_footnote_definition_map_new(markdown_core_mem *mem) {

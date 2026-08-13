@@ -82,28 +82,6 @@ enum markdown_core_node__internal_flags {
     // (1 << 5)..(1 << 13); each owning extension defines its own bits (see
     // extensions/table.c). The engine holds no runtime flag registry.
     MARKDOWN_CORE_NODE__EXTENSION_FIRST = (1 << 5),
-
-    // Qualifies CLEAN_START: the child's first line arrived while a chain of
-    // footnote definitions — and nothing else — was still open, and the
-    // line's own shape (non-blank, first non-space before the continuation
-    // indent) is what closes them, before anything above can capture it.
-    // The anchor therefore holds only while the line keeps that shape.
-    MARKDOWN_CORE_NODE__CLEAN_START_SEALING = (1 << 14),
-
-    // Set on a direct document child whose first line arrived while the
-    // document was the only open block (or while the open chain was sealed
-    // by the line itself; see CLEAN_START_SEALING). Such a child is a safe
-    // incremental restart point: reparsing the source from its start line
-    // under a fresh parser reproduces it and everything after it, because no
-    // construct (setext underline, lazy continuation, table delimiter
-    // look-back, paragraph interruption) can reach back across the boundary
-    // — those all attach to a block that was still open, which this flag
-    // rules out.
-    MARKDOWN_CORE_NODE__CLEAN_START = (1 << 15),
-
-    // The restart-anchor pair: every path that grants, transfers, or strips
-    // anchor-hood moves both bits together.
-    MARKDOWN_CORE_NODE__CLEAN_ANCHOR = MARKDOWN_CORE_NODE__CLEAN_START | MARKDOWN_CORE_NODE__CLEAN_START_SEALING,
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

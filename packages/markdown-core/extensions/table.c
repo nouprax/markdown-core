@@ -552,15 +552,12 @@ static markdown_core_node *try_opening_table_header(
         /* The prefix lines belong to the split-off paragraph now, so the
          * retyped node's span starts where its header row was spelled —
          * the buffer's last line, whose mark carries the tab-expanded
-         * column node positions use. The table's first line still does not
-         * begin a document child on a clean line: it must not remain an
-         * incremental restart point, sealing qualifier included. */
+         * column node positions use. */
         parent_container->start_line = parser->line_marks[parser->line_mark_count - 1].line;
         /* The byte column, not the mark's tab-expanded one: every node
          * position in the engine is byte-based, and the two disagree the
          * moment a tab precedes the row. */
         parent_container->start_column = (int)parser->line_marks[parser->line_mark_count - 1].byte_offset + 1;
-        parent_container->flags &= ~(markdown_core_node_internal_flags)MARKDOWN_CORE_NODE__CLEAN_ANCHOR;
     }
 
     /* The paragraph is already rewritten into a table node here.  On

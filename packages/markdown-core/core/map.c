@@ -381,16 +381,6 @@ static int index_map(markdown_core_map *map) {
 
 static int prepare_map(markdown_core_map *map) { return map->prepared || index_map(map) || sort_map(map); }
 
-int markdown_core_map_ensure_index(markdown_core_map *map) {
-    if (map->prepared && map->indexed) {
-        return 1;
-    }
-    if (map->prepared) {
-        unprepare_map(map);
-    }
-    return index_map(map);
-}
-
 /* Leftmost entry of the label's run in the sorted array: the winner.
  * A lower-bound binary search keeps duplicate-heavy fallback lookups at
  * O(log n) instead of walking the run linearly. */
@@ -415,13 +405,12 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
     markdown_core_map_entry *r = NULL;
     unsigned char *norm;
 
-    /* Labels over the scanner cap can never match any definition, so they are
-     * not dependencies either and stay unobserved. */
+    /* Labels over the scanner cap can never match any definition. */
     if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
         return NULL;
     }
 
-    if (map == NULL || (!map->size && !map->lookup_sink)) {
+    if (map == NULL || !map->size) {
         return NULL;
     }
 
@@ -434,16 +423,6 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
             }
             return NULL;
         }
-    }
-
-    /* A miss against an empty map is still an answer a later definition can
-     * change; the sink sees it before the empty-map shortcut returns. */
-    if (map->lookup_sink) {
-        map->lookup_sink(map->lookup_context, map->lookup_unit, norm);
-    }
-    if (!map->size) {
-        map->mem->free(map->mem, norm);
-        return NULL;
     }
 
     if (!prepare_map(map)) {
@@ -467,16 +446,9 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 
 void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry) {
     entry->order = ++map->next_order;
-    entry->owner = map->pending_owner;
-    entry->start_line = map->pending_line;
-    entry->from_vanished_clean = false;
     entry->bucket_next = NULL;
     entry->bucket_prev = NULL;
     entry->next = map->refs;
-    entry->prev = NULL;
-    if (map->refs) {
-        map->refs->prev = entry;
-    }
     map->refs = entry;
     map->size++;
 
@@ -489,143 +461,6 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
          * and let the next lookup rebuild them. */
         unprepare_map(map);
     }
-}
-
-/* Unlinks `entry` from its bucket and keeps the index slot on the winner.
- * O(1): the chain is circular and doubly linked, so neither the predecessor
- * nor the successor has to be found. Returns 0 when the index state could not
- * be kept coherent. */
-static int bucket_detach(markdown_core_map *map, markdown_core_map_entry *entry) {
-    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
-    markdown_core_map_entry *head =
-        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
-    markdown_core_map_entry *successor;
-
-    if (!head) {
-        return 0;
-    }
-    successor = entry->bucket_next == entry ? NULL : entry->bucket_next;
-    entry->bucket_prev->bucket_next = entry->bucket_next;
-    entry->bucket_next->bucket_prev = entry->bucket_prev;
-    entry->bucket_next = NULL;
-    entry->bucket_prev = NULL;
-    if (head != entry) {
-        return 1;
-    }
-    if (!markdown_core_key_index_remove(&map->index, entry->label, label_len)) {
-        return 0;
-    }
-    if (!successor) {
-        return 1;
-    }
-    /* Re-elect the next-oldest definition; its label bytes key the slot
-     * from now on. The freshly vacated run guarantees room, and the
-     * insert's own growth path covers the remaining corner cases. */
-    return markdown_core_key_index_insert(
-        &map->index,
-        successor->label,
-        (markdown_core_bufsize)strlen((char *)successor->label),
-        successor,
-        0,
-        NULL
-    );
-}
-
-void markdown_core_map_remove_until(markdown_core_map *map, markdown_core_map_entry *until) {
-    if (map == NULL) {
-        return;
-    }
-    while (map->refs && map->refs != until) {
-        markdown_core_map_entry *entry = map->refs;
-        map->refs = entry->next;
-        if (map->refs) {
-            map->refs->prev = NULL;
-        }
-        if (map->prepared) {
-            if (!map->indexed || !bucket_detach(map, entry)) {
-                unprepare_map(map);
-            }
-        }
-        map->size--;
-        map->free(map, entry);
-    }
-}
-
-void markdown_core_map_remove_owned(markdown_core_map *map, uint64_t owner) {
-    markdown_core_map_entry **link;
-
-    if (map == NULL) {
-        return;
-    }
-
-    link = &map->refs;
-    while (*link) {
-        markdown_core_map_entry *entry = *link;
-        if (entry->owner != owner) {
-            link = &entry->next;
-            continue;
-        }
-        *link = entry->next;
-        if (entry->next) {
-            entry->next->prev = entry->prev;
-        }
-        if (map->prepared) {
-            if (!map->indexed || !bucket_detach(map, entry)) {
-                unprepare_map(map);
-            }
-        }
-        map->size--;
-        map->free(map, entry);
-    }
-}
-
-markdown_core_map_entry **markdown_core_map_winners(markdown_core_map *map, size_t *count) {
-    markdown_core_map_entry **winners;
-    size_t filled = 0;
-
-    *count = 0;
-    if (map == NULL || !map->size) {
-        return NULL;
-    }
-    if (!prepare_map(map)) {
-        map->oom = 1;
-        return NULL;
-    }
-
-    if (map->indexed) {
-        size_t slot;
-        winners = (markdown_core_map_entry **)map->mem->calloc(map->mem, map->index.size, sizeof(*winners));
-        if (!winners) {
-            map->oom = 1;
-            return NULL;
-        }
-        for (slot = 0; slot < map->index.capacity; slot++) {
-            if (map->index.slots[slot].key) {
-                winners[filled++] = (markdown_core_map_entry *)map->index.slots[slot].value;
-            }
-        }
-    } else {
-        size_t i;
-        size_t unique = 0;
-        for (i = 0; i < map->size; i++) {
-            if (i == 0 || labelcmp(map->sorted[i]->label, map->sorted[i - 1]->label) != 0) {
-                unique++;
-            }
-        }
-        winners = (markdown_core_map_entry **)map->mem->calloc(map->mem, unique, sizeof(*winners));
-        if (!winners) {
-            map->oom = 1;
-            return NULL;
-        }
-        for (i = 0; i < map->size; i++) {
-            if (i == 0 || labelcmp(map->sorted[i]->label, map->sorted[i - 1]->label) != 0) {
-                winners[filled++] = map->sorted[i];
-            }
-        }
-    }
-
-    *count = filled;
-    return winners;
 }
 
 void markdown_core_map_free(markdown_core_map *map) {

@@ -97,48 +97,20 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
     return parser;
 }
 
-void markdown_core_document_resolve_definition_owners(markdown_core_map *map) {
-    markdown_core_map_entry *entry;
-    for (entry = map->refs; entry; entry = entry->next) {
-        if (entry->owner != 0) {
-            entry->owner = ((const markdown_core_node *)(uintptr_t)entry->owner)->id;
-        }
-        /* Unguarded, unlike `owner`: 0 is a real owner (the region before the
-         * first document child), while every entry that reaches adoption was
-         * stamped with the node it was written as. A definition whose node
-         * was lost to allocation failure fails the parse instead, so its
-         * entry never gets here. */
-        entry->definition_node = ((const markdown_core_node *)(uintptr_t)entry->definition_node)->id;
-    }
-}
-
-/* Frees a set of definition tables — the staged ones a failed full commit
- * abandons, or the committed ones it replaces. */
-static void release_definition_tables(markdown_core_mem *mem, markdown_core_definition_table *tables) {
-    size_t s;
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_map_free(tables[s].map);
-        if (tables[s].index) {
-            mem->free(mem, tables[s].index);
-        }
-        memset(&tables[s], 0, sizeof(tables[s]));
-    }
-}
-
 // Full staged reparse: parses the whole stored text with a fresh parser and
 // fresh definition maps, adopts ids from the previous tree, and replaces every
 // piece of document state at once. The staging never touches the committed
 // state, so any failure leaves the document valid at its previous revision.
-/* PARSE. A pure function of (bytes, options): it fills this document's tree,
- * definition maps and footnote index from its own stored text and reads
- * nothing else. No predecessor, no ids — identity is the diff's to assign. */
+/* PARSE. A pure function of (bytes, options): it fills this document's tree
+ * from its own stored text and reads nothing else. The parser's definition
+ * maps serve the parse's own inline phase and die with the parser: the tree
+ * carries every published answer. No predecessor, no ids — identity is the
+ * diff's to assign. */
 static bool document_parse_text(markdown_core_document *document, markdown_core_error **error) {
     markdown_core_parser *parser;
     markdown_core_node *root;
-    markdown_core_definition_table staged[MARKDOWN_CORE_DEFINITION_TABLE_COUNT];
     int total_lines;
     int last_line_length;
-    size_t s;
 
     parser = markdown_core_document_new_parser(document, error);
     if (!parser) {
@@ -166,7 +138,7 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
     if (!root) {
         bool allocation_failed = parser->oom;
         bool internal_error = parser->internal_error;
-        markdown_core_parser_free(parser); // frees the staged maps with it
+        markdown_core_parser_free(parser); // frees the definition maps with it
         markdown_core_ast_set_error(
             error,
             allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
@@ -175,11 +147,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         );
         return false;
     }
-    memset(staged, 0, sizeof(staged));
-    staged[MARKDOWN_CORE_DEFINITIONS_REFERENCES].map = parser->refmap;
-    staged[MARKDOWN_CORE_DEFINITIONS_FOOTNOTES].map = parser->footnote_defs;
-    parser->refmap = NULL;
-    parser->footnote_defs = NULL;
     /* The parser's diagnostics become this document's, converted from the
      * core-side record to the facade type. A conversion that cannot allocate
      * leaves the document with none: a missing underline is not a wrong
@@ -205,26 +172,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         }
     }
     markdown_core_parser_free(parser);
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        // The sink's context is this call's stack frame; the maps outlive it.
-        // Both are present: a parse that lost one is poisoned and returns no
-        // root, so this line is only reached with the tree in hand.
-        staged[s].map->lookup_sink = NULL;
-        staged[s].map->lookup_context = NULL;
-        staged[s].map->lookup_unit = NULL;
-    }
-    if (false) {
-        release_definition_tables(document->mem, staged);
-        markdown_core_node_free(root);
-        markdown_core_ast_set_error(
-            error,
-            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
-            "could not record the document's reference lookups"
-        );
-        return false;
-    }
-
-    memcpy(document->definitions, staged, sizeof(staged));
     document->root = root;
     document->total_lines = total_lines;
     document->last_line_length = last_line_length;
@@ -244,18 +191,10 @@ bool markdown_core_document_diff(
     markdown_core_document *nw,
     markdown_core_error **error
 ) {
-    size_t s;
-
     if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision)) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not match identities");
         return false;
     }
-    // Ids exist now, so definitions recorded against anchor node pointers can
-    // take their ids.
-    for (s = 0; s < MARKDOWN_CORE_DEFINITION_TABLE_COUNT; s++) {
-        markdown_core_document_resolve_definition_owners(nw->definitions[s].map);
-    }
-
     return true;
 }
 
@@ -531,7 +470,6 @@ void markdown_core_document_free(markdown_core_document *document) {
     }
     series_clock_release(document->clock);
     markdown_core_source_release(document->source);
-    release_definition_tables(document->mem, document->definitions);
     free(document);
 }
 
