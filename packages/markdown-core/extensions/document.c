@@ -228,69 +228,51 @@ static bool document_set_text(markdown_core_document *doc, markdown_core_string 
     return true;
 }
 
-/* THE SERIES CLOCK. One cell per series, shared by every document in it and
- * released with the last of them.
- *
- * It exists because two successors of ONE predecessor must not share a
- * revision: a node that each of them changed differently would otherwise
- * carry one (id, revision) with two contents, which the contract says cannot
- * happen. Copying `prev->revision + 1` into both gives them the same number;
- * a moment from the host clock gives them different numbers ALMOST always,
- * and almost is not a contract -- the concurrency runner caught two threads
- * inside one microsecond on its first run under a sanitizer. So the number
- * comes from a counter they share and advance atomically.
- *
- * The atomics are compiler builtins, not <stdatomic.h>: this engine is built
- * as C99 on four toolchains, and MSVC's C11 atomics are not there yet. */
+/* The chain owner's one atomic: handles on a chain may be freed from
+ * different threads, so the refcount is advanced with a compiler builtin
+ * rather than <stdatomic.h> — this engine is built as C99 on four
+ * toolchains, and MSVC's C11 atomics are not there yet. Everything else on
+ * the chain is owned by the current mutation, which the contract serializes
+ * externally. */
 #if defined(_MSC_VER)
 #include <intrin.h>
-static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
-    return (uint64_t)_InterlockedExchangeAdd64((volatile long long *)slot, (long long)amount);
-}
-static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+static uint32_t chain_fetch_add32(volatile uint32_t *slot, int32_t amount) {
     return (uint32_t)_InterlockedExchangeAdd((volatile long *)slot, (long)amount);
 }
 #elif defined(__GNUC__) || defined(__clang__)
-static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
-    return __atomic_fetch_add(slot, amount, __ATOMIC_SEQ_CST);
-}
-static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+static uint32_t chain_fetch_add32(volatile uint32_t *slot, int32_t amount) {
     return __atomic_fetch_add(slot, amount, __ATOMIC_SEQ_CST);
 }
 #else
 /* No builtins: single-threaded targets only, where the plain read-modify-write
  * is already indivisible with respect to anything that could observe it. */
-static uint64_t series_fetch_add(volatile uint64_t *slot, uint64_t amount) {
-    uint64_t previous = *slot;
-    *slot = previous + amount;
-    return previous;
-}
-static uint32_t series_fetch_add32(volatile uint32_t *slot, int32_t amount) {
+static uint32_t chain_fetch_add32(volatile uint32_t *slot, int32_t amount) {
     uint32_t previous = *slot;
     *slot = (uint32_t)((int32_t)previous + amount);
     return previous;
 }
 #endif
 
-static markdown_core_series_clock *series_clock_new(void) {
-    markdown_core_series_clock *clock = (markdown_core_series_clock *)calloc(1, sizeof(*clock));
-    if (clock) {
-        clock->next_revision = 1;
-        clock->refcount = 1;
+static markdown_core_chain *chain_new(void) {
+    markdown_core_chain *chain = (markdown_core_chain *)calloc(1, sizeof(*chain));
+    if (chain) {
+        chain->refcount = 1;
+        chain->generation = 1;
+        chain->next_revision = 1;
     }
-    return clock;
+    return chain;
 }
 
-static markdown_core_series_clock *series_clock_retain(markdown_core_series_clock *clock) {
-    if (clock) {
-        series_fetch_add32(&clock->refcount, 1);
+static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
+    if (chain) {
+        chain_fetch_add32(&chain->refcount, 1);
     }
-    return clock;
+    return chain;
 }
 
-static void series_clock_release(markdown_core_series_clock *clock) {
-    if (clock && series_fetch_add32(&clock->refcount, -1) == 1) {
-        free(clock);
+static void chain_release(markdown_core_chain *chain) {
+    if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
+        free(chain);
     }
 }
 
@@ -349,14 +331,24 @@ static markdown_core_document *document_build(
         return NULL;
     }
     if (prev) {
-        doc->series = prev->series;
+        doc->chain = chain_retain(prev->chain);
+        doc->series = prev->chain->series;
         doc->next_id = prev->next_id;
-        // The series' own counter, advanced once per successor: no two
-        // successors of one predecessor can come away with the same number,
-        // however they are scheduled.
-        series_clock_release(doc->clock);
-        doc->clock = series_clock_retain(prev->clock);
-        doc->revision = doc->clock ? series_fetch_add(&doc->clock->next_revision, 1) : prev->revision + 1;
+        /* The revision is CLAIMED here (the diff below stamps it into nodes)
+         * but the counter advances only on success, so a failed build burns
+         * no number and adjacent published documents stay strictly +1. */
+        doc->revision = prev->chain->next_revision;
+        doc->generation = 0; /* not a head until the build succeeds */
+    } else {
+        doc->chain = chain_new();
+        if (!doc->chain) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+            markdown_core_document_free(doc);
+            return NULL;
+        }
+        doc->chain->series = doc->series; /* minted by the allocator */
+        doc->revision = 0;
+        doc->generation = 1;
     }
     if (markdown.length && !document_set_text(doc, markdown, error)) {
         markdown_core_document_free(doc);
@@ -365,6 +357,13 @@ static markdown_core_document *document_build(
     if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, error)) {
         markdown_core_document_free(doc);
         return NULL;
+    }
+    if (prev) {
+        /* SUPERSESSION, in one place: the successor becomes the chain's head
+         * the moment it exists in full, and the receiver's generation stops
+         * matching in the same assignment. */
+        doc->chain->next_revision++;
+        doc->generation = ++doc->chain->generation;
     }
     return doc;
 }
@@ -432,7 +431,6 @@ static markdown_core_document *markdown_core_document_alloc(
     }
     document->next_id = 1;
     document->revision = 0;
-    document->clock = series_clock_new();
 
     // The address/time/clock mix alone is deterministic for the first
     // document of lockstep-started isolated runtimes (one WASM instance per
@@ -457,8 +455,14 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     document->mem->free(document->mem, document->diagnostics);
+    /* The chain is a system allocation shared across the arena boundary, so
+     * BOTH teardown paths release it. (Its predecessor, the series clock,
+     * was released only on the unpooled path — every pooled document leaked
+     * its cell, and the ASan suites could not see it because they force
+     * pooling off.) */
+    chain_release(document->chain);
     if (document->arena) {
-        // Everything the document owns came from the arena (errors are
+        // Everything else the document owns came from the arena (errors are
         // caller-owned system allocations); one release replaces the
         // per-structure teardown below.
         markdown_core_arena_release(document->arena);
@@ -468,7 +472,6 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (document->root) {
         markdown_core_node_free(document->root);
     }
-    series_clock_release(document->clock);
     markdown_core_source_release(document->source);
     free(document);
 }
@@ -501,20 +504,14 @@ markdown_core_document *markdown_core_document_new(
     return document_build(options, markdown, NULL, markdown_core_mem_default(), true, error);
 }
 
-/* EDIT: hand the document new text.
- *
- *     let new = Document(markdown, document.options)
- *     diff(document, new)
- *     return new
- *
- * It is `edit` and not `commit` because there is nothing pending to commit.
- * A commit is what you do to changes a document has been accumulating, and
- * there is no document and no accumulation: you hand over text and get back
- * the document it describes. The receiver is READ, not consumed: it is the
- * diff's input, it keeps every byte it owns, and it remains the caller's to
- * free. Editing it twice is therefore legal and gives two lines of descent,
- * told apart by their revisions. */
-markdown_core_document *markdown_core_document_edit(
+/* THE MUTATION GUARDS, shared by both mutations. A mutation is legal only
+ * on the chain's live head — a superseded handle fails deterministically,
+ * which is what keeps history linear and lets a consumer destroy and
+ * rebuild derived state in place — and never on a poisoned chain. Argument
+ * validation fails the CALL, not the chain: a rejected argument touched
+ * nothing, is repeatable, and poisoning over it would punish the caller for
+ * a typo. */
+static bool mutation_permitted(
     const markdown_core_document *document,
     markdown_core_string markdown,
     markdown_core_error **error
@@ -522,7 +519,23 @@ markdown_core_document *markdown_core_document_edit(
     clear_error(error);
     if (!document) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
-        return NULL;
+        return false;
+    }
+    if (document->chain->poisoned) {
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "the chain is done: a failed append ended it, and only free remains"
+        );
+        return false;
+    }
+    if (document->generation != document->chain->generation) {
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
+            "the document has been superseded: mutate the successor"
+        );
+        return false;
     }
     if (!markdown.data && markdown.length != 0) {
         markdown_core_ast_set_error(
@@ -530,13 +543,30 @@ markdown_core_document *markdown_core_document_edit(
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "markdown must not be null when length is nonzero"
         );
+        return false;
+    }
+    return true;
+}
+
+/* EDIT: the whole-text mutation.
+ *
+ *     let new = Document(markdown, document.options)
+ *     diff(document, new)
+ *     return new
+ *
+ * It is `edit` and not `commit` because there is nothing pending to commit:
+ * you hand over text and get back the document it describes, and the
+ * successor supersedes the receiver. A failed edit supersedes nothing — the
+ * receiver stays the chain's head and can be queried, walked, and mutated
+ * again. */
+markdown_core_document *markdown_core_document_edit(
+    markdown_core_document *document,
+    markdown_core_string markdown,
+    markdown_core_error **error
+) {
+    if (!mutation_permitted(document, markdown, error)) {
         return NULL;
     }
-    // The receiver is READ, never taken: it is the diff's input and nothing
-    // else, it keeps every byte it owns, and the caller frees it when the
-    // caller is done with it. That is what lets a document be shared across
-    // threads without a lock and edited more than once — two successors of
-    // one predecessor are two lines of descent, told apart by their revisions.
     return document_build(
         &document->options,
         markdown,
@@ -545,6 +575,73 @@ markdown_core_document *markdown_core_document_edit(
         document->arena != NULL,
         error
     );
+}
+
+/* APPEND: the trailing mutation, the streaming plan's hot path. Any byte
+ * split is legal — mid-UTF-8, mid-CRLF, mid-line — because the successor's
+ * projection is defined as a fresh parse of all bytes so far, and bytes are
+ * all the chunk adds.
+ *
+ * This is the D6 fallback implementation: concatenate and rebuild whole.
+ * The warm path replaces it construct by construct from P2 on, behind the
+ * same signature and the same oracle.
+ *
+ * A failed append poisons the chain (D5): the engine cannot say which side
+ * of the failure the chunk landed on, the caller still holds every byte it
+ * ever sent, and recovery is a rebuild — so the chain reports itself done
+ * rather than pretending to a state it cannot prove. */
+markdown_core_document *markdown_core_document_append(
+    markdown_core_document *document,
+    markdown_core_string chunk,
+    markdown_core_error **error
+) {
+    markdown_core_document *successor;
+    uint8_t *joined;
+    size_t length;
+    size_t total;
+    size_t pos = 0;
+    markdown_core_string whole;
+
+    if (!mutation_permitted(document, chunk, error)) {
+        return NULL;
+    }
+    /* One flat buffer of bytes-so-far plus the chunk. An empty chunk still
+     * mutates — the chain advances and the receiver is superseded, exactly
+     * as an edit to identical text would. */
+    length = markdown_core_source_length(document->source);
+    total = length + chunk.length;
+    joined = (uint8_t *)malloc(total ? total : 1);
+    if (!joined) {
+        document->chain->poisoned = true;
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not append the chunk");
+        return NULL;
+    }
+    while (pos < length) {
+        size_t run = 0;
+        const uint8_t *bytes = markdown_core_source_run_at(document->source, pos, &run);
+        memcpy(joined + pos, bytes, run);
+        pos += run;
+    }
+    if (chunk.length) {
+        memcpy(joined + length, chunk.data, chunk.length);
+    }
+    whole.data = joined;
+    whole.length = total;
+
+    successor = document_build(
+        &document->options,
+        whole,
+        document,
+        markdown_core_mem_default(),
+        document->arena != NULL,
+        error
+    );
+    free(joined);
+    if (!successor) {
+        document->chain->poisoned = true;
+        return NULL;
+    }
+    return successor;
 }
 
 uint64_t markdown_core_document_revision(const markdown_core_document *document) {

@@ -38,6 +38,7 @@ MARKDOWN_CORE_3.0 {
     markdown_core_document_dump;
     markdown_core_dump_free;
     markdown_core_document_edit;
+    markdown_core_document_append;
     markdown_core_document_revision;
     markdown_core_document_series;
     markdown_core_document_length;

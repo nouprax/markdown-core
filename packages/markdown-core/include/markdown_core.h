@@ -23,17 +23,19 @@
  * any number of threads are safe by construction; no warmup, external lock,
  * or explicit init call is required.
  *
- * Distinct documents: parse, traversal, dump, edit, and free of *different*
- * documents may run fully concurrently. No two documents share mutable state.
+ * Distinct chains: parse, traversal, dump, mutation, and free on documents
+ * of *different* chains may run fully concurrently. No two chains share
+ * mutable state.
  *
- * A single document: after markdown_core_document_new returns, the document
- * and its nodes are logically immutable through this API. Concurrent
- * read-only access (traversal, accessors, dump) to the same document from
- * multiple threads is safe. markdown_core_document_free is the only mutating
- * operation: the caller must ensure it happens after all other access to that
- * document has completed (external synchronization); no access is allowed
- * afterwards. Node handles and string views borrow from the owning document
- * and end with it.
+ * One chain: a mutation (edit or append) is an exclusive operation on its
+ * chain — all access to any handle on the chain must happen-before the
+ * mutation or happen-after its return, and two mutations must be externally
+ * serialized. Between mutations, concurrent read-only access (traversal,
+ * accessors, dump) to the live head from any number of threads is safe.
+ * markdown_core_document_free of one handle must be externally ordered
+ * against other access to THAT handle; different handles of one chain may be
+ * freed concurrently. Node handles and string views borrow from the owning
+ * document and end with it.
  *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
  * the caller of that call and is not shared with any other thread; release it
@@ -265,7 +267,9 @@ typedef struct markdown_core_optional_bool {
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
-/** NULL is allowed. */
+/** NULL is allowed. On a superseded handle this is the only legal call and
+ * costs O(1) beyond the handle's own teardown; releasing a chain's last
+ * handle reclaims what the chain itself owns. */
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 /** The root of the document's tree: kind DOCUMENT, scoped to the whole text.
  *
@@ -553,32 +557,49 @@ MARKDOWN_CORE_API bool markdown_core_document_dump(
 MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 
 /*
- * Editing
- * =======
+ * Mutation
+ * ========
  *
- * A document owns one Markdown text and its AST. `edit` hands it new text and
- * returns the document that text describes. There is nothing pending and
- * nothing to commit. What changed is asked of the new tree itself: a node's
- * id names the same thing across the edit, and its revision says when its
- * projection last changed — (id, revision) is the whole update protocol.
+ * A document is the live head of a CHAIN. A mutation — `edit` replaces all
+ * text, `append` adds bytes at the end — advances the chain and SUPERSEDES
+ * its receiver: the successor is the new head, the receiver from then on
+ * supports only markdown_core_document_free, and the receiver's node handles
+ * become invalid the moment the next mutation begins (that is a wording of
+ * undefined behavior, not a checked error: a bare node pointer cannot carry
+ * the check). Both mutations are one rule — same chain, same series,
+ * revision strictly +1 on the chain's own counter — and mutating a
+ * superseded handle is a deterministic error, so history is linear and
+ * there is no forking. `append`'s result has the same tree, dump, and
+ * identity rules as an `edit` of the concatenated text; the difference is
+ * cost, and today none: both rebuild whole. Any byte split is legal on
+ * append — mid-UTF-8, mid-CRLF, mid-line.
+ *
+ * What changed is asked of the new tree itself: a node's id names the same
+ * thing across the mutation, and its revision says when its projection last
+ * changed — (id, revision) is the whole update protocol.
  *
  * The text is the raw bytes exactly as given. UTF-8 is ASSUMED AND NEVER
  * VALIDATED: nothing is scanned, nothing is replaced, and nothing is rejected.
  * NUL is replaced with U+FFFD during parsing because CommonMark requires it of
  * canonical text, and nothing else is.
  *
- * An edit that fails reports the error and leaves the document it was called
- * on UNTOUCHED: nothing partial is produced, NULL is returned, and that same
- * document can be queried, walked, and edited again.
+ * Failure is asymmetric, deliberately. A failed `edit` supersedes nothing:
+ * the receiver stays the head and can be queried, walked, and mutated again.
+ * A failed `append` POISONS THE CHAIN — "the chain is done": every further
+ * mutation fails deterministically, only free remains, the caller holds
+ * every byte it ever sent, and recovery is a new chain. A rejected argument
+ * (NULL data with nonzero length, a stale receiver) fails the call, never
+ * the chain.
  */
 
 /**
- * `Document(markdown, options)` — the one entry point.
+ * `Document(markdown, options)` — the one entry point; opens a chain.
  *
- * `options == NULL` selects the defaults and they are fixed for this
- * document's whole series: an edit takes text and not options. The returned
- * document owns all nodes and borrowed string views. On failure, NULL is
- * returned and `*error` is set when `error` is non-NULL.
+ * `options == NULL` selects the defaults and they are fixed for the chain's
+ * whole life: a mutation takes text and not options, and different options
+ * are a new chain with a new series. The returned document owns all nodes
+ * and borrowed string views. On failure, NULL is returned and `*error` is
+ * set when `error` is non-NULL.
  */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     markdown_core_string markdown,
@@ -586,37 +607,50 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     markdown_core_error **error
 );
 
-/** `document.edit(markdown)` — hand the document new text and get back the
- * document that text describes.
+/** `document.edit(markdown)` — the whole-text mutation: hand the chain's
+ * head new text and get back the document that text describes, which
+ * SUPERSEDES the receiver.
  *
  * There is nothing pending to commit, so the operation is an edit, not a
- * commit.
- *
- * READS the receiver and takes nothing: it keeps everything it owns, stays
- * usable, and is freed by whoever holds it. Editing one document twice gives
- * two lines of descent, distinguished by their revisions; nodes from two
- * lines are not comparable, exactly as nodes from two documents are not. The
- * caller owns the returned document. */
+ * commit. The caller owns the returned document; the receiver supports only
+ * free from here on. On a stale or poisoned receiver this is a
+ * deterministic error and nothing changes. */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_edit(
-    const markdown_core_document *document,
+    markdown_core_document *document,
     markdown_core_string markdown,
     markdown_core_error **error
 );
 
-/** This document's place in its series, from a counter the series shares,
- * and strictly greater than its predecessor's; a fresh parse is zero.
+/** `document.append(chunk)` — the trailing mutation: add bytes to the end of
+ * the chain's head and get back the document all bytes so far describe,
+ * which SUPERSEDES the receiver.
  *
- * It is not a count of edits: two successors of one document need different
- * revisions, or a node each changed differently would carry one (id,
- * revision) with two contents. */
+ * Any byte split is legal — mid-UTF-8, mid-CRLF, mid-line — and settled
+ * content never moves: a node the append did not reach keeps its id, its
+ * revision, and its positions. The caller owns the returned document; the
+ * receiver supports only free from here on. On a stale or poisoned receiver
+ * this is a deterministic error and nothing changes; a failure past the
+ * guards poisons the chain (see the Mutation section). */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_append(
+    markdown_core_document *document,
+    markdown_core_string chunk,
+    markdown_core_error **error
+);
+
+/** This document's place in its chain: strictly its predecessor's plus one,
+ * whichever mutation produced it; a fresh parse is zero.
+ *
+ * One counter per chain suffices because history is linear — a superseded
+ * handle cannot mutate, so no two successors of one document ever exist to
+ * need telling apart. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_revision(const markdown_core_document *document);
 
 /** Per-series random salt; nodes from different parses never share identity
  * even when ids collide numerically.
  *
- * A SERIES is one document and every document its edits produce, so an edit
- * inherits its predecessor's salt; ids restart at 1 for each new series,
- * which is what makes the salt load-bearing rather than decorative. */
+ * A SERIES is one chain's identity space: every document on the chain
+ * shares the salt, ids restart at 1 for each new chain, and that is what
+ * makes the salt load-bearing rather than decorative. */
 MARKDOWN_CORE_API uint64_t markdown_core_document_series(const markdown_core_document *document);
 /** The length of the document's text in bytes, not in characters. */
 MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_document *document);

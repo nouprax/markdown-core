@@ -76,11 +76,14 @@ static const markdown_core_node *node_by_id(const markdown_core_node *root, mark
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 typedef HANDLE thread_handle;
+/* CYCLIC: the phase counter is what releases waiters, so the barrier is
+ * reusable — the chain_mutation case crosses it three times per round. */
 typedef struct barrier {
     CRITICAL_SECTION lock;
     CONDITION_VARIABLE released;
     int waiting;
     int threshold;
+    unsigned phase;
 } barrier;
 
 static void barrier_init(barrier *b, int threshold) {
@@ -88,15 +91,19 @@ static void barrier_init(barrier *b, int threshold) {
     InitializeConditionVariable(&b->released);
     b->waiting = 0;
     b->threshold = threshold;
+    b->phase = 0;
 }
 
 static void barrier_wait(barrier *b) {
     EnterCriticalSection(&b->lock);
+    unsigned phase = b->phase;
     b->waiting += 1;
     if (b->waiting >= b->threshold) {
+        b->waiting = 0;
+        b->phase += 1;
         WakeAllConditionVariable(&b->released);
     } else {
-        while (b->waiting < b->threshold) {
+        while (b->phase == phase) {
             SleepConditionVariableCS(&b->released, &b->lock, INFINITE);
         }
     }
@@ -135,11 +142,14 @@ static void thread_join(thread_handle handle) {
 #include <pthread.h>
 
 typedef pthread_t thread_handle;
+/* CYCLIC: the phase counter is what releases waiters, so the barrier is
+ * reusable — the chain_mutation case crosses it three times per round. */
 typedef struct barrier {
     pthread_mutex_t lock;
     pthread_cond_t released;
     int waiting;
     int threshold;
+    unsigned phase;
 } barrier;
 
 static void barrier_init(barrier *b, int threshold) {
@@ -147,15 +157,19 @@ static void barrier_init(barrier *b, int threshold) {
     pthread_cond_init(&b->released, NULL);
     b->waiting = 0;
     b->threshold = threshold;
+    b->phase = 0;
 }
 
 static void barrier_wait(barrier *b) {
     pthread_mutex_lock(&b->lock);
+    unsigned phase = b->phase;
     b->waiting += 1;
     if (b->waiting >= b->threshold) {
+        b->waiting = 0;
+        b->phase += 1;
         pthread_cond_broadcast(&b->released);
     } else {
-        while (b->waiting < b->threshold) {
+        while (b->phase == phase) {
             pthread_cond_wait(&b->released, &b->lock);
         }
     }
@@ -603,112 +617,165 @@ static THREAD_RETURN document_reader_main(void *argument) {
     return THREAD_RESULT;
 }
 
-/* SHARED RECEIVER. An edit reads its document and takes nothing from it, so
- * one document can be edited by several threads at once. What every thread
- * must get back is the SAME TREE over the same content, because the tree is
- * a function of (bytes, options) and of nothing else. The revisions differ,
- * and must: two successors of one predecessor are two lines of descent, and
- * a node each of them changed differently would otherwise carry one
- * (id, revision) with two contents.
- *
- * The receiver is never written here, which is the whole claim. TSan is what
- * checks it. */
-typedef struct shared_edit_worker {
-    barrier *start;
-    const markdown_core_document *base;
-    const char *text;
-    uint8_t *dump;
-    size_t dump_length;
-    uint64_t revision;
+/* ONE CHAIN, THE UNIFIED MUTATION RULE. A mutation is an exclusive
+ * operation on its chain and history is linear: what this case pins under
+ * TSan is exactly the contract's four clauses — externally serialized
+ * mutations from different threads advance one revision line; a stale
+ * handle's mutation attempt fails deterministically and disturbs nothing;
+ * between mutations, every thread may read the live head concurrently and
+ * gets byte-identical dumps; and superseded handles are freed concurrently
+ * from different threads, which is the one place the chain's refcount
+ * atomics are load-bearing. */
+typedef struct chain_mutation_worker {
+    barrier *round;
+    markdown_core_document **head; /* shared slot; written only in the mutation phase */
+    markdown_core_document **retired;
+    int rounds;
+    int index;
     int failed;
-} shared_edit_worker;
+} chain_mutation_worker;
 
-static THREAD_RETURN shared_edit_worker_main(void *argument) {
-    shared_edit_worker *worker = (shared_edit_worker *)argument;
-    markdown_core_error *error = NULL;
-    markdown_core_document *successor;
-
-    barrier_wait(worker->start);
-    successor = markdown_core_document_edit(worker->base, mc_sv(worker->text, strlen(worker->text)), &error);
-    if (!successor) {
-        markdown_core_error_free(error);
-        worker->failed = 1;
-        return THREAD_RESULT;
-    }
-    worker->revision = markdown_core_document_revision(successor);
-    if (!markdown_core_document_dump(successor, &worker->dump, &worker->dump_length, NULL)) {
-        worker->failed = 1;
-    }
-    markdown_core_document_free(successor);
+static THREAD_RETURN free_document_main(void *argument) {
+    markdown_core_document_free((markdown_core_document *)argument);
     return THREAD_RESULT;
 }
 
-static int case_shared_edit(void) {
-    static shared_edit_worker workers[THREAD_COUNT];
+static THREAD_RETURN chain_mutation_worker_main(void *argument) {
+    chain_mutation_worker *worker = (chain_mutation_worker *)argument;
+    static const char *const chunks[] = {"line one\n", "- item\n", "**strong** ", "\n> quote\n"};
+    int round;
+
+    for (round = 0; round < worker->rounds; round++) {
+        int mutator = round % THREAD_COUNT;
+
+        /* Mutation phase: exactly one thread mutates; the barriers on both
+         * sides are the external serialization the contract demands, and
+         * they order the phase against every reader. */
+        barrier_wait(worker->round);
+        if (worker->index == mutator) {
+            markdown_core_document *previous = *worker->head;
+            markdown_core_error *error = NULL;
+            markdown_core_document *successor;
+            const char *chunk = chunks[round % 4];
+            if (round % 3 == 2) {
+                /* Every third round is a whole-text edit: same rule, same
+                 * chain, same revision line as the appends around it. */
+                successor = markdown_core_document_edit(previous, mc_sv("# reset\n", 8), &error);
+            } else {
+                successor = markdown_core_document_append(previous, mc_sv(chunk, strlen(chunk)), &error);
+            }
+            if (!successor) {
+                markdown_core_error_free(error);
+                worker->failed = 1;
+            } else {
+                if (markdown_core_document_revision(successor) != markdown_core_document_revision(previous) + 1) {
+                    fprintf(stderr, "chain_mutation: revision did not advance by one\n");
+                    worker->failed = 1;
+                }
+                worker->retired[round] = previous;
+                *worker->head = successor;
+            }
+        }
+        barrier_wait(worker->round);
+        if (worker->failed) {
+            /* Keep the barrier phases aligned across threads even after a
+             * failure; the loop just stops doing work. */
+            continue;
+        }
+
+        /* Read phase: every thread reads the SAME live head at once, and one
+         * non-mutator pokes the freshly superseded handle to pin the
+         * deterministic stale error. */
+        {
+            markdown_core_document *head = *worker->head;
+            uint8_t *dump = NULL;
+            size_t dump_length = 0;
+            if (!markdown_core_document_dump(head, &dump, &dump_length, NULL) || dump_length == 0) {
+                fprintf(stderr, "chain_mutation: concurrent dump failed\n");
+                worker->failed = 1;
+            }
+            markdown_core_dump_free(dump);
+            if (worker->index == (mutator + 1) % THREAD_COUNT) {
+                markdown_core_document *stale = worker->retired[round];
+                markdown_core_error *error = NULL;
+                if (markdown_core_document_append(stale, mc_sv("x", 1), &error) != NULL || !error) {
+                    fprintf(stderr, "chain_mutation: a stale mutation did not fail deterministically\n");
+                    worker->failed = 1;
+                }
+                markdown_core_error_free(error);
+            }
+        }
+        barrier_wait(worker->round);
+    }
+    return THREAD_RESULT;
+}
+
+static int case_chain_mutation(void) {
+    enum { CHAIN_ROUNDS = 24 };
+    static chain_mutation_worker workers[THREAD_COUNT];
+    static markdown_core_document *retired[CHAIN_ROUNDS];
     thread_handle handles[THREAD_COUNT];
-    barrier start;
+    barrier round;
     markdown_core_error *error = NULL;
-    markdown_core_document *base = NULL;
-    static const char before[] = "# Title\n\nAlpha\n\nBravo\n";
-    static const char after[] = "# Title\n\nAlpha changed\n\nBravo\n";
+    markdown_core_document *head = NULL;
+    markdown_core_document *head_slot;
     int failures = 0;
     int index;
 
-    base = markdown_core_document_new(mc_sv(before, sizeof(before) - 1), NULL, &error);
-    if (!base) {
-        fprintf(stderr, "shared_edit: base document failed to open\n");
+    head = markdown_core_document_new(mc_sv("# Title\n\nAlpha\n", 15), NULL, &error);
+    if (!head) {
+        fprintf(stderr, "chain_mutation: the chain failed to open\n");
         markdown_core_error_free(error);
         return 1;
     }
-    barrier_init(&start, THREAD_COUNT);
+    head_slot = head;
+    barrier_init(&round, THREAD_COUNT);
     for (index = 0; index < THREAD_COUNT; index++) {
         memset(&workers[index], 0, sizeof(workers[index]));
-        workers[index].start = &start;
-        workers[index].base = base;
-        workers[index].text = after;
-        if (thread_spawn(&handles[index], shared_edit_worker_main, &workers[index])) {
-            fprintf(stderr, "shared_edit: failed to spawn thread %d\n", index);
-            markdown_core_document_free(base);
+        workers[index].round = &round;
+        workers[index].head = &head_slot;
+        workers[index].retired = retired;
+        workers[index].rounds = CHAIN_ROUNDS;
+        workers[index].index = index;
+        if (thread_spawn(&handles[index], chain_mutation_worker_main, &workers[index])) {
+            fprintf(stderr, "chain_mutation: failed to spawn thread %d\n", index);
+            markdown_core_document_free(head_slot);
             return 1;
         }
     }
     for (index = 0; index < THREAD_COUNT; index++) {
         thread_join(handles[index]);
     }
-
     for (index = 0; index < THREAD_COUNT; index++) {
-        if (workers[index].failed || !workers[index].dump) {
-            fprintf(stderr, "shared_edit: thread %d reported a violation\n", index);
-            failures += 1;
-            continue;
-        }
-        // Same text in, same tree out, on every thread.
-        if (workers[index].dump_length != workers[0].dump_length ||
-            memcmp(workers[index].dump, workers[0].dump, workers[index].dump_length) != 0) {
-            fprintf(stderr, "shared_edit: thread %d produced a different tree\n", index);
-            failures += 1;
-        }
-        // And a revision of its own: no two successors may share one.
-        for (int other = 0; other < index; other++) {
-            if (workers[other].revision == workers[index].revision) {
-                fprintf(stderr, "shared_edit: threads %d and %d share a revision\n", other, index);
-                failures += 1;
-            }
-        }
-        if (workers[index].revision <= markdown_core_document_revision(base)) {
-            fprintf(stderr, "shared_edit: thread %d did not advance the revision\n", index);
-            failures += 1;
-        }
+        failures += workers[index].failed;
     }
-    // The receiver survived every one of them.
-    if (markdown_core_document_root(base) == NULL) {
-        fprintf(stderr, "shared_edit: the shared receiver did not survive\n");
+    if (markdown_core_document_revision(head_slot) != CHAIN_ROUNDS) {
+        fprintf(stderr, "chain_mutation: the revision line is not strictly +1 per mutation\n");
         failures += 1;
     }
-    for (index = 0; index < THREAD_COUNT; index++) {
-        markdown_core_dump_free(workers[index].dump);
+
+    /* Concurrent frees of different superseded handles: one per thread at a
+     * time, racing on nothing but the chain's refcount. */
+    {
+        int freed = 0;
+        while (freed < CHAIN_ROUNDS) {
+            int batch = CHAIN_ROUNDS - freed;
+            if (batch > THREAD_COUNT) {
+                batch = THREAD_COUNT;
+            }
+            for (index = 0; index < batch; index++) {
+                if (thread_spawn(&handles[index], free_document_main, retired[freed + index])) {
+                    fprintf(stderr, "chain_mutation: failed to spawn a free thread\n");
+                    return failures + 1;
+                }
+            }
+            for (index = 0; index < batch; index++) {
+                thread_join(handles[index]);
+            }
+            freed += batch;
+        }
     }
-    markdown_core_document_free(base);
+    markdown_core_document_free(head_slot);
     return failures;
 }
 
@@ -990,8 +1057,8 @@ int main(int argc, char **argv) {
     if (strcmp(case_name, "documents") == 0) {
         return case_documents();
     }
-    if (strcmp(case_name, "shared_edit") == 0) {
-        return case_shared_edit();
+    if (strcmp(case_name, "chain_mutation") == 0) {
+        return case_chain_mutation();
     }
     if (strcmp(case_name, "dump_small_stack") == 0) {
         return case_dump_small_stack();
