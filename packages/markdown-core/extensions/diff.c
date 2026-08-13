@@ -6,10 +6,11 @@
 
 // THE DIFF: what changed between the previous committed tree and a freshly
 // parsed one. It answers both of the requirements that need it — which node
-// is which across a commit, so a reactive UI's `ForEach(id:)` reattaches row
-// state to the right row, and which nodes changed, so an imperative consumer
-// can update locally. Both fall out of ONE decision: for each node in the new
-// tree, which node in the old tree it IS.
+// is which across an edit, so a reactive UI's `ForEach(id:)` reattaches row
+// state to the right row, and when each node last changed, which it stamps
+// into the node's revision so a consumer can prune its own traversal. Both
+// fall out of ONE decision: for each node in the new tree, which node in the
+// old tree it IS.
 //
 // It was called `adopt`, after its mechanism — the new tree adopting the old
 // tree's identities. The name hid the invariant. A DIFF OF THE SAME TWO TREES
@@ -41,23 +42,9 @@
 
 typedef struct {
     markdown_core_document *document;
-    markdown_core_delta *changes;
     uint64_t new_rev;
     bool failed;
 } diff_ctx;
-
-// THIS WALK EMITS THE DELTA. It used to only annotate nodes, because a second
-// pass -- the footnote index diff -- could still add an ANSWERS part to a node
-// this one had already classified, so nothing could be written down until both
-// had spoken. That pass is gone with the part it reported, so the verdict is
-// final at frame exit and the row is pushed there. A separate postorder walk
-// over the whole tree, plus the scratch field it read, went with it.
-static void mark(diff_ctx *ctx, markdown_core_node *node, uint32_t parts) {
-    node->last_changed_rev = ctx->new_rev;
-    if (ctx->changes && !markdown_core_delta_push(ctx->changes, node->id, parts)) {
-        ctx->failed = true;
-    }
-}
 
 static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
     markdown_core_node *node = root;
@@ -66,59 +53,6 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
     for (;;) {
         node->id = ctx->document->next_id++;
         node->last_changed_rev = ctx->new_rev;
-        if (node->first_child) {
-            node = node->first_child;
-            continue;
-        }
-        while (node != root && !node->next) {
-            node = node->parent;
-        }
-        if (node == root) {
-            break;
-        }
-        node = node->next;
-    }
-
-    if (!ctx->changes) {
-        return;
-    }
-    // Rows postorder, because a consumer building immutable values bottom-up
-    // needs a node's children before the node. A created node differs from
-    // absence in every part it has (9.1).
-    node = root;
-    while (node->first_child) {
-        node = node->first_child;
-    }
-    for (;;) {
-        if (!markdown_core_delta_push(ctx->changes, node->id, markdown_core_ast_parts_present(node))) {
-            ctx->failed = true;
-            return;
-        }
-        if (node == root) {
-            return;
-        }
-        if (node->next) {
-            node = node->next;
-            while (node->first_child) {
-                node = node->first_child;
-            }
-        } else {
-            node = node->parent;
-        }
-    }
-}
-
-// A retired subtree is pushed where it is found: inside its former parent's
-// run, and so before that parent's own row. Deletion is addressed by id, so a
-// retired row needs no position of its own; what this ordering buys is that a
-// consumer drops a parent's dead children before it re-reads that parent.
-static void record_removed_subtree(diff_ctx *ctx, const markdown_core_node *root) {
-    const markdown_core_node *node = root;
-    for (;;) {
-        if (ctx->changes && !markdown_core_delta_push(ctx->changes, node->id, 0)) {
-            ctx->failed = true;
-            return;
-        }
         if (node->first_child) {
             node = node->first_child;
             continue;
@@ -326,8 +260,10 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
         }
 
         if (!top->middle_done) {
+            // Unpaired old children retire silently: deletion has no record
+            // to write, and their ids are simply never minted again. The
+            // cursor still walks past them to reach the suffix run.
             for (size_t i = 0; i < top->middle_old; i++) {
-                record_removed_subtree(ctx, top->oc);
                 top->oc = top->oc->next;
             }
             for (size_t i = 0; i < top->middle_new; i++) {
@@ -340,20 +276,15 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
 
         // Exit: every child is resolved; classify this pair. Field equality
         // is checked here (once) since node fields never change mid-walk.
-        uint32_t parts = markdown_core_ast_parts_changed(top->old, top->nw);
-        if (top->child_list_changed) {
-            parts |= MARKDOWN_CORE_DIFF_CHILDREN;
-        }
-        if (top->descendant_changed) {
-            parts |= MARKDOWN_CORE_DIFF_DESCENDANT;
-        }
-        if (parts) {
-            mark(ctx, top->nw, parts);
+        bool changed = top->child_list_changed || top->descendant_changed ||
+                       markdown_core_ast_projection_changed(top->old, top->nw);
+        if (changed) {
+            top->nw->last_changed_rev = ctx->new_rev;
         } else {
             top->nw->last_changed_rev = top->old->last_changed_rev;
         }
 
-        child_result = parts != 0;
+        child_result = changed;
         have_result = true;
         stack->length--;
     }
@@ -374,10 +305,9 @@ bool markdown_core_diff_trees(
     markdown_core_document *document,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
-    uint64_t new_rev,
-    markdown_core_delta *changes
+    uint64_t new_rev
 ) {
-    diff_ctx ctx = {document, changes, new_rev, false};
+    diff_ctx ctx = {document, new_rev, false};
 
     if (!old_root) {
         // NOTHING PAIRS AGAINST NOTHING, so nothing is hashed. The hash

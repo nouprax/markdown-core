@@ -1,7 +1,7 @@
 /* libFuzzer target for document edits: every input is an edit script
  * (format in tests/support/edit_replay.h) replayed with full per-commit
  * verification — dump equality against a one-shot parse of the shadow text,
- * delta-mirror integrity, and footnote-query equivalence when the script
+ * identity-ledger integrity, and footnote-query equivalence when the script
  * enables footnotes.  Any verification failure aborts, so the fuzzer keeps
  * the input as a crash reproducer; replay one with
  * `fuzz_smoke_runner --script FILE`. */

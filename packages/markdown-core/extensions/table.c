@@ -945,7 +945,7 @@ static void opaque_free(markdown_core_extension *self, markdown_core_mem *mem, m
 }
 
 /* A table's alignments and a row's header bit are what
- * markdown_core_ast_parts_changed compares for these kinds, and they live
+ * markdown_core_ast_projection_changed compares for these kinds, and they live
  * here rather than in the core union -- so without this the diff pairs a
  * left-aligned table with a right-aligned one and hands over the id. */
 static uint64_t table_hash_value(markdown_core_extension *extension, const markdown_core_node *node, uint64_t h) {

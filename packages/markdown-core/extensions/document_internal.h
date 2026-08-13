@@ -36,15 +36,6 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
-struct markdown_core_delta {
-    uint64_t series;
-    uint64_t before;
-    uint64_t after;
-    markdown_core_diff *diffs;
-    size_t count;
-    size_t capacity;
-};
-
 // (hits and misses alike: every lookup is an answer a definition edit can
 // change). Labels are owned NUL-terminated strings; `positions` runs
 // parallel to `labels` and holds each label's entry position inside its
@@ -255,43 +246,32 @@ markdown_core_document *markdown_core_document_open_with_mem(
     markdown_core_error **error
 );
 
-/** Which parts of two same-raw-type nodes' projections differ: VALUE for
- * kind and scalar fields, TEXT for canonical text bytes (9.1). Allocation
- * failure reports "differs" so a revision bump can never be missed. Defined
- * in ast.c next to the dump implementation, which reads the same fields. */
-uint32_t markdown_core_ast_parts_changed(const markdown_core_node *a, const markdown_core_node *b);
+/** Whether two same-raw-type nodes' OWN projections differ: kind and scalar
+ * fields, string-valued fields, and canonical text bytes — child lists and
+ * descendants are the diff walk's to judge. Allocation failure reports
+ * "differs" so a revision bump can never be missed. Defined in ast.c next to
+ * the dump implementation, which reads the same fields. */
+bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b);
 
-/** Which parts a node HAS, which is what a created node carries: every node
- * has VALUE; TEXT belongs to the kinds with canonical text bytes; CHILDREN
- * and DESCENDANT to a node that has children. */
-uint32_t markdown_core_ast_parts_present(const markdown_core_node *node);
-
-/** DIFF: assigns `nw`'s identities from `old` (which may be NULL) and reports
- * what changed. Reads no text; reparses nothing. A pure function of two trees,
+/** DIFF: assigns `nw`'s identities from `old` (which may be NULL) and stamps
+ * revisions. Reads no text; reparses nothing. A pure function of two trees,
  * which is what lets the parse be a pure function of (bytes, options). */
 bool markdown_core_document_diff(
     const markdown_core_document *old,
     markdown_core_document *nw,
-    markdown_core_delta *changes,
     markdown_core_error **error
 );
 
 /** Adopts ids from `old_root` (may be NULL) onto `new_root`, assigns
- * last_changed_rev = new_rev to every added/changed/bubbled node, carries the
- * old revision over for untouched subtrees, and records facade-visible ids
- * into `changes` when non-NULL. Returns false on allocation failure while
- * recording (the trees are left consistent; the caller discards `new_root`).
- */
+ * last_changed_rev = new_rev to every added/changed/bubbled node, and carries
+ * the old revision over for untouched subtrees. Returns false on allocation
+ * failure (the trees are left consistent; the caller discards `new_root`). */
 bool markdown_core_diff_trees(
     markdown_core_document *document,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
-    uint64_t new_rev,
-    markdown_core_delta *changes
+    uint64_t new_rev
 );
-
-/** Appends one row to a delta's `diffs`; plain-malloc grow. */
-bool markdown_core_delta_push(markdown_core_delta *changes, markdown_core_node_id id, uint32_t parts);
 
 /** Creates a parser configured with the document's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set

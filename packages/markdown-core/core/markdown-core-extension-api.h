@@ -337,7 +337,7 @@ typedef markdown_core_node *(*markdown_core_postprocess_block_func)(
  * lives outside the core union MUST implement this: the diff pairs nodes on
  * `subtree_hash`, so two nodes the hash cannot tell apart are paired, and the
  * newcomer is handed the survivor's identity. Mix whatever
- * markdown_core_ast_parts_changed compares for the type — a directive's name
+ * markdown_core_ast_projection_changed compares for the type — a directive's name
  * and attributes, a table's alignments, a row's header bit, a formula's mode.
  * Use markdown_core_hash_mix and markdown_core_hash_bytes so every type is
  * sampled the same way. */

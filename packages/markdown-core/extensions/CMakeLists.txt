@@ -10,7 +10,6 @@ set(LIBRARY_SOURCES
     concrete.c
     concrete.h
     diff.c
-    delta.c
     core-extensions.c
     table.c
     strikethrough.c

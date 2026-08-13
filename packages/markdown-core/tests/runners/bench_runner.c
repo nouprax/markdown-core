@@ -19,7 +19,6 @@
 #include <markdown_core.h>
 
 #include "test_support.h"
-#include "commit_compat.h"
 
 #define BENCH_MAX_REPEATS 32
 #define BENCH_DEFAULT_REPEATS 5

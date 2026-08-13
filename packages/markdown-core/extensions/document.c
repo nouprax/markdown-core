@@ -26,7 +26,7 @@
 
 // A document is a purely local object: it owns its text, its committed tree,
 // and its definition tables, and shares nothing with any other document but
-// its series' revision counter. Every commit is one full parse of the new
+// its series' revision counter. Every edit is one full parse of the new
 // text plus a diff against the previous document (document_build below); the
 // equivalence suite pins that the result always equals a one-shot parse of
 // the same text.
@@ -233,22 +233,21 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
 
 /* DIFF. `new` has a tree and no identities; `old` may be NULL. This assigns
  * `new`'s identities from `old` — the one decision both requirements rest on
- * — and reports what changed. It reads no text and reparses nothing.
+ * — and stamps each node's revision. It reads no text and reparses nothing.
  *
  * A diff of the same two trees is the same diff. That is the invariant the
  * old `adopt` name hid, and keeping parse and diff apart is what makes it
- * statable: a tree is a pure function of (bytes, options), and a delta is a
- * pure function of two trees. */
+ * statable: a tree is a pure function of (bytes, options), and the identity
+ * assignment is a pure function of two trees. */
 bool markdown_core_document_diff(
     const markdown_core_document *old,
     markdown_core_document *nw,
-    markdown_core_delta *changes,
     markdown_core_error **error
 ) {
     size_t s;
 
-    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision, changes)) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not record the delta");
+    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision)) {
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not match identities");
         return false;
     }
     // Ids exist now, so definitions recorded against anchor node pointers can
@@ -390,10 +389,10 @@ static bool document_host_entropy(uint64_t *value) {
 
 /* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
  *
- *     new   = Document(markdown, options)
- *     delta = diff(prev, new)
+ *     new = Document(markdown, options)
+ *     diff(prev, new)
  *
- * That is the whole of a commit. There is no incremental path, no pending
+ * That is the whole of an edit. There is no incremental path, no pending
  * edit, no reuse of the previous tree: the previous document is INPUT to the
  * diff and nothing else, and it is untouched by this call. */
 static markdown_core_document *document_build(
@@ -402,11 +401,9 @@ static markdown_core_document *document_build(
     const markdown_core_document *prev,
     markdown_core_mem *mem,
     bool pooled,
-    markdown_core_delta **changes_out,
     markdown_core_error **error
 ) {
     markdown_core_document *doc;
-    markdown_core_delta *changes = NULL;
 
     doc = markdown_core_document_alloc(options, mem, pooled, error);
     if (!doc) {
@@ -426,24 +423,9 @@ static markdown_core_document *document_build(
         markdown_core_document_free(doc);
         return NULL;
     }
-    if (changes_out) {
-        changes = (markdown_core_delta *)calloc(1, sizeof(*changes));
-        if (!changes) {
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate delta");
-            markdown_core_document_free(doc);
-            return NULL;
-        }
-        changes->series = doc->series;
-        changes->before = prev ? prev->revision : 0;
-        changes->after = doc->revision;
-    }
-    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, changes, error)) {
-        markdown_core_delta_free(changes);
+    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, error)) {
         markdown_core_document_free(doc);
         return NULL;
-    }
-    if (changes_out) {
-        *changes_out = changes;
     }
     return doc;
 }
@@ -537,8 +519,8 @@ void markdown_core_document_free(markdown_core_document *document) {
     }
     document->mem->free(document->mem, document->diagnostics);
     if (document->arena) {
-        // Everything the document owns came from the arena (deltas and errors
-        // are caller-owned system allocations); one release replaces the
+        // Everything the document owns came from the arena (errors are
+        // caller-owned system allocations); one release replaces the
         // per-structure teardown below.
         markdown_core_arena_release(document->arena);
         free(document);
@@ -560,7 +542,7 @@ markdown_core_document *markdown_core_document_open_with_mem(
     markdown_core_error **error
 ) {
     markdown_core_string empty = {NULL, 0};
-    return document_build(options, empty, NULL, mem, pooled, NULL, error);
+    return document_build(options, empty, NULL, mem, pooled, error);
 }
 
 /* `Document(markdown, options)` — the one entry point. */
@@ -578,39 +560,31 @@ markdown_core_document *markdown_core_document_new(
         );
         return NULL;
     }
-    return document_build(options, markdown, NULL, markdown_core_mem_default(), true, NULL, error);
+    return document_build(options, markdown, NULL, markdown_core_mem_default(), true, error);
 }
 
 /* EDIT: hand the document new text.
  *
- *     let new   = Document(markdown, document.options)
- *     let delta = diff(document, new)
- *     return Commit(new, delta)
+ *     let new = Document(markdown, document.options)
+ *     diff(document, new)
+ *     return new
  *
  * It is `edit` and not `commit` because there is nothing pending to commit.
  * A commit is what you do to changes a document has been accumulating, and
  * there is no document and no accumulation: you hand over text and get back
- * the document it describes, plus what changed. The receiver is READ, not
- * consumed: it is the diff's input, it keeps every byte it owns, and it
- * remains the caller's to free. Editing it twice is therefore legal and
- * gives two lines of descent, told apart by their revisions. */
-bool markdown_core_document_edit(
+ * the document it describes. The receiver is READ, not consumed: it is the
+ * diff's input, it keeps every byte it owns, and it remains the caller's to
+ * free. Editing it twice is therefore legal and gives two lines of descent,
+ * told apart by their revisions. */
+markdown_core_document *markdown_core_document_edit(
     const markdown_core_document *document,
     markdown_core_string markdown,
-    markdown_core_commit *out,
     markdown_core_error **error
 ) {
-    markdown_core_document *nw;
-    markdown_core_delta *delta = NULL;
-
     clear_error(error);
-    if (out) {
-        out->document = NULL;
-        out->delta = NULL;
-    }
     if (!document) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INVALID_ARGUMENT, "document must not be null");
-        return false;
+        return NULL;
     }
     if (!markdown.data && markdown.length != 0) {
         markdown_core_ast_set_error(
@@ -618,32 +592,21 @@ bool markdown_core_document_edit(
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
             "markdown must not be null when length is nonzero"
         );
-        return false;
+        return NULL;
     }
     // The receiver is READ, never taken: it is the diff's input and nothing
     // else, it keeps every byte it owns, and the caller frees it when the
     // caller is done with it. That is what lets a document be shared across
     // threads without a lock and edited more than once — two successors of
     // one predecessor are two lines of descent, told apart by their revisions.
-    nw = document_build(
+    return document_build(
         &document->options,
         markdown,
         document,
         markdown_core_mem_default(),
         document->arena != NULL,
-        out ? &delta : NULL,
         error
     );
-    if (!nw) {
-        return false;
-    }
-    if (out) {
-        out->document = nw;
-        out->delta = delta;
-    } else {
-        markdown_core_document_free(nw);
-    }
-    return true;
 }
 
 uint64_t markdown_core_document_revision(const markdown_core_document *document) {

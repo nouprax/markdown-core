@@ -26,9 +26,6 @@
  * Distinct documents: parse, traversal, dump, edit, and free of *different*
  * documents may run fully concurrently. No two documents share mutable state.
  *
- * Deltas are caller-owned plain data: they outlive both documents they
- * describe and are released with markdown_core_delta_free.
- *
  * A single document: after markdown_core_document_new returns, the document
  * and its nodes are logically immutable through this API. Concurrent
  * read-only access (traversal, accessors, dump) to the same document from
@@ -69,17 +66,6 @@ typedef struct markdown_core_document markdown_core_document;
 typedef struct markdown_core_node markdown_core_node;
 #endif
 typedef struct markdown_core_error markdown_core_error;
-typedef struct markdown_core_delta markdown_core_delta;
-
-/** What an edit returns: the successor document and the delta between the
- * document it was called on and that successor.
- *
- * A value, not a handle — release the two members, there is nothing else to
- * free. */
-typedef struct markdown_core_commit {
-    markdown_core_document *document;
-    markdown_core_delta *delta;
-} markdown_core_commit;
 
 /** Node identity, assigned once per series and never reused.
  *
@@ -113,43 +99,6 @@ typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
 } markdown_core_scope;
-
-/** Which components of a node's observable projection differ (9.1).
- *
- * There is no lifecycle tag. A retired node has no parts in `after`, so its
- * `parts` is ZERO, and that is how a consumer tells a deletion from a change.
- * A created node differs from absence in every part it has, so it carries all
- * of them. */
-typedef enum markdown_core_diff_part {
-    /** One of the node's own fields differs, string-valued ones included.
-     *
-     * A link's destination and title, a reference's label, a directive's name
-     * and attributes are all VALUE, not TEXT. Never a kind change — paired
-     * nodes always share a kind, because a changed kind is a retirement and
-     * a creation rather than a difference. */
-    MARKDOWN_CORE_DIFF_VALUE = 1u << 0,
-    /** The node's canonical text differs.
-     *
-     * Only the text-bearing kinds carry this part at all: Text, Code,
-     * CodeBlock, HTML, HTMLBlock, Formula, and FormulaBlock. */
-    MARKDOWN_CORE_DIFF_TEXT = 1u << 1,
-    /** The node's own child list differs. */
-    MARKDOWN_CORE_DIFF_CHILDREN = 1u << 2,
-    /** Something below the node differs.
-     *
-     * Reported together with whatever of the node's own differs, never
-     * instead of it, and carried by every node above a change — so a subtree
-     * whose root the delta does not name holds no change at all. */
-    MARKDOWN_CORE_DIFF_DESCENDANT = 1u << 3
-} markdown_core_diff_part;
-
-/** One node whose projection differs between the delta's two documents. */
-typedef struct markdown_core_diff {
-    markdown_core_node_id markup;
-    /** A bitwise OR of markdown_core_diff_part at a fixed ABI width; zero
-     * means the node is retired. */
-    uint32_t parts;
-} markdown_core_diff;
 
 /** The parser's feature switches.
  *
@@ -608,8 +557,10 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * =======
  *
  * A document owns one Markdown text and its AST. `edit` hands it new text and
- * returns the document that text describes, together with what changed. There
- * is nothing pending and nothing to commit.
+ * returns the document that text describes. There is nothing pending and
+ * nothing to commit. What changed is asked of the new tree itself: a node's
+ * id names the same thing across the edit, and its revision says when its
+ * projection last changed — (id, revision) is the whole update protocol.
  *
  * The text is the raw bytes exactly as given. UTF-8 is ASSUMED AND NEVER
  * VALIDATED: nothing is scanned, nothing is replaced, and nothing is rejected.
@@ -617,15 +568,15 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * canonical text, and nothing else is.
  *
  * An edit that fails reports the error and leaves the document it was called
- * on UNTOUCHED: nothing partial is produced, both members of `out` are NULL,
- * and that same document can be queried, walked, and edited again.
+ * on UNTOUCHED: nothing partial is produced, NULL is returned, and that same
+ * document can be queried, walked, and edited again.
  */
 
 /**
  * `Document(markdown, options)` — the one entry point.
  *
  * `options == NULL` selects the defaults and they are fixed for this
- * document's whole series: a commit takes text and not options. The returned
+ * document's whole series: an edit takes text and not options. The returned
  * document owns all nodes and borrowed string views. On failure, NULL is
  * returned and `*error` is set when `error` is non-NULL.
  */
@@ -636,7 +587,7 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
 );
 
 /** `document.edit(markdown)` — hand the document new text and get back the
- * document that text describes, plus what changed.
+ * document that text describes.
  *
  * There is nothing pending to commit, so the operation is an edit, not a
  * commit.
@@ -645,11 +596,10 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
  * usable, and is freed by whoever holds it. Editing one document twice gives
  * two lines of descent, distinguished by their revisions; nodes from two
  * lines are not comparable, exactly as nodes from two documents are not. The
- * caller owns `out->document` and `out->delta`. */
-MARKDOWN_CORE_API bool markdown_core_document_edit(
+ * caller owns the returned document. */
+MARKDOWN_CORE_API markdown_core_document *markdown_core_document_edit(
     const markdown_core_document *document,
     markdown_core_string markdown,
-    markdown_core_commit *out,
     markdown_core_error **error
 );
 
@@ -673,47 +623,15 @@ MARKDOWN_CORE_API size_t markdown_core_document_length(const markdown_core_docum
 
 /** Identity accessors.
  *
- * `id` is 0 only for a NULL node; `revision` is the commit revision at which
- * the node's own fields, child list, or any descendant last changed — two
- * nodes of one series with equal (id, revision) have identical content. A
+ * `id` is 0 only for a NULL node; `revision` is the document revision at
+ * which the node's own fields, child list, or any descendant last changed —
+ * two nodes of one series with equal (id, revision) have identical content. A
  * pure positional shift never changes a node's revision. */
 MARKDOWN_CORE_API markdown_core_node_id markdown_core_node_get_id(const markdown_core_node *node);
 MARKDOWN_CORE_API uint64_t markdown_core_node_get_revision(const markdown_core_node *node);
 
 /** Canonical parent, or NULL for the root. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_parent(const markdown_core_node *node);
-
-/** Delta accessors. */
-MARKDOWN_CORE_API void markdown_core_delta_revisions(
-    const markdown_core_delta *changes,
-    uint64_t *before,
-    uint64_t *after
-);
-/**
- * Every node whose projection differs, IN ORDER: the new document's postorder
- * over the surviving nodes, so a node always appears after all of its own
- * children, and a retired node (`parts` zero) EMITTED WHERE IT WAS FOUND —
- * inside its former parent's run, and so before that parent's own row, but
- * after any surviving sibling that precedes it.
- *
- * That order is the answer, not a convention. A consumer materializing
- * immutable values bottom-up reads the list once, front to back: every child
- * it needs is already built by the time it reaches a parent, and a parent's
- * dead children are gone before it re-reads that parent's child list. There is
- * no separate ordered-entry table and no id-to-node index, because a list that
- * is already in order carries its own position (9.1).
- *
- * A retired node needs no position of its own — deletion is addressed by id,
- * and ids are never reused — so what this ordering buys is the single pass:
- * the diff walk writes each row at the moment it decides it.
- *
- * The rows belong to the delta and live as long as it does.
- */
-MARKDOWN_CORE_API size_t
-markdown_core_delta_diffs(const markdown_core_delta *changes, const markdown_core_diff **diffs);
-
-/** NULL is allowed. */
-MARKDOWN_CORE_API void markdown_core_delta_free(markdown_core_delta *changes);
 
 #ifdef __cplusplus
 }

@@ -13,9 +13,11 @@ extern "C" {
 /* Shared edit replay harness: drives a document through successive edits
  * next to a shadow copy of the text and verifies, on every edit, that the
  * edited document dumps byte-identically to a one-shot parse of the shadow
- * bytes, and that the delta accounts for every observable node change (an
- * id->revision mirror maintained purely from deltas is compared against a
- * fresh walk).
+ * bytes, and that identity behaves. The identity check is a double walk:
+ * the predecessor and successor trees are walked against a cumulative id
+ * ledger, which pins that ids never resurrect, revisions never regress, and
+ * a node whose (id, revision) did not move has an unchanged own projection
+ * and child list.
  *
  * The equivalence runner and the fuzzing entry points share this harness so
  * every driver checks the same invariants: failures are routed through the
@@ -30,28 +32,34 @@ typedef struct er_text {
     size_t capacity;
 } er_text;
 
-typedef struct er_mirror_entry {
+/* One id the series has ever shown, with the revision it carried when last
+ * seen. Entries are never removed: a retired entry is what makes
+ * resurrection detectable at any later edit, not just the next one. */
+typedef struct er_ledger_entry {
     markdown_core_node_id id;
-    uint64_t revision;
-} er_mirror_entry;
+    uint64_t revision; /* at the last sighting */
+    uint32_t seen;     /* serial of the walk that last saw it */
+    bool alive;        /* present in the current head's tree */
+} er_ledger_entry;
 
-typedef struct er_mirror {
-    er_mirror_entry *entries;
+typedef struct er_ledger {
+    er_ledger_entry *entries; /* sorted by id */
     size_t count;
     size_t capacity;
-} er_mirror;
+    uint32_t walk; /* serial of the latest verification walk */
+} er_ledger;
 
 typedef struct er_replay {
     const char *context;
     markdown_core_document *document;
     er_text shadow;
-    er_mirror mirror;
+    er_ledger ledger;
     const markdown_core_parse_options *options;
     er_report_fn report;
     void *user;
 } er_replay;
 
-/* Parses the empty document and seeds the mirror with its revision-0 root.
+/* Parses the empty document and seeds the ledger from its tree.
  * `options` must stay valid until er_replay_close. */
 int er_replay_open(
     er_replay *replay,
@@ -68,9 +76,9 @@ void er_replay_close(er_replay *replay);
  * `length`, so scripted drivers can locate edit positions with strstr. */
 int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length);
 
-/* Commits the document, folds the delta into the mirror, verifies the mirror
- * against a fresh walk, and compares the document dump with a one-shot parse
- * of the shadow text. */
+/* Edits the document with the whole shadow text, double-walks the predecessor
+ * and successor trees against the ledger, and compares the document dump with
+ * a one-shot parse of the shadow text. */
 int er_replay_commit(er_replay *replay);
 
 /* Deterministic edit-script interpreter: replays `script` as a document edit
@@ -98,23 +106,3 @@ int er_script_replay(const uint8_t *script, size_t length, const char *context, 
 #endif
 
 #endif
-
-/* --- edit-shaped test harness over a whole-text engine -----------------
- *
- * The engine has one operation: `Document(markdown, options)` and
- * `commit(markdown)`, both taking whole text. A great many tests are written
- * as a sequence of byte-range edits, which is what an editor produces and
- * what they are meant to exercise. `mc_doc` keeps that shape where it belongs
- * — in the test — by holding the text itself and handing the WHOLE of it to
- * the engine on every commit. */
-typedef struct mc_doc {
-    markdown_core_document *document;
-    char *text;
-    size_t length;
-    size_t capacity;
-} mc_doc;
-
-bool mc_doc_open(mc_doc *doc, const markdown_core_parse_options *options, markdown_core_error **error);
-bool mc_doc_edit(mc_doc *doc, size_t start, size_t end, const void *bytes, size_t length);
-bool mc_doc_commit(mc_doc *doc, markdown_core_delta **delta, markdown_core_error **error);
-void mc_doc_close(mc_doc *doc);

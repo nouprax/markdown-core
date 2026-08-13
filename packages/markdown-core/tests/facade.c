@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include <markdown_core.h>
-#include "commit_compat.h"
+#include "test_support.h"
 
 static int failures = 0;
 

@@ -44,9 +44,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_get_id;
     markdown_core_node_get_revision;
     markdown_core_node_get_parent;
-    markdown_core_delta_revisions;
-    markdown_core_delta_diffs;
-    markdown_core_delta_free;
   local:
     *;
 };

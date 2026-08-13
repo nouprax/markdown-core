@@ -5,7 +5,7 @@
 #include <string.h>
 
 #include <markdown_core.h>
-#include "commit_compat.h"
+#include "test_support.h"
 
 static int parse_and_release(const uint8_t *source, size_t length) {
     markdown_core_error *error = NULL;

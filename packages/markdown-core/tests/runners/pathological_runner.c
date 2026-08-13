@@ -13,10 +13,9 @@
  * iterative, so 50000-deep trees cannot overflow the stack.
  *
  * The edit_* cases replay adversarial inputs through successive edits via
- * the shared replay harness: every edit checks the edited document
- * dump against a one-shot parse of the same text, folds the delta stream
- * into an id->revision mirror, and (with footnotes enabled) compares
- * dump against a one-shot parse of the same text.  The canonical dump is
+ * the shared replay harness: every edit checks the edited document dump
+ * against a one-shot parse of the same text and double-walks the
+ * predecessor and successor trees against the id ledger.  The canonical dump is
  * iterative like every other traversal; edit-case depths are bounded
  * only by the dump volume the per-commit verification materializes (dump
  * bytes grow quadratically with depth), never by a stack budget.
@@ -834,7 +833,7 @@ static int case_formula_backslash_openers(pc_context *context) {
  *
  * Adversarial structures replayed through successive edits.  The shared
  * harness verifies every commit in full (dump equality against a one-shot
- * parse, delta accounting, footnote-query equivalence), so these cases only
+ * parse, identity double-walk, footnote-query equivalence), so these cases only
  * add the structural probes that document each attack; the CTest TIMEOUT
  * bounds a commit whose cost degenerates against the structure even when it
  * stays correct.
@@ -1097,7 +1096,7 @@ done:
 
 /* 4096 one-line paragraphs behind a toggling unclosed fence at the head:
  * each commit re-kinds the entire suffix, so adoption, the graveyard, and
- * the delta stream churn the whole tree twice per round. */
+ * the revision stamps churn the whole tree twice per round. */
 static int case_edit_fence_gate(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
