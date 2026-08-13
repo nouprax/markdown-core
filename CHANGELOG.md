@@ -6,6 +6,21 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Added (C, Swift, Kotlin, and ECMAScript): `append`. A document is the live
+  head of a chain; `append(chunk)` adds bytes at the end — any byte split is
+  legal, mid-word or mid-character — and returns the document all bytes so
+  far describe. Both mutations are one rule: `edit` and `append` supersede
+  their receiver (which from then on supports only free), the revision
+  advances strictly by one on the chain's own counter, and mutating a
+  superseded handle is a deterministic error, so history is linear and
+  derived state can be destroyed and rebuilt in place. A failed `append`
+  ends the chain; a failed `edit` supersedes nothing. The bindings decode
+  O(changed) per append: an unchanged (id, revision) subtree reuses the
+  previously decoded value outright, so a stream's per-tick decode cost
+  follows the change, not the document. The engine side of `append` is
+  currently the documented fallback — concatenate and rebuild whole — with
+  the warm path arriving construct by construct behind the same signature
+  and oracle.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. `edit`
   returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

@@ -136,12 +136,18 @@ read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
-## Editing
+## Editing and streaming
 
-There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes.
-Options are fixed for a document's whole series — changing what the parser
-means is a new document, not an edit.
+There is no session type. A document is the live head of a CHAIN: `edit`
+hands it whole new text, `append` adds bytes at the end — an LLM stream is
+`document = document.append(chunk)` per tick, and any byte split is legal,
+mid-word or mid-character. Both mutations are one rule: the successor
+supersedes the receiver (which from then on supports only close/free), the
+revision advances strictly by one on the chain's own counter, and mutating a
+superseded handle is a deterministic error, so history is linear. In one
+sentence: a mutation advances the chain, old handles die, decoded values
+live forever. Options are fixed for the chain's whole life — changing what
+the parser means is a new chain.
 
 **The stability an application needs is on the TREE.** An id keeps naming the
 same node until that node is removed, an unchanged node keeps its exact
@@ -158,35 +164,37 @@ text.
 
 ```swift
 let document = try Document("# Hello\n")
-let next = try document.edit("# Hello\nworld again\n")
+let streamed = try document.append("world ")
+let corrected = try streamed.edit("# Hello\nworld again\n")
 ```
 
 ```kotlin
 Document("# Hello\nworld\n").use { document ->
-    document.edit("# Goodbye\nworld\n").use { next -> println(next.root) }
+    document.append(" and more\n").use { next -> println(next.root) }
 }
 ```
 
 ```js
-const document = Document("# Hello\nworld\n");
-const next = document.edit("# Goodbye\nworld\n");
+let document = Document("# Hello\n");
+document = document.append("world");   // append supersedes and returns the next head
 document.close();
-next.close();
 ```
 
 ```c
 markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
-markdown_core_string edited = {(const uint8_t *)"# Goodbye\n", 10};
-markdown_core_document *next = markdown_core_document_edit(document, edited, NULL);
+markdown_core_string chunk = {(const uint8_t *)"world", 5};
+markdown_core_document *next = markdown_core_document_append(document, chunk, NULL);
+markdown_core_document_free(document); /* superseded: free is its one legal call */
 markdown_core_document_free(next);
-markdown_core_document_free(document);
 ```
 
-`edit` READS the document it is called on and takes nothing: it keeps
-everything it owns, stays usable, and is freed by whoever holds it, so editing
-one document twice gives two lines of descent. Any number of documents may be
-parsed and edited concurrently; there is no shared or global parser state.
+A mutation is an exclusive operation on its chain — two mutations must be
+externally serialized, and between them any number of threads may read the
+live head. Documents on different chains never share state, so any number of
+chains parse and mutate concurrently. A failed `edit` supersedes nothing; a
+failed `append` ends the chain ("the chain is done": only free remains, the
+caller still holds every byte it sent, recovery is a new chain).
 
 Every document also reports `diagnostics`: everything an editor should
 underline, which for Markdown is one thing — a directive's `{...}` attribute
