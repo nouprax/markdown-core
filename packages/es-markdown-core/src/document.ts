@@ -37,6 +37,14 @@ interface Built {
     readonly handle: CDocument;
     readonly options: Readonly<Required<ParseOptions>>;
     readonly series: string;
+    /**
+     * At most one UTF-16 code unit: a trailing high surrogate the last
+     * `append` held back because its low half had not arrived. It prepends
+     * to the next append's chunk so a pair split across two appends reaches
+     * the encoder whole; `edit` replaces all text, so it discards this with
+     * everything else.
+     */
+    readonly held: string;
     readonly identities: Map<number, MarkupID>;
     /**
      * Every non-root node of this document by raw id — `node`'s answer, and
@@ -71,6 +79,19 @@ function identity(state: Built, predecessors: ReadonlyMap<number, MarkupID> | nu
  * `MarkupID`, so `node` keeps answering and a later full decode re-issues
  * the same id objects. A pure JavaScript walk over already-built values:
  * reuse spends no native call below the (id, revision) pair that proved it.
+ *
+ * This walk is why per-tick index bookkeeping is O(live nodes) while native
+ * decode stays O(changed): the successor's maps start empty, and eviction
+ * happens by never entering what the new tree does not present. The eviction
+ * itself cannot be skipped — a stale id must not resolve on the successor,
+ * which the retired-id tests pin.
+ *
+ * Deferred: a bounded exact fix needs one of two mechanisms — persistent
+ * maps with structural sharing, so the successor derives its maps from the
+ * predecessor's in O(changed) instead of rebuilding both, or an
+ * engine-provided retirement stream (the deleted delta's ghost), so the
+ * predecessor's maps could be carried whole and only the retired ids
+ * removed.
  */
 function register(state: Built, value: Markup): void {
     const stack: Markup[] = [value];
@@ -100,9 +121,10 @@ function register(state: Built, value: Markup): void {
  * terminating newline into its end. The mismatch declines that one node;
  * its children are still tried one by one. Declining is sound in the other
  * direction too: appended bytes only ever grow extents toward the tail, so
- * an ancestor whose extent held vouches for every descendant's. The
- * per-append decode is therefore O(changed), which is the point of
- * appending.
+ * an ancestor whose extent held vouches for every descendant's. Per append,
+ * native decode and value construction are therefore O(changed) — which is
+ * the point of appending — while the index bookkeeping behind `node` and
+ * the next mirror is O(live nodes) of pure map writes (see `register`).
  *
  * `predecessors` and `mirror` are consulted only for the duration of the
  * walk and then dropped whole: an id the new tree does not present never
@@ -201,6 +223,9 @@ function edit(state: Built, markdown: string): Document {
                 handle,
                 options: state.options,
                 series: state.series,
+                // An edit replaces ALL text: a code unit `append` held back
+                // is discarded with the rest, never spliced into `markdown`.
+                held: "",
                 // Fresh, not copied: the decode walk repopulates both maps,
                 // so they hold exactly what the new tree presents and
                 // nothing a past revision retired.
@@ -213,13 +238,28 @@ function edit(state: Built, markdown: string): Document {
 }
 
 function append(state: Built, chunk: string): Document {
-    const handle = state.handle.append(chunk);
+    // Checked before the boundary's own guard can see it: concatenating the
+    // held unit below would coerce a non-string into a string chunk.
+    if (typeof chunk !== "string") throw new TypeError("markdown must be a string");
+    // Hold-back: each chunk is encoded to UTF-8 on its own, so a surrogate
+    // pair split across two appends would otherwise become U+FFFD twice. A
+    // high surrogate at the end of the effective chunk may be completed by
+    // the next one; it waits here while the rest is appended — possibly
+    // nothing, and an empty append is legal and still advances the chain. A
+    // trailing LOW surrogate is not a split — nothing held can precede its
+    // half, and no later chunk completes it — so it encodes to U+FFFD
+    // exactly as `TextEncoder` defines for the caller's own lone surrogate.
+    const effective = state.held + chunk;
+    const last = effective.charCodeAt(effective.length - 1);
+    const sent = last >= 0xd800 && last <= 0xdbff ? effective.length - 1 : effective.length;
+    const handle = state.handle.append(effective.slice(0, sent));
     return owning(handle, () =>
         build(
             {
                 handle,
                 options: state.options,
                 series: state.series,
+                held: effective.slice(sent),
                 identities: new Map(),
                 index: new Map()
             },
@@ -273,6 +313,7 @@ export function Document(markdown: string, options: ParseOptions = {}): Document
             handle,
             options: normalized.options,
             series: handle.series(),
+            held: "",
             identities: new Map(),
             index: new Map()
         })

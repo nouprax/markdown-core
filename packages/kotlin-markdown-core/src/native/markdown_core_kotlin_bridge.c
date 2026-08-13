@@ -7,7 +7,10 @@
 #include <string.h>
 
 /* MKC5 wire: every payload opens with the magic and a status byte (0 =
- * success data follows, 1 = an error record follows). A success payload
+ * success data follows, 1 = an error record follows, 2 = the mutation
+ * SUCCEEDED but its payload could not be delivered — the receiver is
+ * superseded and its successor is gone, so the chain is done and only
+ * close remains; a status-2 payload carries nothing further). A success payload
  * carries the document handle, its series, and the root's id, revision and
  * extent, then the tree, then the diagnostics — the same shape for an open,
  * an edit, and an append, because a mutation's answer is simply the next
@@ -603,6 +606,22 @@ bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t op
     return finish(&buffer, output, output_length);
 }
 
+/* The mutation succeeded but its payload could not be encoded. The successor
+ * cannot reach the caller through this protocol, and the receiver is already
+ * superseded at the engine, so the honest answer is status 2: the chain is
+ * done, only close remains. The successor's one owner is this call; the tiny
+ * replacement payload can itself fail to allocate, in which case finish
+ * degrades to the hard `false` the wrapper already treats as fatal. */
+static bool deliver_lost(bridge_buffer *buffer, markdown_core_document *successor,
+                         uint8_t **output, size_t *output_length) {
+    markdown_core_document_free(successor);
+    free(buffer->data);
+    memset(buffer, 0, sizeof(*buffer));
+    put_magic(buffer);
+    put_u8(buffer, 2);
+    return finish(buffer, output, output_length);
+}
+
 bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
                                uint8_t **output, size_t *output_length) {
     markdown_core_document *document = document_of(handle);
@@ -632,8 +651,7 @@ bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t le
         encode_diagnostics(&buffer, successor);
     }
     if (buffer.failed) {
-        /* The handle never reaches the caller, so this call owns it. */
-        markdown_core_document_free(successor);
+        return deliver_lost(&buffer, successor, output, output_length);
     }
     return finish(&buffer, output, output_length);
 }
@@ -685,8 +703,7 @@ bool markdown_core_kotlin_append(uint64_t handle, const uint8_t *chunk, size_t l
         encode_diagnostics(&buffer, successor);
     }
     if (buffer.failed) {
-        /* The handle never reaches the caller, so this call owns it. */
-        markdown_core_document_free(successor);
+        return deliver_lost(&buffer, successor, output, output_length);
     }
     return finish(&buffer, output, output_length);
 }

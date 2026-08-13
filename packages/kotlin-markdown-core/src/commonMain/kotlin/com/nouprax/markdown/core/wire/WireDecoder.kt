@@ -13,7 +13,10 @@ import kotlin.jvm.JvmSynthetic
 // cannot skew.
 private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
 
-private fun reader(bytes: ByteArray): WireReader {
+private fun reader(
+    bytes: ByteArray,
+    onDeliveryLost: (() -> Nothing)?,
+): WireReader {
     val reader = WireReader(bytes)
     magic.forEachIndexed { index, expected ->
         val actual = reader.byte()
@@ -24,6 +27,7 @@ private fun reader(bytes: ByteArray): WireReader {
     when (reader.byte().toInt()) {
         0 -> Unit
         1 -> throw reader.error()
+        2 -> if (onDeliveryLost != null) onDeliveryLost() else error("unsupported native bridge status")
         else -> error("unsupported native bridge status")
     }
     return reader
@@ -52,6 +56,12 @@ private fun reader(bytes: ByteArray): WireReader {
 internal fun <Result> decodeWire(
     bytes: ByteArray,
     reuse: Map<ULong, Markup> = emptyMap(),
+    /** Wire status 2: the native mutation succeeded but its payload was
+     * lost, so the receiver is superseded with no reachable successor. The
+     * handler leaves through a parameter for the same reason the payload
+     * leaves through [build]: no wire type crosses a file boundary, so the
+     * wire layer stays out of the Java-visible surface. */
+    onDeliveryLost: (() -> Nothing)? = null,
     build: (
         handle: Long,
         id: MarkupID,
@@ -62,7 +72,7 @@ internal fun <Result> decodeWire(
         diagnostics: kotlin.collections.List<Diagnostic>,
     ) -> Result,
 ): Result {
-    val reader = reader(bytes)
+    val reader = reader(bytes, onDeliveryLost)
     val handle = reader.long()
     val series = reader.ulong()
     val rootId = reader.ulong()

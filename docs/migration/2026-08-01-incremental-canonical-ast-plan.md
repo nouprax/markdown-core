@@ -1371,3 +1371,25 @@ number is the one to drive down first.
   language-neutral.
 - The `NATIVE` coordinate profile's per-binding closed value set (§7.2), which
   each binding declares when it adopts in M7.
+
+## Unpinned ledger growth record
+
+The coverage policy (`specs/coverage/policy.json`) says an `unpinned` entry
+may grow only when an intended change moves what the pinning corpus reaches,
+with the cause recorded here.
+
+- **2026-08-13, Kotlin `Document.kt` lines 2 → 4, functions 2 → 3, and
+  branches 0 → 2 (kotlin-jvm).** The chain-done translation
+  (`deliveryLost()` and the `CHAIN_LOST` guard) fires only when a succeeded
+  native mutation loses its payload to allocation failure — wire status 2,
+  decoder-tested through its handler parameter, but the wrapper path needs
+  bridge fault injection no corpus input reaches.
+- **2026-08-13, `Document.swift` lines 13 → 15 and functions 3 → 4
+  (swift-macos).** P1's
+  revision-pruned decode adds two implicit error-message closures
+  (`reprojectedContent()` and the private `project(_:series:reusing:)`)
+  that fire only on engine fault paths no corpus input can reach — the same
+  class as the two `MarkupBuilder.markup(from:)` message closures already
+  under the entry. Net: two of the previously allowed message closures left
+  the file in P0's delta removal, two arrived with P1's pruning, and the
+  reachable surface stays fully pinned by the value_mirror gate.

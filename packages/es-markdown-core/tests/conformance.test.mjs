@@ -116,6 +116,12 @@ test("conformance: directive labels preserve missing, empty, and populated state
     assert.deepEqual(block.content, []);
 });
 
+test("conformance: the mirror oracle rejects a value it did not build", () => {
+    // The gate's oracle needs the native parse behind a public value; a
+    // foreign object has none to offer.
+    assert.throws(() => unprunedDecode({ kind: "document" }), /not a document value this module built/);
+});
+
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
         const document = Document(testCase.source, testCase.parseOptions);

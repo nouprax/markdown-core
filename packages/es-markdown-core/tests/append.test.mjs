@@ -83,9 +83,11 @@ test("appends: the trailing mutation extends the text and keeps settled identity
 test("appends: per-code-point appends land on the one-shot parse", () => {
     // A JavaScript chunk is a string, and the boundary re-encodes each
     // chunk as valid UTF-8 — a mid-UTF-8 byte split is not expressible from
-    // here, so the engine's own replay gates carry that class. Per code
-    // point is the finest split a string honestly carries; the rocket keeps
-    // its four bytes together while every marker around it is torn apart.
+    // here, so the engine's own replay gates carry that class. A string CAN
+    // still tear a surrogate pair; the one-unit hold-back that heals that
+    // split is pinned by the unicode suite. Here the split is per code
+    // point: the rocket keeps its four bytes together while every marker
+    // around it is torn apart.
     const source = "para *em🚀ph* tail\n";
     const whole = Document(source);
     let document = Document("");

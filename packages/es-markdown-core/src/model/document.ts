@@ -44,6 +44,9 @@ export interface Document extends MarkupBase<"document"> {
      * value and `close` still works, but mutating it again is a
      * deterministic error, so history is linear and there is no forking. A
      * failed edit supersedes nothing: the receiver stays the head.
+     *
+     * `markdown` replaces ALL text: a surrogate half a previous `append`
+     * held back (see there) is discarded with the rest, never spliced in.
      */
     readonly edit: (markdown: string) => Document;
     /**
@@ -54,8 +57,14 @@ export interface Document extends MarkupBase<"document"> {
      * text; the difference is cost. Appended bytes never move settled
      * content, so the successor re-decodes only what changed, and a node the
      * append did not reach is the predecessor's very value object — same
-     * `id`, same `revision`, same `scope`, `===`. Any byte split is legal:
-     * mid-UTF-8, mid-CRLF, mid-line.
+     * `id`, same `revision`, same `scope`, `===`. Any split of the text is
+     * legal, mid-CRLF, mid-line, even between the two halves of a surrogate
+     * pair: a chunk ending in an unpaired high surrogate has that one code
+     * unit held back until the next append completes it, so the parsed text
+     * trails the units handed in by at most one UTF-16 code unit and a
+     * split pair never becomes U+FFFD. A lone LOW surrogate is not a split
+     * — no later chunk can complete it — and encodes to U+FFFD exactly as
+     * `TextEncoder` always did.
      *
      * Supersedes the receiver exactly as `edit` does. A failure past the
      * argument checks poisons the chain — every further mutation fails

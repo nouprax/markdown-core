@@ -118,10 +118,16 @@ a new document).
 `append` produces the same tree, the same dump, and the same identities as an
 `edit` of the concatenated text — the difference is cost. Appended bytes
 never move settled content, so after an append the binding re-decodes only
-what changed: the per-tick decode is O(changed), and a node the append did
-not reach is the predecessor's very value object — same `id`, same
-`revision`, same `scope`, `===`. Any split of the text is legal, mid-word,
-mid-marker, mid-line:
+what changed: native decode and value construction are O(changed) per tick,
+while the JS-side index bookkeeping behind `document.node(id)` is O(live
+nodes) of pure map writes. A node the append did not reach is the
+predecessor's very value object — same `id`, same `revision`, same `scope`,
+`===`. Any split of the text is legal, mid-word, mid-marker, mid-line — even
+between the two halves of a surrogate pair: a chunk ending in an unpaired
+high surrogate has that one code unit held back until the next append
+completes it, so a split emoji never becomes U+FFFD and the parsed text
+trails the appended units by at most one UTF-16 code unit (`edit` replaces
+all text and discards a held unit):
 
 ```js
 import { Document } from "@nouprax/es-markdown-core";

@@ -18,6 +18,10 @@ private class Built(
     val content: kotlin.collections.List<Markup>,
     val diagnostics: kotlin.collections.List<Diagnostic>,
     val index: Map<ULong, Markup>,
+    /** A trailing unpaired high surrogate held back by [Document.append]:
+     * half a code point cannot cross the byte boundary without becoming
+     * U+FFFD, so it waits for its partner in the next chunk. */
+    val heldSurrogate: String = "",
 )
 
 private fun open(
@@ -92,6 +96,13 @@ public class Document private constructor(
      * engine's own wording. */
     private val superseded = AtomicLong(0L)
 
+    private companion object {
+        /** [superseded] sentinel: superseded with no reachable successor. */
+        const val CHAIN_LOST = 2L
+        const val CHAIN_DONE_MESSAGE =
+            "the chain is done: the mutation succeeded but its result could not be delivered; only close remains"
+    }
+
     // Held so the platform's reclaim registration outlives this constructor;
     // see attachNativeCleanup. Never read.
     @Suppress("unused")
@@ -144,12 +155,22 @@ public class Document private constructor(
 
     override fun hashCode(): Int = markupHashCode(this)
 
+    /** Wire status 2: the native mutation succeeded but its payload was
+     * lost. The receiver is superseded at the engine with no reachable
+     * successor, so this chain is over — record that, then surface the
+     * public chain-done error. */
+    private fun deliveryLost(): Nothing {
+        superseded.store(CHAIN_LOST)
+        throw IllegalStateException(CHAIN_DONE_MESSAGE)
+    }
+
     /** The handle a mutation may target: this document must be neither
      * closed nor superseded. The superseded refusal repeats the engine's own
      * wording, because it is the engine's rule enforced one crossing early. */
     private fun mutableHandle(): CDocumentHandle {
         val owned = handle.load()
         check(owned != 0L) { "the document is closed" }
+        check(superseded.load() != CHAIN_LOST) { CHAIN_DONE_MESSAGE }
         check(superseded.load() == 0L) { "the document has been superseded: mutate the successor" }
         return owned
     }
@@ -182,8 +203,10 @@ public class Document private constructor(
     public fun edit(markdown: String): Document {
         val owned = mutableHandle()
         val carriedOptions = options
+        // A held trailing surrogate belongs to the stream this edit replaces
+        // wholesale; it is discarded with the rest of the old text.
         val successor =
-            decodeWire(owned.edit(markdown.encodeToByteArray())) {
+            decodeWire(owned.edit(markdown.encodeToByteArray()), onDeliveryLost = ::deliveryLost) {
                 handle,
                 id,
                 revision,
@@ -224,8 +247,24 @@ public class Document private constructor(
     public fun append(chunk: String): Document {
         val owned = mutableHandle()
         val carriedOptions = options
+        // Half a code point cannot cross the byte boundary: a chunk that ends
+        // in an unpaired high surrogate holds that one code unit back for its
+        // partner in the next chunk (the mutation still happens — an empty
+        // byte chunk advances the chain), so a caller may split its string
+        // anywhere, code points included. An unpaired LOW surrogate has no
+        // partner to wait for and encodes to U+FFFD as it always did.
+        val joined = built.heldSurrogate + chunk
+        val flushed: String
+        val held: String
+        if (joined.isNotEmpty() && joined.last().isHighSurrogate()) {
+            flushed = joined.dropLast(1)
+            held = joined.takeLast(1)
+        } else {
+            flushed = joined
+            held = ""
+        }
         val successor =
-            decodeWire(owned.append(chunk.encodeToByteArray(), built.revision), built.index) {
+            decodeWire(owned.append(flushed.encodeToByteArray(), built.revision), built.index, ::deliveryLost) {
                 handle,
                 id,
                 revision,
@@ -234,7 +273,9 @@ public class Document private constructor(
                 index,
                 diagnostics,
                 ->
-                Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
+                Document(
+                    Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index, held),
+                )
             }
         superseded.store(1L)
         return successor

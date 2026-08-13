@@ -107,6 +107,31 @@ class ChainContractTest {
         assertEquals(1, heading.level)
         document.close()
     }
+
+    @Test
+    fun aSurrogatePairSplitAcrossAppendsReassembles() {
+        val whole = "before \uD83D\uDE00 after\n"
+        var streamed = Document("")
+        // Split INSIDE the emoji: the high surrogate travels alone.
+        val cut = whole.indexOf('\uD83D') + 1
+        streamed = streamed.append(whole.substring(0, cut)).also { streamed.close() }
+        streamed = streamed.append(whole.substring(cut)).also { streamed.close() }
+        Document(whole).use { reference ->
+            assertEquals(MarkupDumper.dump(reference), MarkupDumper.dump(streamed))
+        }
+        streamed.close()
+    }
+
+    @Test
+    fun aHeldSurrogateIsDiscardedByEdit() {
+        var head = Document("")
+        head = head.append("x\uD83D").also { head.close() } // high surrogate held back
+        head = head.edit("replaced\n").also { head.close() }
+        Document("replaced\n").use { reference ->
+            assertEquals(MarkupDumper.dump(reference), MarkupDumper.dump(head))
+        }
+        head.close()
+    }
 }
 
 private fun lineOneOf(document: Document): String {
