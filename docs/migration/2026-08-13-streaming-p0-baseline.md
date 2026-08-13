@@ -39,10 +39,10 @@ sanitizers by construction, since benchmark-label tests are excluded there).
 | footnote_dense (distinct labels) | 3.725 | 9.785 | 22.508 | 56.224 | 144.289 |
 | giant_paragraph (no blank line) | 0.836 | 1.745 | 3.852 | 9.665 | 23.438 |
 | references_appendix (no blank line) | 3.766 | 9.636 | 31.864 | 90.722 | 193.239 |
-| mixed_edit (mid-splice tick over prose) | 0.894 | 1.833 | 3.855 | 7.953 | 16.846 |
+| mixed_edit (mid-splice tick over prose) | 0.881 | 1.782 | 4.022 | 8.005 | 17.251 |
 
-Peak RSS over the whole workload: ~656 MiB (`append_baseline
-peak_rss_kib=671392`), dominated by the per-tick predecessor+successor pair
+Peak RSS over the whole workload: ~642 MiB (`append_baseline
+peak_rss_kib=657280`), dominated by the per-tick predecessor+successor pair
 at the 4 MiB checkpoints.
 
 ## Readings

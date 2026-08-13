@@ -565,19 +565,20 @@ static int bench_append_shape(
             failed = 1;
             break;
         }
+        char splice_saved = text[offset / 2];
         for (tick = -APPEND_WARMUP_TICKS; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
             uint64_t *slot = tick < 0 ? NULL : &samples[tick];
             if (splice_mid) {
                 /* The mixed-edit shape: the tick is a one-byte splice in the
                  * middle of the text instead of a trailing append — the same
                  * full parse today, a whole different path once streaming
-                 * lands, which is why the skeleton keeps it separate. */
-                char saved = text[offset / 2];
-                int result;
-                text[offset / 2] = saved == 'a' ? 'b' : 'a';
-                result = append_tick(&document, text, offset, slot);
-                text[offset / 2] = saved;
-                if (result != 0) {
+                 * lands, which is why the skeleton keeps it separate. The
+                 * byte ALTERNATES across the burst and is restored only
+                 * after it: the document holds the previous tick's text, so
+                 * restoring between ticks would make every tick but the
+                 * first a no-op edit of identical bytes. */
+                text[offset / 2] = text[offset / 2] == 'x' ? 'y' : 'x';
+                if (append_tick(&document, text, offset, slot) != 0) {
                     failed = 1;
                     break;
                 }
@@ -591,6 +592,9 @@ static int bench_append_shape(
                     break;
                 }
             }
+        }
+        if (splice_mid) {
+            text[offset / 2] = splice_saved;
         }
         if (failed) {
             break;
