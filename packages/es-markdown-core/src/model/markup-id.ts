@@ -12,11 +12,21 @@
  *
  * Two ids are the same identity exactly when their `series` and `rawValue`
  * are equal. Within one series the same identity is always the same object,
- * so ids are usable as `Map` keys and React-style list keys.
+ * so ids a document handed out are usable as `Map` keys and React-style list
+ * keys. An id rebuilt from JSON or `structuredClone` is a new object with the
+ * same fields: `document.node` accepts it, reference equality does not.
  */
 export interface MarkupID {
-    /** A `bigint` because a random 64-bit salt does not survive a `number`. */
-    readonly series: bigint;
+    /**
+     * The salt's 64 bits as 16 lowercase hex digits.
+     *
+     * The contract calls a series' identity OPAQUE, and nothing here does
+     * arithmetic on it — it is assigned, compared, and used as a key. Of the
+     * two JavaScript types that carry 64 bits without losing any, `bigint` is
+     * the one `JSON.stringify` throws on, so this is the other. Fixed width,
+     * so two salts order the same way their numbers would.
+     */
+    readonly series: string;
     /** A `number` and not a `bigint`: raw values start at 1 and count up, and
      * the decoder throws rather than hand back one that has outgrown exact
      * integer precision. */

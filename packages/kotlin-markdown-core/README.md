@@ -40,7 +40,7 @@ names both remedies.
 The Android AAR publishes its own narrowly scoped R8 consumer rule for the
 private `JvmNative` linkage boundary. Applications can therefore enable
 release shrinking without adding Markdown Core keep rules; the bridge class
-and its 13 native method names remain stable while every other implementation
+and its three native method names remain stable while every other implementation
 class stays eligible for shrinking, optimization, and obfuscation. If no
 application path uses Markdown Core, R8 may remove the bridge as well.
 
@@ -59,9 +59,9 @@ println(document.content.first()::class.simpleName)
 println(document.dump())
 ```
 
-All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+All parse options default to `true`: smart punctuation, footnotes, tables,
+strikethrough, autolinks, task lists, formulas, directives, cross-links
+(`[[reference]]`), and embeds (`![[reference]]`). The
 `formulas` option controls formula fences and every supported formula delimiter,
 including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The result is an immutable
 value tree whose nodes carry a stable identity (`id`) and a change `revision`;
@@ -70,10 +70,10 @@ absolute start/end line and column — which is deliberately outside equality,
 because position is not content. The package exposes parsing, editing, and
 read-only AST traversal, not rendering or mutation.
 
-`Document` owns a native parse and is `AutoCloseable`: `use { }` it, or hand it
-to `edit`, which moves the parse to the successor. A document that is neither
-closed nor edited is released when it becomes unreachable, but that is a
-backstop, not the contract. Everything it produced — content, scopes,
+`Document` owns a native parse and is `AutoCloseable`: `use { }` it, and
+`use { }` the one `edit` hands back too — a commit leaves two parses open. A
+document that is never closed is released when it becomes unreachable, but
+that is a backstop, not the contract. Everything it produced — content, scopes,
 diagnostics, dump — is a value and stays usable afterwards.
 
 ## Traverse and Inspect
@@ -125,6 +125,7 @@ commit.document.use { next ->
     check(next.content[1].id == document.content[1].id)
     check(next.content[0] == document.content[0])
 }
+document.close()
 ```
 
 `edit` READS the receiver and takes nothing: the document it was called on
@@ -185,11 +186,11 @@ The package intentionally has two complementary ABI gates:
   `api/kotlin-markdown-core.klib.api` freeze the public Kotlin/JVM and
   Kotlin/Native APIs. The KLIB baseline covers both `linuxX64` and
   `macosArm64`.
-- `jvm-abi.txt` freezes the artifact's Java-source-callable bytecode, including
-  JVM descriptors and inheritance. Its class inventory must match the
-  documented JVM API dump exactly, while a Java compiler probe proves that
-  native-bridge and wire-decoder implementation names and members cannot be
-  used from ordinary Java source.
+- `verifyJvmImplementationHidden` and `verifyAndroidImplementationHidden` keep
+  no baseline of their own: each checks that the classes ordinary Java source
+  can actually use match that JVM API dump's inventory exactly, while Java
+  compiler probes prove that native-bridge and wire-decoder implementation
+  names and members cannot be used from ordinary Java source.
 
 Module-internal top-level helpers share one `MarkdownCoreKt` owner through
 Kotlin's multifile-class mechanism, and each is `@JvmSynthetic`, so the facade
@@ -202,13 +203,6 @@ baselines from the repository root:
 
 ```sh
 scripts/gradle.sh :packages:kotlin-markdown-core:updateKotlinAbi
-```
-
-After an intentional change to the JVM bytecode surface, update its separate
-baseline:
-
-```sh
-scripts/gradle.sh :packages:kotlin-markdown-core:verifyJvmAbi -PwriteJvmAbi
 ```
 
 `kotlinTest` checks both baselines and the JVM and Android Java-visibility

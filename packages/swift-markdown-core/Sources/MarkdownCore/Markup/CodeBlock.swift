@@ -29,7 +29,8 @@ public struct CodeBlock: Markup {
     public let fenced: Bool
     /// Whether a fenced block's closing fence was present.
     ///
-    /// Streaming input parsed mid-block reports `false`.
+    /// An unclosed fence runs to the end of the document; an indented block
+    /// is closed by definition.
     public let closed: Bool
 
     /// Dispatches this node to `visitor`'s matching `visit` overload.

@@ -199,10 +199,7 @@ void markdown_core_inline_parser_concrete_reinterpret(
  * markdown_core_inline_concrete_kind). Call exactly on the consume's
  * success path, after the markdown_core_inline_parser_consume_source that
  * advanced past the bytes; a lost record joins the parse's sticky
- * failure, so the parse is discarded rather than published thinner. The
- * spelling's trigger byte must already be a seam barrier (an extension's
- * unconditional special char is one), which is what keeps the inert
- * prefix of an incremental seam fast-forward recordless. */
+ * failure, so the parse is discarded rather than published thinner. */
 void markdown_core_inline_parser_concrete_capture_spelling(
     markdown_core_inline_parser *parser,
     uint8_t kind,

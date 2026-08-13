@@ -29,8 +29,7 @@ function diagnosticCode(raw: number): DiagnosticCode {
 }
 
 /**
- * Releases a native parse that its document never handed on and nobody
- * closed.
+ * Releases a native parse nobody closed.
  *
  * `close` remains the way to release promptly; this is what keeps a dropped
  * document from leaking, and it is never a reason not to close one. The
@@ -45,7 +44,7 @@ const reclaim = new FinalizationRegistry<CDocument>((handle) => handle.free());
 interface Built {
     readonly handle: CDocument;
     readonly options: Readonly<Required<ParseOptions>>;
-    readonly series: bigint;
+    readonly series: string;
     readonly identities: Map<number, MarkupID>;
 }
 
@@ -109,31 +108,50 @@ function build(state: Built): Document {
     return document;
 }
 
+/**
+ * Releases `handle` unless `body` returns.
+ *
+ * A fresh parse belongs to nobody between the call that produced it and the
+ * `reclaim` registration `build` ends with, so a throw inside that window is
+ * the one way to lose one — and WASM linear memory never gives it back. Both
+ * entry points open that window, so both close it here.
+ */
+function owning<Result>(handle: CDocument, body: () => Result): Result {
+    try {
+        return body();
+    } catch (failure) {
+        handle.free();
+        throw failure;
+    }
+}
+
 function edit(state: Built, markdown: string): Commit {
     const { document: handle, delta: deltaPointer } = state.handle.edit(markdown);
     try {
-        const raw = handle.readDelta(deltaPointer);
-        const delta: Delta = {
-            beforeRevision: raw.beforeRevision,
-            afterRevision: raw.afterRevision,
-            diffs: raw.diffs.map((row): Diff => ({
-                markup: identity(state, row.rawValue),
-                parts: diffParts(row.parts)
-            }))
-        };
-        const successor: Built = {
-            handle,
-            options: state.options,
-            series: state.series,
-            // Identity interning carries over: an id names the same node
-            // across the whole series, so the `MarkupID` a consumer held
-            // before the edit is the one the new tree hands back.
-            identities: new Map(state.identities)
-        };
-        for (const row of raw.diffs) {
-            if (row.parts === 0) successor.identities.delete(row.rawValue);
-        }
-        return { document: build(successor), delta };
+        return owning(handle, () => {
+            const raw = handle.readDelta(deltaPointer);
+            const delta: Delta = {
+                beforeRevision: raw.beforeRevision,
+                afterRevision: raw.afterRevision,
+                diffs: raw.diffs.map((row): Diff => ({
+                    markup: identity(state, row.rawValue),
+                    parts: diffParts(row.parts)
+                }))
+            };
+            const successor: Built = {
+                handle,
+                options: state.options,
+                series: state.series,
+                // Identity interning carries over: an id names the same node
+                // across the whole series, so the `MarkupID` a consumer held
+                // before the edit is the one the new tree hands back.
+                identities: new Map(state.identities)
+            };
+            for (const row of raw.diffs) {
+                if (row.parts === 0) successor.identities.delete(row.rawValue);
+            }
+            return { document: build(successor), delta };
+        });
     } finally {
         handle.deltaFree(deltaPointer);
     }
@@ -152,15 +170,12 @@ function edit(state: Built, markdown: string): Commit {
 export function Document(markdown: string, options: ParseOptions = {}): Document {
     const normalized = normalizeOptions(options);
     const handle = CDocument.open(markdown, normalized.flags);
-    try {
-        return build({
+    return owning(handle, () =>
+        build({
             handle,
             options: normalized.options,
             series: handle.series(),
             identities: new Map()
-        });
-    } catch (failure) {
-        handle.free();
-        throw failure;
-    }
+        })
+    );
 }

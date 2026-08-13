@@ -97,7 +97,7 @@ document.dump = () => "replacement";
 document.content[1].scope = { start: { line: 1, column: 1 }, end: { line: 1, column: 1 } };
 
 const identity: MarkupID = document.id;
-const series: bigint = identity.series;
+const series: string = identity.series;
 const rawValue: number = identity.rawValue;
 const revision: number = document.revision;
 const documentScope: Scope = document.scope;

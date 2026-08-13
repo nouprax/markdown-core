@@ -31,8 +31,8 @@
 // `default` is the canonical default options and every bundled extension,
 // exactly like the platform bindings' default ParseOptions. `gfm` is the subset
 // Markdown Core shares with upstream cmark-gfm — this repository's own
-// extensions off, and smart punctuation and HTML-comment stripping off because
-// upstream defaults them off too. It exists so a reader can reproduce what the
+// extensions off, and smart punctuation off because upstream defaults it off
+// too. It exists so a reader can reproduce what the
 // upstream-parity check compares (scripts/check-upstream-parity.mjs), and so
 // any question about "is this ours or GFM's?" can be answered by running both.
 // `gfm-smart` is that same subset with smart punctuation on, which upstream

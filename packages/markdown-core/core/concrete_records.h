@@ -210,11 +210,7 @@ const markdown_core_concrete_record *markdown_core_node_concrete_records(const m
  *
  * `start` and `length` are byte extents in the owning node's content
  * buffer — the exact substrate the inline pass scans, which the node
- * retains. That coordinate is what the incremental seam relies on: a
- * valid seam prefix admits no byte that any capture site records (every
- * record-producing byte is a seam barrier, which the seam gate pins), so
- * a fast-forwarded reparse's vector is complete without transplanting a
- * single record.
+ * retains.
  *
  * Whether delimiter material was consumed as markup is decided at reduce
  * time, not at capture time. `head` and `tail` count the bytes consumed

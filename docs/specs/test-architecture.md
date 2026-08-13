@@ -150,20 +150,20 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
 
 Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
-`robustness`、`sessions`、`consumer`；`ConformanceSuite` 位于独立
+`robustness`、`text`、`edits`、`depth`、`consumer`；`ConformanceSuite` 位于独立
 `MarkdownCoreConformanceTests` target。测试与 consumer package 位于
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
-`sessions` 覆盖 M4 binding 契约:streaming/clean-boundary/kind-change 的
-id-stability、(series, id, revision) 等值语义、空 delta 纯位移、scope
-惰性物化的存活性、footnote queries,以及模拟真实 LLM 消费端的
-conflated-streaming 驱动(多 turn、不规律 render tick、20-30 token 量级
-消息混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界换行之间)、
-turn 边界已定稿块冻结、Σ|delta| 近线性上界断言;三端共用同一确定性
-发生器,突发形状逐条一致)；
-`ConformanceSuite` 另以 per-line append 通过 `MarkupSession` 回放 manifest
-corpus，逐 commit 校验 dump 等价与 delta-mirror 完整性(数组不相交、
-revision 不变式、removed 消失)。
+`edits` 覆盖 `Document.edit` 契约:streaming/clean-boundary/kind-change 的
+id-stability、(series, id, revision) 等值语义、空 delta 纯位移、delta 的
+children-before-parents postorder、被 edit 读过的 document 仍可自答,以及
+模拟真实 LLM 消费端的 conflated-streaming 驱动(多 turn、不规律 render tick、
+20-30 token 量级消息混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界
+换行之间)、turn 边界已定稿块冻结、Σ|delta| 近线性上界断言;三端共用同一确定性
+发生器,突发形状逐条一致)；`depth` 覆盖超出调用栈预算的对抗性嵌套。
+`ConformanceSuite` 另以 per-line append 通过 `Document.edit` 回放 manifest
+corpus，逐 commit 校验 dump 等价与 delta 完整性(id 不重复、delta 未命名的
+节点 revision 不变、retired id 从树中消失)。
 
 Kotlin correctness suites:`api`、`errors`、`unicode`、`ownership`、`robustness`、
 `consumer`、`packaging`；`AstTest` 只由具名 conformance tasks 选择。`commonTest` 复用于 JVM、Android host、Android emulator、

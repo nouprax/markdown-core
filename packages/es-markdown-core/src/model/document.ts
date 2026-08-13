@@ -34,16 +34,18 @@ export interface Document extends MarkupBase<"document"> {
      * Hands this document new text and returns the document that text
      * describes, together with what changed.
      *
-     * SUPERSEDES the receiver: the native parse moves to the successor, so
-     * this document must not be edited again. Its already-extracted values,
-     * scopes, and diagnostics stay valid forever, because they are values.
+     * Reads the receiver and takes nothing from it: this document stays
+     * usable and may be edited again. Editing it twice gives two lines of
+     * descent, told apart by their revisions — and, like nodes from two
+     * separate parses, nodes from two lines are not comparable.
      */
     readonly edit: (markdown: string) => Commit;
     /**
      * Releases the native parse.
      *
-     * Idempotent, and unnecessary after `edit`, which hands the parse to the
-     * successor. Every value this document already produced stays usable
+     * Idempotent, and needed after `edit` as much as before it: an edit takes
+     * nothing away, so a chain of edits leaves one parse per link for its
+     * holder to close. Every value this document already produced stays usable
      * afterwards, because none of them borrow from the parse.
      */
     readonly close: () => void;

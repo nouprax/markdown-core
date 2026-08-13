@@ -7,14 +7,13 @@
 //
 // This was an AVL-balanced rope of windows into refcounted immutable buffers,
 // so that applying an edit built a successor sharing every untouched subtree
-// and predecessors stayed readable at zero copying cost. Nothing needed
-// predecessors: one document is published at a time, reusing its view in place at
-// every commit, so no caller can hold one (incremental-canonical-ast.md 4.2),
-// and a consumer that wants a revision to outlive its commit takes a value
-// copy, which the bindings already do.
+// and predecessors stayed readable at zero copying cost. Nothing needed a
+// predecessor's bytes: an edit is handed the whole new text, so the successor
+// fills a source of its own and never reads the one it was called on, which
+// stays intact for as long as its holder keeps it.
 //
 // What is left is what the engine ever asked of this file: give me the bytes,
-// and apply an edit. Nineteen call sites, all of them one of those two.
+// and apply an edit. Six call sites, all of them in extensions/document.c.
 
 struct markdown_core_source {
     markdown_core_mem *mem;

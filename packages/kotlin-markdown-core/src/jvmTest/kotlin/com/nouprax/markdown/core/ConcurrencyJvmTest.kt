@@ -2,9 +2,34 @@ package com.nouprax.markdown.core
 
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertTrue
+
+class ReclaimJvmTest {
+    @Test
+    fun aDroppedOwnerReachesItsRelease() {
+        // The backstop every unclosed document rests on. It has no assertion
+        // anywhere else, and it is not the JDK's Cleaner — that class arrived
+        // on Android in API 33 and this artifact ships to API 21, so both JVM
+        // targets run a phantom-reference queue of their own.
+        val released = CountDownLatch(1)
+        var owner: Any? = Any()
+
+        // The action captures the latch and never the owner: one that reached
+        // its owner would keep that owner reachable, and never run.
+        attachNativeCleanup(owner!!) { released.countDown() }
+        owner = null
+
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30)
+        while (released.count > 0L && System.nanoTime() < deadline) {
+            System.gc()
+            released.await(50, TimeUnit.MILLISECONDS)
+        }
+        assertTrue(released.count == 0L, "a dropped owner never reached its release")
+    }
+}
 
 class ConcurrencyJvmTest {
     @Test
@@ -80,13 +105,21 @@ class ConcurrencyJvmTest {
             (0 until 8).map { worker ->
                 thread {
                     start.await()
+
+                    // An edit reads its receiver and takes nothing, so each
+                    // predecessor in a chain stays this thread's to close.
+                    fun advance(
+                        previous: Document,
+                        text: String,
+                    ): Document = previous.edit(text).document.also { previous.close() }
+
                     var document = Document("")
                     repeat(25) { iteration ->
-                        document = document.edit("").document
+                        document = advance(document, "")
                         var streamed = ""
                         for (line in source.split("\n").dropLast(1)) {
                             streamed += line + "\n"
-                            document = document.edit(streamed).document
+                            document = advance(document, streamed)
                         }
                         if (document.dump() != reference) {
                             failures.add("worker $worker iteration $iteration diverged")

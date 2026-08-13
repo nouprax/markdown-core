@@ -18,9 +18,9 @@
 bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t options_mask,
                                uint8_t **output, size_t *output_length);
 
-/* Hands `handle` new text. The handle is CONSUMED on every path, success or
- * not, exactly as markdown_core_document_edit consumes its document; the
- * payload carries the successor's handle. */
+/* Hands `handle` new text. Reads it and takes nothing, exactly as
+ * markdown_core_document_edit does: the handle stays valid and releasable,
+ * and the payload carries the successor's own. */
 bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
                                uint8_t **output, size_t *output_length);
 

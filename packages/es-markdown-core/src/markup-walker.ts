@@ -43,8 +43,8 @@ export class MarkupWalker {
      * Walks the document depth-first, dispatching each node to `visitor` in
      * preorder.
      *
-     * Scope-free by construction: a structural visitor neither pays scope
-     * materialization nor depends on anything but the values it is handed.
+     * One dispatch per node, not the callback overload's entering/exiting
+     * pair, and no scope argument: `scope` is a field on the node.
      */
     walk(document: Document, visitor: MarkupVisitor<void>): void;
     /** Walks the document depth-first, supplying each event with the node's

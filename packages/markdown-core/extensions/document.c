@@ -25,11 +25,11 @@
 #include <parser.h>
 
 // A document is a purely local object: it owns its text, its committed tree,
-// its reference map, and its id table, and shares no state with any other
-// document or any global. Commits route through the incremental pipeline in
-// incremental.c when the edits allow it and fall back to a full staged reparse
-// (this file) otherwise; both produce identical observable results, which the
-// equivalence suite enforces.
+// and its definition tables, and shares nothing with any other document but
+// its series' revision counter. Every commit is one full parse of the new
+// text plus a diff against the previous document (document_build below); the
+// equivalence suite pins that the result always equals a one-shot parse of
+// the same text.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -624,7 +624,7 @@ bool markdown_core_document_edit(
     // else, it keeps every byte it owns, and the caller frees it when the
     // caller is done with it. That is what lets a document be shared across
     // threads without a lock and edited more than once — two successors of
-    // one predecessor are two lines of descent, told apart by their moments.
+    // one predecessor are two lines of descent, told apart by their revisions.
     nw = document_build(
         &document->options,
         markdown,

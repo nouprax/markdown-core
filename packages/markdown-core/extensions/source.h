@@ -20,10 +20,10 @@ extern "C" {
  * It was a persistent AVL rope of windows into refcounted immutable buffers,
  * so that an apply built a successor sharing every unedited subtree and
  * predecessors stayed readable however many successors existed. Nothing
- * needed a predecessor. One document is published at a time — the view it reuses
- * in place at every commit — so no caller can hold one (4.2), and a consumer
- * that wants a revision to outlive its commit takes a value copy, which the
- * bindings already do. The two bounds declared here for that design, an
+ * needed a predecessor's bytes: an edit is handed the whole new text, so the
+ * successor fills a buffer of its own and never reads its predecessor's,
+ * which stays intact and readable for as long as its holder keeps it. The
+ * two bounds declared here for that design, an
  * amplification limit on retained buffer bytes and a leaf-merge limit on
  * append copying, described sharing that no longer happens.
  *

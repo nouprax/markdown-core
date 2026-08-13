@@ -107,7 +107,8 @@ test("ast: the document mediates the canonical diagnostic dump", () => {
 
 test("ast: nodes carry identity and their own extent", () => {
     const document = Document("Lead\n\n# Heading\n");
-    assert.equal(typeof document.id.series, "bigint");
+    assert.equal(typeof document.id.series, "string");
+    assert.match(document.id.series, /^[0-9a-f]{16}$/);
     assert.equal(typeof document.id.rawValue, "number");
     assert.equal(typeof document.revision, "number");
     // The extent is a property OF the node, read without a lookup and
@@ -118,6 +119,27 @@ test("ast: nodes carry identity and their own extent", () => {
     });
     // Separate parses never share identity.
     assert.notEqual(Document("# Heading\n").id.series, document.id.series);
+});
+
+test("ast: a document survives JSON and its ids come back usable", () => {
+    const document = Document("# Title\n\nBody with *emphasis* and `code`.\n");
+    // The whole point of rendering the salt as text: no custom serializer,
+    // and a round trip that is the document rather than a picture of it.
+    const revived = JSON.parse(JSON.stringify(document));
+    assert.deepEqual(revived, JSON.parse(JSON.stringify(document)));
+    assert.deepEqual(revived.content[1].scope, document.content[1].scope);
+    // An id read back out of JSON is the same identity, so the live document
+    // still answers for it — as a new object, which is why it is resolved
+    // rather than compared by reference.
+    const heading = revived.content[0];
+    assert.notEqual(heading.id, document.content[0].id);
+    assert.deepEqual(heading.id, document.content[0].id);
+    assert.equal(document.node(heading.id), document.content[0]);
+    // And an id from another series is still not this document's to answer.
+    const other = Document("# Other\n");
+    assert.equal(document.node(JSON.parse(JSON.stringify(other)).content[0].id), null);
+    other.close();
+    document.close();
 });
 
 test("unicode: UTF-8 survives native document release", () => {

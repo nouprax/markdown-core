@@ -122,13 +122,11 @@ export class CDocument {
      * Hands this document new text and returns the successor together with
      * the caller-owned delta pointer (release with `deltaFree`).
      *
-     * CONSUMES the receiver on every path, success or not: the native edit
-     * clears it either way, so this instance stops owning anything the
-     * moment the call is made.
+     * READS the receiver and takes nothing: the handle stays this object's,
+     * it may be edited again, and `free` is still the only thing that
+     * releases it.
      */
     edit(source: string): { readonly document: CDocument; readonly delta: number } {
-        // The native edit reads this document and takes nothing: the handle
-        // stays this object's, and `close` is what releases it.
         const owned = this.requirePointer();
         const scratch = decoder.scratchPointer;
         const commit = withSource(source, (bytes, length) => {
@@ -186,10 +184,14 @@ export class CDocument {
         return rows;
     }
 
-    series(): bigint {
+    /** The series salt as 16 lowercase hex digits. */
+    series(): string {
         // The WASM boundary delivers i64 as a signed bigint; the salt is an
-        // unsigned 64-bit value.
-        return BigInt.asUintN(64, native.es_document_series(this.requirePointer()));
+        // unsigned 64-bit value, and it leaves this class as the opaque token
+        // the contract calls for rather than a number nobody may do
+        // arithmetic on.
+        const raw = BigInt.asUintN(64, native.es_document_series(this.requirePointer()));
+        return raw.toString(16).padStart(16, "0");
     }
 
     /** Reads one delta's rows, in the order the facade defines. */
@@ -229,8 +231,8 @@ export class CDocument {
         native.es_delta_free(delta);
     }
 
-    /** Releases the native parse. Idempotent, and a no-op once `edit` has
-     * handed the parse to a successor. */
+    /** Releases the native parse. Idempotent; an edit hands nothing away, so
+     * every document in a chain of edits still reaches this. */
     free(): void {
         if (!this.pointer) return;
         native.es_document_free(this.pointer);

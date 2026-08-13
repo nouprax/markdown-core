@@ -43,6 +43,7 @@ private fun open(
  * ```kotlin
  * Document("# Title").use { document ->
  *     val commit = document.edit("# Renamed")
+ *     commit.document.close()
  * }
  * ```
  *
@@ -56,8 +57,8 @@ private fun open(
  * hold them, put them in a view model, hand them to another thread. What this
  * class owns is the native parse, which [edit] needs in order to keep
  * identities stable across revisions — and which [close] releases. A document
- * that is neither closed nor edited is released once it becomes unreachable,
- * but that is a backstop, not the contract.
+ * that is never closed is released once it becomes unreachable, but that is a
+ * backstop, not the contract.
  */
 public class Document private constructor(
     private val built: Built,
@@ -190,10 +191,11 @@ public class Document private constructor(
     /**
      * Releases the native parse.
      *
-     * Idempotent, and unnecessary after [edit], which hands the parse to the
-     * successor. Every value this document already produced — its content,
-     * scopes, diagnostics, and dump — stays usable afterwards, because none
-     * of them borrow from the parse.
+     * Idempotent, and needed after [edit] as much as before it: an edit takes
+     * nothing away, so a chain of edits leaves one parse per link for its
+     * holder to close. Every value this document already produced — its
+     * content, scopes, diagnostics, and dump — stays usable afterwards,
+     * because none of them borrow from the parse.
      */
     override fun close() {
         val owned = handle.exchange(0L)

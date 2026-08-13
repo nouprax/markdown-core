@@ -5,9 +5,9 @@ export interface NativeExports extends WebAssembly.Exports {
     /** Parses `bytes` and returns the document, or 0 with `*errorOutput`
      * set. */
     es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
-    /** Hands `document` new text. CONSUMES the document on every path;
-     * `commitOutput` receives the successor document and the delta as two
-     * caller-owned pointers. */
+    /** Hands `document` new text and takes nothing from it; `commitOutput`
+     * receives the successor document and the delta as two caller-owned
+     * pointers. */
     es_document_edit(
         document: number,
         bytes: number,
@@ -34,8 +34,6 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_scope(node: number, output: number): void;
     es_node_html_comment(node: number): number;
     es_error_code(error: number): number;
-    /** Writes the error's four absolute scope coordinates to `output`;
-     * answers 0 when the error carries no scope. */
     es_error_free(error: number): void;
     es_node_kind(node: number): number;
     es_node_first_child(node: number): number;
@@ -53,9 +51,9 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_table_column_count(node: number): number;
     es_node_table_alignment(node: number, index: number): number;
     es_node_table_row_header(node: number): number;
-    /** Writes i32 mode, one reserved u32, and u32 name/attributes
-     * (data, length) view pairs to `output` in one crossing. Label topology
-     * is carried exclusively by canonical child records. */
+    /** Writes i32 mode, u32 has-attributes, the name's (data, length) view
+     * pair, and the u32 attribute count to `output` in one crossing. Label
+     * topology is carried exclusively by canonical child records. */
     es_node_directive_properties(node: number, output: number): void;
     /** Writes one attribute pair to `output` as u32 key data, u32 key length,
      * u32 value data, u32 value length; 0 when the index is out of range. */
@@ -82,11 +80,11 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     }
     const memoryHolder: { memory?: WebAssembly.Memory } = {};
     // Supplies time (u64 nanoseconds at timePtr) for the engine's
-    // per-session identity entropy; any clock id gets the same source, and
+    // per-series identity entropy; any clock id gets the same source, and
     // nothing else in the engine consumes time. Each call advances the
     // reported value a full second past the previous call: the entropy mix
     // survives libc only at seconds granularity, and a freed-and-reallocated
-    // session at the same address within the same wall-clock second would
+    // document at the same address within the same wall-clock second would
     // otherwise mint the same series. The clock is only the fallback layer
     // of the seed; random_get below carries the cross-runtime uniqueness
     // contract.
@@ -100,7 +98,7 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
             new DataView(memory.buffer).setBigUint64(timePtr, lastNanoseconds, true);
             return 0;
         },
-        // Backs the engine's getentropy: per-session series must stay
+        // Backs the engine's getentropy: a series salt must stay
         // collision-resistant across isolated runtimes (workers, processes),
         // where every deterministic input — allocator state, coarse clocks —
         // repeats exactly.

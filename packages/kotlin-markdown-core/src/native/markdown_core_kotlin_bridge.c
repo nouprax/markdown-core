@@ -304,10 +304,18 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         put_u8(buffer, has_attributes ? 1u : 0u);
         if (has_attributes) {
             markdown_core_node_directive_attribute_count(node, &count);
+            if (count > INT32_MAX) {
+                buffer->failed = true;
+                return;
+            }
             put_u32(buffer, (uint32_t)count);
             for (index = 0; index < count; index++) {
+                /* The count is already on the wire. Stopping short would
+                 * leave the decoder reading the next record's bytes as a
+                 * string length, so a disagreement fails the payload. */
                 if (!markdown_core_node_directive_attribute_at(node, index, &first, &second)) {
-                    break;
+                    buffer->failed = true;
+                    return;
                 }
                 put_string(buffer, first, true);
                 put_string(buffer, second, true);
@@ -333,22 +341,26 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
         markdown_core_node_embed_reference(node, &first);
         put_string(buffer, first, true);
         break;
+    /* A destination, a source and a definition's destination are always
+     * written — an inline link always spells its `(...)` — so they go on the
+     * wire as present. Only the titles are optional, and only they carry the
+     * absent marker; the decoder reads the pairing exactly that way. */
     case MARKDOWN_CORE_KIND_LINK:
         markdown_core_node_link_properties(node, &first, &second);
-        put_string(buffer, first, first.data != NULL);
+        put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);
         put_child_ids(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_IMAGE:
         markdown_core_node_image_properties(node, &first, &second);
-        put_string(buffer, first, first.data != NULL);
+        put_string(buffer, first, true);
         put_string(buffer, second, second.data != NULL);
         put_child_ids(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
         markdown_core_node_reference_definition_properties(node, &first, &second, &third);
         put_string(buffer, first, true);
-        put_string(buffer, second, second.data != NULL);
+        put_string(buffer, second, true);
         put_string(buffer, third, third.data != NULL);
         break;
     case MARKDOWN_CORE_KIND_LINK_REFERENCE:

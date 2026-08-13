@@ -22,7 +22,7 @@ bytes back. This matches cmark, whose `VALIDATE_UTF8` is opt-in and whose
 default passes an invalid sequence through untouched, and goldmark, which
 reads bytes and assumes UTF-8 without checking.
 
-It is recorded here because the project had departed from it. The session
+It is recorded here because the project had departed from it. The engine
 turned `MARKDOWN_CORE_OPT_VALIDATE_UTF8` on unconditionally, with no statement
 of why, which made every parse lossy on input that was not UTF-8 — and neither
 external parity oracle could see it, because both feed UTF-8 only. The

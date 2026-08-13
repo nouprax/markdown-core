@@ -179,6 +179,7 @@ Document("# Hello\nworld\n").use { document ->
 ```js
 const document = Document("# Hello\nworld\n");
 const { document: next, delta } = document.edit("# Goodbye\nworld\n");
+document.close();
 next.close();
 ```
 
@@ -187,17 +188,17 @@ markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
 markdown_core_string edited = {(const uint8_t *)"# Goodbye\n", 10};
 markdown_core_commit commit;
-markdown_core_document_edit(&document, edited, &commit, NULL);
+markdown_core_document_edit(document, edited, &commit, NULL);
 /* rows via markdown_core_delta_diffs; each carries an id and its parts */
 markdown_core_delta_free(commit.delta);
 markdown_core_document_free(commit.document);
+markdown_core_document_free(document);
 ```
 
-`edit` SUPERSEDES the document it is called on: the native parse moves to the
-successor. Values already extracted from the predecessor — its nodes, scopes,
-diagnostics, and dump — stay valid forever, because they are values. Any
-number of documents may be parsed and edited concurrently; there is no shared
-or global parser state.
+`edit` READS the document it is called on and takes nothing: it keeps
+everything it owns, stays usable, and is freed by whoever holds it, so editing
+one document twice gives two lines of descent. Any number of documents may be
+parsed and edited concurrently; there is no shared or global parser state.
 
 Every document also reports `diagnostics`: everything an editor should
 underline, which for Markdown is one thing — a directive's `{...}` attribute
@@ -205,9 +206,11 @@ block that did not parse. Every other "wrong" construct is a defined outcome
 of the standard semantics rather than a failure, and reporting those would be
 reporting Markdown itself.
 
-The language-neutral contract — identity and ordering rules, delta semantics,
-and the incremental cost model — is specified in
-[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md).
+The language-neutral AST contract is
+[`docs/specs/canonical-ast.md`](docs/specs/canonical-ast.md).
+[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md)
+is a frozen design contract for a later milestone; no current public API
+implements it.
 
 ## Repository layout
 
@@ -216,7 +219,6 @@ and the incremental cost model — is specified in
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
-- `samples`: sample consumers and integration examples.
 - `scripts`: repository build, formatting, lint, audit, and consumer-check entry points.
 
 ## Build

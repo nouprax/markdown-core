@@ -10,8 +10,8 @@ class WalkerTraversalTest {
         val first = Document("First\n\nSecond\n")
         first.edit("First\n\nSecond\n\nThird\n").document.close()
 
-        // Editing handed the native parse to the successor, which has since
-        // been released. Both overloads still traverse the predecessor,
+        // Editing left the predecessor's parse alone and the successor's is
+        // now released. Both overloads still traverse the predecessor,
         // because its tree and its scopes were copied out at parse time.
         val recording = RecordingVisitor()
         MarkupWalker.walk(first, recording)
@@ -31,7 +31,7 @@ class WalkerTraversalTest {
     fun adversarialNestingWalksAndDumpsBeyondTheCallStackBudget() {
         // 3072 nested quotes overflowed the recursive walker on the default
         // JVM stack; the explicit frame stack must keep walking and the
-        // delta path of an incremental commit working at 4096. Walking is
+        // delta path of an edit working at 4096. Walking is
         // stack-bound but dumping is heap-bound — the canonical dump's
         // per-line prefixes make dump bytes quadratic in depth, beyond the
         // Android instrumentation heap at this depth — so full-depth
@@ -92,8 +92,8 @@ class ScopeOwnershipTest {
             first.edit("First\n\nSecond\n\nThird\n").document.close()
             retained = first
         }
-        // There is nothing to materialize: a document builds its scope table
-        // at parse time, so it answers whatever happened to its series since.
+        // There is nothing to materialize: a node carries its own scope from
+        // parse time, so it answers whatever happened to its series since.
         assertEquals(
             3,
             retained.content[1]

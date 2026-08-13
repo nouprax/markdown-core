@@ -3,7 +3,11 @@
 Status: **frozen design contract** for the next Markdown Core
 self-contained-AST and stable-trace session milestone, revised 2026-08-03. No
 current public API implements this target. Shipping requires every
-conformance, failure-injection, and complexity gate in this document.
+conformance, failure-injection, and complexity gate in this document. One
+decision has since gone the other way: `937d184` put `scope` back onto every
+node value, so 7.2's "a node therefore holds no coordinate" and the
+extent-materialization prohibitions in 11.2 and 16 no longer describe the
+shipped API.
 
 Companion contracts:
 

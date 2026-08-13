@@ -84,8 +84,8 @@ markdown_core_document *es_document_open(
     return markdown_core_document_new(markdown, &options, error);
 }
 
-/* Hands `document` new text. CONSUMES it on every path, success or not;
- * `out` receives the successor document and the delta, each caller-owned. */
+/* Hands `document` new text and takes nothing from it; `out` receives the
+ * successor document and the delta, each caller-owned. */
 int32_t es_document_edit(
     markdown_core_document *document,
     const uint8_t *bytes,

@@ -6,7 +6,7 @@ package com.nouprax.markdown.core
 /** Produces the canonical diagnostic tree for immutable Markdown markup. */
 public object MarkupDumper {
     /** Returns the canonical diagnostic dump for [document] and its
-     * descendants, resolving absolute scopes through the snapshot. */
+     * descendants, with each scope as the node carries it. */
     public fun dump(document: Document): String = dump(document, document)
 
     /**

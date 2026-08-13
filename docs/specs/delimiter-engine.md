@@ -649,7 +649,6 @@ scaling；它不能替代 deterministic operation invariant。
   typed reducers、source span/consume APIs。
 - `extensions/`：Strikethrough、Formula、Directive、CrossLink 与 Embed 全部使用同一
   delimiter engine；Autolink 使用同一 transactional source cursor 与显式 seam metadata。
-- `tests/runners/delimiter_engine_runner.c`：数据结构、事务性与 deterministic work invariants。
 - `tests/runners/extension_order_runner.c`：全部 bundled delimiter-extension attach permutations。
 
 旧 pointer stack、sentinel delimiter kinds、phase-two owner lookup、raw cursor setter、

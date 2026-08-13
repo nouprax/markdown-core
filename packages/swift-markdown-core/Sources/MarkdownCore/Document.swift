@@ -128,7 +128,7 @@ public final class Document: Markup, @unchecked Sendable {
     public var series: UInt64 { id.series }
 
     let handle: OpaquePointer
-    /// Every node of this document by identity, so an answer addressed by
+    /// Every node below the root by identity, so an answer addressed by
     /// ``MarkupID`` can hand back the node value rather than the bare id.
     private let index: [UInt64: any Markup]
     /// Parses `markdown` and returns a self-contained document; throws

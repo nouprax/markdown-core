@@ -40,9 +40,8 @@
  *
  * Errors: a markdown_core_error returned through an out-parameter is owned by
  * the caller of that call and is not shared with any other thread; release it
- * with markdown_core_error_free (NULL is allowed). Dump buffers and scope
- * tables are owned by the caller and released with their matching free
- * functions (NULL is allowed).
+ * with markdown_core_error_free (NULL is allowed). Dump buffers are owned by
+ * the caller and released with markdown_core_dump_free (NULL is allowed).
  *
  * No other process-global lifecycle exists: this contract is complete, and
  * bindings must not rely on undocumented conventions.
@@ -654,7 +653,7 @@ MARKDOWN_CORE_API bool markdown_core_document_edit(
     markdown_core_error **error
 );
 
-/** The moment this document was produced, from the host's monotonic clock,
+/** This document's place in its series, from a counter the series shares,
  * and strictly greater than its predecessor's; a fresh parse is zero.
  *
  * It is not a count of edits: two successors of one document need different

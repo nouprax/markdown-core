@@ -135,9 +135,9 @@ private fun deepEditNs(source: String): Long {
 // `deep_scope_materialization` workload, whose subject no longer exists: a
 // snapshot resolved scopes lazily against its session, so the first request
 // was a measurable event. Scopes now arrive with the tree in one payload, and
-// `scope` is a map lookup. The cost did not disappear — it moved into the
-// parse boundary — so the workload that measures it is a deep parse, under a
-// name that says so.
+// `scope` is a field on the node. The cost did not disappear — it moved into
+// the parse boundary — so the workload that measures it is a deep parse,
+// under a name that says so.
 private fun deepBuildBenchmark(
     workload: String,
     source: String,
@@ -179,8 +179,8 @@ private fun streamBenchmark(
                 val previous = document
                 document = document.edit(streamed).document
                 // The edit reads its receiver and takes nothing, so the loop
-                // ends the predecessor. The Cleaner is not a backstop here: a
-                // native parse costs memory the JVM collector cannot see.
+                // ends the predecessor. Unreachability is not a backstop here:
+                // a native parse costs memory the JVM collector cannot see.
                 previous.close()
             }
             document.scope

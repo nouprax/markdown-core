@@ -27,9 +27,9 @@ console.log(document.dump());
 console.log(MarkupDumper.dump(document, document.content[0]));
 ```
 
-All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+All parse options default to `true`: smart punctuation, footnotes, tables,
+strikethrough, autolinks, task lists, formulas, directives, cross-links
+(`[[reference]]`), and embeds (`![[reference]]`). The
 `formulas` option controls every formula form, including dollar and LaTeX
 delimiters and `formula` fenced code. Pass only the options you want to
 override.
@@ -38,6 +38,14 @@ override.
 TypeScript properties. The JavaScript objects are not runtime-frozen. The
 package exposes parsing, editing, and AST traversal, not rendering or AST
 mutation.
+
+The tree is a value all the way down, so `JSON.stringify` serializes it,
+`structuredClone` copies it, and `postMessage` carries it to a worker. Nothing
+on a node needs a custom serializer: `MarkupID.series` is 16 hex digits rather
+than a `bigint` so that an id survives the trip intact. What comes back is a
+new object carrying the same two fields, not the interned one — so hand it to
+`document.node(id)` or compare the fields. Reference equality and `Map`
+lookups work for the ids a live document handed you, and not for revived ones.
 
 Every node carries an identity: `id` (a `MarkupID` of the owning series
 salt plus a raw value, always the same object for the same identity) and
@@ -51,10 +59,10 @@ delta deliberately does not report that. A consumer that draws anything
 positional — gutter numbers, underlines, a scroll anchor, a source map — must
 read it from the NEW document's node even for one it skipped as unchanged.
 
-A document owns a native parse. `document.close()` releases it, and `edit`
-hands it to the successor; a document that is neither closed nor edited is
-released when it becomes unreachable, but that is a backstop, not the
-contract. Everything the document produced — content, scopes, diagnostics,
+A document owns a native parse. `document.close()` releases it; `edit` leaves
+it alone, so each document in a series is closed separately. An unclosed
+document is released when it becomes unreachable, but that is a backstop, not
+the contract. Everything the document produced — content, scopes, diagnostics,
 dump — is a value and stays usable afterwards.
 
 ## Traverse and Inspect
@@ -69,7 +77,8 @@ new MarkupWalker().walk(document, (event, node, scope) => {
 ```
 
 The typed-visitor overload, `walker.walk(document, visitor)`, instead
-dispatches each node once in preorder without resolving scopes.
+dispatches each node once in preorder, with no exiting event and no scope
+argument — `node.scope` is a field.
 
 `document.dump()` and `MarkupDumper.dump(document, node)` emit the canonical
 diagnostic tree for the complete document or a focused subtree (subtree scopes
@@ -142,6 +151,7 @@ socket.onmessage = ({ data }) => {
 };
 const ticker = setInterval(() => {
   const commit = document.edit(streamed);
+  document.close();
   document = commit.document;
   render(document, commit.delta);
 }, 100);

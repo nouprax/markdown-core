@@ -31,6 +31,9 @@ its text — the opposite of the value semantics a reactive consumer needs.
 Scope was never part of equality and still is not, so nothing a reactive
 framework compares changes; what goes with the move is the scope table, the
 `document.scope(of:)` mediator, and the stale-value failure mode it needed.
+The session went on 2026-08-12, so `MarkupSession` above never became a
+canonical entry point: `Document(markdown, options)` and `edit` are the whole
+entry surface.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed

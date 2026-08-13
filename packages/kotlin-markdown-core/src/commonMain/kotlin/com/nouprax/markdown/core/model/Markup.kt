@@ -23,7 +23,7 @@ public sealed interface Markup {
      * Series-scoped identity, unique within the series and never reused;
      * see [MarkupID].
      *
-     * Stable across incremental commits while the node remains the same kind
+     * Stable across edits while the node remains the same kind
      * of thing at the same place.
      */
     public val id: MarkupID
