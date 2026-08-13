@@ -139,46 +139,37 @@ after all access to that document has finished. The complete C contract is in
 ## Editing
 
 There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes plus the
-delta between the two. Options are fixed for a document's whole series —
-changing what the parser means is a new document, not an edit.
+`edit` hands it new text: it returns the document that text describes.
+Options are fixed for a document's whole series — changing what the parser
+means is a new document, not an edit.
 
-**The stability an application needs is on the TREE, not in the delta.** An id
-keeps naming the same node until that node is removed, an unchanged node keeps
-its exact revision, and a pure positional shift is not a change — so equality
-is O(1) over (id, revision) and an id goes unmodified into a SwiftUI
-`ForEach(id:)`, a Compose `key()`, or a React `key`. A complete application
-hands the edited document to its reactive framework and never reads a delta.
-After any sequence of edits the document is byte-for-byte dump-equal to a
-from-scratch parse of the same text.
-
-A delta answers a different question: WHERE did it change. It is one list, in
-the new document's postorder: every node whose projection differs appears
-after all of its own children, and a retired node appears where it was found,
-before its former parent's row. Each row says which parts differ — value,
-text, children, descendant — and a row with no parts is a node that no longer
-exists. `descendant` alone means "nothing of this node's own changed, something
-below it did", so a side-by-side editor highlighting what a keystroke affected
-lights the run that changed rather than the section containing it. The other
-reader is a consumer holding state it must edit in place rather than
-re-derive: a display list, a text-measurement cache, an LSP token array.
+**The stability an application needs is on the TREE.** An id keeps naming the
+same node until that node is removed, an unchanged node keeps its exact
+revision, and a pure positional shift is not a change — so equality is O(1)
+over (id, revision) and an id goes unmodified into a SwiftUI `ForEach(id:)`,
+a Compose `key()`, or a React `key`. A node's revision is subtree-covering:
+it is the document revision at which the node's own fields, child list, or
+any descendant last changed, so a consumer holding values from the previous
+document walks the new tree top-down and stops descending wherever the
+(id, revision) pair is one it already has. That pair is the entire update
+protocol — there is no change list to read. After any sequence of edits the
+document is byte-for-byte dump-equal to a from-scratch parse of the same
+text.
 
 ```swift
 let document = try Document("# Hello\n")
-let commit = try document.edit("# Hello\nworld again\n")
-print(commit.delta.diffs)              // stable MarkupID values plus parts
+let next = try document.edit("# Hello\nworld again\n")
 ```
 
 ```kotlin
 Document("# Hello\nworld\n").use { document ->
-    val commit = document.edit("# Goodbye\nworld\n")
-    commit.document.use { println(commit.delta.diffs) }
+    document.edit("# Goodbye\nworld\n").use { next -> println(next.root) }
 }
 ```
 
 ```js
 const document = Document("# Hello\nworld\n");
-const { document: next, delta } = document.edit("# Goodbye\nworld\n");
+const next = document.edit("# Goodbye\nworld\n");
 document.close();
 next.close();
 ```
@@ -187,11 +178,8 @@ next.close();
 markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
 markdown_core_string edited = {(const uint8_t *)"# Goodbye\n", 10};
-markdown_core_commit commit;
-markdown_core_document_edit(document, edited, &commit, NULL);
-/* rows via markdown_core_delta_diffs; each carries an id and its parts */
-markdown_core_delta_free(commit.delta);
-markdown_core_document_free(commit.document);
+markdown_core_document *next = markdown_core_document_edit(document, edited, NULL);
+markdown_core_document_free(next);
 markdown_core_document_free(document);
 ```
 
@@ -207,9 +195,12 @@ of the standard semantics rather than a failure, and reporting those would be
 reporting Markdown itself.
 
 The language-neutral AST contract is
-[`docs/specs/canonical-ast.md`](docs/specs/canonical-ast.md).
+[`docs/specs/canonical-ast.md`](docs/specs/canonical-ast.md). The adopted
+plan for the streaming redesign — `append` as the hot path, documents as
+chain heads — is
+[`docs/reviews/2026-08-12-streaming-plan.md`](docs/reviews/2026-08-12-streaming-plan.md);
 [`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md)
-is a frozen design contract for a later milestone; no current public API
+is a frozen earlier design that plan supersedes, and no current public API
 implements it.
 
 ## Repository layout

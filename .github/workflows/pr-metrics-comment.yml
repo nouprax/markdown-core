@@ -171,7 +171,7 @@ jobs:
                               "kotlin",
                               new Set([
                                   "jni_parse_and_value_copy",
-                                  "jni_edit_and_delta_decode",
+                                  "jni_edit_and_decode",
                               ]),
                           ],
                           ["es", new Set(["wasm_parse_and_value_copy"])],
