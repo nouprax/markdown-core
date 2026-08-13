@@ -170,38 +170,52 @@ class EditTest {
         val two = assertIs<Paragraph>(first.content[1])
         assertEquals(3, two.scope.start.line)
 
-        // Editing takes nothing from the predecessor. Its values, scopes,
-        // diagnostics, and dump were all extracted at parse time and owe that
-        // parse nothing.
+        // The edit supersedes the receiver — mutation is now the successor's
+        // alone — but supersession severs mutation, not the values. Content,
+        // scopes, diagnostics, and dump were all extracted at parse time and
+        // owe the native parse nothing, so the superseded document keeps
+        // answering from its own tables.
         first.edit("Zero\n\nOne\n\nTwo\n").close()
         assertEquals(3, two.scope.start.line)
         assertTrue(first.dump().contains("Paragraph"))
         val recording = RecordingVisitor()
         MarkupWalker.walk(first, recording)
         assertEquals(5, recording.visited.size)
+        first.close()
     }
 
     @Test
-    fun aDocumentMayBeEditedTwiceAndOnlyAClosedOneRefuses() {
-        // An edit READS its receiver, so the receiver survives it. Editing
-        // one document twice gives two lines of descent: same predecessor,
-        // same starting identities, different revisions.
+    fun aMutationSupersedesItsReceiverAndHistoryStaysLinear() {
+        // A mutation advances the chain, old handles die, decoded values
+        // live forever. There is no forking: mutating a superseded document
+        // is a deterministic refusal with the engine's own wording, and the
+        // refusal disturbs nothing.
         val base = Document("One\n")
-        val first = base.edit("Two\n")
-        val second = base.edit("Three\n")
-        assertEquals("Two", assertIs<Text>(assertIs<Paragraph>(first.content[0]).content[0]).literal)
-        assertEquals("Three", assertIs<Text>(assertIs<Paragraph>(second.content[0]).content[0]).literal)
-        assertTrue(first.revision != second.revision)
-        assertTrue(first.revision > base.revision && second.revision > base.revision)
-        first.close()
-        second.close()
+        val head = base.edit("Two\n")
+        for (refused in listOf<() -> Document>({ base.edit("Three\n") }, { base.append("!") })) {
+            val refusal = assertFailsWith<IllegalStateException>(block = refused)
+            assertEquals("the document has been superseded: mutate the successor", refusal.message)
+        }
+        // The superseded document still answers from its decoded values...
+        assertEquals("One", assertIs<Text>(assertIs<Paragraph>(base.content[0]).content[0]).literal)
+        // ...and the head is untouched by the refusals: it is still the live
+        // head, and both mutations remain its to make.
+        assertEquals("Two", assertIs<Text>(assertIs<Paragraph>(head.content[0]).content[0]).literal)
+        val appended = head.append("Three\n")
+        assertEquals(Document("Two\nThree\n").use { it.dump() }, appended.dump())
+        assertTrue(appended.revision > head.revision)
+        appended.close()
+        head.close()
         base.close()
 
         val closed = Document("One\n")
         closed.close()
-        // Closing twice is a no-op; editing after it is not.
+        // Closing twice is a no-op; mutating after it is not, and the closed
+        // refusal is its own message — closing is the caller's act, not a
+        // mutation's.
         closed.close()
-        assertFailsWith<IllegalStateException> { closed.edit("Three\n") }
+        val refusal = assertFailsWith<IllegalStateException> { closed.edit("Three\n") }
+        assertEquals("the document is closed", refusal.message)
         // What was already extracted stays answerable either way.
         assertEquals(
             1,
@@ -246,39 +260,14 @@ class EditTest {
 
     @Test
     fun streamingWithIrregularTicksOverAMultiTurnConversation() {
-        // The shape of a real LLM consumer: every socket message extends the
-        // text (nothing parses), only an irregular render tick edits, and the
-        // messages between ticks conflate into that one edit. Three assistant
-        // turns extend one document; blocks settled at a turn boundary must
-        // stay frozen while later turns stream.
-        val turns =
-            listOf(
-                "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
-                    "and the heading keeps its identity from the first render on.\n\n" +
-                    "Deltas stay proportional to what changed, so a renderer " +
-                    "reconciles by id instead of walking the whole tree.\n\n" +
-                    "> Snapshots are values: whatever a tick captured stays valid " +
-                    "while the socket races ahead.",
-                "\n\n- append per message\n- edit per tick\n- settled blocks stay frozen" +
-                    "\n- identical items stress identity\n- identical items stress identity" +
-                    "\n\n```swift\nlet constant = 1\nlet mirror = [Int: String]()\n" +
-                    "for index in 0..<3 {\n    print(index, constant)\n}\n```\n\n" +
-                    "Fenced code arrives line by line and only closes at the final tick.",
-                "\n\nA table lands late in the conversation:\n\n" +
-                    "| stage | commits | messages |\n| - | - | - |\n| one | 3 | 9 |\n" +
-                    "| two | 5 | 14 |\n| three | 8 | 21 |\n\n" +
-                    "Tail with a footnote[^n] whose definition arrives last.\n\n" +
-                    "[^n]: Resolved at the end, after every reference already rendered.",
-            )
-        // One fixed generator drives batch sizes and tick timing, so the
-        // burst shapes are irregular but reproducible — and identical in the
-        // Swift and ES mirrors of this test.
-        var state = 0x9E3779B97F4A7C15UL.toLong()
-
-        fun draw(bound: Long): Long {
-            state = state * 6364136223846793005L + 1442695040888963407L
-            return (state ushr 33) % bound
-        }
+        // The shape of a real LLM consumer: every socket message rides the
+        // real append — the streaming mutation — and an irregular render
+        // tick reads what the appends produced. Three assistant turns extend
+        // one document; blocks settled at a turn boundary must stay frozen
+        // while later turns stream. The corpus text and the split generator
+        // are the shared burst shapes, byte-identical in the Swift and ES
+        // mirrors of this test.
+        val splits = StreamingCorpus.Splits()
 
         var document = Document("")
         var streamed = ""
@@ -288,22 +277,13 @@ class EditTest {
         var touched = 0
 
         fun tick() {
-            val predecessorRevision = document.revision
-            document = document.edit(streamed)
             ticks += 1
-            // The old delta row count, re-expressed on the tree: the nodes
-            // whose revision equals the new document revision are exactly the
-            // ones this tick changed or minted — and a root that kept its
-            // revision means the tick changed nothing anywhere.
-            if (document.revision != predecessorRevision) {
-                val stamped = document.revision
-                MarkupWalker.walk(document) { event, node, _ ->
-                    if (event == WalkEvent.ENTERING && node.revision == stamped) {
-                        touched += 1
-                    }
-                }
+            // A tick no longer parses anything: the appends already did, and
+            // the tick verifies their sum against a one-shot parse of every
+            // byte so far.
+            Document(streamed).use { reference ->
+                assertEquals(reference.dump(), document.dump())
             }
-            assertEquals(Document(streamed).dump(), document.dump())
             for ((index, id, revision) in frozen) {
                 val node = document.content[index]
                 assertEquals(id, node.id)
@@ -311,20 +291,35 @@ class EditTest {
             }
         }
 
-        for (turn in turns) {
+        for (turn in StreamingCorpus.turns) {
             var offset = 0
             while (offset < turn.length) {
-                // Mostly a 20-30 token batch (80-150 characters), with
-                // occasional tiny flushes of a few words. Cuts land at raw
-                // character offsets — mid-word, mid-marker, even between the
-                // two newlines of a block boundary — because that is the
-                // steady state of LLM output.
-                val width = if (draw(10L) < 2L) 2 + draw(18L).toInt() else 80 + draw(71L).toInt()
+                val width = splits.width()
                 val message = turn.substring(offset, minOf(offset + width, turn.length))
                 offset += message.length
                 streamed += message
                 messages += 1
-                if (draw(4L) == 0L) {
+
+                // Each message advances the chain; the superseded predecessor
+                // is closed behind it — an O(1) release.
+                val predecessorRevision = document.revision
+                val superseded = document
+                document = document.append(message)
+                superseded.close()
+
+                // The old delta row count, re-expressed on the tree: the
+                // nodes whose revision equals the new document revision are
+                // exactly the ones this append changed or minted — and a root
+                // that kept its revision means the append changed nothing.
+                if (document.revision != predecessorRevision) {
+                    val stamped = document.revision
+                    MarkupWalker.walk(document) { event, node, _ ->
+                        if (event == WalkEvent.ENTERING && node.revision == stamped) {
+                            touched += 1
+                        }
+                    }
+                }
+                if (splits.draw(4L) == 0L) {
                     tick()
                 }
             }
@@ -338,19 +333,23 @@ class EditTest {
         }
         assertTrue(messages > 9)
         assertTrue(ticks < messages)
-        assertEquals(Document(turns.joinToString(separator = "")).dump(), document.dump())
+        assertEquals(
+            Document(StreamingCorpus.turns.joinToString(separator = "")).use { it.dump() },
+            document.dump(),
+        )
 
         // Near-O(n) pipeline: the total count of nodes stamped with a new
         // document revision stays within one per final node plus bounded
-        // frontier churn per tick. A full rebuild per tick would be on the
-        // order of ticks * nodes.
+        // frontier churn per append. A full re-decode per append would be on
+        // the order of messages * nodes — which is exactly the term the
+        // pruned decode deletes.
         var nodes = 0
         MarkupWalker.walk(document) { event, _, _ ->
             if (event == WalkEvent.ENTERING) {
                 nodes += 1
             }
         }
-        assertTrue(touched < nodes + 16 * ticks)
+        assertTrue(touched < nodes + 16 * messages)
         document.close()
     }
 }

@@ -78,6 +78,34 @@ JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_edit(JNIEn
     return payload_to_array(environment, output, output_length);
 }
 
+JNIEXPORT jbyteArray JNICALL Java_com_nouprax_markdown_core_JvmNative_append(JNIEnv *environment,
+                                                                             jobject receiver,
+                                                                             jlong handle,
+                                                                             jbyteArray chunk,
+                                                                             jlong baseline) {
+    jbyte *chunk_bytes;
+    jsize chunk_length;
+    uint8_t *output = NULL;
+    size_t output_length = 0;
+    bool encoded;
+    (void)receiver;
+
+    chunk_length = (*environment)->GetArrayLength(environment, chunk);
+    chunk_bytes = (*environment)->GetByteArrayElements(environment, chunk, NULL);
+    if (chunk_bytes == NULL) {
+        return NULL;
+    }
+    encoded = markdown_core_kotlin_append((uint64_t)handle, (const uint8_t *)chunk_bytes,
+                                          (size_t)chunk_length, (uint64_t)baseline, &output,
+                                          &output_length);
+    (*environment)->ReleaseByteArrayElements(environment, chunk, chunk_bytes, JNI_ABORT);
+    if (!encoded) {
+        throw_out_of_memory(environment, "native document append failed");
+        return NULL;
+    }
+    return payload_to_array(environment, output, output_length);
+}
+
 JNIEXPORT void JNICALL Java_com_nouprax_markdown_core_JvmNative_release(JNIEnv *environment,
                                                                         jobject receiver,
                                                                         jlong handle) {

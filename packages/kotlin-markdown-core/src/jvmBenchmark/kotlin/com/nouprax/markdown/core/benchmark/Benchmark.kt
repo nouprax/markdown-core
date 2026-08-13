@@ -167,21 +167,25 @@ private fun deepBuildBenchmark(
     )
 }
 
-private fun streamBenchmark(
+// The streaming arm, repointed from the edit path to the real append per the
+// streaming plan: each tick is one append crossing plus the PRUNED decode,
+// where every subtree the encoder proved unchanged arrives as a single reuse
+// record and resolves from the predecessor's values — the per-tick cost this
+// milestone claims is O(changed). The whole trace is timed and the tick count
+// rides in `commits`, so per-tick cost is median_ns / commits.
+private fun appendStreamBenchmark(
     workload: String,
     chunks: kotlin.collections.List<String>,
 ) {
     fun stream(): Long =
         measureNanoTime {
             var document = Document("")
-            var streamed = ""
             for (chunk in chunks) {
-                streamed += chunk
                 val previous = document
-                document = document.edit(streamed)
-                // The edit reads its receiver and takes nothing, so the loop
-                // ends the predecessor. Unreachability is not a backstop here:
-                // a native parse costs memory the JVM collector cannot see.
+                document = document.append(chunk)
+                // The append superseded the predecessor; closing it is an
+                // O(1) release. Unreachability is not a backstop here: a
+                // native parse costs memory the JVM collector cannot see.
                 previous.close()
             }
             document.scope
@@ -193,7 +197,7 @@ private fun streamBenchmark(
             .List(5) { stream() }
             .sorted()
     println(
-        "benchmark runtime=kotlin boundary=jni_edit_and_decode workload=$workload " +
+        "benchmark runtime=kotlin boundary=jni_append_and_reuse_decode workload=$workload " +
             "workload_version=1 bytes=${chunks.sumOf { it.encodeToByteArray().size }} " +
             "commits=${chunks.size} warmup=1 repeats=5 " +
             "median_ns=${samples[samples.size / 2]} ${memoryMetrics()}",
@@ -219,7 +223,7 @@ fun main() {
         "> ".repeat(4_096) + "leaf\n",
         4_096,
     )
-    streamBenchmark(
+    appendStreamBenchmark(
         "stream_flat",
         buildList {
             val line = "Paragraph with **strong**, [link](https://example.com), and streaming text.\n"

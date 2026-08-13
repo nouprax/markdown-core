@@ -61,3 +61,135 @@ internal fun markupEquals(
 
 @JvmSynthetic
 internal fun markupHashCode(node: Markup): Int = 31 * node.id.hashCode() + node.revision.hashCode()
+
+/**
+ * The node's children in document order — the one enumeration of what "the
+ * children" means per kind, shared by the walker's traversal and the wire
+ * mirror's subtree walk so the two can never disagree about structure.
+ */
+@JvmSynthetic
+internal fun Markup.childValues(): kotlin.collections.List<Markup> =
+    when (this) {
+        is Document -> {
+            content
+        }
+
+        is BlockQuote -> {
+            content
+        }
+
+        is Paragraph -> {
+            content
+        }
+
+        is Heading -> {
+            content
+        }
+
+        is ThematicBreak -> {
+            emptyList()
+        }
+
+        is List -> {
+            items
+        }
+
+        is ListItem -> {
+            content
+        }
+
+        is CodeBlock,
+        is HTMLBlock,
+        is FormulaBlock,
+        -> {
+            emptyList()
+        }
+
+        is Table -> {
+            buildList {
+                add(header)
+                addAll(rows)
+            }
+        }
+
+        is TableRow -> {
+            cells
+        }
+
+        is TableCell -> {
+            content
+        }
+
+        is DirectiveBlock -> {
+            buildList {
+                label?.let(::add)
+                addAll(content)
+            }
+        }
+
+        is DirectiveLabel -> {
+            content
+        }
+
+        is FootnoteDefinition -> {
+            content
+        }
+
+        is Text,
+        is SoftBreak,
+        is LineBreak,
+        is Code,
+        is HTML,
+        is Formula,
+        -> {
+            emptyList()
+        }
+
+        is Emphasis -> {
+            content
+        }
+
+        is Strong -> {
+            content
+        }
+
+        is Strikethrough -> {
+            content
+        }
+
+        is Link -> {
+            content
+        }
+
+        is Image -> {
+            content
+        }
+
+        is Directive -> {
+            listOfNotNull(label)
+        }
+
+        is FootnoteReference -> {
+            emptyList()
+        }
+
+        is ReferenceDefinition -> {
+            emptyList()
+        }
+
+        is LinkReference -> {
+            content
+        }
+
+        is ImageReference -> {
+            content
+        }
+
+        is CrossLink -> {
+            emptyList()
+        }
+
+        is Embed -> {
+            emptyList()
+        }
+    }

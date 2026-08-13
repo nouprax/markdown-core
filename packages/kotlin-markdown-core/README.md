@@ -40,7 +40,7 @@ names both remedies.
 The Android AAR publishes its own narrowly scoped R8 consumer rule for the
 private `JvmNative` linkage boundary. Applications can therefore enable
 release shrinking without adding Markdown Core keep rules; the bridge class
-and its three native method names remain stable while every other implementation
+and its four native method names remain stable while every other implementation
 class stays eligible for shrinking, optimization, and obfuscation. If no
 application path uses Markdown Core, R8 may remove the bridge as well.
 
@@ -71,10 +71,12 @@ because position is not content. The package exposes parsing, editing, and
 read-only AST traversal, not rendering or mutation.
 
 `Document` owns a native parse and is `AutoCloseable`: `use { }` it, and
-`use { }` the one `edit` hands back too — an edit leaves two parses open. A
-document that is never closed is released when it becomes unreachable, but
-that is a backstop, not the contract. Everything it produced — content, scopes,
-diagnostics, dump — is a value and stays usable afterwards.
+`use { }` what `edit` and `append` hand back too — a mutation leaves the
+receiver's parse open for its holder to close, an O(1) release once it is
+superseded. A document that is never closed is released when it becomes
+unreachable, but that is a backstop, not the contract. Everything it
+produced — content, scopes, diagnostics, dump — is a value and stays usable
+afterwards.
 
 ## Traverse and Inspect
 
@@ -106,12 +108,15 @@ println(document.dump())
 println(MarkupDumper.dump(document))
 ```
 
-## Edit
+## Edit and Append
 
-There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes. Options
-are fixed for a document's whole series — changing what the parser means is a
-new `Document`, not an edit.
+There is no session type. A document is the live head of a chain, and a
+mutation hands it text: `edit` replaces the whole text, `append` adds bytes
+at the end, and either returns the next document. The chain contract is one
+sentence: **a mutation advances the chain and supersedes its receiver — old
+heads refuse further mutation deterministically, and decoded values live
+forever.** Options are fixed for a chain's whole life — changing what the
+parser means is a new `Document`, not a mutation.
 
 ```kotlin
 val document = Document("# Title\n\nHello")
@@ -128,12 +133,35 @@ next.use {
 document.close()
 ```
 
-`edit` READS the receiver and takes nothing: the document it was called on
-keeps everything it owns, stays usable, and may be edited again. Editing one
-document twice gives two lines of descent, told apart by their revisions —
-and, like nodes from two separate parses, nodes from two lines are not
-comparable. Release a document when you are done with it; its
-already-extracted values stay valid forever, because they are values.
+Release each document when you are done with it — closing a superseded one
+is an O(1) release, and its already-extracted values stay valid forever,
+because they are values.
+
+## Stream
+
+`append` is the streaming hot path: hand every socket message to the chain's
+head and render from the document that comes back.
+
+```kotlin
+var document = Document("")
+for (message in stream) {
+    val previous = document
+    document = document.append(message)
+    previous.close()
+    render(document)
+}
+document.close()
+```
+
+Any byte split is legal — mid-word, mid-marker, even between the two
+newlines of a block boundary — and an empty chunk still advances the chain,
+to an identical tree. The per-tick cost is O(changed), not O(document):
+appending never moves settled content, so a subtree the mutation did not
+touch crosses the native boundary as a single reuse record and resolves to
+the value the predecessor already decoded — the decode work per tick is
+proportional to what the appended bytes changed, plus the trailing spine.
+A failed append poisons the chain: every further mutation fails, every
+document's values and `close` remain, and recovery is a new `Document`.
 
 ### What changed is asked of the tree
 
@@ -160,8 +188,6 @@ A node the predecessor does not answer for is new; an id the successor no
 longer answers for (`next.node(id) == null`) is retired. Creation and
 retirement are presence questions, not a list to read.
 
-Streaming consumers edit on the render tick rather than on every socket
-message, so the parse rate follows the display and not the socket.
 `document.diagnostics` lists everything an editor should underline — which, for
 Markdown, is one thing: a directive's `{...}` attribute block that did not
 parse. Every other "wrong" construct is a defined outcome of the standard

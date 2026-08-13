@@ -9,14 +9,27 @@
 /* MKC5 wire: every payload opens with the magic and a status byte (0 =
  * success data follows, 1 = an error record follows). A success payload
  * carries the document handle, its series, and the root's id, revision and
- * extent, then the tree, then the diagnostics — the same shape for an open
- * and for an edit, because an edit's answer is simply the next document.
+ * extent, then the tree, then the diagnostics — the same shape for an open,
+ * an edit, and an append, because a mutation's answer is simply the next
+ * document.
  *
- * Every payload carries the WHOLE tree, children before parents, which is the
- * order a decoder assembles immutable values in. There is no delta section:
- * what changed is asked of the tree itself, because a node's revision is the
- * document revision at which its own fields, child list, or any descendant
- * last changed — (id, revision) is the entire update protocol.
+ * An open and an edit carry the WHOLE tree, children before parents, which is
+ * the order a decoder assembles immutable values in. There is no delta
+ * section: what changed is asked of the tree itself, because a node's
+ * revision is the document revision at which its own fields, child list, or
+ * any descendant last changed — (id, revision) is the entire update protocol.
+ *
+ * The append payload prunes by that protocol: a non-root subtree may be one
+ * REUSE record — the tag byte and the subtree root's id — with the encoder
+ * not descending into it, because the caller decoded that exact subtree from
+ * the receiver already. The record is emitted only when BOTH halves of the
+ * value are provably unchanged: the revision vouches for the content
+ * (fields, literals, descendants), and the extent check in subtree_reused
+ * vouches for the positions — a revision alone cannot, because position is
+ * not content and nothing stamps a trailing construct that absorbs its
+ * terminating newline into its scope end. This is sound only on the append
+ * path: an edit can shift positions anywhere in the document and so always
+ * ships the whole tree.
  *
  * Node records carry (kind, id, revision, scope, fields, child-id lists). The
  * scope is in the record because it belongs to the node; it had a table of its
@@ -124,6 +137,12 @@ static void put_string(bridge_buffer *buffer, markdown_core_string value, bool p
     put_bytes(buffer, value.data, value.length);
 }
 
+/* Still MKC5 with the append payload's REUSE record in the grammar: the
+ * magic is a same-build handshake between this bridge and WireDecoder, MKC5
+ * has never shipped in any release, and both sides change together in this
+ * repository — so there is no older MKC5 reader anywhere for the new record
+ * to confuse, and bumping the magic would version a boundary that cannot
+ * skew. */
 static void put_magic(bridge_buffer *buffer) {
     static const uint8_t magic[] = {'M', 'K', 'C', '5'};
     put_bytes(buffer, magic, sizeof(magic));
@@ -386,18 +405,70 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
     }
 }
 
-/* Postorder: children before parents, which is the order a decoder assembles
- * immutable values in. */
-static const markdown_core_node *postorder_first(const markdown_core_node *root) {
-    const markdown_core_node *child;
-    while ((child = markdown_core_node_get_first_child(root)) != NULL) {
-        root = child;
+/* The append payload's one non-node record: the tag byte, then the reused
+ * subtree root's id, and nothing else — the value the caller holds already
+ * carries the revision, the scope, and the whole subtree. The tag can never
+ * collide with a node record's kind byte: kind numbering is append-only and
+ * grows upward from the mid-thirties, and 0xFF is reserved for this record
+ * forever. */
+#define BRIDGE_REUSE_TAG 0xFFu
+
+/* The append payload's reuse gate: the caller's baseline revision, and the
+ * receiver's last content coordinate. NULL on the open and edit payloads,
+ * which never reuse. */
+typedef struct reuse_gate {
+    uint64_t baseline;
+    markdown_core_position receiver_end;
+} reuse_gate;
+
+/* A subtree the receiver already delivered, byte for byte. The root is never
+ * reused — its record is the payload's mount point, and the decoder's root
+ * sink has no mirror to take it from.
+ *
+ * Both halves of the value must be provably unchanged, and each has its own
+ * test. The revision vouches for the CONTENT: a revision at most the
+ * baseline means fields, literals, and descendants are exactly what the
+ * receiver delivered. It cannot vouch for the EXTENT, because position is
+ * not content: a trailing construct absorbs its terminating newline into its
+ * scope end when the next line arrives, and nothing stamps that. So the
+ * extent is proved by geometry instead — under append, starts never move
+ * and an end can only have changed by growing to or past the receiver's end
+ * of text, so an end strictly before the receiver's LAST CONTENT COORDINATE
+ * is guaranteed still true. That coordinate (the receiver root's extent end)
+ * is a lower bound of the old end of text read off the public surface, so
+ * the test errs conservative: at worst the trailing spine re-encodes
+ * records that did not change, which the decoder resolves by (id, revision)
+ * all the same. */
+static bool subtree_reused(const markdown_core_node *node, const markdown_core_node *root,
+                           const reuse_gate *prune) {
+    markdown_core_scope scope;
+    if (prune == NULL || node == root || markdown_core_node_get_revision(node) > prune->baseline) {
+        return false;
     }
-    return root;
+    scope = markdown_core_node_scope(node);
+    return scope.end.line < prune->receiver_end.line ||
+           (scope.end.line == prune->receiver_end.line &&
+            scope.end.column < prune->receiver_end.column);
+}
+
+/* Postorder: children before parents, which is the order a decoder assembles
+ * immutable values in. A reused subtree is a leaf of this walk: the encoder
+ * emits its one record and does not descend, which is what makes the append
+ * payload O(changed) rather than O(tree). */
+static const markdown_core_node *postorder_first(const markdown_core_node *node,
+                                                 const markdown_core_node *root,
+                                                 const reuse_gate *prune) {
+    const markdown_core_node *child;
+    while (!subtree_reused(node, root, prune) &&
+           (child = markdown_core_node_get_first_child(node)) != NULL) {
+        node = child;
+    }
+    return node;
 }
 
 static const markdown_core_node *postorder_next(const markdown_core_node *node,
-                                                const markdown_core_node *root) {
+                                                const markdown_core_node *root,
+                                                const reuse_gate *prune) {
     const markdown_core_node *next;
     if (node == root) {
         return NULL;
@@ -406,30 +477,36 @@ static const markdown_core_node *postorder_next(const markdown_core_node *node,
     if (next == NULL) {
         return markdown_core_node_get_parent(node);
     }
-    return postorder_first(next);
+    return postorder_first(next, root, prune);
 }
 
-static size_t postorder_count(const markdown_core_node *root) {
-    const markdown_core_node *node = postorder_first(root);
+static size_t postorder_count(const markdown_core_node *root, const reuse_gate *prune) {
+    const markdown_core_node *node = postorder_first(root, root, prune);
     size_t count = 0;
     while (node != NULL) {
         count++;
-        node = postorder_next(node, root);
+        node = postorder_next(node, root, prune);
     }
     return count;
 }
 
-static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root) {
+static void encode_tree(bridge_buffer *buffer, const markdown_core_node *root,
+                        const reuse_gate *prune) {
     const markdown_core_node *node;
-    size_t count = postorder_count(root);
+    size_t count = postorder_count(root, prune);
     if (count > INT32_MAX) {
         buffer->failed = true;
         return;
     }
     put_i32(buffer, (int32_t)count);
-    for (node = postorder_first(root); node != NULL && !buffer->failed;
-         node = postorder_next(node, root)) {
-        write_record(buffer, node);
+    for (node = postorder_first(root, root, prune); node != NULL && !buffer->failed;
+         node = postorder_next(node, root, prune)) {
+        if (subtree_reused(node, root, prune)) {
+            put_u8(buffer, BRIDGE_REUSE_TAG);
+            put_u64(buffer, markdown_core_node_get_id(node));
+        } else {
+            write_record(buffer, node);
+        }
     }
 }
 
@@ -516,7 +593,7 @@ bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t op
     }
     root = put_header(&buffer, document);
     if (root != NULL) {
-        encode_tree(&buffer, root);
+        encode_tree(&buffer, root, NULL);
         encode_diagnostics(&buffer, document);
     }
     if (buffer.failed) {
@@ -551,7 +628,60 @@ bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t le
     }
     root = put_header(&buffer, successor);
     if (root != NULL) {
-        encode_tree(&buffer, root);
+        encode_tree(&buffer, root, NULL);
+        encode_diagnostics(&buffer, successor);
+    }
+    if (buffer.failed) {
+        /* The handle never reaches the caller, so this call owns it. */
+        markdown_core_document_free(successor);
+    }
+    return finish(&buffer, output, output_length);
+}
+
+bool markdown_core_kotlin_append(uint64_t handle, const uint8_t *chunk, size_t length,
+                                 uint64_t baseline, uint8_t **output, size_t *output_length) {
+    markdown_core_document *document = document_of(handle);
+    markdown_core_document *successor;
+    markdown_core_error *error = NULL;
+    markdown_core_string text;
+    const markdown_core_node *root;
+    const markdown_core_node *receiver_root;
+    reuse_gate reuse;
+    const reuse_gate *prune = NULL;
+    bridge_buffer buffer = {0};
+
+    if (output == NULL || output_length == NULL) {
+        return false;
+    }
+    *output = NULL;
+    *output_length = 0;
+
+    put_magic(&buffer);
+    text.data = chunk;
+    text.length = length;
+    successor = markdown_core_document_append(document, text, &error);
+    if (successor == NULL) {
+        put_error(&buffer, error);
+        return finish(&buffer, output, output_length);
+    }
+    /* The receiver's last content coordinate, for the reuse gate's extent
+     * half. Read AFTER the successful append and legal exactly then: a
+     * superseded receiver's node handles die when the NEXT mutation begins,
+     * mutations on one chain are externally serialized, and a stale or
+     * poisoned receiver was refused above without reaching here — so this
+     * root is read only on the document that really was the head, before
+     * any next mutation can exist. Without a root (or on the sentinel
+     * extent of an empty receiver) nothing passes the gate and the payload
+     * simply ships whole. */
+    receiver_root = markdown_core_document_root(document);
+    if (receiver_root != NULL) {
+        reuse.baseline = baseline;
+        reuse.receiver_end = markdown_core_node_scope(receiver_root).end;
+        prune = &reuse;
+    }
+    root = put_header(&buffer, successor);
+    if (root != NULL) {
+        encode_tree(&buffer, root, prune);
         encode_diagnostics(&buffer, successor);
     }
     if (buffer.failed) {

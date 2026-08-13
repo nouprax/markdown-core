@@ -92,7 +92,7 @@ class ConcurrencyJvmTest {
 
     @Test
     fun parallelSeriesOnExecutorThreadsStayIsolated() {
-        // One series per worker thread, interleaved edit and read, with
+        // One chain per worker thread, interleaved mutation and read, with
         // cross-thread reads after the writer thread finished — a document is
         // an immutable value, so whatever a thread produced stays readable
         // from any other.
@@ -106,20 +106,19 @@ class ConcurrencyJvmTest {
                 thread {
                     start.await()
 
-                    // An edit reads its receiver and takes nothing, so each
-                    // predecessor in a chain stays this thread's to close.
+                    // A mutation supersedes its receiver, so the loop follows
+                    // the chain and closes each predecessor behind itself —
+                    // an O(1) release of a superseded shell.
                     fun advance(
                         previous: Document,
-                        text: String,
-                    ): Document = previous.edit(text).also { previous.close() }
+                        next: Document.() -> Document,
+                    ): Document = previous.next().also { previous.close() }
 
                     var document = Document("")
                     repeat(25) { iteration ->
-                        document = advance(document, "")
-                        var streamed = ""
+                        document = advance(document) { edit("") }
                         for (line in source.split("\n").dropLast(1)) {
-                            streamed += line + "\n"
-                            document = advance(document, streamed)
+                            document = advance(document) { append(line + "\n") }
                         }
                         if (document.dump() != reference) {
                             failures.add("worker $worker iteration $iteration diverged")

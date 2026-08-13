@@ -6,14 +6,25 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Edit replay of the shared canonical AST corpus: every per-line revision
- * must dump byte-equal to a one-shot parse of the same text, and every tree
- * must keep the (id, revision) contract against a cumulative ledger — the
- * Kotlin twin of the C harness's two-snapshot double walk
- * (tests/support/edit_replay.c). */
+/** Mutation replay of the shared canonical AST corpus: every per-line
+ * revision must dump byte-equal to a one-shot parse of the same text, and
+ * every tree must keep the (id, revision) contract against a cumulative
+ * ledger — the Kotlin twin of the C harness's two-snapshot double walk
+ * (tests/support/edit_replay.c). Both mutations replay: the edit path hands
+ * the whole text over per line, the append path hands only the line, and
+ * the ledger holds them to the same one contract. */
 class EditAstTest {
     @Test
     fun editsReplayTheManifestCorpusToDumpEqualityPerRevision() {
+        replayManifest { document, replayed, _ -> document.edit(replayed) }
+    }
+
+    @Test
+    fun appendsReplayTheManifestCorpusToDumpEqualityPerRevision() {
+        replayManifest { document, _, chunk -> document.append(chunk) }
+    }
+
+    private fun replayManifest(advance: (Document, String, String) -> Document) {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
             var document = Document("", testCase.options)
@@ -24,9 +35,13 @@ class EditAstTest {
             var previous = ledger.verify(document, null)
             for (chunk in lineChunks(testCase.source)) {
                 replayed += chunk
-                document = document.edit(replayed)
+                // The mutation supersedes its receiver, so the replay follows
+                // the chain and closes each predecessor behind itself.
+                val superseded = document
+                document = advance(document, replayed, chunk)
+                superseded.close()
 
-                // Equivalence: the edited document dumps byte-equal to a
+                // Equivalence: the mutated document dumps byte-equal to a
                 // one-shot parse of the same text.
                 Document(replayed, testCase.options).use { reference ->
                     assertEquals(reference.dump(), document.dump(), testCase.name)
@@ -183,20 +198,4 @@ private class Ledger(
     private companion object {
         val scopeField = Regex("""scope=\S+ ?""")
     }
-}
-
-private fun lineChunks(source: String): kotlin.collections.List<String> {
-    val chunks = mutableListOf<String>()
-    val current = StringBuilder()
-    for (character in source) {
-        current.append(character)
-        if (character == '\n') {
-            chunks += current.toString()
-            current.clear()
-        }
-    }
-    if (current.isNotEmpty()) {
-        chunks += current.toString()
-    }
-    return chunks
 }
