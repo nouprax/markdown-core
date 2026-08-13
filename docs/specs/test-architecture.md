@@ -140,7 +140,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
-| `equivalence` | session 增量编辑 replay 与 one-shot parse 的 dump 等价 + delta mirror 校验(`equivalence_*`) |
+| `equivalence` | 逐 commit 编辑 replay 与 one-shot parse 的 dump 等价 + 双走查 id ledger 校验(`equivalence_*`) |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
@@ -155,15 +155,18 @@ Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
 `edits` 覆盖 `Document.edit` 契约:streaming/clean-boundary/kind-change 的
-id-stability、(series, id, revision) 等值语义、空 delta 纯位移、delta 的
-children-before-parents postorder、被 edit 读过的 document 仍可自答,以及
-模拟真实 LLM 消费端的 conflated-streaming 驱动(多 turn、不规律 render tick、
-20-30 token 量级消息混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界
-换行之间)、turn 边界已定稿块冻结、Σ|delta| 近线性上界断言;三端共用同一确定性
-发生器,突发形状逐条一致)；`depth` 覆盖超出调用栈预算的对抗性嵌套。
+id-stability、(series, id, revision) 等值语义、纯位移不动任何 (id, revision)、
+被 edit 读过的 document 仍可自答,以及模拟真实 LLM 消费端的
+conflated-streaming 驱动(多 turn、不规律 render tick、20-30 token 量级消息
+混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界换行之间)、turn
+边界已定稿块冻结、每 tick「携带新 document revision 的节点数」近线性上界断言,
+以 root revision 是否前进为 tick 有效门;三端共用同一确定性发生器,突发形状
+逐条一致)；`depth` 覆盖超出调用栈预算的对抗性嵌套。
 `ConformanceSuite` 另以 per-line append 通过 `Document.edit` 回放 manifest
-corpus，逐 commit 校验 dump 等价与 delta 完整性(id 不重复、delta 未命名的
-节点 revision 不变、retired id 从树中消失)。
+corpus,逐 commit 做与 C harness 同构的双走查:累计 id ledger 跨整个 replay
+(id 不重复、retired id 永不复活、revision 单调、child revision ≤ parent
+revision、mint 携带新 document revision),(id, revision) 未变的 topmost
+幸存者比较去位置化的子树内容,子树形式由归纳覆盖。
 
 Kotlin correctness suites:`api`、`errors`、`unicode`、`ownership`、`robustness`、
 `consumer`、`packaging`；`AstTest` 只由具名 conformance tasks 选择。`commonTest` 复用于 JVM、Android host、Android emulator、
@@ -408,8 +411,8 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
   错当成复杂度类别。
 - Footnote-renumber complexity 同样是 trend-based：256 → 4096 的 doubling
   序列，gate 比较四个相邻区间 normalized growth 的中位数。这条 case 的
-  per-commit 成本按构造就是 footnote 数量的线性函数（delta 为每个被重编号的
-  footnote 报告一个 changed node），所以被测的信号只是**对线性的偏离**，两个
+  per-commit 成本按构造就是 footnote 数量的线性函数（每个被重编号的
+  footnote 都是一个被重新盖章的 changed node），所以被测的信号只是**对线性的偏离**，两个
   孤立 endpoint 之间的一次 allocator/cache 切换与该信号同量级。之前的两点比值
   形式正是这样失效的：同一份 C 代码在一个 commit 上通过、在只改了一个文本
   文件的下一个 commit 上以 4.099x 失败。中位数形式实测健康实现为
