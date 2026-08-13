@@ -379,6 +379,258 @@ static int workload_adversarial(const bench_options *options) {
     return bench_doubling("adversarial_emphasis", options, build_adversarial_emphasis, scales, 3);
 }
 
+/* --- append baseline (streaming plan P0.2) -------------------------------
+ *
+ * The per-tick cost of consuming a stream TODAY, before any streaming
+ * machinery exists: every tick hands the whole bytes-so-far to `edit`, so a
+ * tick costs one full parse plus one whole-tree diff of the prefix. These
+ * are the numbers the streaming engine's fallback may never exceed and its
+ * warm path is built to beat.
+ *
+ * Shapes follow the plan's list; each is measured at doubling prefix
+ * checkpoints. A burst of token-sized, non-line-aligned ticks (3-8 byte
+ * strides) runs at each checkpoint — a full trace at these sizes is
+ * quadratic and would measure nothing extra. The doubling assertion holds
+ * because a tick IS a full parse of the prefix: super-linear growth here is
+ * a parser regression, not a streaming property. */
+
+typedef char *(*append_shape_build)(size_t target, size_t *length);
+
+static char *build_append_prose(size_t target, size_t *length) {
+    static const char unit[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod\n"
+                               "tempor incididunt ut labore et dolore magna aliqua ut enim ad minim.\n\n";
+    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
+}
+
+static char *build_append_nested_list(size_t target, size_t *length) {
+    static const char unit[] = "- alpha item one\n  - beta item two\n    - gamma item three\n"
+                               "      - delta item four\n- epsilon item five\n\n";
+    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
+}
+
+static char *build_append_fence(size_t target, size_t *length) {
+    static const char unit[] = "let value = compute(index) + offset; // streamed code line\n";
+    char *body = ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
+    char *input;
+    if (!body) {
+        return NULL;
+    }
+    /* One growing, never-closed fence: the shape the plan calls memcpy-speed
+     * for the warm path, full-parse speed today. */
+    input = (char *)malloc(*length + 5);
+    if (!input) {
+        free(body);
+        return NULL;
+    }
+    memcpy(input, "```\n", 4);
+    memcpy(input + 4, body, *length);
+    input[*length + 4] = 0;
+    *length += 4;
+    free(body);
+    return input;
+}
+
+static char *build_append_giant_paragraph(size_t target, size_t *length) {
+    /* No blank line anywhere: one paragraph that never closes. */
+    static const char unit[] = "words keep arriving and the paragraph never ends because no blank line\n";
+    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
+}
+
+/* Distinct labels, so density stresses the definition table rather than one
+ * bucket's duplicate chain. */
+static char *build_append_footnote_dense(size_t target, size_t *length) {
+    size_t capacity = target + 128;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    if (!input) {
+        return NULL;
+    }
+    while (used < target) {
+        int wrote = snprintf(
+            input + used,
+            capacity - used,
+            "Mention[^n%zu] rides along.\n\n[^n%zu]: The matching note body.\n\n",
+            n,
+            n
+        );
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n++;
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
+static char *build_append_references_appendix(size_t target, size_t *length) {
+    size_t capacity = target + 128;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    if (!input) {
+        return NULL;
+    }
+    /* Consecutive definitions with no blank line: one growing paragraph the
+     * harvest re-consumes whole every tick — the plan's named quadratic. */
+    while (used < target) {
+        int wrote = snprintf(input + used, capacity - used, "[r%zu]: /url/%zu\n", n, n);
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n++;
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
+/* One measured tick: hand `length` bytes of `text` to the live document as
+ * the whole new text and swap the handle. Only `edit` is timed; releasing
+ * the predecessor stays outside the window. */
+static int append_tick(markdown_core_document **document, const char *text, size_t length, uint64_t *nanoseconds) {
+    markdown_core_error *error = NULL;
+    uint64_t started = ts_monotonic_ns();
+    markdown_core_document *successor =
+        markdown_core_document_edit(*document, mc_sv((const uint8_t *)text, length), &error);
+    uint64_t elapsed = ts_monotonic_ns() - started;
+    if (!successor) {
+        markdown_core_error_free(error);
+        return -1;
+    }
+    markdown_core_document_free(*document);
+    *document = successor;
+    if (nanoseconds) {
+        *nanoseconds = elapsed;
+    }
+    return 0;
+}
+
+#define APPEND_TICKS_PER_CHECKPOINT 5
+
+static int bench_append_shape(
+    const char *name,
+    append_shape_build build,
+    bool splice_mid,
+    const bench_options *options
+) {
+    static const size_t checkpoints[] = {256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024};
+    const size_t steps = sizeof(checkpoints) / sizeof(checkpoints[0]);
+    size_t text_length = 0;
+    char *text = build(checkpoints[steps - 1] + 4096, &text_length);
+    markdown_core_document *document;
+    markdown_core_error *error = NULL;
+    ts_prng prng;
+    double previous_ms = 0.0;
+    size_t step;
+    int failed = 0;
+
+    (void)options;
+    if (!text || text_length < checkpoints[steps - 1]) {
+        fprintf(stderr, "%s: cannot build input\n", name);
+        free(text);
+        return -1;
+    }
+    ts_prng_seed(&prng, UINT64_C(0xa99e4dba5e11e5) ^ (uint64_t)name[0]);
+    document = markdown_core_document_new(mc_sv(NULL, 0), NULL, &error);
+    if (!document) {
+        markdown_core_error_free(error);
+        free(text);
+        return -1;
+    }
+
+    for (step = 0; step < steps && !failed; step++) {
+        uint64_t samples[APPEND_TICKS_PER_CHECKPOINT];
+        size_t offset = checkpoints[step];
+        double median_ms;
+        char case_name[128];
+        int tick;
+
+        /* Fast-forward to the checkpoint with one jump tick (unmeasured),
+         * then measure a burst of token-sized ticks. */
+        if (append_tick(&document, text, offset, NULL) != 0) {
+            failed = 1;
+            break;
+        }
+        for (tick = 0; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
+            if (splice_mid) {
+                /* The mixed-edit shape: the tick is a one-byte splice in the
+                 * middle of the text instead of a trailing append — the same
+                 * full parse today, a whole different path once streaming
+                 * lands, which is why the skeleton keeps it separate. */
+                char saved = text[offset / 2];
+                int result;
+                text[offset / 2] = saved == 'a' ? 'b' : 'a';
+                result = append_tick(&document, text, offset, &samples[tick]);
+                text[offset / 2] = saved;
+                if (result != 0) {
+                    failed = 1;
+                    break;
+                }
+            } else {
+                offset += 3 + (size_t)(ts_prng_next(&prng) % 6);
+                if (offset > text_length) {
+                    offset = text_length;
+                }
+                if (append_tick(&document, text, offset, &samples[tick]) != 0) {
+                    failed = 1;
+                    break;
+                }
+            }
+        }
+        if (failed) {
+            break;
+        }
+        qsort(samples, APPEND_TICKS_PER_CHECKPOINT, sizeof(samples[0]), compare_u64);
+        median_ms = (double)samples[APPEND_TICKS_PER_CHECKPOINT / 2] / 1e6;
+        snprintf(case_name, sizeof(case_name), "append_%s@%zu", name, checkpoints[step]);
+        printf(
+            "benchmark case=%s bytes=%zu repeats=%d warmup=0 median_ms=%.3f\n",
+            case_name,
+            checkpoints[step],
+            APPEND_TICKS_PER_CHECKPOINT,
+            median_ms
+        );
+        if (step > 0) {
+            double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
+            if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
+                fprintf(
+                    stderr,
+                    "%s: per-tick scaling ratio %.2f exceeds %.2f at %zu bytes\n",
+                    name,
+                    median_ms / floor_ms,
+                    BENCH_MAX_DOUBLING_RATIO,
+                    checkpoints[step]
+                );
+                failed = 1;
+            }
+        }
+        previous_ms = median_ms;
+    }
+
+    markdown_core_document_free(document);
+    free(text);
+    return failed ? -1 : 0;
+}
+
+static int workload_append_baseline(const bench_options *options) {
+    int failed = 0;
+    failed |= bench_append_shape("prose", build_append_prose, false, options) != 0;
+    failed |= bench_append_shape("nested_list", build_append_nested_list, false, options) != 0;
+    failed |= bench_append_shape("fence", build_append_fence, false, options) != 0;
+    failed |= bench_append_shape("footnote_dense", build_append_footnote_dense, false, options) != 0;
+    failed |= bench_append_shape("giant_paragraph", build_append_giant_paragraph, false, options) != 0;
+    failed |= bench_append_shape("references_appendix", build_append_references_appendix, false, options) != 0;
+    failed |= bench_append_shape("mixed_edit", build_append_prose, true, options) != 0;
+    if (!failed) {
+        printf("append_baseline peak_rss_kib=%ld\n", peak_rss_kib());
+    }
+    return failed ? -1 : 0;
+}
+
 typedef struct bench_workload {
     const char *name;
     int (*run)(const bench_options *options);
@@ -392,6 +644,7 @@ static const bench_workload WORKLOADS[] = {
     {"extensions", workload_extensions},
     {"large_table", workload_large_table},
     {"adversarial", workload_adversarial},
+    {"append_baseline", workload_append_baseline},
 };
 
 int main(int argc, char **argv) {

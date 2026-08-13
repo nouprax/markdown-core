@@ -511,7 +511,8 @@ set(MARKDOWN_CORE_BENCH_WORKLOADS
     deep_nesting
     extensions
     large_table
-    adversarial)
+    adversarial
+    append_baseline)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}
