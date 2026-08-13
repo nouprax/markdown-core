@@ -33,8 +33,10 @@ promised to remain compatible between releases.
   `MarkupSession` in Swift, Kotlin, and ECMAScript and the whole
   `markdown_core_session_*` family are removed rather than deprecated: the
   former one-shot parse and the former session open are one call, and `edit`
-  hands a document new text and returns the document that text describes plus
-  the delta between the two. `edit` READS its receiver and takes nothing — the
+  hands a document new text and returns the document that text describes
+  (this same release also removes the delta — see the entry above; the two
+  changes ship together, so `edit` never returns one within a published
+  version). `edit` READS its receiver and takes nothing — the
   document it was called on keeps everything it owns, stays usable, and is
   freed by whoever holds it, so editing one document twice gives two lines of
   descent. Options are fixed for a document's whole series; changing them is a

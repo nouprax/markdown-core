@@ -9,15 +9,19 @@
 The per-tick cost of consuming a stream **today**: every tick hands the whole
 bytes-so-far to `edit`, so a tick costs one full parse plus one whole-tree
 diff of the prefix. The workload drives the real `edit()` path with
-token-sized, non-line-aligned strides (3–8 bytes) in bursts of five at each
-doubling checkpoint, per shape from the plan's list; the burst median is
-reported. These are the numbers the streaming engine's D6 fallback may never
+token-sized, non-line-aligned strides (3–8 bytes) in bursts of five (after
+one unrecorded warmup tick) at each doubling checkpoint, per shape from the
+plan's list; the burst median is reported. These are the numbers the streaming engine's D6 fallback may never
 exceed and its warm path is built to beat. They are measured after the P0
 removals (delta emission, ref_size budget, CLEAN_START, the definition
 archive), so they describe the exact engine P1 starts from.
 
 Absolute values below are one machine's; the CTest gate asserts only the
-doubling ratios (≤ 4.0× per step), never wall-clock.
+MEDIAN of the adjacent-doubling growth ratios (≤ 4.0×), never wall-clock —
+an isolated allocator size-class transition moves one interval's ratio
+without moving the median, while sustained super-linear growth moves every
+interval (the same median form the footnote-renumber complexity gate uses,
+for the same reason).
 
 ## Machine
 

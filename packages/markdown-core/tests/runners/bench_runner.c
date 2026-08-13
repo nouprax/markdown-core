@@ -114,6 +114,12 @@ static int compare_u64(const void *left, const void *right) {
     return a < b ? -1 : (a > b ? 1 : 0);
 }
 
+static int compare_double(const void *left, const void *right) {
+    double a = *(const double *)left;
+    double b = *(const double *)right;
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
 static int bench_measure(
     const char *name,
     const char *input,
@@ -510,6 +516,8 @@ static int append_tick(markdown_core_document **document, const char *text, size
 }
 
 #define APPEND_TICKS_PER_CHECKPOINT 5
+#define APPEND_WARMUP_TICKS 1
+#define APPEND_CHECKPOINTS 5
 
 static int bench_append_shape(
     const char *name,
@@ -517,14 +525,16 @@ static int bench_append_shape(
     bool splice_mid,
     const bench_options *options
 ) {
-    static const size_t checkpoints[] = {256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024};
-    const size_t steps = sizeof(checkpoints) / sizeof(checkpoints[0]);
+    static const size_t checkpoints[APPEND_CHECKPOINTS] =
+        {256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024};
+    const size_t steps = APPEND_CHECKPOINTS;
     size_t text_length = 0;
     char *text = build(checkpoints[steps - 1] + 4096, &text_length);
     markdown_core_document *document;
     markdown_core_error *error = NULL;
     ts_prng prng;
-    double previous_ms = 0.0;
+    double medians_ms[APPEND_CHECKPOINTS];
+    double ratios[APPEND_CHECKPOINTS - 1];
     size_t step;
     int failed = 0;
 
@@ -545,17 +555,18 @@ static int bench_append_shape(
     for (step = 0; step < steps && !failed; step++) {
         uint64_t samples[APPEND_TICKS_PER_CHECKPOINT];
         size_t offset = checkpoints[step];
-        double median_ms;
         char case_name[128];
         int tick;
 
-        /* Fast-forward to the checkpoint with one jump tick (unmeasured),
-         * then measure a burst of token-sized ticks. */
+        /* Fast-forward to the checkpoint with one jump tick, then run the
+         * burst: warmup ticks settle the allocator at this working-set size
+         * before anything is recorded. */
         if (append_tick(&document, text, offset, NULL) != 0) {
             failed = 1;
             break;
         }
-        for (tick = 0; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
+        for (tick = -APPEND_WARMUP_TICKS; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
+            uint64_t *slot = tick < 0 ? NULL : &samples[tick];
             if (splice_mid) {
                 /* The mixed-edit shape: the tick is a one-byte splice in the
                  * middle of the text instead of a trailing append — the same
@@ -564,7 +575,7 @@ static int bench_append_shape(
                 char saved = text[offset / 2];
                 int result;
                 text[offset / 2] = saved == 'a' ? 'b' : 'a';
-                result = append_tick(&document, text, offset, &samples[tick]);
+                result = append_tick(&document, text, offset, slot);
                 text[offset / 2] = saved;
                 if (result != 0) {
                     failed = 1;
@@ -575,7 +586,7 @@ static int bench_append_shape(
                 if (offset > text_length) {
                     offset = text_length;
                 }
-                if (append_tick(&document, text, offset, &samples[tick]) != 0) {
+                if (append_tick(&document, text, offset, slot) != 0) {
                     failed = 1;
                     break;
                 }
@@ -585,30 +596,46 @@ static int bench_append_shape(
             break;
         }
         qsort(samples, APPEND_TICKS_PER_CHECKPOINT, sizeof(samples[0]), compare_u64);
-        median_ms = (double)samples[APPEND_TICKS_PER_CHECKPOINT / 2] / 1e6;
+        medians_ms[step] = (double)samples[APPEND_TICKS_PER_CHECKPOINT / 2] / 1e6;
         snprintf(case_name, sizeof(case_name), "append_%s@%zu", name, checkpoints[step]);
         printf(
-            "benchmark case=%s bytes=%zu repeats=%d warmup=0 median_ms=%.3f\n",
+            "benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n",
             case_name,
             checkpoints[step],
             APPEND_TICKS_PER_CHECKPOINT,
-            median_ms
+            APPEND_WARMUP_TICKS,
+            medians_ms[step]
         );
-        if (step > 0) {
-            double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
-            if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
-                fprintf(
-                    stderr,
-                    "%s: per-tick scaling ratio %.2f exceeds %.2f at %zu bytes\n",
-                    name,
-                    median_ms / floor_ms,
-                    BENCH_MAX_DOUBLING_RATIO,
-                    checkpoints[step]
-                );
-                failed = 1;
-            }
+    }
+
+    /* The gate is the MEDIAN of the adjacent-doubling growth ratios, not any
+     * single pair: an allocator size-class or cache-level transition puts one
+     * step's ratio far above its neighbours while every other interval stays
+     * linear, and a two-point ratio cannot tell that from an asymptote — the
+     * footnote-renumber complexity gate failed exactly this way before it
+     * moved to the same median form (docs/specs/test-architecture.md).
+     * Sustained super-linear growth moves every interval, so it moves the
+     * median; an isolated transition cannot. */
+    if (!failed) {
+        double sorted[APPEND_CHECKPOINTS - 1];
+        double median_ratio;
+        for (step = 1; step < steps; step++) {
+            double floor_ms = medians_ms[step - 1] > 0.0005 ? medians_ms[step - 1] : 0.0005;
+            ratios[step - 1] = medians_ms[step] / floor_ms;
         }
-        previous_ms = median_ms;
+        memcpy(sorted, ratios, sizeof(sorted));
+        qsort(sorted, steps - 1, sizeof(sorted[0]), compare_double);
+        median_ratio = sorted[(steps - 1) / 2];
+        if (median_ratio > BENCH_MAX_DOUBLING_RATIO) {
+            fprintf(
+                stderr,
+                "%s: median per-tick doubling ratio %.2f exceeds %.2f\n",
+                name,
+                median_ratio,
+                BENCH_MAX_DOUBLING_RATIO
+            );
+            failed = 1;
+        }
     }
 
     markdown_core_document_free(document);

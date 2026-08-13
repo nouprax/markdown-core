@@ -30,11 +30,11 @@
                     "reason": "llvm-cov emits no branch regions for Swift: SwiftPM's coverage instrumentation produces line, function, and region counters only. Line and function coverage carry this platform's gate until the toolchain grows branch support."
                 }
             ],
-            "minimumMeasuredFiles": 34,
+            "minimumMeasuredFiles": 33,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 17,
-                    "functions": 5
+                    "lines": 11,
+                    "functions": 3
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
                     "lines": 1,
@@ -57,12 +57,12 @@
                     "functions": 3
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
-                    "lines": 13,
+                    "lines": 5,
                     "functions": 1
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift": {
-                    "lines": 2,
-                    "functions": 1
+                    "lines": 1,
+                    "functions": 0
                 }
             }
         },
@@ -73,7 +73,7 @@
                 "packages/kotlin-markdown-core/src/"
             ],
             "exempt": [],
-            "minimumMeasuredFiles": 41,
+            "minimumMeasuredFiles": 40,
             "unpinned": {
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/BlockQuote.kt": {
                     "lines": 2,
@@ -89,11 +89,6 @@
                     "lines": 2,
                     "functions": 2,
                     "branches": 0
-                },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Commit.kt": {
-                    "lines": 20,
-                    "functions": 9,
-                    "branches": 26
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/CrossLink.kt": {
                     "lines": 2,
