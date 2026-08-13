@@ -1,4 +1,4 @@
-/* libFuzzer target for incremental documents: every input is an edit script
+/* libFuzzer target for document edits: every input is an edit script
  * (format in tests/support/edit_replay.h) replayed with full per-commit
  * verification — dump equality against a one-shot parse of the shadow text,
  * delta-mirror integrity, and footnote-query equivalence when the script

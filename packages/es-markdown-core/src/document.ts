@@ -29,8 +29,7 @@ function diagnosticCode(raw: number): DiagnosticCode {
 }
 
 /**
- * Releases a native parse that its document never handed on and nobody
- * closed.
+ * Releases a native parse nobody closed.
  *
  * `close` remains the way to release promptly; this is what keeps a dropped
  * document from leaking, and it is never a reason not to close one. The
@@ -45,7 +44,7 @@ const reclaim = new FinalizationRegistry<CDocument>((handle) => handle.free());
 interface Built {
     readonly handle: CDocument;
     readonly options: Readonly<Required<ParseOptions>>;
-    readonly series: bigint;
+    readonly series: string;
     readonly identities: Map<number, MarkupID>;
 }
 
@@ -111,6 +110,10 @@ function build(state: Built): Document {
 
 function edit(state: Built, markdown: string): Commit {
     const { document: handle, delta: deltaPointer } = state.handle.edit(markdown);
+    // The successor is owned from here until `build` registers it for
+    // reclaim. Nothing else can release it in between, and WASM linear memory
+    // never shrinks, so the throw path has to.
+    let adopted = false;
     try {
         const raw = handle.readDelta(deltaPointer);
         const delta: Delta = {
@@ -133,9 +136,12 @@ function edit(state: Built, markdown: string): Commit {
         for (const row of raw.diffs) {
             if (row.parts === 0) successor.identities.delete(row.rawValue);
         }
-        return { document: build(successor), delta };
+        const document = build(successor);
+        adopted = true;
+        return { document, delta };
     } finally {
         handle.deltaFree(deltaPointer);
+        if (!adopted) handle.free();
     }
 }
 

@@ -3,10 +3,14 @@
 
 package com.nouprax.markdown.core
 
+import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
-import java.lang.ref.Cleaner
-import java.nio.file.Files
-import java.nio.file.Path
+import java.lang.ref.PhantomReference
+import java.lang.ref.ReferenceQueue
+import java.util.Collections
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.jvm.JvmSynthetic
 
 /** Loads the JNI bridge for this target before any [JvmNative] call. */
@@ -28,21 +32,91 @@ internal actual fun CDocumentHandle.edit(source: ByteArray): ByteArray = JvmNati
 @JvmSynthetic
 internal actual fun CDocumentHandle.release(): Unit = JvmNative.release(this)
 
-/** One Cleaner for the process: its thread is started on first use and is
- * shared by every document, which is what the class is for. */
-private val cleaner: Cleaner by lazy { Cleaner.create() }
+/**
+ * One document's registration: the owner's phantom reachability, and what to
+ * run when it arrives.
+ *
+ * Holds [action] and never the owner. A registration that could reach its own
+ * owner would keep that owner reachable, and then it would never run.
+ */
+private class NativeCleanup(
+    owner: Any,
+    private val action: () -> Unit,
+    queue: ReferenceQueue<Any>,
+) : PhantomReference<Any>(owner, queue) {
+    fun run() = action()
+}
+
+/**
+ * Runs each document's release once that document is unreachable.
+ *
+ * `java.lang.ref.Cleaner` is precisely this and would otherwise be the whole
+ * implementation, but it reached Android only in API 33 while this artifact
+ * ships to API 21. Both JVM targets therefore share the mechanism that class
+ * is built from, rather than splitting the backstop per target — a split
+ * would leave the Android half unreachable from the desktop suite, which is
+ * how a JVM-only API came to be called on API 21 in the first place.
+ *
+ * One daemon thread for the process, started with the first registration.
+ */
+private object NativeReclaim {
+    private val queue = ReferenceQueue<Any>()
+
+    // A phantom reference is enqueued only while something still holds it, so
+    // this set is what keeps a registration alive until its owner dies.
+    private val live: MutableSet<NativeCleanup> =
+        Collections.newSetFromMap(ConcurrentHashMap<NativeCleanup, Boolean>())
+
+    init {
+        val thread = Thread(::drain, "markdown-core-native-reclaim")
+        thread.isDaemon = true
+        thread.start()
+    }
+
+    @JvmSynthetic
+    fun register(
+        owner: Any,
+        release: () -> Unit,
+    ): Any = NativeCleanup(owner, release, queue).also(live::add)
+
+    private fun drain() {
+        while (true) {
+            val cleanup =
+                try {
+                    queue.remove() as NativeCleanup
+                } catch (interrupt: InterruptedException) {
+                    // Asked to stop, so stop: whatever is still queued belongs
+                    // to a process on its way out, and its native memory
+                    // leaves with the process. A thread that refused would
+                    // outlive every host that shuts its workers down politely.
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            live.remove(cleanup)
+            // Java 9 enqueues phantom references cleared; Android does not
+            // promise that, and clearing an already-cleared reference is a
+            // no-op on both.
+            cleanup.clear()
+            try {
+                cleanup.run()
+            } catch (failure: RuntimeException) {
+                // One document's failed release must not end the thread and
+                // take every later document's backstop with it. Cleaner
+                // ignores a throwing action for the same reason.
+            }
+        }
+    }
+}
 
 @JvmSynthetic
 internal actual fun attachNativeCleanup(
     owner: Any,
     release: () -> Unit,
 ): Any? =
-    // The Runnable holds `release` and never `owner`; one that reached its
-    // owner would keep that owner reachable and never run. The Cleanable is
-    // handed back only because the shared signature has to serve
-    // Kotlin/Native; the JVM's registration is live whether anyone holds it
-    // or not.
-    cleaner.register(owner) { release() }
+    // Handed back only because the shared signature has to serve
+    // Kotlin/Native, where the cleaner object's own lifetime is the trigger.
+    // Here the registration is live whether the caller holds it or not.
+    NativeReclaim.register(owner, release)
 
 private object JvmNative {
     external fun open(
@@ -99,23 +173,42 @@ internal val hostNativeLibraryResourcePath: String?
             "/com/nouprax/markdown/core/native/$it/$hostNativeLibraryFileName"
         }
 
+/**
+ * A directory only this process can name.
+ *
+ * `Files.createTempDirectory` is the obvious call and `java.nio.file` reached
+ * Android only in API 26, so this source set — which the Android artifact
+ * compiles — stays on the `java.io` surface that has been there since API 1.
+ * `mkdir` refusing an existing name is what makes the directory exclusively
+ * ours, and a random name is what keeps another process from predicting the
+ * path a library is about to be loaded from.
+ */
+private fun createPrivateTemporaryDirectory(): File {
+    val base = File(System.getProperty("java.io.tmpdir") ?: ".")
+    repeat(4) {
+        val directory = File(base, "markdown-core-${UUID.randomUUID()}")
+        if (directory.mkdir()) return directory
+    }
+    throw IllegalStateException("could not create a private directory for Markdown Core's native library")
+}
+
 /** Extracts a bundled library to a self-deleting temp directory and
  * loads it; [stream] is consumed and closed. */
 @JvmSynthetic
 internal fun extractAndLoadHostNativeLibrary(stream: InputStream) {
-    val directory = Files.createTempDirectory("markdown-core-")
-    val library = directory.resolve(hostNativeLibraryFileName)
+    val directory = createPrivateTemporaryDirectory()
+    val library = File(directory, hostNativeLibraryFileName)
 
     // deleteOnExit removes entries in reverse registration order, so the
     // directory must be registered before its child.
-    directory.toFile().deleteOnExit()
-    stream.use { Files.copy(it, library) }
-    library.toFile().deleteOnExit()
+    directory.deleteOnExit()
+    stream.use { input -> FileOutputStream(library).use(input::copyTo) }
+    library.deleteOnExit()
     loadBundledLibrary(library)
 }
 
 @Suppress("UnsafeDynamicallyLoadedCode")
-private fun loadBundledLibrary(library: Path) {
+private fun loadBundledLibrary(library: File) {
     // loadLibrary cannot address a native library extracted from a JAR.
-    System.load(library.toAbsolutePath().toString())
+    System.load(library.absolutePath)
 }

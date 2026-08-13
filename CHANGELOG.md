@@ -6,6 +6,41 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
+- Breaking (ECMAScript): `MarkupID.series` is a 16-digit lowercase hex string
+  instead of a `bigint`, so a document is ordinary JSON. `JSON.stringify` threw
+  on every tree before this — the salt was the one `bigint` on the public
+  surface — and no `toJSON` could have fixed it, because an id serialized to a
+  string and read back would no longer have matched the `bigint` that
+  `document.node` compares. The contract calls a series' identity opaque and
+  nothing does arithmetic on it, so the value is unchanged and only its
+  rendering moved: same 64 bits, still compared with `===`, still usable as a
+  `Map` key, and now round-tripping through JSON as the same identity. Kotlin
+  and Swift keep `ULong` and `UInt64`, which serialize on their own platforms.
+- Breaking (C, Swift, Kotlin, and ECMAScript): there is no session type.
+  `MarkupSession` in Swift, Kotlin, and ECMAScript and the whole
+  `markdown_core_session_*` family are removed rather than deprecated: the
+  former one-shot parse and the former session open are one call, and `edit`
+  hands a document new text and returns the document that text describes plus
+  the delta between the two. `edit` READS its receiver and takes nothing — the
+  document it was called on keeps everything it owns, stays usable, and is
+  freed by whoever holds it, so editing one document twice gives two lines of
+  descent. Options are fixed for a document's whole series; changing them is a
+  new document, not an edit.
+- Breaking (C, Swift, Kotlin, and ECMAScript): the incremental engine is
+  removed, and with it every promise built on it — no stale region, no
+  snapshot that structurally shares unchanged nodes with its predecessor, and
+  no per-commit cost proportional to the change. Every edit parses the whole
+  text and decodes the whole tree; the engine went because it bought no time
+  yet, measured rather than assumed. What a consumer relies on is unchanged:
+  after any sequence of edits a document dumps byte-for-byte equal to a
+  from-scratch parse of the same text, an untouched node keeps its `id` and
+  its `revision`, and a pure positional shift is not a change.
+- Breaking (C, Swift, Kotlin, and ECMAScript): the session-scoped footnote
+  answers are removed — numbering, resolution, first-use order, and
+  back-references, with `markdown_core_session_footnote_*` and the
+  `FootnoteInfo` platform type. `FootnoteDefinition` and `FootnoteReference`
+  carry their `label`; a consumer that wants numbering or resolution derives
+  it from the tree.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the per-parse identity salt is
   now called `series` everywhere it was called `lineage`
   (`markdown_core_document_series`, `MarkupID.series`, Kotlin's `seriesBits`
@@ -63,13 +98,13 @@ promised to remain compatible between releases.
   function of its text and options, not of how the caller reached it. What a
   reactive consumer compares is unchanged — an untouched node keeps its `id`
   and its `revision`.
-- Kotlin/JVM: native-bridge, scope-resolver, and wire-decoder implementation
-  types are no longer importable or constructible from Java; dedicated ABI
-  and Java-compiler gates keep the documented API as the only public surface.
+- Kotlin/JVM: native-bridge and wire-decoder implementation types are no
+  longer importable or constructible from Java; dedicated ABI and
+  Java-compiler gates keep the documented API as the only public surface.
 - Kotlin/Android: publish the exact private-JNI consumer rule in the main AAR
   and verify it with a minified release application whose own configuration
   intentionally contains no generic native-method keep. Mapping and DEX
-  inspection pin the `JvmNative` binary name and all 13 JNI method names when
+  inspection pin the `JvmNative` binary name and every JNI method name when
   used, plus prove that an unused library is still removed.
 - Tooling: update the development-only `brace-expansion` lockfile resolution
   to patched release 5.0.8.

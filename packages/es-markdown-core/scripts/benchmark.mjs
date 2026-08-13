@@ -85,9 +85,9 @@ function benchmarkStream(workload, unit, units) {
 
 function benchmarkFanOut(workload, width) {
     // One-byte edits alternating in the first paragraph of a document with
-    // `width` root children: the engine's incremental parse stays
-    // proportional to the edit, and this measures what the binding adds on
-    // top of it — one full decode of the committed tree per commit.
+    // `width` root children: every commit reparses the whole text and
+    // decodes the whole committed tree, so a narrow edit costs what a wide
+    // document costs.
     const body = "a\n\n".repeat(width);
     const sources = ["a" + body.slice(1), "b" + body.slice(1)];
 

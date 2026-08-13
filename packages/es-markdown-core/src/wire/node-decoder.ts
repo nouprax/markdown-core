@@ -7,8 +7,8 @@ import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values
 import type { NativeExports } from "../runtime/native.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before `adopt` wires its mediators — scope, node,
- * edit, close, dump — to the parse it came from. */
+/** A decoded document before `adopt` wires its mediators — node, edit,
+ * close, dump — to the parse it came from. */
 export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" | "content">;
 
 /**
@@ -73,7 +73,7 @@ export class NodeDecoder {
     /** The scratch block shared with the document boundary. Allocated once
      * in the constructor and held for the module's lifetime — the decoder is
      * a singleton over one WASM instance, so there is nothing to release it
-     * to. Holds `scratchSlots` little-endian 64-bit slots. */
+     * to. Holds four little-endian 64-bit slots. */
     get scratchPointer(): number {
         this.requireLive();
         return this.scratch;

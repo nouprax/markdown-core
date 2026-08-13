@@ -33,9 +33,9 @@ print((document.content.first as? Heading)?.level ?? 0)
 print(document.dump())
 ```
 
-All parse options default to `true`: smart punctuation, footnotes, HTML comment
-stripping, tables, strikethrough, autolinks, task lists, formulas, and
-directives, cross-links (`[[reference]]`), and embeds (`![[reference]]`). The
+All parse options default to `true`: smart punctuation, footnotes, tables,
+strikethrough, autolinks, task lists, formulas, directives, cross-links
+(`[[reference]]`), and embeds (`![[reference]]`). The
 single `formulas` switch controls `$…$`, `$$…$$`, LaTeX delimiters, and
 `formula` fenced blocks. The result is an immutable `Sendable` value tree whose
 nodes carry a stable identity (`id`, a `MarkupID` of the owning series salt
@@ -72,8 +72,8 @@ try MarkupWalker().walk(document) { event, node, scope in
 ```
 
 For typed dispatch, conform to `MarkupVisitor` and hand it to
-`node.accept(&visitor)`, or traverse the complete document without resolving
-scopes via `MarkupWalker().walk(document, visitor: &visitor)`. Directive labels
+`node.accept(&visitor)`, or traverse the complete document via
+`MarkupWalker().walk(document, visitor: &visitor)`. Directive labels
 are first-class `DirectiveLabel` nodes:
 `Directive.label` and `DirectiveBlock.label` are optional typed edges, while an
 explicit empty `[]` is a non-nil label whose `content` is empty.

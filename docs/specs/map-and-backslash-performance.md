@@ -311,10 +311,7 @@ Reviewer 应重点确认：
 
 - `packages/markdown-core/core/map.c` / `map.h`：共享 index 与 inherited map adapter；
 - `packages/markdown-core/core/references.c`：reference entry ownership；
-- `packages/markdown-core/core/footnotes.c`、`blocks.c`：footnote lookup 与显式输出排序；
+- `packages/markdown-core/core/blocks.c`：footnote lookup 与显式输出排序；
 - `packages/markdown-core/extensions/directive.c`：统一的 attribute normalization；
 - `packages/markdown-core/core/inlines.c`：allocation-free 连续 backslash pair-run 解码；
-- `packages/markdown-core/tests/runners/complexity_runner.c`：4 KiB → 128 MiB endpoint gate；
-- `packages/markdown-core/tests/runners/pathological_runner.c`：legacy-hash collision regression；
-- `packages/markdown-core/tests/runners/fallback_runner.c`：allocator 注入的 sorted-fallback
-  对拍、构造聚簇的扩容重试与 OOM 降级回归。
+- `packages/markdown-core/tests/runners/pathological_runner.c`：legacy-hash collision regression。

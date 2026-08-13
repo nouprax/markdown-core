@@ -9,8 +9,8 @@ Apple Xcode toolchain does not ship it).
 
 ## Document edit-script fuzzer
 
-`fuzz_document_edits` interprets every input as an edit script over an
-incremental document (format documented in
+`fuzz_document_edits` interprets every input as an edit script over a
+document (format documented in
 `tests/support/edit_replay.h`: two option bytes, then
 insert/delete/replace/commit operations) and verifies each commit through the
 shared replay harness — the document dump must equal a one-shot parse of the

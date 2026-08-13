@@ -55,7 +55,7 @@ cluster — node identity/traversal and error accessors (`node_get_id`,
 `node_get_kind`, `node_get_revision`, `node_get_parent`,
 `node_get_first_child`, `node_get_next_sibling`, `error_get_*`) — and uses
 bare `subject_attribute` names everywhere else (kind-specific property
-accessors, `session_*`, `delta_*`, `document_root`). This is
+accessors, `delta_*`, `document_root`). This is
 deliberate, not drift: the bare names for that cluster are occupied
 (`markdown_core_node_id` and `markdown_core_node_kind` are type names, and
 `node_first_child`/`node_parent` are the raw internal traversal functions),

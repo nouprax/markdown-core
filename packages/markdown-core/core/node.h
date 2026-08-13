@@ -65,14 +65,6 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
 
-    // Set at seal time (commit): start_line holds a delta from the
-    // raw parent's resolved start line (root keeps its absolute), end_line a
-    // delta from the node's own absolute start line; columns stay line-local.
-    // The parser and raw one-shot parses keep absolute lines and never set
-    // this. Position-free nodes (start_line 0: soft/hard breaks, synthesized
-    // blocks) stay raw and unsealed so incremental line shifts of an
-    // ancestor cannot move their zero markers; resolution treats an unsealed
-    // node's fields as final.
     /* The block ended on the line being processed, having consumed its own
      * terminator, so its end position is that line rather than the one
      * before. `finalize` names the block types this is true of; an extension
@@ -95,10 +87,7 @@ enum markdown_core_node__internal_flags {
     // footnote definitions — and nothing else — was still open, and the
     // line's own shape (non-blank, first non-space before the continuation
     // indent) is what closes them, before anything above can capture it.
-    // The anchor therefore holds only while the line keeps that shape;
-    // restart planning re-checks it against the current text and backs off
-    // one clean entry when an edit has reshaped the line into a
-    // continuation.
+    // The anchor therefore holds only while the line keeps that shape.
     MARKDOWN_CORE_NODE__CLEAN_START_SEALING = (1 << 14),
 
     // Set on a direct document child whose first line arrived while the
@@ -131,7 +120,7 @@ struct markdown_core_node {
     struct markdown_core_node *last_child;
 
     // Commit-assigned identity: `id` is unique within the owning series and
-    // stable across incremental commits while the node remains "the same
+    // stable across commits while the node remains "the same
     // thing"; `last_changed_rev` is the document revision at which the node's
     // own fields, child list, or any descendant last changed. Both stay 0 for
     // parses that never pass through a commit's adoption walk.

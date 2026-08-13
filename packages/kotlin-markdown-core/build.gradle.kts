@@ -12,6 +12,7 @@ import org.gradle.api.tasks.CompileClasspath
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.OutputFile
@@ -35,6 +36,8 @@ import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
+import java.util.Properties
+import java.util.SortedSet
 import java.util.zip.ZipFile
 import javax.inject.Inject
 
@@ -888,6 +891,19 @@ kotlin {
                 project.dependencies.project(":packages:kotlin-markdown-core:android-runtime"),
             )
         }
+        // The Kotlin classes and the JNI payload they call are one artifact
+        // published as two modules, so a consumer must not be able to pair
+        // halves from different releases — highest-version-wins, a BOM, or a
+        // `force` would otherwise do it silently. A project dependency
+        // publishes only `requires`, so the strict version travels as a
+        // constraint, and Gradle fails the resolution instead.
+        project.dependencies.constraints.add(
+            "androidMainImplementation",
+            "com.nouprax:kotlin-markdown-core-android-runtime",
+        ) {
+            version { strictly(project.version.toString()) }
+            because("the Kotlin classes and the JNI payload are one artifact split in two")
+        }
         macosArm64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
         linuxX64Main { kotlin.srcDir("src/nativePlatformMain/kotlin") }
     }
@@ -962,7 +978,7 @@ tasks.withType<Test>().configureEach {
 
 // JVM-target coverage for the repository's one coverage gate.
 //
-// The Android, Native, and JS targets compile the same commonMain sources, so
+// The Android and Native targets compile the same commonMain sources, so
 // one instrumented JVM run measures the shared binding logic once rather than
 // reporting every common file four times under four toolchains. The
 // target-specific sources each keep their own gate through their own platform.
@@ -1093,13 +1109,13 @@ tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentat
     testedAbi.set(androidManagedDeviceTestAbi)
 }
 
-// Complements Kotlin's metadata-aware ABI dumps by freezing every ordinary
-// Java-source-visible class and each public/protected non-synthetic member in
-// the JVM artifact. javac deliberately hides ACC_SYNTHETIC classes/members;
+// Complements Kotlin's metadata-aware ABI dumps by comparing the classes
+// ordinary Java source can use in the JVM and Android outputs against that
+// dump's inventory. javac deliberately hides ACC_SYNTHETIC classes/members;
 // explicit negative compile probes below pin that boundary as well.
 // Module-internal top-level declarations live in package-private multifile
-// parts, while their synthetic forwarders share the documented
-// FootnoteQueriesKt owner. Regenerate deliberately with -PwriteJvmAbi.
+// parts, while their synthetic forwarders share one MarkdownCoreKt owner
+// carrying no member Java can name.
 val javaToolchains = extensions.getByType<JavaToolchainService>()
 val javaProbeCompiler =
     javaToolchains.compilerFor {
@@ -1115,6 +1131,190 @@ fun VerifyJavaImplementationHidden.useJavaCompiler(
     javaCompilerRuntimeVersion.set(compiler.map { it.metadata.javaRuntimeVersion })
     javaRelease.set(release.map { it.toInt() })
 }
+
+/**
+ * Fails when the Android classes reference a platform type the floor they
+ * declare did not have.
+ *
+ * Nothing else catches this. ktlint reads formatting; the host tests run on a
+ * real JDK, where every `java.*` type exists whatever `minSdk` says; and every
+ * managed device sits above the floor — which is how a call to an API-33 class
+ * shipped in an artifact advertising API 21. The SDK ships the answer in
+ * `api-versions.xml`, so the check is a lookup, not a heuristic.
+ *
+ * Constant-pool class entries only. A call, a field access, a `new`, a cast
+ * and a supertype all reduce to one, and one is exactly what the failure looks
+ * like at runtime: a class the verifier cannot resolve.
+ */
+@CacheableTask
+abstract class VerifyAndroidApiFloor : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val libraryClasses: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val apiVersions: RegularFileProperty
+
+    @get:Input
+    abstract val minSdk: Property<Int>
+
+    @get:OutputFile
+    abstract val reportFile: RegularFileProperty
+
+    @TaskAction
+    fun verify() {
+        val floor = minSdk.get()
+        val introducedIn = platformApiLevels(apiVersions.get().asFile)
+        val violations = sortedMapOf<String, SortedSet<String>>()
+        var scanned = 0
+        for (root in libraryClasses.files) {
+            if (!root.isDirectory) {
+                continue
+            }
+            root
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "class" }
+                .forEach { classFile ->
+                    scanned += 1
+                    val owner =
+                        classFile
+                            .toRelativeString(root)
+                            .removeSuffix(".class")
+                            .replace(File.separatorChar, '/')
+                    for (referenced in referencedClasses(classFile.readBytes())) {
+                        val level = introducedIn[referenced] ?: continue
+                        if (level > floor) {
+                            violations
+                                .getOrPut("$referenced (API $level)") { sortedSetOf() }
+                                .add(owner)
+                        }
+                    }
+                }
+        }
+        check(scanned > 0) { "no Android classes to check; the compilation produced nothing" }
+        val report =
+            buildString {
+                appendLine("minSdk=$floor classes=$scanned violations=${violations.size}")
+                violations.forEach { (reference, owners) ->
+                    appendLine("$reference used by ${owners.joinToString(", ")}")
+                }
+            }
+        reportFile
+            .get()
+            .asFile
+            .apply { parentFile.mkdirs() }
+            .writeText(report)
+        check(violations.isEmpty()) {
+            "the Android artifact declares minSdk $floor and references newer platform types:\n$report"
+        }
+        logger.lifecycle("Android API floor verified: $scanned classes against minSdk $floor.")
+    }
+
+    /** `<class name="…" since="N">` rows; a class with no `since` has been
+     * there since API 1. */
+    private fun platformApiLevels(file: File): Map<String, Int> {
+        val row = Regex("""<class name="([^"]+)"(?:[^>]*\ssince="(\d+)")?""")
+        val levels = HashMap<String, Int>()
+        file.forEachLine { line ->
+            val match = row.find(line) ?: return@forEachLine
+            levels[match.groupValues[1]] = match.groupValues[2].toIntOrNull() ?: 1
+        }
+        check(levels.isNotEmpty()) { "no class rows in ${file.absolutePath}" }
+        return levels
+    }
+
+    private fun referencedClasses(bytes: ByteArray): Set<String> {
+        val input = DataInputStream(bytes.inputStream())
+        require(input.readInt() == -0x35014542) { "not a class file" }
+        input.readUnsignedShort()
+        input.readUnsignedShort()
+        val poolCount = input.readUnsignedShort()
+        val text = arrayOfNulls<String>(poolCount)
+        // A class entry may name a slot the walk has not reached, so the names
+        // are resolved after the pool is complete.
+        val nameSlots = mutableListOf<Int>()
+        var slot = 1
+        while (slot < poolCount) {
+            when (val tag = input.readUnsignedByte()) {
+                1 -> {
+                    text[slot] = input.readUTF()
+                }
+
+                7 -> {
+                    nameSlots += input.readUnsignedShort()
+                }
+
+                8, 16, 19, 20 -> {
+                    input.skipBytes(2)
+                }
+
+                15 -> {
+                    input.skipBytes(3)
+                }
+
+                3, 4, 9, 10, 11, 12, 17, 18 -> {
+                    input.skipBytes(4)
+                }
+
+                5, 6 -> {
+                    input.skipBytes(8)
+                    slot += 1
+                }
+
+                else -> {
+                    error("unsupported constant pool tag $tag")
+                }
+            }
+            slot += 1
+        }
+        return nameSlots
+            .mapNotNull { text[it] }
+            // An array type carries its own class entry; the platform answers
+            // for the element type.
+            .map { it.trimStart('[') }
+            .map { if (it.startsWith("L") && it.endsWith(";")) it.substring(1, it.length - 1) else it }
+            .toSet()
+    }
+}
+
+/** The SDK the Android tooling would use, from the same places it looks. */
+val androidSdkDirectory: File? =
+    sequenceOf(
+        providers.gradleProperty("sdk.dir").orNull,
+        rootProject.file("local.properties").takeIf { it.isFile }?.let { file ->
+            val properties = Properties()
+            file.inputStream().use { properties.load(it) }
+            properties.getProperty("sdk.dir")
+        },
+        providers.environmentVariable("ANDROID_HOME").orNull,
+        providers.environmentVariable("ANDROID_SDK_ROOT").orNull,
+    ).filterNotNull()
+        .map(::File)
+        .firstOrNull(File::isDirectory)
+
+val verifyAndroidApiFloor =
+    tasks.register<VerifyAndroidApiFloor>("verifyAndroidApiFloor") {
+        group = "verification"
+        description = "Proves the Android classes reference no platform type newer than minSdk."
+        libraryClasses.from(androidMainCompilation.output.classesDirs)
+        minSdk.set(
+            libs.versions.android.min.sdk
+                .map(String::toInt),
+        )
+        val compileSdk =
+            libs.versions.android.compile.sdk
+                .get()
+        val sdk =
+            androidSdkDirectory
+                ?: error(
+                    "no Android SDK found for verifyAndroidApiFloor; set ANDROID_HOME or sdk.dir in local.properties",
+                )
+        val versions = File(sdk, "platforms/android-$compileSdk/data/api-versions.xml")
+        check(versions.isFile) { "missing ${versions.absolutePath}; install the android-$compileSdk platform" }
+        apiVersions.set(versions)
+        reportFile.set(layout.buildDirectory.file("verification/android-api-floor.txt"))
+    }
 
 val verifyJvmImplementationHidden =
     tasks.register<VerifyJavaImplementationHidden>("verifyJvmImplementationHidden") {
@@ -1149,6 +1349,7 @@ tasks.register("kotlinTest") {
             "verifyKotlinNativePackaging",
             verifyJvmImplementationHidden,
             verifyAndroidImplementationHidden,
+            verifyAndroidApiFloor,
             "checkKotlinAbi",
         ),
     )

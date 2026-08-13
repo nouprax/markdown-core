@@ -20,13 +20,15 @@ internal expect fun cOpen(
 
 /**
  * Hands [source] to the document behind this handle and returns the MKC4
- * payload describing its successor. CONSUMES the handle on every path,
- * success or not — the successor's handle arrives inside the payload.
+ * payload describing its successor. READS this handle and takes nothing: it
+ * stays valid and editable, and the successor's own handle arrives inside the
+ * payload.
  */
 @JvmSynthetic
 internal expect fun CDocumentHandle.edit(source: ByteArray): ByteArray
 
-/** Releases a handle no edit has consumed. */
+/** Releases a handle. Every handle reaches this, an edited one included:
+ * an edit produces a successor and consumes nothing. */
 @JvmSynthetic
 internal expect fun CDocumentHandle.release()
 
@@ -35,8 +37,9 @@ internal expect fun CDocumentHandle.release()
  * the registration for [owner] to hold.
  *
  * A [Document] owns a native parse and common Kotlin has no deterministic
- * destructor, so the backstop is the platform's own reclaim mechanism:
- * `java.lang.ref.Cleaner` on the JVM and Android, `createCleaner` on Native.
+ * destructor, so the backstop is phantom reachability: a reference queue
+ * drained by one daemon thread on the JVM and Android, `createCleaner` on
+ * Native.
  * [Document.close] remains the way to release promptly; this is what keeps a
  * dropped document from leaking, and it is never a reason not to close one.
  *

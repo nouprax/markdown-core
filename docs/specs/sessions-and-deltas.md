@@ -1,8 +1,9 @@
 # Documents, deltas, and platform surfaces
 
 Status: rewritten 2026-08-09 onto the document model — there is no session; a
-document is created from text and options, and `commit` hands it new text and
-supersedes it (`../reviews/2026-08-09-api-model-and-allocation-failure.md`).
+document is created from text and options, and `commit` hands it new text
+without taking it
+(`../reviews/2026-08-09-api-model-and-allocation-failure.md`).
 Rewritten 2026-08-03 onto the unified-CST ownership model. This
 contract is not implemented yet; it becomes binding together with
 `incremental-canonical-ast.md`, and the two ship atomically with
@@ -97,10 +98,10 @@ revisions are excluded — they are document history, not content.
 
 ## Failure and memory
 
-- **On allocation failure the commit reports an error and the document it was
-  called on is done.** There is no restoration and no retry: the caller holds
-  the text, so recovery is building a document from it again. An aborted
-  identity or revision is burned, never reused.
+- **On allocation failure the commit reports an error and leaves the document
+  it was called on UNTOUCHED.** Nothing partial is produced, neither member of
+  the `Commit` is set, and that document can be queried, walked, and committed
+  again. An aborted identity or revision is burned, never reused.
 
   What replaced a transactional-and-retryable promise, and why, is
   [`../reviews/2026-08-09-api-model-and-allocation-failure.md`](../reviews/2026-08-09-api-model-and-allocation-failure.md).
@@ -111,15 +112,16 @@ revisions are excluded — they are document history, not content.
   contract already required — do not crash, do not leak, report the error, and
   never let a truncated document masquerade as success.
 - Releasing a document invalidates no OTHER document, node view, byte slice, or
-  delta. Its own views die with it, and a superseded document is already dead:
-  `commit` ends the one it was called on.
+  delta. Its own views die with it, and a successor has its own: `commit` ends
+  nothing, so every document is released by whoever holds it.
 - Routine private storage compaction preserves every public identity,
   revision, and AST value and emits no diff entry.
 
 ## Concurrency
 
-- `commit` on one document is externally synchronized (one writer), because it
-  supersedes its receiver.
+- `commit` needs no external synchronization: it reads its receiver and takes
+  nothing. Freeing a document is the one mutating operation, and must follow
+  all other access to it.
 - Documents and deltas are immutable values, safe for concurrent reads from any
   thread according to the binding's value contract.
 - Distinct documents are fully concurrent, which is what lets a workspace hold
@@ -135,7 +137,6 @@ The canonical entry point on Swift, Kotlin, and ES is `Document`:
 | `commit(markdown)` | returns `Commit { document, delta }`; the receiver is read, not taken |
 | `version` | this document's `DocumentVersion` |
 | `node(for:)` / `parent(of:)` / `index(of:)` | resolve an identity in this document |
-| `scope(of:profile:)` | resolve a stable extent to a `Scope` |
 | `footnote(of:)` / `footnotes()` / `resolution(of:)` / `references(of:)` | the parser answers above |
 | `concrete` | the retained `ConcreteTree` |
 

@@ -1605,11 +1605,9 @@ footnoteForm:
             // renderer had to special-case. The label reads exactly as the
             // borrow below reads it.
             //
-            // The map is the document's, spanning all of it: a
-            // paragraph reparsed on its own still sees a definition a hundred
-            // lines further down, so an incremental tree equals the one-shot
-            // tree. A definedness flip is what re-refines the units that read
-            // the label.
+            // The map is the document's, spanning all of it: the lookup sees
+            // a definition a hundred lines further down as readily as one
+            // above.
             markdown_core_chunk probe = {literal->data + 1, label_span, 0};
             bool defined = markdown_core_map_lookup(parser->footnote_defs, &probe) != NULL;
 

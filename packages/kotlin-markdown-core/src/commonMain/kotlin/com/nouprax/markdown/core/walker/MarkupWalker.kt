@@ -28,10 +28,7 @@ public object MarkupWalker {
      * Walks the document depth-first, dispatching each node to [visitor] in
      * preorder.
      *
-     * Scope-free by construction: a structural visitor neither pays scope
-     * materialization nor depends on the snapshot's resolver state, so a
-     * retained snapshot traverses regardless of whether it ever resolved
-     * scopes.
+     * No exit event, and no scope handed over: a node carries its own.
      */
     public fun walk(
         document: Document,

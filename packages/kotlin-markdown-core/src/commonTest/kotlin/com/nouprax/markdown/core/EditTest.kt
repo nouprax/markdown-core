@@ -185,9 +185,9 @@ class EditTest {
         val two = assertIs<Paragraph>(first.content[1])
         assertEquals(3, two.scope.start.line)
 
-        // Editing hands the native parse to the successor. The predecessor's
-        // values, scopes, diagnostics, and dump were all extracted at parse
-        // time and owe that parse nothing.
+        // Editing takes nothing from the predecessor. Its values, scopes,
+        // diagnostics, and dump were all extracted at parse time and owe that
+        // parse nothing.
         first.edit("Zero\n\nOne\n\nTwo\n").document.close()
         assertEquals(3, two.scope.start.line)
         assertTrue(first.dump().contains("Paragraph"))

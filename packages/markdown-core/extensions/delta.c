@@ -11,7 +11,7 @@
 // four arrays at once, a work row per surviving id, a parent-link pass, and a
 // Kahn queue to emit children before parents -- plus, for every id, a lookup
 // through a document-wide id->node index that had to be built on every commit
-// just to answer it. `diffs` is emitted in postorder now (document.c), so a
+// just to answer it. `diffs` is emitted in postorder now (diff.c), so a
 // row's position IS its position and none of that has a question to answer.
 
 bool markdown_core_delta_push(markdown_core_delta *changes, markdown_core_node_id id, uint32_t parts) {
