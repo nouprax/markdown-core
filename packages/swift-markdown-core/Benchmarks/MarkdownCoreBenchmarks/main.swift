@@ -104,7 +104,7 @@ func benchmarkStream(_ workload: String, unit: String, units: Int) throws {
     // The streaming consumer: text grows by one unit per tick and each tick
     // edits the document into its successor.
     try measureAndReport(
-        boundary: "native_edit_and_delta_decode",
+        boundary: "native_edit_and_decode",
         workload: workload,
         metrics: "bytes=\(unit.utf8.count * units) commits=\(units)"
     ) { _ in
@@ -112,7 +112,7 @@ func benchmarkStream(_ workload: String, unit: String, units: Int) throws {
         var streamed = ""
         for _ in 0..<units {
             streamed += unit
-            document = try document.edit(streamed).document
+            document = try document.edit(streamed)
         }
     }
 }
@@ -125,7 +125,7 @@ func benchmarkDeepEdit(_ workload: String, depth: Int) throws {
     // quadratic through per-entry ancestor walks.
     let prefix = String(repeating: "> ", count: depth)
     try measurePreparedAndReport(
-        boundary: "native_edit_and_delta_decode",
+        boundary: "native_edit_and_decode",
         workload: workload,
         metrics: "bytes=\(depth * 2 + 2) commits=1",
         prepare: { _ in try Document(prefix + "a\n") },

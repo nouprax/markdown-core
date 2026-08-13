@@ -18,8 +18,7 @@ import Testing
         #expect((second.content[0] as? Text)?.literal == "second")
 
         // The edit path takes the same route and must not truncate either.
-        let commit = try document.edit("lead\n\nx\u{0}y\n")
-        let edited = commit.document
+        let edited = try document.edit("lead\n\nx\u{0}y\n")
         #expect(edited.content.count == 2)
         let tail = try #require(edited.content[1] as? Paragraph)
         #expect((tail.content[0] as? Text)?.literal == "x\u{FFFD}y")

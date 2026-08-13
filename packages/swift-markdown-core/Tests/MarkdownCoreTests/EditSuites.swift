@@ -10,8 +10,7 @@ import Testing
         let firstParagraph = try #require(first.content[1] as? Paragraph)
         let firstText = try #require(firstParagraph.content[0] as? Text)
 
-        let commit = try first.edit("# Title\n\nHello world")
-        let second = commit.document
+        let second = try first.edit("# Title\n\nHello world")
         let secondHeading = try #require(second.content[0] as? Heading)
         let secondParagraph = try #require(second.content[1] as? Paragraph)
         let secondText = try #require(secondParagraph.content[0] as? Text)
@@ -22,13 +21,11 @@ import Testing
         #expect(secondText.revision > firstText.revision)
         #expect(secondHeading == firstHeading)
 
-        // The heading settled before the edit and is not in the delta at all;
-        // the text it precedes is, and nothing is retired.
-        let named = Set(commit.delta.diffs.map(\.markup))
-        #expect(!named.contains(firstHeading.id))
-        #expect(named.contains(secondText.id))
-        #expect(commit.delta.diffs.allSatisfy { !$0.parts.isRetired })
-        #expect(try #require(commit.delta.diffs.first { $0.markup == secondText.id }).parts.contains(.text))
+        // The heading settled before the edit and kept its exact revision —
+        // that is what `==` above pins. The text changed, so it carries the
+        // new document revision, which the root above it also carries.
+        #expect(secondText.revision == second.revision)
+        #expect(second.revision > first.revision)
     }
 
     @Test("a clean-boundary insert at the top leaves downstream identity intact")
@@ -37,8 +34,7 @@ import Testing
         let downstreamBefore = before.content.map { ($0.id, $0.revision) }
         let thirdBefore = try #require(before.content[2] as? Paragraph)
 
-        let commit = try before.edit("# New\n\nFirst\n\nSecond\n\nThird\n")
-        let after = commit.document
+        let after = try before.edit("# New\n\nFirst\n\nSecond\n\nThird\n")
 
         #expect(after.content.count == 4)
         let inserted = try #require(after.content[0] as? Heading)
@@ -47,10 +43,11 @@ import Testing
             #expect(node.revision == downstreamBefore[index].1)
         }
 
-        // A created node differs from absence in every part it has: a heading
-        // has a value and children, and no text of its own.
-        let insertedDiff = try #require(commit.delta.diffs.first { $0.markup == inserted.id })
-        #expect(insertedDiff.parts == [.value, .children, .descendant])
+        // A created node's identity is minted at this edit — nothing in the
+        // predecessor answers for it — and it carries the new document
+        // revision, the stamp every node changed at this edit shares.
+        #expect(before.node(inserted.id) == nil)
+        #expect(inserted.revision == after.revision)
 
         // Downstream nodes shifted by two lines. The successor's value is the
         // one that moved; the predecessor's value keeps the extent it was
@@ -71,24 +68,16 @@ import Testing
         let before = try Document("text\n")
         let paragraph = try #require(before.content[0] as? Paragraph)
 
-        let commit = try before.edit("# text\n")
-        let heading = try #require(commit.document.content[0] as? Heading)
+        let after = try before.edit("# text\n")
+        let heading = try #require(after.content[0] as? Heading)
 
+        // Paired nodes always share a kind, so the paragraph's identity is
+        // retired — gone from the new tree, its id answering nothing — and
+        // the heading's is minted, carrying the new document revision.
         #expect(heading.id != paragraph.id)
-        let retired = commit.delta.diffs.filter(\.parts.isRetired).map(\.markup)
-        #expect(retired.contains(paragraph.id))
-        #expect(commit.delta.diffs.contains { $0.markup == heading.id && !$0.parts.isRetired })
-        // A retired node is emitted WHERE IT WAS FOUND — inside its former
-        // parent's run, before the nodes that took its place there and before
-        // that parent's own row — so a consumer drops a parent's dead children
-        // before it re-reads that parent's child list. (It is NOT true that
-        // every retirement precedes every survivor: a sibling that merely
-        // changed is emitted before the removal that follows it.)
-        let retiredIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == paragraph.id })
-        let createdIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == heading.id })
-        let rootIndex = try #require(commit.delta.diffs.firstIndex { $0.markup == commit.document.id })
-        #expect(retiredIndex < createdIndex)
-        #expect(createdIndex < rootIndex)
+        #expect(after.node(paragraph.id) == nil)
+        #expect(heading.revision == after.revision)
+        #expect(after.revision > before.revision)
     }
 
     @Test("equality is series-salted identity plus revision")
@@ -110,8 +99,8 @@ import Testing
         // minted before the edit still name something after it.
         #expect(first.series == first.id.series)
         let edited = try first.edit("Same *content* twice, extended.\n")
-        #expect(edited.document.series == first.series)
-        #expect(edited.document.id.series == first.id.series)
+        #expect(edited.series == first.series)
+        #expect(edited.id.series == first.id.series)
 
         // Hashable agrees with ==, which is what a document held as a
         // dictionary key or in a Set depends on.
@@ -125,19 +114,27 @@ import Testing
         #expect(Set([first, first, second]).count == 2)
     }
 
-    @Test("a blank-line-only edit reports an empty delta yet shifts scopes")
-    func pureShiftReportsEmptyDelta() throws {
+    @Test("a blank-line-only edit keeps every (id, revision) yet shifts scopes")
+    func pureShiftKeepsEveryRevision() throws {
         let before = try Document("Alpha\n\n\n\nOmega\n")
         let omegaBefore = try #require(before.content[1] as? Paragraph)
         #expect(omegaBefore.scope.start.line == 5)
 
         // Delete two of the blank lines: no node's content changes.
-        let commit = try before.edit("Alpha\n\nOmega\n")
-        let after = commit.document
+        let after = try before.edit("Alpha\n\nOmega\n")
         let omegaAfter = try #require(after.content[1] as? Paragraph)
 
-        #expect(commit.delta.diffs.isEmpty)
-        #expect(commit.delta.afterRevision > commit.delta.beforeRevision)
+        // A pure positional shift stamps nothing: the two trees carry
+        // identical (id, revision) pairs, node for node — the root included,
+        // even though the document revision advanced underneath.
+        func track(_ document: Document) -> [[UInt64]] {
+            var rows: [[UInt64]] = []
+            MarkupWalker().walk(document) { event, node, _ in
+                if event == .entering { rows.append([node.id.rawValue, node.revision]) }
+            }
+            return rows
+        }
+        #expect(track(after) == track(before))
         // Equal, and at a different place: two nodes differing only in where
         // they sit are equal, because position is not content.
         #expect(omegaAfter == omegaBefore)
@@ -146,39 +143,38 @@ import Testing
         #expect(after.dump() == (try Document("Alpha\n\nOmega\n").dump()))
     }
 
-    @Test("a deep rebuild names children before parents in one postorder pass")
-    func deepRebuildOrder() throws {
+    @Test("a deep rebuild stamps the changed path and nothing beside it")
+    func deepRebuildStampsThePath() throws {
         let depth = 512
         let stable = "Stable\n\n"
         let prefix = String(repeating: "> ", count: depth)
         let before = try Document(stable + prefix + "alpha\n")
         let stableBefore = try #require(before.content.first as? Paragraph)
 
-        let commit = try before.edit(stable + prefix + "bravo\n")
-        let after = commit.document
+        let after = try before.edit(stable + prefix + "bravo\n")
 
-        // The quote chain is untouched material whose descendant changed, so
-        // every one of its nodes is named — and named after what it contains.
-        #expect(commit.delta.diffs.count >= depth)
-        expectPostorder(commit.delta, of: after)
         #expect(after.content.first?.id == stableBefore.id)
+        #expect(after.content.first?.revision == stableBefore.revision)
         #expect(after.dump() == (try Document(stable + prefix + "bravo\n").dump()))
 
-        // Exactly one node's own projection differs — the innermost text —
-        // and every one of its ancestors carries `descendant` and nothing
-        // else, which is what lets a renderer stop at the first node whose
-        // own parts are empty.
+        // One text changed at the bottom of the quote chain, and a node's
+        // revision covers its whole subtree — so the text, every quote above
+        // it, the paragraph the text sits in, and the document itself all
+        // carry the new document revision, while the stable paragraph beside
+        // the chain keeps its old one.
         var innermost: any Markup = try #require(after.content.last)
         while let quote = innermost as? BlockQuote {
             innermost = try #require(quote.content.first)
         }
         let text = try #require((innermost as? Paragraph)?.content.first as? Text)
         #expect(text.literal == "bravo")
-        let ownChanges = commit.delta.diffs.filter { $0.parts != .descendant }
-        #expect(ownChanges.map(\.markup) == [text.id])
-        #expect(ownChanges.first?.parts == .text)
-        // The chain, the paragraph it ends in, and the document above it.
-        #expect(commit.delta.diffs.count == depth + 3)
+        #expect(text.revision == after.revision)
+        var stamped = 0
+        MarkupWalker().walk(after) { event, node, _ in
+            if event == .entering, node.revision == after.revision { stamped += 1 }
+        }
+        // The text, the paragraph holding it, the chain, and the document.
+        #expect(stamped == depth + 3)
     }
 
     @Test("a superseded document keeps answering from its own tables")
@@ -190,10 +186,10 @@ import Testing
             two = try #require(first.content[1] as? Paragraph)
             #expect(try #require(two).scope.start.line == 3)
 
-            // Editing hands the native parse to the successor, which then
-            // goes out of scope and frees it. The predecessor's values,
-            // scopes, and dump were all extracted at parse time and owe that
-            // parse nothing.
+            // Editing builds the successor a native parse of its own, which
+            // then goes out of scope and frees it. The receiver keeps its
+            // parse, and its values, scopes, and dump were all extracted at
+            // parse time anyway.
             _ = try first.edit("Zero\n\nOne\n\nTwo\n")
             retained = first
         }
@@ -220,24 +216,20 @@ import Testing
         try driver.finish()
     }
 
-    @Test("documents and deltas are Sendable values; ids are stable dictionary keys")
+    @Test("documents are Sendable values; ids are stable dictionary keys")
     func valueSemantics() throws {
         requireSendable(Document.self)
-        requireSendable(Commit.self)
-        requireSendable(Delta.self)
-        requireSendable(Diff.self)
         requireSendable(MarkupID.self)
         requireSendable(Diagnostic.self)
 
         let empty = try Document("")
         #expect(empty.content.isEmpty)
-        let commit = try empty.edit("Alpha\n")
-        let document = commit.document
+        let document = try empty.edit("Alpha\n")
         let paragraph = try #require(document.content[0] as? Paragraph)
         var byID: [MarkupID: String] = [:]
         byID[paragraph.id] = "paragraph"
         #expect(document.node(paragraph.id)?.id == paragraph.id)
-        // The root answers for itself, which is what a delta naming it needs.
+        // The root answers for itself, like any node reconciled by id.
         #expect(document.node(document.id)?.id == document.id)
         #expect(byID[paragraph.id] == "paragraph")
     }
@@ -249,7 +241,7 @@ import Testing
         let labelBefore = try #require(blockBefore.label)
         let bodyBefore = try #require(blockBefore.content.first)
 
-        let after = try before.edit(":::note[*Other*]\nBody\n:::\n").document
+        let after = try before.edit(":::note[*Other*]\nBody\n:::\n")
         let blockAfter = try #require(after.content.first as? DirectiveBlock)
         let labelAfter = try #require(blockAfter.label)
         let emphasis = try #require(labelAfter.content.first as? Emphasis)
@@ -274,37 +266,11 @@ import Testing
                 == Scope(start: Position(line: 1, column: 8), end: Position(line: 1, column: 14))
         )
 
-        let after = try before.edit(":::note{a=1}\nbody\n:::\n").document
+        let after = try before.edit(":::note{a=1}\nbody\n:::\n")
         #expect(after.diagnostics.isEmpty)
         // The predecessor keeps reporting its own: diagnostics are values it
         // copied out at parse time, like every other part of it.
         #expect(before.diagnostics.count == 1)
-    }
-}
-
-/// Asserts the delta's own ordering contract: every surviving node appears
-/// after all of its own children, so a consumer materializing immutable
-/// values bottom-up reads the list once, front to back.
-private func expectPostorder(
-    _ delta: Delta,
-    of document: Document,
-    sourceLocation: SourceLocation = #_sourceLocation
-) {
-    var position: [MarkupID: Int] = [:]
-    for (index, diff) in delta.diffs.enumerated() where !diff.parts.isRetired {
-        position[diff.markup] = index
-    }
-    var stack: [MarkupID] = []
-    MarkupWalker().walk(document) { event, node, _ in
-        switch event {
-        case .entering:
-            if let parent = stack.last, let above = position[parent], let below = position[node.id] {
-                #expect(below < above, sourceLocation: sourceLocation)
-            }
-            stack.append(node.id)
-        case .exiting:
-            stack.removeLast()
-        }
     }
 }
 
@@ -425,9 +391,10 @@ private final class StreamDriver {
         #expect(ticks < messages)
         #expect(document.dump() == (try Document(Self.turns.joined()).dump()))
 
-        // Near-O(n) pipeline: total delta traffic stays within one row per
-        // final node plus bounded frontier churn per tick. A full rebuild per
-        // tick would be on the order of ticks * nodes.
+        // Near-O(n) pipeline: total revision traffic — per tick, the nodes
+        // stamped with that tick's new document revision — stays within one
+        // stamp per final node plus bounded frontier churn per tick. A full
+        // rebuild per tick would be on the order of ticks * nodes.
         var nodes = 0
         MarkupWalker().walk(document) { event, _, _ in
             if event == .entering { nodes += 1 }
@@ -441,12 +408,20 @@ private final class StreamDriver {
     }
 
     private func tick() throws {
-        let commit = try document.edit(streamed)
-        document = commit.document
+        let next = try document.edit(streamed)
         ticks += 1
-        touched += commit.delta.diffs.count
+        // The traffic this tick caused: every node minted or changed here is
+        // stamped with the new document revision, and any change bubbles to
+        // the root — so when the root's revision moved, the nodes carrying
+        // it are exactly this tick's traffic, and when it did not, the tick
+        // touched nothing.
+        if next.revision != document.revision {
+            MarkupWalker().walk(next) { event, node, _ in
+                if event == .entering, node.revision == next.revision { touched += 1 }
+            }
+        }
+        document = next
         #expect(document.dump() == (try Document(streamed).dump()))
-        expectPostorder(commit.delta, of: document)
         for entry in frozen {
             let node = document.content[entry.index]
             #expect(node.id == entry.id)
@@ -499,7 +474,7 @@ private final class StreamDriver {
                 walker.start()
                 walked.wait()
 
-                let edited = try Document(prefix + "leaf\n").edit(prefix + "seed\n").document
+                let edited = try Document(prefix + "leaf\n").edit(prefix + "seed\n")
                 let reference = try Document(prefix + "seed\n")
                 outcome.editMatchesReference = edited.dump() == reference.dump()
             } catch {

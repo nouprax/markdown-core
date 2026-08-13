@@ -119,38 +119,138 @@ import Testing
         for testCase in manifest.cases {
             var document = try Document("", options: testCase.parseOptions.value)
             var replayed = ""
-            var previous: [UInt64: UInt64] = [:]
+            // The cumulative id ledger: every id the series has ever shown,
+            // its last-sighted revision, and whether it is still in a tree.
+            // Cumulative because retirement is forever — two adjacent
+            // snapshots alone would forgive an id resurrected a commit later.
+            var ledger: [UInt64: LedgerEntry] = [:]
+            verifyTree(document, against: nil, ledger: &ledger, testCase.name)
             for chunk in lineChunks(testCase.source) {
                 replayed += chunk
-                let commit = try document.edit(replayed)
-                document = commit.document
+                let previous = document
+                document = try previous.edit(replayed)
+                #expect(document.series == previous.series, Comment(rawValue: testCase.name))
 
                 // Equivalence: the edited document dumps byte-equal to a
                 // one-shot parse of the same text.
                 let reference = try Document(replayed, options: testCase.parseOptions.value)
                 #expect(document.dump() == reference.dump(), Comment(rawValue: testCase.name))
 
-                // Delta integrity: no id is named twice, every node the delta
-                // does not name kept its exact revision, and every retired id
-                // is gone from the tree.
-                let delta = commit.delta
-                let named = Set(delta.diffs.map(\.markup.rawValue))
-                #expect(named.count == delta.diffs.count, Comment(rawValue: testCase.name))
-                var current: [UInt64: UInt64] = [:]
-                for node in flatten(document) {
-                    current[node.id.rawValue] = node.revision
-                    if !named.contains(node.id.rawValue) {
-                        #expect(previous[node.id.rawValue] == node.revision)
-                    }
-                }
-                for retired in delta.diffs where retired.parts.isRetired {
-                    #expect(current[retired.markup.rawValue] == nil)
-                }
-                previous = current
+                verifyTree(document, against: previous, ledger: &ledger, testCase.name)
             }
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
+}
+
+private struct LedgerEntry {
+    var revision: UInt64
+    var alive: Bool
+}
+
+/// Walks one snapshot against the cumulative ledger — the Swift double-walk,
+/// mirroring the C harness's `er_walk_visit`. Per node: the id is nonzero
+/// and unique within the tree, a child's revision never exceeds its
+/// parent's, a never-seen id carries the new document revision, a retired id
+/// never comes back, and a surviving id's revision is either its last
+/// sighting — in which case its subtree value must equal the predecessor's —
+/// or the new document revision, nothing in between and never less.
+/// Afterwards, live ledger ids the walk did not meet are retired.
+///
+/// The subtree form of the (id, revision) promise is checked at each
+/// TOPMOST unchanged node: its content dump covers every descendant's kind,
+/// fields, and literal, and its (id, revision) walk pins the identities
+/// underneath, so nodes inside a compared subtree need no comparison of
+/// their own.
+private func verifyTree(
+    _ document: Document,
+    against previous: Document?,
+    ledger: inout [UInt64: LedgerEntry],
+    _ name: String
+) {
+    let comment = Comment(rawValue: name)
+    // Any minted or changed node bubbles a stamp up to the root, so whenever
+    // this walk needs the new document revision — only ever at such a node —
+    // the root's own revision IS that revision.
+    let successorRevision = document.revision
+    var seen: Set<UInt64> = []
+    var parentRevisions: [UInt64] = []
+    // Whether an ancestor's subtree has already been compared against the
+    // predecessor, which covers this node too.
+    var covered: [Bool] = []
+    MarkupWalker().walk(document) { event, node, _ in
+        guard event == .entering else {
+            parentRevisions.removeLast()
+            covered.removeLast()
+            return
+        }
+        let id = node.id.rawValue
+        var covers = covered.last ?? false
+        defer {
+            parentRevisions.append(node.revision)
+            covered.append(covers)
+        }
+        #expect(id != 0, comment)
+        #expect(!seen.contains(id), comment)
+        seen.insert(id)
+        if let parent = parentRevisions.last {
+            #expect(node.revision <= parent, comment)
+        }
+        guard let entry = ledger[id] else {
+            // A never-seen id is minted by this commit and carries its
+            // revision.
+            #expect(node.revision == successorRevision, comment)
+            ledger[id] = LedgerEntry(revision: node.revision, alive: true)
+            return
+        }
+        #expect(entry.alive, comment)
+        #expect(node.revision >= entry.revision, comment)
+        if node.revision != entry.revision {
+            #expect(node.revision == successorRevision, comment)
+        } else if let previous, !covers {
+            // A topmost unchanged survivor: its whole subtree must be the
+            // value the predecessor held for this id.
+            if let before = previous.node(node.id) {
+                #expect(
+                    contentDump(previous, of: before) == contentDump(document, of: node),
+                    comment
+                )
+                #expect(track(previous, of: before) == track(document, of: node), comment)
+            } else {
+                Issue.record(Comment(rawValue: "a live ledger id is missing from the predecessor tree: \(name)"))
+            }
+            covers = true
+        }
+        ledger[id] = LedgerEntry(revision: node.revision, alive: true)
+    }
+    for (id, entry) in ledger where entry.alive && !seen.contains(id) {
+        ledger[id] = LedgerEntry(revision: entry.revision, alive: false)
+    }
+}
+
+/// The subtree's canonical dump with every `scope=` field stripped: content
+/// only, because a pure positional shift never changes a node's revision and
+/// must not fail the unchanged-subtree comparison.
+private func contentDump(_ document: Document, of node: any Markup) -> String {
+    document.dump(of: node)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { line -> String in
+            var line = String(line)
+            if let range = line.range(of: #"scope=\S+ "#, options: .regularExpression) {
+                line.removeSubrange(range)
+            }
+            return line
+        }
+        .joined(separator: "\n")
+}
+
+/// The subtree's (id, revision) pairs in preorder.
+private func track(_ document: Document, of node: any Markup) -> [[UInt64]] {
+    var rows: [[UInt64]] = []
+    MarkupWalker().walk(document, from: node) { event, current, _ in
+        if event == .entering { rows.append([current.id.rawValue, current.revision]) }
+    }
+    return rows
 }
 
 private func loadManifest() throws -> CanonicalManifest {

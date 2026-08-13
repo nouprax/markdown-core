@@ -10,7 +10,7 @@ public enum ListFlavor: String, Sendable {
 public struct List: Markup {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this node's content last changed.
+    /// The document revision at which this node's content last changed.
     public let revision: UInt64
     /// The node's absolute source extent, both bounds inclusive of the
     /// construct's own markers.
@@ -62,7 +62,7 @@ extension List {
 public struct ListItem: Markup {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this node's content last changed.
+    /// The document revision at which this node's content last changed.
     public let revision: UInt64
     /// The node's absolute source extent, both bounds inclusive of the
     /// construct's own markers.

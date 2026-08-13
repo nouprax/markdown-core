@@ -12,7 +12,7 @@ public enum TableAlignment: String, Sendable {
 public struct Table: Markup {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this node's content last changed.
+    /// The document revision at which this node's content last changed.
     public let revision: UInt64
     /// The node's absolute source extent, both bounds inclusive of the
     /// construct's own markers.
@@ -66,7 +66,7 @@ extension Table {
 public struct TableRow: Markup {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this node's content last changed.
+    /// The document revision at which this node's content last changed.
     public let revision: UInt64
     /// The node's absolute source extent, both bounds inclusive of the
     /// construct's own markers.
@@ -104,7 +104,7 @@ extension TableRow {
 public struct TableCell: Markup {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
-    /// The commit revision at which this node's content last changed.
+    /// The document revision at which this node's content last changed.
     public let revision: UInt64
     /// The node's absolute source extent, both bounds inclusive of the
     /// construct's own markers.
