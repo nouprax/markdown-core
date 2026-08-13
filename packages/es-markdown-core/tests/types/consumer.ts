@@ -116,6 +116,14 @@ void currentValue;
 void diagnostics;
 // @ts-expect-error options are immutable for a document's whole series
 document.options.tables = false;
+const appended: ParsedDocument = successor.append(" and appended");
+const appendedRevision: number = appended.revision;
+void appendedRevision;
+// @ts-expect-error append takes the chunk's text
+successor.append();
+// @ts-expect-error a chunk is a string, not bytes
+successor.append(new Uint8Array(1));
+appended.close();
 successor.close();
 
 declare const table: Table;

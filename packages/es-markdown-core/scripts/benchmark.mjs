@@ -57,10 +57,10 @@ function benchmarkStream(workload, unit, units) {
             streamed += unit;
             const previous = document;
             document = document.edit(streamed);
-            // The edit reads its receiver and takes nothing, so the loop is
-            // what ends the predecessor. The registry is not a backstop here:
-            // a native parse costs WASM linear memory, which is invisible to
-            // the JavaScript collector, so nothing would make it run.
+            // The edit superseded its receiver, and the loop is what closes
+            // it. The registry is not a backstop here: a native parse costs
+            // WASM linear memory, which is invisible to the JavaScript
+            // collector, so nothing would make it run.
             previous.close();
         }
         document.close();
@@ -78,6 +78,40 @@ function benchmarkStream(workload, unit, units) {
     console.log(
         `benchmark runtime=es boundary=wasm_edit_and_decode workload=${workload} ` +
             `workload_version=1 bytes=${Buffer.byteLength(unit) * units} edits=${units} ` +
+            `warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
+            `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
+    );
+}
+
+// The same stream driven by the trailing mutation: each unit arrives as an
+// append, and the boundary name says what the arm actually measures — the
+// native append plus the revision-pruned decode that reuses every value the
+// (id, revision) mirror proves. The boundary is new with this arm and is
+// deliberately NOT added to any benchmark allowlist; the row is
+// informational until the cross-runtime baseline document adopts it.
+function benchmarkAppendStream(workload, unit, units) {
+    function replay() {
+        let document = Document("");
+        for (let index = 0; index < units; index += 1) {
+            const previous = document;
+            document = document.append(unit);
+            previous.close();
+        }
+        document.close();
+    }
+
+    replay();
+    const timings = [];
+    for (let index = 0; index < 5; index += 1) {
+        const start = performance.now();
+        replay();
+        timings.push(performance.now() - start);
+    }
+    timings.sort((left, right) => left - right);
+    const medianNanoseconds = Math.round(timings[2] * 1e6);
+    console.log(
+        `benchmark runtime=es boundary=wasm_append_and_reuse_decode workload=${workload} ` +
+            `workload_version=1 bytes=${Buffer.byteLength(unit) * units} appends=${units} ` +
             `warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );
@@ -123,4 +157,5 @@ benchmark("large_document", unit.repeat(2_000));
 benchmark("deep_nesting", "> ".repeat(128) + "leaf\n");
 benchmarkDeepBuild("deep_document_build", "> ".repeat(4_096) + "leaf\n", 4_096);
 benchmarkStream("streamed_document", unit, 500);
+benchmarkAppendStream("streamed_document_append", unit, 500);
 benchmarkFanOut("fan_out_narrow_edit", 10_000);

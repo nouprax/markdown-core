@@ -59,11 +59,15 @@ revisions deliberately do not report that. A consumer that draws anything
 positional — gutter numbers, underlines, a scroll anchor, a source map — must
 read it from the NEW document's node even for one it skipped as unchanged.
 
-A document owns a native parse. `document.close()` releases it; `edit` leaves
-it alone, so each document in a series is closed separately. An unclosed
-document is released when it becomes unreachable, but that is a backstop, not
-the contract. Everything the document produced — content, scopes, diagnostics,
-dump — is a value and stays usable afterwards.
+A document is the live head of a CHAIN, and the whole lifecycle is one
+sentence: a mutation advances the chain, old handles die, decoded values live
+forever. `edit` and `append` are the two mutations; each returns the next
+head and supersedes its receiver, whose only remaining obligation is
+`document.close()` — each document on a chain is closed separately, and
+closing a superseded one is O(1). An unclosed document is released when it
+becomes unreachable, but that is a backstop, not the contract. Everything a
+document produced — content, scopes, diagnostics, dump — is a value and stays
+usable forever.
 
 ## Traverse and Inspect
 
@@ -85,14 +89,17 @@ diagnostic tree for the complete document or a focused subtree (subtree scopes
 print with the subtree as origin). The text is intended for logs, snapshots,
 and debugging rather than persistence or data interchange.
 
-## Edit
+## Edit and Append
 
-There is no session type. A document is created from text and options, and
-`edit` hands it new text: it returns the document that text describes. Options
-are fixed for a document's whole series — changing what the parser means is a
-new document, not an edit.
+There is no session type. A document is created from text and options and
+mutated in place on its chain: `edit` hands it new text whole, `append` adds
+text at the end, and either returns the document the resulting text
+describes. Options are fixed for a chain's whole series — changing what the
+parser means is a new document, not a mutation.
 
 ```js
+import { Document } from "@nouprax/es-markdown-core";
+
 const document = Document("# Title\n\nHello");
 const next = document.edit("# Title\n\nHello world");
 // The heading did not change, so it compares equal — same id, same revision.
@@ -101,12 +108,33 @@ console.log(next.content[0].id === document.content[0].id); // true
 console.log(next.content[0].revision === document.content[0].revision); // true
 ```
 
-`edit` READS the receiver and takes nothing: the document it was called on
-keeps everything it owns, stays usable, and may be edited again. Editing one
-document twice gives two lines of descent, told apart by their revisions —
-and, like nodes from two separate parses, nodes from two lines are not
-comparable. Release a document when you are done with it; its
-already-extracted values stay valid forever, because they are values.
+A successful mutation SUPERSEDES its receiver: the old head keeps answering
+from its decoded values and still wants its `close()`, but mutating it again
+is a deterministic error — history is linear, there is no forking. A failed
+`edit` supersedes nothing; a failed `append` ends the chain ("the chain is
+done": only `close` remains, you still hold every byte you sent, recovery is
+a new document).
+
+`append` produces the same tree, the same dump, and the same identities as an
+`edit` of the concatenated text — the difference is cost. Appended bytes
+never move settled content, so after an append the binding re-decodes only
+what changed: the per-tick decode is O(changed), and a node the append did
+not reach is the predecessor's very value object — same `id`, same
+`revision`, same `scope`, `===`. Any split of the text is legal, mid-word,
+mid-marker, mid-line:
+
+```js
+import { Document } from "@nouprax/es-markdown-core";
+
+let document = Document("");
+for (const chunk of ["# Str", "eaming\n\nThe tail grows; ", "settled blocks keep their id."]) {
+  const previous = document;
+  document = document.append(chunk);
+  previous.close(); // a superseded handle supports only close
+}
+console.log(document.content[0].kind); // "heading"
+document.close();
+```
 
 ### What changed is asked of the new tree
 
@@ -133,21 +161,20 @@ const reconcile = (kept, node) => {
 };
 ```
 
-Streaming consumers edit on the render tick rather than on every socket
-message, so the parse rate follows the display and not the socket:
+A streaming consumer appends every socket message as it arrives — there is
+no self-held accumulated string, and no reason to throttle the parse to the
+render:
 
 ```js
+import { Document } from "@nouprax/es-markdown-core";
+
 let document = Document("");
-let streamed = "";
 socket.onmessage = ({ data }) => {
-  streamed += data;
+  const previous = document;
+  document = document.append(data);
+  previous.close();
+  scheduleRender(document);
 };
-const ticker = setInterval(() => {
-  const next = document.edit(streamed);
-  document.close();
-  document = next;
-  render(document);
-}, 100);
 ```
 
 `document.diagnostics` lists everything an editor should underline — which,

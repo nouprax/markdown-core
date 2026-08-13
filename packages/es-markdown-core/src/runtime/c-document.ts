@@ -88,6 +88,11 @@ function takeError(error: number): ParseError {
  */
 export class CDocument {
     private pointer: number;
+    /** Set the moment a mutation of this receiver succeeds: from then on the
+     * engine's contract leaves the handle exactly one legal call — free —
+     * and this flag is what severs every other native path deterministically
+     * (a bare pointer cannot carry the check on the C side). */
+    private superseded = false;
 
     private constructor(pointer: number) {
         this.pointer = pointer;
@@ -107,21 +112,49 @@ export class CDocument {
     }
 
     /**
-     * Hands this document new text and returns the caller-owned successor;
-     * throws the native rejection.
+     * Hands the chain's head new text and returns the caller-owned
+     * successor; throws the native rejection.
      *
-     * READS the receiver and takes nothing: the handle stays this object's,
-     * it may be edited again, and `free` is still the only thing that
-     * releases it.
+     * Success SUPERSEDES this receiver: `free` is its one remaining call,
+     * and this object still owes it — a mutation hands nothing away. A
+     * failed edit supersedes nothing, so the receiver stays the head.
      */
     edit(source: string): CDocument {
+        return this.mutate(source, (document, bytes, length, error) =>
+            native.es_document_edit(document, bytes, length, error)
+        );
+    }
+
+    /**
+     * Appends `source` to the end of the chain's head and returns the
+     * caller-owned successor; throws the native rejection.
+     *
+     * Same supersession rule as `edit`. A failure past the argument guards
+     * poisons the chain on the engine side: this receiver stays unsuperseded
+     * here, and every further mutation through it is rejected
+     * deterministically by the engine — only `free` remains useful.
+     */
+    append(source: string): CDocument {
+        return this.mutate(source, (document, bytes, length, error) =>
+            native.es_document_append(document, bytes, length, error)
+        );
+    }
+
+    /** The one shape both mutations share: copy the text across, call the
+     * engine, and mark this receiver superseded exactly when the engine
+     * committed to a successor. */
+    private mutate(
+        source: string,
+        call: (document: number, bytes: number, length: number, errorOutput: number) => number
+    ): CDocument {
         const owned = this.requirePointer();
         const scratch = decoder.scratchPointer;
         return new CDocument(
             withSource(source, (bytes, length) => {
                 decoder.dataView().setUint32(scratch, 0, true);
-                const document = native.es_document_edit(owned, bytes, length, scratch);
+                const document = call(owned, bytes, length, scratch);
                 if (!document) throw takeError(decoder.dataView().getUint32(scratch, true));
+                this.superseded = true;
                 return document;
             })
         );
@@ -175,8 +208,10 @@ export class CDocument {
         return raw.toString(16).padStart(16, "0");
     }
 
-    /** Releases the native parse. Idempotent; an edit hands nothing away, so
-     * every document in a chain of edits still reaches this. */
+    /** Releases the native parse. Idempotent, and the one call a superseded
+     * handle still supports — a mutation hands nothing away, so every
+     * document on a chain still reaches this, at O(1) for a superseded one
+     * (the engine refcounts the chain underneath). */
     free(): void {
         if (!this.pointer) return;
         native.es_document_free(this.pointer);
@@ -189,6 +224,9 @@ export class CDocument {
 
     private requirePointer(): number {
         if (!this.pointer) throw new Error("the native document has been released");
+        if (this.superseded) {
+            throw new Error("the document has been superseded by a later mutation; only close remains");
+        }
         return this.pointer;
     }
 }
