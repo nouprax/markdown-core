@@ -58,6 +58,13 @@ typedef struct markdown_core_chain {
     uint64_t next_revision;
     uint64_t series; /* the salt every document on the chain shares,
                         minted once at chain birth */
+    /* THE CHAIN'S BYTES. One buffer for the whole chain: appends land at the
+     * end and every document is a length watermark into it (source.h), so a
+     * tick copies its own chunk rather than the document. The head's
+     * watermark is always the stored length — bytes are committed here only
+     * once the mutation that describes them has succeeded. Owned; released
+     * with the chain, after the last handle. */
+    markdown_core_source *source;
     /* The chain's base allocator: every successor builds over it, so a chain
      * opened over an injected allocator stays observable to the injection —
      * mutations do not silently fall back to the default. Borrowed; the
@@ -71,11 +78,10 @@ typedef struct markdown_core_chain {
 struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    // The document's bytes: one buffer, singly owned, filled when the
-    // document is built and read-only from then on (source.h). Append reads
-    // every stored byte back through run_at to assemble its successor's text
-    // — the per-tick copy the living-tree plan §2 retires.
-    markdown_core_source *source;
+    // This document's text: the chain's first `length` bytes. A watermark,
+    // not a buffer — successors only ever add bytes past it, so what this
+    // document describes never moves and never changes.
+    size_t length;
     markdown_core_node *root; // the committed tree, owned
     // What an editor underlines, in source order, owned. Taken from the
     // parser when this document takes its tree, so it describes exactly the

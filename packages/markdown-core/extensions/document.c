@@ -24,12 +24,18 @@
 #include <node.h>
 #include <parser.h>
 
-// A document owns its text, its committed tree, and its diagnostics, and
-// shares one object with the other handles on its chain: the chain record
-// (refcount, revision counter, series salt, poison flag, base allocator).
-// Every append is one full parse of all bytes so far plus a diff against the
-// previous document (document_build below); the equivalence suite pins that
-// the result always equals a one-shot parse of the same text.
+// A document owns its committed tree and its diagnostics; its TEXT belongs
+// to the chain, which every handle shares along with the revision counter,
+// the series salt, the poison flag, and the base allocator. A document
+// names its text by watermark — the chain's first `length` bytes — because
+// appends only ever add at the end, so what a document describes is fixed
+// the moment it is built even though the chain keeps growing.
+//
+// Every append is still one full parse of all bytes so far plus a diff
+// against the previous document (document_build below); the equivalence
+// suite pins that the result always equals a one-shot parse of the same
+// text. What a tick no longer pays is the bytes: the chunk is copied once
+// into the chain's buffer instead of the whole document being copied twice.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -98,11 +104,16 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
 }
 
 /* PARSE. A pure function of (bytes, options): it fills this freshly built
- * document's tree from its own stored text and reads nothing else. The
+ * document's tree from the chain's stored bytes plus the ones this mutation
+ * brought, which together are exactly the document's text. The
  * parser's definition maps serve the parse's own inline phase and die with
  * the parser: the tree carries every published answer. No predecessor, no
  * ids — identity is the diff's to assign. */
-static bool document_parse_text(markdown_core_document *document, markdown_core_error **error) {
+static bool document_parse_text(
+    markdown_core_document *document,
+    markdown_core_string arriving,
+    markdown_core_error **error
+) {
     markdown_core_parser *parser;
     markdown_core_node *root;
 
@@ -111,19 +122,25 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         return false;
     }
 
-    // Fed run by run. markdown_core_parser_feed is a streaming interface
-    // (core/blocks.c S_parser_feed buffers a partial line in parser->linebuf),
-    // so the chunking is free to follow whatever the store hands back — which,
-    // now that the store is one flat buffer, is the whole document at once.
-    size_t length = markdown_core_source_length(document->source);
+    // Fed in two pieces: the chain's stored bytes, then the ones this
+    // mutation brought. They are separate only because the arriving bytes are
+    // not stored yet — a mutation takes them only once it has succeeded — and
+    // markdown_core_parser_feed is a streaming interface (core/blocks.c
+    // S_parser_feed buffers a partial line in parser->linebuf), so where the
+    // pieces are cut changes nothing about the parse.
     {
+        size_t stored = markdown_core_source_length(document->chain->source);
         size_t pos = 0;
-        while (pos < length) {
+        while (pos < stored) {
             size_t run = 0;
-            const uint8_t *bytes = markdown_core_source_run_at(document->source, pos, &run);
+            const uint8_t *bytes = markdown_core_source_run_at(document->chain->source, pos, &run);
             markdown_core_parser_feed(parser, (const char *)bytes, run);
             pos += run;
         }
+        /* Unconditional: an empty chunk is a legal mutation, and a feed of
+         * no bytes is defined to change nothing — including the pending-CR
+         * seam a later chunk may still complete. */
+        markdown_core_parser_feed(parser, (const char *)arriving.data, arriving.length);
     }
     markdown_core_parser_finalize_blocks(parser);
     root = markdown_core_parser_refine_blocks(parser);
@@ -190,7 +207,6 @@ bool markdown_core_document_diff(
 
 static markdown_core_document *markdown_core_document_alloc(
     const markdown_core_parse_options *options,
-    markdown_core_string markdown,
     markdown_core_mem *mem,
     bool pooled,
     markdown_core_error **error
@@ -267,6 +283,11 @@ static markdown_core_chain *chain_new(markdown_core_mem *mem) {
         chain->refcount = 1;
         chain->next_revision = 1;
         chain->mem = mem;
+        chain->source = markdown_core_source_new(mem);
+        if (!chain->source) {
+            free(chain);
+            return NULL;
+        }
         entropy ^= markdown_core_mix64((uint64_t)time(NULL));
         entropy ^= markdown_core_mix64((uint64_t)clock()) << 1;
         if (document_host_entropy(&host_entropy)) {
@@ -286,6 +307,7 @@ static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
 
 static void chain_release(markdown_core_chain *chain) {
     if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
+        markdown_core_source_release(chain->source);
         free(chain);
     }
 }
@@ -311,7 +333,7 @@ static markdown_core_document *document_build(
 ) {
     markdown_core_document *doc;
 
-    doc = markdown_core_document_alloc(options, markdown, mem, pooled, error);
+    doc = markdown_core_document_alloc(options, mem, pooled, error);
     if (!doc) {
         return NULL;
     }
@@ -331,10 +353,26 @@ static markdown_core_document *document_build(
         }
         doc->revision = 0;
     }
-    if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, error)) {
+    /* This document's text is everything the chain holds plus what arrived.
+     * Room for the arriving bytes is taken BEFORE the parse so that storing
+     * them afterwards cannot fail: the chain takes a mutation's bytes only
+     * once that mutation has succeeded, which is what keeps the stored length
+     * equal to the head's watermark at every instant a caller could look. */
+    doc->length = markdown_core_source_length(doc->chain->source) + markdown.length;
+    if (!markdown_core_source_reserve(doc->chain->source, markdown.length)) {
+        markdown_core_ast_set_error(
+            error,
+            MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+            prev ? "could not append the chunk" : "could not allocate document"
+        );
         markdown_core_document_free(doc);
         return NULL;
     }
+    if (!document_parse_text(doc, markdown, error) || !markdown_core_document_diff(prev, doc, error)) {
+        markdown_core_document_free(doc);
+        return NULL;
+    }
+    markdown_core_source_commit(doc->chain->source, markdown.data, markdown.length);
     if (prev) {
         /* SUPERSESSION, in one place: advancing the chain clock makes the
          * successor the head (its claimed revision is now the one behind the
@@ -344,11 +382,11 @@ static markdown_core_document *document_build(
     return doc;
 }
 
-/* Allocates a document holding `markdown`'s bytes. No parse; document_build
- * does that once, after wiring the chain. */
+/* Allocates a bare document: its options, its allocator, and its arena if it
+ * is pooled. No bytes and no parse — document_build wires it to a chain,
+ * which is where the bytes live, and parses once. */
 static markdown_core_document *markdown_core_document_alloc(
     const markdown_core_parse_options *options,
-    markdown_core_string markdown,
     markdown_core_mem *mem,
     bool pooled,
     markdown_core_error **error
@@ -384,21 +422,6 @@ static markdown_core_document *markdown_core_document_alloc(
         mem = markdown_core_arena_mem(document->arena);
     }
     document->mem = mem;
-    // The store holds whatever bytes it is handed. UTF-8 is assumed and
-    // never validated, and a streamed append completes a multi-byte
-    // character whose first bytes arrived earlier — deciding that at the
-    // substrate was always the wrong layer, and there is no longer a
-    // profile that could.
-    document->source = markdown_core_source_new(mem, markdown.data, markdown.length);
-    if (!document->source) {
-        // Unwound by hand: only the arena and the bare struct exist yet.
-        if (document->arena) {
-            markdown_core_arena_release(document->arena);
-        }
-        free(document);
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-        return NULL;
-    }
     document->next_id = 1;
     document->revision = 0;
     return document;
@@ -410,8 +433,9 @@ void markdown_core_document_free(markdown_core_document *document) {
         return;
     }
     document->mem->free(document->mem, document->diagnostics);
-    /* The chain is a system allocation shared across the arena boundary, so
-     * BOTH teardown paths release it. (Its predecessor, the series clock,
+    /* The chain is shared across the arena boundary — it owns the text every
+     * handle on it reads — so BOTH teardown paths release it, and the last
+     * release takes the bytes with it. (Its predecessor, the series clock,
      * was released only on the unpooled path — every pooled document leaked
      * its cell, and the ASan suites could not see it because they force
      * pooling off.) */
@@ -427,7 +451,6 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (document->root) {
         markdown_core_node_free(document->root);
     }
-    markdown_core_source_release(document->source);
     free(document);
 }
 
@@ -520,41 +543,17 @@ markdown_core_document *markdown_core_document_append(
     markdown_core_error **error
 ) {
     markdown_core_document *successor;
-    uint8_t *joined;
-    size_t length;
-    size_t total;
-    size_t pos = 0;
-    markdown_core_string whole;
 
     if (!mutation_permitted(document, chunk, error)) {
         return NULL;
     }
-    /* One flat buffer of bytes-so-far plus the chunk. An empty chunk still
-     * mutates — the chain advances and the receiver is superseded, and the
-     * successor's projection is byte-identical to its predecessor's. */
-    length = markdown_core_source_length(document->source);
-    total = length + chunk.length;
-    joined = (uint8_t *)malloc(total ? total : 1);
-    if (!joined) {
-        document->chain->poisoned = true;
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not append the chunk");
-        return NULL;
-    }
-    while (pos < length) {
-        size_t run = 0;
-        const uint8_t *bytes = markdown_core_source_run_at(document->source, pos, &run);
-        memcpy(joined + pos, bytes, run);
-        pos += run;
-    }
-    if (chunk.length) {
-        memcpy(joined + length, chunk.data, chunk.length);
-    }
-    whole.data = joined;
-    whole.length = total;
-
+    /* The chunk is all this call carries: the bytes before it are already the
+     * chain's, and the successor describes them by watermark rather than by
+     * copy. An empty chunk still mutates — the chain advances and the
+     * receiver is superseded, and the successor's projection is
+     * byte-identical to its predecessor's. */
     successor =
-        document_build(&document->options, whole, document, document->chain->mem, document->arena != NULL, error);
-    free(joined);
+        document_build(&document->options, chunk, document, document->chain->mem, document->arena != NULL, error);
     if (!successor) {
         document->chain->poisoned = true;
         return NULL;
@@ -570,6 +569,4 @@ uint64_t markdown_core_document_series(const markdown_core_document *document) {
     return document ? document->chain->series : 0;
 }
 
-size_t markdown_core_document_length(const markdown_core_document *document) {
-    return document ? markdown_core_source_length(document->source) : 0;
-}
+size_t markdown_core_document_length(const markdown_core_document *document) { return document ? document->length : 0; }

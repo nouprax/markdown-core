@@ -1154,6 +1154,16 @@ static int case_append_crlf_seam(pc_context *context) {
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4097, "Paragraph") != 0) {
         goto done;
     }
+    /* A NULL chunk of no bytes, landing between the two halves of the pair.
+     * It is a legal mutation — the contract forbids NULL only with a nonzero
+     * length — and this is where it is sharpest: the stored bytes end with
+     * the CR, so the parser meets the arriving chunk holding a pending seam,
+     * and a feed that inspects a byte before checking that it has one reads
+     * through NULL right here. */
+    if (er_replay_append(&replay, NULL, 0) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4097, "Paragraph") != 0) {
+        goto done;
+    }
     if (pe_append(&replay, "\n") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4097, "Paragraph") != 0) {
         goto done;

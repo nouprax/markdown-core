@@ -1104,15 +1104,18 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
 
+    /* A feed of no bytes changes nothing — not even the CR seam. Reading
+     * *buffer to test the seam would be a read past the end (or of NULL,
+     * which the public feed permits alongside a zero length), and clearing
+     * the seam would split a CRLF that a later feed still completes. */
     if (len > 0) {
         parser->feed_started = true;
+        if (parser->last_buffer_ended_with_cr && *buffer == '\n') {
+            // skip NL if last buffer ended with CR ; see #117
+            buffer++;
+        }
+        parser->last_buffer_ended_with_cr = false;
     }
-
-    if (parser->last_buffer_ended_with_cr && *buffer == '\n') {
-        // skip NL if last buffer ended with CR ; see #117
-        buffer++;
-    }
-    parser->last_buffer_ended_with_cr = false;
     while (buffer < end) {
         const unsigned char *eol;
         markdown_core_bufsize chunk_len;

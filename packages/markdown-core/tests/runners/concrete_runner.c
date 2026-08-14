@@ -2947,6 +2947,16 @@ static int case_chain_poison(void) {
         }
         markdown_core_error_free(error);
         error = NULL;
+        /* The receiver still describes exactly its own bytes. The chain holds
+         * the text now, so a failed append is only safe if it never handed
+         * its chunk to the chain: the bytes are stored after the parse and
+         * the diff have both succeeded, and the reservation that makes that
+         * storing infallible happens before either. */
+        if (markdown_core_document_length(head) != 0) {
+            fprintf(stderr, "chain_poison: a failed append extended the receiver's text at allocation %ld\n", fail_at);
+            markdown_core_document_free(head);
+            return -1;
+        }
         if (markdown_core_document_append(head, mc_sv("x", 1), &error) != NULL || !error ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
             fprintf(stderr, "chain_poison: a poisoned chain accepted an append at allocation %ld\n", fail_at);
