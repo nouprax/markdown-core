@@ -117,6 +117,10 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     };
     const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
     memoryHolder.memory = instance.exports["memory"] as WebAssembly.Memory;
+    // WASI reactor ABI: _initialize carries the C runtime's constructors and
+    // must run once before any other export is called.
+    const initialize = instance.exports["_initialize"] as (() => void) | undefined;
+    if (initialize) initialize();
     return instance;
 }
 
