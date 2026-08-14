@@ -220,7 +220,7 @@ function resolveSourceFile(index, packagePath, baseName) {
  * repository path. That is not a path: Kotlin lets a file's package differ
  * from its directory, and this repository's bindings use that freely — every
  * common source declares `com.nouprax.markdown.core` while living under
- * `model/`, `session/`, `walker/`, or `wire/`. Joining package to name would
+ * `model/`, `walker/`, or `wire/`. Joining package to name would
  * therefore resolve almost nothing, and a resolver that dropped what it could
  * not place would report a handful of files as the whole binding.
  *

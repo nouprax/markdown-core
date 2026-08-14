@@ -21,7 +21,7 @@ so the fuzzer preserves the failing script; replay one deterministically with
 `fuzz_smoke_runner --script FILE`.
 
 ```bash
-cmake -S packages/markdown-core -B build-fuzz -DMARKDOWN_CORE_FUZZ_SESSION=ON \
+cmake -S packages/markdown-core -B build-fuzz -DMARKDOWN_CORE_FUZZ_APPENDS=ON \
       -DCMAKE_C_COMPILER=$(which clang) -DCMAKE_CXX_COMPILER=$(which clang++) \
       -DCMAKE_BUILD_TYPE=Release
 cmake --build build-fuzz --target fuzz_document_appends --parallel

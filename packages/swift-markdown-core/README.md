@@ -116,7 +116,8 @@ O(document): a
 node the append did not reach keeps its id, revision, and positions, and the
 binding reuses its already-decoded value whole — subtree and all — rather
 than rebuilding it, so decode work is proportional to what the append
-changed plus the open frontier it grew.
+changed plus the open frontier it grew. The native append itself still
+reparses every byte sent so far.
 
 Hand the returned document to SwiftUI and stop. The stability a reactive
 framework needs is on the TREE: an unchanged node keeps its `id` and its

@@ -2441,7 +2441,7 @@ static int case_capture_document(void) {
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0 ||
             tree_inline_record_total(markdown_core_document_concrete(view)) == 0) {
-            fprintf(stderr, "capture_document: committed view exposes no concrete owner\n");
+            fprintf(stderr, "capture_document: base document exposes no concrete owner\n");
             failed = 1;
         }
         if (!mc_append(&document, mc_sv(tail, sizeof(tail) - 1), NULL)) {
@@ -2467,129 +2467,128 @@ static int case_capture_document(void) {
  * a shape mismatch here is reported rather than tolerated. */
 static int compare_tree_records(
     const char *context,
-    const markdown_core_node *committed,
+    const markdown_core_node *appended,
     const markdown_core_node *fresh,
-    int commit_index
+    int append_index
 ) {
     int failed = 0;
-    size_t committed_count = 0;
+    size_t appended_count = 0;
     size_t fresh_count = 0;
-    const markdown_core_concrete_record *committed_records =
-        markdown_core_node_concrete_records(committed, &committed_count);
+    const markdown_core_concrete_record *appended_records =
+        markdown_core_node_concrete_records(appended, &appended_count);
     const markdown_core_concrete_record *fresh_records = markdown_core_node_concrete_records(fresh, &fresh_count);
-    size_t committed_inline_count = 0;
+    size_t appended_inline_count = 0;
     size_t fresh_inline_count = 0;
-    const markdown_core_inline_concrete_record *committed_inline =
-        markdown_core_node_inline_concrete_records(committed, &committed_inline_count);
+    const markdown_core_inline_concrete_record *appended_inline =
+        markdown_core_node_inline_concrete_records(appended, &appended_inline_count);
     const markdown_core_inline_concrete_record *fresh_inline =
         markdown_core_node_inline_concrete_records(fresh, &fresh_inline_count);
-    const markdown_core_node *committed_child = committed->first_child;
+    const markdown_core_node *appended_child = appended->first_child;
     const markdown_core_node *fresh_child = fresh->first_child;
     size_t i;
 
-    if (committed->type != fresh->type) {
+    if (appended->type != fresh->type) {
         fprintf(
             stderr,
-            "%s: commit %d: tree shapes diverge (%s vs %s)\n",
+            "%s: append %d: tree shapes diverge (%s vs %s)\n",
             context,
-            commit_index,
-            type_name(committed->type),
+            append_index,
+            type_name(appended->type),
             type_name(fresh->type)
         );
         return 1;
     }
-    if (committed_count != fresh_count) {
+    if (appended_count != fresh_count) {
         fprintf(
             stderr,
-            "%s: commit %d: %s holds %zu records, fresh parse %zu\n",
+            "%s: append %d: %s holds %zu records, fresh parse %zu\n",
             context,
-            commit_index,
-            type_name(committed->type),
-            committed_count,
+            append_index,
+            type_name(appended->type),
+            appended_count,
             fresh_count
         );
         failed = 1;
     } else {
-        for (i = 0; i < committed_count; i++) {
-            if (committed_records[i].line != fresh_records[i].line ||
-                committed_records[i].column != fresh_records[i].column ||
-                committed_records[i].length != fresh_records[i].length ||
-                committed_records[i].kind != fresh_records[i].kind ||
-                committed_records[i].flags != fresh_records[i].flags) {
+        for (i = 0; i < appended_count; i++) {
+            if (appended_records[i].line != fresh_records[i].line ||
+                appended_records[i].column != fresh_records[i].column ||
+                appended_records[i].length != fresh_records[i].length ||
+                appended_records[i].kind != fresh_records[i].kind ||
+                appended_records[i].flags != fresh_records[i].flags) {
                 fprintf(
                     stderr,
-                    "%s: commit %d: %s record %zu diverges "
+                    "%s: append %d: %s record %zu diverges "
                     "(line %u/%u column %u/%u length %u/%u kind %u/%u)\n",
                     context,
-                    commit_index,
-                    type_name(committed->type),
+                    append_index,
+                    type_name(appended->type),
                     i,
-                    committed_records[i].line,
+                    appended_records[i].line,
                     fresh_records[i].line,
-                    committed_records[i].column,
+                    appended_records[i].column,
                     fresh_records[i].column,
-                    committed_records[i].length,
+                    appended_records[i].length,
                     fresh_records[i].length,
-                    committed_records[i].kind,
+                    appended_records[i].kind,
                     fresh_records[i].kind
                 );
                 failed = 1;
             }
         }
     }
-    if (committed_inline_count != fresh_inline_count) {
+    if (appended_inline_count != fresh_inline_count) {
         fprintf(
             stderr,
-            "%s: commit %d: %s holds %zu inline records, fresh parse %zu\n",
+            "%s: append %d: %s holds %zu inline records, fresh parse %zu\n",
             context,
-            commit_index,
-            type_name(committed->type),
-            committed_inline_count,
+            append_index,
+            type_name(appended->type),
+            appended_inline_count,
             fresh_inline_count
         );
         failed = 1;
     } else {
-        for (i = 0; i < committed_inline_count; i++) {
-            if (committed_inline[i].start != fresh_inline[i].start ||
-                committed_inline[i].length != fresh_inline[i].length ||
-                committed_inline[i].head != fresh_inline[i].head || committed_inline[i].tail != fresh_inline[i].tail ||
-                committed_inline[i].kind != fresh_inline[i].kind ||
-                committed_inline[i].flags != fresh_inline[i].flags) {
+        for (i = 0; i < appended_inline_count; i++) {
+            if (appended_inline[i].start != fresh_inline[i].start ||
+                appended_inline[i].length != fresh_inline[i].length ||
+                appended_inline[i].head != fresh_inline[i].head || appended_inline[i].tail != fresh_inline[i].tail ||
+                appended_inline[i].kind != fresh_inline[i].kind || appended_inline[i].flags != fresh_inline[i].flags) {
                 fprintf(
                     stderr,
-                    "%s: commit %d: %s inline record %zu diverges "
+                    "%s: append %d: %s inline record %zu diverges "
                     "(start %u/%u length %u/%u head %u/%u tail %u/%u kind %u/%u)\n",
                     context,
-                    commit_index,
-                    type_name(committed->type),
+                    append_index,
+                    type_name(appended->type),
                     i,
-                    committed_inline[i].start,
+                    appended_inline[i].start,
                     fresh_inline[i].start,
-                    committed_inline[i].length,
+                    appended_inline[i].length,
                     fresh_inline[i].length,
-                    committed_inline[i].head,
+                    appended_inline[i].head,
                     fresh_inline[i].head,
-                    committed_inline[i].tail,
+                    appended_inline[i].tail,
                     fresh_inline[i].tail,
-                    committed_inline[i].kind,
+                    appended_inline[i].kind,
                     fresh_inline[i].kind
                 );
                 failed = 1;
             }
         }
     }
-    while (committed_child && fresh_child) {
-        failed |= compare_tree_records(context, committed_child, fresh_child, commit_index);
-        committed_child = committed_child->next;
+    while (appended_child && fresh_child) {
+        failed |= compare_tree_records(context, appended_child, fresh_child, append_index);
+        appended_child = appended_child->next;
         fresh_child = fresh_child->next;
     }
-    if (committed_child || fresh_child) {
+    if (appended_child || fresh_child) {
         fprintf(
             stderr,
-            "%s: commit %d: child counts diverge under %s\n",
+            "%s: append %d: child counts diverge under %s\n",
             context,
-            commit_index,
-            type_name(committed->type)
+            append_index,
+            type_name(appended->type)
         );
         failed = 1;
     }

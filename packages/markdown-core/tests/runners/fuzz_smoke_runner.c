@@ -109,54 +109,99 @@ static void script_report(void *user, const char *context, const char *message) 
     fprintf(stderr, "FAILED: %s: %s\n", context, message);
 }
 
-/* Splice payloads drawn from this table make generated scripts overwhelmingly
+/* Chunk payloads drawn from this table make generated scripts overwhelmingly
  * more likely to assemble real constructs than uniform bytes would; the
  * uniform half of the generation keeps raw byte-noise covered. */
 static const char SCRIPT_TOKENS[] = "\n\n\n `#>-*[]()|:$^~_!\".= abc\r";
 
+/* Multi-byte fragments whose interiors a chunk boundary can land in: CRLF,
+ * fence and emphasis markers, task and table markers, and two-, three-, and
+ * four-byte UTF-8 sequences. Splitting these mid-fragment is the point. */
+static const char *const SCRIPT_FRAGMENTS[] = {
+    "\r\n",
+    "```",
+    "~~~",
+    "**",
+    "~~",
+    "- [x] ",
+    "| --- |",
+    "[^a]:",
+    "\xC3\xA9",         /* U+00E9, two bytes */
+    "\xE2\x82\xAC",     /* U+20AC, three bytes */
+    "\xF0\x9F\x98\x80", /* U+1F600, four bytes */
+};
+
+/* Emits the append-script format er_script_replay interprets
+ * (support/append_replay.h): two option bytes, then len8-prefixed literal
+ * chunks. The content is synthesized first — markdown-ish tokens and
+ * multi-byte fragments in token mode, raw byte noise otherwise — and then
+ * partitioned with adversarial chunk lengths: empty and one-byte chunks are
+ * frequent, so boundaries land inside multi-byte UTF-8 sequences and inside
+ * markers by construction. Deterministic: the same prng state always yields
+ * the same script. */
 static uint8_t *script_generate(ts_prng *prng, size_t *length, int tokens) {
     size_t target = 64 + (size_t)(ts_prng_next(prng) % 448);
-    size_t capacity = target + 8 + 255;
-    uint8_t *script = (uint8_t *)malloc(capacity);
+    size_t longest_fragment = 8;
+    uint8_t *content = (uint8_t *)malloc(target + longest_fragment);
+    uint8_t *script;
+    size_t content_length = 0;
     size_t at = 0;
+    size_t offset = 0;
+    size_t empty_chunks_left = 8;
 
+    if (!content) {
+        return NULL;
+    }
+    while (content_length < target) {
+        uint64_t roll = ts_prng_next(prng);
+        if (tokens && roll % 4 == 0) {
+            const char *fragment =
+                SCRIPT_FRAGMENTS[ts_prng_next(prng) % (sizeof(SCRIPT_FRAGMENTS) / sizeof(SCRIPT_FRAGMENTS[0]))];
+            size_t fragment_length = strlen(fragment);
+            memcpy(content + content_length, fragment, fragment_length);
+            content_length += fragment_length;
+        } else if (tokens) {
+            content[content_length++] = (uint8_t)SCRIPT_TOKENS[ts_prng_next(prng) % (sizeof(SCRIPT_TOKENS) - 1)];
+        } else {
+            content[content_length++] = (uint8_t)roll;
+        }
+    }
+
+    /* Worst case: every chunk is one byte (two script bytes each), plus the
+     * option bytes and the bounded run of empty chunks. */
+    script = (uint8_t *)malloc(2 + 2 * content_length + empty_chunks_left);
     if (!script) {
+        free(content);
         return NULL;
     }
     script[at++] = (uint8_t)ts_prng_next(prng);
     script[at++] = (uint8_t)ts_prng_next(prng);
-    while (at < target) {
-        uint8_t op = (uint8_t)ts_prng_next(prng);
-        script[at++] = op;
-        switch (op & 3) {
-        case 0: /* insert */
-        case 2: /* replace */
-        {
-            size_t payload = (size_t)(ts_prng_next(prng) % 24);
-            size_t k;
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            if ((op & 3) == 2) {
-                script[at++] = (uint8_t)ts_prng_next(prng);
-                script[at++] = (uint8_t)ts_prng_next(prng);
+    while (offset < content_length) {
+        size_t chunk;
+        switch (ts_prng_next(prng) % 8) {
+        case 0: /* the empty append, still a verified mutation */
+            if (empty_chunks_left > 0) {
+                empty_chunks_left--;
+                script[at++] = 0;
             }
-            script[at++] = (uint8_t)payload;
-            for (k = 0; k < payload; k++) {
-                script[at++] = tokens ? (uint8_t)SCRIPT_TOKENS[ts_prng_next(prng) % (sizeof(SCRIPT_TOKENS) - 1)]
-                                      : (uint8_t)ts_prng_next(prng);
-            }
+            continue;
+        case 1:
+        case 2: /* one byte: guaranteed mid-sequence, mid-marker splits */
+            chunk = 1;
+            break;
+        default:
+            chunk = 2 + (size_t)(ts_prng_next(prng) % 46);
             break;
         }
-        case 1: /* delete */
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            script[at++] = (uint8_t)ts_prng_next(prng);
-            break;
-        default: /* commit carries no operands */
-            break;
+        if (chunk > content_length - offset) {
+            chunk = content_length - offset;
         }
+        script[at++] = (uint8_t)chunk;
+        memcpy(script + at, content + offset, chunk);
+        at += chunk;
+        offset += chunk;
     }
+    free(content);
     *length = at;
     return script;
 }

@@ -122,7 +122,8 @@ import Testing
             // The cumulative id ledger: every id the series has ever shown,
             // its last-sighted revision, and whether it is still in a tree.
             // Cumulative because retirement is forever — two adjacent
-            // snapshots alone would forgive an id resurrected a commit later.
+            // snapshots alone would forgive an id resurrected an append
+            // later.
             var ledger: [UInt64: LedgerEntry] = [:]
             verifyTree(document, against: nil, ledger: &ledger, testCase.name)
             for chunk in lineChunks(testCase.source) {
@@ -199,7 +200,7 @@ private func verifyTree(
             #expect(node.revision <= parent, comment)
         }
         guard let entry = ledger[id] else {
-            // A never-seen id is minted by this commit and carries its
+            // A never-seen id is minted by this append and carries its
             // revision.
             #expect(node.revision == successorRevision, comment)
             ledger[id] = LedgerEntry(revision: node.revision, alive: true)
