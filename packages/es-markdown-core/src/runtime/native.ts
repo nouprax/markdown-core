@@ -7,9 +7,11 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
     /** Appends `bytes` to the end of the chain's head; returns the
      * caller-owned successor document, or 0 with `*errorOutput` set.
-     * Success SUPERSEDES `document`: only es_document_free remains for it.
-     * A failure past the argument guards poisons the chain, after which
-     * only es_document_free remains. */
+     * Success SUPERSEDES `document`: the engine keeps it readable until the
+     * chain's next mutation begins, but this wrapper decodes at build time
+     * and never calls back in, so its one remaining call is
+     * es_document_free. A failure past the argument guards poisons the
+     * chain, after which only es_document_free remains. */
     es_document_append(document: number, bytes: number, length: number, errorOutput: number): number;
     es_document_free(document: number): void;
     es_document_series(document: number): bigint;

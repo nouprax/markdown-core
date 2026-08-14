@@ -145,7 +145,7 @@ mid-word or mid-character. One rule: the successor supersedes the receiver,
 the revision advances strictly by one on the chain's own counter, and
 mutating a superseded handle is a deterministic error, so history is
 linear. In one sentence: an append
-advances the chain, old handles die, decoded values live forever. There is
+advances the chain, old heads stop mutating, decoded values live forever. There is
 no whole-text edit: replacing the text describes a different document, and
 the way to say so is constructing a new one — a new chain with a new
 series. Options are fixed for the chain's whole life — changing what the
@@ -187,7 +187,9 @@ markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
 markdown_core_string chunk = {(const uint8_t *)"world", 5};
 markdown_core_document *next = markdown_core_document_append(document, chunk, NULL);
-markdown_core_document_free(document); /* superseded: free is its one legal call */
+/* The receiver is superseded: reads and free both stay legal until the
+ * chain's next mutation begins. */
+markdown_core_document_free(document);
 markdown_core_document_free(next);
 ```
 
