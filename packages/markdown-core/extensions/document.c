@@ -24,12 +24,12 @@
 #include <node.h>
 #include <parser.h>
 
-// A document is a purely local object: it owns its text, its committed tree,
-// and its definition tables, and shares nothing with any other document but
-// its series' revision counter. Every append is one full parse of all bytes
-// so far plus a diff against the previous document (document_build below);
-// the equivalence suite pins that the result always equals a one-shot parse
-// of the same text.
+// A document owns its text, its committed tree, and its diagnostics, and
+// shares one object with the other handles on its chain: the chain record
+// (refcount, revision counter, series salt, poison flag, base allocator).
+// Every append is one full parse of all bytes so far plus a diff against the
+// previous document (document_build below); the equivalence suite pins that
+// the result always equals a one-shot parse of the same text.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -40,8 +40,8 @@ static void clear_error(markdown_core_error **error) {
 // --- parsing ----------------------------------------------------------------
 
 static int native_options_from(const markdown_core_parse_options *options) {
-    /* UTF-8 is assumed and never validated (7.1); nothing is switched on
-     * here to check it. */
+    /* UTF-8 is assumed and never validated; nothing is switched on here to
+     * check it. */
     int native_options = 0;
     if (options->smart_punctuation) {
         native_options |= MARKDOWN_CORE_OPT_SMART;
@@ -97,20 +97,14 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
     return parser;
 }
 
-// Full staged reparse: parses the whole stored text with a fresh parser and
-// fresh definition maps, adopts ids from the previous tree, and replaces every
-// piece of document state at once. The staging never touches the committed
-// state, so any failure leaves the document valid at its previous revision.
-/* PARSE. A pure function of (bytes, options): it fills this document's tree
- * from its own stored text and reads nothing else. The parser's definition
- * maps serve the parse's own inline phase and die with the parser: the tree
- * carries every published answer. No predecessor, no ids — identity is the
- * diff's to assign. */
+/* PARSE. A pure function of (bytes, options): it fills this freshly built
+ * document's tree from its own stored text and reads nothing else. The
+ * parser's definition maps serve the parse's own inline phase and die with
+ * the parser: the tree carries every published answer. No predecessor, no
+ * ids — identity is the diff's to assign. */
 static bool document_parse_text(markdown_core_document *document, markdown_core_error **error) {
     markdown_core_parser *parser;
     markdown_core_node *root;
-    int total_lines;
-    int last_line_length;
 
     parser = markdown_core_document_new_parser(document, error);
     if (!parser) {
@@ -132,8 +126,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
         }
     }
     markdown_core_parser_finalize_blocks(parser);
-    total_lines = parser->line_number;
-    last_line_length = parser->last_line_length;
     root = markdown_core_parser_refine_blocks(parser);
     if (!root) {
         bool allocation_failed = parser->oom;
@@ -173,8 +165,6 @@ static bool document_parse_text(markdown_core_document *document, markdown_core_
     }
     markdown_core_parser_free(parser);
     document->root = root;
-    document->total_lines = total_lines;
-    document->last_line_length = last_line_length;
     return true;
 }
 
@@ -200,33 +190,11 @@ bool markdown_core_document_diff(
 
 static markdown_core_document *markdown_core_document_alloc(
     const markdown_core_parse_options *options,
+    markdown_core_string markdown,
     markdown_core_mem *mem,
     bool pooled,
     markdown_core_error **error
 );
-
-/* Replaces the document's whole text. The source starts empty, so this is one
- * insertion at the origin. */
-static bool document_set_text(markdown_core_document *doc, markdown_core_string markdown, markdown_core_error **error) {
-    markdown_core_source_edit edit;
-    markdown_core_source_stats stats;
-    markdown_core_source_status status = MARKDOWN_CORE_SOURCE_OK;
-    memset(&stats, 0, sizeof(stats));
-    edit.span.start = 0;
-    edit.span.end = 0;
-    edit.replacement = markdown.data;
-    edit.replacement_length = markdown.length;
-    if (!markdown_core_source_apply(doc->source, &edit, 1, &stats, &status)) {
-        markdown_core_ast_set_error(
-            error,
-            status == MARKDOWN_CORE_SOURCE_NO_MEMORY ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED
-                                                     : MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
-            "could not store the document text"
-        );
-        return false;
-    }
-    return true;
-}
 
 /* The chain owner's one atomic: handles on a chain may be freed from
  * different threads, so the refcount is advanced with a compiler builtin
@@ -252,30 +220,6 @@ static uint32_t chain_fetch_add32(volatile uint32_t *slot, int32_t amount) {
     return previous;
 }
 #endif
-
-static markdown_core_chain *chain_new(markdown_core_mem *mem) {
-    markdown_core_chain *chain = (markdown_core_chain *)calloc(1, sizeof(*chain));
-    if (chain) {
-        chain->refcount = 1;
-        chain->generation = 1;
-        chain->next_revision = 1;
-        chain->mem = mem;
-    }
-    return chain;
-}
-
-static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
-    if (chain) {
-        chain_fetch_add32(&chain->refcount, 1);
-    }
-    return chain;
-}
-
-static void chain_release(markdown_core_chain *chain) {
-    if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
-        free(chain);
-    }
-}
 
 // One 64-bit read from the host CSPRNG. Documents stay free of any library-
 // owned RNG state: every source below is the platform's own, shared-nothing
@@ -307,6 +251,45 @@ static bool document_host_entropy(uint64_t *value) {
 #endif
 }
 
+/* Born once per chain, at document_new/open; append retains the receiver's.
+ * The series salt is minted HERE, so an append pays no host-entropy read:
+ * every document on the chain shares this one value. The address/time/clock
+ * mix alone is deterministic for the first chain of lockstep-started isolated
+ * runtimes (one WASM instance per worker reproduces the same allocator state
+ * and coarse clocks), so the host CSPRNG carries the cross-runtime uniqueness
+ * contract; the local mix stays folded in as a best-effort fallback when the
+ * host read fails. */
+static markdown_core_chain *chain_new(markdown_core_mem *mem) {
+    markdown_core_chain *chain = (markdown_core_chain *)calloc(1, sizeof(*chain));
+    if (chain) {
+        uint64_t entropy = (uint64_t)(uintptr_t)chain;
+        uint64_t host_entropy = 0;
+        chain->refcount = 1;
+        chain->next_revision = 1;
+        chain->mem = mem;
+        entropy ^= markdown_core_mix64((uint64_t)time(NULL));
+        entropy ^= markdown_core_mix64((uint64_t)clock()) << 1;
+        if (document_host_entropy(&host_entropy)) {
+            entropy ^= host_entropy;
+        }
+        chain->series = markdown_core_mix64(entropy);
+    }
+    return chain;
+}
+
+static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
+    if (chain) {
+        chain_fetch_add32(&chain->refcount, 1);
+    }
+    return chain;
+}
+
+static void chain_release(markdown_core_chain *chain) {
+    if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
+        free(chain);
+    }
+}
+
 // --- public API -------------------------------------------------------------
 
 /* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
@@ -314,9 +297,10 @@ static bool document_host_entropy(uint64_t *value) {
  *     new = Document(markdown, options)
  *     diff(prev, new)
  *
- * That is the whole of an edit. There is no incremental path, no pending
- * edit, no reuse of the previous tree: the previous document is INPUT to the
- * diff and nothing else, and it is untouched by this call. */
+ * That is the whole of both constructors — new starts a chain, append
+ * extends one. There is no incremental path, no reuse of the previous tree:
+ * the previous document is INPUT to the diff and nothing else, and it is
+ * untouched by this call. */
 static markdown_core_document *document_build(
     const markdown_core_parse_options *options,
     markdown_core_string markdown,
@@ -327,19 +311,17 @@ static markdown_core_document *document_build(
 ) {
     markdown_core_document *doc;
 
-    doc = markdown_core_document_alloc(options, mem, pooled, error);
+    doc = markdown_core_document_alloc(options, markdown, mem, pooled, error);
     if (!doc) {
         return NULL;
     }
     if (prev) {
         doc->chain = chain_retain(prev->chain);
-        doc->series = prev->chain->series;
         doc->next_id = prev->next_id;
         /* The revision is CLAIMED here (the diff below stamps it into nodes)
          * but the counter advances only on success, so a failed build burns
          * no number and adjacent published documents stay strictly +1. */
         doc->revision = prev->chain->next_revision;
-        doc->generation = 0; /* not a head until the build succeeds */
     } else {
         doc->chain = chain_new(mem);
         if (!doc->chain) {
@@ -347,32 +329,26 @@ static markdown_core_document *document_build(
             markdown_core_document_free(doc);
             return NULL;
         }
-        doc->chain->series = doc->series; /* minted by the allocator */
         doc->revision = 0;
-        doc->generation = 1;
-    }
-    if (markdown.length && !document_set_text(doc, markdown, error)) {
-        markdown_core_document_free(doc);
-        return NULL;
     }
     if (!document_parse_text(doc, error) || !markdown_core_document_diff(prev, doc, error)) {
         markdown_core_document_free(doc);
         return NULL;
     }
     if (prev) {
-        /* SUPERSESSION, in one place: the successor becomes the chain's head
-         * the moment it exists in full, and the receiver's generation stops
-         * matching in the same assignment. */
+        /* SUPERSESSION, in one place: advancing the chain clock makes the
+         * successor the head (its claimed revision is now the one behind the
+         * clock) and stops the receiver matching, in the same increment. */
         doc->chain->next_revision++;
-        doc->generation = ++doc->chain->generation;
     }
     return doc;
 }
 
-/* Allocates a document and its empty source. No parse; document_build does
- * that once, with the text in hand. */
+/* Allocates a document holding `markdown`'s bytes. No parse; document_build
+ * does that once, after wiring the chain. */
 static markdown_core_document *markdown_core_document_alloc(
     const markdown_core_parse_options *options,
+    markdown_core_string markdown,
     markdown_core_mem *mem,
     bool pooled,
     markdown_core_error **error
@@ -408,45 +384,23 @@ static markdown_core_document *markdown_core_document_alloc(
         mem = markdown_core_arena_mem(document->arena);
     }
     document->mem = mem;
-    {
-        // The store holds whatever bytes it is handed. UTF-8 is assumed and
-        // never validated (7.1), and a streamed append completes a multi-byte
-        // character whose first bytes arrived earlier — deciding that at the
-        // substrate was always the wrong layer, and there is no longer a
-        // profile that could.
-        markdown_core_source_stats scratch;
-        markdown_core_source_status status;
-        memset(&scratch, 0, sizeof(scratch));
-        document->source = markdown_core_source_new(mem, NULL, 0, &scratch, &status);
-        if (!document->source) {
-            // Unwound here rather than through markdown_core_document_release:
-            // that path releases document->source unconditionally, and it is
-            // the thing that just failed to exist.
-            if (document->arena) {
-                markdown_core_arena_release(document->arena);
-            }
-            free(document);
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-            return NULL;
+    // The store holds whatever bytes it is handed. UTF-8 is assumed and
+    // never validated, and a streamed append completes a multi-byte
+    // character whose first bytes arrived earlier — deciding that at the
+    // substrate was always the wrong layer, and there is no longer a
+    // profile that could.
+    document->source = markdown_core_source_new(mem, markdown.data, markdown.length);
+    if (!document->source) {
+        // Unwound by hand: only the arena and the bare struct exist yet.
+        if (document->arena) {
+            markdown_core_arena_release(document->arena);
         }
+        free(document);
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
     }
     document->next_id = 1;
     document->revision = 0;
-
-    // The address/time/clock mix alone is deterministic for the first
-    // document of lockstep-started isolated runtimes (one WASM instance per
-    // worker reproduces the same allocator state and coarse clocks), so the
-    // host CSPRNG carries the cross-runtime uniqueness contract. The local
-    // mix stays folded in as a best-effort fallback when the host read
-    // fails.
-    uint64_t entropy = (uint64_t)(uintptr_t)document;
-    uint64_t host_entropy = 0;
-    entropy ^= markdown_core_mix64((uint64_t)time(NULL));
-    entropy ^= markdown_core_mix64((uint64_t)clock()) << 1;
-    if (document_host_entropy(&host_entropy)) {
-        entropy ^= host_entropy;
-    }
-    document->series = markdown_core_mix64(entropy);
     return document;
 }
 
@@ -530,7 +484,7 @@ static bool mutation_permitted(
         );
         return false;
     }
-    if (document->generation != document->chain->generation) {
+    if (document->revision + 1 != document->chain->next_revision) {
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_INVALID_ARGUMENT,
@@ -613,7 +567,7 @@ uint64_t markdown_core_document_revision(const markdown_core_document *document)
 }
 
 uint64_t markdown_core_document_series(const markdown_core_document *document) {
-    return document ? document->series : 0;
+    return document ? document->chain->series : 0;
 }
 
 size_t markdown_core_document_length(const markdown_core_document *document) {

@@ -68,7 +68,7 @@
 Required CI 使用 build-once/test-many DAG，而不是把 build 和多个 suite 顺序塞进同一个 runner：
 
 1. `Health Check - <scope>` jobs 并行完成 repository/C/ES/Kotlin/Swift 的 formatting、lint、contract
-   与 topology audit；显式 health barrier 成功后才允许任何 build producer 启动；
+   与 test-layout audit；显式 health barrier 成功后才允许任何 build producer 启动；
 2. `Build - <platform>` host-specific producers 只构建可交付产品，例如 tests-off C product tree、
    ES dist/WASM、Kotlin staged publications、Swift product 与声明的 deployment targets；native/cinterop
    产品必须由兼容 host 构建，禁止伪装成单 host cross-build；
@@ -140,7 +140,7 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `conformance` | 公开 facade/schema shape 与 reviewed canonical dumps(`facade_native`、`facade_dump_cli`)；不进入 correctness preset |
 | `consumer` | C++ consumer 编译/链接/运行(`consumer_facade_cplusplus`) |
 | `spec` | CommonMark spec、smart punctuation、entities(全部为 canonical AST dump 断言) |
-| `equivalence` | 逐 commit 编辑 replay 与 one-shot parse 的 dump 等价 + 双走查 id ledger 校验(`equivalence_*`) |
+| `equivalence` | 逐 append replay 与 one-shot parse 的 dump 等价 + 双走查 id ledger 校验(`equivalence_*`) |
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
@@ -208,7 +208,7 @@ C 数据驱动 runner 自身提供第二级 discovery:`spec_runner --list/--exam
 `pathological_runner --list/--case`、`concrete_runner --list/--case`、
 `bench_runner --list/--workload`、`concurrency_runner --case`(三个固定 case:
 `first_parse`/`stress`/`lifecycle`,逐一注册为 CTest 测试)。CMake 中注册的
-case 清单由 `scripts/audit-test-topology.sh` 与 runner `--list` 输出强制一致。
+case 清单由 `scripts/audit-test-layout.sh` 与 runner `--list` 输出强制一致。
 
 IDE 契约:仓库提交 `CMakePresets.json`(configure/build/test presets),
 VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites;
@@ -409,15 +409,17 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
   比较六个相邻区间 normalized growth 的中位数。这样持续的 ancestor-walk
   quadratic growth 会在多数尺度上失败，而单次 allocator/cache 层级切换不会被
   错当成复杂度类别。
-- Footnote-renumber complexity 同样是 trend-based：256 → 4096 的 doubling
-  序列，gate 比较四个相邻区间 normalized growth 的中位数。这条 case 的
-  per-commit 成本按构造就是 footnote 数量的线性函数（每个被重编号的
-  footnote 都是一个被重新盖章的 changed node），所以被测的信号只是**对线性的偏离**，两个
-  孤立 endpoint 之间的一次 allocator/cache 切换与该信号同量级。之前的两点比值
-  形式正是这样失效的：同一份 C 代码在一个 commit 上通过、在只改了一个文本
-  文件的下一个 commit 上以 4.099x 失败。中位数形式实测健康实现为
-  0.984x–0.996x；把 footnote index diff 的 dedup set 换成线性扫描后为
-  1.934x–1.952x，gate 正确失败。
+- Benchmark runner 的 append shapes 同样是 trend-based：六个 shape（其中
+  `footnote_dense` 继承了旧 footnote-renumber complexity case 的职责）各以
+  256 KiB → 4 MiB 的 doubling 序列驱动，gate 比较四个相邻区间 normalized
+  growth 的中位数。`footnote_dense` 的 per-append 成本按构造就是 footnote
+  数量的线性函数（每个被重编号的 footnote 都是一个被重新盖章的 changed
+  node），所以被测的信号只是**对线性的偏离**，两个孤立 endpoint 之间的一次
+  allocator/cache 切换与该信号同量级。旧 case 的两点比值形式正是这样失效
+  的：同一份 C 代码在一个 git commit 上通过、在只改了一个文本文件的下一个
+  commit 上以 4.099x 失败。中位数形式当时实测健康实现为 0.984x–0.996x；把
+  footnote index diff 的 dedup set 换成线性扫描后为 1.934x–1.952x，gate
+  正确失败。
 - Benchmark 是诊断证据和回归 gate，不是根据当前样本设计另一套算法的 oracle。
   禁止为了追回某个局部数字，按 benchmark 观察到的 cardinality、input size 或
   “常见形状”增加实现分支（例如 `count == 1` 快路径）。同一个语义操作必须只有
@@ -450,14 +452,14 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
 - 外部 corpus 只能按 `packages/markdown-core/tests/corpora/README.md` 的
   manifest/license/hash 政策一次性导入;
   `packaging_corpus_guard`/`benchmark_corpus_guard` CTest tests 与
-  `scripts/audit-test-topology.sh` 强制该政策。
+  `scripts/audit-test-layout.sh` 强制该政策。
 - 长时间 fuzz campaign 是显式非默认任务(`make afl`、`make libFuzzer`),复用
   `packages/markdown-core/tests/core/` 下的 harness 与 corpus;确定性 fuzz
   smoke(parse/traverse/dump/free)属于 correctness(label `fuzz`)。
 
 ## 8. 审计
 
-`scripts/audit-test-topology.sh`(`pnpm audit:tests`,verify 链与 CI 均执行)
+`scripts/audit-test-layout.sh`(`pnpm audit:tests`,verify 链与 CI 均执行)
 只验证会改变质量结论的事实：四个平台都接入共享 canonical contract，测试与 benchmark
 不在运行时获取可变网络输入，外部 corpus 具备 manifest/license/hash，CTest 的 required
 labels 非空且没有 disabled test，correctness/conformance/benchmark selection 互斥，runner

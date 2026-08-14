@@ -12,14 +12,13 @@ extern "C" {
 
 /** Ownership-region classification (incremental-canonical-ast.md 11.1, 0).
  *
- * The region is the unit a localized edit reparses, and it is defined
- * rather than left to taste because concrete offsets are region-relative:
- * a token or trivia record never becomes a leaf of a document-wide
- * structure, so an edit elsewhere can never touch one. Every bound in the
- * complexity contract is parameterized on this classification, which is
- * why it lands first and alone — the capture, extent, and canonical-text
- * milestones all consume it, and a misclassification would surface as a
- * broken bound three milestones later where it is expensive to trace back.
+ * The region is the unit of source attribution: every marker byte belongs
+ * to exactly one region, and the classification is defined rather than
+ * left to taste because concrete offsets are region-relative — a token or
+ * trivia record never becomes a leaf of a document-wide structure, it
+ * resolves through the node that owns it. The living-tree plan's
+ * per-settle refine (docs/reviews/2026-08-13-living-tree-plan.md) will
+ * re-earn a locality story on this same classification.
  *
  * The classes, verbatim from 11.1:
  *
@@ -57,14 +56,14 @@ typedef enum markdown_core_region_class {
 /** Classifies `node` per 11.1. Pure: reads the node's type and, for a
  * directive label, its parent's type; allocates nothing. Unknown types are
  * a contract violation and classify as NONE, which the partition gate
- * refuses (every node of a committed tree must belong to a region). */
+ * refuses (every node of a document's tree must belong to a region). */
 markdown_core_region_class markdown_core_region_classify(const markdown_core_node *node);
 
 /** The region that owns `node`'s concrete material: the node itself when it
  * is a region, otherwise its nearest region ancestor. For every inline node
  * the result is the enclosing LEAF or INLINE_SEQUENCE region — never a
  * CONTAINER, because marker material owns no inline content. Returns NULL
- * only for a detached non-region node, which no committed tree contains. */
+ * only for a detached non-region node, which no document's tree contains. */
 const markdown_core_node *markdown_core_region_of(const markdown_core_node *node);
 
 #ifdef __cplusplus

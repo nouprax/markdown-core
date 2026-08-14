@@ -13,30 +13,6 @@ static const char *TYPE_STRING = "tasklist";
 
 static const char *get_type_string(markdown_core_extension *extension, markdown_core_node *node) { return TYPE_STRING; }
 
-// Return 1 if state was set, 0 otherwise
-int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked) {
-    // The node has to exist, and be an extension, and actually be the right type in order to get
-    // the value.
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
-        return 0;
-    }
-
-    node->as.list.checked = is_checked;
-    return 1;
-}
-
-bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node) {
-    if (!node || !node->extension || strcmp(markdown_core_node_get_type_string(node), TYPE_STRING)) {
-        return false;
-    }
-
-    if (node->as.list.checked) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
 static int matches(
     markdown_core_extension *self,
     markdown_core_parser *parser,

@@ -202,7 +202,7 @@ markdown_core_add_test(facade_concurrent_first_parse facade 240 concurrency_runn
 markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --case stress)
 
 # facade multi-document contract: isolated documents streaming concurrently
-# with per-byte commits must never interfere, and one document's document
+# with per-byte appends must never interfere, and one document's document
 # must support concurrent read-only access between mutating calls.
 markdown_core_add_test(facade_concurrent_documents facade 600 concurrency_runner --case documents)
 # One chain under the unified mutation rule: externally serialized mutations
@@ -274,8 +274,8 @@ if(MARKDOWN_CORE_STATIC)
     # with the class checked against each node's observed content category,
     # region resolution for concrete ownership, and the block-phase marker
     # capture gates — records dereferenced against source lines and AST
-    # fields, Document.concrete reachability from one-shot and committed
-    # documents (14.1.9), record equality between every document commit and
+    # fields, Document.concrete reachability from one-shot and appended
+    # documents (14.1.9), record equality between every document append and
     # a fresh parse, and the allocation-failure sweep.
     foreach(
         case IN
@@ -488,9 +488,9 @@ markdown_core_add_test(
     --generated
     0
     --script
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/edit_scripts/seam-extension-specials.bin"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/append_scripts/seam-extension-specials.bin"
     --script
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/edit_scripts/seam-column-environment.bin"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/fixtures/append_scripts/seam-column-environment.bin"
     --script-generated
     512)
 

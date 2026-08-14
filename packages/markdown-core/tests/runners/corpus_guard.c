@@ -4,7 +4,7 @@
  * Pro Git checkout, loose generated benchmark input, or a vendored corpus
  * under packages/markdown-core/tests/corpora/ that lacks its manifest,
  * license, or checksum file.
- * Content hashes are additionally verified by scripts/audit-test-topology.sh;
+ * Content hashes are additionally verified by scripts/audit-test-layout.sh;
  * this guard keeps the invariant enforced from every test/bench run without
  * needing a shell.
  *

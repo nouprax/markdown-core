@@ -193,8 +193,6 @@ final class com.nouprax.markdown.core/CodeBlock : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/CrossLink : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/CrossLink|null[0]
-    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, com.nouprax.markdown.core/Scope, kotlin/String) // com.nouprax.markdown.core/CrossLink.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;com.nouprax.markdown.core.Scope;kotlin.String){}[0]
-
     final val id // com.nouprax.markdown.core/CrossLink.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/CrossLink.id.<get-id>|<get-id>(){}[0]
     final val reference // com.nouprax.markdown.core/CrossLink.reference|{}reference[0]
@@ -309,8 +307,6 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
 }
 
 final class com.nouprax.markdown.core/Embed : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Embed|null[0]
-    constructor <init>(com.nouprax.markdown.core/MarkupID, kotlin/ULong, com.nouprax.markdown.core/Scope, kotlin/String) // com.nouprax.markdown.core/Embed.<init>|<init>(com.nouprax.markdown.core.MarkupID;kotlin.ULong;com.nouprax.markdown.core.Scope;kotlin.String){}[0]
-
     final val id // com.nouprax.markdown.core/Embed.id|{}id[0]
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Embed.id.<get-id>|<get-id>(){}[0]
     final val reference // com.nouprax.markdown.core/Embed.reference|{}reference[0]

@@ -4,7 +4,7 @@
 package com.nouprax.markdown.core
 
 /** An embed written as `![[reference]]`. */
-public class Embed(
+public class Embed internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
     override val scope: Scope,

@@ -6,23 +6,24 @@ promised to remain compatible between releases.
 
 ## Unreleased
 
-- Added (C, Swift, Kotlin, and ECMAScript): `append`. A document is the live
-  head of a chain; `append(chunk)` adds bytes at the end — any byte split is
-  legal, mid-word or mid-character — and returns the document all bytes so
-  far describe. Both mutations are one rule: `edit` and `append` supersede
-  their receiver (which from then on supports only free), the revision
-  advances strictly by one on the chain's own counter, and mutating a
-  superseded handle is a deterministic error, so history is linear and
-  derived state can be destroyed and rebuilt in place. A failed `append`
-  ends the chain; a failed `edit` supersedes nothing. The bindings decode
-  O(changed) per append: an unchanged (id, revision) subtree reuses the
-  previously decoded value outright, so a stream's per-tick decode cost
-  follows the change, not the document. The engine side of `append` is
-  currently the documented fallback — concatenate and rebuild whole — with
-  the warm path arriving construct by construct behind the same signature
-  and oracle.
-- Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. `edit`
-  returns the successor document and nothing else — `markdown_core_commit`,
+- Added (C, Swift, Kotlin, and ECMAScript): `append`, the one mutation. A
+  document is the live head of a chain; `append(chunk)` adds bytes at the
+  end — any byte split is legal, mid-word or mid-character — and returns
+  the document all bytes so far describe. One rule: an append supersedes
+  its receiver (which keeps free at any time, and read-only access until
+  the chain's next mutation begins), the revision advances strictly by one
+  on the chain's own counter, and mutating a superseded handle is a
+  deterministic error, so history is linear and derived state can be
+  destroyed and rebuilt in place. A failed `append` ends the chain. The
+  bindings decode O(changed) per append: an unchanged (id, revision)
+  subtree reuses the previously decoded value outright, so a stream's
+  per-tick decode cost follows the change, not the document. The engine
+  side of `append` is currently the documented fallback — concatenate and
+  rebuild whole — with the amortized O(affected) engine arriving behind the
+  same signature and oracle
+  (`docs/reviews/2026-08-13-living-tree-plan.md`).
+- Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
+  mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three
   delta accessors are removed from C, and Commit/Delta/Diff types and every
   delta decode path are removed from all three bindings. What changed is
@@ -31,9 +32,7 @@ promised to remain compatible between releases.
   last changed), so a consumer walks the new tree top-down and stops
   descending wherever the (id, revision) pair is one it already holds —
   (id, revision) is the entire update protocol. The Kotlin wire format drops
-  its delta section (MKC4 → MKC5). This clears the runway for the adopted
-  streaming plan (`docs/reviews/2026-08-12-streaming-plan.md`), where `edit`
-  and a new `append` become two mutations under one supersession rule.
+  its delta section (MKC4 → MKC5).
 - Breaking (ECMAScript): `MarkupID.series` is a 16-digit lowercase hex string
   instead of a `bigint`, so a document is ordinary JSON. `JSON.stringify` threw
   on every tree before this — the salt was the one `bigint` on the public
@@ -47,22 +46,19 @@ promised to remain compatible between releases.
 - Breaking (C, Swift, Kotlin, and ECMAScript): there is no session type.
   `MarkupSession` in Swift, Kotlin, and ECMAScript and the whole
   `markdown_core_session_*` family are removed rather than deprecated: the
-  former one-shot parse and the former session open are one call, and `edit`
-  hands a document new text and returns the document that text describes
-  (this same release also removes the delta — see the entry above; the two
-  changes ship together, so `edit` never returns one within a published
-  version). `edit` READS its receiver and takes nothing — the
-  document it was called on keeps everything it owns, stays usable, and is
-  freed by whoever holds it, so editing one document twice gives two lines of
-  descent. Options are fixed for a document's whole series; changing them is a
-  new document, not an edit.
+  former one-shot parse and the former session open are one call —
+  construct a document — and the only mutation is `append`. There is no
+  whole-text edit: replacing the text describes a different document, and
+  the way to say so is constructing a new one, a new chain with a new
+  series. Options are fixed for a chain's whole life; changing them is a
+  new chain too.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the incremental engine is
   removed, and with it every promise built on it — no stale region, no
   snapshot that structurally shares unchanged nodes with its predecessor, and
-  no per-commit cost proportional to the change. Every edit parses the whole
-  text and decodes the whole tree; the engine went because it bought no time
-  yet, measured rather than assumed. What a consumer relies on is unchanged:
-  after any sequence of edits a document dumps byte-for-byte equal to a
+  no per-mutation cost proportional to the change. Every mutation parses
+  the whole text; the engine went because it bought no time yet, measured
+  rather than assumed. What a consumer relies on is unchanged: after any
+  sequence of appends a document dumps byte-for-byte equal to a
   from-scratch parse of the same text, an untouched node keeps its `id` and
   its `revision`, and a pure positional shift is not a change.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the session-scoped footnote
@@ -75,8 +71,8 @@ promised to remain compatible between releases.
   now called `series` everywhere it was called `lineage`
   (`markdown_core_document_series`, `MarkupID.series`, Kotlin's `seriesBits`
   and `MarkupID.fromBits`, `document.series`). Nothing about the value or its
-  contract changed: a SERIES is one document and every document its edits
-  produce, node raw values restart at 1 for each new series, and the salt is
+  contract changed: a SERIES is one chain — a document and every document
+  its appends produce — node raw values restart at 1 for each new series, and the salt is
   what keeps two unrelated documents' identities from comparing equal. The
   old name is removed rather than aliased.
 - Breaking (C, Swift, Kotlin, and ECMAScript): formula parsing now has one
@@ -116,18 +112,9 @@ promised to remain compatible between releases.
   `markdown_core_scope_table_free`, `Document.scope(of:)` in Swift,
   `Document.scope(node)` in Kotlin, and `document.scope(node)` in
   ECMAScript. `scope` is deliberately NOT part of equality on any platform,
-  so an edit that only shifts text still leaves every reactive comparison
-  below it unchanged. Each binding's `MarkupWalker` keeps its scope-free
+  so a change that only shifts positions still leaves every reactive
+  comparison below it unchanged. Each binding's `MarkupWalker` keeps its scope-free
   typed-visitor traversal.
-- Breaking (C, Swift, Kotlin, and ECMAScript): a delta is one ordered list of
-  `(markup, parts)` rows in the new document's postorder, where `parts == 0`
-  is a retired node and a retired row appears where it was found. The parent
-  column, the topological pass that consumed it, and the binding-local mirror
-  that reused an unchanged node's previous OBJECT are all gone. Every binding
-  now decodes every node on every commit: a document's projection is a
-  function of its text and options, not of how the caller reached it. What a
-  reactive consumer compares is unchanged — an untouched node keeps its `id`
-  and its `revision`.
 - Kotlin/JVM: native-bridge and wire-decoder implementation types are no
   longer importable or constructible from Java; dedicated ABI and
   Java-compiler gates keep the documented API as the only public surface.

@@ -107,7 +107,7 @@ function isVisitor(value: Markup | WalkCallback | MarkupVisitor<void>): value is
 }
 
 /** A node's direct children in document order — the one place the child
- * topology of every kind is spelled out. Exported for the document facade's
+ * structure of every kind is spelled out. Exported for the document facade's
  * reuse bookkeeping; not part of the package surface. */
 export function children(node: Markup): readonly Markup[] {
     switch (node.kind) {

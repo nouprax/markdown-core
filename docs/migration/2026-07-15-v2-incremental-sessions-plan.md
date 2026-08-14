@@ -12,8 +12,8 @@ reparse with reflow + suffix transplant, graveyard adoption through the
 standard machine, session-persistent reference map with
 definition-sequence reconciliation, transactional splice, and the
 equivalence/complexity gates. Interim M3 simplifications that remain open
-are listed under the M3 milestone below. The binding contract text
-lives in `../specs/sessions-and-deltas.md`; this document records why the
+are listed under the M3 milestone below. The contract text, since
+archived, lives in `../specs/archive/sessions-and-deltas.md`; this document records why the
 design is shaped this way, the exact engine architecture, the deltas to the
 frozen v1 contracts, and the milestone/gate plan.
 

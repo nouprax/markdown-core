@@ -31,8 +31,8 @@ function diagnosticCode(raw: number): DiagnosticCode {
  */
 const reclaim = new FinalizationRegistry<CDocument>((handle) => handle.free());
 
-/** Everything one parse settles, so that both mutations and the entry point
- * build the same document value the same way. */
+/** Everything one parse settles, so that the one mutation — append — and the
+ * entry point build the same document value the same way. */
 interface Built {
     readonly handle: CDocument;
     readonly options: Readonly<Required<ParseOptions>>;
@@ -192,7 +192,7 @@ function build(
               })
     });
     states.set(document, state);
-    if (!state.handle.released) reclaim.register(document, state.handle, document);
+    reclaim.register(document, state.handle, document);
     return document;
 }
 

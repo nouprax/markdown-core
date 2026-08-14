@@ -51,6 +51,13 @@ private fun reader(
  * The decoded pieces leave through [build] rather than in a payload type of
  * this file's own, so no wire type crosses a file boundary — which is what
  * keeps the whole wire layer out of the Java-visible surface.
+ *
+ * Ownership: a success payload carries a live native parse that nothing owns
+ * until the caller receives [build]'s result. If this function returns, the
+ * caller owns the handle inside that result; if it throws after reading the
+ * handle, the handle has already been released here — a decode failure, an
+ * allocation failure mid-tree, or a throw out of [build] itself must not
+ * leak the parse it could not hand over.
  */
 @JvmSynthetic
 internal fun <Result> decodeWire(
@@ -74,24 +81,34 @@ internal fun <Result> decodeWire(
 ): Result {
     val reader = reader(bytes, onDeliveryLost)
     val handle = reader.long()
-    val series = reader.ulong()
-    val rootId = reader.ulong()
-    val revision = reader.ulong()
-    val scope = reader.scope()
-    val index = HashMap<ULong, Markup>()
-    val root = RootSink()
-    reader.treeBody(series, rootId, index, reuse, root)
-    val diagnostics = reader.diagnostics()
-    require(reader.finished) { "trailing bytes after a native payload" }
-    return build(
-        handle,
-        MarkupID(series, rootId),
-        revision,
-        scope,
-        checkNotNull(root.content) { "a payload carried no document root" },
-        index,
-        diagnostics,
-    )
+    try {
+        val series = reader.ulong()
+        val rootId = reader.ulong()
+        val revision = reader.ulong()
+        val scope = reader.scope()
+        val index = HashMap<ULong, Markup>()
+        val root = RootSink()
+        reader.treeBody(series, rootId, index, reuse, root)
+        val diagnostics = reader.diagnostics()
+        require(reader.finished) { "trailing bytes after a native payload" }
+        return build(
+            handle,
+            MarkupID(series, rootId),
+            revision,
+            scope,
+            checkNotNull(root.content) { "a payload carried no document root" },
+            index,
+            diagnostics,
+        )
+    } catch (failure: Throwable) {
+        // Throwable, not Exception: an OutOfMemoryError mid-tree is exactly
+        // the throw most likely to strand a large parse. Zero is never a
+        // valid handle, so a crafted test payload carrying none frees none.
+        if (handle != 0L) {
+            handle.release()
+        }
+        throw failure
+    }
 }
 
 /** Catches the one record that is not an index entry. The root has no parent

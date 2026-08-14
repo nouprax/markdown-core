@@ -102,8 +102,8 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
-/* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior. */
+/* Appends `data`; on allocation failure the list is unchanged and 0 is
+ * returned. */
 static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **head, void *data) {
     markdown_core_llist *node = (markdown_core_llist *)mem->calloc(mem, 1, sizeof(*node));
     markdown_core_llist *tail;
@@ -127,7 +127,7 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown
     markdown_core_inline_attachment *attachment = NULL;
     markdown_core_delimiter_result attachment_result;
 
-    if (!parser || !extension || !parser->inline_config || parser->total_size != 0) {
+    if (!parser || !extension || !parser->inline_config || parser->feed_started) {
         return 0;
     }
     for (existing = parser->extensions; existing; existing = existing->next) {
@@ -356,10 +356,11 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
  * ListItem, the fence lines on their CodeBlock. `column` and `length` are
  * byte extents within the current normalized line; the stored line is the
  * offset from the node's own first line, which is what keeps every record
- * region-relative — a suffix reflow moves the node and every record moves
- * with it, untouched, exactly like the sealed parent-relative node lines.
- * Capture runs only while the node's parse is live, so start_line is still
- * the absolute opening line, never the sealed delta.
+ * region-relative — a record repeats no coordinate the owning node already
+ * carries, so a node's placement lives on the node alone and a record
+ * resolves through the node it is reached from. Capture runs only while the
+ * node's parse is live, when node->start_line is already the absolute
+ * opening line the subtraction needs.
  *
  * A lost record poisons the parse on the same terms as a lost line mark: a
  * parse that succeeded with silently thinner concrete material would differ
@@ -922,13 +923,6 @@ static markdown_core_node *add_child(
     return child;
 }
 
-void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
-    /*
-     * Compatibility no-op for callers built against the former mutable-table
-     * SPI. The compiled parser-local config is always active.
-     */
-}
-
 static void S_parse_node_inlines(
     markdown_core_parser *parser,
     markdown_core_node *cur,
@@ -1110,10 +1104,8 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
 
-    if (len > UINT_MAX - parser->total_size) {
-        parser->total_size = UINT_MAX;
-    } else {
-        parser->total_size += len;
+    if (len > 0) {
+        parser->feed_started = true;
     }
 
     if (parser->last_buffer_ended_with_cr && *buffer == '\n') {

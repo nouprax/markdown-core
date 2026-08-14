@@ -23,7 +23,7 @@ struct markdown_core_chunk;
  * way using that API, it should be the preferred method.
  *
  * The following API requires a more in-depth understanding
- * of libmarkdown_core's parsing strategy, which is exposed
+ * of how libmarkdown_core parses, which is laid out
  * [here](http://spec.commonmark.org/0.24/#appendix-a-parsing-strategy).
  *
  * It should be used when "a posteriori" modification of the AST
@@ -90,14 +90,14 @@ struct markdown_core_chunk;
  * created by the extension together.
  *
  * The callback receives an immutable match snapshot and may only update the
- * AST. Delimiter topology and range retirement remain exclusively owned by
+ * AST. The delimiter chain and range retirement remain exclusively owned by
  * the engine.
  *
  * Reducers are transactional at the AST boundary: every operation that can
  * fail, including allocation and semantic validation, must finish before the
  * first AST mutation. A reducer that has mutated the AST must return
- * MARKDOWN_CORE_DELIMITER_OK. The engine can always restore delimiter
- * topology, but deliberately does not clone or roll back the AST.
+ * MARKDOWN_CORE_DELIMITER_OK. The engine can always restore the delimiter
+ * chain, but deliberately does not clone or roll back the AST.
  *
  * Finally, the extension should return NULL if its scan didn't
  * match its syntax rules.
@@ -216,11 +216,6 @@ void markdown_core_inline_parser_concrete_capture_spelling(
  */
 MARKDOWN_CORE_EXPORT
 markdown_core_extension *markdown_core_extension_find(const char *name);
-
-/** Returns a caller-owned list of the bundled syntax extensions.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_extension_list(markdown_core_mem *mem);
 
 /** Should create and add a new open block to 'parent_container' if
  * 'input' matches a syntax rule for that block type. It is allowed
@@ -390,9 +385,9 @@ int markdown_core_parser_get_offset(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 
-/** Return the difference between the values returned by
- * markdown_core_parser_get_first_nonspace_column() and
- * markdown_core_parser_get_column().
+/** Return the width of the current line's indentation: the tab-expanded
+ * column distance between the parse position and the first non-space
+ * character.
  *
  * This is not a byte offset, as it can count one tab as multiple
  * characters.
@@ -445,10 +440,12 @@ markdown_core_node *markdown_core_parser_add_child(
     int start_column
 );
 
-/** Advance the 'offset' of the parser in the current line.
+/** Advance the 'offset' of the parser in the current line. When 'columns'
+ * is nonzero, 'count' is measured in tab-expanded columns rather than
+ * bytes, and stopping inside a tab leaves it partially consumed.
  *
- * See the documentation of markdown_core_parser_get_offset() and
- * markdown_core_parser_get_column() for more information.
+ * See the documentation of markdown_core_parser_get_offset() for more
+ * information.
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
@@ -585,14 +582,6 @@ int markdown_core_inline_parser_scan_delimiters(
     int *punct_before,
     int *punct_after
 );
-
-/**
- * Compatibility no-op. Attached inline grammar is now compiled into an
- * always-active parser-local plan and no longer requires temporary bitmap
- * mutation.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add);
 
 #ifdef __cplusplus
 }

@@ -53,9 +53,6 @@ MARKDOWN_CORE_EXPORT
 void markdown_core_strbuf_free(markdown_core_strbuf *buf);
 
 MARKDOWN_CORE_EXPORT
-markdown_core_bufsize markdown_core_strbuf_len(const markdown_core_strbuf *buf);
-
-MARKDOWN_CORE_EXPORT
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf);
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_strbuf_cstr(const markdown_core_strbuf *buf) {

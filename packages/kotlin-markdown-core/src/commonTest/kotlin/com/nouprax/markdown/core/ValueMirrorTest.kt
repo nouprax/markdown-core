@@ -122,7 +122,8 @@ private class FullDecode(
             decodeWire(handle.append(chunk, 0u)) { successor, _, _, _, content, _, diagnostics ->
                 FullDecode(successor, content, diagnostics)
             }
-        // The append superseded this handle; only free remains, and freeing a
+        // The append superseded this handle; the decode above already read
+        // everything this test will ever want from it, and freeing a
         // superseded handle is an O(1) release.
         handle.release()
         return next

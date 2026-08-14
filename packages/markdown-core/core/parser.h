@@ -31,28 +31,35 @@ struct markdown_core_parser {
     struct markdown_core_node *root;
     /* The last open block after a line is fully processed */
     struct markdown_core_node *current;
-    /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_get_line_number() in
+     * markdown-core-extension-api.h */
     int line_number;
-    /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_get_offset() in
+     * markdown-core-extension-api.h */
     markdown_core_bufsize offset;
-    /* See the documentation for markdown_core_parser_get_column() in markdown_core.h */
+    /* Tab-expanded column of the parse position in the current line; one tab
+     * advances it to the next multiple of the tab stop, so it can run ahead
+     * of `offset`. */
     markdown_core_bufsize column;
-    /* See the documentation for markdown_core_parser_get_first_nonspace() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_get_first_nonspace() in
+     * markdown-core-extension-api.h */
     markdown_core_bufsize first_nonspace;
-    /* See the documentation for markdown_core_parser_get_first_nonspace_column() in markdown_core.h
-     */
+    /* Tab-expanded column of the byte at `first_nonspace`. */
     markdown_core_bufsize first_nonspace_column;
     markdown_core_bufsize thematic_break_kill_pos;
-    /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_get_indent() in
+     * markdown-core-extension-api.h */
     int indent;
-    /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
+    /* See the documentation for markdown_core_parser_is_blank() in
+     * markdown-core-extension-api.h */
     bool blank;
-    /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
-     * markdown_core.h */
+    /* The parse position sits inside a tab: `offset` has not passed the tab
+     * byte, but `column` has consumed part of its width. */
     bool partially_consumed_tab;
     /* Contains the currently processed line */
     markdown_core_strbuf curline;
-    /* See the documentation for markdown_core_parser_get_last_line_length() in markdown_core.h */
+    /* Byte length of the most recently finished line excluding its line
+     * ending; closing blocks stamp their end column from it. */
     markdown_core_bufsize last_line_length;
     /* Accumulates partial feed chunks until a complete line is available;
      * curline holds the normalized line currently being parsed. */
@@ -77,7 +84,10 @@ struct markdown_core_parser {
      * misclassifying a broken refinement lifecycle as OOM. */
     bool internal_error;
     bool last_buffer_ended_with_cr;
-    size_t total_size;
+    /* Set by the first feed that delivers any bytes (a zero-length feed does
+     * not count); markdown_core_parser_attach_extension refuses new syntax
+     * from then on, so the grammar is fixed before parsing begins. */
+    bool feed_started;
     markdown_core_llist *extensions;
     /* Immutable for each inline pass and parser-local. It owns compiled
      * trigger buckets and delimiter rule bindings for the attached syntax

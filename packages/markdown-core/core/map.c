@@ -124,9 +124,9 @@ int markdown_core_key_index_insert(
             *existing = slot->value;
         }
         if (replace) {
-            /* The key bytes match, but the stored pointer may belong to an
-             * entry that is about to be removed; repoint it at the caller's
-             * storage together with the value. */
+            /* The key bytes match, but they are borrowed from the losing
+             * value's storage; repoint them with the value so the slot
+             * never mixes one owner's key bytes with another's value. */
             slot->key = key;
             slot->key_len = key_len;
             slot->value = value;
@@ -169,57 +169,6 @@ void *markdown_core_key_index_lookup(
         position = (position + 1) & (index->capacity - 1);
     }
     return NULL;
-}
-
-int markdown_core_key_index_remove(
-    markdown_core_key_index *index,
-    const unsigned char *key,
-    markdown_core_bufsize key_len
-) {
-    uint64_t hash = hash_key(key, key_len);
-    size_t mask;
-    size_t position;
-    size_t probe;
-    size_t gap;
-    size_t scan;
-    int found = 0;
-
-    if (!index->capacity) {
-        return 0;
-    }
-    mask = index->capacity - 1;
-    position = (size_t)hash & mask;
-    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
-        markdown_core_key_index_slot *slot = &index->slots[position];
-        if (!slot->key) {
-            return 0;
-        }
-        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
-            found = 1;
-            break;
-        }
-        position = (position + 1) & mask;
-    }
-    if (!found) {
-        return 0;
-    }
-
-    /* Backward-shift deletion: walk the collision run after the gap and pull
-     * every entry whose home slot lies at or before the gap into it. The
-     * load-factor bound guarantees an empty slot, so the walk terminates. */
-    gap = position;
-    scan = (gap + 1) & mask;
-    while (index->slots[scan].key) {
-        size_t home = (size_t)index->slots[scan].hash & mask;
-        if (((scan - home) & mask) >= ((scan - gap) & mask)) {
-            index->slots[gap] = index->slots[scan];
-            gap = scan;
-        }
-        scan = (scan + 1) & mask;
-    }
-    memset(&index->slots[gap], 0, sizeof(index->slots[gap]));
-    index->size--;
-    return 1;
 }
 
 // normalize map label:  collapse internal whitespace to single space,
@@ -309,67 +258,18 @@ static int sort_map(markdown_core_map *map) {
     return 1;
 }
 
-/* Splices `entry` in front of the bucket head, which for a circular list is
- * the tail position. O(1), and the only splice there is: nothing here
- * searches for a slot, because no caller ever has a middle one to offer. */
-static void bucket_splice(markdown_core_map_entry *head, markdown_core_map_entry *entry) {
-    entry->bucket_prev = head->bucket_prev;
-    entry->bucket_next = head;
-    head->bucket_prev->bucket_next = entry;
-    head->bucket_prev = entry;
-}
-
-static void bucket_alone(markdown_core_map_entry *entry) {
-    entry->bucket_next = entry;
-    entry->bucket_prev = entry;
-}
-
-/* `entry` is OLDER than every definition of its label, so it becomes the
- * winner and the index slot moves to it. The full index build is the caller:
- * it walks the live chain newest-first, so every entry it offers is a new
- * minimum. Returns 0 when the index could not take the label. */
-static int bucket_prepend(markdown_core_map *map, markdown_core_map_entry *entry) {
-    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
-    markdown_core_map_entry *head =
-        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
-
-    if (!head) {
-        bucket_alone(entry);
-        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 0, NULL);
-    }
-    bucket_splice(head, entry);
-    return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 1, NULL);
-}
-
-/* `entry` is NEWER than every definition of its label, so it becomes the
- * tail and the winner does not change — which is why this touches the index
- * only when the label is new. The incremental add is the caller: its order is
- * the largest ever stamped. Returns 0 when the index could not take the
- * label. */
-static int bucket_append(markdown_core_map *map, markdown_core_map_entry *entry) {
-    markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)entry->label);
-    markdown_core_map_entry *head =
-        (markdown_core_map_entry *)markdown_core_key_index_lookup(&map->index, entry->label, label_len);
-
-    if (!head) {
-        bucket_alone(entry);
-        return markdown_core_key_index_insert(&map->index, entry->label, label_len, entry, 0, NULL);
-    }
-    bucket_splice(head, entry);
-    return 1;
-}
-
-/* Hash path: label -> bucket head. The live chain is newest-first with
- * monotonic orders, so every entry this offers is a new minimum for its
- * label — which is the claim bucket_prepend is named after, and which is now
- * carried by the choice of function rather than by a branch inside one. */
+/* Hash path: label -> winner. The live chain is newest-first with monotonic
+ * orders, so every entry this walk offers is OLDER than every definition of
+ * its label already indexed — a new minimum, so it takes the slot
+ * unconditionally (replace=1). */
 static int index_map(markdown_core_map *map) {
     markdown_core_map_entry *ref;
     if (!markdown_core_key_index_init(&map->index, map->mem)) {
         return 0;
     }
     for (ref = map->refs; ref; ref = ref->next) {
-        if (!bucket_prepend(map, ref)) {
+        markdown_core_bufsize label_len = (markdown_core_bufsize)strlen((char *)ref->label);
+        if (!markdown_core_key_index_insert(&map->index, ref->label, label_len, ref, 1, NULL)) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
@@ -446,8 +346,6 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
 
 void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entry) {
     entry->order = ++map->next_order;
-    entry->bucket_next = NULL;
-    entry->bucket_prev = NULL;
     entry->next = map->refs;
     map->refs = entry;
     map->size++;
@@ -455,9 +353,19 @@ void markdown_core_map_add(markdown_core_map *map, markdown_core_map_entry *entr
     if (!map->prepared) {
         return;
     }
-    if (!map->indexed || !bucket_append(map, entry)) {
-        /* The sorted array cannot absorb inserts (and a failed index attach
-         * must not leave the label partially visible); drop the structures
+    /* The new entry's order is the largest ever stamped, so it wins its
+     * label only when the label is new: replace=0 leaves an existing winner
+     * untouched and still reports success. */
+    if (!map->indexed || !markdown_core_key_index_insert(
+                             &map->index,
+                             entry->label,
+                             (markdown_core_bufsize)strlen((char *)entry->label),
+                             entry,
+                             0,
+                             NULL
+                         )) {
+        /* The sorted array cannot absorb inserts, and a failed index insert
+         * left the new label invisible to the hash path; drop the structures
          * and let the next lookup rebuild them. */
         unprepare_map(map);
     }

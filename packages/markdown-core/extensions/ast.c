@@ -1169,7 +1169,7 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
 }
 
 // Content equality; a NULL view and an empty view compare equal, matching
-// the dump output both sides of a delta are held to.
+// the dump output the dump-equivalence oracle holds every revision to.
 static bool view_content_equal(markdown_core_string a, markdown_core_string b) {
     return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
 }

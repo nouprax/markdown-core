@@ -165,6 +165,49 @@ class ErrorsTest {
     }
 
     @Test
+    fun aDecodeFailurePastTheHandleReleasesTheParseItCouldNotDeliver() {
+        // A REAL parse whose payload is then cut off right behind the handle
+        // — magic(4) + status(1) + handle(8) — so the decoder holds a live
+        // native document and the very next read throws. The release this
+        // forces runs against a handle the engine really issued; freeing a
+        // wrong or already-freed one would take the suite down natively.
+        val payload = cOpen("# leak window\n".encodeToByteArray(), ParseOptions())
+        assertFailsWith<IllegalArgumentException> {
+            decodeWire(payload.copyOf(13)) { _, _, _, _, _, _, _ ->
+                error("a truncated payload reached the build step")
+            }
+        }
+    }
+
+    @Test
+    fun aThrowingBuildStepReleasesTheParseAndRethrowsTheCallersFailure() {
+        // The other half of the window: the whole payload decodes and the
+        // build step itself throws. The parse is released and the caller's
+        // own exception surfaces unwrapped.
+        val payload = cOpen("# leak window\n".encodeToByteArray(), ParseOptions())
+        val failure =
+            assertFailsWith<IllegalStateException> {
+                decodeWire(payload) { _, _, _, _, _, _, _ ->
+                    error("the build step failed after a complete decode")
+                }
+            }
+        assertEquals("the build step failed after a complete decode", failure.message)
+    }
+
+    @Test
+    fun aCraftedPayloadWithoutAParseFreesNothing() {
+        // Zero is never a valid handle: a hand-built payload that carries
+        // none must fail its decode without a release call reaching the
+        // native side.
+        val zeroHandle = byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x00, 0, 0, 0, 0, 0, 0, 0, 0)
+        assertFailsWith<IllegalArgumentException> {
+            decodeWire(zeroHandle) { _, _, _, _, _, _, _ ->
+                error("a truncated payload reached the build step")
+            }
+        }
+    }
+
+    @Test
     fun aDeliveryLostStatusSurfacesThroughItsHandler() {
         // Status 2: the native mutation succeeded but its payload was lost —
         // the wire's whole answer is the one byte, routed to the caller's
@@ -181,6 +224,47 @@ class ErrorsTest {
             decodeWire(byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x02)) { _, _, _, _, _, _, _ ->
                 error("a delivery-lost payload reached the build step")
             }
+        }
+    }
+
+    @Test
+    fun aNativeFailureStatusSurfacesAsAParseExceptionCarryingItsCodeAndMessage() {
+        // Status 1: the native call failed and the payload is the error
+        // record itself — an int code, then the engine's one English message.
+        // Codes 1 and 2 are the engine's named failures; everything else,
+        // including the engine's own 3, is a bug and decodes as INTERNAL.
+        fun errorPayload(
+            rawCode: Int,
+            message: String,
+        ): ByteArray {
+            fun int(value: Int) =
+                byteArrayOf(
+                    value.toByte(),
+                    (value ushr 8).toByte(),
+                    (value ushr 16).toByte(),
+                    (value ushr 24).toByte(),
+                )
+            val text = message.encodeToByteArray()
+            return byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x01) + int(rawCode) + int(text.size) + text
+        }
+
+        val cases =
+            listOf(
+                1 to ParseErrorCode.INVALID_ARGUMENT,
+                2 to ParseErrorCode.ALLOCATION_FAILED,
+                3 to ParseErrorCode.INTERNAL,
+                99 to ParseErrorCode.INTERNAL,
+            )
+        for ((rawCode, expected) in cases) {
+            val payload = errorPayload(rawCode, "the engine's account of failure $rawCode")
+            val failure =
+                assertFailsWith<ParseException> {
+                    decodeWire(payload) { _, _, _, _, _, _, _ ->
+                        error("an error payload reached the build step")
+                    }
+                }
+            assertEquals(expected, failure.code)
+            assertEquals("the engine's account of failure $rawCode", failure.message)
         }
     }
 }

@@ -51,11 +51,11 @@
         {
             "id": "footnote-resolution-model",
             "kind": "deliberate-difference",
-            "summary": "Upstream unlinks a footnote definition nothing refers to. Markdown Core keeps every definition where it was written, referenced or not, and answers numbering and back-reference ordinals from the session's footnote index.",
+            "summary": "Upstream unlinks a footnote definition nothing refers to. Markdown Core keeps every definition where it was written, referenced or not; whether [^label] is a footnote at all is answered by the whole-document definition set, and no numbering is projected.",
             "rationale": "An unreferenced definition is text the author wrote; dropping it makes the tree stop describing the source, and makes whether a block exists depend on an inline elsewhere in the document.",
             "support": "remark keeps unreferenced definitions too, so this half has a second authority — recorded as `footnote-definition-placement` in specs/mdast-parity/deltas.json.",
             "handling": "The comparison drops unreferenced definitions from this side before comparing, so what is checked is the resolved language rather than the two representations of retention.",
-            "evidence": "packages/markdown-core/extensions/footnote.c, 'decision #5'; scripts/lib/upstream-cmark.mjs, applyUpstreamFootnoteModel",
+            "evidence": "packages/markdown-core/core/parser.h, footnote_defs; packages/markdown-core/core/references.c, markdown_core_footnote_definition_create; scripts/lib/upstream-cmark.mjs, applyUpstreamFootnoteModel",
             "history": "Until 2026-08-02 this also covered unresolved references, which upstream rewrites to literal text and this repository kept as nodes. That half was given up rather than defended: it made footnote references the one reference form a renderer had to special-case, and both authorities already agreed against it. The two sides now produce the same text for an undefined `[^label]`, label unparsed, with nothing projected."
         },
         {

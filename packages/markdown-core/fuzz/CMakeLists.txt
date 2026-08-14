@@ -12,11 +12,11 @@ if(MARKDOWN_CORE_FUZZ_QUADRATIC)
     fuzzer(fuzz_quadratic_brackets)
 endif()
 
-# The document edit-script target verifies through the shared replay harness,
-# which lives in the test support library.
-if(MARKDOWN_CORE_FUZZ_SESSION)
+# The document append-script target verifies through the shared replay
+# harness, which lives in the test support library.
+if(MARKDOWN_CORE_FUZZ_APPENDS)
     if(NOT MARKDOWN_CORE_TESTS)
-        message(FATAL_ERROR "MARKDOWN_CORE_FUZZ_SESSION requires MARKDOWN_CORE_TESTS=ON")
+        message(FATAL_ERROR "MARKDOWN_CORE_FUZZ_APPENDS requires MARKDOWN_CORE_TESTS=ON")
     endif()
     fuzzer(fuzz_document_appends)
     target_link_libraries(fuzz_document_appends markdown-core-test-support)

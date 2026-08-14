@@ -1,5 +1,5 @@
-#ifndef MARKDOWN_CORE_SESSION_INTERNAL_H
-#define MARKDOWN_CORE_SESSION_INTERNAL_H
+#ifndef MARKDOWN_CORE_DOCUMENT_INTERNAL_H
+#define MARKDOWN_CORE_DOCUMENT_INTERNAL_H
 
 #include "../include/markdown_core.h"
 #include "arena.h"
@@ -11,7 +11,7 @@
 #include "source.h"
 
 // AddressSanitizer detection: document pooling is bypassed under ASan so the
-// sanitizer keeps seeing individual allocations (see markdown_core_document_open_with_mem).
+// sanitizer keeps seeing individual allocations (see markdown_core_document_alloc).
 #ifndef MARKDOWN_CORE_ASAN
 #if defined(__SANITIZE_ADDRESS__)
 #define MARKDOWN_CORE_ASAN 1
@@ -26,7 +26,8 @@
 #endif
 #endif
 
-/** SplitMix64 finalizer shared by the document's open-addressing tables. */
+/** SplitMix64 finalizer: whitens the entropy that mints a chain's series
+ * salt (see markdown_core_chain.series). */
 static inline uint64_t markdown_core_mix64(uint64_t x) {
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;
@@ -36,23 +37,27 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
-/* THE CHAIN OWNER. One per chain — a document and every successor a
- * mutation produced from it — shared by every live handle on the chain and
+/* THE CHAIN OWNER. One per chain — a document and every successor an
+ * append produced from it — shared by every live handle on the chain and
  * released with the last of them.
  *
  * The chain is what makes supersession enforceable: a mutation is legal only
- * on the handle whose generation matches the chain's, so a superseded handle
- * fails deterministically instead of forking history, and the linear history
- * that results is what lets a consumer destroy and rebuild derived state in
- * place. Only the refcount is atomic: handles on one chain may be freed from
- * different threads, but mutations are externally serialized by contract, so
- * generation and the revision counter are plain fields the current mutation
- * owns. */
+ * on the handle whose revision sits just behind the chain clock, so a
+ * superseded handle fails deterministically instead of forking history, and
+ * the linear history that results is what lets a consumer destroy and
+ * rebuild derived state in place. Only the refcount is atomic: handles on
+ * one chain may be freed from different threads, but mutations are
+ * externally serialized by contract, so the clock is a plain field the
+ * current mutation owns. */
 typedef struct markdown_core_chain {
     volatile uint32_t refcount;
-    uint64_t generation;    /* the live head's generation; mutations bump it */
-    uint64_t next_revision; /* strictly +1 per mutation, whichever kind */
-    uint64_t series;        /* the salt every document on the chain shares */
+    /* The chain clock: the revision the next successful append publishes,
+     * strictly +1 per append — a failed build burns no number. Doubles as
+     * the head predicate: a handle is the live head exactly while its
+     * revision + 1 equals this, so supersession is one increment. */
+    uint64_t next_revision;
+    uint64_t series; /* the salt every document on the chain shares,
+                        minted once at chain birth */
     /* The chain's base allocator: every successor builds over it, so a chain
      * opened over an injected allocator stays observable to the injection —
      * mutations do not silently fall back to the default. Borrowed; the
@@ -66,12 +71,10 @@ typedef struct markdown_core_chain {
 struct markdown_core_document {
     markdown_core_mem *mem;
     markdown_core_parse_options options;
-    // The document's bytes: one growable buffer, mutable and singly owned,
-    // filled once when the document is built (source.h). It was a persistent
-    // rope for two reasons now gone — the bounded-neighbourhood copy was
-    // 11.1's removed work bound, and no successor needs a predecessor's
-    // bytes: an edit is handed the whole new text and fills a buffer of its
-    // own.
+    // The document's bytes: one buffer, singly owned, filled when the
+    // document is built and read-only from then on (source.h). Append reads
+    // every stored byte back through run_at to assemble its successor's text
+    // — the per-tick copy the living-tree plan §2 retires.
     markdown_core_source *source;
     markdown_core_node *root; // the committed tree, owned
     // What an editor underlines, in source order, owned. Taken from the
@@ -80,19 +83,15 @@ struct markdown_core_document {
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
     uint64_t next_id; // monotonic, starts at 1, never reused
-    uint64_t series;  // copied from the chain at build time
+    /* This handle's place on the chain: it is the live head — and mutation
+     * legal — exactly while revision + 1 == chain->next_revision. */
     uint64_t revision;
     markdown_core_chain *chain;
-    /* Which head this handle was: mutation is legal exactly while it equals
-     * chain->generation. */
-    uint64_t generation;
-    int total_lines;      // parser line count of the committed text
-    int last_line_length; // parser's final-line length of the committed text
     // When pooled, every document-owned allocation flows through this arena
     // (document->mem is its allocator face) and teardown is a wholesale
-    // release. NULL for unpooled documents: the one-shot parse (its detached
-    // tree must outlive the document and a parse keeps its v1 memory
-    // profile) and the ASan suites.
+    // release. NULL only for unpooled documents, which today means the ASan
+    // suites: the sanitizer build forces pooling off so it keeps seeing
+    // individual allocations.
     markdown_core_arena *arena;
 };
 

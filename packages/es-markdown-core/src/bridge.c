@@ -234,7 +234,7 @@ int32_t es_node_table_row_header(const markdown_core_node *node) {
 // the attribute count. The entries themselves come from
 // es_node_directive_attribute_at, one crossing per pair, because a map is
 // what they are -- there is no serialized form to hand over in one piece.
-// Label presence and content come from the canonical child topology, exactly
+// Label presence and content come from the canonical child records, exactly
 // like every other typed child relation.
 void es_node_directive_properties(const markdown_core_node *node, void *out) {
     markdown_core_placement_mode mode;

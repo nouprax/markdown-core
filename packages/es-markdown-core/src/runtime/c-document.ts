@@ -88,9 +88,10 @@ function takeError(error: number): ParseError {
  */
 export class CDocument {
     private pointer: number;
-    /** Set the moment a mutation of this receiver succeeds: from then on the
-     * engine's contract leaves the handle exactly one legal call — free —
-     * and this flag is what severs every other native path deterministically
+    /** Set the moment a mutation of this receiver succeeds. The engine keeps
+     * a superseded handle readable until the chain's next mutation begins,
+     * but this wrapper decoded everything it will ever read at build time,
+     * so the flag severs every native path except free deterministically
      * (a bare pointer cannot carry the check on the C side). */
     private superseded = false;
 
@@ -194,10 +195,6 @@ export class CDocument {
         if (!this.pointer) return;
         native.es_document_free(this.pointer);
         this.pointer = 0;
-    }
-
-    get released(): boolean {
-        return this.pointer === 0;
     }
 
     private requirePointer(): number {

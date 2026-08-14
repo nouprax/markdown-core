@@ -69,8 +69,6 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, markdown_core_bufsize 
     buf->asize = new_size;
 }
 
-markdown_core_bufsize markdown_core_strbuf_len(const markdown_core_strbuf *buf) { return buf->size; }
-
 void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     if (!buf) {
         return;

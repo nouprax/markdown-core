@@ -26,7 +26,7 @@
 //   documents     Multi-document isolation: a barrier releases every thread
 //                into its very first markdown_core_document_new
 //                simultaneously; each thread owns one document and streams
-//                its own input byte-by-byte with a commit per byte,
+//                its own input byte-by-byte with an append per byte,
 //                repeatedly (clear + restream), asserting per-thread dump
 //                determinism, monotonically increasing revisions, a stable
 //                root id, and a final dump byte-equal to a one-shot parse of
@@ -779,7 +779,7 @@ static int case_documents(void) {
     int failures = 0;
 
     // Phase 1: one isolated document per thread, first document_open under
-    // contention, byte-streamed commits overlapping across threads.
+    // contention, byte-streamed appends overlapping across threads.
     barrier_init(&start, THREAD_COUNT);
     for (int index = 0; index < THREAD_COUNT; index++) {
         memset(&workers[index], 0, sizeof(workers[index]));
@@ -883,7 +883,7 @@ static int case_documents(void) {
         if (!document || !mc_append(&document, mc_sv("tail\n\n", 6), &error) ||
             !markdown_core_document_dump(document, &dump, &length, &error)) {
             markdown_core_error_free(error);
-            fprintf(stderr, "documents: post-read commit failed\n");
+            fprintf(stderr, "documents: post-read append failed\n");
             failures += 1;
         }
         markdown_core_dump_free(dump);

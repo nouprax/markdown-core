@@ -7,9 +7,11 @@ export interface NativeExports extends WebAssembly.Exports {
     es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
     /** Appends `bytes` to the end of the chain's head; returns the
      * caller-owned successor document, or 0 with `*errorOutput` set.
-     * Success SUPERSEDES `document`: only es_document_free remains for it.
-     * A failure past the argument guards poisons the chain, after which
-     * only es_document_free remains. */
+     * Success SUPERSEDES `document`: the engine keeps it readable until the
+     * chain's next mutation begins, but this wrapper decodes at build time
+     * and never calls back in, so its one remaining call is
+     * es_document_free. A failure past the argument guards poisons the
+     * chain, after which only es_document_free remains. */
     es_document_append(document: number, bytes: number, length: number, errorOutput: number): number;
     es_document_free(document: number): void;
     es_document_series(document: number): bigint;
@@ -44,7 +46,7 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_table_row_header(node: number): number;
     /** Writes i32 mode, u32 has-attributes, the name's (data, length) view
      * pair, and the u32 attribute count to `output` in one crossing. Label
-     * topology is carried exclusively by canonical child records. */
+     * placement is carried exclusively by canonical child records. */
     es_node_directive_properties(node: number, output: number): void;
     /** Writes one attribute pair to `output` as u32 key data, u32 key length,
      * u32 value data, u32 value length; 0 when the index is out of range. */
@@ -115,6 +117,10 @@ async function loadWasm(): Promise<WebAssembly.Instance> {
     };
     const instance = (await WebAssembly.instantiate(bytes, { wasi_snapshot_preview1: wasi, env })).instance;
     memoryHolder.memory = instance.exports["memory"] as WebAssembly.Memory;
+    // WASI reactor ABI: _initialize carries the C runtime's constructors and
+    // must run once before any other export is called.
+    const initialize = instance.exports["_initialize"] as (() => void) | undefined;
+    if (initialize) initialize();
     return instance;
 }
 

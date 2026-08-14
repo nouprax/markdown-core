@@ -21,8 +21,9 @@ All platform APIs have one synchronous entry point, and it is the document
 itself: `Document(markdown, options)` in Swift, Kotlin, and ECMAScript, and
 `markdown_core_document_new` in C. Parsing produces a complete AST. The Swift,
 Kotlin, and ECMAScript bindings copy that AST into platform values; the
-document keeps the native parse only so that `edit` can hold identities stable
-across revisions, and releasing it never invalidates a value it produced.
+document keeps the native parse only so that `append` can hold identities
+stable across revisions, and releasing it never invalidates a value it
+produced.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -141,11 +142,11 @@ after all access to that document has finished. The complete C contract is in
 There is no session type. A document is the live head of a CHAIN, and the
 chain grows one way: `append` adds bytes at the end — an LLM stream is
 `document = document.append(chunk)` per tick, and any byte split is legal,
-mid-word or mid-character. One rule: the successor supersedes the receiver
-(which from then on supports only close/free), the revision advances
-strictly by one on the chain's own counter, and mutating a superseded handle
-is a deterministic error, so history is linear. In one sentence: an append
-advances the chain, old handles die, decoded values live forever. There is
+mid-word or mid-character. One rule: the successor supersedes the receiver,
+the revision advances strictly by one on the chain's own counter, and
+mutating a superseded handle is a deterministic error, so history is
+linear. In one sentence: an append
+advances the chain, old heads stop mutating, decoded values live forever. There is
 no whole-text edit: replacing the text describes a different document, and
 the way to say so is constructing a new one — a new chain with a new
 series. Options are fixed for the chain's whole life — changing what the
@@ -187,16 +188,19 @@ markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
 markdown_core_string chunk = {(const uint8_t *)"world", 5};
 markdown_core_document *next = markdown_core_document_append(document, chunk, NULL);
-markdown_core_document_free(document); /* superseded: free is its one legal call */
+/* The receiver is superseded: reads stay legal until the chain's next
+ * mutation begins; free is legal at any time. */
+markdown_core_document_free(document);
 markdown_core_document_free(next);
 ```
 
 A mutation is an exclusive operation on its chain — two mutations must be
 externally serialized, and between them any number of threads may read the
 live head. Documents on different chains never share state, so any number of
-chains parse and mutate concurrently. A failed `edit` supersedes nothing; a
-failed `append` ends the chain ("the chain is done": only free remains, the
-caller still holds every byte it sent, recovery is a new chain).
+chains parse and mutate concurrently. A failed construction supersedes
+nothing; a failed `append` ends the chain ("the chain is done": only free
+remains, the caller still holds every byte it sent, recovery is a new
+chain).
 
 Every document also reports `diagnostics`: everything an editor should
 underline, which for Markdown is one thing — a directive's `{...}` attribute
@@ -300,7 +304,7 @@ There is intentionally no cross-host aggregate: required CI runs every
 supported platform target on an appropriate host, simulator, browser, or
 device.
 
-Run repository-wide formatting, lint, contract, topology, and public-surface
+Run repository-wide formatting, lint, contract, test-layout, and public-surface
 checks with:
 
 ```sh

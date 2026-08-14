@@ -46,12 +46,3 @@ markdown_core_extension *markdown_core_extension_find(const char *name) {
     }
     return NULL;
 }
-
-markdown_core_llist *markdown_core_extension_list(markdown_core_mem *mem) {
-    markdown_core_llist *res = NULL;
-
-    for (size_t i = 0; i < CORE_EXTENSION_COUNT; i++) {
-        res = markdown_core_llist_append(mem, res, core_extension_at(i));
-    }
-    return res;
-}

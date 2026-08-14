@@ -4,13 +4,14 @@
 
 #include <node.h>
 
-// THE DIFF: what changed between the previous committed tree and a freshly
-// parsed one. It answers both of the requirements that need it — which node
-// is which across an edit, so a reactive UI's `ForEach(id:)` reattaches row
-// state to the right row, and when each node last changed, which it stamps
-// into the node's revision so a consumer can prune its own traversal. Both
-// fall out of ONE decision: for each node in the new tree, which node in the
-// old tree it IS.
+// THE DIFF: what changed between the receiver's tree and the successor's
+// full reparse of all bytes so far, so ids hand over across an append. It
+// answers both of the requirements that need it — which node is which across
+// the append, so a reactive UI's `ForEach(id:)` reattaches row state to the
+// right row, and when each node last changed, which it stamps into the
+// node's revision so a consumer can prune its own traversal. Both fall out
+// of ONE decision: for each node in the new tree, which node in the old
+// tree it IS.
 //
 // It was called `adopt`, after its mechanism — the new tree adopting the old
 // tree's identities. The name hid the invariant. A DIFF OF THE SAME TWO TREES
@@ -19,18 +20,10 @@
 // let the matcher see, and it does.
 //
 // Children are paired with a prefix/suffix sweep on the refined child lists:
-// leading children pair front-to-back, trailing children back-to-front, and
-// the unpaired middle is reported as removed (old) plus added (new). A kind
-// change is a retirement and a creation, never a pairing (5.2).
-//
-// **The pairing test is RAW TYPE, and that is a known defect.** Two paragraphs
-// pair regardless of their content, and the prefix sweep may consume the whole
-// pairable run before the suffix sweep is given any budget — so inserting one
-// paragraph at the front of a run of same-kind siblings re-points every id in
-// it onto the next node's content. Under `ForEach(id:)` that is per-row focus,
-// scroll offset and in-flight animation attaching to the wrong paragraph. The
-// fix is to pair on equality and to compute prefix and suffix independently;
-// it is not done here yet.
+// leading children pair front-to-back, trailing children back-to-front, the
+// middle left between them still pairs positionally by type, and the residue
+// retires (old) or is minted fresh (new). A kind change is a retirement and
+// a creation, never a pairing (5.2).
 //
 // Parser-only storage owners have already been eliminated by refinement, so
 // this tree is the canonical tree: every node receives an id and normal
@@ -159,15 +152,15 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     // On raw type they paired anything, so the prefix sweep ate the whole
     // pairable run before the suffix sweep was given a byte of budget:
     // inserting one paragraph at the front of a run of paragraphs re-pointed
-    // EVERY id in it onto the next paragraph's content, and reported the whole
-    // suffix as changed. Under `ForEach(id:)` that is per-row focus, scroll
-    // offset and in-flight animation attaching to the wrong paragraph, and it
-    // was measured at roughly half the cost of a mid-document edit -- the
-    // delta carried the entire suffix.
+    // EVERY id in it onto the next paragraph's content, and re-stamped every
+    // revision in the suffix. Under `ForEach(id:)` that is per-row focus,
+    // scroll offset and in-flight animation attaching to the wrong
+    // paragraph, and a consumer pruning on revision re-renders the whole
+    // tail.
     //
     // On the hash the prefix stops at the first child that genuinely
     // differs, which leaves the suffix its budget, and what falls out between
-    // them is the edit. The residual middle still pairs positionally by raw
+    // them is the change. The residual middle still pairs positionally by raw
     // type below, so a node whose own text changed keeps its identity instead
     // of being retired and recreated.
     pairable = n_old < n_new ? n_old : n_new;
@@ -185,10 +178,10 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
 
     // WHAT IS LEFT BETWEEN THE SWEEPS STILL PAIRS, positionally and by raw
     // type, for as far as the types agree. Without this a node whose own text
-    // changed would fall in the middle and be reported as a retirement plus a
-    // creation -- the identity that `ForEach(id:)` reattaches row state to
-    // would be destroyed by editing the row. A KIND change is a genuine
-    // retirement (5.2), so the run stops there.
+    // changed would fall in the middle and be retired plus recreated -- the
+    // identity that `ForEach(id:)` reattaches row state to would be
+    // destroyed by the very change to the row it exists to survive. A KIND
+    // change is a genuine retirement (5.2), so the run stops there.
     middle_old = n_old - prefix - suffix;
     middle_new = n_new - prefix - suffix;
     middle_pair = middle_old < middle_new ? middle_old : middle_new;
@@ -310,11 +303,12 @@ bool markdown_core_diff_trees(
     diff_ctx ctx = {document, new_rev, false};
 
     if (!old_root) {
-        // NOTHING PAIRS AGAINST NOTHING, so nothing is hashed. The hash
-        // exists only to decide which children pair, and a first parse pairs
-        // no children -- running it here cost 24% of a 41 MB parse to build
-        // an answer that was thrown away, and it is what pushed that corpus's
-        // scaling gate from 3.44x to 4.03x against a 4.0x bound.
+        // A first parse pairs no children, so the diff only mints. The tree
+        // IS hashed — by the stamping walk at blocks.c:2320, like every
+        // parse's. When hashing was a diff-owned pass instead, running it
+        // here cost 24% of a 41 MB parse to build an answer that was thrown
+        // away, and it is what pushed that corpus's scaling gate from 3.44x
+        // to 4.03x against a 4.0x bound.
         mint_subtree(&ctx, new_root);
         return !ctx.failed;
     }

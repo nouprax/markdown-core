@@ -1205,7 +1205,7 @@ static void utf8(test_batch_runner *runner) {
  *     document, not an invalid one: a stream may stop mid-character and 8.2
  *     forbids a finalize step (14.8.2-3);
  *   - U+0000 becomes U+FFFD, because CommonMark requires it of canonical text
- *     and it is the one replacement this engine performs (the Editing
+ *     and it is the one replacement this engine performs (the Mutation
  *     section of markdown_core.h).
  *
  * That the engine does not CRASH on arbitrary bytes is a separate requirement,
@@ -1907,7 +1907,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
         paragraph_id = markdown_core_node_get_id(paragraph);
         text_id = markdown_core_node_get_id(text);
         root_rev_before = markdown_core_node_get_revision(root);
-        OK(runner, heading_id != 0 && paragraph_id != 0 && text_id != 0, "committed nodes carry nonzero ids");
+        OK(runner, heading_id != 0 && paragraph_id != 0 && text_id != 0, "appended nodes carry nonzero ids");
         OK(runner, markdown_core_node_get_parent(heading) == root, "node_get_parent reaches the root");
     }
 

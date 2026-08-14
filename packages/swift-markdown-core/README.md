@@ -111,11 +111,13 @@ chain built from text the caller still holds. Appending an empty string is
 still a mutation: the chain advances over an identical projection.
 
 Streaming is `document = try document.append(chunk)` per message — never
-re-send accumulated text. Per-tick work is O(changed), not O(document): a
+re-send accumulated text. Per-tick decode work is O(changed), not
+O(document): a
 node the append did not reach keeps its id, revision, and positions, and the
 binding reuses its already-decoded value whole — subtree and all — rather
 than rebuilding it, so decode work is proportional to what the append
-changed plus the open frontier it grew.
+changed plus the open frontier it grew. The native append itself still
+reparses every byte sent so far.
 
 Hand the returned document to SwiftUI and stop. The stability a reactive
 framework needs is on the TREE: an unchanged node keeps its `id` and its

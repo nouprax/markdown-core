@@ -187,7 +187,8 @@ public class Document private constructor(
      * arrives pruned — a subtree the encoder proved unchanged in both
      * content and position crosses the boundary as one reuse record and
      * resolves to the value this document already decoded, making the
-     * per-append cost O(changed), not O(document).
+     * per-append decode cost O(changed), not O(document). The native append
+     * itself still reparses every byte sent so far.
      *
      * The successor is its chain's new head; this document keeps its decoded
      * values and its [close], and refuses further mutation deterministically.
@@ -218,6 +219,15 @@ public class Document private constructor(
             flushed = joined
             held = ""
         }
+        // The successor is constructed INSIDE the decode callback so its
+        // whole construction sits inside decodeWire's owns-or-frees guard:
+        // a throw anywhere before the successor exists — the decode, the
+        // Built, the constructor itself — releases the successor's parse
+        // instead of leaking it. Nothing may also release it here: cleanup
+        // registration is the constructor's last initializer with nothing
+        // left to throw after it, so a construction that unwinds through
+        // the guard never registered a second releaser, and the guard's
+        // release is the only one.
         val successor =
             decodeWire(owned.append(flushed.encodeToByteArray(), built.revision), built.index, ::deliveryLost) {
                 handle,

@@ -4,7 +4,7 @@ Status: frozen for Phase 5 on 2026-07-11; footnote contract revised for v2
 milestone M3 on 2026-07-16 (source-order definitions, label-carrying
 references, query-based numbering — see the reference and footnote semantics
 section and
-`sessions-and-deltas.md`); identity/equality contract added and scope moved
+`archive/sessions-and-deltas.md`); identity/equality contract added and scope moved
 off node values for v2 milestone M4 on 2026-07-17 (`MarkupSession` becomes a
 canonical entry point; the footnote label field is renamed `label` because
 `id` now names node identity); directive labels promoted to the public
@@ -474,7 +474,7 @@ DirectiveLabel(content: readonly Markup[])
 
 `DirectiveLabel` is a public `Markup` kind placed immediately after
 `DirectiveBlock` in the one canonical inventory. The C tree and every platform
-AST expose one topology: when present, the label node is the directive's first
+AST expose one shape: when present, the label node is the directive's first
 direct child and owns its complete inline child list. A block directive's block
 `content` follows it; an inline directive has no other children. There is at
 most one label node.
