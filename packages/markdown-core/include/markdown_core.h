@@ -267,11 +267,12 @@ typedef struct markdown_core_optional_bool {
 /** Initializes every field to the frozen Markdown Core defaults. */
 MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_options *options);
 
-/** NULL is allowed. A superseded handle supports this call and read-only
- * access, both only until the next mutation on its chain begins (the
- * Mutation section states the rule). Costs O(1) beyond the handle's own
- * teardown; releasing a chain's last handle reclaims what the chain itself
- * owns. */
+/** NULL is allowed. Legal on a superseded handle at any time, from any
+ * thread — freeing touches only the document's own state and the chain's
+ * refcount, never the live head (the Mutation section states the
+ * supersession rule; only READS expire there). Costs O(1) beyond the
+ * handle's own teardown; releasing a chain's last handle reclaims what the
+ * chain itself owns. */
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 /** The root of the document's tree: kind DOCUMENT, scoped to the whole text.
  *
@@ -569,11 +570,12 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  *
  * An append advances the chain and SUPERSEDES its receiver: the successor
  * is the new head, and the receiver keeps exactly two rights —
- * markdown_core_document_free, and read-only access to the document and its
- * nodes — both only until the next mutation on the chain begins. The moment
- * that mutation begins, every superseded handle and every superseded node
- * is invalid (that is a wording of undefined behavior, not a checked error:
- * a bare node pointer cannot carry the check). Same chain, same series,
+ * markdown_core_document_free, legal at any time, and read-only access to
+ * the document and its nodes, legal only until the next mutation on the
+ * chain begins. The moment that mutation begins, every READ of a superseded
+ * document or node is invalid (that is a wording of undefined behavior, not
+ * a checked error: a bare node pointer cannot carry the check); the free
+ * right survives, because freeing never touches what the chain still owns. Same chain, same series,
  * revision strictly +1 on the chain's
  * own counter — and appending to a superseded handle is a deterministic
  * error, so history is linear and there is no forking. The result has the
@@ -619,7 +621,7 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
  * Any byte split is legal — mid-UTF-8, mid-CRLF, mid-line — and settled
  * content never moves: a node the append did not reach keeps its id, its
  * revision, and its positions. The caller owns the returned document; the
- * receiver keeps free and read-only access, both only until the next
+ * receiver keeps free at any time, and read-only access until the next
  * mutation on the chain begins. On a stale or poisoned receiver
  * this is a deterministic error and nothing changes; a failure past the
  * guards poisons the chain (see the Mutation section). */

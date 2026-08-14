@@ -188,8 +188,8 @@ markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
 markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
 markdown_core_string chunk = {(const uint8_t *)"world", 5};
 markdown_core_document *next = markdown_core_document_append(document, chunk, NULL);
-/* The receiver is superseded: reads and free both stay legal until the
- * chain's next mutation begins. */
+/* The receiver is superseded: reads stay legal until the chain's next
+ * mutation begins; free is legal at any time. */
 markdown_core_document_free(document);
 markdown_core_document_free(next);
 ```
