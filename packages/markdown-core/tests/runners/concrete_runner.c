@@ -3011,6 +3011,265 @@ static int case_warm_fingerprint(void) {
     return 0;
 }
 
+/* --- warm_close_undo ------------------------------------------------------- */
+
+/* The claim this milestone cannot afford to be wrong about: a parser can be
+ * closed to publish a projection at a cut point, and then put back exactly as
+ * it was, so the bytes that arrive next continue as if the close had never
+ * happened. If that is false, the only answers left are a second tree or a
+ * reparse per tick — both redesigns.
+ *
+ * It is proven COLD here: no living tree, no ownership change, nothing on the
+ * shipping path. The undo lives in the test rather than in the engine on
+ * purpose — what is under test is whether the state is restorable AT ALL, and
+ * the mechanism moves into the engine once it is known to be.
+ *
+ * Two verdicts per cut. The fingerprint before the close must equal the one
+ * after the undo, which says the state came back and localizes what did not.
+ * Then the rest of the text is fed and the warm state is compared against a
+ * twin parser that was never interrupted, which says nothing downstream could
+ * tell the difference. */
+
+#define WC_MAX_DEPTH 16
+#define WC_MAX_MARKS 128
+#define WC_MAX_HELD 512
+
+typedef struct wc_node_state {
+    markdown_core_node *node;
+    uint16_t flags;
+    int end_line;
+    int end_column;
+    markdown_core_bufsize content_size;
+    markdown_core_node *last_child;
+} wc_node_state;
+
+typedef struct wc_state {
+    wc_node_state spine[WC_MAX_DEPTH];
+    size_t depth;
+    int line_number;
+    int last_line_length;
+    markdown_core_node *current;
+    size_t line_mark_count;
+    struct markdown_core_line_mark marks[WC_MAX_MARKS];
+    unsigned char held[WC_MAX_HELD];
+    markdown_core_bufsize held_size;
+    bool last_cr;
+    bool overflowed;
+} wc_state;
+
+/* Bytes that cannot open a block, retype one, or start a definition. The set
+ * is deliberately coarse: L1's warm subset is prose, and a byte this test is
+ * unsure about belongs to the fallback rather than to the proof. */
+static bool wc_plain_byte(unsigned char c) {
+    return !(
+        c == '#' || c == '>' || c == '*' || c == '-' || c == '+' || c == '_' || c == '=' || c == '~' || c == ':' ||
+        c == '$' || c == '`' || c == '[' || c == ']' || c == '|' || c == '<' || c == '!' || c == '\t' ||
+        (c >= '0' && c <= '9')
+    );
+}
+
+static bool wc_plain_run(const unsigned char *bytes, markdown_core_bufsize length) {
+    markdown_core_bufsize i;
+    for (i = 0; i < length; i++) {
+        if (!wc_plain_byte(bytes[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The open spine must be the document with at most one paragraph under it,
+ * and every byte in play — the held line and the paragraph's accumulated
+ * content — must be prose. Anything else takes the fallback in L1, so it is
+ * not this proof's subject. */
+static bool wc_eligible(const markdown_core_parser *parser) {
+    markdown_core_node *root = parser->root;
+    markdown_core_node *child;
+    if (!root || parser->oom || parser->internal_error) {
+        return false;
+    }
+    if (markdown_core_node_get_type(root) != MARKDOWN_CORE_NODE_DOCUMENT || !(root->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        return false;
+    }
+    if (parser->linebuf.size >= WC_MAX_HELD || parser->line_mark_count >= WC_MAX_MARKS) {
+        return false;
+    }
+    if (parser->linebuf.size > 0) {
+        if (parser->linebuf.ptr[0] == ' ' ||
+            !wc_plain_run((const unsigned char *)parser->linebuf.ptr, parser->linebuf.size)) {
+            return false;
+        }
+    }
+    child = root->last_child;
+    if (!child || !(child->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        /* Nothing open below the document: the held line, if any, will open
+         * whatever it opens, and the close has only the root to undo. */
+        return true;
+    }
+    if (markdown_core_node_get_type(child) != MARKDOWN_CORE_NODE_PARAGRAPH || child->last_child) {
+        return false;
+    }
+    return wc_plain_run((const unsigned char *)child->content.ptr, child->content.size);
+}
+
+static void wc_save(const markdown_core_parser *parser, wc_state *state) {
+    markdown_core_node *node;
+    memset(state, 0, sizeof(*state));
+    state->line_number = parser->line_number;
+    state->last_line_length = parser->last_line_length;
+    state->current = parser->current;
+    state->last_cr = parser->last_buffer_ended_with_cr;
+    state->line_mark_count = parser->line_mark_count;
+    memcpy(state->marks, parser->line_marks, parser->line_mark_count * sizeof(state->marks[0]));
+    state->held_size = parser->linebuf.size;
+    memcpy(state->held, parser->linebuf.ptr, parser->linebuf.size);
+    for (node = parser->root; node && (node->flags & MARKDOWN_CORE_NODE__OPEN); node = node->last_child) {
+        wc_node_state *entry;
+        if (state->depth == WC_MAX_DEPTH) {
+            state->overflowed = true;
+            return;
+        }
+        entry = &state->spine[state->depth++];
+        entry->node = node;
+        entry->flags = node->flags;
+        entry->end_line = node->end_line;
+        entry->end_column = node->end_column;
+        entry->content_size = node->content.size;
+        entry->last_child = node->last_child;
+    }
+}
+
+static void wc_restore(markdown_core_parser *parser, const wc_state *state) {
+    size_t i = state->depth;
+    /* Deepest first: a node minted by the close hangs under the node that
+     * was open when it was minted, so its owner is restored after it is
+     * gone. */
+    while (i-- > 0) {
+        const wc_node_state *entry = &state->spine[i];
+        markdown_core_node *node = entry->node;
+        markdown_core_node *child = entry->last_child ? entry->last_child->next : node->first_child;
+        while (child) {
+            markdown_core_node *next = child->next;
+            markdown_core_node_free(child);
+            child = next;
+        }
+        node->last_child = entry->last_child;
+        if (entry->last_child) {
+            entry->last_child->next = NULL;
+        } else {
+            node->first_child = NULL;
+        }
+        node->flags = entry->flags;
+        node->end_line = entry->end_line;
+        node->end_column = entry->end_column;
+        markdown_core_strbuf_truncate(&node->content, entry->content_size);
+    }
+    parser->line_number = state->line_number;
+    parser->last_line_length = state->last_line_length;
+    parser->current = state->current;
+    parser->last_buffer_ended_with_cr = state->last_cr;
+    parser->line_mark_count = state->line_mark_count;
+    memcpy(parser->line_marks, state->marks, state->line_mark_count * sizeof(state->marks[0]));
+    markdown_core_strbuf_clear(&parser->linebuf);
+    markdown_core_strbuf_put(&parser->linebuf, state->held, state->held_size);
+}
+
+static const char *const WC_TEXTS[] = {
+    "alpha beta gamma\n\ndelta epsilon\n",
+    "one two three four five\nsix seven eight\n\nnine\n",
+    "prose that keeps going and going and stops mid word here",
+    "first para\n\nsecond para\r\nwith a crlf line\r\n",
+    "a\n\nb\n\nc\n\nd",
+    NULL,
+};
+
+static int case_warm_close_undo(void) {
+    size_t text_index;
+    size_t eligible = 0;
+    size_t total = 0;
+
+    for (text_index = 0; WC_TEXTS[text_index]; text_index++) {
+        const char *text = WC_TEXTS[text_index];
+        size_t length = strlen(text);
+        size_t cut;
+        for (cut = 0; cut <= length; cut++) {
+            markdown_core_parser *parser = sweep_parser_new(NULL);
+            markdown_core_parser *twin = sweep_parser_new(NULL);
+            wc_state state;
+            uint64_t before, after, continued, uninterrupted;
+            int result = 0;
+
+            if (!parser || !twin) {
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                fprintf(stderr, "warm_close_undo: parser allocation failed\n");
+                return -1;
+            }
+            markdown_core_parser_feed(parser, text, cut);
+            total++;
+            if (!wc_eligible(parser)) {
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                continue;
+            }
+            wc_save(parser, &state);
+            if (state.overflowed) {
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                continue;
+            }
+            eligible++;
+
+            before = markdown_core_parser_warm_fingerprint(parser);
+            markdown_core_parser_finalize_blocks(parser);
+            wc_restore(parser, &state);
+            after = markdown_core_parser_warm_fingerprint(parser);
+            if (before != after) {
+                fprintf(
+                    stderr,
+                    "warm_close_undo: text %zu cut %zu did not come back (%llx vs %llx)\n",
+                    text_index,
+                    cut,
+                    (unsigned long long)before,
+                    (unsigned long long)after
+                );
+                result = -1;
+            }
+
+            /* The verdict that matters: whatever the fingerprint covers, the
+             * bytes that follow must land exactly where they would have. */
+            markdown_core_parser_feed(parser, text + cut, length - cut);
+            markdown_core_parser_feed(twin, text, length);
+            continued = markdown_core_parser_warm_fingerprint(parser);
+            uninterrupted = markdown_core_parser_warm_fingerprint(twin);
+            if (result == 0 && continued != uninterrupted) {
+                fprintf(
+                    stderr,
+                    "warm_close_undo: text %zu cut %zu diverged from an uninterrupted parse\n",
+                    text_index,
+                    cut
+                );
+                result = -1;
+            }
+            markdown_core_parser_free(parser);
+            markdown_core_parser_free(twin);
+            if (result != 0) {
+                return -1;
+            }
+        }
+    }
+
+    /* A proof that proves nothing is a failure: the prose subset has to be a
+     * real share of the cuts, and the number is printed so a later change
+     * that narrows it is visible rather than silent. */
+    if (eligible * 4 < total) {
+        fprintf(stderr, "warm_close_undo: only %zu of %zu cuts were eligible\n", eligible, total);
+        return -1;
+    }
+    printf("warm_close_undo: %zu of %zu cuts closed and came back\n", eligible, total);
+    return 0;
+}
+
 /* --- chain_poison --------------------------------------------------------- */
 
 /* D5 under systematic allocation loss: sweep the failure across the whole
@@ -4570,6 +4829,7 @@ static const concrete_case CASES[] = {
     {"capture_equivalence", case_capture_equivalence},
     {"capture_oom_sweep", case_capture_oom_sweep},
     {"warm_fingerprint", case_warm_fingerprint},
+    {"warm_close_undo", case_warm_close_undo},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
     {"inline_shape", case_inline_shape},
