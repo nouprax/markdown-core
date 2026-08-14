@@ -66,15 +66,17 @@ static bool attach_extension_named(markdown_core_parser *parser, const char *nam
     return extension && markdown_core_parser_attach_extension(parser, extension) != 0;
 }
 
-markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *document, markdown_core_error **error) {
-    markdown_core_parser *parser =
-        markdown_core_parser_new_with_mem(native_options_from(&document->options), document->mem);
+markdown_core_parser *markdown_core_document_new_parser(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    markdown_core_error **error
+) {
+    markdown_core_parser *parser = markdown_core_parser_new_with_mem(native_options_from(options), mem);
     if (!parser) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate parser");
         return NULL;
     }
 
-    const markdown_core_parse_options *options = &document->options;
     /* Attachment order is priority. `table` is attached last because its row
      * opener accepts any non-blank line inside an open table, so anything with
      * a narrower claim has to be offered the line first — which is exactly
@@ -110,14 +112,15 @@ markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *
  * the parser: the tree carries every published answer. No predecessor, no
  * ids — identity is the diff's to assign. */
 static bool document_parse_text(
-    markdown_core_document *document,
+    markdown_core_chain *chain,
+    document_generation *generation,
     markdown_core_string arriving,
     markdown_core_error **error
 ) {
     markdown_core_parser *parser;
     markdown_core_node *root;
 
-    parser = markdown_core_document_new_parser(document, error);
+    parser = markdown_core_document_new_parser(&chain->options, generation->mem, error);
     if (!parser) {
         return false;
     }
@@ -129,11 +132,11 @@ static bool document_parse_text(
     // S_parser_feed buffers a partial line in parser->linebuf), so where the
     // pieces are cut changes nothing about the parse.
     {
-        size_t stored = markdown_core_source_length(document->chain->source);
+        size_t stored = markdown_core_source_length(chain->source);
         size_t pos = 0;
         while (pos < stored) {
             size_t run = 0;
-            const uint8_t *bytes = markdown_core_source_run_at(document->chain->source, pos, &run);
+            const uint8_t *bytes = markdown_core_source_run_at(chain->source, pos, &run);
             markdown_core_parser_feed(parser, (const char *)bytes, run);
             pos += run;
         }
@@ -161,12 +164,10 @@ static bool document_parse_text(
      * leaves the document with none: a missing underline is not a wrong
      * tree, and failing an otherwise good parse over one would be the worse
      * trade. */
-    document->mem->free(document->mem, document->diagnostics);
-    document->diagnostics = NULL;
-    document->diagnostic_count = 0;
     if (parser->diagnostic_count > 0) {
         markdown_core_diagnostic *rows =
-            (markdown_core_diagnostic *)document->mem->calloc(document->mem, parser->diagnostic_count, sizeof(*rows));
+            (markdown_core_diagnostic *)
+                generation->mem->calloc(generation->mem, parser->diagnostic_count, sizeof(*rows));
         if (rows) {
             size_t i;
             for (i = 0; i < parser->diagnostic_count; i++) {
@@ -176,12 +177,12 @@ static bool document_parse_text(
                 rows[i].scope.end.line = parser->diagnostics[i].end_line;
                 rows[i].scope.end.column = parser->diagnostics[i].end_column;
             }
-            document->diagnostics = rows;
-            document->diagnostic_count = parser->diagnostic_count;
+            generation->diagnostics = rows;
+            generation->diagnostic_count = parser->diagnostic_count;
         }
     }
     markdown_core_parser_free(parser);
-    document->root = root;
+    generation->root = root;
     return true;
 }
 
@@ -194,23 +195,19 @@ static bool document_parse_text(
  * statable: a tree is a pure function of (bytes, options), and the identity
  * assignment is a pure function of two trees. */
 bool markdown_core_document_diff(
-    const markdown_core_document *old,
-    markdown_core_document *nw,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    uint64_t new_revision,
     markdown_core_error **error
 ) {
-    if (!markdown_core_diff_trees(nw, old ? old->root : NULL, nw->root, nw->revision)) {
+    if (!markdown_core_diff_trees(chain, mem, old_root, new_root, new_revision)) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not match identities");
         return false;
     }
     return true;
 }
-
-static markdown_core_document *markdown_core_document_alloc(
-    const markdown_core_parse_options *options,
-    markdown_core_mem *mem,
-    bool pooled,
-    markdown_core_error **error
-);
 
 /* The chain owner's one atomic: handles on a chain may be freed from
  * different threads, so the refcount is advanced with a compiler builtin
@@ -275,7 +272,41 @@ static bool document_host_entropy(uint64_t *value) {
  * and coarse clocks), so the host CSPRNG carries the cross-runtime uniqueness
  * contract; the local mix stays folded in as a best-effort fallback when the
  * host read fails. */
-static markdown_core_chain *chain_new(markdown_core_mem *mem) {
+/* Opens a generation to build into: its own arena when the chain pools, and
+ * the allocator everything that build produces comes from. */
+static bool generation_open(markdown_core_chain *chain, document_generation *generation, markdown_core_error **error) {
+    memset(generation, 0, sizeof(*generation));
+    if (chain->pooled) {
+        generation->arena = markdown_core_arena_new(chain->mem);
+        if (!generation->arena) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+            return false;
+        }
+        generation->mem = markdown_core_arena_mem(generation->arena);
+    } else {
+        generation->mem = chain->mem;
+    }
+    return true;
+}
+
+/* Releases a generation whole. Pooled, that is one arena release and the
+ * tree and diagnostics go with it; unpooled, it is the per-structure
+ * teardown the sanitizer builds need in order to see each free. */
+static void generation_release(document_generation *generation) {
+    if (generation->arena) {
+        markdown_core_arena_release(generation->arena);
+    } else {
+        if (generation->root) {
+            markdown_core_node_free(generation->root);
+        }
+        if (generation->diagnostics && generation->mem) {
+            generation->mem->free(generation->mem, generation->diagnostics);
+        }
+    }
+    memset(generation, 0, sizeof(*generation));
+}
+
+static markdown_core_chain *chain_new(markdown_core_mem *mem, const markdown_core_parse_options *options, bool pooled) {
     markdown_core_chain *chain = (markdown_core_chain *)calloc(1, sizeof(*chain));
     if (chain) {
         uint64_t entropy = (uint64_t)(uintptr_t)chain;
@@ -284,6 +315,20 @@ static markdown_core_chain *chain_new(markdown_core_mem *mem) {
         chain->next_revision = 1;
         chain->next_id = 1;
         chain->mem = mem;
+        if (options) {
+            chain->options = *options;
+        } else {
+            markdown_core_parse_options_init(&chain->options);
+        }
+#if MARKDOWN_CORE_ASAN
+        // Slab-carved and freelist-reused blocks are invisible to
+        // AddressSanitizer, so pooling would blind the ASan suites to
+        // use-after-free and overflow inside a generation's memory. The
+        // sanitizer build exercises the same allocation paths against the
+        // base allocator instead.
+        pooled = false;
+#endif
+        chain->pooled = pooled;
         chain->source = markdown_core_source_new(mem);
         if (!chain->source) {
             free(chain);
@@ -308,6 +353,7 @@ static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
 
 static void chain_release(markdown_core_chain *chain) {
     if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
+        generation_release(&chain->head);
         markdown_core_source_release(chain->source);
         free(chain);
     }
@@ -332,34 +378,40 @@ static markdown_core_document *document_build(
     bool pooled,
     markdown_core_error **error
 ) {
+    markdown_core_chain *chain;
     markdown_core_document *doc;
+    document_generation generation;
 
-    doc = markdown_core_document_alloc(options, mem, pooled, error);
-    if (!doc) {
-        return NULL;
-    }
+    clear_error(error);
+    /* `options` and `pooled` describe a CHAIN, so they are read only when one
+     * is being born; an append inherits both from the chain it extends. */
     if (prev) {
-        doc->chain = chain_retain(prev->chain);
-        /* The revision is CLAIMED here (the diff below stamps it into nodes)
-         * but the counter advances only on success, so a failed build burns
-         * no number and adjacent published documents stay strictly +1. */
-        doc->revision = prev->chain->next_revision;
+        chain = chain_retain(prev->chain);
     } else {
-        doc->chain = chain_new(mem);
-        if (!doc->chain) {
+        chain = chain_new(mem, options, pooled);
+        if (!chain) {
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-            markdown_core_document_free(doc);
             return NULL;
         }
-        doc->revision = 0;
     }
+    doc = (markdown_core_document *)calloc(1, sizeof(*doc));
+    if (!doc) {
+        chain_release(chain);
+        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
+        return NULL;
+    }
+    doc->chain = chain;
+    /* The revision is CLAIMED here (the diff below stamps it into nodes) but
+     * the counter advances only on success, so a failed build burns no number
+     * and adjacent published documents stay strictly +1. */
+    doc->revision = prev ? chain->next_revision : 0;
     /* This document's text is everything the chain holds plus what arrived.
      * Room for the arriving bytes is taken BEFORE the parse so that storing
      * them afterwards cannot fail: the chain takes a mutation's bytes only
      * once that mutation has succeeded, which is what keeps the stored length
      * equal to the head's watermark at every instant a caller could look. */
-    doc->length = markdown_core_source_length(doc->chain->source) + markdown.length;
-    if (!markdown_core_source_reserve(doc->chain->source, markdown.length)) {
+    doc->length = markdown_core_source_length(chain->source) + markdown.length;
+    if (!markdown_core_source_reserve(chain->source, markdown.length)) {
         markdown_core_ast_set_error(
             error,
             MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
@@ -368,94 +420,46 @@ static markdown_core_document *document_build(
         markdown_core_document_free(doc);
         return NULL;
     }
-    if (!document_parse_text(doc, markdown, error) || !markdown_core_document_diff(prev, doc, error)) {
+    if (!generation_open(chain, &generation, error)) {
         markdown_core_document_free(doc);
         return NULL;
     }
-    markdown_core_source_commit(doc->chain->source, markdown.data, markdown.length);
+    if (!document_parse_text(chain, &generation, markdown, error) ||
+        !markdown_core_document_diff(chain, generation.mem, chain->head.root, generation.root, doc->revision, error)) {
+        generation_release(&generation);
+        markdown_core_document_free(doc);
+        return NULL;
+    }
+    /* PUBLICATION, in one place: the new generation replaces the head and
+     * takes its bytes with it. What it replaces is released here rather than
+     * when its handle is freed, because a superseded handle answers for no
+     * tree — the chain keeps one, and this is the moment it changes hands. */
+    generation_release(&chain->head);
+    chain->head = generation;
+    markdown_core_source_commit(chain->source, markdown.data, markdown.length);
     if (prev) {
         /* SUPERSESSION, in one place: advancing the chain clock makes the
          * successor the head (its claimed revision is now the one behind the
          * clock) and stops the receiver matching, in the same increment. */
-        doc->chain->next_revision++;
+        chain->next_revision++;
         /* THE TICK LEDGER. This mutation rebuilt the document from nothing,
          * so it reparsed every byte the document describes — which is what
          * the bound is about, and why the bytes are counted next to the
          * ticks. */
-        doc->chain->rebuilt_ticks++;
-        doc->chain->rebuilt_bytes += (uint64_t)doc->length;
+        chain->rebuilt_ticks++;
+        chain->rebuilt_bytes += (uint64_t)doc->length;
     }
     return doc;
 }
 
-/* Allocates a bare document: its options, its allocator, and its arena if it
- * is pooled. No bytes and no parse — document_build wires it to a chain,
- * which is where the bytes live, and parses once. */
-static markdown_core_document *markdown_core_document_alloc(
-    const markdown_core_parse_options *options,
-    markdown_core_mem *mem,
-    bool pooled,
-    markdown_core_error **error
-) {
-    clear_error(error);
-
-    markdown_core_document *document = (markdown_core_document *)calloc(1, sizeof(*document));
-    if (!document) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-        return NULL;
-    }
-
-    if (options) {
-        document->options = *options;
-    } else {
-        markdown_core_parse_options_init(&document->options);
-    }
-#if MARKDOWN_CORE_ASAN
-    // Slab-carved and freelist-reused blocks are invisible to
-    // AddressSanitizer, so pooling would blind the ASan suites to
-    // use-after-free and overflow inside document memory. The sanitizer
-    // build exercises the exact same allocation paths against the base
-    // allocator instead.
-    pooled = false;
-#endif
-    if (pooled) {
-        document->arena = markdown_core_arena_new(mem);
-        if (!document->arena) {
-            free(document);
-            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not allocate document");
-            return NULL;
-        }
-        mem = markdown_core_arena_mem(document->arena);
-    }
-    document->mem = mem;
-    document->revision = 0;
-    return document;
-}
-
-/* One owner, one teardown, one name. */
+/* One owner, one teardown, one name. A handle owns nothing but its own cell:
+ * the chain owns the text, the tree and the diagnostics, and the last handle
+ * to let go takes all three with it. */
 void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
-    document->mem->free(document->mem, document->diagnostics);
-    /* The chain is shared across the arena boundary — it owns the text every
-     * handle on it reads — so BOTH teardown paths release it, and the last
-     * release takes the bytes with it. (Its predecessor, the series clock,
-     * was released only on the unpooled path — every pooled document leaked
-     * its cell, and the ASan suites could not see it because they force
-     * pooling off.) */
     chain_release(document->chain);
-    if (document->arena) {
-        // Everything else the document owns came from the arena (errors are
-        // caller-owned system allocations); one release replaces the
-        // per-structure teardown below.
-        markdown_core_arena_release(document->arena);
-        free(document);
-        return;
-    }
-    if (document->root) {
-        markdown_core_node_free(document->root);
-    }
     free(document);
 }
 
@@ -557,8 +561,9 @@ markdown_core_document *markdown_core_document_append(
      * copy. An empty chunk still mutates — the chain advances and the
      * receiver is superseded, and the successor's projection is
      * byte-identical to its predecessor's. */
-    successor =
-        document_build(&document->options, chunk, document, document->chain->mem, document->arena != NULL, error);
+    /* The chain carries the options and the pooling; an append brings only
+     * bytes. */
+    successor = document_build(NULL, chunk, document, document->chain->mem, false, error);
     if (!successor) {
         document->chain->poisoned = true;
         return NULL;

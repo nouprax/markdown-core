@@ -37,6 +37,18 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
+/* ONE BUILD'S OUTPUT: the tree and the diagnostics that describe it, and the
+ * arena they came from. A generation is taken whole and released whole,
+ * which is what makes a failed build cost exactly one release and a
+ * successful one exactly one swap. */
+typedef struct document_generation {
+    markdown_core_arena *arena;
+    markdown_core_mem *mem;
+    markdown_core_node *root;
+    markdown_core_diagnostic *diagnostics;
+    size_t diagnostic_count;
+} document_generation;
+
 /* THE CHAIN OWNER. One per chain — a document and every successor an
  * append produced from it — shared by every live handle on the chain and
  * released with the last of them.
@@ -91,31 +103,31 @@ typedef struct markdown_core_chain {
      * they are unique either way, and a counter that could go backwards to
      * reclaim them would be the defect. */
     uint64_t next_id;
+    /* THE OPTIONS, fixed for the chain's whole life: changing what the
+     * parser means is a new chain, so every build on this one reads these. */
+    markdown_core_parse_options options;
+    /* Whether builds pool their allocations in an arena. Fixed at birth, so
+     * a generation is released the same way it was taken. */
+    bool pooled;
+    /* THE HEAD'S GENERATION. A build produces a tree and the diagnostics
+     * that describe it, out of one arena; publishing swaps the whole thing
+     * in and releases what it replaced. The head is the only generation the
+     * chain keeps, which is exactly what a superseded handle answering for
+     * no tree buys (the Mutation section of the public header). */
+    document_generation head;
 } markdown_core_chain;
 
+/* A HANDLE, and nothing more. Everything a document is made of belongs to
+ * the chain; what a handle carries is which document it names. */
 struct markdown_core_document {
-    markdown_core_mem *mem;
-    markdown_core_parse_options options;
     // This document's text: the chain's first `length` bytes. A watermark,
     // not a buffer — successors only ever add bytes past it, so what this
     // document describes never moves and never changes.
     size_t length;
-    markdown_core_node *root; // the committed tree, owned
-    // What an editor underlines, in source order, owned. Taken from the
-    // parser when this document takes its tree, so it describes exactly the
-    // committed text.
-    markdown_core_diagnostic *diagnostics;
-    size_t diagnostic_count;
     /* This handle's place on the chain: it is the live head — and mutation
      * legal — exactly while revision + 1 == chain->next_revision. */
     uint64_t revision;
     markdown_core_chain *chain;
-    // When pooled, every document-owned allocation flows through this arena
-    // (document->mem is its allocator face) and teardown is a wholesale
-    // release. NULL only for unpooled documents, which today means the ASan
-    // suites: the sanitizer build forces pooling off so it keeps seeing
-    // individual allocations.
-    markdown_core_arena *arena;
 };
 
 /** Internal constructor for an empty document over an explicit allocator;
@@ -141,8 +153,11 @@ bool markdown_core_ast_projection_changed(const markdown_core_node *a, const mar
  * revisions. Reads no text; reparses nothing. A pure function of two trees,
  * which is what lets the parse be a pure function of (bytes, options). */
 bool markdown_core_document_diff(
-    const markdown_core_document *old,
-    markdown_core_document *nw,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    uint64_t new_revision,
     markdown_core_error **error
 );
 
@@ -151,7 +166,8 @@ bool markdown_core_document_diff(
  * the old revision over for untouched subtrees. Returns false on allocation
  * failure (the trees are left consistent; the caller discards `new_root`). */
 bool markdown_core_diff_trees(
-    markdown_core_document *document,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev
@@ -160,6 +176,10 @@ bool markdown_core_diff_trees(
 /** Creates a parser configured with the document's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
  * when non-NULL. Defined in document.c. */
-markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *document, markdown_core_error **error);
+markdown_core_parser *markdown_core_document_new_parser(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    markdown_core_error **error
+);
 
 #endif
