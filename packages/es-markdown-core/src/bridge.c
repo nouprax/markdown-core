@@ -79,12 +79,12 @@ markdown_core_document *es_document_open(
     return markdown_core_document_new(markdown, &options, error);
 }
 
-/* Hands `document` new text and takes nothing from it; returns the successor
- * document, caller-owned, or NULL with `*error` set. The edit reads
- * `document`: the JS handle keeps it, and `es_document_free` is what releases
- * it. */
+/* Hands the chain's head new text; returns the successor document,
+ * caller-owned, or NULL with `*error` set. On success the receiver is
+ * SUPERSEDED: `es_document_free` is its one remaining call, which the JS
+ * handle still owes it. A failed edit supersedes nothing. */
 markdown_core_document *es_document_edit(
-    const markdown_core_document *document,
+    markdown_core_document *document,
     const uint8_t *bytes,
     size_t length,
     markdown_core_error **error
@@ -94,6 +94,23 @@ markdown_core_document *es_document_edit(
     markdown.data = bytes;
     markdown.length = length;
     return markdown_core_document_edit(document, markdown, error);
+}
+
+/* Appends `bytes` to the end of the chain's head; returns the successor
+ * document, caller-owned, or NULL with `*error` set. Same supersession rule
+ * as `es_document_edit`; a failure past the argument guards poisons the
+ * chain, after which only `es_document_free` remains. */
+markdown_core_document *es_document_append(
+    markdown_core_document *document,
+    const uint8_t *bytes,
+    size_t length,
+    markdown_core_error **error
+) {
+    markdown_core_string chunk;
+
+    chunk.data = bytes;
+    chunk.length = length;
+    return markdown_core_document_append(document, chunk, error);
 }
 
 void es_document_free(markdown_core_document *document) { markdown_core_document_free(document); }

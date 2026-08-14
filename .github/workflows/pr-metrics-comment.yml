@@ -172,9 +172,16 @@ jobs:
                               new Set([
                                   "jni_parse_and_value_copy",
                                   "jni_edit_and_decode",
+                                  "jni_append_and_reuse_decode",
                               ]),
                           ],
-                          ["es", new Set(["wasm_parse_and_value_copy"])],
+                          [
+                              "es",
+                              new Set([
+                                  "wasm_parse_and_value_copy",
+                                  "wasm_append_and_reuse_decode",
+                              ]),
+                          ],
                       ]);
                       const allowedSizes = new Set([
                           "c-shared-library",

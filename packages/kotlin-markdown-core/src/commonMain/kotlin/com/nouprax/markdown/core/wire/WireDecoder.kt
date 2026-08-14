@@ -5,9 +5,18 @@ package com.nouprax.markdown.core
 
 import kotlin.jvm.JvmSynthetic
 
+// Still MKC5 with the append payload's REUSE record in the grammar: the magic
+// is a same-build handshake between this decoder and the C bridge, MKC5 has
+// never shipped in any release, and both sides change together in this
+// repository — so there is no older MKC5 writer or reader anywhere for the
+// new record to confuse, and bumping the magic would version a boundary that
+// cannot skew.
 private val magic = byteArrayOf(0x4d, 0x4b, 0x43, 0x35)
 
-private fun reader(bytes: ByteArray): WireReader {
+private fun reader(
+    bytes: ByteArray,
+    onDeliveryLost: (() -> Nothing)?,
+): WireReader {
     val reader = WireReader(bytes)
     magic.forEachIndexed { index, expected ->
         val actual = reader.byte()
@@ -18,20 +27,26 @@ private fun reader(bytes: ByteArray): WireReader {
     when (reader.byte().toInt()) {
         0 -> Unit
         1 -> throw reader.error()
+        2 -> if (onDeliveryLost != null) onDeliveryLost() else error("unsupported native bridge status")
         else -> error("unsupported native bridge status")
     }
     return reader
 }
 
 /**
- * Decodes one payload: the whole tree, then the diagnostics. An open and an
- * edit answer in the same shape, because an edit's answer is simply the next
- * document.
+ * Decodes one payload: the tree, then the diagnostics. An open, an edit, and
+ * an append answer in the same shape, because a mutation's answer is simply
+ * the next document.
  *
  * Every record's child ids resolve against entries this same pass decoded,
- * because the tree arrives children-before-parents. Nothing is carried over
- * from a previous document: a document's projection is a function of its text
- * and its options, not of how the caller reached it.
+ * because the tree arrives children-before-parents. An open or edit payload
+ * carries the whole tree and [reuse] is empty. An append payload may prune:
+ * a REUSE record stands for a subtree the encoder proved unchanged in both
+ * content and position, and resolves against [reuse] — the receiver's own id
+ * index, which the chain's linear history pins as the one document those
+ * values decode. The resolved subtree's ids re-enter this pass's index, so
+ * the successor's index answers for its whole tree and an id that vanished
+ * never rides along.
  *
  * The decoded pieces leave through [build] rather than in a payload type of
  * this file's own, so no wire type crosses a file boundary — which is what
@@ -40,6 +55,13 @@ private fun reader(bytes: ByteArray): WireReader {
 @JvmSynthetic
 internal fun <Result> decodeWire(
     bytes: ByteArray,
+    reuse: Map<ULong, Markup> = emptyMap(),
+    /** Wire status 2: the native mutation succeeded but its payload was
+     * lost, so the receiver is superseded with no reachable successor. The
+     * handler leaves through a parameter for the same reason the payload
+     * leaves through [build]: no wire type crosses a file boundary, so the
+     * wire layer stays out of the Java-visible surface. */
+    onDeliveryLost: (() -> Nothing)? = null,
     build: (
         handle: Long,
         id: MarkupID,
@@ -50,7 +72,7 @@ internal fun <Result> decodeWire(
         diagnostics: kotlin.collections.List<Diagnostic>,
     ) -> Result,
 ): Result {
-    val reader = reader(bytes)
+    val reader = reader(bytes, onDeliveryLost)
     val handle = reader.long()
     val series = reader.ulong()
     val rootId = reader.ulong()
@@ -58,7 +80,7 @@ internal fun <Result> decodeWire(
     val scope = reader.scope()
     val index = HashMap<ULong, Markup>()
     val root = RootSink()
-    reader.treeBody(series, rootId, index, root)
+    reader.treeBody(series, rootId, index, reuse, root)
     val diagnostics = reader.diagnostics()
     require(reader.finished) { "trailing bytes after a native payload" }
     return build(
@@ -184,19 +206,30 @@ private fun diagnosticCode(rawValue: Int): DiagnosticCode =
         else -> error("unknown native diagnostic code $rawValue")
     }
 
-/** Reads the whole tree. The root record is diverted to [root] rather than
+/** Reads the tree. The root record is diverted to [root] rather than
  * stored: nothing resolves it as a child, and on this side it is a [Document],
- * which owns a native parse and cannot be minted from a record. */
+ * which owns a native parse and cannot be minted from a record.
+ *
+ * A REUSE record takes its whole subtree from [reuse] and enters every id of
+ * that subtree into [index], so a parent's child list and a later [Document.node]
+ * lookup resolve reused descendants exactly like freshly decoded ones. */
 private fun WireReader.treeBody(
     series: ULong,
     rootId: ULong,
     index: MutableMap<ULong, Markup>,
+    reuse: Map<ULong, Markup>,
     root: RootSink,
 ) {
     val count = int()
     require(count >= 0) { "invalid native record count" }
     repeat(count) {
         val kind = kind()
+        if (kind == WireKind.REUSE) {
+            val id = ulong()
+            val value = reuse[id] ?: error("native payload reused a subtree the mirror does not hold")
+            enterSubtree(value, index)
+            return@repeat
+        }
         val id = MarkupID(series, ulong())
         val revision = ulong()
         val scope = scope()
@@ -208,6 +241,24 @@ private fun WireReader.treeBody(
         index[id.rawValue] = record(kind, id, revision, scope, index)
     }
     requireNotNull(root.content) { "native payload carried no document root" }
+}
+
+/** Enters a reused subtree's every node into [index], iteratively — nesting
+ * depth is input-controlled, so the walk must not ride the call stack. */
+private fun enterSubtree(
+    value: Markup,
+    index: MutableMap<ULong, Markup>,
+) {
+    val stack = ArrayDeque<Markup>()
+    stack.addLast(value)
+    while (stack.isNotEmpty()) {
+        val node = stack.removeLast()
+        index[node.id.rawValue] = node
+        val children = node.childValues()
+        for (child in children) {
+            stack.addLast(child)
+        }
+    }
 }
 
 private fun WireReader.record(
@@ -550,4 +601,10 @@ private object WireKind {
     const val REFERENCE_DEFINITION = 32
     const val LINK_REFERENCE = 33
     const val IMAGE_REFERENCE = 34
+
+    // Not a node kind: the append payload's reuse tag, framed exactly like a
+    // record's kind byte so one read dispatches both. Kind numbering is
+    // append-only and grows upward from here, and 0xFF is reserved for this
+    // tag forever, so a decoder can never take one record for the other.
+    const val REUSE = 0xFF
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { unprunedDecode } from "../dist/document.js";
 import { kindVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -115,6 +116,12 @@ test("conformance: directive labels preserve missing, empty, and populated state
     assert.deepEqual(block.content, []);
 });
 
+test("conformance: the mirror oracle rejects a value it did not build", () => {
+    // The gate's oracle needs the native parse behind a public value; a
+    // foreign object has none to offer.
+    assert.throws(() => unprunedDecode({ kind: "document" }), /not a document value this module built/);
+});
+
 for (const testCase of canonicalManifest.cases) {
     test(`conformance: shared canonical AST case ${testCase.name}`, async () => {
         const document = Document(testCase.source, testCase.parseOptions);
@@ -148,6 +155,35 @@ for (const testCase of canonicalManifest.cases) {
             const reference = Document(replayed, testCase.parseOptions);
             assert.equal(document.dump(), reference.dump(), testCase.name);
             reference.close();
+
+            previousNodes = verifyTree(document, ledger, previousNodes, testCase.name);
+        }
+        assert.equal(document.dump(), testCase.expected, testCase.name);
+        document.close();
+    });
+}
+
+// The same double walk driven by the real append: each per-line revision now
+// arrives as a trailing mutation whose decode is pruned through the value
+// mirror, so on top of the ledger every step is compared field by field
+// against a mirror-free decode of the same native document — the one oracle
+// a wrongly carried value cannot hide from.
+for (const testCase of canonicalManifest.cases) {
+    test(`conformance: append replay of canonical AST case ${testCase.name}`, () => {
+        let document = Document("", testCase.parseOptions);
+        let replayed = "";
+        const ledger = new Map();
+        let previousNodes = verifyTree(document, ledger, new Map(), testCase.name);
+        for (const chunk of lineChunks(testCase.source)) {
+            replayed += chunk;
+            const appending = document;
+            document = document.append(chunk);
+            appending.close();
+
+            const reference = Document(replayed, testCase.parseOptions);
+            assert.equal(document.dump(), reference.dump(), testCase.name);
+            reference.close();
+            assert.deepStrictEqual(document, unprunedDecode(document), testCase.name);
 
             previousNodes = verifyTree(document, ledger, previousNodes, testCase.name);
         }

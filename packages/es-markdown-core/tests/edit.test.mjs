@@ -178,30 +178,35 @@ test("edits: a superseded document keeps answering from its own values", () => {
     const two = first.content[1];
     assert.equal(two.scope.start.line, 3);
 
-    // Editing reads the receiver and takes nothing; here even the successor
-    // is closed at once. The predecessor's values, scopes, diagnostics, and
-    // dump were all extracted at parse time and owe nobody anything.
+    // The edit supersedes its receiver; here even the successor is closed at
+    // once. The predecessor's values, scopes, diagnostics, and dump were all
+    // extracted at parse time and owe nobody anything — decoded values live
+    // forever.
     first.edit("Zero\n\nOne\n\nTwo\n").close();
     assert.equal(two.scope.start.line, 3);
     assert.ok(first.dump().includes("Paragraph"));
     assert.equal(flatten(first).length, 5);
+    first.close();
 });
 
-test("edits: a document may be edited twice, and only a closed one refuses", () => {
-    // An edit READS its receiver, so the receiver survives it. Editing one
-    // document twice gives two lines of descent: same predecessor, same
-    // starting identities, different revisions.
+test("edits: a mutation supersedes its receiver, so history is linear", () => {
+    // A document is the live head of a chain. A mutation advances the chain
+    // and supersedes its receiver: mutating the old head again is a
+    // deterministic error, never a second line of descent.
     const base = Document("One\n");
-    const first = base.edit("Two\n");
-    const second = base.edit("Three\n");
-    assert.equal(first.content[0].content[0].literal, "Two");
-    assert.equal(second.content[0].content[0].literal, "Three");
-    assert.notEqual(first.revision, second.revision);
-    assert.ok(first.revision > base.revision);
-    assert.ok(second.revision > base.revision);
-    first.close();
-    second.close();
+    const head = base.edit("Two\n");
+    assert.equal(head.content[0].content[0].literal, "Two");
+    assert.throws(() => base.edit("Three\n"), /superseded/);
+    assert.throws(() => base.append("Three\n"), /superseded/);
+    // The rejected calls changed nothing: the real head still mutates, and
+    // the superseded document still answers from its decoded values.
+    assert.equal(base.content[0].content[0].literal, "One");
+    const next = head.edit("Three\n");
+    assert.equal(next.content[0].content[0].literal, "Three");
+    assert.ok(next.revision > head.revision);
     base.close();
+    head.close();
+    next.close();
 
     const closed = Document("One\n");
     closed.close();
@@ -245,11 +250,11 @@ test("edits: options are fixed for a series and reported by every revision", () 
 });
 
 test("edits: irregular render ticks over a multi-turn conversation", () => {
-    // The shape of a real LLM consumer: every socket message extends the
-    // text (nothing parses), only an irregular render tick edits, and the
-    // messages between ticks conflate into that one edit. Three assistant
-    // turns extend one document; blocks settled at a turn boundary must stay
-    // frozen while later turns stream.
+    // The shape of a real LLM consumer: every socket message APPENDS to the
+    // document — the hot path — and an irregular render tick only verifies
+    // what a renderer would draw. Three assistant turns extend one document;
+    // blocks settled at a turn boundary must stay frozen while later turns
+    // stream.
     const turns = [
         "# Streaming\n\nThe *quick* parser holds **steady** under bursts, " +
             "and the heading keeps its identity from the first render on.\n\n" +
@@ -285,14 +290,7 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
     let touched = 0;
 
     const tick = () => {
-        const previous = document;
-        document = document.edit(streamed);
         ticks += 1;
-        // What this tick stamped, measured off the new tree itself: the
-        // nodes carrying the new document revision — the same proxy the
-        // Swift and Kotlin mirrors of this test count.
-        touched += stamped(document, previous.revision).length;
-        previous.close();
         const reference = Document(streamed);
         assert.equal(document.dump(), reference.dump());
         reference.close();
@@ -311,9 +309,18 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
             // newlines of a block boundary — because that is the steady
             // state of LLM output.
             const width = draw(10n) < 2 ? 2 + draw(18n) : 80 + draw(71n);
-            streamed += turn.slice(offset, offset + width);
+            const chunk = turn.slice(offset, offset + width);
+            streamed += chunk;
             offset += width;
             messages += 1;
+            const previous = document;
+            document = document.append(chunk);
+            // What this append stamped, measured off the new tree itself:
+            // the nodes carrying a fresher revision than the whole
+            // predecessor tree — the same proxy the Swift and Kotlin mirrors
+            // of this test count.
+            touched += stamped(document, previous.revision).length;
+            previous.close();
             if (draw(4n) === 0) tick();
         }
         // The turn boundary always renders; everything but the still-hot
@@ -328,8 +335,8 @@ test("edits: irregular render ticks over a multi-turn conversation", () => {
     reference.close();
 
     // Near-O(n) pipeline: total stamped-node traffic stays within one node
-    // per final node plus bounded frontier churn per tick. A full rebuild
-    // per tick would be on the order of ticks * nodes.
-    assert.ok(touched < flatten(document).length + 16 * ticks);
+    // per final node plus bounded frontier churn per append. A full rebuild
+    // per message would be on the order of messages * nodes.
+    assert.ok(touched < flatten(document).length + 24 * messages);
     document.close();
 });

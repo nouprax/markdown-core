@@ -109,6 +109,7 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;)V
 	public synthetic fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/ParseOptions;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
+	public final fun append (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public fun close ()V
 	public final fun dump ()Ljava/lang/String;
 	public final fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;

@@ -498,10 +498,11 @@ int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *b
     return 0;
 }
 
-int er_replay_commit(er_replay *replay) {
+/* The shared oracle behind both mutations: adopt the successor, double-walk
+ * it against the predecessor and the ledger, and require the dump to equal a
+ * one-shot parse of the shadow bytes. `previous` is released here. */
+static int er_verify_successor(er_replay *replay, markdown_core_document *previous, markdown_core_document *successor) {
     markdown_core_error *error = NULL;
-    markdown_core_document *previous = replay->document;
-    markdown_core_document *successor;
     markdown_core_document *reference = NULL;
     uint8_t *edited_dump = NULL;
     uint8_t *reference_dump = NULL;
@@ -510,13 +511,6 @@ int er_replay_commit(er_replay *replay) {
     er_prev_index index;
     int result = -1;
 
-    successor = markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &error);
-    if (!successor) {
-        markdown_core_document_free(previous);
-        replay->document = NULL;
-        markdown_core_error_free(error);
-        return er_fail(replay, "commit failed");
-    }
     /* The successor is adopted first so every failure path below leaves the
      * replay closeable; the predecessor stays alive until the double walk
      * has compared against it, and is released at `done`. */
@@ -524,11 +518,11 @@ int er_replay_commit(er_replay *replay) {
 
     memset(&index, 0, sizeof(index));
     if (markdown_core_document_series(successor) != markdown_core_document_series(previous)) {
-        er_fail(replay, "an edit changed the series");
+        er_fail(replay, "a mutation changed the series");
         goto done;
     }
-    if (markdown_core_document_revision(successor) <= markdown_core_document_revision(previous)) {
-        er_fail(replay, "the document revision did not advance");
+    if (markdown_core_document_revision(successor) != markdown_core_document_revision(previous) + 1) {
+        er_fail(replay, "the document revision did not advance by exactly one");
         goto done;
     }
 
@@ -588,6 +582,43 @@ done:
     markdown_core_document_free(previous);
     free(index.entries);
     return result;
+}
+
+int er_replay_commit(er_replay *replay) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *previous = replay->document;
+    markdown_core_document *successor;
+
+    successor = markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &error);
+    if (!successor) {
+        markdown_core_document_free(previous);
+        replay->document = NULL;
+        markdown_core_error_free(error);
+        return er_fail(replay, "commit failed");
+    }
+    return er_verify_successor(replay, previous, successor);
+}
+
+/* Appends `length` bytes through the REAL append mutation — any split is
+ * legal, mid-UTF-8 and mid-line included — and runs the same oracle a
+ * commit runs: the double walk plus dump equality against a one-shot parse
+ * of the shadow bytes. */
+int er_replay_append(er_replay *replay, const uint8_t *bytes, size_t length) {
+    markdown_core_error *error = NULL;
+    markdown_core_document *previous = replay->document;
+    markdown_core_document *successor;
+
+    if (er_text_splice(&replay->shadow, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
+        return er_fail(replay, "shadow append allocation failed");
+    }
+    successor = markdown_core_document_append(previous, mc_sv(bytes, length), &error);
+    if (!successor) {
+        markdown_core_document_free(previous);
+        replay->document = NULL;
+        markdown_core_error_free(error);
+        return er_fail(replay, "append failed");
+    }
+    return er_verify_successor(replay, previous, successor);
 }
 
 /* --- edit-script interpreter --------------------------------------------- */

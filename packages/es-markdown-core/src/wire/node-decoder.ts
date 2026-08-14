@@ -12,9 +12,10 @@ import { kinds, type NativeKind } from "./kinds.js";
 export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" | "content">;
 
 /**
- * One decode pass over the native tree. Every node is decoded, every time: a
- * document's projection is a function of its text and its options, not of how
- * the caller reached it.
+ * One decode pass over the native tree. A document's projection is a function
+ * of its text and its options, not of how the caller reached it — which is
+ * exactly what lets `reuse` swap a decode for the predecessor's identical
+ * value without the projection being able to tell.
  */
 export interface DecodeContext {
     /** Series-interned identity for a raw id: the same identity is always
@@ -24,6 +25,18 @@ export interface DecodeContext {
     readonly adopt: (value: DocumentValue) => Document;
     /** The document's id → node index, filled as the walk decodes. */
     readonly index: Map<number, Markup>;
+    /**
+     * Consulted once per non-root node, before any of it is decoded: a
+     * non-null return is taken as the node's whole value and the subtree
+     * under it is never visited — the caller vouches, per the engine's
+     * (id, revision) ledger, that the value it hands back is content- and
+     * position-identical to what a decode would build. `scope` is the
+     * node's freshly read extent, handed over because the pair alone
+     * cannot vouch for position — the decoder pays for the read either
+     * way. The hook owns indexing whatever it returns; the decoder indexes
+     * only what it decodes.
+     */
+    readonly reuse?: (rawValue: number, revision: number, scope: Scope) => Markup | null;
 }
 
 const stringField = {
@@ -166,14 +179,18 @@ export class NodeDecoder {
                 const pointer = top.pointers[top.index]!;
                 top.index += 1;
                 const rawId = this.rawId(pointer);
+                const revision = this.revisionOf(pointer);
+                const scope = this.scopeOf(pointer);
+                const reused = context.reuse?.(rawId, revision, scope);
+                if (reused) {
+                    // The whole point of the hook: the pair and the extent
+                    // proved the subtree, so these three native reads are
+                    // all this node — and everything under it — ever costs.
+                    top.values.push(reused);
+                    continue;
+                }
                 stack.push(
-                    NodeDecoder.frame(
-                        pointer,
-                        context.ids(rawId),
-                        this.revisionOf(pointer),
-                        this.scopeOf(pointer),
-                        this.childPointers(pointer)
-                    )
+                    NodeDecoder.frame(pointer, context.ids(rawId), revision, scope, this.childPointers(pointer))
                 );
                 continue;
             }

@@ -49,6 +49,7 @@ const exported = [
     "free",
     "es_document_open",
     "es_document_edit",
+    "es_document_append",
     "es_document_free",
     "es_document_series",
     "es_document_diagnostics",

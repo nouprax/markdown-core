@@ -205,11 +205,13 @@ markdown_core_add_test(facade_concurrent_stress facade 600 concurrency_runner --
 # with per-byte commits must never interfere, and one document's document
 # must support concurrent read-only access between mutating calls.
 markdown_core_add_test(facade_concurrent_documents facade 600 concurrency_runner --case documents)
-# One document, every thread editing it at once with the SAME text: the tree
-# is a function of content, so every thread must come back with the same
-# tree -- and with a revision of its own, because two successors of one
-# predecessor are two lines of descent.
-markdown_core_add_test(facade_concurrent_shared_edit facade 600 concurrency_runner --case shared_edit)
+# One chain under the unified mutation rule: externally serialized mutations
+# from rotating threads advance one strictly-+1 revision line, a stale
+# handle's mutation fails deterministically and disturbs nothing, every
+# thread reads the live head concurrently between mutations, and superseded
+# handles are freed concurrently across threads (the chain refcount's one
+# load-bearing race). TSan is what checks it.
+markdown_core_add_test(facade_concurrent_chain_mutation facade 600 concurrency_runner --case chain_mutation)
 
 # regression: registry lifecycle stays immutable across parse/free cycles
 # and facade failure paths.
@@ -283,6 +285,7 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
+              chain_poison
               capture_growth_ceiling
               inline_shape
               inline_smart
@@ -484,6 +487,15 @@ markdown_core_add_test(
     "${MARKDOWN_CORE_CANONICAL_AST_DIR}/structure.md"
     --generated
     256)
+markdown_core_add_test(
+    fuzz_append_streams
+    fuzz
+    240
+    fuzz_smoke_runner
+    --generated
+    0
+    --append-streams
+    64)
 markdown_core_add_test(
     fuzz_script_smoke
     fuzz

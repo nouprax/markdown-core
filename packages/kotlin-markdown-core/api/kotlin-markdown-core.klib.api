@@ -298,6 +298,7 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
         final fun <get-series>(): kotlin/ULong // com.nouprax.markdown.core/Document.series.<get-series>|<get-series>(){}[0]
 
     final fun <#A1: kotlin/Any?> accept(com.nouprax.markdown.core/MarkupVisitor<#A1>): #A1 // com.nouprax.markdown.core/Document.accept|accept(com.nouprax.markdown.core.MarkupVisitor<0:0>){0§<kotlin.Any?>}[0]
+    final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Document.append|append(kotlin.String){}[0]
     final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
     final fun dump(): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(){}[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(com.nouprax.markdown.core.Markup){}[0]

@@ -489,6 +489,27 @@ v2 design = a stable-prefix hint on TEXT + segmented literal exposure.
 
 ---
 
+## Errata
+
+**E1 (found during P1, 2026-08-13).** §3.2's claim that a D6-fallback append
+needs no flag because "append never moves bytes ⇒ values for unchanged
+(id, rev) are byte-identical including scope" is **falsified**: a trailing
+construct absorbs its terminating newline into its scope END without a
+revision bump — position is not content by contract, so nothing stamps it
+(`ThematicBreak 5:1..5:3` → `5:1..6:0` on appending a newline). The Swift
+value_mirror gate caught it before it shipped, which is the gate doing
+exactly its job. Consequences, all landed with P1: the bindings' prune
+condition is **(id, revision, scope)** — sound for whole subtrees because
+under append starts never move, ends only grow toward the old EOF, and a
+grown descendant end forces every ancestor's end past it; the Kotlin wire's
+`REUSE(id)` encoder emits only for nodes whose scope end lies strictly
+before the predecessor's EOF (the encoder must be sound alone — a decoder
+holding a REUSE record has no subtree to fall back to); and INV4's
+"(id, rev) equal ⇒ equal subtree dump" is read with dump positions
+excluded, which is how the C ledger always checked it.
+
+---
+
 *Method and evidence chain: six fact-finding investigations (all file:line verified) →
 design D′ → four adversarial passes → the requirement decisions (streaming-only, no
 delta) → design S2 → three adversarial passes (the fork mechanism, the identity

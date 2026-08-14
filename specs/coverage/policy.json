@@ -33,8 +33,8 @@
             "minimumMeasuredFiles": 33,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 13,
-                    "functions": 3
+                    "lines": 15,
+                    "functions": 4
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
                     "lines": 1,
@@ -57,7 +57,7 @@
                     "functions": 3
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/NativeValues.swift": {
-                    "lines": 5,
+                    "lines": 1,
                     "functions": 1
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Walker/MarkupDumper.swift": {
@@ -116,9 +116,9 @@
                     "branches": 0
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Document.kt": {
-                    "lines": 2,
-                    "functions": 2,
-                    "branches": 0
+                    "lines": 4,
+                    "functions": 3,
+                    "branches": 2
                 },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/model/Embed.kt": {
                     "lines": 2,
@@ -235,11 +235,6 @@
                     "functions": 2,
                     "branches": 4
                 },
-                "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/walker/MarkupWalker.kt": {
-                    "lines": 0,
-                    "functions": 0,
-                    "branches": 1
-                },
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
                     "lines": 3,
                     "functions": 0,
@@ -301,9 +296,9 @@
                     "branches": 1
                 },
                 "packages/es-markdown-core/src/runtime/c-document.ts": {
-                    "lines": 20,
+                    "lines": 12,
                     "functions": 1,
-                    "branches": 12
+                    "branches": 8
                 },
                 "packages/es-markdown-core/src/runtime/native.ts": {
                     "lines": 8,
@@ -318,5 +313,5 @@
             }
         }
     },
-    "purpose": "This gate measures which BINDING code a golden assertion pins. It is not a code-quality score and must never be used to record current behaviour as acceptable. Producers run only the suites that assert parse output, so a covered branch is one a golden assertion would catch changing, and an uncovered branch is behaviour a rewrite can alter silently. The c-host platform is gone: it ratcheted line and branch counts per C file, and those files are the ones a Rust engine replaces, so the ledger could not outlive the rewrite it was meant to protect. What protects the engine across that rewrite is the source-to-AST corpus \u2014 spec, pathological, entity, extension-order, equivalence, fuzz, and both parity oracles."
+    "purpose": "This gate measures which BINDING code a golden assertion pins. It is not a code-quality score and must never be used to record current behaviour as acceptable. Producers run only the suites that assert parse output, so a covered branch is one a golden assertion would catch changing, and an uncovered branch is behaviour a rewrite can alter silently. The c-host platform is gone: it ratcheted line and branch counts per C file, and those files are the ones a Rust engine replaces, so the ledger could not outlive the rewrite it was meant to protect. What protects the engine across that rewrite is the source-to-AST corpus — spec, pathological, entity, extension-order, equivalence, fuzz, and both parity oracles."
 }

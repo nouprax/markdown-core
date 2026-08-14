@@ -36,14 +36,32 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
-/* One per series, shared by every document in it: see the note in
- * document.c. Holds the revision counter that keeps two successors of one
- * predecessor apart, and the reference count that ends it with the last
- * document that came from it. */
-typedef struct markdown_core_series_clock {
-    volatile uint64_t next_revision;
+/* THE CHAIN OWNER. One per chain — a document and every successor a
+ * mutation produced from it — shared by every live handle on the chain and
+ * released with the last of them.
+ *
+ * The chain is what makes supersession enforceable: a mutation is legal only
+ * on the handle whose generation matches the chain's, so a superseded handle
+ * fails deterministically instead of forking history, and the linear history
+ * that results is what lets a consumer destroy and rebuild derived state in
+ * place. Only the refcount is atomic: handles on one chain may be freed from
+ * different threads, but mutations are externally serialized by contract, so
+ * generation and the revision counter are plain fields the current mutation
+ * owns. */
+typedef struct markdown_core_chain {
     volatile uint32_t refcount;
-} markdown_core_series_clock;
+    uint64_t generation;    /* the live head's generation; mutations bump it */
+    uint64_t next_revision; /* strictly +1 per mutation, whichever kind */
+    uint64_t series;        /* the salt every document on the chain shares */
+    /* The chain's base allocator: every successor builds over it, so a chain
+     * opened over an injected allocator stays observable to the injection —
+     * mutations do not silently fall back to the default. Borrowed; the
+     * opener guarantees it outlives the chain. */
+    markdown_core_mem *mem;
+    /* A failed append is "the chain is done": nothing further may mutate it,
+     * the caller holds the text, and recovery is a rebuild. */
+    bool poisoned;
+} markdown_core_chain;
 
 struct markdown_core_document {
     markdown_core_mem *mem;
@@ -62,9 +80,12 @@ struct markdown_core_document {
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
     uint64_t next_id; // monotonic, starts at 1, never reused
-    uint64_t series;
+    uint64_t series;  // copied from the chain at build time
     uint64_t revision;
-    markdown_core_series_clock *clock;
+    markdown_core_chain *chain;
+    /* Which head this handle was: mutation is legal exactly while it equals
+     * chain->generation. */
+    uint64_t generation;
     int total_lines;      // parser line count of the committed text
     int last_line_length; // parser's final-line length of the committed text
     // When pooled, every document-owned allocation flows through this arena

@@ -186,10 +186,10 @@ import Testing
             two = try #require(first.content[1] as? Paragraph)
             #expect(try #require(two).scope.start.line == 3)
 
-            // Editing builds the successor a native parse of its own, which
-            // then goes out of scope and frees it. The receiver keeps its
-            // parse, and its values, scopes, and dump were all extracted at
-            // parse time anyway.
+            // Editing supersedes the receiver: only reads and release
+            // remain to it. Its values, scopes, and dump were all extracted
+            // at parse time, so every read keeps answering after the
+            // successor goes out of scope and frees its own parse.
             _ = try first.edit("Zero\n\nOne\n\nTwo\n")
             retained = first
         }
@@ -201,13 +201,14 @@ import Testing
         #expect(visitor.count == 5)
     }
 
-    @Test("streaming: irregular render ticks over a multi-turn conversation")
-    func conflatedStreaming() throws {
-        // The shape of a real LLM consumer: every socket message extends the
-        // text (nothing parses), only an irregular render tick edits, and the
-        // messages between ticks conflate into that one edit. Three assistant
-        // turns extend one document; blocks settled at a turn boundary must
-        // stay frozen while later turns stream.
+    @Test("streaming: every message rides the real append; render ticks read the head")
+    func streamedAppends() throws {
+        // The shape of a real LLM consumer: every socket message is one
+        // append — `document = document.append(chunk)`, no self-held
+        // accumulated text resent — and an irregular render tick only READS
+        // the head it is handed. Three assistant turns extend one document;
+        // blocks settled at a turn boundary must stay frozen while later
+        // turns stream.
         let driver = try StreamDriver()
         for turn in StreamDriver.turns {
             try driver.stream(turn)
@@ -218,6 +219,10 @@ import Testing
 
     @Test("documents are Sendable values; ids are stable dictionary keys")
     func valueSemantics() throws {
+        // `Document: Sendable` rests on the chain's threading contract:
+        // mutations are exclusive and serialized by the caller, concurrent
+        // reads between mutations never touch the native parse, and decoded
+        // values are pure — safe on any thread, forever.
         requireSendable(Document.self)
         requireSendable(MarkupID.self)
         requireSendable(Diagnostic.self)
@@ -317,10 +322,10 @@ private struct CountingVisitor: MarkupVisitor {
 
 private func requireSendable<T: Sendable>(_: T.Type) {}
 
-/// Drives one simulated LLM conversation and asserts the streaming contract
-/// at every render tick. One fixed generator drives batch sizes and tick
-/// timing, so the burst shapes are irregular but reproducible — and identical
-/// in the Kotlin and ES mirrors of this test.
+/// Drives one simulated LLM conversation over the real append mutation and
+/// asserts the streaming contract at every render tick. One fixed generator
+/// drives batch sizes and tick timing, so the burst shapes are irregular but
+/// reproducible — and identical in the Kotlin and ES mirrors of this test.
 private final class StreamDriver {
     static let turns = [
         "# Streaming\n\nThe *quick* parser holds **steady** under bursts, "
@@ -363,16 +368,30 @@ private final class StreamDriver {
 
     /// Streams one turn as service-shaped messages: mostly a 20-30 token
     /// batch (80-150 characters), with occasional tiny flushes of a few
-    /// words. Cuts land at raw character offsets — mid-word, mid-marker,
-    /// even between the two newlines of a block boundary — because that is
-    /// the steady state of LLM output.
+    /// words. Every message is one real append — the burst shape IS the
+    /// mutation now — and cuts land at raw character offsets: mid-word,
+    /// mid-marker, even between the two newlines of a block boundary,
+    /// because that is the steady state of LLM output.
     func stream(_ turn: String) throws {
         var pending = Array(turn)[...]
         while !pending.isEmpty {
             let width = draw(10) < 2 ? 2 + Int(draw(18)) : 80 + Int(draw(71))
-            streamed += String(pending.prefix(width))
+            let chunk = String(pending.prefix(width))
             pending = pending.dropFirst(width)
+            streamed += chunk
             messages += 1
+            let next = try document.append(chunk)
+            // The traffic this append caused: every node minted or changed
+            // here is stamped with the new document revision, and any change
+            // bubbles to the root — so when the root's revision moved, the
+            // nodes carrying it are exactly this mutation's traffic, and
+            // when it did not, the append touched nothing.
+            if next.revision != document.revision {
+                MarkupWalker().walk(next) { event, node, _ in
+                    if event == .entering, node.revision == next.revision { touched += 1 }
+                }
+            }
+            document = next
             if draw(4) == 0 { try tick() }
         }
     }
@@ -391,15 +410,16 @@ private final class StreamDriver {
         #expect(ticks < messages)
         #expect(document.dump() == (try Document(Self.turns.joined()).dump()))
 
-        // Near-O(n) pipeline: total revision traffic — per tick, the nodes
-        // stamped with that tick's new document revision — stays within one
-        // stamp per final node plus bounded frontier churn per tick. A full
-        // rebuild per tick would be on the order of ticks * nodes.
+        // Near-O(n) pipeline: total revision traffic — per append, the
+        // nodes stamped with that mutation's new document revision — stays
+        // within one stamp per final node plus bounded frontier churn per
+        // message. A full restamp per message would be on the order of
+        // messages * nodes.
         var nodes = 0
         MarkupWalker().walk(document) { event, _, _ in
             if event == .entering { nodes += 1 }
         }
-        #expect(touched < nodes + 16 * ticks)
+        #expect(touched < nodes + 16 * messages)
     }
 
     private func draw(_ bound: UInt64) -> UInt64 {
@@ -407,20 +427,12 @@ private final class StreamDriver {
         return (state >> 33) % bound
     }
 
+    /// A render tick READS the head it already holds — the appends between
+    /// ticks were the mutations — and asserts the contract: the head dumps
+    /// identically to a one-shot parse of every byte so far, and blocks
+    /// settled at a turn boundary stayed frozen through later appends.
     private func tick() throws {
-        let next = try document.edit(streamed)
         ticks += 1
-        // The traffic this tick caused: every node minted or changed here is
-        // stamped with the new document revision, and any change bubbles to
-        // the root — so when the root's revision moved, the nodes carrying
-        // it are exactly this tick's traffic, and when it did not, the tick
-        // touched nothing.
-        if next.revision != document.revision {
-            MarkupWalker().walk(next) { event, node, _ in
-                if event == .entering, node.revision == next.revision { touched += 1 }
-            }
-        }
-        document = next
         #expect(document.dump() == (try Document(streamed).dump()))
         for entry in frozen {
             let node = document.content[entry.index]

@@ -102,6 +102,26 @@ class ErrorsTest {
             }
         }
     }
+
+    @Test
+    fun aDeliveryLostStatusSurfacesThroughItsHandler() {
+        // Status 2: the native mutation succeeded but its payload was lost —
+        // the wire's whole answer is the one byte, routed to the caller's
+        // handler; without one it is an unsupported status.
+        assertFailsWith<IllegalStateException> {
+            decodeWire(
+                byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x02),
+                onDeliveryLost = { throw IllegalStateException("the chain is done") },
+            ) { _, _, _, _, _, _, _ ->
+                error("a delivery-lost payload reached the build step")
+            }
+        }
+        assertFailsWith<IllegalStateException> {
+            decodeWire(byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x02)) { _, _, _, _, _, _, _ ->
+                error("a delivery-lost payload reached the build step")
+            }
+        }
+    }
 }
 
 class OwnershipTest {

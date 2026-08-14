@@ -113,8 +113,8 @@ import Testing
         }
     }
 
-    @Test("edits replay the manifest corpus to dump equality per revision")
-    func editEquivalenceReplay() throws {
+    @Test("appends replay the manifest corpus to dump equality per revision")
+    func appendEquivalenceReplay() throws {
         let manifest = try loadManifest()
         for testCase in manifest.cases {
             var document = try Document("", options: testCase.parseOptions.value)
@@ -123,6 +123,36 @@ import Testing
             // its last-sighted revision, and whether it is still in a tree.
             // Cumulative because retirement is forever — two adjacent
             // snapshots alone would forgive an id resurrected a commit later.
+            var ledger: [UInt64: LedgerEntry] = [:]
+            verifyTree(document, against: nil, ledger: &ledger, testCase.name)
+            for chunk in lineChunks(testCase.source) {
+                replayed += chunk
+                let previous = document
+                // The real append: only the chunk travels, never the
+                // accumulated text.
+                document = try previous.append(chunk)
+                #expect(document.series == previous.series, Comment(rawValue: testCase.name))
+
+                // Equivalence: the appended document dumps byte-equal to a
+                // one-shot parse of every byte so far.
+                let reference = try Document(replayed, options: testCase.parseOptions.value)
+                #expect(document.dump() == reference.dump(), Comment(rawValue: testCase.name))
+
+                verifyTree(document, against: previous, ledger: &ledger, testCase.name)
+            }
+            #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
+        }
+    }
+
+    @Test("edits replay the manifest corpus to dump equality per revision")
+    func editEquivalenceReplay() throws {
+        // Kept on the EDIT path deliberately: append now carries the
+        // streaming load, but edit remains the whole-text mutation and its
+        // full-decode path needs this replay's coverage.
+        let manifest = try loadManifest()
+        for testCase in manifest.cases {
+            var document = try Document("", options: testCase.parseOptions.value)
+            var replayed = ""
             var ledger: [UInt64: LedgerEntry] = [:]
             verifyTree(document, against: nil, ledger: &ledger, testCase.name)
             for chunk in lineChunks(testCase.source) {
@@ -253,7 +283,9 @@ private func track(_ document: Document, of node: any Markup) -> [[UInt64]] {
     return rows
 }
 
-private func loadManifest() throws -> CanonicalManifest {
+/// Target-visible, not file-private: the value-mirror suite streams the
+/// same corpus.
+func loadManifest() throws -> CanonicalManifest {
     let resource = try #require(
         Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
     )
@@ -280,19 +312,19 @@ private func lineChunks(_ source: String) -> [String] {
     return chunks
 }
 
-private struct CanonicalManifest: Decodable {
+struct CanonicalManifest: Decodable {
     let schemaVersion: Int
     let cases: [CanonicalCase]
 }
 
-private struct CanonicalCase: Decodable {
+struct CanonicalCase: Decodable {
     let name: String
     let source: String
     let expected: String
     let parseOptions: CanonicalParseOptions
 }
 
-private struct CanonicalParseOptions: Decodable {
+struct CanonicalParseOptions: Decodable {
     let smartPunctuation: Bool
     let footnotes: Bool
     let tables: Bool

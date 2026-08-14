@@ -93,19 +93,33 @@ extension ParseError: LocalizedError {
 /// owner of the native parse it came from, and the only entry point.
 ///
 /// ```swift
-/// let document = try Document("# Title")
-/// let renamed = try document.edit("# Renamed")
+/// var document = try Document("# Title")
+/// document = try document.append("\n\nHello")
+/// document = try document.edit("# Renamed")
 /// ```
 ///
-/// There is no session type. A document is created from text and options;
-/// editing hands it new text and returns the next document. Options are
-/// fixed for a document's whole series — changing what the parser means is a
-/// new ``Document``, not an edit.
+/// There is no session type. A document is the live head of a CHAIN: created
+/// from text and options, advanced by a mutation — ``edit(_:)`` replaces all
+/// text, ``append(_:)`` adds text at the end — that returns the next head
+/// and SUPERSEDES its receiver. Options are fixed for the chain's whole
+/// series — changing what the parser means is a new ``Document``, not a
+/// mutation.
 ///
 /// The node values are ordinary Swift values with no reference back here:
-/// hold them, copy them, put them in a view model. What this class owns is
-/// the native parse, which ``edit(_:)`` needs in order to keep identities
-/// stable across revisions.
+/// hold them, copy them, put them in a view model — they outlive every
+/// mutation, because they are values. What this class owns is the native
+/// parse, which the next mutation needs in order to keep identities stable
+/// across revisions.
+///
+/// Threading is the chain's one rule. A mutation is an exclusive operation
+/// on its chain: all access to any document on the chain must happen before
+/// the mutation begins or after it returns, and two mutations must be
+/// serialized by the caller. Between mutations, concurrent reads of any
+/// document on the chain — superseded or live — are safe from any thread:
+/// every stored property is a `let` extracted when the document was built,
+/// and no read touches the native parse again, which is what
+/// `@unchecked Sendable` rests on. Decoded values are pure and safe
+/// everywhere, always.
 public final class Document: Markup, @unchecked Sendable {
     /// The node's series-scoped identity; see ``MarkupID``.
     public let id: MarkupID
@@ -129,6 +143,12 @@ public final class Document: Markup, @unchecked Sendable {
     let handle: OpaquePointer
     /// Every node below the root by identity, so an answer addressed by
     /// ``MarkupID`` can hand back the node value rather than the bare id.
+    ///
+    /// This is also the chain's value mirror: an append hands the receiver's
+    /// index to the successor's decode, which reuses the held value whole
+    /// wherever the native id, revision, AND scope still match. Rebuilt by
+    /// walking the new value tree, so an id retired by the mutation never
+    /// enters the successor's — while this document keeps its own forever.
     private let index: [UInt64: any Markup]
     /// Parses `markdown` and returns a self-contained document; throws
     /// ``ParseError`` when the engine rejects the input or cannot allocate.
@@ -159,18 +179,35 @@ public final class Document: Markup, @unchecked Sendable {
         index = Document.index(of: content)
     }
 
-    private init(adopting handle: OpaquePointer, options: ParseOptions) throws {
+    /// Builds the successor a mutation produced, reusing the receiver's
+    /// decoded values through `mirror` — the receiver's index, or empty for
+    /// a full decode.
+    ///
+    /// A reused value must still be true in every field a consumer reads,
+    /// which is why the prune matches id, revision, and scope — and why the
+    /// caller still picks: an append never moves settled bytes, so a
+    /// scope-verified subtree root covers its descendants; an edit can
+    /// shift a whole region without changing a revision, so it hands
+    /// nothing and decodes whole. Consuming the mirror while the receiver
+    /// keeps it is safe because both only read it — the values are shared,
+    /// immutable, and copy-on-write — and because the runtime-enforced
+    /// linear history means no third document is being built from it.
+    private init(
+        adopting handle: OpaquePointer,
+        options: ParseOptions,
+        reusing mirror: [UInt64: any Markup]
+    ) throws {
         self.handle = handle
         self.options = options
         let series = markdown_core_document_series(handle)
         guard let root = markdown_core_document_root(handle) else {
             markdown_core_document_free(handle)
-            throw ParseError(code: .internal, message: "edit produced no document root")
+            throw ParseError(code: .internal, message: "the mutation produced no document root")
         }
         id = MarkupID(series: series, rawValue: markdown_core_node_get_id(root))
         revision = markdown_core_node_get_revision(root)
         scope = Scope(from: markdown_core_node_scope(root))
-        content = Document.project(root, series: series)
+        content = Document.project(root, series: series, reusing: mirror)
         diagnostics = Document.diagnostics(handle)
         index = Document.index(of: content)
     }
@@ -179,18 +216,24 @@ public final class Document: Markup, @unchecked Sendable {
         markdown_core_document_free(handle)
     }
 
-    /// Hands this document new text and returns the document that text
-    /// describes.
+    /// Hands the chain's head new text and returns the document that text
+    /// describes, which SUPERSEDES the receiver.
     ///
-    /// Reads the receiver and takes nothing from it: this document stays
-    /// usable and may be edited again. Editing it twice gives two lines of
-    /// descent, told apart by their revisions — and, like nodes from two
-    /// separate parses, nodes from two lines are not comparable.
+    /// Both mutations are one rule: same chain, same series, revision
+    /// strictly +1 on the chain's own counter, whichever mutation advanced
+    /// it. A successful mutation makes the receiver superseded — every
+    /// further mutation on it throws the engine's deterministic
+    /// `invalidArgument` error and disturbs nothing, so history is linear
+    /// and there is no forking. Every READ keeps answering forever: the
+    /// values, scopes, ``dump()``, ``node(_:)``, and ``diagnostics`` of a
+    /// superseded document all come from the decoded state built with it,
+    /// never from the native parse, and releasing it stays O(1). A FAILED
+    /// edit supersedes nothing: the receiver stays the head, readable and
+    /// mutable.
     ///
-    /// There is nothing to synchronize. Every stored property is a `let`,
-    /// and the native parse a document owns is only ever READ — including
-    /// here, where the successor is built a parse of its own — so concurrent
-    /// callers cannot race, which is what `@unchecked Sendable` rests on.
+    /// An edit can move a node without changing its revision, so the
+    /// successor is decoded whole; ``append(_:)`` is the mutation that
+    /// reuses the receiver's decoded values.
     public func edit(_ markdown: String) throws -> Document {
         var nativeError: OpaquePointer?
         var source = markdown
@@ -205,7 +248,45 @@ public final class Document: Markup, @unchecked Sendable {
         // Exactly one owner: the adopting initializer frees the native
         // document itself on its only throwing path, so a failure here
         // cannot leak it.
-        return try Document(adopting: next, options: options)
+        return try Document(adopting: next, options: options, reusing: [:])
+    }
+
+    /// Adds text to the end of the chain's head and returns the document
+    /// all text so far describes, which SUPERSEDES the receiver — the same
+    /// rule as ``edit(_:)``: revision strictly +1 on the chain's counter,
+    /// a superseded receiver's further mutations throw the engine's
+    /// deterministic `invalidArgument` error, and its reads keep answering
+    /// from decoded state forever.
+    ///
+    /// Any split of the incoming text is legal — mid-word, mid-marker,
+    /// even between a carriage return and its line feed — and appending
+    /// nothing is still a mutation: the chain advances and the projection
+    /// is identical. Settled content never moves, so a node the append did
+    /// not reach keeps its id, revision, and positions, and its
+    /// already-decoded value is reused whole instead of rebuilt: decode
+    /// work per append is proportional to what changed, not to the
+    /// document.
+    ///
+    /// Failure is asymmetric, deliberately. A rejected argument — mutating
+    /// a stale receiver — fails the call, never the chain. An append that
+    /// fails past the guards POISONS the chain: every further mutation
+    /// throws the engine's deterministic "the chain is done" error, every
+    /// document remains readable and releasable, and recovery is a new
+    /// chain built from text the caller still holds.
+    public func append(_ chunk: String) throws -> Document {
+        var nativeError: OpaquePointer?
+        var source = chunk
+        let next = source.withUTF8 { buffer -> OpaquePointer? in
+            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
+            return markdown_core_document_append(handle, text, &nativeError)
+        }
+        guard let next else {
+            defer { markdown_core_error_free(nativeError) }
+            throw ParseError(from: nativeError)
+        }
+        // Same single-owner shape as edit; the receiver's index rides along
+        // as the value mirror because an append never moves settled bytes.
+        return try Document(adopting: next, options: options, reusing: index)
     }
 
     /// This document's node for `id`, or nil when no node has that identity
@@ -226,6 +307,22 @@ public final class Document: Markup, @unchecked Sendable {
     /// Dispatches this node to `visitor`'s matching `visit` overload.
     public func accept<V: MarkupVisitor>(_ visitor: inout V) -> V.Result { visitor.visit(self) }
 
+    /// A prune-free second projection of this document's native tree, for
+    /// the value-mirror gate: whatever ``content`` reused from a
+    /// predecessor must be indistinguishable, field by field, from this
+    /// independent full decode of the same native nodes.
+    ///
+    /// Internal and test-only. Reading the native tree is legal until the
+    /// chain's next mutation begins; the gate calls this on a head it just
+    /// received, which the externally-serialized mutation contract
+    /// sequences.
+    func reprojectedContent() -> [any Markup] {
+        guard let root = markdown_core_document_root(handle) else {
+            preconditionFailure("the document lost its native root")
+        }
+        return Document.project(root, series: id.series)
+    }
+
     /// Two documents are equal exactly when they share ``id`` and ``revision``,
     /// the same rule every other ``Markup`` node follows.
     public static func == (lhs: Document, rhs: Document) -> Bool {
@@ -238,14 +335,32 @@ public final class Document: Markup, @unchecked Sendable {
         hasher.combine(revision)
     }
 
-    /// Builds every value below `root`.
+    /// Builds every value below `root`, reusing `mirror` values wherever
+    /// the native (id, revision) still matches.
     ///
     /// Postorder over an explicit stack, because nesting depth is
     /// input-controlled: a document that PARSED must also project, and the
     /// call stack is not a budget this package may spend on the caller's
     /// behalf. Child arrays assemble in sibling frames, so every node is
     /// built exactly once, from children that are already built.
-    private static func project(_ root: OpaquePointer, series: UInt64) -> [any Markup] {
+    ///
+    /// The mirror check is the revision pruning: a node's revision covers
+    /// its whole subtree's CONTENT, so a held value with the same
+    /// (id, revision) projects this subtree — but not its extent, because a
+    /// trailing construct absorbs its terminating newline into its scope
+    /// end WITHOUT a revision bump (position is not content, so nothing
+    /// stamps it; the value-mirror gate caught exactly this). So the prune
+    /// also requires the held scope to equal the native one: under append,
+    /// starts never move and an end only grows past the old text end — and
+    /// a grown descendant end forces the subtree root's end past it too —
+    /// so a root whose scope held still covers every descendant's. The
+    /// mirror holds only descendants, never a root, so the root is always
+    /// decoded fresh.
+    private static func project(
+        _ root: OpaquePointer,
+        series: UInt64,
+        reusing mirror: [UInt64: any Markup] = [:]
+    ) -> [any Markup] {
         var frames: [[any Markup]] = [[]]
         var completed: [any Markup] = []
         let builder = MarkupBuilder(series: series) { _ in completed }
@@ -257,6 +372,14 @@ public final class Document: Markup, @unchecked Sendable {
                     return completed
                 }
                 frames[frames.count - 1].append(builder.markup(from: node))
+                continue
+            }
+            if node != root,
+                let held = mirror[markdown_core_node_get_id(node)],
+                held.revision == markdown_core_node_get_revision(node),
+                held.scope == Scope(from: markdown_core_node_scope(node))
+            {
+                frames[frames.count - 1].append(held)
                 continue
             }
             stack.append((node, true))

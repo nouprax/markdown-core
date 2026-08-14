@@ -87,13 +87,12 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 }
 NODE
 
-# The model and walker stay mutation-free. There is no exception directory any
-# more: the session's append/replace surface is gone, and a document is edited
-# into a successor rather than mutated. (The exclusion that used to sit here
-# named a directory that no longer exists, which is a filter that quietly
-# filters nothing.)
+# The model and walker stay mutation-free. `append` is not in this list: it
+# is one of the chain's two mutations (edit and append), and like edit it
+# returns a successor document rather than mutating a value in place — the
+# in-place surface this rule exists to forbid.
 if grep -R -n -E \
-    'public (func|var|let|static func).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    'public (func|var|let|static func).*\b(render|set[A-Z]|insert|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
     packages/swift-markdown-core/Sources/MarkdownCore; then
     fail "Swift exports mutation, renderer, or native implementation details"
 fi
@@ -218,11 +217,12 @@ for (const [label, names] of inventories) {
     }
 }
 NODE
-# The model and walker stay mutation-free. There is no exception directory any
-# more: the session's append/replace surface is gone, and a document is edited
-# into a successor rather than mutated.
+# The model and walker stay mutation-free. `append` is not in this list: it
+# is one of the chain's two mutations (edit and append), and like edit it
+# returns a successor document rather than mutating a value in place — the
+# in-place surface this rule exists to forbid.
 if grep -R -n -E \
-    'public (fun|val|var).*\b(render|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
+    'public (fun|val|var).*\b(render|set[A-Z]|insert|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
     packages/kotlin-markdown-core/src/commonMain; then
     fail "Kotlin exports mutation, renderer, or native implementation details"
 fi

@@ -494,10 +494,29 @@ static char *build_append_references_appendix(size_t target, size_t *length) {
     return input;
 }
 
-/* One measured tick: hand `length` bytes of `text` to the live document as
- * the whole new text and swap the handle. Only `edit` is timed; releasing
- * the predecessor stays outside the window. */
-static int append_tick(markdown_core_document **document, const char *text, size_t length, uint64_t *nanoseconds) {
+/* One measured append tick through the REAL mutation: hand only the chunk
+ * over and swap the handle. Only `append` is timed; releasing the
+ * predecessor stays outside the window. */
+static int append_tick(markdown_core_document **document, const char *chunk, size_t length, uint64_t *nanoseconds) {
+    markdown_core_error *error = NULL;
+    uint64_t started = ts_monotonic_ns();
+    markdown_core_document *successor =
+        markdown_core_document_append(*document, mc_sv((const uint8_t *)chunk, length), &error);
+    uint64_t elapsed = ts_monotonic_ns() - started;
+    if (!successor) {
+        markdown_core_error_free(error);
+        return -1;
+    }
+    markdown_core_document_free(*document);
+    *document = successor;
+    if (nanoseconds) {
+        *nanoseconds = elapsed;
+    }
+    return 0;
+}
+
+/* One measured whole-text edit tick, for the mixed shape. */
+static int edit_tick(markdown_core_document **document, const char *text, size_t length, uint64_t *nanoseconds) {
     markdown_core_error *error = NULL;
     uint64_t started = ts_monotonic_ns();
     markdown_core_document *successor =
@@ -552,19 +571,21 @@ static int bench_append_shape(
         return -1;
     }
 
+    size_t sent = 0;
     for (step = 0; step < steps && !failed; step++) {
         uint64_t samples[APPEND_TICKS_PER_CHECKPOINT];
         size_t offset = checkpoints[step];
         char case_name[128];
         int tick;
 
-        /* Fast-forward to the checkpoint with one jump tick, then run the
+        /* Fast-forward to the checkpoint with one jump chunk, then run the
          * burst: warmup ticks settle the allocator at this working-set size
          * before anything is recorded. */
-        if (append_tick(&document, text, offset, NULL) != 0) {
+        if (append_tick(&document, text + sent, offset - sent, NULL) != 0) {
             failed = 1;
             break;
         }
+        sent = offset;
         char splice_saved = text[offset / 2];
         for (tick = -APPEND_WARMUP_TICKS; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
             uint64_t *slot = tick < 0 ? NULL : &samples[tick];
@@ -578,19 +599,20 @@ static int bench_append_shape(
                  * restoring between ticks would make every tick but the
                  * first a no-op edit of identical bytes. */
                 text[offset / 2] = text[offset / 2] == 'x' ? 'y' : 'x';
-                if (append_tick(&document, text, offset, slot) != 0) {
+                if (edit_tick(&document, text, offset, slot) != 0) {
                     failed = 1;
                     break;
                 }
             } else {
-                offset += 3 + (size_t)(ts_prng_next(&prng) % 6);
-                if (offset > text_length) {
-                    offset = text_length;
+                size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
+                if (step_bytes > text_length - sent) {
+                    step_bytes = text_length - sent;
                 }
-                if (append_tick(&document, text, offset, slot) != 0) {
+                if (append_tick(&document, text + sent, step_bytes, slot) != 0) {
                     failed = 1;
                     break;
                 }
+                sent += step_bytes;
             }
         }
         if (splice_mid) {

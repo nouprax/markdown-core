@@ -51,17 +51,32 @@ class ConcurrencyTest {
                             variants.map { options ->
                                 async {
                                     // The same text arrived at by 24 rounds of
-                                    // growing and clearing, so each series is
+                                    // growing and clearing, so each chain is
                                     // busy in the engine while the others are.
+                                    // A mutation supersedes its receiver, so
+                                    // the loop follows the chain and closes
+                                    // every predecessor behind itself — an
+                                    // O(1) release each, and the old
+                                    // leak-tolerance reason is gone.
+                                    fun advance(
+                                        previous: Document,
+                                        next: Document.() -> Document,
+                                    ): Document = previous.next().also { previous.close() }
+
                                     var document = Document("", options)
                                     repeat(24) { round ->
-                                        var streamed = ""
-                                        for (character in source) {
-                                            streamed += character
+                                        // Growing rides the real append, in
+                                        // small uneven slices that ignore
+                                        // construct boundaries.
+                                        var offset = 0
+                                        while (offset < source.length) {
+                                            val width = minOf(5 + (offset + round) % 7, source.length - offset)
+                                            val chunk = source.substring(offset, offset + width)
+                                            offset += width
+                                            document = advance(document) { append(chunk) }
                                         }
-                                        document = document.edit(streamed)
                                         if (round + 1 < 24) {
-                                            document = document.edit("")
+                                            document = advance(document) { edit("") }
                                         }
                                     }
                                     document.use { it.dump() }

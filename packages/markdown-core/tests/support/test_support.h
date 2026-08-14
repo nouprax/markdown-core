@@ -75,10 +75,11 @@ static inline bool mc_edit(
     markdown_core_error **error
 ) {
     markdown_core_document *previous = *document;
-    // The engine reads the receiver and takes nothing; this helper keeps the
-    // replace-in-place shape every test was written against by doing the
-    // release itself. A test that wants two lines of descent calls the
-    // engine directly.
+    // The mutation supersedes the receiver, whose one remaining legal call
+    // is free — which this helper performs, keeping the replace-in-place
+    // shape every test was written against. On failure the receiver was
+    // still the live head; releasing it ends the chain, which is the
+    // fail-stop shape these tests want.
     markdown_core_document *successor = markdown_core_document_edit(previous, markdown, error);
     markdown_core_document_free(previous);
     *document = successor;

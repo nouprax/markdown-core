@@ -1,5 +1,6 @@
 _markdown_core_document_diagnostics
 _markdown_core_document_dump
+_markdown_core_document_append
 _markdown_core_document_edit
 _markdown_core_document_free
 _markdown_core_document_length

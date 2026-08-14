@@ -47,7 +47,7 @@ if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);
 }
 if (selected.includes("edits")) {
-    run("node", ["--test", "tests/edit.test.mjs"]);
+    run("node", ["--test", "tests/edit.test.mjs", "tests/append.test.mjs"]);
 }
 const packageSuites = selected.filter((suite) => ["consumer", "types", "packaging"].includes(suite));
 if (packageSuites.length === 3) {

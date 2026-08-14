@@ -52,11 +52,11 @@ static int eq_open(er_replay *replay, const char *context, const markdown_core_p
     return er_replay_open(replay, context, options, eq_report, NULL);
 }
 
+/* A trailing extension goes through the REAL append mutation, so every case
+ * built on this helper drives the streaming hot path with full per-mutation
+ * verification. Mid-document splices stay on er_replay_edit + commit. */
 static int eq_replay_append_commit(er_replay *replay, const uint8_t *bytes, size_t length) {
-    if (er_replay_edit(replay, replay->shadow.length, replay->shadow.length, bytes, length) != 0) {
-        return -1;
-    }
-    return er_replay_commit(replay);
+    return er_replay_append(replay, bytes, length);
 }
 
 /* --- replays over one input --------------------------------------------- */
@@ -89,6 +89,46 @@ static int eq_replay_per_line(
     }
     /* Empty inputs still must commit cleanly. */
     if (length == 0 && er_replay_commit(&replay) != 0) {
+        goto done;
+    }
+    result = 0;
+done:
+    er_replay_close(&replay);
+    return result;
+}
+
+/* THE PRIMARY APPEND GATE (streaming plan §7): token-sized strides, 3-8
+ * bytes, deliberately NOT line-aligned — the per-line replay is blind to the
+ * whole partial-line mechanism class, which is exactly where the warm path
+ * will live from P2 on. Deterministically seeded per input. */
+static int eq_replay_per_token(
+    const char *context,
+    const uint8_t *text,
+    size_t length,
+    const markdown_core_parse_options *options
+) {
+    er_replay replay;
+    ts_prng prng;
+    size_t offset = 0;
+    int result = -1;
+
+    ts_prng_seed(&prng, UINT64_C(0x70ce55a11d) ^ (uint64_t)length);
+    if (eq_open(&replay, context, options) != 0) {
+        return -1;
+    }
+    while (offset < length) {
+        size_t step = 3 + (size_t)(ts_prng_next(&prng) % 6);
+        if (step > length - offset) {
+            step = length - offset;
+        }
+        if (er_replay_append(&replay, text + offset, step) != 0) {
+            goto done;
+        }
+        offset += step;
+    }
+    /* The empty append is a mutation too: the chain must advance and the
+     * oracle must hold on identical bytes. */
+    if (er_replay_append(&replay, text, 0) != 0) {
         goto done;
     }
     result = 0;
@@ -276,6 +316,8 @@ static int case_canonical(const char *fixtures_dir, char **names, size_t name_co
         }
         snprintf(context, sizeof(context), "canonical %s per-line", name);
         eq_replay_per_line(context, markdown, length, &options);
+        snprintf(context, sizeof(context), "canonical %s per-token", name);
+        eq_replay_per_token(context, markdown, length, &options);
         if (length <= EQ_PER_BYTE_LIMIT) {
             snprintf(context, sizeof(context), "canonical %s per-byte", name);
             eq_replay_per_byte(context, markdown, length, &options);
@@ -301,6 +343,8 @@ static int case_spec(const char *spec_path) {
 
         snprintf(context, sizeof(context), "spec example %d per-line", example->example);
         eq_replay_per_line(context, (const uint8_t *)example->markdown, example->markdown_length, &options);
+        snprintf(context, sizeof(context), "spec example %d per-token", example->example);
+        eq_replay_per_token(context, (const uint8_t *)example->markdown, example->markdown_length, &options);
         if (i % EQ_SPEC_PER_BYTE_STRIDE == 0 && example->markdown_length <= EQ_PER_BYTE_LIMIT) {
             snprintf(context, sizeof(context), "spec example %d per-byte", example->example);
             eq_replay_per_byte(context, (const uint8_t *)example->markdown, example->markdown_length, &options);

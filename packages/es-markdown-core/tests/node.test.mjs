@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { unprunedDecode } from "../dist/document.js";
 import { kindVisitor } from "./visitor.mjs";
 
 test("api: synchronous parse, typed visitor dispatch, and walker", () => {
@@ -149,12 +150,72 @@ test("unicode: UTF-8 survives native document release", () => {
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
 });
 
+test("unicode: a surrogate pair split across appends reassembles intact", () => {
+    // Each append's chunk crosses the boundary as UTF-8 on its own, so a
+    // non-BMP character torn between two chunks would become U+FFFD twice.
+    // The binding holds an unpaired trailing high surrogate back one append
+    // — the parsed text trails by at most that one code unit — and the pair
+    // reaches the encoder whole when its low half arrives.
+    const source = "pre 😀🚀 post\n";
+    const whole = Document(source);
+    let document = Document("");
+    for (let index = 0; index < source.length; index += 1) {
+        // Per UTF-16 code unit — unlike `for...of`, this tears every pair.
+        const previous = document;
+        document = document.append(source[index]);
+        previous.close();
+        // The value mirror holds on every tick, held unit or not: the
+        // pruned decode deep-equals a mirror-free decode of the same parse.
+        assert.deepStrictEqual(document, unprunedDecode(document));
+    }
+    assert.equal(document.content[0].content[0].literal, "pre 😀🚀 post");
+    assert.equal(document.dump(), whole.dump());
+    whole.close();
+    document.close();
+});
+
+test("unicode: an edit discards a held surrogate half — it replaces all text", () => {
+    const opened = Document("x");
+    // "y" plus the high half of 😀: the half is held, so the parsed text
+    // lags one code unit behind what was handed in.
+    const held = opened.append("y\u{1F600}".slice(0, 2));
+    assert.equal(held.content[0].content[0].literal, "xy");
+    opened.close();
+
+    const edited = held.edit("plain ");
+    held.close();
+    const appended = edited.append("tail\n");
+    edited.close();
+    // Neither the held half nor a replacement character resurfaces.
+    assert.equal(appended.content[0].content[0].literal, "plain tail");
+    const reference = Document("plain tail\n");
+    assert.equal(appended.dump(), reference.dump());
+    reference.close();
+    appended.close();
+});
+
+test("unicode: a lone low surrogate still encodes to U+FFFD", () => {
+    // Nothing held and nothing to wait for: no later chunk can complete a
+    // low surrogate, so it is the caller's garbage, and it crosses the
+    // boundary exactly as TextEncoder always sent it — as U+FFFD.
+    const opened = Document("");
+    const next = opened.append("a\uDE00");
+    assert.equal(next.content[0].content[0].literal, "a�");
+    opened.close();
+    next.close();
+});
+
 test("errors: empty input is valid and arguments are checked", () => {
     assert.deepEqual(Document("").content, []);
     assert.throws(() => Document(null), TypeError);
     assert.throws(() => Document("x", { tables: "yes" }), TypeError);
     assert.throws(() => Document("x", { tables: null }), TypeError);
     assert.throws(() => new Document(), TypeError);
+    // append checks its own argument before the surrogate hold-back can
+    // coerce a non-string into a string chunk.
+    const document = Document("");
+    assert.throws(() => document.append(1), TypeError);
+    document.close();
 });
 
 test("ownership: declarations are readonly without runtime freeze", () => {
