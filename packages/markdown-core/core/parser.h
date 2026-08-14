@@ -139,6 +139,26 @@ struct markdown_core_parser {
     size_t line_mark_capacity;
 };
 
+/** Parses inlines and postprocesses the tree WITHOUT ending the parse.
+ *
+ * markdown_core_parser_refine_blocks does the same two passes and then takes
+ * the tree away — `res = parser->root; parser->root = NULL` — after which the
+ * parser ignores every further feed. That is right for a parse that is over
+ * and wrong for a projection published mid-stream, which has to leave a
+ * parser the next chunk can still be fed to. This is that second form: no
+ * stamp, no detach, and a false return where refine_blocks would have freed
+ * the tree, because the caller still owns a parser it may want to put back.
+ *
+ * NO STAMP is a caller obligation, not a saving: subtree hashes are what the
+ * append diff pairs on, so a tree that may still be handed to it has to be
+ * restamped by whoever warmed it.
+ *
+ * PRECONDITION: no unit in the tree already holds inline children. A unit is
+ * parsed for inlines exactly once — the records vector is assigned, not
+ * merged — so a caller that refines twice must retire the first refine's
+ * children first. */
+bool markdown_core_parser_warm_refine(markdown_core_parser *parser);
+
 /** Everything a projection may read but must not change, in one value: the
  * line counters and sticky failure bits, the held partial line and its
  * pending CR, every node's type, flags, coordinates and content bytes, both

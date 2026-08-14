@@ -2379,6 +2379,26 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
     }
 }
 
+bool markdown_core_parser_warm_refine(markdown_core_parser *parser) {
+    if (parser->root == NULL) {
+        return false;
+    }
+
+    process_inlines(parser, parser->refmap, parser->options);
+    S_postprocess_blocks(parser);
+
+    /* The same allocation-loss convergence refine_blocks performs, minus its
+     * verdict: a warm refine reports the loss and leaves the tree alone,
+     * because the caller still owns a parser it may want to put back. */
+    if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
+        parser->oom = true;
+    }
+    if (parser->capture_lost) {
+        parser->oom = true;
+    }
+    return !(parser->oom || parser->internal_error);
+}
+
 markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *parser) {
     markdown_core_node *res;
 

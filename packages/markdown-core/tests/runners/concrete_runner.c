@@ -3184,12 +3184,91 @@ static void wc_restore(markdown_core_parser *parser, const wc_state *state) {
     markdown_core_strbuf_put(&parser->linebuf, state->held, state->held_size);
 }
 
+/* Retires what a warm refine minted: a unit's inline children borrow its
+ * content buffer, so they die before anything can grow it, and the records
+ * vector is assigned rather than merged, so it has to go with them. The prose
+ * subset keeps this to the document's own paragraphs. */
+static void wc_unrefine(markdown_core_node *root) {
+    markdown_core_node *block;
+    for (block = root->first_child; block; block = block->next) {
+        markdown_core_node *child;
+        if (markdown_core_node_get_type(block) != MARKDOWN_CORE_NODE_PARAGRAPH) {
+            continue;
+        }
+        child = block->first_child;
+        while (child) {
+            markdown_core_node *next = child->next;
+            markdown_core_node_free(child);
+            child = next;
+        }
+        block->first_child = NULL;
+        block->last_child = NULL;
+        if (block->inline_concrete) {
+            markdown_core_inline_concrete_records_free(markdown_core_node_mem(block), block->inline_concrete);
+            block->inline_concrete = NULL;
+        }
+    }
+}
+
+/* The projection a tick would publish at this cut, against the only thing it
+ * is allowed to be: a one-shot parse of exactly the bytes fed so far. */
+static int wc_projection_matches(markdown_core_parser *parser, const char *text, size_t cut) {
+    markdown_core_parse_options options;
+    markdown_core_document *reference;
+    uint8_t *warm_dump = NULL;
+    uint8_t *reference_dump = NULL;
+    size_t warm_length = 0;
+    size_t reference_length = 0;
+    int result = 0;
+
+    /* The frozen defaults are exactly what sweep_parser_new configures — the
+     * three native flags and the eight extensions — so the two sides differ
+     * in how the bytes arrived and in nothing else. */
+    markdown_core_parse_options_init(&options);
+    reference = markdown_core_document_new(mc_sv(text, cut), &options, NULL);
+    if (!reference) {
+        return -1;
+    }
+    if (!markdown_core_ast_dump_root(parser->root, &warm_dump, &warm_length, NULL) ||
+        !markdown_core_document_dump(reference, &reference_dump, &reference_length, NULL)) {
+        result = -1;
+    } else if (warm_length != reference_length || memcmp(warm_dump, reference_dump, warm_length) != 0) {
+        size_t at = 0;
+        while (at < warm_length && at < reference_length && warm_dump[at] == reference_dump[at]) {
+            at++;
+        }
+        fprintf(
+            stderr,
+            "  projection diverges at byte %zu of %zu (one-shot has %zu)\n  warm: %.60s\n  once: %.60s\n",
+            at,
+            warm_length,
+            reference_length,
+            (const char *)warm_dump + (at > 30 ? at - 30 : 0),
+            (const char *)reference_dump + (at > 30 ? at - 30 : 0)
+        );
+        result = -1;
+    }
+    markdown_core_dump_free(warm_dump);
+    markdown_core_dump_free(reference_dump);
+    markdown_core_document_free(reference);
+    return result;
+}
+
 static const char *const WC_TEXTS[] = {
     "alpha beta gamma\n\ndelta epsilon\n",
     "one two three four five\nsix seven eight\n\nnine\n",
     "prose that keeps going and going and stops mid word here",
     "first para\n\nsecond para\r\nwith a crlf line\r\n",
     "a\n\nb\n\nc\n\nd",
+    /* Multi-byte text, so cuts land inside characters as well as inside
+     * words — the split the streaming contract calls legal and the one a
+     * token stream produces constantly. */
+    "\xc3\xbc"
+    "ber caf\xc3\xa9 und stra"
+    "\xc3\x9f"
+    "e\n\nzweiter absatz mit \xe2\x80\x9c"
+    "quotes"
+    "\xe2\x80\x9d",
     NULL,
 };
 
@@ -3232,6 +3311,24 @@ static int case_warm_close_undo(void) {
 
             before = markdown_core_parser_warm_fingerprint(parser);
             markdown_core_parser_finalize_blocks(parser);
+
+            /* What the tick is FOR: the closed tree refined into a projection,
+             * which must be the projection a one-shot parse of the same bytes
+             * would have produced. Then everything the refine minted is
+             * retired, because the undo below puts back a tree of blocks. */
+            if (!markdown_core_parser_warm_refine(parser)) {
+                fprintf(stderr, "warm_close_undo: text %zu cut %zu could not refine\n", text_index, cut);
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                return -1;
+            }
+            if (wc_projection_matches(parser, text, cut) != 0) {
+                fprintf(stderr, "warm_close_undo: text %zu cut %zu published a wrong projection\n", text_index, cut);
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                return -1;
+            }
+            wc_unrefine(parser->root);
             wc_restore(parser, &state);
             after = markdown_core_parser_warm_fingerprint(parser);
             if (before != after) {
