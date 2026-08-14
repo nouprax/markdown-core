@@ -26,7 +26,8 @@
 #endif
 #endif
 
-/** SplitMix64 finalizer shared by the document's open-addressing tables. */
+/** SplitMix64 finalizer: whitens the entropy that mints a chain's series
+ * salt (see markdown_core_chain.series). */
 static inline uint64_t markdown_core_mix64(uint64_t x) {
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;

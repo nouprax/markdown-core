@@ -13,18 +13,6 @@ extern "C" {
  * after the first lookup. */
 struct markdown_core_map_entry {
     struct markdown_core_map_entry *next; /* every live entry, newest first */
-    /* Same-label chain, ascending document order, CIRCULAR and doubly
-     * linked: the index slot names the head (the winner), so `head->bucket_prev`
-     * names the tail without a field of its own. A lone entry links to itself.
-     *
-     * Circular because both ends are hot and neither insertion is a search.
-     * A definition joins its label either as the new minimum (a full index
-     * build walks the live chain newest-first) or as the new maximum (a
-     * later add stamps the largest order there has ever been), and both
-     * are "splice in front of the head" — the second one just does not move
-     * the head. */
-    struct markdown_core_map_entry *bucket_next;
-    struct markdown_core_map_entry *bucket_prev;
     unsigned char *label;
     uint64_t order; /* document-order key; the minimum per label wins lookups */
 };
@@ -53,7 +41,7 @@ struct markdown_core_map {
     markdown_core_mem *mem;
     markdown_core_map_entry *refs;    /* every live entry, newest first */
     markdown_core_map_entry **sorted; /* fallback path: all entries by (label, order) */
-    markdown_core_key_index index;    /* hash path: label -> bucket head (winner) */
+    markdown_core_key_index index;    /* hash path: label -> winner */
     size_t size;                      /* live entry count, duplicates included */
     uint64_t next_order;              /* monotonic document-order allocator */
     int prepared;
@@ -82,14 +70,6 @@ int markdown_core_key_index_insert(
 );
 void *markdown_core_key_index_lookup(
     const markdown_core_key_index *index,
-    const unsigned char *key,
-    markdown_core_bufsize key_len
-);
-/* Removes a key via backward-shift deletion. Returns 1 when the key was
- * present. Never violates the probe-window invariant: shifting only moves
- * entries closer to their home slot. */
-int markdown_core_key_index_remove(
-    markdown_core_key_index *index,
     const unsigned char *key,
     markdown_core_bufsize key_len
 );

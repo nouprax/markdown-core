@@ -102,8 +102,8 @@ static markdown_core_node *make_document(markdown_core_mem *mem) {
     return e;
 }
 
-/* Appends and reports failure directly instead of relying on llist_append's
- * silent-drop behavior. */
+/* Appends `data`; on allocation failure the list is unchanged and 0 is
+ * returned. */
 static int S_llist_append_checked(markdown_core_mem *mem, markdown_core_llist **head, void *data) {
     markdown_core_llist *node = (markdown_core_llist *)mem->calloc(mem, 1, sizeof(*node));
     markdown_core_llist *tail;
@@ -127,7 +127,7 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown
     markdown_core_inline_attachment *attachment = NULL;
     markdown_core_delimiter_result attachment_result;
 
-    if (!parser || !extension || !parser->inline_config || parser->total_size != 0) {
+    if (!parser || !extension || !parser->inline_config || parser->feed_started) {
         return 0;
     }
     for (existing = parser->extensions; existing; existing = existing->next) {
@@ -923,13 +923,6 @@ static markdown_core_node *add_child(
     return child;
 }
 
-void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add) {
-    /*
-     * Compatibility no-op for callers built against the former mutable-table
-     * SPI. The compiled parser-local config is always active.
-     */
-}
-
 static void S_parse_node_inlines(
     markdown_core_parser *parser,
     markdown_core_node *cur,
@@ -1111,10 +1104,8 @@ static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buf
     const unsigned char *end = buffer + len;
     static const uint8_t repl[] = {239, 191, 189};
 
-    if (len > UINT_MAX - parser->total_size) {
-        parser->total_size = UINT_MAX;
-    } else {
-        parser->total_size += len;
+    if (len > 0) {
+        parser->feed_started = true;
     }
 
     if (parser->last_buffer_ended_with_cr && *buffer == '\n') {

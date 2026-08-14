@@ -217,11 +217,6 @@ void markdown_core_inline_parser_concrete_capture_spelling(
 MARKDOWN_CORE_EXPORT
 markdown_core_extension *markdown_core_extension_find(const char *name);
 
-/** Returns a caller-owned list of the bundled syntax extensions.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_extension_list(markdown_core_mem *mem);
-
 /** Should create and add a new open block to 'parent_container' if
  * 'input' matches a syntax rule for that block type. It is allowed
  * to modify the type of 'parent_container'.
@@ -390,9 +385,9 @@ int markdown_core_parser_get_offset(markdown_core_parser *parser);
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_get_first_nonspace(markdown_core_parser *parser);
 
-/** Return the difference between the values returned by
- * markdown_core_parser_get_first_nonspace_column() and
- * markdown_core_parser_get_column().
+/** Return the width of the current line's indentation: the tab-expanded
+ * column distance between the parse position and the first non-space
+ * character.
  *
  * This is not a byte offset, as it can count one tab as multiple
  * characters.
@@ -445,10 +440,12 @@ markdown_core_node *markdown_core_parser_add_child(
     int start_column
 );
 
-/** Advance the 'offset' of the parser in the current line.
+/** Advance the 'offset' of the parser in the current line. When 'columns'
+ * is nonzero, 'count' is measured in tab-expanded columns rather than
+ * bytes, and stopping inside a tab leaves it partially consumed.
  *
- * See the documentation of markdown_core_parser_get_offset() and
- * markdown_core_parser_get_column() for more information.
+ * See the documentation of markdown_core_parser_get_offset() for more
+ * information.
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_advance_offset(markdown_core_parser *parser, const char *input, int count, int columns);
@@ -585,14 +582,6 @@ int markdown_core_inline_parser_scan_delimiters(
     int *punct_before,
     int *punct_after
 );
-
-/**
- * Compatibility no-op. Attached inline grammar is now compiled into an
- * always-active parser-local plan and no longer requires temporary bitmap
- * mutation.
- */
-MARKDOWN_CORE_EXPORT
-void markdown_core_parser_manage_extensions_special_characters(markdown_core_parser *parser, int add);
 
 #ifdef __cplusplus
 }

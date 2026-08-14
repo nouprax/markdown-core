@@ -138,12 +138,6 @@ typedef struct _markdown_core_llist {
     void *data;
 } markdown_core_llist;
 
-/** Append an element to the linked list, return the possibly modified
- * head of the list.
- */
-MARKDOWN_CORE_EXPORT
-markdown_core_llist *markdown_core_llist_append(markdown_core_mem *mem, markdown_core_llist *head, void *data);
-
 /** Free the list starting with 'head'
  */
 MARKDOWN_CORE_EXPORT
