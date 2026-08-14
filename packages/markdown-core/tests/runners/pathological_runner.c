@@ -928,8 +928,7 @@ static int case_append_backtick_runs(pc_context *context) {
     if (pe_open(&replay, "append_backtick_runs", &options) != 0) {
         return -1;
     }
-    if (pe_append_input(&replay, context) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
+    if (pe_append_input(&replay, context) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
         goto done;
     }
     /* The space keeps the new backtick a run of its own; it closes the
@@ -1004,13 +1003,11 @@ static int case_append_list_spine(pc_context *context) {
     if (pe_open(&replay, "append_list_spine", &options) != 0) {
         return -1;
     }
-    if (pe_append_input(&replay, context) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
+    if (pe_append_input(&replay, context) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
         goto done;
     }
-    if (pe_append(&replay, "lazy one\n") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
+    if (pe_append(&replay, "lazy one\n") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
         goto done;
     }
     if (pe_append(&replay, "lazy two\n") != 0 ||
@@ -1117,8 +1114,7 @@ static int case_append_lazy_wall(pc_context *context) {
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
-    if (pe_append(&replay, "c\n") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
+    if (pe_append(&replay, "c\n") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
     if (pe_append(&replay, "\n") != 0 || pe_append(&replay, "d\n") != 0 ||
@@ -1216,16 +1212,20 @@ static int case_append_footnote_labels(pc_context *context) {
         goto done;
     }
     /* A tail reference to a defined label folds and resolves. */
-    if (pe_append(&replay,
-                  "tail [^\xC3\x80\xD0\x91"
-                  "0008]\n\n") != 0 ||
+    if (pe_append(
+            &replay,
+            "tail [^\xC3\x80\xD0\x91"
+            "0008]\n\n"
+        ) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES + 1, "FootnoteReference") != 0) {
         goto done;
     }
     /* A fresh definition grows the interning table; nothing references it. */
-    if (pe_append(&replay,
-                  "[^\xC3\x80\xD0\x91"
-                  "9999]: d\n") != 0 ||
+    if (pe_append(
+            &replay,
+            "[^\xC3\x80\xD0\x91"
+            "9999]: d\n"
+        ) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES + 1, "FootnoteReference") != 0) {
         goto done;
     }

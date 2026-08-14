@@ -102,8 +102,8 @@ endif()
 # Shared native test support: fixture loading, in-process conversion, byte
 # comparison, deterministic diffs, PRNG, timing, and the document replay
 # harness (shadow text, identity ledger, per-append equivalence verification).
-add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h
-                                              support/append_replay.c support/append_replay.h)
+add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/append_replay.c
+                                              support/append_replay.h)
 target_include_directories(
     markdown-core-test-support
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"

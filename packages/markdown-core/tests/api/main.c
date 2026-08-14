@@ -2071,8 +2071,7 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
                                  "[reference]: /a\n"
                                  "[^n]: Footnote body\n";
     markdown_core_error *error = NULL;
-    markdown_core_document *document =
-        markdown_core_document_new(mc_sv(source, strlen(source)), NULL, &error);
+    markdown_core_document *document = markdown_core_document_new(mc_sv(source, strlen(source)), NULL, &error);
 
     OK(runner, document != NULL, "block-label lookup document opens");
     if (!document) {
