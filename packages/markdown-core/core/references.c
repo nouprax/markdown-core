@@ -83,7 +83,7 @@ void markdown_core_footnote_definition_create(markdown_core_map *map, markdown_c
     }
     /* url and title stay zero: a footnote reference expands to nothing at
      * the reference site. The empty chunks also make the shared payload
-     * comparison a tautology, which is the right answer — identical footnote
+     * comparison trivially true, which is the right answer — identical footnote
      * labels *are* identical definitions as far as any reference can tell. */
     markdown_core_map_add(map, &ref->entry);
 }

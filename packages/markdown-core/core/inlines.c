@@ -1908,7 +1908,7 @@ static markdown_core_node *consume_rule_close(
 /*
  * A shared close belongs to the newest semantic opener whose pure lexical
  * probe accepts the current bytes. Every rule is probed at most once; only
- * the winning binding can consume, allocate, or mutate delimiter topology.
+ * the winning binding can consume, allocate, or mutate the delimiter chain.
  */
 static shared_close_result handle_shared_close(markdown_core_parser *parser, subject *subj, unsigned char trigger) {
     shared_close_result result = {NULL, 0};

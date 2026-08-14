@@ -21,8 +21,9 @@ All platform APIs have one synchronous entry point, and it is the document
 itself: `Document(markdown, options)` in Swift, Kotlin, and ECMAScript, and
 `markdown_core_document_new` in C. Parsing produces a complete AST. The Swift,
 Kotlin, and ECMAScript bindings copy that AST into platform values; the
-document keeps the native parse only so that `edit` can hold identities stable
-across revisions, and releasing it never invalidates a value it produced.
+document keeps the native parse only so that `append` can hold identities
+stable across revisions, and releasing it never invalidates a value it
+produced.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
@@ -196,9 +197,10 @@ markdown_core_document_free(next);
 A mutation is an exclusive operation on its chain — two mutations must be
 externally serialized, and between them any number of threads may read the
 live head. Documents on different chains never share state, so any number of
-chains parse and mutate concurrently. A failed `edit` supersedes nothing; a
-failed `append` ends the chain ("the chain is done": only free remains, the
-caller still holds every byte it sent, recovery is a new chain).
+chains parse and mutate concurrently. A failed construction supersedes
+nothing; a failed `append` ends the chain ("the chain is done": only free
+remains, the caller still holds every byte it sent, recovery is a new
+chain).
 
 Every document also reports `diagnostics`: everything an editor should
 underline, which for Markdown is one thing — a directive's `{...}` attribute
@@ -302,7 +304,7 @@ There is intentionally no cross-host aggregate: required CI runs every
 supported platform target on an appropriate host, simulator, browser, or
 device.
 
-Run repository-wide formatting, lint, contract, topology, and public-surface
+Run repository-wide formatting, lint, contract, test-layout, and public-surface
 checks with:
 
 ```sh

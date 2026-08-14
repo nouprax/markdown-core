@@ -23,7 +23,7 @@ struct markdown_core_chunk;
  * way using that API, it should be the preferred method.
  *
  * The following API requires a more in-depth understanding
- * of libmarkdown_core's parsing strategy, which is exposed
+ * of how libmarkdown_core parses, which is laid out
  * [here](http://spec.commonmark.org/0.24/#appendix-a-parsing-strategy).
  *
  * It should be used when "a posteriori" modification of the AST
@@ -90,14 +90,14 @@ struct markdown_core_chunk;
  * created by the extension together.
  *
  * The callback receives an immutable match snapshot and may only update the
- * AST. Delimiter topology and range retirement remain exclusively owned by
+ * AST. The delimiter chain and range retirement remain exclusively owned by
  * the engine.
  *
  * Reducers are transactional at the AST boundary: every operation that can
  * fail, including allocation and semantic validation, must finish before the
  * first AST mutation. A reducer that has mutated the AST must return
- * MARKDOWN_CORE_DELIMITER_OK. The engine can always restore delimiter
- * topology, but deliberately does not clone or roll back the AST.
+ * MARKDOWN_CORE_DELIMITER_OK. The engine can always restore the delimiter
+ * chain, but deliberately does not clone or roll back the AST.
  *
  * Finally, the extension should return NULL if its scan didn't
  * match its syntax rules.

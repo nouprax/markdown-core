@@ -45,7 +45,7 @@ jobs:
               run: scripts/init-environment.sh --check node java wrappers dependencies
             - name: Check cross-platform contracts
               run: pnpm check:contracts
-            - name: Audit test topology and public surface
+            - name: Audit test layout and public surface
               run: |
                   pnpm audit:repository:clean
                   pnpm audit:ci

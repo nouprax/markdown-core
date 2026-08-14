@@ -46,7 +46,7 @@ export interface NativeExports extends WebAssembly.Exports {
     es_node_table_row_header(node: number): number;
     /** Writes i32 mode, u32 has-attributes, the name's (data, length) view
      * pair, and the u32 attribute count to `output` in one crossing. Label
-     * topology is carried exclusively by canonical child records. */
+     * placement is carried exclusively by canonical child records. */
     es_node_directive_properties(node: number, output: number): void;
     /** Writes one attribute pair to `output` as u32 key data, u32 key length,
      * u32 value data, u32 value length; 0 when the index is out of range. */

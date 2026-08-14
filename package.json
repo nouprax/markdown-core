@@ -16,7 +16,7 @@
         "audit:ast-projections": "node scripts/audit-ast-projections.mjs",
         "audit:source-lists": "node scripts/audit-source-lists.mjs",
         "audit:surface": "scripts/audit-public-surface.sh",
-        "audit:tests": "scripts/audit-test-topology.sh",
+        "audit:tests": "scripts/audit-test-layout.sh",
         "benchmark:c-host": "cmake --preset default && cmake --build --preset default --parallel && ctest --preset benchmark",
         "benchmark:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift run --disable-sandbox -c release MarkdownCoreBenchmarks",
         "benchmark:kotlin-jvm": "scripts/gradle.sh :packages:kotlin-markdown-core:kotlinBenchmark",

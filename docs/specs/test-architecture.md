@@ -68,7 +68,7 @@
 Required CI 使用 build-once/test-many DAG，而不是把 build 和多个 suite 顺序塞进同一个 runner：
 
 1. `Health Check - <scope>` jobs 并行完成 repository/C/ES/Kotlin/Swift 的 formatting、lint、contract
-   与 topology audit；显式 health barrier 成功后才允许任何 build producer 启动；
+   与 test-layout audit；显式 health barrier 成功后才允许任何 build producer 启动；
 2. `Build - <platform>` host-specific producers 只构建可交付产品，例如 tests-off C product tree、
    ES dist/WASM、Kotlin staged publications、Swift product 与声明的 deployment targets；native/cinterop
    产品必须由兼容 host 构建，禁止伪装成单 host cross-build；
@@ -208,7 +208,7 @@ C 数据驱动 runner 自身提供第二级 discovery:`spec_runner --list/--exam
 `pathological_runner --list/--case`、`concrete_runner --list/--case`、
 `bench_runner --list/--workload`、`concurrency_runner --case`(三个固定 case:
 `first_parse`/`stress`/`lifecycle`,逐一注册为 CTest 测试)。CMake 中注册的
-case 清单由 `scripts/audit-test-topology.sh` 与 runner `--list` 输出强制一致。
+case 清单由 `scripts/audit-test-layout.sh` 与 runner `--list` 输出强制一致。
 
 IDE 契约:仓库提交 `CMakePresets.json`(configure/build/test presets),
 VS Code/CLion 直接消费;Xcode 通过 SwiftPM 发现 Swift Testing suites;
@@ -452,14 +452,14 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
 - 外部 corpus 只能按 `packages/markdown-core/tests/corpora/README.md` 的
   manifest/license/hash 政策一次性导入;
   `packaging_corpus_guard`/`benchmark_corpus_guard` CTest tests 与
-  `scripts/audit-test-topology.sh` 强制该政策。
+  `scripts/audit-test-layout.sh` 强制该政策。
 - 长时间 fuzz campaign 是显式非默认任务(`make afl`、`make libFuzzer`),复用
   `packages/markdown-core/tests/core/` 下的 harness 与 corpus;确定性 fuzz
   smoke(parse/traverse/dump/free)属于 correctness(label `fuzz`)。
 
 ## 8. 审计
 
-`scripts/audit-test-topology.sh`(`pnpm audit:tests`,verify 链与 CI 均执行)
+`scripts/audit-test-layout.sh`(`pnpm audit:tests`,verify 链与 CI 均执行)
 只验证会改变质量结论的事实：四个平台都接入共享 canonical contract，测试与 benchmark
 不在运行时获取可变网络输入，外部 corpus 具备 manifest/license/hash，CTest 的 required
 labels 非空且没有 disabled test，correctness/conformance/benchmark selection 互斥，runner

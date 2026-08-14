@@ -9,7 +9,7 @@ consumer=packages/swift-markdown-core/Tests/Consumer
 cd "$root"
 CLANG_MODULE_CACHE_PATH="$root/build/swift-module-cache" \
     swift build --build-tests --disable-sandbox
-# The repository-wide topology audit runs on a Linux runner without a Swift
+# The repository-wide test-layout audit runs on a Linux runner without a Swift
 # toolchain, so the producer itself must assert the built test products
 # discover a non-empty Swift Testing graph (mirroring the CTest inventory
 # assertion in build-c-test-artifact.sh).

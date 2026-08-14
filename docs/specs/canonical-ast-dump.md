@@ -60,7 +60,7 @@ The dump deliberately carries no property or array-index edge labels. Parent
 kind, child kind, sibling order, `children`, and behavior-bearing fields such
 as `isHeader` preserve the complete public tree semantics without coupling
 the generic tree formatter to schema-specific edge names. Directive-label
-presence is topology: a `DirectiveLabel` child is either present or absent.
+presence is structural: a `DirectiveLabel` child is either present or absent.
 
 ## Scalar encoding
 

@@ -474,7 +474,7 @@ DirectiveLabel(content: readonly Markup[])
 
 `DirectiveLabel` is a public `Markup` kind placed immediately after
 `DirectiveBlock` in the one canonical inventory. The C tree and every platform
-AST expose one topology: when present, the label node is the directive's first
+AST expose one shape: when present, the label node is the directive's first
 direct child and owns its complete inline child list. A block directive's block
 `content` follows it; an inline directive has no other children. There is at
 most one label node.

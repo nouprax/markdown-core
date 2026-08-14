@@ -61,7 +61,7 @@ if [ -d packages/markdown-core/tests/corpora ]; then
     note "vendored corpora are manifested and verified"
 fi
 
-# 4. CTest topology: configure/build if needed, then cross-check labels and
+# 4. CTest layout: configure/build if needed, then cross-check labels and
 # per-case registrations against runner discovery.
 BUILD_DIR=build/cmake
 if [ ! -f "$BUILD_DIR/CTestTestfile.cmake" ]; then
@@ -165,7 +165,7 @@ if command -v swift >/dev/null 2>&1; then
 fi
 
 if [ "$failures" -gt 0 ]; then
-    echo "$failures test topology violation(s)" >&2
+    echo "$failures test layout violation(s)" >&2
     exit 1
 fi
-echo "test topology audit passed"
+echo "test layout audit passed"
