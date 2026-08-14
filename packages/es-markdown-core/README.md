@@ -36,7 +36,7 @@ override.
 
 `Document` returns a discriminated `Markup` union with recursively readonly
 TypeScript properties. The JavaScript objects are not runtime-frozen. The
-package exposes parsing, editing, and AST traversal, not rendering or AST
+package exposes parsing, appending, and AST traversal, not rendering or AST
 mutation.
 
 The tree is a value all the way down, so `JSON.stringify` serializes it,
@@ -53,21 +53,23 @@ salt plus a raw value, always the same object for the same identity) and
 with the same `id` and `revision` are guaranteed to have identical content.
 
 Identity says nothing about POSITION. Every node carries its own `scope` — its
-absolute start/end line and column, read straight off the value — but an edit
-that shifts text moves positions without changing any node's content, and
-revisions deliberately do not report that. A consumer that draws anything
-positional — gutter numbers, underlines, a scroll anchor, a source map — must
-read it from the NEW document's node even for one it skipped as unchanged.
+absolute start/end line and column, read straight off the value — but an
+append can move a boundary on the hot tail without changing any node's
+content, and revisions deliberately do not report that. A consumer that draws
+anything positional — gutter numbers, underlines, a scroll anchor, a source
+map — must read it from the NEW document's node even for one it skipped as
+unchanged.
 
 A document is the live head of a CHAIN, and the whole lifecycle is one
 sentence: a mutation advances the chain, old handles die, decoded values live
-forever. `edit` and `append` are the two mutations; each returns the next
-head and supersedes its receiver, whose only remaining obligation is
+forever. A chain grows one way: `append` is the one mutation; it returns the
+next head and supersedes its receiver, whose only remaining obligation is
 `document.close()` — each document on a chain is closed separately, and
-closing a superseded one is O(1). An unclosed document is released when it
-becomes unreachable, but that is a backstop, not the contract. Everything a
-document produced — content, scopes, diagnostics, dump — is a value and stays
-usable forever.
+closing a superseded one is O(1). Replacing the text is a new document (new
+chain, new series). An unclosed document is released when it becomes
+unreachable, but that is a backstop, not the contract. Everything a document
+produced — content, scopes, diagnostics, dump — is a value and stays usable
+forever.
 
 ## Traverse and Inspect
 
@@ -89,45 +91,44 @@ diagnostic tree for the complete document or a focused subtree (subtree scopes
 print with the subtree as origin). The text is intended for logs, snapshots,
 and debugging rather than persistence or data interchange.
 
-## Edit and Append
+## Append
 
-There is no session type. A document is created from text and options and
-mutated in place on its chain: `edit` hands it new text whole, `append` adds
-text at the end, and either returns the document the resulting text
-describes. Options are fixed for a chain's whole series — changing what the
-parser means is a new document, not a mutation.
+There is no session type. A document is created from text and options, and a
+document chain grows one way: `append` adds text at the end and returns the
+document the resulting text describes. Replacing the text is a new document
+(new chain, new series). Options are fixed for a chain's whole series —
+changing what the parser means is a new document, not a mutation.
 
 ```js
 import { Document } from "@nouprax/es-markdown-core";
 
 const document = Document("# Title\n\nHello");
-const next = document.edit("# Title\n\nHello world");
+const next = document.append(" world");
 // The heading did not change, so it compares equal — same id, same revision.
-// Its `scope` may still place it somewhere new.
 console.log(next.content[0].id === document.content[0].id); // true
 console.log(next.content[0].revision === document.content[0].revision); // true
 ```
 
-A successful mutation SUPERSEDES its receiver: the old head keeps answering
+A successful append SUPERSEDES its receiver: the old head keeps answering
 from its decoded values and still wants its `close()`, but mutating it again
-is a deterministic error — history is linear, there is no forking. A failed
-`edit` supersedes nothing; a failed `append` ends the chain ("the chain is
-done": only `close` remains, you still hold every byte you sent, recovery is
-a new document).
+is a deterministic error — history is linear, there is no forking. An
+argument failure supersedes nothing; a failure past the argument checks ends
+the chain ("the chain is done": only `close` remains, you still hold every
+byte you sent, recovery is a new document).
 
-`append` produces the same tree, the same dump, and the same identities as an
-`edit` of the concatenated text — the difference is cost. Appended bytes
-never move settled content, so after an append the binding re-decodes only
-what changed: native decode and value construction are O(changed) per tick,
-while the JS-side index bookkeeping behind `document.node(id)` is O(live
-nodes) of pure map writes. A node the append did not reach is the
-predecessor's very value object — same `id`, same `revision`, same `scope`,
-`===`. Any split of the text is legal, mid-word, mid-marker, mid-line — even
-between the two halves of a surrogate pair: a chunk ending in an unpaired
-high surrogate has that one code unit held back until the next append
-completes it, so a split emoji never becomes U+FFFD and the parsed text
-trails the appended units by at most one UTF-16 code unit (`edit` replaces
-all text and discards a held unit):
+`append` produces the same tree, the same dump, and the same node structure
+as a one-shot parse of the concatenated text — the difference is cost.
+Appended bytes never move settled content, so after an append the binding
+re-decodes only what changed: native decode and value construction are
+O(changed) per tick, while the JS-side index bookkeeping behind
+`document.node(id)` is O(live nodes) of pure map writes. A node the append
+did not reach is the predecessor's very value object — same `id`, same
+`revision`, same `scope`, `===`. Any split of the text is legal, mid-word,
+mid-marker, mid-line — even between the two halves of a surrogate pair: a
+chunk ending in an unpaired high surrogate has that one code unit held back
+until the next append completes it, so a split emoji never becomes U+FFFD
+and the parsed text trails the appended units by at most one UTF-16 code
+unit:
 
 ```js
 import { Document } from "@nouprax/es-markdown-core";
@@ -144,7 +145,7 @@ document.close();
 
 ### What changed is asked of the new tree
 
-There is no change list riding along with an edit; `(id, revision)` is the
+There is no change list riding along with an append; `(id, revision)` is the
 whole update protocol. The stability a reactive framework needs is on the
 TREE: an unchanged node keeps its `id` and its `revision`, `MarkupID` is
 interned so `a.id === b.id` is O(1), and `id` goes unmodified into a `key`.

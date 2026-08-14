@@ -50,14 +50,15 @@ private fun open(
  * }
  * ```
  *
- * There is no session type. A document is the live head of a CHAIN: [edit]
- * hands it whole new text, [append] hands it trailing bytes, and either
- * mutation returns the next document and SUPERSEDES this one — the successor
- * is the new head, and a superseded document refuses further mutation with
- * the same deterministic error whichever way it is asked. Its decoded values
- * — content, scopes, diagnostics, dump, [node] — stay valid forever, and
- * [close] stays both legal and owed. Options are fixed for the chain's whole
- * life — changing what the parser means is a new [Document], not a mutation.
+ * There is no session type. A document is the live head of a CHAIN: [append]
+ * hands it trailing bytes, and the mutation returns the next document and
+ * SUPERSEDES this one — the successor is the new head, and a superseded
+ * document refuses further mutation with a deterministic error. Its decoded
+ * values — content, scopes, diagnostics, dump, [node] — stay valid forever,
+ * and [close] stays both legal and owed. Options are fixed for the chain's
+ * whole life, and there is no whole-text mutation: text that is not an
+ * extension of this chain's is a new [Document], because a fresh parse is
+ * exactly what such an edit means.
  *
  * What changed is asked of the new tree: an unchanged node keeps its
  * [Markup.id] and [Markup.revision], and a changed one carries the new
@@ -173,52 +174,6 @@ public class Document private constructor(
         check(superseded.load() != CHAIN_LOST) { CHAIN_DONE_MESSAGE }
         check(superseded.load() == 0L) { "the document has been superseded: mutate the successor" }
         return owned
-    }
-
-    /**
-     * Hands this document new text and returns the document that text
-     * describes, which SUPERSEDES this one.
-     *
-     * The successor is its chain's new head; this document keeps its decoded
-     * values and its [close], and refuses further mutation deterministically.
-     * A failed edit supersedes nothing: this document stays the head and may
-     * be mutated again.
-     *
-     * An edit's answer is decoded whole, because an edit may shift a node's
-     * position without changing its content — and position is not content,
-     * so the revision does not move with it. Identity still survives: an
-     * unchanged node keeps its exact (id, revision) pair, which is what
-     * keeps a reactive consumer's per-id state alive across a correction.
-     *
-     * What changed is asked of the returned tree, not of a delta: a node's
-     * [Markup.revision] is the document revision at which its own fields,
-     * child list, or any descendant last changed, so an unchanged node keeps
-     * its exact (id, revision) pair and a changed one carries the new
-     * document's revision.
-     *
-     * Throws [ParseException] when the engine fails, and
-     * [IllegalStateException] once this document has been [close]d or
-     * superseded.
-     */
-    public fun edit(markdown: String): Document {
-        val owned = mutableHandle()
-        val carriedOptions = options
-        // A held trailing surrogate belongs to the stream this edit replaces
-        // wholesale; it is discarded with the rest of the old text.
-        val successor =
-            decodeWire(owned.edit(markdown.encodeToByteArray()), onDeliveryLost = ::deliveryLost) {
-                handle,
-                id,
-                revision,
-                scope,
-                content,
-                index,
-                diagnostics,
-                ->
-                Document(Built(handle, id, revision, scope, carriedOptions, content, diagnostics, index))
-            }
-        superseded.store(1L)
-        return successor
     }
 
     /**

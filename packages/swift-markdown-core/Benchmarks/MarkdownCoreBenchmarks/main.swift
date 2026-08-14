@@ -101,36 +101,22 @@ func benchmarkDeepBuild(_ workload: String, depth: Int) throws {
 try benchmarkDeepBuild("deep_document_build", depth: 4_096)
 
 func benchmarkStream(_ workload: String, unit: String, units: Int) throws {
-    // The streaming consumer: text grows by one unit per tick and each tick
-    // edits the document into its successor.
+    // The re-parsing streaming consumer: text grows by one unit per tick
+    // and each tick constructs a fresh document from all text so far. A
+    // document chain grows one way — append — so replacing the text IS a
+    // new document; this workload prices that baseline, which is exactly
+    // what the deleted whole-text edit performed.
     try measureAndReport(
-        boundary: "native_edit_and_decode",
+        boundary: "native_parse_and_value_copy",
         workload: workload,
         metrics: "bytes=\(unit.utf8.count * units) commits=\(units)"
     ) { _ in
-        var document = try Document("")
         var streamed = ""
         for _ in 0..<units {
             streamed += unit
-            document = try document.edit(streamed)
+            _ = try Document(streamed)
         }
     }
 }
 
 try benchmarkStream("streamed_document", unit: unit, units: 500)
-
-func benchmarkDeepEdit(_ workload: String, depth: Int) throws {
-    // A one-byte edit at the innermost leaf of a deep quote chain: the
-    // rebuild ordering must stay proportional to the touched path, not turn
-    // quadratic through per-entry ancestor walks.
-    let prefix = String(repeating: "> ", count: depth)
-    try measurePreparedAndReport(
-        boundary: "native_edit_and_decode",
-        workload: workload,
-        metrics: "bytes=\(depth * 2 + 2) commits=1",
-        prepare: { _ in try Document(prefix + "a\n") },
-        body: { document, _ in _ = try document.edit(prefix + "b\n") }
-    )
-}
-
-try benchmarkDeepEdit("deep_path_edit", depth: 5_000)

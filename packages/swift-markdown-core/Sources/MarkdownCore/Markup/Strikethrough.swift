@@ -11,8 +11,9 @@ public struct Strikethrough: Markup {
     ///
     /// A property OF the node, not of a lookup: a document is an immutable
     /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an edit
-    /// above this node leaves every reactive comparison below it untouched.
+    /// deliberately absent from `==` — position is not content — so an
+    /// append that only grows this node's extent leaves every reactive
+    /// comparison untouched.
     public let scope: Scope
     /// The struck-through inline content in source order.
     public let content: [any Markup]

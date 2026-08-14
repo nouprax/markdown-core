@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
+import { DiagnosticCode, Document, MarkupDumper, visit, MarkupWalker, WalkEvent } from "../dist/index.js";
 import { unprunedDecode } from "../dist/document.js";
 import { kindVisitor } from "./visitor.mjs";
 
@@ -143,6 +143,31 @@ test("ast: a document survives JSON and its ids come back usable", () => {
     document.close();
 });
 
+test("ast: diagnostics travel with the document that raised them", () => {
+    // The one thing an editor underlines: a directive's `{...}` did not
+    // parse, so the braces stayed literal text. Invisible in the tree — the
+    // node simply has no attributes — which is why it is reported.
+    const flagged = Document(":::note{= bad}\nbody\n:::\n");
+    assert.deepEqual(
+        flagged.diagnostics.map((diagnostic) => diagnostic.code),
+        [DiagnosticCode.directiveAttributes]
+    );
+    assert.deepEqual(flagged.diagnostics[0].scope, {
+        start: { line: 1, column: 8 },
+        end: { line: 1, column: 14 }
+    });
+
+    // A document chain grows one way: append. Replacing the text is a new
+    // document (new chain, new series) — and the fixed text reports nothing.
+    const fixed = Document(":::note{a=1}\nbody\n:::\n");
+    assert.equal(fixed.diagnostics.length, 0);
+    // The flagged document keeps reporting its own: diagnostics are values
+    // it copied out at parse time, like every other part of it.
+    assert.equal(flagged.diagnostics.length, 1);
+    fixed.close();
+    flagged.close();
+});
+
 test("unicode: UTF-8 survives native document release", () => {
     const document = Document("héllo 🚀 中文\n");
     assert.equal(document.content[0].content[0].literal, "héllo 🚀 中文");
@@ -172,26 +197,6 @@ test("unicode: a surrogate pair split across appends reassembles intact", () => 
     assert.equal(document.dump(), whole.dump());
     whole.close();
     document.close();
-});
-
-test("unicode: an edit discards a held surrogate half — it replaces all text", () => {
-    const opened = Document("x");
-    // "y" plus the high half of 😀: the half is held, so the parsed text
-    // lags one code unit behind what was handed in.
-    const held = opened.append("y\u{1F600}".slice(0, 2));
-    assert.equal(held.content[0].content[0].literal, "xy");
-    opened.close();
-
-    const edited = held.edit("plain ");
-    held.close();
-    const appended = edited.append("tail\n");
-    edited.close();
-    // Neither the held half nor a replacement character resurfaces.
-    assert.equal(appended.content[0].content[0].literal, "plain tail");
-    const reference = Document("plain tail\n");
-    assert.equal(appended.dump(), reference.dump());
-    reference.close();
-    appended.close();
 });
 
 test("unicode: a lone low surrogate still encodes to U+FFFD", () => {
@@ -293,22 +298,22 @@ test("robustness: worker threads own isolated engine instances", async () => {
         assert.deepEqual(dumps, references);
     }
 
-    // The same corpus reached by line-by-line EDITS instead of one-shot
+    // The same corpus reached by line-by-line APPENDS instead of one-shot
     // parses, still one WASM instance per thread: incremental state is per
-    // instance, so four threads editing at once must land on the same trees
-    // a one-shot parse produces.
-    const editors = Array.from(
+    // instance, so four threads appending at once must land on the same
+    // trees a one-shot parse produces.
+    const appenders = Array.from(
         { length: 4 },
         () =>
             new Promise((resolve, reject) => {
-                const worker = new Worker(new URL("./worker-edit.mjs", import.meta.url), {
+                const worker = new Worker(new URL("./worker-append.mjs", import.meta.url), {
                     workerData: { jobs }
                 });
                 worker.once("message", resolve);
                 worker.once("error", reject);
             })
     );
-    for (const dumps of await Promise.all(editors)) {
+    for (const dumps of await Promise.all(appenders)) {
         assert.deepEqual(dumps, references);
     }
 });

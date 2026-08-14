@@ -19,17 +19,6 @@ internal expect fun cOpen(
 ): ByteArray
 
 /**
- * Hands [source] to the document behind this handle and returns the MKC5
- * payload describing its successor, whose own handle arrives inside the
- * payload. On success the successor supersedes this handle on its chain;
- * either way the handle stays valid and releasable. The payload always
- * carries the whole tree: an edit can shift positions without touching
- * revisions, so nothing decoded before it is guaranteed current.
- */
-@JvmSynthetic
-internal expect fun CDocumentHandle.edit(source: ByteArray): ByteArray
-
-/**
  * Hands [chunk] to the document behind this handle as trailing bytes and
  * returns the MKC5 payload describing its successor, whose own handle
  * arrives inside the payload. On success the successor supersedes this
@@ -50,8 +39,8 @@ internal expect fun CDocumentHandle.append(
     baseline: ULong,
 ): ByteArray
 
-/** Releases a handle. Every handle reaches this, an edited one included:
- * an edit produces a successor and consumes nothing. */
+/** Releases a handle. Every handle reaches this, a superseded one included:
+ * an append produces a successor and consumes nothing. */
 @JvmSynthetic
 internal expect fun CDocumentHandle.release()
 

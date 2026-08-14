@@ -4,7 +4,7 @@ public enum class ParseErrorCode { INVALID_ARGUMENT, ALLOCATION_FAILED, INTERNAL
 
 /**
  * A call into the engine failed: thrown by the [Document] constructor and by
- * [Document.edit].
+ * [Document.append].
  *
  * Never a verdict on the Markdown. Every byte sequence is a valid document,
  * so no text a caller can hand over produces one of these; what is left is

@@ -302,7 +302,6 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun close() // com.nouprax.markdown.core/Document.close|close(){}[0]
     final fun dump(): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(){}[0]
     final fun dump(com.nouprax.markdown.core/Markup): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(com.nouprax.markdown.core.Markup){}[0]
-    final fun edit(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/Document.edit|edit(kotlin.String){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Document.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Document.hashCode|hashCode(){}[0]
     final fun node(com.nouprax.markdown.core/MarkupID): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.MarkupID){}[0]

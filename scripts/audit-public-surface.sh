@@ -88,9 +88,9 @@ if (products.join("\n") !== "MarkdownCore:MarkdownCore") {
 NODE
 
 # The model and walker stay mutation-free. `append` is not in this list: it
-# is one of the chain's two mutations (edit and append), and like edit it
-# returns a successor document rather than mutating a value in place — the
-# in-place surface this rule exists to forbid.
+# is the chain's one mutation, and it returns a successor document rather
+# than mutating a value in place — the in-place surface this rule exists to
+# forbid.
 if grep -R -n -E \
     'public (func|var|let|static func).*\b(render|set[A-Z]|insert|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
     packages/swift-markdown-core/Sources/MarkdownCore; then
@@ -218,9 +218,9 @@ for (const [label, names] of inventories) {
 }
 NODE
 # The model and walker stay mutation-free. `append` is not in this list: it
-# is one of the chain's two mutations (edit and append), and like edit it
-# returns a successor document rather than mutating a value in place — the
-# in-place surface this rule exists to forbid.
+# is the chain's one mutation, and it returns a successor document rather
+# than mutating a value in place — the in-place surface this rule exists to
+# forbid.
 if grep -R -n -E \
     'public (fun|val|var).*\b(render|set[A-Z]|insert|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)' \
     packages/kotlin-markdown-core/src/commonMain; then

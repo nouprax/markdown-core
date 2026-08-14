@@ -1,5 +1,5 @@
-/* libFuzzer target for document edits: every input is an edit script
- * (format in tests/support/edit_replay.h) replayed with full per-commit
+/* libFuzzer target for document appends: every input is an append script
+ * (format in tests/support/append_replay.h) replayed with full per-append
  * verification — dump equality against a one-shot parse of the shadow text,
  * identity-ledger integrity, and footnote-query equivalence when the script
  * enables footnotes.  Any verification failure aborts, so the fuzzer keeps
@@ -9,16 +9,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "edit_replay.h"
+#include "append_replay.h"
 
 static void fuzz_report(void *user, const char *context, const char *message) {
     (void)user;
     (void)context;
-    fprintf(stderr, "document edit script failed verification: %s\n", message);
+    fprintf(stderr, "document append script failed verification: %s\n", message);
     abort();
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-    (void)er_script_replay(data, size, "fuzz_document_edits", fuzz_report, NULL);
+    (void)er_script_replay(data, size, "fuzz_document_appends", fuzz_report, NULL);
     return 0;
 }

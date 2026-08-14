@@ -5,15 +5,11 @@ export interface NativeExports extends WebAssembly.Exports {
     /** Parses `bytes` and returns the document, or 0 with `*errorOutput`
      * set. */
     es_document_open(bytes: number, length: number, flags: number, errorOutput: number): number;
-    /** Hands the chain's head new text; returns the caller-owned successor
-     * document, or 0 with `*errorOutput` set. Success SUPERSEDES `document`:
-     * only es_document_free remains for it. A failed edit supersedes
-     * nothing. */
-    es_document_edit(document: number, bytes: number, length: number, errorOutput: number): number;
     /** Appends `bytes` to the end of the chain's head; returns the
-     * caller-owned successor document, or 0 with `*errorOutput` set. Same
-     * supersession rule as es_document_edit; a failure past the argument
-     * guards poisons the chain, after which only es_document_free remains. */
+     * caller-owned successor document, or 0 with `*errorOutput` set.
+     * Success SUPERSEDES `document`: only es_document_free remains for it.
+     * A failure past the argument guards poisons the chain, after which
+     * only es_document_free remains. */
     es_document_append(document: number, bytes: number, length: number, errorOutput: number): number;
     es_document_free(document: number): void;
     es_document_series(document: number): bigint;

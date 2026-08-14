@@ -30,8 +30,8 @@ const utf8Encoder = new TextEncoder();
  *
  * Its whole state is a 32-byte scratch block in WASM memory and a cached
  * DataView, and every call through it is synchronous, so a second one would
- * buy nothing and cost a malloc/free pair per document — including per edit
- * of a streaming document.
+ * buy nothing and cost a malloc/free pair per document — including per
+ * append of a streaming document.
  */
 export const decoder: NodeDecoder = new NodeDecoder(native);
 
@@ -112,47 +112,25 @@ export class CDocument {
     }
 
     /**
-     * Hands the chain's head new text and returns the caller-owned
-     * successor; throws the native rejection.
+     * Appends `source` to the end of the chain's head and returns the
+     * caller-owned successor; throws the native rejection. The shape is
+     * copy the text across, call the engine, and mark this receiver
+     * superseded exactly when the engine committed to a successor.
      *
      * Success SUPERSEDES this receiver: `free` is its one remaining call,
      * and this object still owes it — a mutation hands nothing away. A
-     * failed edit supersedes nothing, so the receiver stays the head.
-     */
-    edit(source: string): CDocument {
-        return this.mutate(source, (document, bytes, length, error) =>
-            native.es_document_edit(document, bytes, length, error)
-        );
-    }
-
-    /**
-     * Appends `source` to the end of the chain's head and returns the
-     * caller-owned successor; throws the native rejection.
-     *
-     * Same supersession rule as `edit`. A failure past the argument guards
-     * poisons the chain on the engine side: this receiver stays unsuperseded
-     * here, and every further mutation through it is rejected
-     * deterministically by the engine — only `free` remains useful.
+     * failure past the argument guards poisons the chain on the engine
+     * side: this receiver stays unsuperseded here, and every further
+     * mutation through it is rejected deterministically by the engine —
+     * only `free` remains useful.
      */
     append(source: string): CDocument {
-        return this.mutate(source, (document, bytes, length, error) =>
-            native.es_document_append(document, bytes, length, error)
-        );
-    }
-
-    /** The one shape both mutations share: copy the text across, call the
-     * engine, and mark this receiver superseded exactly when the engine
-     * committed to a successor. */
-    private mutate(
-        source: string,
-        call: (document: number, bytes: number, length: number, errorOutput: number) => number
-    ): CDocument {
         const owned = this.requirePointer();
         const scratch = decoder.scratchPointer;
         return new CDocument(
             withSource(source, (bytes, length) => {
                 decoder.dataView().setUint32(scratch, 0, true);
-                const document = call(owned, bytes, length, scratch);
+                const document = native.es_document_append(owned, bytes, length, scratch);
                 if (!document) throw takeError(decoder.dataView().getUint32(scratch, true));
                 this.superseded = true;
                 return document;

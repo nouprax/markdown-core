@@ -491,6 +491,31 @@ v2 design = a stable-prefix hint on TEXT + segmented literal exposure.
 
 ## Errata
 
+**E2 — THE RESHAPE (user ruling, 2026-08-13).** Edit and the parser-tail
+fork (§4.2) are DELETED. The API is `new` + `append`, nothing else: a
+whole-text edit is indistinguishable from constructing a new document, so it
+is spelled that way — a new chain with a new series — and the warm path the
+fork would have carried is not built. Append remains the D6 shape this plan
+already shipped and measured (one full parse plus one whole-tree diff per
+tick; the ~2x streaming win of P1 was measured on exactly that), so nothing
+regresses. What the ruling buys: the fork's implementation had grown three
+contract-edge mechanisms — a sibling SEAM (one `next` pointer shared between
+the warm tree and every snapshot, borrowed per fork under the invalidation
+window), a persistent PRESENTATION ROOT mutated in place per tick, and a
+full-build→warm id handover sweep — all sound only by appeal to the
+handles-die-at-next-mutation clause, all deleted unbuilt. P2's landed slices
+(two-generation arena, settled sink, warm fingerprint, warm builder) served
+only the fork and are abandoned with it; their design record survives in the
+project memory for the day a warm path is wanted again. Consequences swept
+through the tree on 2026-08-13: `markdown_core_document_edit` is gone from
+the facade, exports and every binding; the replay harness is append-only
+(`tests/support/append_replay.{h,c}`, chunk-boundary fuzz format); the
+pathological and capture oracles drive appends; the diff's head-insertion
+pairing configurations are unreachable through the public surface (an
+append cannot mint a node ahead of unchanged bytes), which leaves the
+subtree-hash value-pairing machinery wider than the surface needs — a
+recorded candidate for later simplification, not touched here.
+
 **E1 (found during P1, 2026-08-13).** §3.2's claim that a D6-fallback append
 needs no flag because "append never moves bytes ⇒ values for unchanged
 (id, rev) are byte-identical including scope" is **falsified**: a trailing

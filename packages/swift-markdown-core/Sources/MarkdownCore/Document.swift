@@ -1,7 +1,7 @@
 import Foundation
 import MarkdownCoreC
 
-/// The feature switches for one document and every document its edits
+/// The feature switches for one document and every document its appends
 /// produce, fixed when the first one is parsed.
 ///
 /// Every option defaults to `true`.
@@ -59,14 +59,14 @@ public struct ParseOptions: Sendable, Hashable {
     }
 }
 
-/// The category of a native parse or edit failure.
+/// The category of a native parse or append failure.
 public enum ParseErrorCode: Int32, Sendable {
     case invalidArgument = 1
     case allocationFailed = 2
     case `internal` = 3
 }
 
-/// A native parse or edit failure: a category and the engine's message.
+/// A native parse or append failure: a category and the engine's message.
 ///
 /// No scope. These are the parse failing to RUN, never a verdict on the
 /// Markdown, so none of them is attributable to an extent of the input. The
@@ -95,15 +95,15 @@ extension ParseError: LocalizedError {
 /// ```swift
 /// var document = try Document("# Title")
 /// document = try document.append("\n\nHello")
-/// document = try document.edit("# Renamed")
 /// ```
 ///
-/// There is no session type. A document is the live head of a CHAIN: created
-/// from text and options, advanced by a mutation — ``edit(_:)`` replaces all
-/// text, ``append(_:)`` adds text at the end — that returns the next head
-/// and SUPERSEDES its receiver. Options are fixed for the chain's whole
-/// series — changing what the parser means is a new ``Document``, not a
-/// mutation.
+/// There is no session type. A document is the live head of a CHAIN, and a
+/// chain grows one way: created from text and options, advanced by
+/// ``append(_:)`` — the one mutation — which adds text at the end, returns
+/// the next head, and SUPERSEDES its receiver. Replacing the text is a new
+/// ``Document``: a new chain, a new series. Options are fixed for the
+/// chain's whole series — changing what the parser means is likewise a new
+/// ``Document``, not a mutation.
 ///
 /// The node values are ordinary Swift values with no reference back here:
 /// hold them, copy them, put them in a view model — they outlive every
@@ -150,6 +150,7 @@ public final class Document: Markup, @unchecked Sendable {
     /// walking the new value tree, so an id retired by the mutation never
     /// enters the successor's — while this document keeps its own forever.
     private let index: [UInt64: any Markup]
+
     /// Parses `markdown` and returns a self-contained document; throws
     /// ``ParseError`` when the engine rejects the input or cannot allocate.
     public init(_ markdown: String, options: ParseOptions = .init()) throws {
@@ -179,19 +180,16 @@ public final class Document: Markup, @unchecked Sendable {
         index = Document.index(of: content)
     }
 
-    /// Builds the successor a mutation produced, reusing the receiver's
-    /// decoded values through `mirror` — the receiver's index, or empty for
-    /// a full decode.
+    /// Builds the successor an append produced, reusing the receiver's
+    /// decoded values through `mirror` — the receiver's index.
     ///
     /// A reused value must still be true in every field a consumer reads,
-    /// which is why the prune matches id, revision, and scope — and why the
-    /// caller still picks: an append never moves settled bytes, so a
-    /// scope-verified subtree root covers its descendants; an edit can
-    /// shift a whole region without changing a revision, so it hands
-    /// nothing and decodes whole. Consuming the mirror while the receiver
-    /// keeps it is safe because both only read it — the values are shared,
-    /// immutable, and copy-on-write — and because the runtime-enforced
-    /// linear history means no third document is being built from it.
+    /// which is why the prune matches id, revision, and scope: an append
+    /// never moves settled bytes, so a scope-verified subtree root covers
+    /// its descendants. Consuming the mirror while the receiver keeps it is
+    /// safe because both only read it — the values are shared, immutable,
+    /// and copy-on-write — and because the runtime-enforced linear history
+    /// means no third document is being built from it.
     private init(
         adopting handle: OpaquePointer,
         options: ParseOptions,
@@ -216,47 +214,19 @@ public final class Document: Markup, @unchecked Sendable {
         markdown_core_document_free(handle)
     }
 
-    /// Hands the chain's head new text and returns the document that text
-    /// describes, which SUPERSEDES the receiver.
-    ///
-    /// Both mutations are one rule: same chain, same series, revision
-    /// strictly +1 on the chain's own counter, whichever mutation advanced
-    /// it. A successful mutation makes the receiver superseded — every
-    /// further mutation on it throws the engine's deterministic
-    /// `invalidArgument` error and disturbs nothing, so history is linear
-    /// and there is no forking. Every READ keeps answering forever: the
-    /// values, scopes, ``dump()``, ``node(_:)``, and ``diagnostics`` of a
-    /// superseded document all come from the decoded state built with it,
-    /// never from the native parse, and releasing it stays O(1). A FAILED
-    /// edit supersedes nothing: the receiver stays the head, readable and
-    /// mutable.
-    ///
-    /// An edit can move a node without changing its revision, so the
-    /// successor is decoded whole; ``append(_:)`` is the mutation that
-    /// reuses the receiver's decoded values.
-    public func edit(_ markdown: String) throws -> Document {
-        var nativeError: OpaquePointer?
-        var source = markdown
-        let next = source.withUTF8 { buffer -> OpaquePointer? in
-            let text = markdown_core_string(data: buffer.baseAddress, length: buffer.count)
-            return markdown_core_document_edit(handle, text, &nativeError)
-        }
-        guard let next else {
-            defer { markdown_core_error_free(nativeError) }
-            throw ParseError(from: nativeError)
-        }
-        // Exactly one owner: the adopting initializer frees the native
-        // document itself on its only throwing path, so a failure here
-        // cannot leak it.
-        return try Document(adopting: next, options: options, reusing: [:])
-    }
-
     /// Adds text to the end of the chain's head and returns the document
-    /// all text so far describes, which SUPERSEDES the receiver — the same
-    /// rule as ``edit(_:)``: revision strictly +1 on the chain's counter,
-    /// a superseded receiver's further mutations throw the engine's
-    /// deterministic `invalidArgument` error, and its reads keep answering
-    /// from decoded state forever.
+    /// all text so far describes, which SUPERSEDES the receiver: same
+    /// chain, same series, revision strictly +1 on the chain's counter.
+    /// A superseded receiver's further appends throw the engine's
+    /// deterministic `invalidArgument` error and disturb nothing, so
+    /// history is linear and there is no forking. Every READ keeps
+    /// answering forever: the values, scopes, ``dump()``, ``node(_:)``,
+    /// and ``diagnostics`` of a superseded document all come from the
+    /// decoded state built with it, never from the native parse, and
+    /// releasing it stays O(1).
+    ///
+    /// A document chain grows one way — append. Replacing the text is a
+    /// new ``Document``: a new chain, a new series.
     ///
     /// Any split of the incoming text is legal — mid-word, mid-marker,
     /// even between a carriage return and its line feed — and appending
@@ -284,8 +254,10 @@ public final class Document: Markup, @unchecked Sendable {
             defer { markdown_core_error_free(nativeError) }
             throw ParseError(from: nativeError)
         }
-        // Same single-owner shape as edit; the receiver's index rides along
-        // as the value mirror because an append never moves settled bytes.
+        // Exactly one owner: the adopting initializer frees the native
+        // document itself on its only throwing path, so a failure here
+        // cannot leak it. The receiver's index rides along as the value
+        // mirror because an append never moves settled bytes.
         return try Document(adopting: next, options: options, reusing: index)
     }
 

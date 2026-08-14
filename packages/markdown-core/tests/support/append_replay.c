@@ -1,4 +1,4 @@
-#include "edit_replay.h"
+#include "append_replay.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -489,16 +489,7 @@ void er_replay_close(er_replay *replay) {
     memset(replay, 0, sizeof(*replay));
 }
 
-/* The shadow IS the text now. An edit splices the harness's own buffer and
- * nothing else; the document only ever sees whole text, at commit. */
-int er_replay_edit(er_replay *replay, size_t start, size_t end, const uint8_t *bytes, size_t length) {
-    if (er_text_splice(&replay->shadow, start, end, bytes, length) != 0) {
-        return er_fail(replay, "shadow splice allocation failed");
-    }
-    return 0;
-}
-
-/* The shared oracle behind both mutations: adopt the successor, double-walk
+/* The oracle behind the mutation: adopt the successor, double-walk
  * it against the predecessor and the ledger, and require the dump to equal a
  * one-shot parse of the shadow bytes. `previous` is released here. */
 static int er_verify_successor(er_replay *replay, markdown_core_document *previous, markdown_core_document *successor) {
@@ -584,25 +575,9 @@ done:
     return result;
 }
 
-int er_replay_commit(er_replay *replay) {
-    markdown_core_error *error = NULL;
-    markdown_core_document *previous = replay->document;
-    markdown_core_document *successor;
-
-    successor = markdown_core_document_edit(previous, mc_sv(replay->shadow.bytes, replay->shadow.length), &error);
-    if (!successor) {
-        markdown_core_document_free(previous);
-        replay->document = NULL;
-        markdown_core_error_free(error);
-        return er_fail(replay, "commit failed");
-    }
-    return er_verify_successor(replay, previous, successor);
-}
-
 /* Appends `length` bytes through the REAL append mutation — any split is
- * legal, mid-UTF-8 and mid-line included — and runs the same oracle a
- * commit runs: the double walk plus dump equality against a one-shot parse
- * of the shadow bytes. */
+ * legal, mid-UTF-8 and mid-line included — and runs the oracle: the double
+ * walk plus dump equality against a one-shot parse of the shadow bytes. */
 int er_replay_append(er_replay *replay, const uint8_t *bytes, size_t length) {
     markdown_core_error *error = NULL;
     markdown_core_document *previous = replay->document;
@@ -621,7 +596,7 @@ int er_replay_append(er_replay *replay, const uint8_t *bytes, size_t length) {
     return er_verify_successor(replay, previous, successor);
 }
 
-/* --- edit-script interpreter --------------------------------------------- */
+/* --- append-script interpreter ------------------------------------------ */
 
 typedef struct er_script_cursor {
     const uint8_t *bytes;
@@ -679,48 +654,25 @@ int er_script_replay(const uint8_t *script, size_t length, const char *context, 
         return -1;
     }
 
+    /* Chunks until the script runs out: len8 then that many literal bytes.
+     * The fuzzer owns the chunk boundaries, so every adversarial split —
+     * mid-UTF-8, mid-CRLF, mid-line — is reachable by construction; a zero
+     * length is the empty append, a mutation like any other. */
     while (cursor.offset < cursor.length) {
-        uint8_t op = er_script_u8(&cursor);
-        switch (op & 3) {
-        case 0: /* insert */
-        case 2: /* replace */
-        {
-            size_t position = (size_t)er_script_u16(&cursor) % (replay.shadow.length + 1);
-            size_t span = 0;
-            size_t insert_length;
-            size_t available;
-            if ((op & 3) == 2) {
-                span = (size_t)er_script_u16(&cursor) % (replay.shadow.length - position + 1);
-            }
-            insert_length = er_script_u8(&cursor);
-            available = cursor.length - cursor.offset;
-            if (insert_length > available) {
-                insert_length = available;
-            }
-            if (er_replay_edit(&replay, position, position + span, cursor.bytes + cursor.offset, insert_length) != 0) {
-                goto done;
-            }
-            cursor.offset += insert_length;
-            break;
+        size_t chunk_length = er_script_u8(&cursor);
+        size_t available = cursor.length - cursor.offset;
+        if (chunk_length > available) {
+            chunk_length = available;
         }
-        case 1: /* delete */
-        {
-            size_t position = (size_t)er_script_u16(&cursor) % (replay.shadow.length + 1);
-            size_t span = (size_t)er_script_u16(&cursor) % (replay.shadow.length - position + 1);
-            if (er_replay_edit(&replay, position, position + span, NULL, 0) != 0) {
-                goto done;
-            }
-            break;
+        if (er_replay_append(&replay, cursor.bytes + cursor.offset, chunk_length) != 0) {
+            goto done;
         }
-        default: /* commit */
-            if (er_replay_commit(&replay) != 0) {
-                goto done;
-            }
-            break;
-        }
+        cursor.offset += chunk_length;
     }
 
-    if (er_replay_commit(&replay) != 0) {
+    /* One final empty append: the tail state must survive a mutation that
+     * adds nothing. */
+    if (er_replay_append(&replay, (const uint8_t *)"", 0) != 0) {
         goto done;
     }
     result = 0;

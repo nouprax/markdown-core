@@ -17,10 +17,10 @@ import Testing
         let second = try #require(document.content[1] as? Paragraph)
         #expect((second.content[0] as? Text)?.literal == "second")
 
-        // The edit path takes the same route and must not truncate either.
-        let edited = try document.edit("lead\n\nx\u{0}y\n")
-        #expect(edited.content.count == 2)
-        let tail = try #require(edited.content[1] as? Paragraph)
+        // The append path takes the same route and must not truncate either.
+        let grown = try document.append("\nx\u{0}y\n")
+        #expect(grown.content.count == 3)
+        let tail = try #require(grown.content[2] as? Paragraph)
         #expect((tail.content[0] as? Text)?.literal == "x\u{FFFD}y")
     }
 }

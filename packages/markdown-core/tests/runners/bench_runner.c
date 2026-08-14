@@ -387,11 +387,9 @@ static int workload_adversarial(const bench_options *options) {
 
 /* --- append baseline (streaming plan P0.2) -------------------------------
  *
- * The per-tick cost of consuming a stream TODAY, before any streaming
- * machinery exists: every tick hands the whole bytes-so-far to `edit`, so a
- * tick costs one full parse plus one whole-tree diff of the prefix. These
- * are the numbers the streaming engine's fallback may never exceed and its
- * warm path is built to beat.
+ * The per-tick cost of consuming a stream: every append re-parses the
+ * bytes-so-far, so a tick costs one full parse plus one whole-tree diff of
+ * the prefix.
  *
  * Shapes follow the plan's list; each is measured at doubling prefix
  * checkpoints. A burst of token-sized, non-line-aligned ticks (3-8 byte
@@ -515,35 +513,11 @@ static int append_tick(markdown_core_document **document, const char *chunk, siz
     return 0;
 }
 
-/* One measured whole-text edit tick, for the mixed shape. */
-static int edit_tick(markdown_core_document **document, const char *text, size_t length, uint64_t *nanoseconds) {
-    markdown_core_error *error = NULL;
-    uint64_t started = ts_monotonic_ns();
-    markdown_core_document *successor =
-        markdown_core_document_edit(*document, mc_sv((const uint8_t *)text, length), &error);
-    uint64_t elapsed = ts_monotonic_ns() - started;
-    if (!successor) {
-        markdown_core_error_free(error);
-        return -1;
-    }
-    markdown_core_document_free(*document);
-    *document = successor;
-    if (nanoseconds) {
-        *nanoseconds = elapsed;
-    }
-    return 0;
-}
-
 #define APPEND_TICKS_PER_CHECKPOINT 5
 #define APPEND_WARMUP_TICKS 1
 #define APPEND_CHECKPOINTS 5
 
-static int bench_append_shape(
-    const char *name,
-    append_shape_build build,
-    bool splice_mid,
-    const bench_options *options
-) {
+static int bench_append_shape(const char *name, append_shape_build build, const bench_options *options) {
     static const size_t checkpoints[APPEND_CHECKPOINTS] =
         {256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024};
     const size_t steps = APPEND_CHECKPOINTS;
@@ -586,37 +560,17 @@ static int bench_append_shape(
             break;
         }
         sent = offset;
-        char splice_saved = text[offset / 2];
         for (tick = -APPEND_WARMUP_TICKS; tick < APPEND_TICKS_PER_CHECKPOINT; tick++) {
             uint64_t *slot = tick < 0 ? NULL : &samples[tick];
-            if (splice_mid) {
-                /* The mixed-edit shape: the tick is a one-byte splice in the
-                 * middle of the text instead of a trailing append — the same
-                 * full parse today, a whole different path once streaming
-                 * lands, which is why the skeleton keeps it separate. The
-                 * byte ALTERNATES across the burst and is restored only
-                 * after it: the document holds the previous tick's text, so
-                 * restoring between ticks would make every tick but the
-                 * first a no-op edit of identical bytes. */
-                text[offset / 2] = text[offset / 2] == 'x' ? 'y' : 'x';
-                if (edit_tick(&document, text, offset, slot) != 0) {
-                    failed = 1;
-                    break;
-                }
-            } else {
-                size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
-                if (step_bytes > text_length - sent) {
-                    step_bytes = text_length - sent;
-                }
-                if (append_tick(&document, text + sent, step_bytes, slot) != 0) {
-                    failed = 1;
-                    break;
-                }
-                sent += step_bytes;
+            size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
+            if (step_bytes > text_length - sent) {
+                step_bytes = text_length - sent;
             }
-        }
-        if (splice_mid) {
-            text[offset / 2] = splice_saved;
+            if (append_tick(&document, text + sent, step_bytes, slot) != 0) {
+                failed = 1;
+                break;
+            }
+            sent += step_bytes;
         }
         if (failed) {
             break;
@@ -671,13 +625,12 @@ static int bench_append_shape(
 
 static int workload_append_baseline(const bench_options *options) {
     int failed = 0;
-    failed |= bench_append_shape("prose", build_append_prose, false, options) != 0;
-    failed |= bench_append_shape("nested_list", build_append_nested_list, false, options) != 0;
-    failed |= bench_append_shape("fence", build_append_fence, false, options) != 0;
-    failed |= bench_append_shape("footnote_dense", build_append_footnote_dense, false, options) != 0;
-    failed |= bench_append_shape("giant_paragraph", build_append_giant_paragraph, false, options) != 0;
-    failed |= bench_append_shape("references_appendix", build_append_references_appendix, false, options) != 0;
-    failed |= bench_append_shape("mixed_edit", build_append_prose, true, options) != 0;
+    failed |= bench_append_shape("prose", build_append_prose, options) != 0;
+    failed |= bench_append_shape("nested_list", build_append_nested_list, options) != 0;
+    failed |= bench_append_shape("fence", build_append_fence, options) != 0;
+    failed |= bench_append_shape("footnote_dense", build_append_footnote_dense, options) != 0;
+    failed |= bench_append_shape("giant_paragraph", build_append_giant_paragraph, options) != 0;
+    failed |= bench_append_shape("references_appendix", build_append_references_appendix, options) != 0;
     if (!failed) {
         printf("append_baseline peak_rss_kib=%ld\n", peak_rss_kib());
     }

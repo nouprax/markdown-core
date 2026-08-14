@@ -12,12 +12,11 @@
  * superseded and its successor is gone, so the chain is done and only
  * close remains; a status-2 payload carries nothing further). A success payload
  * carries the document handle, its series, and the root's id, revision and
- * extent, then the tree, then the diagnostics — the same shape for an open,
- * an edit, and an append, because a mutation's answer is simply the next
- * document.
+ * extent, then the tree, then the diagnostics — the same shape for an open
+ * and an append, because a mutation's answer is simply the next document.
  *
- * An open and an edit carry the WHOLE tree, children before parents, which is
- * the order a decoder assembles immutable values in. There is no delta
+ * An open carries the WHOLE tree, children before parents, which is the
+ * order a decoder assembles immutable values in. There is no delta
  * section: what changed is asked of the tree itself, because a node's
  * revision is the document revision at which its own fields, child list, or
  * any descendant last changed — (id, revision) is the entire update protocol.
@@ -30,9 +29,9 @@
  * (fields, literals, descendants), and the extent check in subtree_reused
  * vouches for the positions — a revision alone cannot, because position is
  * not content and nothing stamps a trailing construct that absorbs its
- * terminating newline into its scope end. This is sound only on the append
- * path: an edit can shift positions anywhere in the document and so always
- * ships the whole tree.
+ * terminating newline into its scope end. This is sound because appending
+ * never moves settled content: only the append path prunes, and an open
+ * has no predecessor to reuse from.
  *
  * Node records carry (kind, id, revision, scope, fields, child-id lists). The
  * scope is in the record because it belongs to the node; it had a table of its
@@ -417,8 +416,8 @@ static void write_record(bridge_buffer *buffer, const markdown_core_node *node) 
 #define BRIDGE_REUSE_TAG 0xFFu
 
 /* The append payload's reuse gate: the caller's baseline revision, and the
- * receiver's last content coordinate. NULL on the open and edit payloads,
- * which never reuse. */
+ * receiver's last content coordinate. NULL on the open payload, which never
+ * reuses. */
 typedef struct reuse_gate {
     uint64_t baseline;
     markdown_core_position receiver_end;
@@ -550,9 +549,9 @@ static markdown_core_document *document_of(uint64_t handle) {
  * carries, whichever body follows it.
  *
  * The ROOT NODE's revision, not the document's: the document's revision counts
- * commits, while a node's counts the commits that changed it, and an edit that
- * changes nothing advances the first and not the second. The root is a Markup
- * node like any other and answers by the node rule. */
+ * commits, while a node's counts the commits that changed it, and an append
+ * that changes nothing advances the first and not the second. The root is a
+ * Markup node like any other and answers by the node rule. */
 static const markdown_core_node *put_header(bridge_buffer *buffer,
                                             const markdown_core_document *document) {
     const markdown_core_node *root = markdown_core_document_root(document);
@@ -620,40 +619,6 @@ static bool deliver_lost(bridge_buffer *buffer, markdown_core_document *successo
     put_magic(buffer);
     put_u8(buffer, 2);
     return finish(buffer, output, output_length);
-}
-
-bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
-                               uint8_t **output, size_t *output_length) {
-    markdown_core_document *document = document_of(handle);
-    markdown_core_document *successor;
-    markdown_core_error *error = NULL;
-    markdown_core_string text;
-    const markdown_core_node *root;
-    bridge_buffer buffer = {0};
-
-    if (output == NULL || output_length == NULL) {
-        return false;
-    }
-    *output = NULL;
-    *output_length = 0;
-
-    put_magic(&buffer);
-    text.data = source;
-    text.length = length;
-    successor = markdown_core_document_edit(document, text, &error);
-    if (successor == NULL) {
-        put_error(&buffer, error);
-        return finish(&buffer, output, output_length);
-    }
-    root = put_header(&buffer, successor);
-    if (root != NULL) {
-        encode_tree(&buffer, root, NULL);
-        encode_diagnostics(&buffer, successor);
-    }
-    if (buffer.failed) {
-        return deliver_lost(&buffer, successor, output, output_length);
-    }
-    return finish(&buffer, output, output_length);
 }
 
 bool markdown_core_kotlin_append(uint64_t handle, const uint8_t *chunk, size_t length,

@@ -101,9 +101,9 @@ endif()
 
 # Shared native test support: fixture loading, in-process conversion, byte
 # comparison, deterministic diffs, PRNG, timing, and the document replay
-# harness (shadow text, identity ledger, per-commit equivalence verification).
-add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h support/edit_replay.c
-                                              support/edit_replay.h)
+# harness (shadow text, identity ledger, per-append equivalence verification).
+add_library(markdown-core-test-support STATIC support/test_support.c support/test_support.h
+                                              support/append_replay.c support/append_replay.h)
 target_include_directories(
     markdown-core-test-support
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/support" "${CMAKE_CURRENT_SOURCE_DIR}/../include"
@@ -298,8 +298,8 @@ if(MARKDOWN_CORE_STATIC)
     endforeach()
 endif()
 
-# equivalence: incrementally edited documents must dump byte-identically to a
-# one-shot parse of the same final text after every commit, and the identity
+# equivalence: incrementally appended documents must dump byte-identically to
+# a one-shot parse of the same final text after every append, and the identity
 # double-walk must hold (no id resurrection, no revision regression).
 markdown_core_add_test(
     equivalence_canonical
@@ -320,22 +320,6 @@ markdown_core_add_test(
     spec
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
-markdown_core_add_test(
-    equivalence_random_edits
-    equivalence
-    600
-    equivalence_runner
-    --case
-    random_edits
-    --spec
-    "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
-markdown_core_add_test(equivalence_link_ref_edits equivalence 120 equivalence_runner --case link_ref_edits)
-markdown_core_add_test(equivalence_footnote_edits equivalence 120 equivalence_runner --case footnote_edits)
-markdown_core_add_test(equivalence_definition_cluster_edits equivalence 120 equivalence_runner --case
-                       definition_cluster_edits)
-markdown_core_add_test(equivalence_directive_multiline_attributes equivalence 120 equivalence_runner --case
-                       directive_multiline_attributes)
-markdown_core_add_test(equivalence_boundary_edits equivalence 120 equivalence_runner --case boundary_edits)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(
@@ -448,15 +432,15 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_long_backslash
     formula_dollar_backtick_openers
     formula_backslash_openers
-    edit_emph_openers
-    edit_backtick_runs
-    edit_quotes_deep
-    edit_list_spine
-    edit_reference_collisions
-    edit_fence_gate
-    edit_lazy_wall
-    edit_crlf_seam
-    edit_footnote_labels)
+    append_emph_openers
+    append_backtick_runs
+    append_quotes_deep
+    append_list_spine
+    append_reference_collisions
+    append_fence_gate
+    append_lazy_wall
+    append_crlf_seam
+    append_footnote_labels)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()
@@ -464,8 +448,8 @@ endforeach()
 # fuzz: deterministic smoke over fixed corpora and seeded generated inputs.
 # Long-running campaigns stay in the explicit AFL/libFuzzer maintenance
 # targets and reuse the corpus under core/afl_test_cases; the document
-# edit-script campaign (fuzz_document_edits) shares the script format the
-# seeded smoke below drives deterministically.
+# append-script campaign (fuzz_document_appends) shares the script format
+# the seeded smoke below drives deterministically.
 markdown_core_add_test(
     fuzz_smoke
     fuzz

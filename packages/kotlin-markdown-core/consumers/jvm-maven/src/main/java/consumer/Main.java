@@ -33,23 +33,23 @@ public final class Main {
         }
         if (document.revisionBits() != paragraph.revisionBits()) {
             // Both were minted by the same parse, which is revision zero: a
-            // revision counts the edits a node has survived, and this one has
-            // survived none.
+            // revision counts the mutations a node has survived, and this one
+            // has survived none.
             throw new IllegalStateException("one parse must mint every node at one revision");
         }
         if (document.revisionBits() != 0L) {
-            throw new IllegalStateException("an unedited parse is revision zero");
+            throw new IllegalStateException("a fresh parse is revision zero");
         }
 
-        // Editing from plain Java: (id, revision) is the entire update
+        // Appending from plain Java: (id, revision) is the entire update
         // protocol, so what changed is read off the successor tree itself.
-        try (Document next = document.edit("héllo 🚀 world\n")) {
+        try (Document next = document.append("world\n")) {
             if (next.revisionBits() == document.revisionBits()) {
                 throw new IllegalStateException("a text change must advance the document revision");
             }
             Markup grown = next.getContent().get(0);
             if (!grown.getId().equals(paragraph.getId())) {
-                throw new IllegalStateException("the surviving paragraph must keep its id across the edit");
+                throw new IllegalStateException("the surviving paragraph must keep its id across the append");
             }
             if (grown.revisionBits() != next.revisionBits()) {
                 throw new IllegalStateException("a changed node must carry the new document revision");

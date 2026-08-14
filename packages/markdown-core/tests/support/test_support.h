@@ -68,10 +68,10 @@ static inline void mc_text_free(mc_text *t) {
     t->capacity = 0;
 }
 
-/* Hands `markdown` to the document and swaps the caller's handle. */
-static inline bool mc_edit(
+/* Appends `chunk` to the document and swaps the caller's handle. */
+static inline bool mc_append(
     markdown_core_document **document,
-    markdown_core_string markdown,
+    markdown_core_string chunk,
     markdown_core_error **error
 ) {
     markdown_core_document *previous = *document;
@@ -80,7 +80,7 @@ static inline bool mc_edit(
     // shape every test was written against. On failure the receiver was
     // still the live head; releasing it ends the chain, which is the
     // fail-stop shape these tests want.
-    markdown_core_document *successor = markdown_core_document_edit(previous, markdown, error);
+    markdown_core_document *successor = markdown_core_document_append(previous, chunk, error);
     markdown_core_document_free(previous);
     *document = successor;
     return successor != NULL;

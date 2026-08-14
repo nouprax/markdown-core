@@ -6,25 +6,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Mutation replay of the shared canonical AST corpus: every per-line
+/** Append replay of the shared canonical AST corpus: every per-line
  * revision must dump byte-equal to a one-shot parse of the same text, and
  * every tree must keep the (id, revision) contract against a cumulative
  * ledger — the Kotlin twin of the C harness's two-snapshot double walk
- * (tests/support/edit_replay.c). Both mutations replay: the edit path hands
- * the whole text over per line, the append path hands only the line, and
- * the ledger holds them to the same one contract. */
-class EditAstTest {
-    @Test
-    fun editsReplayTheManifestCorpusToDumpEqualityPerRevision() {
-        replayManifest { document, replayed, _ -> document.edit(replayed) }
-    }
-
+ * (tests/support/append_replay.c). The append path hands only the line over;
+ * the ledger holds the whole chain to the one contract. */
+class AppendAstTest {
     @Test
     fun appendsReplayTheManifestCorpusToDumpEqualityPerRevision() {
-        replayManifest { document, _, chunk -> document.append(chunk) }
-    }
-
-    private fun replayManifest(advance: (Document, String, String) -> Document) {
         assertTrue(canonicalAstCases.isNotEmpty())
         for (testCase in canonicalAstCases) {
             var document = Document("", testCase.options)
@@ -38,7 +28,7 @@ class EditAstTest {
                 // The mutation supersedes its receiver, so the replay follows
                 // the chain and closes each predecessor behind itself.
                 val superseded = document
-                document = advance(document, replayed, chunk)
+                document = document.append(chunk)
                 superseded.close()
 
                 // Equivalence: the mutated document dumps byte-equal to a
@@ -70,7 +60,7 @@ private class Sighting(
 )
 
 /** The cumulative id ledger of one replay. Each verified tree must satisfy:
- * no id appears twice, ids never resurrect (at any later edit, not just the
+ * no id appears twice, ids never resurrect (at any later append, not just the
  * next), revisions never regress, a child's revision never exceeds its
  * parent's, a minted or changed node carries the new document revision, and a
  * node that kept its last-sighting revision kept its projection and child

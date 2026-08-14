@@ -26,10 +26,10 @@
 
 // A document is a purely local object: it owns its text, its committed tree,
 // and its definition tables, and shares nothing with any other document but
-// its series' revision counter. Every edit is one full parse of the new
-// text plus a diff against the previous document (document_build below); the
-// equivalence suite pins that the result always equals a one-shot parse of
-// the same text.
+// its series' revision counter. Every append is one full parse of all bytes
+// so far plus a diff against the previous document (document_build below);
+// the equivalence suite pins that the result always equals a one-shot parse
+// of the same text.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -505,7 +505,7 @@ markdown_core_document *markdown_core_document_new(
     return document_build(options, markdown, NULL, markdown_core_mem_default(), true, error);
 }
 
-/* THE MUTATION GUARDS, shared by both mutations. A mutation is legal only
+/* THE MUTATION GUARDS. A mutation is legal only
  * on the chain's live head — a superseded handle fails deterministically,
  * which is what keeps history linear and lets a consumer destroy and
  * rebuild derived state in place — and never on a poisoned chain. Argument
@@ -549,36 +549,12 @@ static bool mutation_permitted(
     return true;
 }
 
-/* EDIT: the whole-text mutation.
- *
- *     let new = Document(markdown, document.options)
- *     diff(document, new)
- *     return new
- *
- * It is `edit` and not `commit` because there is nothing pending to commit:
- * you hand over text and get back the document it describes, and the
- * successor supersedes the receiver. A failed edit supersedes nothing — the
- * receiver stays the chain's head and can be queried, walked, and mutated
- * again. */
-markdown_core_document *markdown_core_document_edit(
-    markdown_core_document *document,
-    markdown_core_string markdown,
-    markdown_core_error **error
-) {
-    if (!mutation_permitted(document, markdown, error)) {
-        return NULL;
-    }
-    return document_build(&document->options, markdown, document, document->chain->mem, document->arena != NULL, error);
-}
-
-/* APPEND: the trailing mutation, the streaming plan's hot path. Any byte
+/* APPEND: the one mutation. Any byte
  * split is legal — mid-UTF-8, mid-CRLF, mid-line — because the successor's
  * projection is defined as a fresh parse of all bytes so far, and bytes are
- * all the chunk adds.
- *
- * This is the D6 fallback implementation: concatenate and rebuild whole.
- * The warm path replaces it construct by construct from P2 on, behind the
- * same signature and the same oracle.
+ * all the chunk adds. The implementation is exactly that definition:
+ * concatenate and rebuild whole, then diff against the receiver for the
+ * (id, revision) handover.
  *
  * A failed append poisons the chain (D5): the engine cannot say which side
  * of the failure the chunk landed on, the caller still holds every byte it
@@ -600,8 +576,8 @@ markdown_core_document *markdown_core_document_append(
         return NULL;
     }
     /* One flat buffer of bytes-so-far plus the chunk. An empty chunk still
-     * mutates — the chain advances and the receiver is superseded, exactly
-     * as an edit to identical text would. */
+     * mutates — the chain advances and the receiver is superseded, and the
+     * successor's projection is byte-identical to its predecessor's. */
     length = markdown_core_source_length(document->source);
     total = length + chunk.length;
     joined = (uint8_t *)malloc(total ? total : 1);

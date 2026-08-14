@@ -19,8 +19,9 @@ public struct Table: Markup {
     ///
     /// A property OF the node, not of a lookup: a document is an immutable
     /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an edit
-    /// above this node leaves every reactive comparison below it untouched.
+    /// deliberately absent from `==` — position is not content — so an
+    /// append that only grows this node's extent leaves every reactive
+    /// comparison untouched.
     public let scope: Scope
     /// Per-column alignments, one entry per column.
     public let alignments: [TableAlignment]
@@ -73,8 +74,9 @@ public struct TableRow: Markup {
     ///
     /// A property OF the node, not of a lookup: a document is an immutable
     /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an edit
-    /// above this node leaves every reactive comparison below it untouched.
+    /// deliberately absent from `==` — position is not content — so an
+    /// append that only grows this node's extent leaves every reactive
+    /// comparison untouched.
     public let scope: Scope
     /// Whether this is the table's header row.
     public let isHeader: Bool
@@ -111,8 +113,9 @@ public struct TableCell: Markup {
     ///
     /// A property OF the node, not of a lookup: a document is an immutable
     /// projection of one text, so a node in it does not move. It is
-    /// deliberately absent from `==` — position is not content — so an edit
-    /// above this node leaves every reactive comparison below it untouched.
+    /// deliberately absent from `==` — position is not content — so an
+    /// append that only grows this node's extent leaves every reactive
+    /// comparison untouched.
     public let scope: Scope
     /// The cell's inline content.
     public let content: [any Markup]

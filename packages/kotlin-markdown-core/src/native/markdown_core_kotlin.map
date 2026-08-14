@@ -1,7 +1,6 @@
 {
     global:
         Java_com_nouprax_markdown_core_JvmNative_open;
-        Java_com_nouprax_markdown_core_JvmNative_edit;
         Java_com_nouprax_markdown_core_JvmNative_append;
         Java_com_nouprax_markdown_core_JvmNative_release;
     local:

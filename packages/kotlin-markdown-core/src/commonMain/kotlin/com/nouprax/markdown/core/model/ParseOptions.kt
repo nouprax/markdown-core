@@ -9,9 +9,9 @@ import kotlin.jvm.JvmSynthetic
 /**
  * What the parser recognizes.
  *
- * Fixed for a document's whole series: an edit carries them forward
+ * Fixed for a document's whole series: an append carries them forward
  * unchanged, and parsing under different options is a new [Document] rather
- * than an edit.
+ * than a mutation.
  */
 public data class ParseOptions
     @JvmOverloads

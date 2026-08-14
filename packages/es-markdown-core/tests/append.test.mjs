@@ -72,7 +72,7 @@ test("appends: the trailing mutation extends the text and keeps settled identity
     assert.ok(second.content[0] === heading);
     verifyMirror(second, first, "trailing append");
 
-    // Same tree as an edit of the concatenated text.
+    // Same tree as a one-shot parse of the concatenated text.
     const reference = Document("# Title\n\nHello world");
     assert.equal(second.dump(), reference.dump());
     reference.close();
@@ -147,7 +147,6 @@ test("appends: an empty append advances the chain and changes no value", () => {
 
     // The chain still advanced: the receiver is superseded...
     assert.throws(() => base.append("!"), /superseded/);
-    assert.throws(() => base.edit("Other\n"), /superseded/);
     // ...and the empty append consumed a document revision of its own: the
     // next change stamps two past the base root, not one.
     const changed = idle.append("!\n");
@@ -161,7 +160,6 @@ test("appends: a rejected argument fails the call, and the receiver stays the he
     const document = Document("One");
     // Argument failures supersede nothing and poison nothing.
     assert.throws(() => document.append(1), TypeError);
-    assert.throws(() => document.edit(null), TypeError);
     const next = document.append(" more\n");
     assert.equal(next.content[0].content[0].literal, "One more");
     // A superseded handle supports close — idempotently — and nothing else
@@ -232,16 +230,6 @@ test("appends: the value mirror survives a whole streamed conversation", () => {
         const reference = Document(streamed);
         assert.equal(document.dump(), reference.dump(), `append ${appends}`);
         reference.close();
-
-        // One mid-stream correction: an edit of the accumulated text takes
-        // the full-decode path and rebuilds the mirror, and the appends that
-        // follow prune against the rebuilt one — the warmup contract.
-        if (appends === 40) {
-            const editing = document;
-            document = document.edit(streamed);
-            assert.throws(() => editing.append("x"), /superseded/);
-            editing.close();
-        }
     }
     assert.ok(appends > 100);
     const reference = Document(source);
@@ -250,15 +238,15 @@ test("appends: the value mirror survives a whole streamed conversation", () => {
     document.close();
 });
 
-test("appends: identity objects stay interned across appends and a later edit", () => {
+test("appends: identity objects stay interned across a whole chain of appends", () => {
     // Ids remain === across the whole series: the interning map must keep
-    // full coverage through pruned decodes, or a later full decode would
-    // mint duplicate MarkupID objects for nodes that were carried whole.
+    // full coverage through pruned decodes, or a later decode would mint
+    // duplicate MarkupID objects for nodes that were carried whole.
     const first = Document("# Title\n\nSettled *deep* inline.\n\nTail");
     const deepIds = flatten(first).map((node) => node.id);
 
     const second = first.append(" grows");
-    const third = second.edit("# Title\n\nSettled *deep* inline.\n\nTail grows more");
+    const third = second.append(" more");
     for (const id of deepIds) {
         const survivor = third.node(id);
         if (survivor === null) continue;

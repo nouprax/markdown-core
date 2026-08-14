@@ -27,9 +27,6 @@ internal actual fun cOpen(
 }
 
 @JvmSynthetic
-internal actual fun CDocumentHandle.edit(source: ByteArray): ByteArray = JvmNative.edit(this, source)
-
-@JvmSynthetic
 internal actual fun CDocumentHandle.append(
     chunk: ByteArray,
     baseline: ULong,
@@ -128,11 +125,6 @@ private object JvmNative {
     external fun open(
         source: ByteArray,
         optionsMask: Int,
-    ): ByteArray
-
-    external fun edit(
-        handle: Long,
-        source: ByteArray,
     ): ByteArray
 
     // The baseline rides as the ULong's bit pattern: JNI has no unsigned

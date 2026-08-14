@@ -105,7 +105,7 @@ void rawValue;
 void revision;
 void documentScope;
 
-const successor: ParsedDocument = document.edit("# typed again");
+const successor: ParsedDocument = document.append(" and appended");
 const successorRevision: number = successor.revision;
 const currentValue: Markup | null = successor.node(document.id);
 const diagnostics: readonly Diagnostic[] = successor.diagnostics;
@@ -116,13 +116,15 @@ void currentValue;
 void diagnostics;
 // @ts-expect-error options are immutable for a document's whole series
 document.options.tables = false;
-const appended: ParsedDocument = successor.append(" and appended");
+const appended: ParsedDocument = successor.append(" and more");
 const appendedRevision: number = appended.revision;
 void appendedRevision;
 // @ts-expect-error append takes the chunk's text
 successor.append();
 // @ts-expect-error a chunk is a string, not bytes
 successor.append(new Uint8Array(1));
+// @ts-expect-error a chain grows one way — append; replacing the text is a new document
+successor.edit("# typed again");
 appended.close();
 successor.close();
 

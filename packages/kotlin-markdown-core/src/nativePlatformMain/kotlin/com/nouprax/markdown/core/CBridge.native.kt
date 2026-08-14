@@ -3,7 +3,6 @@
 package com.nouprax.markdown.core
 
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_append
-import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_edit
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_free
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_open
 import com.nouprax.markdown.core.internal.nativebridge.markdown_core_kotlin_release
@@ -62,25 +61,6 @@ internal actual fun cOpen(
             }
         }
     }
-
-internal actual fun CDocumentHandle.edit(source: ByteArray): ByteArray {
-    val handle = toULong()
-    return payload("native document edit failed") { output, outputLength ->
-        if (source.isEmpty()) {
-            markdown_core_kotlin_edit(handle, null, 0u, output, outputLength)
-        } else {
-            source.usePinned { pinned ->
-                markdown_core_kotlin_edit(
-                    handle,
-                    pinned.addressOf(0).reinterpret(),
-                    source.size.toULong(),
-                    output,
-                    outputLength,
-                )
-            }
-        }
-    }
-}
 
 internal actual fun CDocumentHandle.append(
     chunk: ByteArray,

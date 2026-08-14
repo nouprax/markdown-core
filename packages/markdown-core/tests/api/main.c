@@ -1753,15 +1753,6 @@ static char *dump_document_cstr(const markdown_core_document *document) {
  * distinction has no per-node observable — a changed node and an ancestor
  * of one both carry the new revision, because the revision is
  * subtree-covering by contract. */
-static int id_changed_at(const markdown_core_document *document, markdown_core_node_id id) {
-    const markdown_core_node *node = node_by_id(markdown_core_document_root(document), id);
-    return node && markdown_core_node_get_revision(node) == markdown_core_document_revision(document);
-}
-
-static int id_retired(const markdown_core_document *document, markdown_core_node_id id) {
-    return node_by_id(markdown_core_document_root(document), id) == NULL;
-}
-
 static const char SESSION_RICH_SOURCE[] = "# Title\n"
                                           "\n"
                                           "Intro with *emphasis*, **strong**, ~~gone~~, `code`, a [ref][label],\n"
@@ -1797,10 +1788,9 @@ static void document_streaming_equivalence(test_batch_runner *runner) {
     );
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
     size_t length = strlen(SESSION_RICH_SOURCE);
     size_t offset;
-    int all_edits_ok = 1, all_commits_ok = 1;
+    int all_appends_ok = 1;
 
     OK(runner, reference != NULL && expected != NULL, "document equivalence reference parse");
     OK(runner, document != NULL, "document_open succeeds");
@@ -1808,17 +1798,13 @@ static void document_streaming_equivalence(test_batch_runner *runner) {
         goto cleanup;
     }
 
-    /* Byte-at-a-time token stream with a commit after every byte. */
+    /* Byte-at-a-time token stream: one real append per byte. */
     for (offset = 0; offset < length; offset++) {
-        if (!mc_text_splice(&mctext, offset, offset, (const uint8_t *)SESSION_RICH_SOURCE + offset, 1)) {
-            all_edits_ok = 0;
-        }
-        if (!mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error)) {
-            all_commits_ok = 0;
+        if (!mc_append(&document, mc_sv((const uint8_t *)SESSION_RICH_SOURCE + offset, 1), &error)) {
+            all_appends_ok = 0;
         }
     }
-    OK(runner, all_edits_ok, "per-byte appends all succeed");
-    OK(runner, all_commits_ok, "per-byte commits all succeed");
+    OK(runner, all_appends_ok, "per-byte appends all succeed");
     INT_EQ(runner, (int)markdown_core_document_length(document), (int)length, "document_length tracks the text");
 
     {
@@ -1833,7 +1819,6 @@ static void document_streaming_equivalence(test_batch_runner *runner) {
 cleanup:
     free(expected);
     markdown_core_document_free(reference);
-    mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
 }
@@ -1897,208 +1882,9 @@ static void subtree_hash_completeness(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* Inserting a paragraph at the head of a run of same-shaped paragraphs must
- * leave every existing paragraph's id on its own content. This is the case
- * `subtree_hash` exists for (extensions/diff.c): the prefix sweep pairs
- * children while their hashes agree, so a hash that cannot tell "alpha" from
- * "bravo" lets the sweep eat the whole run and re-point every id onto the next
- * paragraph's text. Every paragraph here has exactly one Text child, so child
- * COUNT cannot distinguish them -- only their bytes can. */
-static void document_head_insertion_id_stability(test_batch_runner *runner) {
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    static const char body[] = "alpha\n\nbravo\n\ncharlie\n";
-    static const char head[] = "zulu\n\n";
-    markdown_core_node_id alpha_id = 0, bravo_id = 0, charlie_id = 0;
-
-    OK(runner, document != NULL, "head-insertion document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, (const uint8_t *)body, sizeof(body) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "paragraph-run baseline commits");
-    {
-        const markdown_core_node *p = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        alpha_id = p ? markdown_core_node_get_id(p) : 0;
-        p = p ? markdown_core_node_get_next_sibling(p) : NULL;
-        bravo_id = p ? markdown_core_node_get_id(p) : 0;
-        p = p ? markdown_core_node_get_next_sibling(p) : NULL;
-        charlie_id = p ? markdown_core_node_get_id(p) : 0;
-        OK(runner, alpha_id && bravo_id && charlie_id, "the three paragraphs carry ids");
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, (const uint8_t *)head, sizeof(head) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "head insertion before the run commits");
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        /* Each surviving id must still name the paragraph holding its own
-         * text. Reading the literal rather than the position is the point:
-         * a re-pointed id keeps a plausible position and loses its content. */
-        struct {
-            markdown_core_node_id id;
-            const char *literal;
-        } expected[] = {{alpha_id, "alpha"}, {bravo_id, "bravo"}, {charlie_id, "charlie"}};
-        size_t i;
-        for (i = 0; i < sizeof(expected) / sizeof(expected[0]); i++) {
-            const markdown_core_node *p = node_by_id(root, expected[i].id);
-            const markdown_core_node *text = p ? markdown_core_node_get_first_child(p) : NULL;
-            /* get_literal takes a mutable node; the read itself is const. */
-            const char *literal = text ? markdown_core_node_get_literal((markdown_core_node *)text) : NULL;
-            OK(runner,
-               literal && strcmp(literal, expected[i].literal) == 0,
-               "head insertion leaves each paragraph id on its own text");
-        }
-    }
-
-    mc_text_free(&mctext);
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
-/* THE PREFIX SWEEP PAIRS ON subtree_hash, so a field the hash omits is a
- * field two different nodes collide on -- and the sweep then hands the
- * survivor's id to the newcomer. Insert `## Same` in front of `# Same`: the
- * heading level is what tells them apart, and if it is not hashed the H2
- * takes the H1's id while the H1 is minted fresh. Same shape for a fenced
- * block whose info matches but whose body does not. */
-static void document_head_insertion_pairs_on_value(test_batch_runner *runner) {
-    static const char h1[] = "# Same\n";
-    static const char h2_then_h1[] = "## Same\n\n# Same\n";
-    static const char one_block[] = "```js\nalpha\n```\n";
-    static const char two_blocks[] = "```js\nbeta\n```\n\n```js\nalpha\n```\n";
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv(h1, strlen(h1)), NULL, &error);
-    markdown_core_node_id heading_id = 0;
-    uint64_t heading_rev = 0;
-
-    OK(runner, document != NULL, "value-pairing document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-    {
-        const markdown_core_node *h = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        heading_id = h ? markdown_core_node_get_id(h) : 0;
-        heading_rev = h ? markdown_core_node_get_revision(h) : 0;
-        INT_EQ(runner, h ? h->as.heading.level : 0, 1, "baseline heading is an H1");
-    }
-
-    OK(runner,
-       mc_edit(&document, mc_sv(h2_then_h1, strlen(h2_then_h1)), &error),
-       "inserting a same-text H2 above the H1 commits");
-    {
-        const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
-        OK(runner, first && second, "both headings are present after the insert");
-        if (first && second) {
-            INT_EQ(runner, first->as.heading.level, 2, "the inserted heading is the H2");
-            INT_EQ(runner, second->as.heading.level, 1, "the surviving heading is the H1");
-            OK(runner,
-               markdown_core_node_get_id(first) != heading_id,
-               "the INSERTED heading is minted fresh, not handed the survivor's id");
-            OK(runner, markdown_core_node_get_id(second) == heading_id, "the SURVIVING heading keeps its id");
-            OK(runner,
-               markdown_core_node_get_revision(second) == heading_rev,
-               "the surviving heading is unchanged, so its revision does not move");
-        }
-    }
-    markdown_core_document_free(document);
-    document = markdown_core_document_new(mc_sv(one_block, strlen(one_block)), NULL, &error);
-    OK(runner, document != NULL, "same-info code document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-    {
-        const markdown_core_node *block = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        markdown_core_node_id block_id = block ? markdown_core_node_get_id(block) : 0;
-        OK(runner,
-           mc_edit(&document, mc_sv(two_blocks, strlen(two_blocks)), &error),
-           "inserting a same-info code block above it commits");
-        {
-            const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
-            const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
-            OK(runner,
-               second && markdown_core_node_get_id(second) == block_id,
-               "the id follows the block whose BODY survived, not the shared info string");
-        }
-    }
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
-/* THE SAME TRAP, for every type whose telling-apart value lives behind the
- * extension that registered it. Each pair differs only in that value, so
- * without markdown_core_extension.hash_value they hash alike and the sweep
- * hands the newcomer the survivor's id. */
-static void document_head_insertion_pairs_on_extension_value(test_batch_runner *runner) {
-    static const struct {
-        const char *name;
-        const char *before;
-        const char *after;
-    } cases[] = {
-        {"table alignment", "| a |\n| :-- |\n| b |\n", "| a |\n| --: |\n| b |\n\n| a |\n| :-- |\n| b |\n"},
-        {"directive name", ":::alpha\nbody\n:::\n", ":::bravo\nbody\n:::\n\n:::alpha\nbody\n:::\n"},
-        {"directive attributes", ":::note{a=1}\nbody\n:::\n", ":::note{a=2}\nbody\n:::\n\n:::note{a=1}\nbody\n:::\n"},
-        {"formula literal", "$$\nalpha\n$$\n", "$$\nbeta\n$$\n\n$$\nalpha\n$$\n"},
-        {"cross-link target", "[[alpha]]\n", "[[beta]]\n\n[[alpha]]\n"},
-        {"embed target", "![[alpha]]\n", "![[beta]]\n\n![[alpha]]\n"},
-    };
-    size_t i;
-
-    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        markdown_core_error *error = NULL;
-        markdown_core_document *document =
-            markdown_core_document_new(mc_sv(cases[i].before, strlen(cases[i].before)), NULL, &error);
-        markdown_core_node_id first_id = 0;
-        uint64_t first_rev = 0;
-
-        OK(runner, document != NULL, "%s: baseline opens", cases[i].name);
-        if (!document) {
-            markdown_core_error_free(error);
-            continue;
-        }
-        {
-            const markdown_core_node *block = markdown_core_node_get_first_child(markdown_core_document_root(document));
-            first_id = block ? markdown_core_node_get_id(block) : 0;
-            first_rev = block ? markdown_core_node_get_revision(block) : 0;
-        }
-        OK(runner,
-           mc_edit(&document, mc_sv(cases[i].after, strlen(cases[i].after)), &error),
-           "%s: inserting the near-identical block above it commits",
-           cases[i].name);
-        {
-            const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
-            const markdown_core_node *second = first ? markdown_core_node_get_next_sibling(first) : NULL;
-            OK(runner,
-               first && markdown_core_node_get_id(first) != first_id,
-               "%s: the inserted block is minted fresh",
-               cases[i].name);
-            OK(runner,
-               second && markdown_core_node_get_id(second) == first_id,
-               "%s: the surviving block keeps its id",
-               cases[i].name);
-            OK(runner,
-               second && markdown_core_node_get_revision(second) == first_rev,
-               "%s: the survivor is unchanged, so its revision does not move",
-               cases[i].name);
-        }
-        markdown_core_document_free(document);
-        markdown_core_error_free(error);
-    }
-}
-
 static void document_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
     const char *part_one = "# Title\n\nHello ";
     const char *part_two = "world **bold**";
     markdown_core_node_id heading_id, paragraph_id, text_id;
@@ -2109,8 +1895,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
         return;
     }
 
-    mc_text_splice(&mctext, 0, 0, (const uint8_t *)part_one, strlen(part_one));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "first commit succeeds");
+    OK(runner, mc_append(&document, mc_sv(part_one, strlen(part_one)), &error), "first append succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2127,14 +1912,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
     }
 
     rev_before = markdown_core_document_revision(document);
-    mc_text_splice(
-        &mctext,
-        markdown_core_document_length(document),
-        markdown_core_document_length(document),
-        (const uint8_t *)part_two,
-        strlen(part_two)
-    );
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "second commit succeeds");
+    OK(runner, mc_append(&document, mc_sv(part_two, strlen(part_two)), &error), "second append succeeds");
 
     {
         const markdown_core_node *root = markdown_core_document_root(document);
@@ -2143,7 +1921,7 @@ static void document_append_id_stability(test_batch_runner *runner) {
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
         const markdown_core_node *strong = markdown_core_node_get_next_sibling(text);
         // A revision is the MOMENT a document was produced, not a count of
-        // the edits behind it, so the pair only has to advance.
+        // the mutations behind it, so the pair only has to advance.
         uint64_t after = markdown_core_document_revision(document);
         OK(runner, after > rev_before, "the document revision advances");
 
@@ -2172,7 +1950,6 @@ static void document_append_id_stability(test_batch_runner *runner) {
         OK(runner, markdown_core_document_series(document) != 0, "document series is nonzero");
     }
 
-    mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
 }
@@ -2213,57 +1990,6 @@ static void document_series_entropy(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
-static void document_suffix_id_stability(test_batch_runner *runner) {
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    const char *source = "para one\n\npara two\n\npara three\n";
-    markdown_core_node_id ids[3];
-    uint64_t revs[3];
-
-    OK(runner, document != NULL, "suffix-stability document opens");
-    if (!document) {
-        return;
-    }
-    mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "suffix baseline commit succeeds");
-
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *child = markdown_core_node_get_first_child(root);
-        int i;
-        for (i = 0; i < 3 && child; i++) {
-            ids[i] = markdown_core_node_get_id(child);
-            revs[i] = markdown_core_node_get_revision(child);
-            child = markdown_core_node_get_next_sibling(child);
-        }
-    }
-
-    /* Replace "one" (bytes 5..8) with "1!" — only the first paragraph. */
-    mc_text_splice(&mctext, 5, 8, (const uint8_t *)"1!", 2);
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "mid-document edit commit succeeds");
-
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *first = markdown_core_node_get_first_child(root);
-        const markdown_core_node *second = markdown_core_node_get_next_sibling(first);
-        const markdown_core_node *third = markdown_core_node_get_next_sibling(second);
-        OK(runner, markdown_core_node_get_id(first) == ids[0], "edited paragraph keeps its id");
-        OK(runner, markdown_core_node_get_revision(first) > revs[0], "edited paragraph revision advances");
-        OK(runner,
-           markdown_core_node_get_id(second) == ids[1] && markdown_core_node_get_revision(second) == revs[1],
-           "second paragraph is untouched");
-        OK(runner,
-           markdown_core_node_get_id(third) == ids[2] && markdown_core_node_get_revision(third) == revs[2],
-           "third paragraph is untouched");
-    }
-
-    mc_text_free(&mctext);
-
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
 static void document_utf8_split_append(test_batch_runner *runner) {
     /* A streamed token may split a multi-byte character; the completing
      * append must yield the same tree as a one-shot parse. */
@@ -2272,17 +1998,14 @@ static void document_utf8_split_append(test_batch_runner *runner) {
     markdown_core_document *reference = markdown_core_document_new(mc_sv(euro_doc, sizeof(euro_doc)), NULL, &error);
     char *expected = reference ? dump_document_cstr(reference) : NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
 
     OK(runner, document != NULL && expected != NULL, "utf8-split document and reference exist");
     if (document && expected) {
         char *streamed;
-        mc_text_splice(&mctext, 0, 0, euro_doc, 3); /* 'p', ' ', 0xE2 */
         OK(runner,
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-           "commit with a dangling lead byte succeeds");
-        mc_text_splice(&mctext, 3, 3, euro_doc + 3, 3);
-        OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "completing commit succeeds");
+           mc_append(&document, mc_sv(euro_doc, 3), &error), /* 'p', ' ', 0xE2 */
+           "append with a dangling lead byte succeeds");
+        OK(runner, mc_append(&document, mc_sv(euro_doc + 3, 3), &error), "completing append succeeds");
         streamed = dump_document_cstr(document);
         if (streamed) {
             STR_EQ(runner, streamed, expected, "split multi-byte character parses whole");
@@ -2291,7 +2014,6 @@ static void document_utf8_split_append(test_batch_runner *runner) {
     }
     free(expected);
     markdown_core_document_free(reference);
-    mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
 }
@@ -2341,179 +2063,6 @@ static void document_directive_label_parent(test_batch_runner *runner) {
     markdown_core_error_free(error);
 }
 
-static void document_directive_label_edit_identity(test_batch_runner *runner) {
-    static const uint8_t source[] = ":x[abc]\n";
-    static const uint8_t replacement = 'd';
-    static const uint8_t reshaped[] = ":x[*adc*]\n";
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    markdown_core_node_id root_id = 0;
-    markdown_core_node_id paragraph_id = 0;
-    markdown_core_node_id directive_id = 0;
-    markdown_core_node_id label_id = 0;
-    markdown_core_node_id text_id = 0;
-
-    OK(runner, document != NULL, "directive identity document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, source, sizeof(source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "directive identity baseline commits");
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-        const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
-        const markdown_core_node *label = markdown_core_node_directive_label(directive);
-        const markdown_core_node *text = markdown_core_node_get_first_child(label);
-        root_id = markdown_core_node_get_id(root);
-        paragraph_id = markdown_core_node_get_id(paragraph);
-        directive_id = markdown_core_node_get_id(directive);
-        label_id = markdown_core_node_get_id(label);
-        text_id = markdown_core_node_get_id(text);
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 4, 5, &replacement, 1) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "directive label literal edit commits");
-    // The literal edit keeps every id on the path and stamps the new
-    // revision up the ancestor chain — the revision is subtree-covering, so
-    // the chain from the edited Text to the root all reports the change.
-    OK(runner, id_changed_at(document, text_id), "edited label Text carries the new revision");
-    OK(runner, id_changed_at(document, label_id), "the change reaches DirectiveLabel's revision");
-    OK(runner, id_changed_at(document, directive_id), "the change reaches the directive's revision");
-    OK(runner, id_changed_at(document, paragraph_id), "the change reaches the paragraph's revision");
-    OK(runner, id_changed_at(document, root_id), "the change reaches the root's revision");
-
-    OK(runner,
-       mc_text_splice(&mctext, 0, sizeof(source) - 1, reshaped, sizeof(reshaped) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "directive label topology edit commits");
-    OK(runner,
-       node_by_id(markdown_core_document_root(document), label_id) != NULL,
-       "label topology edit preserves DirectiveLabel identity");
-    OK(runner, id_changed_at(document, label_id), "label child topology change stamps DirectiveLabel");
-    OK(runner, id_retired(document, text_id), "the Text replaced by Emph retires its id");
-
-    mc_text_free(&mctext);
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
-static void document_directive_empty_label_transitions(test_batch_runner *runner) {
-    static const uint8_t inline_source[] = ":x{}\n";
-    static const uint8_t block_source[] = "::x{}\n";
-    static const uint8_t empty_label[] = "[]";
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    markdown_core_node_id directive_id = 0;
-    markdown_core_node_id label_id = 0;
-
-    OK(runner, document != NULL, "inline empty-label document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, inline_source, sizeof(inline_source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "inline absent-label baseline commits");
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-        const markdown_core_node *directive = markdown_core_node_get_first_child(paragraph);
-        directive_id = markdown_core_node_get_id(directive);
-        OK(runner,
-           markdown_core_node_directive_label(directive) == NULL,
-           "inline baseline records an absent label as no child");
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 2, 2, empty_label, sizeof(empty_label) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "inline absent-to-empty label edit commits");
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        const markdown_core_node *label = markdown_core_node_directive_label(directive);
-        label_id = markdown_core_node_get_id(label);
-        OK(runner,
-           directive && label && markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
-               markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
-           "inline absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
-    }
-    OK(runner, id_changed_at(document, label_id), "the minted DirectiveLabel carries the new revision");
-    OK(runner, id_changed_at(document, directive_id), "inline absent-to-empty stamps the directive");
-
-    OK(runner,
-       mc_text_splice(&mctext, 2, 4, NULL, 0) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "inline empty-to-absent label edit commits");
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        OK(runner,
-           directive && markdown_core_node_directive_label(directive) == NULL,
-           "inline empty-to-absent preserves directive identity and removes its label child");
-    }
-    OK(runner, id_retired(document, label_id), "inline empty-to-absent retires the DirectiveLabel id");
-    OK(runner, id_changed_at(document, directive_id), "inline empty-to-absent stamps the directive");
-    mc_text_free(&mctext);
-    markdown_core_document_free(document);
-    document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-
-    OK(runner, document != NULL, "block empty-label document opens");
-    if (!document) {
-        markdown_core_error_free(error);
-        return;
-    }
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, block_source, sizeof(block_source) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "block absent-label baseline commits");
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *directive = markdown_core_node_get_first_child(root);
-        directive_id = markdown_core_node_get_id(directive);
-        OK(runner,
-           markdown_core_node_directive_label(directive) == NULL,
-           "block baseline records an absent label as no child");
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 3, 3, empty_label, sizeof(empty_label) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "block absent-to-empty label edit commits");
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        const markdown_core_node *label = markdown_core_node_directive_label(directive);
-        label_id = markdown_core_node_get_id(label);
-        OK(runner,
-           directive && label && markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
-               markdown_core_node_get_parent(label) == directive && markdown_core_node_child_count(label) == 0,
-           "block absent-to-empty preserves directive identity and adds an empty DirectiveLabel");
-    }
-    OK(runner, id_changed_at(document, label_id), "the minted block DirectiveLabel carries the new revision");
-    OK(runner, id_changed_at(document, directive_id), "block absent-to-empty stamps the directive");
-
-    OK(runner,
-       mc_text_splice(&mctext, 3, 5, NULL, 0) && mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "block empty-to-absent label edit commits");
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        OK(runner,
-           directive && markdown_core_node_directive_label(directive) == NULL,
-           "block empty-to-absent preserves directive identity and removes its label child");
-    }
-    OK(runner, id_retired(document, label_id), "block empty-to-absent retires the DirectiveLabel id");
-    OK(runner, id_changed_at(document, directive_id), "block empty-to-absent stamps the directive");
-
-    mc_text_free(&mctext);
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
 static void document_block_directive_label_lookup(test_batch_runner *runner) {
     static const char source[] = ":::note[See [reference] and note[^n]]\n"
                                  "Body *stable*\n"
@@ -2521,37 +2070,15 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
                                  "\n"
                                  "[reference]: /a\n"
                                  "[^n]: Footnote body\n";
-    static const uint8_t replacement[] = "/b";
-    static const uint8_t prefix[] = "Head\n\n";
     markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    markdown_core_node_id directive_id = 0;
-    markdown_core_node_id label_id = 0;
-    markdown_core_node_id label_text_id = 0;
-    markdown_core_node_id link_id = 0;
-    markdown_core_node_id footnote_reference_id = 0;
-    markdown_core_node_id body_id = 0;
-    uint64_t label_revision = 0;
-    uint64_t label_text_revision = 0;
-    uint64_t link_revision = 0;
-    uint64_t footnote_reference_revision = 0;
-    uint64_t body_revision = 0;
-    markdown_core_scope label_scope = {{0, 0}, {0, 0}};
-    markdown_core_scope label_text_scope = {{0, 0}, {0, 0}};
-    const char *destination_at = strstr(source, "/a");
+    markdown_core_document *document =
+        markdown_core_document_new(mc_sv(source, strlen(source)), NULL, &error);
 
-    OK(runner, document != NULL && destination_at != NULL, "block-label lookup document opens");
-    if (!document || !destination_at) {
-        mc_text_free(&mctext);
-        markdown_core_document_free(document);
+    OK(runner, document != NULL, "block-label lookup document opens");
+    if (!document) {
         markdown_core_error_free(error);
         return;
     }
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source)) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "block-label lookup baseline commits");
     {
         const markdown_core_node *root = markdown_core_document_root(document);
         // The leading reference definition is a node now, so it is the
@@ -2567,6 +2094,8 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
         const markdown_core_node *link = NULL;
         const markdown_core_node *footnote_reference = NULL;
         const markdown_core_node *child;
+        markdown_core_scope label_scope = markdown_core_node_scope(label);
+        markdown_core_scope label_text_scope = markdown_core_node_scope(label_text);
 
         for (child = label_text; child; child = markdown_core_node_get_next_sibling(child)) {
             if (markdown_core_node_get_kind(child) == MARKDOWN_CORE_KIND_LINK_REFERENCE) {
@@ -2575,19 +2104,6 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
                 footnote_reference = child;
             }
         }
-        directive_id = markdown_core_node_get_id(directive);
-        label_id = markdown_core_node_get_id(label);
-        label_text_id = markdown_core_node_get_id(label_text);
-        link_id = markdown_core_node_get_id(link);
-        footnote_reference_id = markdown_core_node_get_id(footnote_reference);
-        body_id = markdown_core_node_get_id(body);
-        label_revision = markdown_core_node_get_revision(label);
-        label_text_revision = markdown_core_node_get_revision(label_text);
-        link_revision = markdown_core_node_get_revision(link);
-        footnote_reference_revision = markdown_core_node_get_revision(footnote_reference);
-        body_revision = markdown_core_node_get_revision(body);
-        label_scope = markdown_core_node_scope(label);
-        label_text_scope = markdown_core_node_scope(label_text);
         OK(runner,
            label && markdown_core_node_get_kind(label) == MARKDOWN_CORE_KIND_DIRECTIVE_LABEL &&
                markdown_core_node_get_parent(label) == directive &&
@@ -2603,124 +2119,24 @@ static void document_block_directive_label_lookup(test_batch_runner *runner) {
         INT_EQ(runner, (int)label_text_scope.start.column, 9, "block label Text starts inside DirectiveLabel");
         INT_EQ(runner, (int)label_text_scope.end.column, 12, "block label Text ends inside DirectiveLabel");
         OK(runner,
+           link != NULL && footnote_reference != NULL,
+           "label content resolves its reference and footnote against tail definitions");
+        OK(runner,
            body && markdown_core_node_get_kind(body) == MARKDOWN_CORE_KIND_PARAGRAPH &&
                markdown_core_node_get_next_sibling(label) == body,
            "container directive exposes its block body after DirectiveLabel");
     }
 
-    {
-        size_t offset = (size_t)(destination_at - source);
-        OK(runner,
-           mc_text_splice(&mctext, offset, offset + 2, replacement, sizeof(replacement) - 1) &&
-               mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-           "block-label reference definition edit commits");
-    }
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        const markdown_core_node *label = node_by_id(markdown_core_document_root(document), label_id);
-        const markdown_core_node *label_text = node_by_id(markdown_core_document_root(document), label_text_id);
-        const markdown_core_node *link = node_by_id(markdown_core_document_root(document), link_id);
-        const markdown_core_node *footnote_reference =
-            node_by_id(markdown_core_document_root(document), footnote_reference_id);
-        const markdown_core_node *body = node_by_id(markdown_core_document_root(document), body_id);
-        OK(runner,
-           directive && label && markdown_core_node_directive_label(directive) == label &&
-               markdown_core_node_get_parent(label) == directive,
-           "reference retarget preserves DirectiveLabel id and parent edge");
-        OK(runner,
-           label && markdown_core_node_get_revision(label) == label_revision,
-           "retargeting a definition leaves the DirectiveLabel's revision alone");
-        OK(runner,
-           label_text && markdown_core_node_get_parent(label_text) == label,
-           "reparsed block label content remains owned by DirectiveLabel");
-        OK(runner,
-           label_text && markdown_core_node_get_revision(label_text) == label_text_revision,
-           "unmodified block-label Text keeps its revision");
-        OK(runner,
-           link && markdown_core_node_get_revision(link) == link_revision,
-           "the reference node itself is untouched by the retarget");
-        OK(runner,
-           footnote_reference && markdown_core_node_get_parent(footnote_reference) == label &&
-               markdown_core_node_get_revision(footnote_reference) == footnote_reference_revision,
-           "unmodified block-label footnote keeps its id, parent, and revision");
-        OK(runner,
-           directive && label && body && markdown_core_node_get_next_sibling(label) == body &&
-               markdown_core_node_get_revision(body) == body_revision,
-           "block-label reparse preserves the block body's identity and revision");
-        label_revision = markdown_core_node_get_revision(label);
-    }
-
-    OK(runner,
-       mc_text_splice(&mctext, 0, 0, prefix, sizeof(prefix) - 1) &&
-           mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error),
-       "head insertion before a block directive commits");
-    {
-        const markdown_core_node *directive = node_by_id(markdown_core_document_root(document), directive_id);
-        const markdown_core_node *label = node_by_id(markdown_core_document_root(document), label_id);
-        const markdown_core_node *label_text = node_by_id(markdown_core_document_root(document), label_text_id);
-        const markdown_core_node *body = node_by_id(markdown_core_document_root(document), body_id);
-        markdown_core_scope shifted_label_scope =
-            label ? markdown_core_node_scope(label) : (markdown_core_scope){{0, 0}, {0, 0}};
-        markdown_core_scope shifted_text_scope =
-            label_text ? markdown_core_node_scope(label_text) : (markdown_core_scope){{0, 0}, {0, 0}};
-        OK(runner,
-           directive && label && markdown_core_node_directive_label(directive) == label &&
-               markdown_core_node_get_parent(label) == directive && label_text &&
-               markdown_core_node_get_parent(label_text) == label,
-           "shifted DirectiveLabel keeps its id and ordinary parent-child edges");
-        OK(runner,
-           label && markdown_core_node_get_revision(label) == label_revision,
-           "scope-only shift leaves DirectiveLabel revision unchanged");
-        OK(runner,
-           label_text && markdown_core_node_get_revision(label_text) == label_text_revision,
-           "scope-only shift leaves the block-label Text revision unchanged");
-        INT_EQ(
-            runner,
-            (int)shifted_label_scope.start.line,
-            (int)label_scope.start.line + 2,
-            "DirectiveLabel start line shifts after head insertion"
-        );
-        INT_EQ(
-            runner,
-            (int)shifted_label_scope.end.line,
-            (int)label_scope.end.line + 2,
-            "DirectiveLabel end line shifts after head insertion"
-        );
-        INT_EQ(
-            runner,
-            (int)shifted_label_scope.start.column,
-            (int)label_scope.start.column,
-            "DirectiveLabel start column survives a line-only shift"
-        );
-        INT_EQ(
-            runner,
-            (int)shifted_label_scope.end.column,
-            (int)label_scope.end.column,
-            "DirectiveLabel end column survives a line-only shift"
-        );
-        INT_EQ(
-            runner,
-            (int)shifted_text_scope.start.line,
-            (int)label_text_scope.start.line + 2,
-            "label Text shifts with its DirectiveLabel"
-        );
-        OK(runner,
-           directive && label && body && markdown_core_node_get_next_sibling(label) == body &&
-               markdown_core_node_get_revision(body) == body_revision,
-           "head insertion preserves the block body's identity and revision");
-    }
-
-    mc_text_free(&mctext);
     markdown_core_document_free(document);
     markdown_core_error_free(error);
 }
 
-/* THE CHAIN CONTRACT, through the public surface alone: both mutations
- * supersede their receiver, the revision line is strictly +1 per mutation
- * whichever kind, a stale handle's mutation fails deterministically and
- * disturbs nothing, an empty append still advances the chain, and
- * superseded handles free in any order. The poison path needs allocation
- * injection and lives in the concrete runner's sweep instead. */
+/* THE CHAIN CONTRACT, through the public surface alone: every append
+ * supersedes its receiver, the revision line is strictly +1 per mutation,
+ * a stale handle's mutation fails deterministically and disturbs nothing,
+ * an empty append still advances the chain, and superseded handles free in
+ * any order. The poison path needs allocation injection and lives in the
+ * concrete runner's sweep instead. */
 static void document_chain_supersession(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *head = markdown_core_document_new(mc_sv("alpha", 5), NULL, &error);
@@ -2751,19 +2167,11 @@ static void document_chain_supersession(test_batch_runner *runner) {
         markdown_core_error_free(error);
         error = NULL;
     }
-    {
-        markdown_core_document *stale = markdown_core_document_edit(head, mc_sv("y", 1), &error);
-        OK(runner, stale == NULL && error != NULL, "a stale edit fails deterministically");
-        markdown_core_error_free(error);
-        error = NULL;
-    }
-
-    /* The failed stale mutations disturbed nothing: the live head mutates,
-     * and the revision line continues +1 with an EDIT — same rule, same
-     * counter, whichever mutation. */
-    third = markdown_core_document_edit(second, mc_sv("# gamma\n", 8), &error);
-    OK(runner, third != NULL, "the live head still mutates after stale attempts");
-    OK(runner, third && markdown_core_document_revision(third) == 2, "edit advances the same revision line");
+    /* The failed stale mutation disturbed nothing: the live head still
+     * mutates, on the same counter. */
+    third = markdown_core_document_append(second, mc_sv("\n# gamma\n", 9), &error);
+    OK(runner, third != NULL, "the live head still mutates after a stale attempt");
+    OK(runner, third && markdown_core_document_revision(third) == 2, "the revision line continues +1");
 
     /* An empty append is a mutation: the chain advances, the projection does
      * not. */
@@ -2857,89 +2265,6 @@ static void document_reference_resolution_is_unbudgeted(test_batch_runner *runne
     markdown_core_error_free(error);
 }
 
-static void document_scope_shift_invariance(test_batch_runner *runner) {
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    mc_text mctext = {NULL, 0, 0};
-    const char *source = "# Title\n\nHello *world*\n";
-    const char *prefix = "Zero\n\n";
-    markdown_core_node_id paragraph_id = 0, emphasis_id = 0;
-    uint64_t paragraph_rev = 0;
-    markdown_core_scope paragraph_before = {{0, 0}, {0, 0}};
-    markdown_core_scope emphasis_before = {{0, 0}, {0, 0}};
-
-    OK(runner, document != NULL, "scope document opens");
-    if (!document) {
-        return;
-    }
-    mc_text_splice(&mctext, 0, 0, (const uint8_t *)source, strlen(source));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "scope baseline commit succeeds");
-
-    {
-        const markdown_core_node *root = markdown_core_document_root(document);
-        const markdown_core_node *heading = markdown_core_node_get_first_child(root);
-        const markdown_core_node *paragraph = markdown_core_node_get_next_sibling(heading);
-        const markdown_core_node *emphasis =
-            markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(paragraph));
-        paragraph_before = markdown_core_node_scope(paragraph);
-        emphasis_before = markdown_core_node_scope(emphasis);
-        paragraph_id = markdown_core_node_get_id(paragraph);
-        paragraph_rev = markdown_core_node_get_revision(paragraph);
-        emphasis_id = markdown_core_node_get_id(emphasis);
-        INT_EQ(runner, (int)paragraph_before.start.line, 3, "paragraph scope resolves an absolute start line");
-        INT_EQ(runner, (int)paragraph_before.end.line, 3, "paragraph scope resolves an absolute end line");
-        INT_EQ(runner, (int)emphasis_before.start.line, 3, "inline scope resolves through the parent chain");
-    }
-
-    /* Insert a paragraph above: every downstream scope shifts by two lines
-     * while ids and revisions stay put (shift-invariant equality). */
-    mc_text_splice(&mctext, 0, 0, (const uint8_t *)prefix, strlen(prefix));
-    OK(runner, mc_edit(&document, mc_sv(mctext.bytes, mctext.length), &error), "scope shift commit succeeds");
-
-    {
-        const markdown_core_node *paragraph = node_by_id(markdown_core_document_root(document), paragraph_id);
-        const markdown_core_node *emphasis = node_by_id(markdown_core_document_root(document), emphasis_id);
-        OK(runner, paragraph != NULL && emphasis != NULL, "shifted nodes keep their ids");
-        if (paragraph && emphasis) {
-            markdown_core_scope after = markdown_core_node_scope(paragraph);
-            INT_EQ(
-                runner,
-                (int)after.start.line,
-                (int)paragraph_before.start.line + 2,
-                "paragraph scope shifts with the insert"
-            );
-            INT_EQ(
-                runner,
-                (int)after.end.line,
-                (int)paragraph_before.end.line + 2,
-                "paragraph end line shifts with the insert"
-            );
-            INT_EQ(runner, (int)after.start.column, (int)paragraph_before.start.column, "columns are shift-invariant");
-            OK(runner,
-               markdown_core_node_get_revision(paragraph) == paragraph_rev,
-               "a pure line shift does not advance the revision");
-            after = markdown_core_node_scope(emphasis);
-            INT_EQ(
-                runner,
-                (int)after.start.line,
-                (int)emphasis_before.start.line + 2,
-                "inline scope shifts with the insert"
-            );
-            INT_EQ(
-                runner,
-                (int)after.start.column,
-                (int)emphasis_before.start.column,
-                "inline columns are shift-invariant"
-            );
-        }
-    }
-
-    mc_text_free(&mctext);
-
-    markdown_core_document_free(document);
-    markdown_core_error_free(error);
-}
-
 int main(void) {
     int retval;
     test_batch_runner *runner = test_batch_runner_new();
@@ -2971,20 +2296,13 @@ int main(void) {
     autolink_source_pos(runner);
     document_streaming_equivalence(runner);
     document_append_id_stability(runner);
-    document_head_insertion_id_stability(runner);
-    document_head_insertion_pairs_on_value(runner);
-    document_head_insertion_pairs_on_extension_value(runner);
     subtree_hash_completeness(runner);
     document_series_entropy(runner);
-    document_suffix_id_stability(runner);
     document_utf8_split_append(runner);
     document_directive_label_parent(runner);
-    document_directive_label_edit_identity(runner);
-    document_directive_empty_label_transitions(runner);
     document_block_directive_label_lookup(runner);
     document_chain_supersession(runner);
     document_reference_resolution_is_unbudgeted(runner);
-    document_scope_shift_invariance(runner);
 
     test_print_summary(runner);
     retval = test_ok(runner) ? 0 : 1;

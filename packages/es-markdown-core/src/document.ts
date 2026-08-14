@@ -41,8 +41,7 @@ interface Built {
      * At most one UTF-16 code unit: a trailing high surrogate the last
      * `append` held back because its low half had not arrived. It prepends
      * to the next append's chunk so a pair split across two appends reaches
-     * the encoder whole; `edit` replaces all text, so it discards this with
-     * everything else.
+     * the encoder whole.
      */
     readonly held: string;
     readonly identities: Map<number, MarkupID>;
@@ -106,8 +105,8 @@ function register(state: Built, value: Markup): void {
 /**
  * Builds one document value over a freshly taken native parse.
  *
- * After `Document` and `edit`, every node is decoded: a full parse settles
- * every position, so no earlier value is known to still be true. After
+ * After `Document`, every node is decoded: a full parse settles every
+ * position, so no earlier value is known to still be true. After
  * `append`, the decode is PRUNED through `mirror` — the predecessor's index.
  * Wherever the new tree presents an (id, revision) pair the mirror also
  * holds AND the node's extent is unmoved, the predecessor's value is taken
@@ -162,7 +161,6 @@ function build(
                 if (id.rawValue === value.id.rawValue) return adopted as Document;
                 return state.index.get(id.rawValue) ?? null;
             });
-            define("edit", (markdown: string) => edit(state, markdown));
             define("append", (chunk: string) => append(state, chunk));
             define("close", () => {
                 reclaim.unregister(adopted);
@@ -213,28 +211,6 @@ function owning<Result>(handle: CDocument, body: () => Result): Result {
         handle.free();
         throw failure;
     }
-}
-
-function edit(state: Built, markdown: string): Document {
-    const handle = state.handle.edit(markdown);
-    return owning(handle, () =>
-        build(
-            {
-                handle,
-                options: state.options,
-                series: state.series,
-                // An edit replaces ALL text: a code unit `append` held back
-                // is discarded with the rest, never spliced into `markdown`.
-                held: "",
-                // Fresh, not copied: the decode walk repopulates both maps,
-                // so they hold exactly what the new tree presents and
-                // nothing a past revision retired.
-                identities: new Map(),
-                index: new Map()
-            },
-            state.identities
-        )
-    );
 }
 
 function append(state: Built, chunk: string): Document {
@@ -297,13 +273,13 @@ export function unprunedDecode(document: Document): DecodedDocument {
  * Parses `markdown` into a document: the root of the canonical value tree,
  * the owner of the native parse it came from, and the only entry point.
  *
- * There is no session type. A document is the live head of a CHAIN: `edit`
- * hands it new text whole, `append` adds bytes at the end, and either
- * mutation returns the next head and supersedes its receiver. What changed
- * is asked of the new tree itself — a node's id names the same thing across
- * the mutation, and its revision says when its content last changed. Options
- * are fixed for a chain's whole series — changing what the parser means is a
- * new document, not a mutation.
+ * There is no session type. A document is the live head of a CHAIN, and a
+ * chain grows one way: `append` adds bytes at the end, returns the next
+ * head, and supersedes its receiver. Replacing the text is a new document
+ * (new chain, new series). What changed is asked of the new tree itself — a
+ * node's id names the same thing across the mutation, and its revision says
+ * when its content last changed. Options are fixed for a chain's whole
+ * series — changing what the parser means is a new document, not a mutation.
  */
 export function Document(markdown: string, options: ParseOptions = {}): Document {
     const normalized = normalizeOptions(options);

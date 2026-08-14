@@ -24,25 +24,41 @@ class ChainContractTest {
         // engine's wording, repeatably — the refusal is deterministic, not a
         // race with anything.
         repeat(3) {
-            for (refused in listOf<() -> Document>({ base.append("!") }, { base.edit("!") })) {
-                val refusal = assertFailsWith<IllegalStateException>(block = refused)
-                assertEquals("the document has been superseded: mutate the successor", refusal.message)
-            }
+            val refusal = assertFailsWith<IllegalStateException> { base.append("!") }
+            assertEquals("the document has been superseded: mutate the successor", refusal.message)
         }
 
         // A refused mutation fails the call, never the chain: the head is
-        // still live, both of its mutations still work, and neither tree
-        // moved an inch in the meantime.
+        // still live, its mutation still works, and neither tree moved an
+        // inch in the meantime.
         assertEquals(expected, head.dump())
         assertEquals("# Title", lineOneOf(base))
-        val edited = head.edit("# Title\n\nBody\nMore body\n")
-        assertEquals(expected, edited.dump())
-        val appended = edited.append("Tail\n")
+        // The settled heading is the same value on both heads: equality is
+        // the (id, revision) pair, and the append did not reach it.
+        assertEquals<Markup>(base.content.first(), head.content.first())
+        val appended = head.append("Tail\n")
         assertTrue(appended.dump().contains("Tail"))
         appended.close()
-        edited.close()
         head.close()
         base.close()
+    }
+
+    @Test
+    fun aClosedDocumentRefusesMutationAndKeepsItsValues() {
+        val closed = Document("One\n")
+        closed.close()
+        // Closing twice is a no-op; mutating after it is not, and the closed
+        // refusal is its own message — closing is the caller's act, not a
+        // mutation's.
+        closed.close()
+        val refusal = assertFailsWith<IllegalStateException> { closed.append("Three\n") }
+        assertEquals("the document is closed", refusal.message)
+        // What was already extracted stays answerable either way.
+        assertEquals(
+            1,
+            closed.content[0]
+                .scope.start.line,
+        )
     }
 
     @Test
@@ -123,14 +139,98 @@ class ChainContractTest {
     }
 
     @Test
-    fun aHeldSurrogateIsDiscardedByEdit() {
-        var head = Document("")
-        head = head.append("x\uD83D").also { head.close() } // high surrogate held back
-        head = head.edit("replaced\n").also { head.close() }
-        Document("replaced\n").use { reference ->
-            assertEquals(MarkupDumper.dump(reference), MarkupDumper.dump(head))
+    fun streamingWithIrregularTicksOverAMultiTurnConversation() {
+        // The shape of a real LLM consumer: every socket message rides the
+        // real append — the streaming mutation — and an irregular render
+        // tick reads what the appends produced. Three assistant turns extend
+        // one document; blocks settled at a turn boundary must stay frozen
+        // while later turns stream. The corpus text and the split generator
+        // are the shared burst shapes, byte-identical in the Swift and ES
+        // mirrors of this test.
+        val splits = StreamingCorpus.Splits()
+
+        var document = Document("")
+        var streamed = ""
+        var frozen = emptyList<Triple<Int, MarkupID, ULong>>()
+        var messages = 0
+        var ticks = 0
+        var touched = 0
+
+        fun tick() {
+            ticks += 1
+            // A tick no longer parses anything: the appends already did, and
+            // the tick verifies their sum against a one-shot parse of every
+            // byte so far.
+            Document(streamed).use { reference ->
+                assertEquals(reference.dump(), document.dump())
+            }
+            for ((index, id, revision) in frozen) {
+                val node = document.content[index]
+                assertEquals(id, node.id)
+                assertEquals(revision, node.revision)
+            }
         }
-        head.close()
+
+        for (turn in StreamingCorpus.turns) {
+            var offset = 0
+            while (offset < turn.length) {
+                val width = splits.width()
+                val message = turn.substring(offset, minOf(offset + width, turn.length))
+                offset += message.length
+                streamed += message
+                messages += 1
+
+                // Each message advances the chain; the superseded predecessor
+                // is closed behind it — an O(1) release.
+                val predecessorRevision = document.revision
+                val superseded = document
+                document = document.append(message)
+                superseded.close()
+
+                // The old delta row count, re-expressed on the tree: the
+                // nodes whose revision equals the new document revision are
+                // exactly the ones this append changed or minted — and a root
+                // that kept its revision means the append changed nothing.
+                if (document.revision != predecessorRevision) {
+                    val stamped = document.revision
+                    MarkupWalker.walk(document) { event, node, _ ->
+                        if (event == WalkEvent.ENTERING && node.revision == stamped) {
+                            touched += 1
+                        }
+                    }
+                }
+                if (splits.draw(4L) == 0L) {
+                    tick()
+                }
+            }
+            // The turn boundary always renders; everything but the still-hot
+            // last block is now settled.
+            tick()
+            frozen =
+                document.content.dropLast(1).mapIndexed { index, node ->
+                    Triple(index, node.id, node.revision)
+                }
+        }
+        assertTrue(messages > 9)
+        assertTrue(ticks < messages)
+        assertEquals(
+            Document(StreamingCorpus.turns.joinToString(separator = "")).use { it.dump() },
+            document.dump(),
+        )
+
+        // Near-O(n) pipeline: the total count of nodes stamped with a new
+        // document revision stays within one per final node plus bounded
+        // frontier churn per append. A full re-decode per append would be on
+        // the order of messages * nodes — which is exactly the term the
+        // pruned decode deletes.
+        var nodes = 0
+        MarkupWalker.walk(document) { event, _, _ ->
+            if (event == WalkEvent.ENTERING) {
+                nodes += 1
+            }
+        }
+        assertTrue(touched < nodes + 16 * messages)
+        document.close()
     }
 }
 

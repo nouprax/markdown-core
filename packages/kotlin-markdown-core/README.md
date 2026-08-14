@@ -40,7 +40,7 @@ names both remedies.
 The Android AAR publishes its own narrowly scoped R8 consumer rule for the
 private `JvmNative` linkage boundary. Applications can therefore enable
 release shrinking without adding Markdown Core keep rules; the bridge class
-and its four native method names remain stable while every other implementation
+and its three native method names remain stable while every other implementation
 class stays eligible for shrinking, optimization, and obfuscation. If no
 application path uses Markdown Core, R8 may remove the bridge as well.
 
@@ -67,11 +67,11 @@ including `$`, `$$`, `\\(...\\)`, and `\\[...\\]`. The result is an immutable
 value tree whose nodes carry a stable identity (`id`) and a change `revision`;
 equality is O(1) over that pair. Every node also carries its own `scope` — its
 absolute start/end line and column — which is deliberately outside equality,
-because position is not content. The package exposes parsing, editing, and
-read-only AST traversal, not rendering or mutation.
+because position is not content. The package exposes parsing, appending, and
+read-only AST traversal, not rendering or in-place mutation.
 
 `Document` owns a native parse and is `AutoCloseable`: `use { }` it, and
-`use { }` what `edit` and `append` hand back too — a mutation leaves the
+`use { }` what `append` hands back too — a mutation leaves the
 receiver's parse open for its holder to close, an O(1) release once it is
 superseded. A document that is never closed is released when it becomes
 unreachable, but that is a backstop, not the contract. Everything it
@@ -108,25 +108,24 @@ println(document.dump())
 println(MarkupDumper.dump(document))
 ```
 
-## Edit and Append
+## Append
 
-There is no session type. A document is the live head of a chain, and a
-mutation hands it text: `edit` replaces the whole text, `append` adds bytes
-at the end, and either returns the next document. The chain contract is one
-sentence: **a mutation advances the chain and supersedes its receiver — old
-heads refuse further mutation deterministically, and decoded values live
-forever.** Options are fixed for a chain's whole life — changing what the
-parser means is a new `Document`, not a mutation.
+There is no session type, and there is no whole-text edit. A document is the
+live head of a chain, and the one mutation hands it trailing bytes: `append`
+returns the next document. The chain contract is one sentence: **a mutation
+advances the chain and supersedes its receiver — old heads refuse further
+mutation deterministically, and decoded values live forever.** Options are
+fixed for a chain's whole life, and text that is not an extension of the
+chain's is a new `Document` — replacing the whole text means a fresh parse,
+so the API says exactly that.
 
 ```kotlin
 val document = Document("# Title\n\nHello")
-val next = document.edit("# Title\n\nHello world")
+val next = document.append(" world")
 next.use {
-    // The paragraph kept its identity, and its unchanged sibling compares
-    // equal down to the last field. Neither is the SAME object — a document
-    // is decoded from its own text, not carried over from the caller's last
-    // one — and `scope` may still place them somewhere new, because an edit
-    // above moves every position below it without changing any content.
+    // The paragraph the append extended kept its identity, and its settled
+    // sibling compares equal down to the last field — equality is the
+    // (id, revision) pair, and appending never moves settled content.
     check(it.content[1].id == document.content[1].id)
     check(it.content[0] == document.content[0])
 }
@@ -172,7 +171,7 @@ equality is O(1) over that pair, and `id` goes unmodified into a `key()`.
 There is nothing else to read. A node's `revision` is the document revision at
 which its own fields, child list, or any descendant last changed, so `(id,
 revision)` is the entire update protocol: a node that kept its pair is
-unchanged all the way down, and a consumer that wants to know WHERE an edit
+unchanged all the way down, and a consumer that wants to know WHERE a change
 landed — a highlighter, a display list, an LSP token array — walks the new
 tree and prunes there:
 

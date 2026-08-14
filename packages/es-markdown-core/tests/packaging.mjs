@@ -66,7 +66,7 @@ try {
                     "if (d.content[0].kind !== 'heading') process.exit(2);",
                     "if ('memory' in api || 'initialize' in api) process.exit(3);",
                     "if (d.dump() !== api.MarkupDumper.dump(d)) process.exit(4);",
-                    "const e = api.Document('# npm').edit('# npm consumer');",
+                    "const e = api.Document('# npm').append(' consumer');",
                     "if (e.dump() !== d.dump()) process.exit(5);",
                     "e.close();"
                 ].join("\n")

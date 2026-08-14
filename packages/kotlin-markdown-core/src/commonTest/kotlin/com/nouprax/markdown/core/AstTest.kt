@@ -181,13 +181,14 @@ class AstTest {
         val firstBlock = first.content.single() as DirectiveBlock
         val firstLabel = assertNotNull(firstBlock.label)
 
-        first.edit(":::note[Title]\nChanged\n:::\n").use { second ->
-            val secondBlock = second.content.single() as DirectiveBlock
+        first.append("\nTail\n").use { second ->
+            val secondBlock = second.content.first() as DirectiveBlock
             val secondLabel = assertNotNull(secondBlock.label)
             // The label did not change, so it keeps its identity and compares
-            // equal — which is what a reactive framework reads. It is NOT the
-            // same object: a document's projection is a function of its text,
-            // not of how the caller reached it.
+            // equal — which is what a reactive framework reads. Equality is
+            // the (id, revision) pair, never object identity: a document's
+            // projection is a function of its text, not of how the caller
+            // reached it.
             assertEquals<Markup>(firstLabel, secondLabel)
             assertEquals<Markup>(secondLabel, assertNotNull(second.node(firstLabel.id)))
         }
