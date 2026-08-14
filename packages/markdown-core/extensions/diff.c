@@ -44,7 +44,7 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
 
     // Ids preorder, which for a wholly new subtree is document order.
     for (;;) {
-        node->id = ctx->document->next_id++;
+        node->id = ctx->document->chain->next_id++;
         node->last_changed_rev = ctx->new_rev;
         if (node->first_child) {
             node = node->first_child;

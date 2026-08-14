@@ -85,6 +85,12 @@ typedef struct markdown_core_chain {
     uint64_t warm_ticks;
     uint64_t rebuilt_ticks;
     uint64_t rebuilt_bytes;
+    /* THE IDENTITY COUNTER. Monotonic, starts at 1, never reused, and one
+     * per chain because identity is what a consumer keys on across a whole
+     * stream. A build that fails after minting burns the numbers it took;
+     * they are unique either way, and a counter that could go backwards to
+     * reclaim them would be the defect. */
+    uint64_t next_id;
 } markdown_core_chain;
 
 struct markdown_core_document {
@@ -100,7 +106,6 @@ struct markdown_core_document {
     // committed text.
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
-    uint64_t next_id; // monotonic, starts at 1, never reused
     /* This handle's place on the chain: it is the live head — and mutation
      * legal — exactly while revision + 1 == chain->next_revision. */
     uint64_t revision;

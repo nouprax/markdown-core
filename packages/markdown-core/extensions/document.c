@@ -282,6 +282,7 @@ static markdown_core_chain *chain_new(markdown_core_mem *mem) {
         uint64_t host_entropy = 0;
         chain->refcount = 1;
         chain->next_revision = 1;
+        chain->next_id = 1;
         chain->mem = mem;
         chain->source = markdown_core_source_new(mem);
         if (!chain->source) {
@@ -339,7 +340,6 @@ static markdown_core_document *document_build(
     }
     if (prev) {
         doc->chain = chain_retain(prev->chain);
-        doc->next_id = prev->next_id;
         /* The revision is CLAIMED here (the diff below stamps it into nodes)
          * but the counter advances only on success, so a failed build burns
          * no number and adjacent published documents stay strictly +1. */
@@ -428,7 +428,6 @@ static markdown_core_document *markdown_core_document_alloc(
         mem = markdown_core_arena_mem(document->arena);
     }
     document->mem = mem;
-    document->next_id = 1;
     document->revision = 0;
     return document;
 }
