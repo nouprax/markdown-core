@@ -287,6 +287,7 @@ if(MARKDOWN_CORE_STATIC)
               capture_oom_sweep
               warm_fingerprint
               warm_close_undo
+              warm_tick_stream
               warm_tick_ledger
               chain_poison
               capture_growth_ceiling

@@ -3443,6 +3443,118 @@ static int case_warm_close_undo(void) {
     return 0;
 }
 
+/* --- warm_tick_stream ------------------------------------------------------ */
+
+/* The cold proof, composed. warm_close_undo shows that ONE close comes back;
+ * a warm tick has to survive doing it at every chunk boundary of a stream,
+ * with the parse continuing through all of them. So: one parser, fed in
+ * token-sized pieces, and at every boundary the whole tick shape — close,
+ * refine, publish a projection, retire the refine, undo the close — before
+ * the next piece arrives. Each projection must equal a one-shot parse of the
+ * bytes so far, and the warm state at the end must equal a parser that was
+ * never interrupted at all.
+ *
+ * This is slice 7's mechanism with nothing but the engine's shipped entry
+ * points behind it, which is what makes it a proof rather than a rehearsal. */
+static int case_warm_tick_stream(void) {
+    static const char *const texts[] = {
+        "streaming prose arrives a few bytes at a time\n\nand paragraphs end\n\nwhile more follows",
+        "\xc3\xbc"
+        "ber caf\xc3\xa9 und stra"
+        "\xc3\x9f"
+        "e\n\nzweiter absatz",
+        NULL,
+    };
+    static const size_t strides[] = {1, 3, 7};
+    size_t text_index;
+    size_t ticks = 0;
+
+    for (text_index = 0; texts[text_index]; text_index++) {
+        const char *text = texts[text_index];
+        size_t length = strlen(text);
+        size_t stride_index;
+        for (stride_index = 0; stride_index < sizeof(strides) / sizeof(strides[0]); stride_index++) {
+            size_t stride = strides[stride_index];
+            markdown_core_parser *parser = sweep_parser_new(NULL);
+            markdown_core_parser *twin = sweep_parser_new(NULL);
+            size_t fed = 0;
+            int failed = 0;
+
+            if (!parser || !twin) {
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                fprintf(stderr, "warm_tick_stream: parser allocation failed\n");
+                return -1;
+            }
+            while (fed < length && !failed) {
+                size_t piece = length - fed < stride ? length - fed : stride;
+                wc_state state;
+                uint64_t before, after;
+
+                markdown_core_parser_feed(parser, text + fed, piece);
+                fed += piece;
+                if (!wc_eligible(parser)) {
+                    continue;
+                }
+                wc_save(parser, &state);
+                if (state.overflowed) {
+                    continue;
+                }
+                ticks++;
+                before = markdown_core_parser_warm_fingerprint(parser);
+                markdown_core_parser_finalize_blocks(parser);
+                if (!markdown_core_parser_warm_refine(parser) || wc_projection_matches(parser, text, fed) != 0) {
+                    fprintf(
+                        stderr,
+                        "warm_tick_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                    break;
+                }
+                wc_unrefine(parser->root);
+                wc_restore(parser, &state);
+                after = markdown_core_parser_warm_fingerprint(parser);
+                if (before != after) {
+                    fprintf(
+                        stderr,
+                        "warm_tick_stream: text %zu stride %zu did not come back at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                }
+            }
+            if (!failed) {
+                markdown_core_parser_feed(twin, text, length);
+                if (markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
+                    fprintf(
+                        stderr,
+                        "warm_tick_stream: text %zu stride %zu drifted from an uninterrupted parse\n",
+                        text_index,
+                        stride
+                    );
+                    failed = 1;
+                }
+            }
+            markdown_core_parser_free(parser);
+            markdown_core_parser_free(twin);
+            if (failed) {
+                return -1;
+            }
+        }
+    }
+    if (ticks < 100) {
+        fprintf(stderr, "warm_tick_stream: only %zu ticks published a projection\n", ticks);
+        return -1;
+    }
+    printf("warm_tick_stream: %zu ticks closed, published and came back\n", ticks);
+    return 0;
+}
+
 /* --- chain_poison --------------------------------------------------------- */
 
 /* D5 under systematic allocation loss: sweep the failure across the whole
@@ -5003,6 +5115,7 @@ static const concrete_case CASES[] = {
     {"capture_oom_sweep", case_capture_oom_sweep},
     {"warm_fingerprint", case_warm_fingerprint},
     {"warm_close_undo", case_warm_close_undo},
+    {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_ledger", case_warm_tick_ledger},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
