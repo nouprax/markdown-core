@@ -378,6 +378,12 @@ static markdown_core_document *document_build(
          * successor the head (its claimed revision is now the one behind the
          * clock) and stops the receiver matching, in the same increment. */
         doc->chain->next_revision++;
+        /* THE TICK LEDGER. This mutation rebuilt the document from nothing,
+         * so it reparsed every byte the document describes — which is what
+         * the bound is about, and why the bytes are counted next to the
+         * ticks. */
+        doc->chain->rebuilt_ticks++;
+        doc->chain->rebuilt_bytes += (uint64_t)doc->length;
     }
     return doc;
 }

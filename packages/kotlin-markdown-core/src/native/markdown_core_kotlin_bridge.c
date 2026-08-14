@@ -642,25 +642,28 @@ bool markdown_core_kotlin_append(uint64_t handle, const uint8_t *chunk, size_t l
     put_magic(&buffer);
     text.data = chunk;
     text.length = length;
-    successor = markdown_core_document_append(document, text, &error);
-    if (successor == NULL) {
-        put_error(&buffer, error);
-        return finish(&buffer, output, output_length);
-    }
+
     /* The receiver's last content coordinate, for the reuse gate's extent
-     * half. Read AFTER the successful append and legal exactly then: a
-     * superseded receiver's node handles die when the NEXT mutation begins,
-     * mutations on one chain are externally serialized, and a stale or
-     * poisoned receiver was refused above without reaching here — so this
-     * root is read only on the document that really was the head, before
-     * any next mutation can exist. Without a root (or on the sentinel
-     * extent of an empty receiver) nothing passes the gate and the payload
-     * simply ships whole. */
+     * half — read BEFORE the append, because what the gate needs is where
+     * the RECEIVER ended. Reading it afterwards happens to give the same
+     * answer while every mutation builds a separate tree, and stops doing so
+     * the moment a successor can share its predecessor's root: the bound
+     * would then describe the successor's own end, every appended node would
+     * sit below it, and a gate meant to be conservative would start claiming
+     * that changed subtrees may be reused. Without a root (or on the
+     * sentinel extent of an empty receiver) nothing passes the gate and the
+     * payload simply ships whole. */
     receiver_root = markdown_core_document_root(document);
     if (receiver_root != NULL) {
         reuse.baseline = baseline;
         reuse.receiver_end = markdown_core_node_scope(receiver_root).end;
         prune = &reuse;
+    }
+
+    successor = markdown_core_document_append(document, text, &error);
+    if (successor == NULL) {
+        put_error(&buffer, error);
+        return finish(&buffer, output, output_length);
     }
     root = put_header(&buffer, successor);
     if (root != NULL) {

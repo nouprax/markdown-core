@@ -73,6 +73,18 @@ typedef struct markdown_core_chain {
     /* A failed append is "the chain is done": nothing further may mutate it,
      * the caller holds the text, and recovery is a rebuild. */
     bool poisoned;
+    /* THE TICK LEDGER. Every mutation lands in exactly one of these, and
+     * their sum is the number of mutations the chain has served. Today the
+     * warm count is structurally zero — there is no warm path yet — and the
+     * counter exists at full corpus exercise BEFORE the path it will measure,
+     * so that when the first warm tick lands the share it takes is read off a
+     * gate that has been honest all along rather than one written to greet
+     * it. The milestone's bound is about bytes, not ticks: `rebuilt_bytes` is
+     * what the fallback actually costs, since a tenth of the ticks each
+     * reparsing the whole document is not a tenth of a problem. */
+    uint64_t warm_ticks;
+    uint64_t rebuilt_ticks;
+    uint64_t rebuilt_bytes;
 } markdown_core_chain;
 
 struct markdown_core_document {

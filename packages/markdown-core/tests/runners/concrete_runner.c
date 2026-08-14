@@ -3011,6 +3011,72 @@ static int case_warm_fingerprint(void) {
     return 0;
 }
 
+/* --- warm_tick_ledger ------------------------------------------------------ */
+
+/* The ledger every later claim about the warm path will be read off, landed
+ * and exercised before the path exists so that the first warm tick is
+ * measured by a gate that has been honest all along.
+ *
+ * It also states today's cost in numbers rather than in prose: each tick
+ * reparses every byte the document describes, so the bytes the chain rebuilds
+ * are the running sum of its own lengths — the quadratic this milestone
+ * exists to retire, written down where a change to it cannot go unnoticed. */
+static int case_warm_tick_ledger(void) {
+    static const char *const chunks[] = {"alpha beta\n", "\ngamma delta\n", "epsilon", " zeta\n"};
+    markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
+    uint64_t expected_bytes = 0;
+    size_t i;
+    int result = 0;
+
+    if (!document) {
+        markdown_core_error_free(error);
+        fprintf(stderr, "warm_tick_ledger: open failed\n");
+        return -1;
+    }
+    if (document->chain->rebuilt_ticks != 0 || document->chain->warm_ticks != 0 ||
+        document->chain->rebuilt_bytes != 0) {
+        fprintf(stderr, "warm_tick_ledger: a fresh chain has already served a tick\n");
+        markdown_core_document_free(document);
+        return -1;
+    }
+
+    for (i = 0; i < sizeof(chunks) / sizeof(chunks[0]); i++) {
+        markdown_core_document *successor =
+            markdown_core_document_append(document, mc_sv(chunks[i], strlen(chunks[i])), &error);
+        if (!successor) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "warm_tick_ledger: append %zu failed\n", i);
+            markdown_core_document_free(document);
+            return -1;
+        }
+        markdown_core_document_free(document);
+        document = successor;
+        expected_bytes += (uint64_t)markdown_core_document_length(document);
+    }
+
+    if (document->chain->rebuilt_ticks != 4 || document->chain->warm_ticks != 0) {
+        fprintf(
+            stderr,
+            "warm_tick_ledger: %llu rebuilt and %llu warm ticks, expected 4 and 0\n",
+            (unsigned long long)document->chain->rebuilt_ticks,
+            (unsigned long long)document->chain->warm_ticks
+        );
+        result = -1;
+    }
+    if (document->chain->rebuilt_bytes != expected_bytes) {
+        fprintf(
+            stderr,
+            "warm_tick_ledger: %llu bytes rebuilt, expected %llu — every tick reparses the whole document\n",
+            (unsigned long long)document->chain->rebuilt_bytes,
+            (unsigned long long)expected_bytes
+        );
+        result = -1;
+    }
+    markdown_core_document_free(document);
+    return result;
+}
+
 /* --- warm_close_undo ------------------------------------------------------- */
 
 /* The claim this milestone cannot afford to be wrong about: a parser can be
@@ -4937,6 +5003,7 @@ static const concrete_case CASES[] = {
     {"capture_oom_sweep", case_capture_oom_sweep},
     {"warm_fingerprint", case_warm_fingerprint},
     {"warm_close_undo", case_warm_close_undo},
+    {"warm_tick_ledger", case_warm_tick_ledger},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
     {"inline_shape", case_inline_shape},
