@@ -3112,6 +3112,16 @@ static bool wc_eligible(const markdown_core_parser *parser) {
     return wc_plain_run((const unsigned char *)child->content.ptr, child->content.size);
 }
 
+/* memcpy is declared to take non-null pointers even for a zero count, and an
+ * empty parser has NULL where its line marks will go. The sanitizer that
+ * reports this runs on Linux and not on Apple, so the guard is written once
+ * here rather than remembered at four call sites. */
+static void wc_copy(void *destination, const void *source, size_t length) {
+    if (length) {
+        memcpy(destination, source, length);
+    }
+}
+
 static void wc_save(const markdown_core_parser *parser, wc_state *state) {
     markdown_core_node *node;
     memset(state, 0, sizeof(*state));
@@ -3120,9 +3130,9 @@ static void wc_save(const markdown_core_parser *parser, wc_state *state) {
     state->current = parser->current;
     state->last_cr = parser->last_buffer_ended_with_cr;
     state->line_mark_count = parser->line_mark_count;
-    memcpy(state->marks, parser->line_marks, parser->line_mark_count * sizeof(state->marks[0]));
+    wc_copy(state->marks, parser->line_marks, parser->line_mark_count * sizeof(state->marks[0]));
     state->held_size = parser->linebuf.size;
-    memcpy(state->held, parser->linebuf.ptr, parser->linebuf.size);
+    wc_copy(state->held, parser->linebuf.ptr, parser->linebuf.size);
     for (node = parser->root; node && (node->flags & MARKDOWN_CORE_NODE__OPEN); node = node->last_child) {
         wc_node_state *entry;
         if (state->depth == WC_MAX_DEPTH) {
@@ -3169,7 +3179,7 @@ static void wc_restore(markdown_core_parser *parser, const wc_state *state) {
     parser->current = state->current;
     parser->last_buffer_ended_with_cr = state->last_cr;
     parser->line_mark_count = state->line_mark_count;
-    memcpy(parser->line_marks, state->marks, state->line_mark_count * sizeof(state->marks[0]));
+    wc_copy(parser->line_marks, state->marks, state->line_mark_count * sizeof(state->marks[0]));
     markdown_core_strbuf_clear(&parser->linebuf);
     markdown_core_strbuf_put(&parser->linebuf, state->held, state->held_size);
 }
