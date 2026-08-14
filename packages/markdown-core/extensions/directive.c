@@ -2019,39 +2019,6 @@ static int can_contain(
     return 0;
 }
 
-static markdown_core_node *prepare_inline_domain(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner
-) {
-    markdown_core_node *root;
-    markdown_core_mem *mem;
-
-    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_DIRECTIVE_LABEL ||
-        committed_owner->extension != extension) {
-        assert(0 && "directive reparse requested for an unsupported owner");
-        return NULL;
-    }
-    mem = committed_owner->content.mem;
-    if (!mem) {
-        assert(0 && "directive label has no content allocator");
-        return NULL;
-    }
-
-    root = make_label_node(
-        extension,
-        mem,
-        committed_owner->content.ptr,
-        committed_owner->content.size,
-        1,
-        committed_owner->start_column,
-        committed_owner->end_column
-    );
-    if (!root) {
-        return NULL;
-    }
-    return root;
-}
-
 static int accepts_lines(markdown_core_extension *extension, markdown_core_node *node) {
     node_directive *directive = get_directive(node);
 
@@ -2125,7 +2092,6 @@ static const markdown_core_extension directive_extension = {
     .try_opening_block = open_directive_block,
     .get_type_string = get_type_string,
     .can_contain = can_contain,
-    .prepare_inline_domain = prepare_inline_domain,
     .accepts_lines = accepts_lines,
     .alloc_opaque = directive_opaque_alloc,
     .free_opaque = directive_opaque_free,

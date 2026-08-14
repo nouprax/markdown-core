@@ -295,23 +295,6 @@ typedef int (*markdown_core_contains_inlines_func)(markdown_core_extension *exte
 
 typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-/**
- * Builds a detached shell for an extension-owned inline owner whose complete
- * child list can be reparsed when a reference-definition answer changes.
- * Before refinement the shell owns a copy of the owner's raw inline source;
- * after refinement its complete child list is the replacement domain.
- *
- * The returned shell must have the same semantic node type, extension
- * descriptor, and allocator as `committed_owner`; refinement must not replace
- * it. NULL reports allocation failure. An ownership domain is always the
- * complete child list of one real semantic owner, never an optimization
- * subrange or a prefix selected by syntax-specific policy.
- */
-typedef markdown_core_node *(*markdown_core_prepare_inline_domain_func)(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner
-);
-
 /** Block-local postprocess hook. After inline parsing, footnote processing,
  * and per-block text consolidation, the parser calls this once for every
  * block (and every inline-owning node, such as a table cell or directive
