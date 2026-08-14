@@ -2322,6 +2322,14 @@ static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node 
         markdown_core_extension *ext = (markdown_core_extension *)extensions->data;
         if (ext->postprocess_block) {
             markdown_core_node *processed = ext->postprocess_block(ext, parser, unit);
+            /* The hook answers with the node now at this position, and the
+             * contract forbids NULL. A hook that spliced the tree and then
+             * answered NULL would be the one replacement a caller cannot
+             * see — it would leave this walk, and anything the walk hands a
+             * unit to, holding a pointer to what was just freed. No bundled
+             * hook does it; tolerating it silently is what would make it
+             * possible. */
+            assert(processed != NULL);
             if (processed) {
                 unit = processed;
                 owns_inlines = contains_inlines(unit);
