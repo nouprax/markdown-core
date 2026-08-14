@@ -446,9 +446,9 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
 
         val hiddenTypes =
             listOf(
+                "AndroidNativeLoader",
                 "Built",
                 "DesktopNativeLoader",
-                "HostNativeLibrary",
                 "JvmNative",
                 "MarkdownCoreKt__CBridgeKt",
                 "MarkdownCoreKt__CBridge_androidKt",

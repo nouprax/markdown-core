@@ -38,7 +38,6 @@ public final class com/nouprax/markdown/core/CodeBlock : com/nouprax/markdown/co
 }
 
 public final class com/nouprax/markdown/core/CrossLink : com/nouprax/markdown/core/Markup {
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;
@@ -128,7 +127,6 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 }
 
 public final class com/nouprax/markdown/core/Embed : com/nouprax/markdown/core/Markup {
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/MarkupID;JLcom/nouprax/markdown/core/Scope;Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun accept (Lcom/nouprax/markdown/core/MarkupVisitor;)Ljava/lang/Object;
 	public fun equals (Ljava/lang/Object;)Z
 	public fun getId ()Lcom/nouprax/markdown/core/MarkupID;

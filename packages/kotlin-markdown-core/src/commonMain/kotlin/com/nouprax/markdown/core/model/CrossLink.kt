@@ -4,7 +4,7 @@
 package com.nouprax.markdown.core
 
 /** A cross-link written as `[[reference]]`. */
-public class CrossLink(
+public class CrossLink internal constructor(
     override val id: MarkupID,
     override val revision: ULong,
     override val scope: Scope,

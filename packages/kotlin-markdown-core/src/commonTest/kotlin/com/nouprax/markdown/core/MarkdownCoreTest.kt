@@ -226,6 +226,47 @@ class ErrorsTest {
             }
         }
     }
+
+    @Test
+    fun aNativeFailureStatusSurfacesAsAParseExceptionCarryingItsCodeAndMessage() {
+        // Status 1: the native call failed and the payload is the error
+        // record itself — an int code, then the engine's one English message.
+        // Codes 1 and 2 are the engine's named failures; everything else,
+        // including the engine's own 3, is a bug and decodes as INTERNAL.
+        fun errorPayload(
+            rawCode: Int,
+            message: String,
+        ): ByteArray {
+            fun int(value: Int) =
+                byteArrayOf(
+                    value.toByte(),
+                    (value ushr 8).toByte(),
+                    (value ushr 16).toByte(),
+                    (value ushr 24).toByte(),
+                )
+            val text = message.encodeToByteArray()
+            return byteArrayOf(0x4d, 0x4b, 0x43, 0x35, 0x01) + int(rawCode) + int(text.size) + text
+        }
+
+        val cases =
+            listOf(
+                1 to ParseErrorCode.INVALID_ARGUMENT,
+                2 to ParseErrorCode.ALLOCATION_FAILED,
+                3 to ParseErrorCode.INTERNAL,
+                99 to ParseErrorCode.INTERNAL,
+            )
+        for ((rawCode, expected) in cases) {
+            val payload = errorPayload(rawCode, "the engine's account of failure $rawCode")
+            val failure =
+                assertFailsWith<ParseException> {
+                    decodeWire(payload) { _, _, _, _, _, _, _ ->
+                        error("an error payload reached the build step")
+                    }
+                }
+            assertEquals(expected, failure.code)
+            assertEquals("the engine's account of failure $rawCode", failure.message)
+        }
+    }
 }
 
 class OwnershipTest {
