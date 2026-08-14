@@ -4,6 +4,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ApiTest {
@@ -76,6 +78,65 @@ class ApiTest {
         MarkupWalker.walk(document, recordingVisitor)
         assertEquals("Document", recordingVisitor.visited.first())
         assertTrue("Heading" in recordingVisitor.visited && "Text" in recordingVisitor.visited)
+    }
+}
+
+class IdentityTest {
+    @Test
+    fun equalityIsSeriesSaltedIdentityPlusRevision() {
+        Document("Same *content* twice.\n").use { first ->
+            Document("Same *content* twice.\n").use { second ->
+                // Identical content from different parses never compares equal.
+                assertNotEquals<Markup>(first, second)
+                assertNotEquals<Markup>(first.content[0], second.content[0])
+                // Within one document, identity is value equality.
+                assertEquals(first.content[0], first.content[0])
+                assertNotEquals(first.id.series, second.id.series)
+                // An id from another series is not this document's to answer.
+                assertNull(first.node(second.content[0].id))
+            }
+        }
+    }
+
+    @Test
+    fun documentsAreValuesAndIdsAreStableMapKeys() {
+        Document("").use { empty ->
+            assertTrue(empty.content.isEmpty())
+            empty.append("Alpha\n").use { document ->
+                val paragraph = assertIs<Paragraph>(document.content[0])
+                val byId = hashMapOf(paragraph.id to "paragraph")
+                assertEquals(paragraph.id, document.node(paragraph.id)?.id)
+                // The root answers for itself, which is what a consumer
+                // reconciling by id needs when the top-level list changes.
+                assertEquals(document.id, document.node(document.id)?.id)
+                assertEquals("paragraph", byId[paragraph.id])
+                assertNull(document.node(MarkupID(document.series + 1UL, paragraph.id.rawValue)))
+            }
+        }
+    }
+
+    @Test
+    fun diagnosticsTravelWithTheDocumentThatRaisedThem() {
+        // The one thing an editor underlines: a directive's `{...}` did not
+        // parse, so the braces stayed literal text. Invisible in the tree —
+        // the node simply has no attributes — which is why it is reported.
+        val before = Document(":::note{= bad}\nbody\n:::\n")
+        assertEquals(listOf(DiagnosticCode.DIRECTIVE_ATTRIBUTES), before.diagnostics.map { it.code })
+        assertEquals(Scope(Position(1, 8), Position(1, 14)), before.diagnostics.single().scope)
+
+        // A well-formed directive raises nothing...
+        Document(":::note{a=1}\nbody\n:::\n").use { clean ->
+            assertTrue(clean.diagnostics.isEmpty())
+        }
+        // ...and appending carries the raiser's diagnostic forward, because
+        // the text that raised it is still in the document.
+        before.append("\ntail\n").use { after ->
+            assertEquals(1, after.diagnostics.size)
+        }
+        // The predecessor keeps reporting its own: diagnostics are values it
+        // copied out at parse time, like every other part of it.
+        assertEquals(1, before.diagnostics.size)
+        before.close()
     }
 }
 

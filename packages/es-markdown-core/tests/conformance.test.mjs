@@ -130,41 +130,11 @@ for (const testCase of canonicalManifest.cases) {
     });
 }
 
-// Edit replay of the shared canonical AST corpus: every per-line revision
+// Append replay of the shared canonical AST corpus: every per-line revision
 // must dump byte-equal to a one-shot parse of the same text, and the
 // (id, revision) update protocol must hold against a cumulative ledger —
-// the same double walk the C harness runs (tests/support/edit_replay.c).
-for (const testCase of canonicalManifest.cases) {
-    test(`conformance: edit replay of canonical AST case ${testCase.name}`, () => {
-        let document = Document("", testCase.parseOptions);
-        let replayed = "";
-        // Cumulative across the whole replay: rawValue -> {revision, alive}.
-        // Retired entries stay forever, which is what makes a resurrection
-        // detectable at any later step, not just the very next one.
-        const ledger = new Map();
-        // The empty parse seeds the ledger: every node it has is a mint.
-        let previousNodes = verifyTree(document, ledger, new Map(), testCase.name);
-        for (const chunk of lineChunks(testCase.source)) {
-            replayed += chunk;
-            const editing = document;
-            document = document.edit(replayed);
-            editing.close();
-
-            // Equivalence: the edited document dumps byte-equal to a
-            // one-shot parse of the same text.
-            const reference = Document(replayed, testCase.parseOptions);
-            assert.equal(document.dump(), reference.dump(), testCase.name);
-            reference.close();
-
-            previousNodes = verifyTree(document, ledger, previousNodes, testCase.name);
-        }
-        assert.equal(document.dump(), testCase.expected, testCase.name);
-        document.close();
-    });
-}
-
-// The same double walk driven by the real append: each per-line revision now
-// arrives as a trailing mutation whose decode is pruned through the value
+// the same double walk the C harness runs. Each per-line revision arrives
+// as the trailing mutation whose decode is pruned through the value
 // mirror, so on top of the ledger every step is compared field by field
 // against a mirror-free decode of the same native document — the one oracle
 // a wrongly carried value cannot hide from.
@@ -172,7 +142,11 @@ for (const testCase of canonicalManifest.cases) {
     test(`conformance: append replay of canonical AST case ${testCase.name}`, () => {
         let document = Document("", testCase.parseOptions);
         let replayed = "";
+        // Cumulative across the whole replay: rawValue -> {revision, alive}.
+        // Retired entries stay forever, which is what makes a resurrection
+        // detectable at any later step, not just the very next one.
         const ledger = new Map();
+        // The empty parse seeds the ledger: every node it has is a mint.
         let previousNodes = verifyTree(document, ledger, new Map(), testCase.name);
         for (const chunk of lineChunks(testCase.source)) {
             replayed += chunk;

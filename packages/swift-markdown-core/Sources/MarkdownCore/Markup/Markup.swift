@@ -29,16 +29,17 @@ public struct Scope: Sendable, Hashable {
     }
 }
 
-/// Series-scoped node identity, stable across edits while the node remains the
-/// same kind of thing at the same place.
+/// Series-scoped node identity, stable across appends while the node remains
+/// the same kind of thing at the same place.
 ///
 /// ``rawValue`` is unique within the owning series and never reused;
 /// ``series`` is that series' random salt, so nodes from different series
 /// (including separate one-shot parses) never share an identity.
 ///
-/// A SERIES is one document and every document its edits produce. Raw values
-/// restart at 1 for each new series, so the salt is the only thing keeping
-/// two unrelated documents' identities apart.
+/// A SERIES is one document and every document its appends produce — a chain
+/// grows one way, and replacing the text is a new document, a new chain, a
+/// new series. Raw values restart at 1 for each new series, so the salt is
+/// the only thing keeping two unrelated documents' identities apart.
 public struct MarkupID: Sendable, Hashable {
     /// The owning series' random salt; ids from different series never
     /// compare equal even when raw values collide.
@@ -71,8 +72,8 @@ struct MarkupTrack {
 ///
 /// ``scope`` is on every node and is deliberately NOT part of that: absolute
 /// source position is not content, so two nodes differing only in where they
-/// sit are equal. That is what lets an edit above a node leave every reactive
-/// comparison below it untouched.
+/// sit are equal. That is what lets an append that only grows a node's
+/// extent leave every reactive comparison untouched.
 public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     /// The node's series-scoped identity; see ``MarkupID``.
     var id: MarkupID { get }
@@ -80,7 +81,7 @@ public protocol Markup: Sendable, Identifiable, Hashable where ID == MarkupID {
     /// The document revision at which this node's own fields, child list, or
     /// any descendant last changed.
     ///
-    /// A pure positional shift caused by an edit elsewhere never changes a
+    /// A pure positional shift caused by an append elsewhere never changes a
     /// node's revision.
     var revision: UInt64 { get }
 

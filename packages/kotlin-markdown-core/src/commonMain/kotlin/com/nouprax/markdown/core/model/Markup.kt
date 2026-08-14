@@ -15,15 +15,15 @@ import kotlin.jvm.JvmSynthetic
  *
  * [scope] is on every node and is deliberately NOT part of that: absolute
  * source position is not content, so two nodes differing only in where they
- * sit are equal. That is what lets an edit above a node leave every reactive
- * comparison below it untouched.
+ * sit are equal. That is what lets a mutation beyond a node leave every
+ * reactive comparison below it untouched.
  */
 public sealed interface Markup {
     /**
      * Series-scoped identity, unique within the series and never reused;
      * see [MarkupID].
      *
-     * Stable across edits while the node remains the same kind
+     * Stable across appends while the node remains the same kind
      * of thing at the same place.
      */
     public val id: MarkupID
@@ -32,8 +32,8 @@ public sealed interface Markup {
      * The document revision at which this node's own fields, child list, or
      * any descendant last changed.
      *
-     * A pure positional shift caused by an edit elsewhere never changes a
-     * node's revision.
+     * A pure positional shift caused by a mutation elsewhere never changes
+     * a node's revision.
      */
     public val revision: ULong
 

@@ -99,7 +99,7 @@ import Testing
     @Test("ParseError carries its native message through every presentation path")
     func parseErrorPresentation() {
         // Every byte sequence is a valid Markdown document, so `Document` and
-        // `edit` reject nothing a Swift caller can express: the engine's
+        // `append` reject nothing a Swift caller can express: the engine's
         // remaining failures are allocation and internal, and no test can
         // provoke either. The presentation paths are pinned directly, because
         // `localizedDescription` degraded to a bare domain and code once and
@@ -164,6 +164,73 @@ import Testing
             }
             try await group.waitForAll()
         }
+    }
+}
+
+@Suite("depth") struct DepthSuite {
+    /// Primitive results ferried out of the worker threads; access is
+    /// sequenced by thread completion, never concurrent.
+    private final class Outcome: @unchecked Sendable {
+        var failure: String?
+        var quoteEnters = 0
+        var events = 0
+        var dumpHasQuote = false
+    }
+
+    @Test("adversarial nesting walks and dumps beyond the call-stack budget")
+    func adversarialNestingDepth() throws {
+        // 4096 nested quotes overflowed the recursive walker. Two explicit
+        // stacks make the proof exact: deep value trees deallocate through
+        // recursive ARC releases, so every deep document lives and dies on
+        // a 16 MiB-stack thread, while the walk and dump run on a 512 KiB
+        // stack that recursive traversal at this depth could not survive.
+        let depth = 4096
+        let outcome = Outcome()
+        let finished = DispatchSemaphore(value: 0)
+        let owner = Thread {
+            defer { finished.signal() }
+            do {
+                let prefix = String(repeating: "> ", count: depth)
+                let document = try Document(prefix + "leaf\n")
+
+                let walked = DispatchSemaphore(value: 0)
+                // `unowned`, deliberately — weak would not do: if the
+                // walker's closure owned the deep tree, the walker THREAD's
+                // finalization could drop the last reference and run the
+                // recursive ARC release on this 512 KiB stack. The owner
+                // thread holds the document until `walked` is signaled —
+                // after the walker's final use — so the lifetime is safe and
+                // the deep tree still dies on the 16 MiB stack.
+                // swiftlint:disable:next unowned_variable_capture
+                let walker = Thread { [unowned document] in
+                    defer { walked.signal() }
+                    var quoteEnters = 0
+                    var events = 0
+                    MarkupWalker().walk(document) { event, node, _ in
+                        events += 1
+                        if event == .entering, node is BlockQuote { quoteEnters += 1 }
+                    }
+                    outcome.quoteEnters = quoteEnters
+                    outcome.events = events
+                    outcome.dumpHasQuote = document.dump().contains("BlockQuote")
+                }
+                walker.stackSize = 512 * 1024
+                walker.start()
+                walked.wait()
+            } catch {
+                outcome.failure = String(describing: error)
+            }
+        }
+        owner.stackSize = 16 * 1024 * 1024
+        owner.start()
+        finished.wait()
+
+        #expect(outcome.failure == nil)
+        #expect(outcome.quoteEnters == depth)
+        // Every node enters exactly once and exits exactly once: the
+        // document, the quote chain, and the innermost paragraph and text.
+        #expect(outcome.events == 2 * (depth + 3))
+        #expect(outcome.dumpHasQuote)
     }
 }
 

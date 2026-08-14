@@ -431,8 +431,8 @@ abstract class VerifyJavaImplementationHidden : DefaultTask() {
                         return new Document("visible");
                     }
 
-                    long edit(Document document) {
-                        Document next = document.edit("visible again");
+                    long append(Document document) {
+                        Document next = document.append("visible again");
                         long revision = next.revisionBits();
                         next.close();
                         return revision;

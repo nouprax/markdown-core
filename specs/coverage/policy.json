@@ -33,7 +33,7 @@
             "minimumMeasuredFiles": 33,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 15,
+                    "lines": 13,
                     "functions": 4
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {
@@ -306,9 +306,9 @@
                     "branches": 3
                 },
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
-                    "lines": 41,
+                    "lines": 39,
                     "functions": 3,
-                    "branches": 26
+                    "branches": 25
                 }
             }
         }

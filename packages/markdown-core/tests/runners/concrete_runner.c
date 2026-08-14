@@ -2431,7 +2431,6 @@ static int case_capture_document(void) {
         markdown_core_parse_options options = capture_options();
         static const char first[] = "> quoted *q*\n> more\n\n# head #\n";
         static const char tail[] = "\n- item\n";
-        static const char both[] = "> quoted *q*\n> more\n\n# head #\n\n- item\n";
         markdown_core_document *document = markdown_core_document_new(mc_sv(first, sizeof(first) - 1), &options, NULL);
         const markdown_core_document *view;
         if (!document) {
@@ -2444,16 +2443,15 @@ static int case_capture_document(void) {
             fprintf(stderr, "capture_document: committed view exposes no concrete owner\n");
             failed = 1;
         }
-        (void)tail;
-        if (!mc_edit(&document, mc_sv(both, sizeof(both) - 1), NULL)) {
+        if (!mc_append(&document, mc_sv(tail, sizeof(tail) - 1), NULL)) {
             markdown_core_document_free(document);
-            fprintf(stderr, "capture_document: second commit failed\n");
+            fprintf(stderr, "capture_document: append failed\n");
             return -1;
         }
         view = document;
         if (markdown_core_document_concrete(view) != markdown_core_document_root(view) ||
             tree_record_total(markdown_core_document_concrete(view)) == 0) {
-            fprintf(stderr, "capture_document: concrete owner lost across commits\n");
+            fprintf(stderr, "capture_document: concrete owner lost across appends\n");
             failed = 1;
         }
         markdown_core_document_free(document);
@@ -2621,14 +2619,6 @@ static bool shadow_splice(capture_shadow *shadow, size_t start, size_t end, cons
     return true;
 }
 
-/* One edit: delete `remove` at its first occurrence (when non-NULL), insert
- * `insert` there (or at `fallback_offset` when `remove` is NULL). */
-typedef struct capture_edit {
-    const char *remove;
-    const char *insert;
-    size_t fallback_offset; /* SIZE_MAX = append at end */
-} capture_edit;
-
 static const char EQUIVALENCE_INITIAL[] = "# Title\n"
                                           "\n"
                                           "> alpha [x] and [^n] here\n"
@@ -2664,38 +2654,29 @@ static const char EQUIVALENCE_INITIAL[] = "# Title\n"
                                           "formula\n"
                                           "$$\n"
                                           "\n"
-                                          "closing para [x] again\n"
-                                          "\n"
-                                          "[^n]: note body\n"
-                                          "\n"
-                                          "[x]: /url\n"
-                                          "\n"
-                                          "***\n";
+                                          "closing para [x] again\n";
 
-/* Suffix reflow, a nested reparse, a marker edit, a lazy-continuation flip,
- * fence breakage and repair, both definition flips, and appends: the edits
- * whose locality the region-relative encoding exists to survive. The
- * extension tail then edits inside every extension owner: cell text
- * growing a `\|`, the delimiter row's alignment, a checkbox flip, the
- * directive's label and attributes, the formula body, and an inline
- * directive's respelling. */
-static const capture_edit EQUIVALENCE_EDITS[] = {
-    {NULL, "intro paragraph\n\n", 0},
-    {"sub item", "sub itXm", 0},
-    {"- two", "* two", 0},
-    {"> beta continues", "beta continues", 0},
-    {"\n```\n", "\n``x\n", 0},
-    {"\n``x\n", "\n```\n", 0},
-    {"[x]: /url\n", "", 0},
-    {"[^n]: note body\n", "", 0},
-    {NULL, "\n## tail ##\n", (size_t)-1},
-    {NULL, "> new quote\n> more\n\n", 0},
-    {"| c | d |", "| c\\|q | d |", 0},
-    {"| - | - |", "| :-: | - |", 0},
-    {"- [ ] tick", "- [x] tick", 0},
-    {":::note[lbl]", ":::note[lbz]{#i .y}", 0},
-    {"formula\n$$", "for$mula\n$$", 0},
-    {":name[lb]{.k}", ":other{q=1}", 0},
+/* Appended tails that re-run every owner\'s capture: a heading, a fresh
+ * quote, a table with an escaped pipe and a non-default alignment, checkbox
+ * items, a directive with label and attributes, a formula whose body hides
+ * a dollar, an inline directive respelled, and — the append-only power move
+ * — the two definitions arriving LAST, so every earlier mention re-resolves
+ * and the whole document\'s records re-encode. Two of the chunks split one
+ * construct mid-marker across ticks: dumps cannot see capture records, so
+ * the split coverage lives here rather than in the equivalence suite. */
+static const char *const EQUIVALENCE_APPENDS[] = {
+    "\n## tail ##\n",
+    "\n> new quote\n> more\n",
+    "\n| a | b |\n| :-: | - |\n| c\\|q | d |\n",
+    "\n- [x] tock two\n- [ ] tick two\n",
+    "\n:::note[lbz]{#i .y}\nappended body\n:::\n",
+    "\n$$\nfor$mu",
+    "la\n$$\n",
+    "\ninline :other{q=1} tail\n",
+    "\n[^n]: note body\n",
+    "\n[x]:",
+    " /url\n",
+    "\n***\n",
 };
 
 static int case_capture_equivalence(void) {
@@ -2716,35 +2697,22 @@ static int case_capture_equivalence(void) {
         return -1;
     }
 
-    for (step = 0; step <= sizeof(EQUIVALENCE_EDITS) / sizeof(EQUIVALENCE_EDITS[0]) && !failed; step++) {
+    for (step = 0; step <= sizeof(EQUIVALENCE_APPENDS) / sizeof(EQUIVALENCE_APPENDS[0]) && !failed; step++) {
         const markdown_core_document *view;
         markdown_core_document *fresh;
+        /* Step 0 appends the initial document itself (the shadow was seeded
+         * with it above); later steps append their tail chunk to both. */
+        const char *chunk = step == 0 ? EQUIVALENCE_INITIAL : EQUIVALENCE_APPENDS[step - 1];
+        size_t chunk_length = strlen(chunk);
         if (step > 0) {
-            const capture_edit *edit = &EQUIVALENCE_EDITS[step - 1];
-            size_t start;
-            size_t end;
-            size_t insert_length = strlen(edit->insert);
-            if (edit->remove) {
-                const char *found = strstr(shadow.bytes, edit->remove);
-                if (!found) {
-                    fprintf(stderr, "capture_equivalence: edit %zu anchor not found\n", step);
-                    failed = 1;
-                    break;
-                }
-                start = (size_t)(found - shadow.bytes);
-                end = start + strlen(edit->remove);
-            } else {
-                start = edit->fallback_offset == (size_t)-1 ? shadow.length : edit->fallback_offset;
-                end = start;
-            }
-            if (!shadow_splice(&shadow, start, end, edit->insert, insert_length)) {
-                fprintf(stderr, "capture_equivalence: edit %zu failed\n", step);
+            if (!shadow_splice(&shadow, shadow.length, shadow.length, chunk, chunk_length)) {
+                fprintf(stderr, "capture_equivalence: append %zu failed\n", step);
                 failed = 1;
                 break;
             }
         }
-        if (!mc_edit(&document, mc_sv(shadow.bytes, shadow.length), NULL)) {
-            fprintf(stderr, "capture_equivalence: commit %zu failed\n", step);
+        if (!mc_append(&document, mc_sv(chunk, chunk_length), NULL)) {
+            fprintf(stderr, "capture_equivalence: append %zu failed\n", step);
             failed = 1;
             break;
         }
@@ -2762,7 +2730,7 @@ static int case_capture_equivalence(void) {
             (int)step
         );
         if (tree_record_total(markdown_core_document_concrete(view)) == 0) {
-            fprintf(stderr, "capture_equivalence: commit %zu captured nothing\n", step);
+            fprintf(stderr, "capture_equivalence: append %zu captured nothing\n", step);
             failed = 1;
         }
         markdown_core_document_free(fresh);
@@ -2983,13 +2951,6 @@ static int case_chain_poison(void) {
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
             fprintf(stderr, "chain_poison: a poisoned chain accepted an append at allocation %ld\n", fail_at);
             markdown_core_error_free(error);
-            markdown_core_document_free(head);
-            return -1;
-        }
-        markdown_core_error_free(error);
-        error = NULL;
-        if (markdown_core_document_edit(head, mc_sv("y", 1), &error) != NULL || !error) {
-            fprintf(stderr, "chain_poison: a poisoned chain accepted an edit at allocation %ld\n", fail_at);
             markdown_core_document_free(head);
             return -1;
         }
@@ -3857,48 +3818,41 @@ static int case_inline_extension_funnel(void) {
 
 /* --- inline_equivalence ------------------------------------------------- */
 
-/* Inline concrete records must equal a fresh parse's after a commit, on the
- * two shapes that used to be the incremental engine's hardest: an edit inside
- * a paragraph whose prefix is inert, and a definition flip that changes what
- * a unit the edit never touched resolves to.
+/* Inline concrete records must equal a fresh parse\'s after every append —
+ * dumps cannot see records, so this oracle is the capture\'s own.
  *
- * This case used to ALSO assert, by pointer identity, that the seam
+ * This case used to assert, by pointer identity, that the seam
  * fast-forward and the dependent rebuild had actually engaged. Those
- * assertions are gone with the mechanism they described — a commit is a full
- * reparse now, so no node survives one and pointer identity across a commit
- * is not a property this engine has. What is asserted is what a consumer can
- * observe: the records equal a fresh parse's. */
+ * assertions are gone with the mechanism they described — a mutation is a
+ * full reparse now, so no node survives one and pointer identity across a
+ * mutation is not a property this engine has. What is asserted is what a
+ * consumer can observe: the records equal a fresh parse\'s. */
 static int case_inline_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
 
-    /* Seam transplant. */
+    /* A construct split mid-marker across two appends. */
     {
-        static const char initial[] = "plain one\nplain two\nedit *here* soon\n";
-        static const char replaced[] = "*there* now\n";
-        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
-        mc_text text = {NULL, 0, 0};
+        static const char head_part[] = "plain one\nplain two\nedit *he";
+        static const char tail_part[] = "re* soon\n";
+        static const char final_text[] = "plain one\nplain two\nedit *here* soon\n";
+        markdown_core_document *document =
+            markdown_core_document_new(mc_sv(head_part, sizeof(head_part) - 1), &options, NULL);
         const markdown_core_document *view;
         const markdown_core_node *paragraph;
-        const markdown_core_node *prefix_text;
         markdown_core_document *fresh;
-        static const char final_text[] = "plain one\nplain two\nedit *there* now\n";
 
         if (!document) {
             return -1;
         }
-        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
+        if (!mc_append(&document, mc_sv(tail_part, sizeof(tail_part) - 1), NULL)) {
             markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: seam first commit failed\n");
+            fprintf(stderr, "inline_equivalence: seam append failed\n");
             return -1;
         }
         view = document;
         paragraph = markdown_core_document_root(view)->first_child;
-        prefix_text = paragraph ? paragraph->first_child : NULL;
-        if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH || !prefix_text) {
-            mc_text_free(&text);
+        if (!paragraph || paragraph->type != MARKDOWN_CORE_NODE_PARAGRAPH) {
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: seam fixture lost its paragraph\n");
             return -1;
@@ -3907,17 +3861,8 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: seam paragraph captured nothing to compare\n");
             failed = 1;
         }
-        if (!mc_text_splice(&text, 25, 36, replaced, sizeof(replaced) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
-            markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: seam second commit failed\n");
-            return -1;
-        }
-        view = document;
         fresh = markdown_core_document_new(mc_sv((const uint8_t *)final_text, sizeof(final_text) - 1), &options, NULL);
         if (!fresh) {
-            mc_text_free(&text);
             markdown_core_document_free(document);
             return -1;
         }
@@ -3929,39 +3874,31 @@ static int case_inline_equivalence(void) {
         );
         failed |= check_inline_invariants("inline_equivalence: seam", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
-        mc_text_free(&text);
         markdown_core_document_free(document);
     }
 
-    /* Dependent rebuild across a definition flip, both directions. */
+    /* Dependent rebuild: the definition arrives LAST, so mentions that
+     * parsed unresolved re-resolve and their records re-encode. */
     if (!failed) {
         static const char initial[] = "alpha [a][x] beta [^n] gamma\n"
                                       "\n"
                                       "filler para\n"
                                       "\n"
-                                      "[x]: /u\n"
-                                      "\n"
                                       "[^n]: note\n";
-        static const char without_def[] = "alpha [a][x] beta [^n] gamma\n"
-                                          "\n"
-                                          "filler para\n"
-                                          "\n"
-                                          "\n"
-                                          "[^n]: note\n";
-        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
-        mc_text text = {NULL, 0, 0};
+        static const char definition[] = "\n[x]: /u\n";
+        static const char with_def[] = "alpha [a][x] beta [^n] gamma\n"
+                                       "\n"
+                                       "filler para\n"
+                                       "\n"
+                                       "[^n]: note\n"
+                                       "\n[x]: /u\n";
+        markdown_core_document *document =
+            markdown_core_document_new(mc_sv(initial, sizeof(initial) - 1), &options, NULL);
         const markdown_core_document *view;
         const markdown_core_node *unit;
         markdown_core_document *fresh;
 
         if (!document) {
-            return -1;
-        }
-        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
-            markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: dependent first commit failed\n");
             return -1;
         }
         view = document;
@@ -3970,86 +3907,49 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: dependent unit captured nothing to compare\n");
             failed = 1;
         }
-        /* Delete the `[x]: /u\n` line, bytes 43..50 plus its newline. */
-        if (!mc_text_splice(&text, 43, 51, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
+        if (!mc_append(&document, mc_sv(definition, sizeof(definition) - 1), NULL)) {
             markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: definition removal commit failed\n");
+            fprintf(stderr, "inline_equivalence: definition append failed\n");
             return -1;
         }
         view = document;
-        fresh =
-            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
+        fresh = markdown_core_document_new(mc_sv((const uint8_t *)with_def, sizeof(with_def) - 1), &options, NULL);
         if (!fresh) {
-            mc_text_free(&text);
             markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
-            "inline_equivalence: definition removed",
+            "inline_equivalence: definition appended",
             markdown_core_document_concrete(view),
             markdown_core_document_concrete(fresh),
             2
         );
+        failed |= check_inline_invariants("inline_equivalence: dependent", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
-
-        /* Flip it back: the same unit swaps again to the resolved shape. */
-        if (!failed) {
-            if (!mc_text_splice(&text, 43, 43, "[x]: /u\n", 8) ||
-                !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-                mc_text_free(&text);
-                markdown_core_document_free(document);
-                fprintf(stderr, "inline_equivalence: definition restore commit failed\n");
-                return -1;
-            }
-            view = document;
-            fresh = markdown_core_document_new(mc_sv((const uint8_t *)initial, sizeof(initial) - 1), &options, NULL);
-            if (!fresh) {
-                mc_text_free(&text);
-                markdown_core_document_free(document);
-                return -1;
-            }
-            failed |= compare_tree_records(
-                "inline_equivalence: definition restored",
-                markdown_core_document_concrete(view),
-                markdown_core_document_concrete(fresh),
-                3
-            );
-            failed |= check_inline_invariants("inline_equivalence: dependent", markdown_core_document_root(view));
-            markdown_core_document_free(fresh);
-        }
-        mc_text_free(&text);
         markdown_core_document_free(document);
     }
 
-    /* Dependent rebuild of a table cell: a definition flip converts a
-     * reference inside the cell without reparsing the table's block
-     * structure — the Table and the cell keep pointer identity (a full
-     * reparse would mint new nodes and silently satisfy the dump
-     * comparison), the cell's inline records swap with its domain, and
-     * its block-side records (the row's pipes, the table's delimiter
-     * row) ride the stable nodes unchanged. */
+    /* The dependent rebuild inside a table cell: the cell carries a `\\|`
+     * escape record on the block side, and the appended definition swaps
+     * the cell\'s inline records while the records land equal to a fresh
+     * parse\'s on both domains. */
     if (!failed) {
-        /* The cell carries a `\|` so it holds a block-side escape record:
-         * the dependent rebuild swaps {children, content, inline records}
-         * and must leave the cell's block records exactly in place. */
         static const char initial[] = "| pre\\|q [a][x] | b |\n"
                                       "| - | - |\n"
                                       "\n"
                                       "filler para\n"
                                       "\n"
-                                      "[x]: /u\n"
-                                      "\n"
                                       "tail para\n";
-        static const char without_def[] = "| pre\\|q [a][x] | b |\n"
-                                          "| - | - |\n"
-                                          "\n"
-                                          "filler para\n"
-                                          "\n"
-                                          "\n"
-                                          "tail para\n";
-        markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, NULL);
-        mc_text text = {NULL, 0, 0};
+        static const char definition[] = "\n[x]: /u\n";
+        static const char with_def[] = "| pre\\|q [a][x] | b |\n"
+                                       "| - | - |\n"
+                                       "\n"
+                                       "filler para\n"
+                                       "\n"
+                                       "tail para\n"
+                                       "\n[x]: /u\n";
+        markdown_core_document *document =
+            markdown_core_document_new(mc_sv(initial, sizeof(initial) - 1), &options, NULL);
         const markdown_core_document *view;
         const markdown_core_node *table;
         const markdown_core_node *cell;
@@ -4058,18 +3958,10 @@ static int case_inline_equivalence(void) {
         if (!document) {
             return -1;
         }
-        if (!mc_text_splice(&text, 0, 0, initial, sizeof(initial) - 1) ||
-            !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
-            markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: cell first commit failed\n");
-            return -1;
-        }
         view = document;
         table = markdown_core_document_root(view)->first_child;
         cell = nth_node_of_type(markdown_core_document_root(view), MARKDOWN_CORE_NODE_TABLE_CELL, 0);
         if (!table || table->type != MARKDOWN_CORE_NODE_TABLE || !cell) {
-            mc_text_free(&text);
             markdown_core_document_free(document);
             fprintf(stderr, "inline_equivalence: cell fixture lost its table\n");
             return -1;
@@ -4078,30 +3970,25 @@ static int case_inline_equivalence(void) {
             fprintf(stderr, "inline_equivalence: cell fixture holds no block record to keep in place\n");
             failed = 1;
         }
-        /* Delete the `[x]: /u\n` definition line. */
-        if (!mc_text_splice(&text, 46, 54, "", 0) || !mc_edit(&document, mc_sv(text.bytes, text.length), NULL)) {
-            mc_text_free(&text);
+        if (!mc_append(&document, mc_sv(definition, sizeof(definition) - 1), NULL)) {
             markdown_core_document_free(document);
-            fprintf(stderr, "inline_equivalence: cell definition removal commit failed\n");
+            fprintf(stderr, "inline_equivalence: cell definition append failed\n");
             return -1;
         }
         view = document;
-        fresh =
-            markdown_core_document_new(mc_sv((const uint8_t *)without_def, sizeof(without_def) - 1), &options, NULL);
+        fresh = markdown_core_document_new(mc_sv((const uint8_t *)with_def, sizeof(with_def) - 1), &options, NULL);
         if (!fresh) {
-            mc_text_free(&text);
             markdown_core_document_free(document);
             return -1;
         }
         failed |= compare_tree_records(
-            "inline_equivalence: cell definition removed",
+            "inline_equivalence: cell definition appended",
             markdown_core_document_concrete(view),
             markdown_core_document_concrete(fresh),
             2
         );
         failed |= check_inline_invariants("inline_equivalence: cell dependent", markdown_core_document_root(view));
         markdown_core_document_free(fresh);
-        mc_text_free(&text);
         markdown_core_document_free(document);
     }
     return failed ? -1 : 0;

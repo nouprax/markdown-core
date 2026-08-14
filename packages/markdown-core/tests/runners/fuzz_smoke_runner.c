@@ -2,13 +2,13 @@
  *
  * Feeds fixed corpora and seeded pseudo-random byte streams through the
  * read-only facade: parse, traverse every node and accessor, dump twice
- * (checking dump determinism), and free.  Seeded edit scripts additionally
+ * (checking dump determinism), and free.  Seeded append scripts additionally
  * drive incremental documents through the shared replay harness
- * (support/edit_replay.h), so every commit is checked against a one-shot
+ * (support/append_replay.h), so every append is checked against a one-shot
  * parse and the identity-ledger invariants.  No renderer is involved and no
  * network or random device is read; the same inputs are generated on every
  * run.  Long-running fuzz campaigns stay in the explicit AFL/libFuzzer
- * maintenance tasks (fuzz_document_edits consumes the same script format).
+ * maintenance tasks (fuzz_document_appends consumes the same script format).
  *
  *   fuzz_smoke_runner [--corpus FILE]... [--generated COUNT]
  *                     [--script FILE]... [--script-generated COUNT]
@@ -19,7 +19,7 @@
 
 #include <markdown_core.h>
 
-#include "edit_replay.h"
+#include "append_replay.h"
 #include "test_support.h"
 
 static size_t nodes_visited;

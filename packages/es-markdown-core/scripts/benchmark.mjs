@@ -49,21 +49,20 @@ function benchmarkDeepBuild(workload, source, depth) {
     );
 }
 
-function benchmarkStream(workload, unit, units) {
+// The append arm's baseline: the same stream where every tick re-parses the
+// accumulated text from scratch. A document chain grows one way — append —
+// and replacing the text is a new document, so a fresh parse per tick is
+// exactly what a consumer without append would pay. Each tick closes the
+// previous head in the loop; the registry is not a backstop here: a native
+// parse costs WASM linear memory, which is invisible to the JavaScript
+// collector, so nothing would make it run.
+function benchmarkParseStream(workload, unit, units) {
     function replay() {
-        let document = Document("");
         let streamed = "";
         for (let index = 0; index < units; index += 1) {
             streamed += unit;
-            const previous = document;
-            document = document.edit(streamed);
-            // The edit superseded its receiver, and the loop is what closes
-            // it. The registry is not a backstop here: a native parse costs
-            // WASM linear memory, which is invisible to the JavaScript
-            // collector, so nothing would make it run.
-            previous.close();
+            Document(streamed).close();
         }
-        document.close();
     }
 
     replay();
@@ -76,8 +75,8 @@ function benchmarkStream(workload, unit, units) {
     timings.sort((left, right) => left - right);
     const medianNanoseconds = Math.round(timings[2] * 1e6);
     console.log(
-        `benchmark runtime=es boundary=wasm_edit_and_decode workload=${workload} ` +
-            `workload_version=1 bytes=${Buffer.byteLength(unit) * units} edits=${units} ` +
+        `benchmark runtime=es boundary=wasm_parse_and_value_copy workload=${workload} ` +
+            `workload_version=1 bytes=${Buffer.byteLength(unit) * units} parses=${units} ` +
             `warmup=1 repeats=5 median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );
@@ -86,9 +85,8 @@ function benchmarkStream(workload, unit, units) {
 // The same stream driven by the trailing mutation: each unit arrives as an
 // append, and the boundary name says what the arm actually measures — the
 // native append plus the revision-pruned decode that reuses every value the
-// (id, revision) mirror proves. The boundary is new with this arm and is
-// deliberately NOT added to any benchmark allowlist; the row is
-// informational until the cross-runtime baseline document adopts it.
+// (id, revision) mirror proves. Compared against benchmarkParseStream above,
+// which pays a full re-parse per tick for the same text.
 function benchmarkAppendStream(workload, unit, units) {
     function replay() {
         let document = Document("");
@@ -118,35 +116,31 @@ function benchmarkAppendStream(workload, unit, units) {
 }
 
 function benchmarkFanOut(workload, width) {
-    // One-byte edits alternating in the first paragraph of a document with
-    // `width` root children: every edit reparses the whole text and decodes
-    // the whole new tree, so a narrow edit costs what a wide document costs.
+    // One-byte changes alternating in the first paragraph of a document with
+    // `width` root children. Replacing the text is a new document, so every
+    // change is a fresh parse of the whole text plus a decode of the whole
+    // new tree: a narrow change costs what a wide document costs.
     const body = "a\n\n".repeat(width);
     const sources = ["a" + body.slice(1), "b" + body.slice(1)];
 
-    function replay(from) {
-        let document = from;
+    function replay() {
         for (let index = 0; index < 20; index += 1) {
-            const previous = document;
-            document = document.edit(sources[index % 2]);
-            previous.close();
+            Document(sources[index % 2]).close();
         }
-        return document;
     }
 
-    let document = replay(Document(sources[0]));
+    replay();
     const timings = [];
     for (let index = 0; index < 5; index += 1) {
         const start = performance.now();
-        document = replay(document);
+        replay();
         timings.push((performance.now() - start) / 20);
     }
-    document.close();
     timings.sort((left, right) => left - right);
     const medianNanoseconds = Math.round(timings[2] * 1e6);
     console.log(
-        `benchmark runtime=es boundary=wasm_edit_and_decode workload=${workload} ` +
-            `workload_version=1 bytes=${width * 3} edits=1 warmup=1 repeats=5 ` +
+        `benchmark runtime=es boundary=wasm_parse_and_value_copy workload=${workload} ` +
+            `workload_version=1 bytes=${width * 3} parses=1 warmup=1 repeats=5 ` +
             `median_ns=${medianNanoseconds} ` +
             `peak_rss_kib=${process.resourceUsage().maxRSS} rss_kib=${Math.round(process.memoryUsage().rss / 1024)}`
     );
@@ -156,6 +150,6 @@ const unit = "## Section\n\nParagraph with **strong**, [link](https://example.co
 benchmark("large_document", unit.repeat(2_000));
 benchmark("deep_nesting", "> ".repeat(128) + "leaf\n");
 benchmarkDeepBuild("deep_document_build", "> ".repeat(4_096) + "leaf\n", 4_096);
-benchmarkStream("streamed_document", unit, 500);
+benchmarkParseStream("streamed_document", unit, 500);
 benchmarkAppendStream("streamed_document_append", unit, 500);
-benchmarkFanOut("fan_out_narrow_edit", 10_000);
+benchmarkFanOut("fan_out_narrow_change", 10_000);

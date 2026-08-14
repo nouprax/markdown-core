@@ -116,7 +116,10 @@ class ConcurrencyJvmTest {
 
                     var document = Document("")
                     repeat(25) { iteration ->
-                        document = advance(document) { edit("") }
+                        // Clearing is a fresh parse: whole-text replacement
+                        // is exactly a new document.
+                        document.close()
+                        document = Document("")
                         for (line in source.split("\n").dropLast(1)) {
                             document = advance(document) { append(line + "\n") }
                         }

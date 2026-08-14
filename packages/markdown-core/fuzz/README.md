@@ -7,14 +7,15 @@ gates that run in CI are the `fuzz`-labelled CTest tests (`fuzz_smoke` and
 Both harnesses need a clang with the libFuzzer runtime (plain LLVM clang; the
 Apple Xcode toolchain does not ship it).
 
-## Document edit-script fuzzer
+## Document append-script fuzzer
 
-`fuzz_document_edits` interprets every input as an edit script over a
+`fuzz_document_appends` interprets every input as an append script over a
 document (format documented in
-`tests/support/edit_replay.h`: two option bytes, then
-insert/delete/replace/commit operations) and verifies each commit through the
-shared replay harness — the document dump must equal a one-shot parse of the
-same text, the identity double-walk must hold (no id resurrection, no revision regression),
+`tests/support/append_replay.h`: two option bytes, then length-prefixed
+chunks, so the fuzzer owns every chunk boundary) and verifies each append
+through the shared replay harness — the document dump must equal a one-shot
+parse of the same text, the identity double-walk must hold (no id
+resurrection, no revision regression),
 and footnote queries must match a fresh document. Verification failures abort,
 so the fuzzer preserves the failing script; replay one deterministically with
 `fuzz_smoke_runner --script FILE`.
@@ -23,9 +24,9 @@ so the fuzzer preserves the failing script; replay one deterministically with
 cmake -S packages/markdown-core -B build-fuzz -DMARKDOWN_CORE_FUZZ_SESSION=ON \
       -DCMAKE_C_COMPILER=$(which clang) -DCMAKE_CXX_COMPILER=$(which clang++) \
       -DCMAKE_BUILD_TYPE=Release
-cmake --build build-fuzz --target fuzz_document_edits --parallel
+cmake --build build-fuzz --target fuzz_document_appends --parallel
 mkdir -p build-fuzz/corpus-document
-build-fuzz/fuzz/fuzz_document_edits build-fuzz/corpus-document \
+build-fuzz/fuzz/fuzz_document_appends build-fuzz/corpus-document \
     -dict=packages/markdown-core/tests/core/fuzzing_dictionary -max_len=512
 ```
 

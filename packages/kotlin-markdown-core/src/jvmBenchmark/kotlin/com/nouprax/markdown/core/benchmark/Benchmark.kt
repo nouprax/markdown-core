@@ -119,19 +119,6 @@ private fun oneShotParseNs(source: String): Long {
     return elapsed
 }
 
-/** One localized edit of a deep chain: the edit and the successor's whole
- * tree decode, with the document it edits prepared outside the clock. */
-private fun deepEditNs(source: String): Long {
-    val document = Document(source)
-    val edited = source.dropLast("leaf\n".length) + "seed\n"
-    lateinit var next: Document
-    val elapsed = measureNanoTime { next = document.edit(edited) }
-    consume(next)
-    next.close()
-    document.close()
-    return elapsed
-}
-
 // A deep document built end to end. This replaces the depth-4,096
 // `deep_scope_materialization` workload, whose subject no longer exists: a
 // snapshot resolved scopes lazily against its session, so the first request
@@ -167,8 +154,8 @@ private fun deepBuildBenchmark(
     )
 }
 
-// The streaming arm, repointed from the edit path to the real append per the
-// streaming plan: each tick is one append crossing plus the PRUNED decode,
+// The streaming arm, riding the real append per the streaming plan: each
+// tick is one append crossing plus the PRUNED decode,
 // where every subtree the encoder proved unchanged arrives as a single reuse
 // record and resolves from the predecessor's values — the per-tick cost this
 // milestone claims is O(changed). The whole trace is timed and the tick count
@@ -212,11 +199,6 @@ fun main() {
         "deep_one_shot_parse",
         "jni_parse_and_value_copy",
         ::oneShotParseNs,
-    )
-    deepScalingBenchmark(
-        "deep_edit",
-        "jni_edit_and_decode",
-        ::deepEditNs,
     )
     deepBuildBenchmark(
         "deep_document_build",

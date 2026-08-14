@@ -1,14 +1,15 @@
 /**
- * Series-scoped node identity, stable across edits while the node remains the
- * same kind of thing at the same place.
+ * Series-scoped node identity, stable across appends while the node remains
+ * the same kind of thing at the same place.
  *
  * `rawValue` is unique within the owning series and never reused; `series` is
  * that series' random 64-bit salt, so nodes from different series (including
  * separate one-shot parses) never share an identity.
  *
- * A SERIES is one document and every document its edits produce. Raw values
- * restart at 1 for each new series, so the salt is the only thing keeping two
- * unrelated documents' identities apart.
+ * A SERIES is one document and every document its appends produce — a chain
+ * grows one way, and replacing the text is a new document (new chain, new
+ * series). Raw values restart at 1 for each new series, so the salt is the
+ * only thing keeping two unrelated documents' identities apart.
  *
  * Two ids are the same identity exactly when their `series` and `rawValue`
  * are equal. Within one series the same identity is always the same object,

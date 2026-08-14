@@ -7,7 +7,7 @@ import type { ListFlavor, PlacementMode, Scope, TableAlignment } from "../values
 import type { NativeExports } from "../runtime/native.js";
 import { kinds, type NativeKind } from "./kinds.js";
 
-/** A decoded document before `adopt` wires its mediators — node, edit,
+/** A decoded document before `adopt` wires its mediators — node, append,
  * close, dump — to the parse it came from. */
 export type DocumentValue = Pick<Document, "kind" | "id" | "revision" | "scope" | "content">;
 

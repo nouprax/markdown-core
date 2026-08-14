@@ -27,7 +27,7 @@
  * of *different* chains may run fully concurrently. No two chains share
  * mutable state.
  *
- * One chain: a mutation (edit or append) is an exclusive operation on its
+ * One chain: a mutation (append) is an exclusive operation on its
  * chain — all access to any handle on the chain must happen-before the
  * mutation or happen-after its return, and two mutations must be externally
  * serialized. Between mutations, concurrent read-only access (traversal,
@@ -71,8 +71,8 @@ typedef struct markdown_core_error markdown_core_error;
 
 /** Node identity, assigned once per series and never reused.
  *
- * Stable across edits while the node remains the same kind of thing at the
- * same place. 0 is never a valid id. */
+ * Stable across appends while the node remains the same kind of thing at
+ * the same place. 0 is never a valid id. */
 typedef uint64_t markdown_core_node_id;
 
 /** Bytes and a length.
@@ -560,22 +560,25 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * Mutation
  * ========
  *
- * A document is the live head of a CHAIN. A mutation — `edit` replaces all
- * text, `append` adds bytes at the end — advances the chain and SUPERSEDES
- * its receiver: the successor is the new head, the receiver from then on
- * supports only markdown_core_document_free, and the receiver's node handles
- * become invalid the moment the next mutation begins (that is a wording of
+ * A document is the live head of a CHAIN, and the chain grows one way:
+ * `append` adds bytes at the end. There is no whole-text edit — replacing
+ * the text describes a DIFFERENT document, and the way to say so is
+ * markdown_core_document_new, which opens a new chain with a new series.
+ *
+ * An append advances the chain and SUPERSEDES its receiver: the successor
+ * is the new head, the receiver from then on supports only
+ * markdown_core_document_free, and the receiver's node handles become
+ * invalid the moment the next mutation begins (that is a wording of
  * undefined behavior, not a checked error: a bare node pointer cannot carry
- * the check). Both mutations are one rule — same chain, same series,
- * revision strictly +1 on the chain's own counter — and mutating a
- * superseded handle is a deterministic error, so history is linear and
- * there is no forking. `append`'s result has the same tree, dump, and
- * identity rules as an `edit` of the concatenated text; the difference is
- * cost, and today none: both rebuild whole. Any byte split is legal on
- * append — mid-UTF-8, mid-CRLF, mid-line.
+ * the check). Same chain, same series, revision strictly +1 on the chain's
+ * own counter — and appending to a superseded handle is a deterministic
+ * error, so history is linear and there is no forking. The result has the
+ * same tree, dump, and identity rules as a fresh parse of the concatenated
+ * text; the difference is the preserved series. Any byte split is legal —
+ * mid-UTF-8, mid-CRLF, mid-line.
  *
  * What changed is asked of the new tree itself: a node's id names the same
- * thing across the mutation, and its revision says when its projection last
+ * thing across the append, and its revision says when its projection last
  * changed — (id, revision) is the whole update protocol.
  *
  * The text is the raw bytes exactly as given. UTF-8 is ASSUMED AND NEVER
@@ -583,9 +586,7 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * NUL is replaced with U+FFFD during parsing because CommonMark requires it of
  * canonical text, and nothing else is.
  *
- * Failure is asymmetric, deliberately. A failed `edit` supersedes nothing:
- * the receiver stays the head and can be queried, walked, and mutated again.
- * A failed `append` POISONS THE CHAIN — "the chain is done": every further
+ * A failed append POISONS THE CHAIN — "the chain is done": every further
  * mutation fails deterministically, only free remains, the caller holds
  * every byte it ever sent, and recovery is a new chain. A rejected argument
  * (NULL data with nonzero length, a stale receiver) fails the call, never
@@ -604,20 +605,6 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
     markdown_core_string markdown,
     const markdown_core_parse_options *options,
-    markdown_core_error **error
-);
-
-/** `document.edit(markdown)` — the whole-text mutation: hand the chain's
- * head new text and get back the document that text describes, which
- * SUPERSEDES the receiver.
- *
- * There is nothing pending to commit, so the operation is an edit, not a
- * commit. The caller owns the returned document; the receiver supports only
- * free from here on. On a stale or poisoned receiver this is a
- * deterministic error and nothing changes. */
-MARKDOWN_CORE_API markdown_core_document *markdown_core_document_edit(
-    markdown_core_document *document,
-    markdown_core_string markdown,
     markdown_core_error **error
 );
 

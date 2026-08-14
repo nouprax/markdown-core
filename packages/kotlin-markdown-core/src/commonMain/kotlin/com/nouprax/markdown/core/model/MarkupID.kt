@@ -7,10 +7,10 @@ import kotlin.jvm.JvmStatic
  *
  * [rawValue] is unique within the owning series and never reused; [series] is
  * that series' random salt, so nodes from different series (including
- * separate one-shot parses) never share an identity. Stable across edits
+ * separate one-shot parses) never share an identity. Stable across appends
  * while the node remains the same kind of thing at the same place.
  *
- * A SERIES is one document and every document its edits produce. Raw values
+ * A SERIES is one document and every document its appends produce. Raw values
  * restart at 1 for each new series, so the salt is the only thing keeping two
  * unrelated documents' identities apart.
  */

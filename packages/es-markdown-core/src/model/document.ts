@@ -10,7 +10,7 @@ import type { ParseOptions } from "../parse-options.js";
  * The root is a plain value like every node under it. `kind`, `id`,
  * `revision`, `scope`, and `content` are its only ENUMERABLE properties, so
  * spreading or structured-cloning a document yields the tree alone; the
- * options, the diagnostics, and the four mediators below do not come along.
+ * options, the diagnostics, and the mediators below do not come along.
  */
 export interface Document extends MarkupBase<"document"> {
     /** The document's top-level blocks in source order. */
@@ -30,32 +30,18 @@ export interface Document extends MarkupBase<"document"> {
      */
     readonly node: (id: Markup["id"]) => Markup | null;
     /**
-     * Hands this document new text and returns the document that text
-     * describes — the whole-text mutation.
-     *
-     * What changed is asked of the new tree itself: a node's id names the
-     * same thing across the mutation, and its revision says when its own
-     * fields, child list, or any descendant last changed — equal
-     * (id, revision) within a series means identical content.
-     *
-     * A document is the live head of a CHAIN, and a mutation advances the
-     * chain, old handles die, decoded values live forever: on success this
-     * receiver is SUPERSEDED — everything it already produced stays a plain
-     * value and `close` still works, but mutating it again is a
-     * deterministic error, so history is linear and there is no forking. A
-     * failed edit supersedes nothing: the receiver stays the head.
-     *
-     * `markdown` replaces ALL text: a surrogate half a previous `append`
-     * held back (see there) is discarded with the rest, never spliced in.
-     */
-    readonly edit: (markdown: string) => Document;
-    /**
      * Appends `chunk` to the end of this document's text and returns the
-     * document all bytes so far describe — the trailing mutation.
+     * document all bytes so far describe — the one mutation. A document
+     * chain grows one way: append. Replacing the text is a new document
+     * (new chain, new series).
      *
-     * Same tree, dump, and identity rules as an `edit` of the concatenated
-     * text; the difference is cost. Appended bytes never move settled
-     * content, so the successor re-decodes only what changed, and a node the
+     * Same tree, dump, and identity rules as a one-shot parse of the
+     * concatenated text; the difference is cost. What changed is asked of
+     * the new tree itself: a node's id names the same thing across the
+     * mutation, and its revision says when its own fields, child list, or
+     * any descendant last changed — equal (id, revision) within a series
+     * means identical content. Appended bytes never move settled content,
+     * so the successor re-decodes only what changed, and a node the
      * append did not reach is the predecessor's very value object — same
      * `id`, same `revision`, same `scope`, `===`. Any split of the text is
      * legal, mid-CRLF, mid-line, even between the two halves of a surrogate
@@ -66,10 +52,15 @@ export interface Document extends MarkupBase<"document"> {
      * — no later chunk can complete it — and encodes to U+FFFD exactly as
      * `TextEncoder` always did.
      *
-     * Supersedes the receiver exactly as `edit` does. A failure past the
-     * argument checks poisons the chain — every further mutation fails
-     * deterministically, only `close` remains, and recovery is a new
-     * document from text the caller still holds.
+     * A mutation advances the chain, old handles die, decoded values live
+     * forever: on success this receiver is SUPERSEDED — everything it
+     * already produced stays a plain value and `close` still works, but
+     * mutating it again is a deterministic error, so history is linear and
+     * there is no forking. An argument failure supersedes nothing: the
+     * receiver stays the head. A failure past the argument checks poisons
+     * the chain — every further mutation fails deterministically, only
+     * `close` remains, and recovery is a new document from text the caller
+     * still holds.
      */
     readonly append: (chunk: string) => Document;
     /**

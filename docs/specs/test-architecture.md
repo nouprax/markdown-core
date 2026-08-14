@@ -150,20 +150,20 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
 
 Swift correctness suites:`api`、`errors`、`unicode`、`ownership`、
-`robustness`、`text`、`edits`、`depth`、`consumer`；`ConformanceSuite` 位于独立
+`robustness`、`text`、`chain`、`depth`、`consumer`；`ConformanceSuite` 位于独立
 `MarkdownCoreConformanceTests` target。测试与 consumer package 位于
 `packages/swift-markdown-core/Tests/`，只通过公开 Swift API 验证
 C-to-Swift node/field/nullability/scope/error/ownership mapping。
-`edits` 覆盖 `Document.edit` 契约:streaming/clean-boundary/kind-change 的
-id-stability、(series, id, revision) 等值语义、纯位移不动任何 (id, revision)、
-被 edit 读过的 document 仍可自答,以及模拟真实 LLM 消费端的
+`chain` 覆盖 `Document.append` 契约:supersession 与线性历史、
+(series, id, revision) 等值语义、被 append 读过的 document 仍可自答、
+诊断随 document 走,以及模拟真实 LLM 消费端的
 conflated-streaming 驱动(多 turn、不规律 render tick、20-30 token 量级消息
 混合小 flush、裸字符偏移切点(mid-word/mid-marker/块边界换行之间)、turn
 边界已定稿块冻结、每 tick「携带新 document revision 的节点数」近线性上界断言,
 以 root revision 是否前进为 tick 有效门;三端共用同一确定性发生器,突发形状
 逐条一致)；`depth` 覆盖超出调用栈预算的对抗性嵌套。
-`ConformanceSuite` 另以 per-line append 通过 `Document.edit` 回放 manifest
-corpus,逐 commit 做与 C harness 同构的双走查:累计 id ledger 跨整个 replay
+`ConformanceSuite` 另以 per-line `Document.append` 回放 manifest
+corpus,逐 append 做与 C harness 同构的双走查:累计 id ledger 跨整个 replay
 (id 不重复、retired id 永不复活、revision 单调、child revision ≤ parent
 revision、mint 携带新 document revision),(id, revision) 未变的 topmost
 幸存者比较去位置化的子树内容,子树形式由归纳覆盖。

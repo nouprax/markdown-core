@@ -113,7 +113,6 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public fun close ()V
 	public final fun dump ()Ljava/lang/String;
 	public final fun dump (Lcom/nouprax/markdown/core/Markup;)Ljava/lang/String;
-	public final fun edit (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getContent ()Ljava/util/List;
 	public final fun getDiagnostics ()Ljava/util/List;

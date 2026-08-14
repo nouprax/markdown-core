@@ -18,19 +18,10 @@
 bool markdown_core_kotlin_open(const uint8_t *source, size_t length, uint32_t options_mask,
                                uint8_t **output, size_t *output_length);
 
-/* Hands `handle` new text, exactly as markdown_core_document_edit does: the
- * successor supersedes the receiver on success, the receiver's handle stays
- * releasable either way, and the payload carries the successor's own. A
- * failed edit supersedes nothing. The edit payload never prunes — an edit
- * can shift a node's positions without touching its revision, so nothing a
- * caller decoded before it is guaranteed current. */
-bool markdown_core_kotlin_edit(uint64_t handle, const uint8_t *source, size_t length,
-                               uint8_t **output, size_t *output_length);
-
 /* Hands `handle` a trailing chunk, exactly as markdown_core_document_append
  * does: the successor supersedes the receiver on success, the receiver's
  * handle stays releasable either way, and a failure past the argument guards
- * poisons the chain. The error shape is the edit entry's.
+ * poisons the chain. The error shape is the open entry's.
  *
  * `baseline` prunes the tree body: a non-root subtree is emitted as one
  * REUSE record instead of its records when its revision is <= baseline AND

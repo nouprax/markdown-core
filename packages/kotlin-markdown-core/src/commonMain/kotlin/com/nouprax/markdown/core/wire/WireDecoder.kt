@@ -34,13 +34,13 @@ private fun reader(
 }
 
 /**
- * Decodes one payload: the tree, then the diagnostics. An open, an edit, and
- * an append answer in the same shape, because a mutation's answer is simply
- * the next document.
+ * Decodes one payload: the tree, then the diagnostics. An open and an append
+ * answer in the same shape, because a mutation's answer is simply the next
+ * document.
  *
  * Every record's child ids resolve against entries this same pass decoded,
- * because the tree arrives children-before-parents. An open or edit payload
- * carries the whole tree and [reuse] is empty. An append payload may prune:
+ * because the tree arrives children-before-parents. An open payload carries
+ * the whole tree and [reuse] is empty. An append payload may prune:
  * a REUSE record stands for a subtree the encoder proved unchanged in both
  * content and position, and resolves against [reuse] — the receiver's own id
  * index, which the chain's linear history pins as the one document those

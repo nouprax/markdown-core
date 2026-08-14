@@ -12,19 +12,19 @@
  * equivalents of the retired HTML-output assertions.  Traversal is
  * iterative, so 50000-deep trees cannot overflow the stack.
  *
- * The edit_* cases replay adversarial inputs through successive edits via
- * the shared replay harness: every edit checks the edited document dump
+ * The append_* cases replay adversarial inputs through successive appends
+ * via the shared replay harness: every append checks the document dump
  * against a one-shot parse of the same text and double-walks the
  * predecessor and successor trees against the id ledger.  The canonical dump is
- * iterative like every other traversal; edit-case depths are bounded
- * only by the dump volume the per-commit verification materializes (dump
+ * iterative like every other traversal; append-case depths are bounded
+ * only by the dump volume the per-append verification materializes (dump
  * bytes grow quadratically with depth), never by a stack budget.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "edit_replay.h"
+#include "append_replay.h"
 #include "test_support.h"
 
 typedef struct pc_context {
@@ -831,12 +831,13 @@ static int case_formula_backslash_openers(pc_context *context) {
 
 /* Document pathological cases ------------------------------------------------
  *
- * Adversarial structures replayed through successive edits.  The shared
- * harness verifies every commit in full (dump equality against a one-shot
- * parse, identity double-walk, footnote-query equivalence), so these cases only
- * add the structural probes that document each attack; the CTest TIMEOUT
- * bounds a commit whose cost degenerates against the structure even when it
- * stays correct.
+ * Adversarial structures replayed through successive appends.  The shared
+ * harness verifies every append in full (dump equality against a one-shot
+ * parse, identity double-walk, footnote-query equivalence), so these cases
+ * only add the structural probes that document each attack; the CTest
+ * TIMEOUT bounds an append whose cost degenerates against the structure even
+ * when it stays correct.  Every append re-parses all bytes so far, so a tail
+ * append IS the attack: the adversarial prefix is re-run in whole per tick.
  */
 
 static int pe_failures;
@@ -851,19 +852,21 @@ static int pe_open(er_replay *replay, const char *context, const markdown_core_p
     return er_replay_open(replay, context, options, pe_report, NULL);
 }
 
-/* One verified commit around a single splice; NULL `text` deletes. */
-static int pe_splice(er_replay *replay, size_t start, size_t end, const char *text) {
-    if (er_replay_edit(replay, start, end, (const uint8_t *)text, text ? strlen(text) : 0) != 0) {
-        return -1;
-    }
-    return er_replay_commit(replay);
+/* One verified append of a NUL-terminated tail. */
+static int pe_append(er_replay *replay, const char *text) {
+    return er_replay_append(replay, (const uint8_t *)text, strlen(text));
+}
+
+/* The adversarial prefix arrives as one verified append of its own. */
+static int pe_append_input(er_replay *replay, const pc_context *context) {
+    return er_replay_append(replay, (const uint8_t *)context->input, context->input_length);
 }
 
 static int pe_expect_kind(const er_replay *replay, markdown_core_node_kind kind, size_t expected, const char *what) {
     size_t counts[TS_KIND_COUNT];
     const markdown_core_document *document = replay->document;
     if (!document || ts_ast_count_kinds(markdown_core_document_root(document), counts) != 0) {
-        fprintf(stderr, "cannot count node kinds in the edited document\n");
+        fprintf(stderr, "cannot count node kinds in the appended document\n");
         return -1;
     }
     if ((size_t)kind >= TS_KIND_COUNT) {
@@ -871,55 +874,38 @@ static int pe_expect_kind(const er_replay *replay, markdown_core_node_kind kind,
         return -1;
     }
     if (counts[kind] != expected) {
-        fprintf(stderr, "expected %zu %s node(s) in the edited document, found %zu\n", expected, what, counts[kind]);
+        fprintf(stderr, "expected %zu %s node(s) in the appended document, found %zu\n", expected, what, counts[kind]);
         return -1;
     }
     return 0;
 }
 
-/* Locates `pattern` in the shadow text (NUL-terminated by the harness). */
-static size_t pe_find(const er_replay *replay, const char *pattern) {
-    const char *hit = strstr((const char *)replay->shadow.bytes, pattern);
-    if (!hit) {
-        fprintf(stderr, "pattern '%s' not found in the shadow text\n", pattern);
-        return (size_t)-1;
-    }
-    return (size_t)(hit - (const char *)replay->shadow.bytes);
-}
-
-/* A 48 KiB single paragraph of emphasis openers: every commit reparses the
+/* A 48 KiB single paragraph of emphasis openers: every append reparses the
  * whole inline run, and the delimiter stack must not leak state between
- * commits.  The parity edit toggles one closer mid-paragraph, matching and
- * unmatching a pair against 16384 candidate openers each round. */
-static int case_edit_emph_openers(pc_context *context) {
+ * appends.  Each appended closer right-flanks against 16384 candidate
+ * openers. */
+static int case_append_emph_openers(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    size_t closer;
-    int round;
     int result = -1;
 
     if (pc_build(context, NULL, "_a ", 16384, NULL) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_emph_openers", &options) != 0) {
+    if (pe_open(&replay, "append_emph_openers", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
         goto done;
     }
-    /* After the 'a' of a middle unit, so the inserted "_" right-flanks. */
-    closer = context->input_length / 2;
-    closer -= closer % 3;
-    closer += 2;
-    for (round = 0; round < 3; round++) {
-        if (pe_splice(&replay, closer, closer, "_") != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 1, "Emphasis") != 0 ||
-            pe_splice(&replay, closer, closer + 1, NULL) != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 0, "Emphasis") != 0) {
-            goto done;
-        }
+    /* "b_" right-flanks: one pair matches against the opener wall. */
+    if (pe_append(&replay, "b_") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 1, "Emphasis") != 0) {
+        goto done;
+    }
+    if (pe_append(&replay, " c_") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_EMPHASIS, 2, "Emphasis") != 0) {
+        goto done;
     }
     result = pe_failures ? -1 : 0;
 done:
@@ -928,30 +914,32 @@ done:
 }
 
 /* Backtick runs of every length below 1200 (~700 KiB) never close a span;
- * toggling a lone backtick at the front closes exactly one and reflows the
- * candidate pairing across every run behind it on each commit. */
-static int case_edit_backtick_runs(pc_context *context) {
+ * an appended lone backtick closes exactly the length-1 run and reflows the
+ * candidate pairing across every run behind it. */
+static int case_append_backtick_runs(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    int round;
     int result = -1;
 
     if (pc_build_backtick_runs(context, 1200) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_backtick_runs", &options) != 0) {
+    if (pe_open(&replay, "append_backtick_runs", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
+    if (pe_append_input(&replay, context) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
         goto done;
     }
-    for (round = 0; round < 2; round++) {
-        if (pe_splice(&replay, 0, 0, "`") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 1, "Code") != 0 ||
-            pe_splice(&replay, 0, 1, NULL) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 0, "Code") != 0) {
-            goto done;
-        }
+    /* The space keeps the new backtick a run of its own; it closes the
+     * length-1 run and the span swallows every run between them. */
+    if (pe_append(&replay, " `") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 1, "Code") != 0) {
+        goto done;
+    }
+    /* A self-contained pair appended after the giant span still reflows the
+     * whole candidate pairing behind it. */
+    if (pe_append(&replay, " ``x``") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE, 2, "Code") != 0) {
+        goto done;
     }
     result = pe_failures ? -1 : 0;
 done:
@@ -960,15 +948,14 @@ done:
 }
 
 /* 4096-deep block quotes.  Depth here is bounded by dump volume, not by
- * any stack: the replay harness verifies every commit with two canonical
+ * any stack: the replay harness verifies every append with two canonical
  * dumps whose per-line prefixes grow with depth, so dump bytes are
  * quadratic in depth (50000 deep would be ~5 GiB per dump).  Stack safety
  * at adversarial depth is pinned separately by the small-stack dump case
  * in the concurrency runner and the 50000-deep structural one-shot cases.
- * The open chain spans the whole document on every commit.  The innermost
- * text edit rides the full chain; the mid-chain marker flip re-kinds level
- * 64 and everything below it into a list and back. */
-static int case_edit_quotes_deep(pc_context *context) {
+ * The open chain spans the whole document, so every appended byte re-runs
+ * container matching over all 4096 levels. */
+static int case_append_quotes_deep(pc_context *context) {
     enum { QUOTE_DEPTH = 4096 };
     markdown_core_parse_options options;
     er_replay replay;
@@ -978,29 +965,22 @@ static int case_edit_quotes_deep(pc_context *context) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_quotes_deep", &options) != 0) {
+    if (pe_open(&replay, "append_quotes_deep", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0) {
         goto done;
     }
-    /* Innermost text, under QUOTE_DEPTH open quotes. */
-    if (pe_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "b") != 0 ||
-        pe_splice(&replay, QUOTE_DEPTH * 2, QUOTE_DEPTH * 2 + 1, "a") != 0) {
+    /* Extends the innermost line, then continues it lazily: both rides
+     * re-match the whole 4096-marker chain. */
+    if (pe_append(&replay, "b") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0) {
         goto done;
     }
-    /* Level 64's marker becomes a list bullet (list markers only open below
-     * the engine's MAX_LIST_DEPTH, so the flip sits shallow): 64 quotes
-     * above, one list item holding the remaining quotes below. */
-    if (pe_splice(&replay, 64 * 2, 64 * 2 + 2, "- ") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH - 1, "BlockQuote") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 1, "List") != 0) {
-        goto done;
-    }
-    if (pe_splice(&replay, 64 * 2, 64 * 2 + 2, "> ") != 0 ||
+    if (pe_append(&replay, "\nlazy") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, QUOTE_DEPTH, "BlockQuote") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 0, "List") != 0) {
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
     result = pe_failures ? -1 : 0;
@@ -1009,40 +989,29 @@ done:
     return result;
 }
 
-/* 512-deep list nesting (~260 KiB of indentation): dedenting one middle
- * level re-parents every deeper level; re-indenting restores the spine. */
-static int case_edit_list_spine(pc_context *context) {
+/* 512-deep list nesting (~260 KiB of indentation): each appended lazy
+ * continuation re-runs container matching down the whole spine. */
+static int case_append_list_spine(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    size_t line_256 = 256 * 256 + 3 * 256; /* line d starts at d*d + 3*d */
     int result = -1;
 
     if (pc_build_nested_list(context, 512) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_list_spine", &options) != 0) {
+    if (pe_open(&replay, "append_list_spine", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
+    if (pe_append_input(&replay, context) != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
         goto done;
     }
-    /* Innermost item text (the input ends "* a\n"). */
-    if (pe_splice(&replay, context->input_length - 2, context->input_length - 1, "b") != 0 ||
-        pe_splice(&replay, context->input_length - 2, context->input_length - 1, "a") != 0) {
+    if (pe_append(&replay, "lazy one\n") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
         goto done;
     }
-    /* Dedent level 256: its item joins level 255's list and the deeper
-     * spine re-parents beneath it. */
-    if (pe_splice(&replay, line_256, line_256 + 2, NULL) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 511, "List") != 0 ||
+    if (pe_append(&replay, "lazy two\n") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST_ITEM, 512, "ListItem") != 0) {
-        goto done;
-    }
-    if (pe_splice(&replay, line_256, line_256, "  ") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LIST, 512, "List") != 0) {
         goto done;
     }
     result = pe_failures ? -1 : 0;
@@ -1053,40 +1022,37 @@ done:
 
 /* 2048 colliding reference definitions, every entry referencing one shared
  * undefined label: appending that label's definition turns 2047 of them
- * into reference nodes
- * across the whole document in one commit, and deleting it collapses them
- * back to literal text — maximal cross-document re-resolution against a
- * collision-saturated reference map. */
-static int case_edit_reference_collisions(pc_context *context) {
+ * into reference nodes across the whole document in one append — maximal
+ * cross-document re-resolution against a collision-saturated reference map.
+ * A duplicate definition appended after it must change nothing: the first
+ * definition keeps winning while the duplicate's paragraph vanishes. */
+static int case_append_reference_collisions(pc_context *context) {
     enum { COLLISIONS = 2048 };
     markdown_core_parse_options options;
     er_replay replay;
     char bad_key[32] = "";
     char definition[64];
-    size_t definition_length;
-    int round;
     int result = -1;
 
     if (pc_build_reference_collisions(context, COLLISIONS, bad_key) != 0) {
         return -1;
     }
     snprintf(definition, sizeof(definition), "[%s]: /t\n", bad_key);
-    definition_length = strlen(definition);
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_reference_collisions", &options) != 0) {
+    if (pe_open(&replay, "append_reference_collisions", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
         goto done;
     }
-    for (round = 0; round < 2; round++) {
-        if (pe_splice(&replay, replay.shadow.length, replay.shadow.length, definition) != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0 ||
-            pe_splice(&replay, replay.shadow.length - definition_length, replay.shadow.length, NULL) != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, 0, "LinkReference") != 0) {
-            goto done;
-        }
+    if (pe_append(&replay, definition) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0) {
+        goto done;
+    }
+    if (pe_append(&replay, definition) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_LINK_REFERENCE, COLLISIONS - 1, "LinkReference") != 0) {
+        goto done;
     }
     result = pe_failures ? -1 : 0;
 done:
@@ -1094,34 +1060,33 @@ done:
     return result;
 }
 
-/* 4096 one-line paragraphs behind a toggling unclosed fence at the head:
- * each commit re-kinds the entire suffix, so adoption, the graveyard, and
- * the revision stamps churn the whole tree twice per round. */
-static int case_edit_fence_gate(pc_context *context) {
+/* An unclosed fence ahead of 4096 one-line paragraphs swallows all of them;
+ * the appended closing fence releases the tail of the stream again — the
+ * streaming shape of the reparse-to-EOF degradation. */
+static int case_append_fence_gate(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    int round;
     int result = -1;
 
     if (pc_build(context, NULL, "a\n\n", 4096, NULL) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_fence_gate", &options) != 0) {
+    if (pe_open(&replay, "append_fence_gate", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+    if (pe_append(&replay, "````\n") != 0 || pe_append_input(&replay, context) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE_BLOCK, 1, "CodeBlock") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 0, "Paragraph") != 0) {
         goto done;
     }
-    for (round = 0; round < 2; round++) {
-        if (pe_splice(&replay, 0, 0, "````\n") != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE_BLOCK, 1, "CodeBlock") != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 0, "Paragraph") != 0 ||
-            pe_splice(&replay, 0, 5, NULL) != 0 ||
-            pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
-            goto done;
-        }
+    if (pe_append(&replay, "````\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_CODE_BLOCK, 1, "CodeBlock") != 0) {
+        goto done;
+    }
+    if (pe_append(&replay, "after\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
+        goto done;
     }
     result = pe_failures ? -1 : 0;
 done:
@@ -1129,40 +1094,32 @@ done:
     return result;
 }
 
-/* One quoted paragraph continued by 4096 lazy lines: no line in the wall
- * is a clean restart anchor, so every edit rides the fallback path.  The
- * mid-wall blank line splits the paragraph and evicts the tail from the
- * quote; deleting it knits the wall back together. */
-static int case_edit_lazy_wall(pc_context *context) {
+/* One quoted paragraph continued by 4096 lazy lines: every appended tail
+ * line rides the whole lazy wall again, and the appended blank finally
+ * evicts the continuation from the quote. */
+static int case_append_lazy_wall(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    size_t middle = 4 + 2 * 2048; /* a line boundary in the wall */
     int result = -1;
 
     if (pc_build(context, "> a\n", "b\n", 4096, NULL) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_lazy_wall", &options) != 0) {
+    if (pe_open(&replay, "append_lazy_wall", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
-    /* Tail edits: the furthest point from the only clean start. */
-    if (pe_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "c") != 0 ||
-        pe_splice(&replay, replay.shadow.length - 2, replay.shadow.length - 1, "b") != 0) {
+    if (pe_append(&replay, "c\n") != 0 || pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
-    if (pe_splice(&replay, middle, middle, "\n") != 0 ||
+    if (pe_append(&replay, "\n") != 0 || pe_append(&replay, "d\n") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 2, "Paragraph") != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 1, "BlockQuote") != 0) {
-        goto done;
-    }
-    if (pe_splice(&replay, middle, middle + 1, NULL) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph") != 0) {
         goto done;
     }
     result = pe_failures ? -1 : 0;
@@ -1171,51 +1128,38 @@ done:
     return result;
 }
 
-/* 4096 CRLF-separated paragraphs edited exactly at "\r\n" seams: deleting
- * a middle "\r", splicing a byte between "\r" and "\n" on both a text line
- * and a blank line, and restoring each shape exercises the restart
- * planner's line-shape re-checks against fused and unfused endings. */
-static int case_edit_crlf_seam(pc_context *context) {
+/* 4096 CRLF-separated paragraphs, then line endings split across appends:
+ * a chunk ending in "\r" leaves half a pair on the seam and the next
+ * append completes it — the ending must fuse across the mutation exactly
+ * as a one-shot parse of the joined bytes fuses it. */
+static int case_append_crlf_seam(pc_context *context) {
     markdown_core_parse_options options;
     er_replay replay;
-    size_t text_cr = 2048 * 6 + 2;  /* the "\r" ending a middle "aa" line */
-    size_t blank_cr = 2048 * 6 + 4; /* the "\r" of the following blank */
     int result = -1;
 
     if (pc_build(context, NULL, "aa\r\n\r\n", 4096, NULL) != 0) {
         return -1;
     }
     markdown_core_parse_options_init(&options);
-    if (pe_open(&replay, "edit_crlf_seam", &options) != 0) {
+    if (pe_open(&replay, "append_crlf_seam", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
         goto done;
     }
-    /* The text line's ending loses and regains its "\r". */
-    if (pe_splice(&replay, text_cr, text_cr + 1, NULL) != 0 || pe_splice(&replay, text_cr, text_cr, "\r") != 0) {
+    /* A lone trailing "\r" is an ending at EOF; the "\n" arriving next
+     * must fuse into one CRLF rather than mint a blank line. */
+    if (pe_append(&replay, "xx\r") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4097, "Paragraph") != 0) {
         goto done;
     }
-    /* A byte lands between "\r" and "\n" of the text line: the "\r" becomes
-     * its own ending and "x" its own line, still one paragraph. */
-    if (pe_splice(&replay, text_cr + 1, text_cr + 1, "x") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
-        pe_splice(&replay, text_cr + 1, text_cr + 2, NULL) != 0) {
+    if (pe_append(&replay, "\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4097, "Paragraph") != 0) {
         goto done;
     }
-    /* The same splice on the blank line leaves the blank alive as a lone
-     * "\r" line while "x" fuses into the next paragraph. */
-    if (pe_splice(&replay, blank_cr + 1, blank_cr + 1, "x") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0 ||
-        pe_splice(&replay, blank_cr + 1, blank_cr + 2, NULL) != 0) {
-        goto done;
-    }
-    /* Deleting the blank's "\r\n" outright fuses the seam's paragraphs. */
-    if (pe_splice(&replay, blank_cr, blank_cr + 2, NULL) != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4095, "Paragraph") != 0 ||
-        pe_splice(&replay, blank_cr, blank_cr, "\r\n") != 0 ||
-        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4096, "Paragraph") != 0) {
+    if (pe_append(&replay, "\r\n") != 0 || pe_append(&replay, "yy\r\n") != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_PARAGRAPH, 4098, "Paragraph") != 0) {
         goto done;
     }
     result = pe_failures ? -1 : 0;
@@ -1225,15 +1169,14 @@ done:
 }
 
 /* 1024 footnote definitions whose labels need case folding, 256 references
- * from one head paragraph: the site-free edit must not refold anything
- * (the timeout bounds a per-site refold), and the label flips on one
- * definition and one reference churn the interning table and cascade the
- * ordinals.  Footnote-query equivalence runs on every commit. */
-static int case_edit_footnote_labels(pc_context *context) {
+ * from one head paragraph: every append re-interns and re-folds against
+ * the saturated table, an appended tail reference resolves against it, and
+ * a fresh definition grows it — with footnote-query equivalence run on
+ * every append by the harness. */
+static int case_append_footnote_labels(pc_context *context) {
     enum { DEFINITIONS = 1024, REFERENCES = 256 };
     markdown_core_parse_options options;
     er_replay replay;
-    size_t position;
     size_t i;
     int result = -1;
 
@@ -1261,40 +1204,29 @@ static int case_edit_footnote_labels(pc_context *context) {
     }
     markdown_core_parse_options_init(&options);
     options.footnotes = true;
-    if (pe_open(&replay, "edit_footnote_labels", &options) != 0) {
+    if (pe_open(&replay, "append_footnote_labels", &options) != 0) {
         return -1;
     }
-    if (pe_splice(&replay, 0, 0, context->input) != 0 ||
+    if (pe_append_input(&replay, context) != 0 ||
         pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES, "FootnoteReference") != 0) {
         goto done;
     }
-    /* Site-free body edit: no label may be refolded. */
-    position = pe_find(&replay, "plain");
-    if (position == (size_t)-1 || pe_splice(&replay, position + 4, position + 5, "e") != 0 ||
-        pe_splice(&replay, position + 4, position + 5, "n") != 0) {
+    /* A tail reference to a defined label folds and resolves. */
+    if (pe_append(
+            &replay,
+            "tail [^\xC3\x80\xD0\x91"
+            "0008]\n\n"
+        ) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES + 1, "FootnoteReference") != 0) {
         goto done;
     }
-    /* Definition label flip: its references unresolve, a new label is
-     * interned, and the ordinals cascade. */
-    position = pe_find(
-        &replay,
-        "[^\xC3\x80\xD0\x91"
-        "0004]:"
-    );
-    if (position == (size_t)-1 || pe_splice(&replay, position + 6, position + 7, "x") != 0 ||
-        pe_splice(&replay, position + 6, position + 7, "0") != 0) {
-        goto done;
-    }
-    /* Reference label flip: the head paragraph precedes every definition,
-     * so the first match is the reference; it retargets to another defined
-     * label and back. */
-    position = pe_find(
-        &replay,
-        "[^\xC3\x80\xD0\x91"
-        "0004]"
-    );
-    if (position == (size_t)-1 || pe_splice(&replay, position + 6, position + 10, "0008") != 0 ||
-        pe_splice(&replay, position + 6, position + 10, "0004") != 0) {
+    /* A fresh definition grows the interning table; nothing references it. */
+    if (pe_append(
+            &replay,
+            "[^\xC3\x80\xD0\x91"
+            "9999]: d\n"
+        ) != 0 ||
+        pe_expect_kind(&replay, MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE, REFERENCES + 1, "FootnoteReference") != 0) {
         goto done;
     }
     result = pe_failures ? -1 : 0;
@@ -1342,15 +1274,15 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_long_backslash", case_formula_long_backslash},
     {"formula_dollar_backtick_openers", case_formula_dollar_backtick},
     {"formula_backslash_openers", case_formula_backslash_openers},
-    {"edit_emph_openers", case_edit_emph_openers},
-    {"edit_backtick_runs", case_edit_backtick_runs},
-    {"edit_quotes_deep", case_edit_quotes_deep},
-    {"edit_list_spine", case_edit_list_spine},
-    {"edit_reference_collisions", case_edit_reference_collisions},
-    {"edit_fence_gate", case_edit_fence_gate},
-    {"edit_lazy_wall", case_edit_lazy_wall},
-    {"edit_crlf_seam", case_edit_crlf_seam},
-    {"edit_footnote_labels", case_edit_footnote_labels},
+    {"append_emph_openers", case_append_emph_openers},
+    {"append_backtick_runs", case_append_backtick_runs},
+    {"append_quotes_deep", case_append_quotes_deep},
+    {"append_list_spine", case_append_list_spine},
+    {"append_reference_collisions", case_append_reference_collisions},
+    {"append_fence_gate", case_append_fence_gate},
+    {"append_lazy_wall", case_append_lazy_wall},
+    {"append_crlf_seam", case_append_crlf_seam},
+    {"append_footnote_labels", case_append_footnote_labels},
 };
 
 int main(int argc, char **argv) {

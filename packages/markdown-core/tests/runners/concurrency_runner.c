@@ -479,42 +479,56 @@ typedef struct document_worker {
     size_t length;
 } document_worker;
 
-// Clears the document text, then streams `input` byte-by-byte with a commit
-// per byte. Hands back a determinism-checked dump.
+// Streams `input` byte-by-byte through the real append mutation on a FRESH
+// chain — a chain grows one way, so a restream is a new chain, not a reset.
+// Checks the chain discipline (revision counts the appends, the root id is
+// nonzero, the tree traverses) and hands back a determinism-checked dump.
 static int document_stream_once(
-    markdown_core_document **document_ref,
+    const markdown_core_parse_options *options,
     const char *input,
     uint8_t **dump_out,
     size_t *length_out
 ) {
     markdown_core_error *error = NULL;
+    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), options, &error);
     size_t length = strlen(input);
     size_t offset;
 
-    // The caller's text, one byte at a time: this test streams, so the text it
-    // hands over grows by one byte per edit. It owns that text; the document
-    // is handed the whole of it every time.
+    if (!document) {
+        markdown_core_error_free(error);
+        return 1;
+    }
+    // One byte at a time: each tick hands the document exactly the one new
+    // byte through the real append mutation.
     for (offset = 0; offset < length; offset++) {
-        markdown_core_document *previous = *document_ref;
-        markdown_core_document *successor = markdown_core_document_edit(previous, mc_sv(input, offset + 1), &error);
+        markdown_core_document *previous = document;
+        document = markdown_core_document_append(previous, mc_sv(input + offset, 1), &error);
         markdown_core_document_free(previous);
-        *document_ref = successor;
-        if (!successor) {
+        if (!document) {
             markdown_core_error_free(error);
             return 1;
         }
+    }
+
+    const markdown_core_node *root = markdown_core_document_root(document);
+    if (markdown_core_node_get_id(root) == 0 || markdown_core_document_revision(document) != (uint64_t)length ||
+        !traverse(root)) {
+        markdown_core_document_free(document);
+        return 1;
     }
 
     uint8_t *first = NULL;
     size_t first_length = 0;
     uint8_t *second = NULL;
     size_t second_length = 0;
-    if (!markdown_core_document_dump((*document_ref), &first, &first_length, &error) ||
-        !markdown_core_document_dump((*document_ref), &second, &second_length, &error)) {
+    if (!markdown_core_document_dump(document, &first, &first_length, &error) ||
+        !markdown_core_document_dump(document, &second, &second_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_dump_free(first);
+        markdown_core_document_free(document);
         return 1;
     }
+    markdown_core_document_free(document);
     int mismatch = first_length != second_length || memcmp(first, second, first_length) != 0;
     markdown_core_dump_free(second);
     if (mismatch) {
@@ -533,34 +547,13 @@ static THREAD_RETURN document_worker_main(void *argument) {
 
     barrier_wait(self->start);
 
-    markdown_core_error *error = NULL;
-    markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, &error);
-    if (!document) {
-        markdown_core_error_free(error);
-        self->failed = 1;
-        return THREAD_RESULT;
-    }
-
-    uint64_t root_id = 0;
-    uint64_t last_revision = 0;
     for (int iteration = 0; iteration < self->iterations; iteration++) {
         uint8_t *dump = NULL;
         size_t length = 0;
-        if (document_stream_once(&document, self->input, &dump, &length)) {
+        if (document_stream_once(&options, self->input, &dump, &length)) {
             self->failed = 1;
             break;
         }
-
-        const markdown_core_node *root = markdown_core_document_root(document);
-        uint64_t id = markdown_core_node_get_id(root);
-        uint64_t revision = markdown_core_document_revision(document);
-        if (id == 0 || (root_id != 0 && id != root_id) || revision <= last_revision || !traverse(root)) {
-            markdown_core_dump_free(dump);
-            self->failed = 1;
-            break;
-        }
-        root_id = id;
-        last_revision = revision;
 
         if (self->dump) {
             // Later restreams must reproduce the first dump byte-for-byte.
@@ -577,7 +570,6 @@ static THREAD_RETURN document_worker_main(void *argument) {
         }
     }
 
-    markdown_core_document_free(document);
     return THREAD_RESULT;
 }
 
@@ -658,9 +650,10 @@ static THREAD_RETURN chain_mutation_worker_main(void *argument) {
             markdown_core_document *successor;
             const char *chunk = chunks[round % 4];
             if (round % 3 == 2) {
-                /* Every third round is a whole-text edit: same rule, same
-                 * chain, same revision line as the appends around it. */
-                successor = markdown_core_document_edit(previous, mc_sv("# reset\n", 8), &error);
+                /* Every third round appends the empty chunk: still a
+                 * mutation, same chain, same revision line as the appends
+                 * around it. */
+                successor = markdown_core_document_append(previous, mc_sv(NULL, 0), &error);
             } else {
                 successor = markdown_core_document_append(previous, mc_sv(chunk, strlen(chunk)), &error);
             }
@@ -845,7 +838,7 @@ static int case_documents(void) {
     size_t reference_length = 0;
     markdown_core_document_free(document);
     document = markdown_core_document_new(mc_sv(shared_input, strlen(shared_input)), NULL, &error);
-    if (!document || !mc_edit(&document, mc_sv(shared_input, strlen(shared_input)), &error) ||
+    if (!document || !mc_append(&document, mc_sv(shared_input, strlen(shared_input)), &error) ||
         !markdown_core_document_dump(document, &reference, &reference_length, &error)) {
         markdown_core_error_free(error);
         markdown_core_document_free(document);
@@ -887,7 +880,7 @@ static int case_documents(void) {
         size_t length = 0;
         markdown_core_document_free(document);
         document = markdown_core_document_new(mc_sv("tail\n\n", 6), NULL, &error);
-        if (!document || !mc_edit(&document, mc_sv("tail\n\n", 6), &error) ||
+        if (!document || !mc_append(&document, mc_sv("tail\n\n", 6), &error) ||
             !markdown_core_document_dump(document, &dump, &length, &error)) {
             markdown_core_error_free(error);
             fprintf(stderr, "documents: post-read commit failed\n");

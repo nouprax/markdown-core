@@ -43,20 +43,20 @@ plus a raw value) and a change `revision`; equality is O(1) over that pair, and
 an unchanged node compares equal across consecutive revisions, which is what a
 render cache keys on.
 
-Identity says nothing about POSITION. An edit that shifts text moves positions
-without changing any node's content, and revisions deliberately do not
-report that. A consumer that draws anything positional — gutter numbers,
+Identity says nothing about POSITION. An append can grow a node's extent
+without changing its content, and revisions deliberately do not report
+that. A consumer that draws anything positional — gutter numbers,
 underlines, a scroll anchor, a source map — must read it from the NEW
 document's node even for one it skipped as unchanged.
 
-The package exposes parsing, the two document mutations (edit and append),
-and read-only AST traversal — not rendering, and not in-place tree mutation.
+The package exposes parsing, the one document mutation (append), and
+read-only AST traversal — not rendering, and not in-place tree mutation.
 
 Every node carries its own `scope` — its absolute start and end line and
 column — read in O(1) off the value. It is deliberately not part of `==`:
 position is not content, so two nodes differing only in where they sit are
-equal, which is what lets an edit above a node leave every reactive
-comparison below it untouched.
+equal, which is what lets an append that only grows a node's extent leave
+every reactive comparison untouched.
 
 ## Traverse and Inspect
 
@@ -83,32 +83,32 @@ the complete document or a focused subtree (subtree scopes print with the
 subtree as origin) — intended for logs, snapshots, and debugging rather than
 persistence or data interchange.
 
-## Edit and Append
+## Append
 
-There is no session type. A document is the live head of a CHAIN: `edit(_:)`
-hands it whole new text, `append(_:)` adds text at the end, and each returns
-the next head. Options are fixed for the chain's whole series — changing what
-the parser means is a new `Document`, not a mutation.
+There is no session type. A document is the live head of a CHAIN, and a
+chain grows one way: `append(_:)` adds text at the end and returns the next
+head. Replacing the text is a new `Document` — a new chain, a new series —
+because an edit is no different from constructing a new document. Options
+are fixed for the chain's whole series — changing what the parser means is
+likewise a new `Document`, not a mutation.
 
 ```swift
 var document = try Document("# Title\n\nHel")
 document = try document.append("lo")  // any split is legal, mid-word included
-document = try document.edit("# Title\n\nHello world")
 // The paragraph kept its identity; only its text advanced a revision.
 ```
 
-The chain contract in one sentence: a mutation advances the chain and
+The chain contract in one sentence: an append advances the chain and
 supersedes its receiver — old heads stop mutating, decoded values live
-forever. In detail: both mutations follow one rule (same chain, same series,
-revision strictly +1 on the chain's own counter); mutating a superseded
+forever. In detail: every append follows one rule (same chain, same series,
+revision strictly +1 on the chain's own counter); appending to a superseded
 document throws a deterministic error and disturbs nothing; and every read on
 a superseded document — its values, scopes, `dump()`, `node(_:)`,
 `diagnostics` — keeps answering from the state decoded when it was built,
-long after the rest of the chain is gone. A failed `edit` supersedes nothing:
-the receiver stays the head. A failed `append` poisons the chain — "the chain
-is done": only reads and release remain, and recovery is a new chain built
-from text the caller still holds. Appending an empty string is still a
-mutation: the chain advances over an identical projection.
+long after the rest of the chain is gone. A failed `append` poisons the chain
+— "the chain is done": only reads and release remain, and recovery is a new
+chain built from text the caller still holds. Appending an empty string is
+still a mutation: the chain advances over an identical projection.
 
 Streaming is `document = try document.append(chunk)` per message — never
 re-send accumulated text. Per-tick work is O(changed), not O(document): a

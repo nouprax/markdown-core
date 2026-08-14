@@ -143,34 +143,6 @@ import Testing
             #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
         }
     }
-
-    @Test("edits replay the manifest corpus to dump equality per revision")
-    func editEquivalenceReplay() throws {
-        // Kept on the EDIT path deliberately: append now carries the
-        // streaming load, but edit remains the whole-text mutation and its
-        // full-decode path needs this replay's coverage.
-        let manifest = try loadManifest()
-        for testCase in manifest.cases {
-            var document = try Document("", options: testCase.parseOptions.value)
-            var replayed = ""
-            var ledger: [UInt64: LedgerEntry] = [:]
-            verifyTree(document, against: nil, ledger: &ledger, testCase.name)
-            for chunk in lineChunks(testCase.source) {
-                replayed += chunk
-                let previous = document
-                document = try previous.edit(replayed)
-                #expect(document.series == previous.series, Comment(rawValue: testCase.name))
-
-                // Equivalence: the edited document dumps byte-equal to a
-                // one-shot parse of the same text.
-                let reference = try Document(replayed, options: testCase.parseOptions.value)
-                #expect(document.dump() == reference.dump(), Comment(rawValue: testCase.name))
-
-                verifyTree(document, against: previous, ledger: &ledger, testCase.name)
-            }
-            #expect(document.dump() == testCase.expected, Comment(rawValue: testCase.name))
-        }
-    }
 }
 
 private struct LedgerEntry {

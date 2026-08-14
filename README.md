@@ -136,18 +136,20 @@ read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
-## Editing and streaming
+## Streaming
 
-There is no session type. A document is the live head of a CHAIN: `edit`
-hands it whole new text, `append` adds bytes at the end — an LLM stream is
+There is no session type. A document is the live head of a CHAIN, and the
+chain grows one way: `append` adds bytes at the end — an LLM stream is
 `document = document.append(chunk)` per tick, and any byte split is legal,
-mid-word or mid-character. Both mutations are one rule: the successor
-supersedes the receiver (which from then on supports only close/free), the
-revision advances strictly by one on the chain's own counter, and mutating a
-superseded handle is a deterministic error, so history is linear. In one
-sentence: a mutation advances the chain, old handles die, decoded values
-live forever. Options are fixed for the chain's whole life — changing what
-the parser means is a new chain.
+mid-word or mid-character. One rule: the successor supersedes the receiver
+(which from then on supports only close/free), the revision advances
+strictly by one on the chain's own counter, and mutating a superseded handle
+is a deterministic error, so history is linear. In one sentence: an append
+advances the chain, old handles die, decoded values live forever. There is
+no whole-text edit: replacing the text describes a different document, and
+the way to say so is constructing a new one — a new chain with a new
+series. Options are fixed for the chain's whole life — changing what the
+parser means is a new chain too.
 
 **The stability an application needs is on the TREE.** An id keeps naming the
 same node until that node is removed, an unchanged node keeps its exact
@@ -158,14 +160,14 @@ it is the document revision at which the node's own fields, child list, or
 any descendant last changed, so a consumer holding values from the previous
 document walks the new tree top-down and stops descending wherever the
 (id, revision) pair is one it already has. That pair is the entire update
-protocol — there is no change list to read. After any sequence of edits the
-document is byte-for-byte dump-equal to a from-scratch parse of the same
-text.
+protocol — there is no change list to read. After any sequence of appends
+the document is byte-for-byte dump-equal to a from-scratch parse of the
+same text.
 
 ```swift
 let document = try Document("# Hello\n")
 let streamed = try document.append("world ")
-let corrected = try streamed.edit("# Hello\nworld again\n")
+let another = try streamed.append("and more\n")
 ```
 
 ```kotlin

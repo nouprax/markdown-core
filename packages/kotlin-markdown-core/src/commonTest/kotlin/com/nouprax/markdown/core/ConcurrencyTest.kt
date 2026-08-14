@@ -57,7 +57,9 @@ class ConcurrencyTest {
                                     // the loop follows the chain and closes
                                     // every predecessor behind itself — an
                                     // O(1) release each, and the old
-                                    // leak-tolerance reason is gone.
+                                    // leak-tolerance reason is gone. Clearing
+                                    // is a fresh parse: whole-text replacement
+                                    // is exactly a new document.
                                     fun advance(
                                         previous: Document,
                                         next: Document.() -> Document,
@@ -76,7 +78,8 @@ class ConcurrencyTest {
                                             document = advance(document) { append(chunk) }
                                         }
                                         if (round + 1 < 24) {
-                                            document = advance(document) { edit("") }
+                                            document.close()
+                                            document = Document("", options)
                                         }
                                     }
                                     document.use { it.dump() }

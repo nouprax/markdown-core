@@ -32,8 +32,8 @@ Scope was never part of equality and still is not, so nothing a reactive
 framework compares changes; what goes with the move is the scope table, the
 `document.scope(of:)` mediator, and the stale-value failure mode it needed.
 The session went on 2026-08-12, so `MarkupSession` above never became a
-canonical entry point: `Document(markdown, options)` and `edit` are the whole
-entry surface.
+canonical entry point: `Document(markdown, options)` and `append` are the
+whole entry surface.
 
 Phase 18 adds the executable repository-level conformance data at
 `specs/canonical-ast/manifest.json`. That manifest and its reviewed
@@ -284,7 +284,7 @@ MarkupTrack {
 
 `MarkupID` pairs the owning document's opaque `DocumentDomain` with a positive
 ordinal: ordinals are unique within a domain, never reused after retirement,
-and stable across edits while the node remains the same logical
+and stable across appends while the node remains the same logical
 node. Nodes from different domains never compare equal, and passing an
 identity from another domain is a programmer error that traps rather than a
 result value. A one-shot parse gets its own domain, as does any change to the
@@ -301,8 +301,8 @@ Equality and hashing on every kind are `(MarkupID, revision)`, which is
 whole-subtree equality. Identifiable-style APIs use `MarkupID` alone. Two equal
 nodes are guaranteed to have identical AST content. **`extent` does not
 participate**: absolute source position is not content, and two nodes that
-differ only in where they sit are equal — which is what lets an edit above a
-node leave every reactive comparison below it untouched.
+differ only in where they sit are equal — which is what lets a mutation
+that only shifts a node leave every reactive comparison below it untouched.
 
 There is deliberately no second stamp for the node's own projection without
 its descendants, and no change list on the side: `(MarkupID, revision)` is
@@ -313,7 +313,7 @@ case and not in the second. That is the same argument §4 already uses to
 forbid per-field, per-text and per-edge stamps: a stamp every node pays for
 is the wrong place to put information only a changed node carries.
 
-Which identities survive an edit is decided by a whole-tree pairing of the
+Which identities survive an append is decided by a whole-tree pairing of the
 predecessor's tree against the new one: identity never crosses a parent or a
 kind (a changed kind is a retirement and a creation, never a pairing),
 leading and trailing children whose subtrees are identical pair first, and
@@ -436,7 +436,7 @@ renderer that wants the GFM shape — definitions gathered at the tail in
 first-use order, numbered markers — derives it by walking the tree, where
 first-use order IS the document order of the `FootnoteReference` nodes and a
 definition is the `FootnoteDefinition` carrying the same label. Keeping them
-out of the tree aligns it with the mdast model and keeps an edit from
+out of the tree aligns it with the mdast model and keeps a mutation from
 renumbering nodes it did not touch.
 
 Making definedness decide a node's type puts a document-scoped fact inside an
@@ -489,7 +489,7 @@ edge rule.
 ## ParseOptions
 
 `Document(source, options = ParseOptions.default)` is the canonical parsing
-entry point, and `document.edit(source)` is the only other way to obtain a
+entry point, and `document.append(chunk)` is the only other way to obtain a
 document. There is no session type and no separate one-shot parse.
 `ParseOptions` is immutable and contains exactly these booleans:
 

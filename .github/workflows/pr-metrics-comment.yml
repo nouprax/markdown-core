@@ -161,7 +161,6 @@ jobs:
                           "large_document",
                           "deep_nesting",
                           "deep_one_shot_parse",
-                          "deep_edit",
                           "deep_document_build",
                       ]);
                       const allowedBoundaries = new Map([
@@ -171,7 +170,6 @@ jobs:
                               "kotlin",
                               new Set([
                                   "jni_parse_and_value_copy",
-                                  "jni_edit_and_decode",
                                   "jni_append_and_reuse_decode",
                               ]),
                           ],
