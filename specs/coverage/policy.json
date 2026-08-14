@@ -238,7 +238,7 @@
                 "packages/kotlin-markdown-core/src/commonMain/kotlin/com/nouprax/markdown/core/wire/WireDecoder.kt": {
                     "lines": 3,
                     "functions": 0,
-                    "branches": 14
+                    "branches": 12
                 },
                 "packages/kotlin-markdown-core/src/jvmMain/kotlin/com/nouprax/markdown/core/CBridge.jvm.kt": {
                     "lines": 3,

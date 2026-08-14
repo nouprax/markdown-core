@@ -154,11 +154,13 @@ document.close()
 
 Any byte split is legal — mid-word, mid-marker, even between the two
 newlines of a block boundary — and an empty chunk still advances the chain,
-to an identical tree. The per-tick cost is O(changed), not O(document):
-appending never moves settled content, so a subtree the mutation did not
-touch crosses the native boundary as a single reuse record and resolves to
-the value the predecessor already decoded — the decode work per tick is
-proportional to what the appended bytes changed, plus the trailing spine.
+to an identical tree. The per-tick decode cost is O(changed), not
+O(document): appending never moves settled content, so a subtree the
+mutation did not touch crosses the native boundary as a single reuse record
+and resolves to the value the predecessor already decoded — the decode work
+per tick is proportional to what the appended bytes changed, plus the
+trailing spine. The native append itself still reparses every byte sent so
+far.
 A failed append poisons the chain: every further mutation fails, every
 document's values and `close` remain, and recovery is a new `Document`.
 

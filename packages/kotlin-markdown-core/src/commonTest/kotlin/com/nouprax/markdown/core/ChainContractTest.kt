@@ -85,7 +85,8 @@ class ChainContractTest {
 
         // Yet the chain DID advance: the receiver is superseded — the
         // wrapper's view of the chain's revision moving under an unmoved
-        // tree — and the successor is the head with both mutations its own.
+        // tree — and the successor is the head, the one document a further
+        // append still reaches.
         assertFailsWith<IllegalStateException> { receiver.append("x") }
         val extended = successor.append("\nTail\n")
         assertTrue(extended.dump().contains("Tail"))
