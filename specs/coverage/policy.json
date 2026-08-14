@@ -33,7 +33,7 @@
             "minimumMeasuredFiles": 33,
             "unpinned": {
                 "packages/swift-markdown-core/Sources/MarkdownCore/Document.swift": {
-                    "lines": 11,
+                    "lines": 13,
                     "functions": 4
                 },
                 "packages/swift-markdown-core/Sources/MarkdownCore/Markup/Directive.swift": {

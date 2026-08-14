@@ -1393,3 +1393,10 @@ with the cause recorded here.
   under the entry. Net: two of the previously allowed message closures left
   the file in P0's delta removal, two arrived with P1's pruning, and the
   reachable surface stays fully pinned by the value_mirror gate.
+- **2026-08-13, `Document.swift` lines 15 → 13, NOT 11 (swift-macos).** A
+  shrink, recorded only to stop the next `--update-ledger` run from
+  re-tightening it: the local toolchain measures 11 uncovered lines after
+  the edit removal, but CI's toolchain attributes two more rows to the same
+  fault-only closures (the exact trap P1 hit when a local measure of 13 was
+  recorded and CI needed 15). The two-row toolchain slack is deliberate;
+  the reachable surface is unchanged.
