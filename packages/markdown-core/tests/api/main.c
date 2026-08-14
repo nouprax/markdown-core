@@ -2173,22 +2173,49 @@ static void document_chain_supersession(test_batch_runner *runner) {
     OK(runner, third && markdown_core_document_revision(third) == 2, "the revision line continues +1");
 
     /* An empty append is a mutation: the chain advances, the projection does
-     * not. */
-    fourth = markdown_core_document_append(third, mc_sv(NULL, 0), &error);
-    OK(runner, fourth != NULL, "an empty append succeeds");
-    OK(runner, fourth && markdown_core_document_revision(fourth) == 3, "an empty append advances the revision");
-    if (third && fourth) {
+     * not. The receiver's dump is taken BEFORE the append, because a
+     * superseded handle stops answering for a tree — the chain keeps one and
+     * it belongs to the head. */
+    {
         uint8_t *before_dump = NULL;
         uint8_t *after_dump = NULL;
         size_t before_length = 0;
         size_t after_length = 0;
+        bool captured = third && markdown_core_document_dump(third, &before_dump, &before_length, NULL);
+        OK(runner, captured, "the head's projection can be captured before the mutation");
+
+        fourth = markdown_core_document_append(third, mc_sv(NULL, 0), &error);
+        OK(runner, fourth != NULL, "an empty append succeeds");
+        OK(runner, fourth && markdown_core_document_revision(fourth) == 3, "an empty append advances the revision");
+
         OK(runner,
-           markdown_core_document_dump(third, &before_dump, &before_length, NULL) &&
-               markdown_core_document_dump(fourth, &after_dump, &after_length, NULL) && before_length == after_length &&
-               memcmp(before_dump, after_dump, before_length) == 0,
+           captured && fourth && markdown_core_document_dump(fourth, &after_dump, &after_length, NULL) &&
+               before_length == after_length && memcmp(before_dump, after_dump, before_length) == 0,
            "an empty append leaves the projection byte-identical");
         markdown_core_dump_free(before_dump);
         markdown_core_dump_free(after_dump);
+    }
+
+    /* And the receiver, now superseded, answers for no tree at all: the
+     * scalars that say WHICH document it was survive, everything that would
+     * describe text does not. */
+    {
+        uint8_t *dump = NULL;
+        size_t dump_length = 0;
+        const markdown_core_diagnostic *diagnostics = (const markdown_core_diagnostic *)1;
+        OK(runner, markdown_core_document_root(third) == NULL, "a superseded document has no root");
+        OK(runner,
+           !markdown_core_document_dump(third, &dump, &dump_length, NULL),
+           "a superseded document does not dump");
+        OK(runner,
+           markdown_core_document_diagnostics(third, &diagnostics) == 0 && diagnostics == NULL,
+           "a superseded document reports no diagnostics");
+        OK(runner,
+           markdown_core_document_revision(third) == 2 &&
+               markdown_core_document_series(third) == markdown_core_document_series(fourth) &&
+               markdown_core_document_length(third) > 0,
+           "a superseded document still says which document it was");
+        markdown_core_dump_free(dump);
     }
 
     OK(runner,

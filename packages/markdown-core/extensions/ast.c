@@ -82,8 +82,16 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->embeds = true;
 }
 
+/* Whether this handle is still the chain's head — the one document whose
+ * tree the chain keeps. Reads that would otherwise answer with a tree route
+ * through here, so a superseded handle answers as if it had none rather than
+ * describing text that has since grown past it. */
+static bool document_is_head(const markdown_core_document *document) {
+    return document && document->revision + 1 == document->chain->next_revision;
+}
+
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
-    return document ? document->root : NULL;
+    return document_is_head(document) ? document->root : NULL;
 }
 
 const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document) {
@@ -97,7 +105,7 @@ size_t markdown_core_document_diagnostics(
     const markdown_core_document *document,
     const markdown_core_diagnostic **diagnostics
 ) {
-    if (!document) {
+    if (!document_is_head(document)) {
         if (diagnostics) {
             *diagnostics = NULL;
         }
@@ -1382,7 +1390,7 @@ bool markdown_core_document_dump(
     size_t *length,
     markdown_core_error **error
 ) {
-    return markdown_core_ast_dump_root(document ? document->root : NULL, output, length, error);
+    return markdown_core_ast_dump_root(document_is_head(document) ? document->root : NULL, output, length, error);
 }
 
 bool markdown_core_ast_dump_root(
