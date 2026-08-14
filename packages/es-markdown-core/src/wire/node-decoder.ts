@@ -73,7 +73,7 @@ interface DecodeFrame {
 }
 
 export class NodeDecoder {
-    private scratch: number;
+    private readonly scratch: number;
     private context: DecodeContext | null = null;
     private cachedView: DataView | null = null;
     private readonly utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -88,7 +88,6 @@ export class NodeDecoder {
      * a singleton over one WASM instance, so there is nothing to release it
      * to. Holds four little-endian 64-bit slots. */
     get scratchPointer(): number {
-        this.requireLive();
         return this.scratch;
     }
 
@@ -136,7 +135,6 @@ export class NodeDecoder {
 
     /** The node's own absolute extent, read in O(1) off the node. */
     scopeOf(node: number): Scope {
-        this.requireLive();
         this.native.es_node_scope(node, this.scratch);
         const view = this.dataView();
         return {
@@ -391,7 +389,6 @@ export class NodeDecoder {
         revision: number,
         scope: Scope
     ): Extract<Markup, { kind: "codeBlock" }> {
-        this.requireLive();
         this.native.es_node_code_properties(node, this.scratch);
         const view = this.dataView();
         const literal = this.scratchString(view, 16);
@@ -417,7 +414,6 @@ export class NodeDecoder {
         scope: Scope,
         children: readonly Markup[]
     ): Extract<Markup, { kind: "list" }> {
-        this.requireLive();
         this.native.es_node_list_properties(node, this.scratch);
         const view = this.dataView();
         const flavor = this.listFlavor(view.getInt32(this.scratch, true));
@@ -505,7 +501,6 @@ export class NodeDecoder {
         // One packed crossing for mode, name, presence and count; scratch
         // layout mirrors `es_node_directive_properties`. Everything is read
         // out before the pair loop, which reuses the same scratch block.
-        this.requireLive();
         this.native.es_node_directive_properties(node, this.scratch);
         const view = this.dataView();
         const mode = this.placement(view.getInt32(this.scratch, true));
@@ -563,7 +558,6 @@ export class NodeDecoder {
     }
 
     readString(object: number, field: number): string | null {
-        this.requireLive();
         this.native.es_string(object, field, this.scratch, this.scratch + Uint32Array.BYTES_PER_ELEMENT);
         return this.scratchString(this.dataView(), 0);
     }
@@ -636,10 +630,6 @@ export class NodeDecoder {
             this.cachedView = new DataView(buffer);
         }
         return this.cachedView;
-    }
-
-    private requireLive(): void {
-        if (!this.scratch) throw new Error("native decoder has been disposed");
     }
 }
 

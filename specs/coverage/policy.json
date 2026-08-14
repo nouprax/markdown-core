@@ -308,7 +308,7 @@
                 "packages/es-markdown-core/src/wire/node-decoder.ts": {
                     "lines": 39,
                     "functions": 3,
-                    "branches": 25
+                    "branches": 24
                 }
             }
         }

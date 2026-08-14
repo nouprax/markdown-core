@@ -196,10 +196,6 @@ export class CDocument {
         this.pointer = 0;
     }
 
-    get released(): boolean {
-        return this.pointer === 0;
-    }
-
     private requirePointer(): number {
         if (!this.pointer) throw new Error("the native document has been released");
         if (this.superseded) {

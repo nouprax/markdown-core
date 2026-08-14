@@ -117,13 +117,14 @@ the chain ("the chain is done": only `close` remains, you still hold every
 byte you sent, recovery is a new document).
 
 `append` produces the same tree, the same dump, and the same node structure
-as a one-shot parse of the concatenated text — the difference is cost.
-Appended bytes never move settled content, so after an append the binding
-re-decodes only what changed: native decode and value construction are
+as a one-shot parse of the concatenated text. What appending saves today is
+the DECODE: appended bytes never move settled content, so after an append the
+binding re-decodes only what changed — decode and value construction are
 O(changed) per tick, while the JS-side index bookkeeping behind
-`document.node(id)` is O(live nodes) of pure map writes. A node the append
-did not reach is the predecessor's very value object — same `id`, same
-`revision`, same `scope`, `===`. Any split of the text is legal, mid-word,
+`document.node(id)` is O(live nodes) of pure map writes. The native append
+itself still reparses every byte sent so far. A node the append did not
+reach is the predecessor's very value object — same `id`, same `revision`,
+same `scope`, `===`. Any split of the text is legal, mid-word,
 mid-marker, mid-line — even between the two halves of a surrogate pair: a
 chunk ending in an unpaired high surrogate has that one code unit held back
 until the next append completes it, so a split emoji never becomes U+FFFD
