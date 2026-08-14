@@ -1101,7 +1101,12 @@ void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer,
 }
 
 static void S_parser_feed(markdown_core_parser *parser, const unsigned char *buffer, size_t len, bool eof) {
-    const unsigned char *end = buffer + len;
+    /* `buffer` may be NULL when `len` is zero — the public append takes such
+     * a chunk, and it is a mutation like any other. Even a zero offset is
+     * undefined on a null pointer, so the end is derived only when there are
+     * bytes to end. Apple's UndefinedBehaviorSanitizer does not report this
+     * one; the Linux toolchains CI runs do, which is where it was caught. */
+    const unsigned char *end = len ? buffer + len : buffer;
     static const uint8_t repl[] = {239, 191, 189};
 
     /* A feed of no bytes changes nothing — not even the CR seam. Reading
