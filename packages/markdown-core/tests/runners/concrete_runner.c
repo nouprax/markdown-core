@@ -2910,6 +2910,107 @@ static int case_capture_oom_sweep(void) {
     return 0;
 }
 
+/* --- warm_fingerprint ------------------------------------------------------ */
+
+/* Feeds `text` into a fresh parser and answers its fingerprint. The parser is
+ * never finalized: what is under test is the WARM state, the one a tick would
+ * find when the next chunk arrives. */
+static int fingerprint_after(const char *const *chunks, uint64_t *out) {
+    markdown_core_parser *parser = sweep_parser_new(NULL);
+    size_t i;
+    if (!parser) {
+        return -1;
+    }
+    for (i = 0; chunks[i]; i++) {
+        markdown_core_parser_feed(parser, chunks[i], strlen(chunks[i]));
+    }
+    *out = markdown_core_parser_warm_fingerprint(parser);
+    markdown_core_parser_free(parser);
+    return 0;
+}
+
+/* The fingerprint is the gate every later warm mechanism is measured by, so
+ * it is measured first: it must be a pure function of what has been fed, must
+ * move when anything about the warm state moves, and must not move for a feed
+ * that carries nothing. */
+static int case_warm_fingerprint(void) {
+    static const char *const held[] = {"# alpha\n\n[x]: /url\n\nbeta ", NULL};
+    static const char *const held_twin[] = {"# alpha\n\n[x]: /url\n\nbeta ", NULL};
+    static const char *const held_split[] = {"# alpha\n\n[x]: /url\n\n", "beta ", NULL};
+    static const char *const held_more[] = {"# alpha\n\n[x]: /url\n\nbeta x", NULL};
+    static const char *const line_open[] = {"para", NULL};
+    static const char *const line_closed[] = {"para\n", NULL};
+    static const char *const cr_held[] = {"para\r", NULL};
+    static const char *const cr_then_nothing[] = {"para\r", "", NULL};
+    uint64_t a = 0, b = 0;
+
+    if (fingerprint_after(held, &a) != 0 || fingerprint_after(held_twin, &b) != 0) {
+        fprintf(stderr, "warm_fingerprint: parser allocation failed\n");
+        return -1;
+    }
+    if (a != b) {
+        fprintf(stderr, "warm_fingerprint: twin parsers fed the same bytes disagree\n");
+        return -1;
+    }
+
+    /* Where the bytes were cut is not warm state: the parser buffers a
+     * partial line either way, so two feeds and one must land identically. */
+    if (fingerprint_after(held_split, &b) != 0) {
+        return -1;
+    }
+    if (a != b) {
+        fprintf(stderr, "warm_fingerprint: the same bytes in two feeds disagree with one\n");
+        return -1;
+    }
+
+    if (fingerprint_after(held_more, &b) != 0) {
+        return -1;
+    }
+    if (a == b) {
+        fprintf(stderr, "warm_fingerprint: one more fed byte left the fingerprint unmoved\n");
+        return -1;
+    }
+
+    /* A line still held differs from the same line processed: the held bytes
+     * live in the line buffer, the processed ones in a node. */
+    if (fingerprint_after(line_open, &a) != 0 || fingerprint_after(line_closed, &b) != 0) {
+        return -1;
+    }
+    if (a == b) {
+        fprintf(stderr, "warm_fingerprint: a held line and a processed line agree\n");
+        return -1;
+    }
+
+    /* The pending CR is warm state, and a feed of no bytes must not disturb
+     * it — the seam a later chunk completes is exactly what an empty chunk
+     * must leave alone. */
+    if (fingerprint_after(cr_held, &a) != 0 || fingerprint_after(cr_then_nothing, &b) != 0) {
+        return -1;
+    }
+    if (a != b) {
+        fprintf(stderr, "warm_fingerprint: a feed of no bytes moved the fingerprint\n");
+        return -1;
+    }
+
+    /* Purity: reading it twice reads the same thing. */
+    {
+        markdown_core_parser *parser = sweep_parser_new(NULL);
+        uint64_t first, second;
+        if (!parser) {
+            return -1;
+        }
+        markdown_core_parser_feed(parser, "a *b* c\n> quoted\n", 17);
+        first = markdown_core_parser_warm_fingerprint(parser);
+        second = markdown_core_parser_warm_fingerprint(parser);
+        markdown_core_parser_free(parser);
+        if (first != second) {
+            fprintf(stderr, "warm_fingerprint: reading the fingerprint changed it\n");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 /* --- chain_poison --------------------------------------------------------- */
 
 /* D5 under systematic allocation loss: sweep the failure across the whole
@@ -4468,6 +4569,7 @@ static const concrete_case CASES[] = {
     {"capture_document", case_capture_document},
     {"capture_equivalence", case_capture_equivalence},
     {"capture_oom_sweep", case_capture_oom_sweep},
+    {"warm_fingerprint", case_warm_fingerprint},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
     {"inline_shape", case_inline_shape},

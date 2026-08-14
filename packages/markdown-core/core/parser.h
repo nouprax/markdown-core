@@ -139,6 +139,19 @@ struct markdown_core_parser {
     size_t line_mark_capacity;
 };
 
+/** Everything a projection may read but must not change, in one value: the
+ * line counters and sticky failure bits, the held partial line and its
+ * pending CR, every node's type, flags, coordinates and content bytes, both
+ * definition tables in order, and the paragraph's line marks.
+ *
+ * The question it answers is whether a parser is EXACTLY where it was — the
+ * decidable form of "the projection left no trace" — so a speculative close
+ * and its undo can be gated on restoring it bit for bit. Anything added to
+ * the parser or to a node must be added here, or the gate goes blind to it.
+ *
+ * O(tree + text) per call: a gate's budget, not a tick's. */
+uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parser);
+
 /** Maps the content-buffer extent [x0, x1) of the line `mark` records onto
  * that normalized source line: `*column` receives the record column and the
  * return value the record length. The map is affine at slope one except for

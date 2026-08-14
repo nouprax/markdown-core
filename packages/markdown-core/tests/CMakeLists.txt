@@ -285,6 +285,7 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
+              warm_fingerprint
               chain_poison
               capture_growth_ceiling
               inline_shape

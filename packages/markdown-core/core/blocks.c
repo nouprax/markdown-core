@@ -1096,6 +1096,120 @@ markdown_core_node *markdown_core_node_parse_document(const char *buffer, size_t
     return document;
 }
 
+/* --- the warm-state fingerprint ------------------------------------------- */
+
+/* Everything a projection may READ but must not CHANGE, folded into one
+ * value. It exists so that "the parser is exactly where it was" becomes a
+ * decidable question: a tick that closes the open spine to publish a
+ * projection and then undoes the close must restore this value bit for bit,
+ * and a journal that misses a write site fails deterministically instead of
+ * surfacing later as a wrong tree.
+ *
+ * The field list is explicit on purpose. A digest built from the engine's own
+ * subtree hashes would inherit their blind spots — they sample literals and
+ * ignore the parser entirely — so this walks the tree and the parser's own
+ * state, and anything added to either must be added here.
+ *
+ * Cost is O(tree + text) per call, which is a gate's budget rather than a
+ * tick's: the callers are test runners. */
+static uint64_t fp_mix(uint64_t hash, uint64_t value) {
+    hash ^= value + UINT64_C(0x9e3779b97f4a7c15) + (hash << 6) + (hash >> 2);
+    hash *= UINT64_C(0xff51afd7ed558ccd);
+    return hash ^ (hash >> 33);
+}
+
+static uint64_t fp_bytes(uint64_t hash, const unsigned char *bytes, size_t length) {
+    /* FNV-1a over the bytes, folded in as one value: the fingerprint's job is
+     * detecting a journal that missed something, not resisting an adversary. */
+    uint64_t inner = UINT64_C(0xcbf29ce484222325);
+    size_t i;
+    for (i = 0; i < length; i++) {
+        inner = (inner ^ bytes[i]) * UINT64_C(0x100000001b3);
+    }
+    return fp_mix(fp_mix(hash, length), inner);
+}
+
+static uint64_t fp_map(uint64_t hash, const struct markdown_core_map *map) {
+    const markdown_core_map_entry *entry;
+    if (map == NULL) {
+        return fp_mix(hash, 0);
+    }
+    /* Order matters as much as content: a definition table that lost and
+     * regained an entry would otherwise fingerprint the same. */
+    for (entry = map->refs; entry; entry = entry->next) {
+        const markdown_core_reference *reference = (const markdown_core_reference *)entry;
+        hash = fp_bytes(hash, entry->label, strlen((const char *)entry->label));
+        hash = fp_mix(hash, (uint64_t)entry->order);
+        hash = fp_bytes(hash, (const unsigned char *)reference->url.data, (size_t)reference->url.len);
+        hash = fp_bytes(hash, (const unsigned char *)reference->title.data, (size_t)reference->title.len);
+    }
+    return fp_mix(hash, (uint64_t)map->size);
+}
+
+uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parser) {
+    uint64_t hash = UINT64_C(0x5eed) ^ (uint64_t)parser->options;
+    markdown_core_iter *iter;
+    size_t i;
+
+    /* The line counters, the sticky failure bits, and the two pieces of the
+     * held partial line: its bytes, and whether a CR is still waiting for the
+     * newline that may complete it. */
+    hash = fp_mix(hash, (uint64_t)parser->line_number);
+    hash = fp_mix(hash, (uint64_t)parser->last_line_length);
+    hash = fp_mix(hash, (uint64_t)parser->feed_started);
+    hash = fp_mix(hash, (uint64_t)parser->diagnostic_count);
+    hash = fp_mix(
+        hash,
+        (uint64_t)parser->oom | ((uint64_t)parser->internal_error << 1) | ((uint64_t)parser->capture_lost << 2) |
+            ((uint64_t)parser->last_buffer_ended_with_cr << 3)
+    );
+    hash = fp_bytes(hash, (const unsigned char *)parser->linebuf.ptr, parser->linebuf.size);
+    hash = fp_bytes(hash, (const unsigned char *)parser->curline.ptr, parser->curline.size);
+
+    /* The whole tree, in document order — not just the open spine. A warm
+     * tick reaches closed nodes too (a spine flag cleared on an ancestor, a
+     * look-back stamp on a paragraph that stayed a paragraph), and a
+     * fingerprint that could not see them would pass while the journal
+     * leaked. */
+    iter = markdown_core_iter_new(parser->root);
+    if (!iter) {
+        return fp_mix(hash, UINT64_C(0xdead));
+    }
+    for (;;) {
+        markdown_core_event_type event = markdown_core_iter_next(iter);
+        markdown_core_node *node;
+        if (event == MARKDOWN_CORE_EVENT_DONE) {
+            break;
+        }
+        if (event != MARKDOWN_CORE_EVENT_ENTER) {
+            continue;
+        }
+        node = markdown_core_iter_get_node(iter);
+        hash = fp_mix(hash, (uint64_t)S_type(node));
+        hash = fp_mix(hash, (uint64_t)node->flags);
+        hash = fp_mix(hash, ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column);
+        hash = fp_mix(hash, ((uint64_t)(uint32_t)node->end_line << 32) | (uint32_t)node->end_column);
+        hash = fp_bytes(hash, (const unsigned char *)node->content.ptr, node->content.size);
+    }
+    markdown_core_iter_free(iter);
+
+    hash = fp_map(hash, parser->refmap);
+    hash = fp_map(hash, parser->footnote_defs);
+
+    /* The paragraph's line marks: reset to zero when a paragraph opens, so
+     * their storage is reused and a journal must copy rows out rather than
+     * trust the array. */
+    for (i = 0; i < parser->line_mark_count; i++) {
+        const struct markdown_core_line_mark *mark = &parser->line_marks[i];
+        hash = fp_mix(hash, (uint64_t)mark->content_offset);
+        hash = fp_mix(hash, ((uint64_t)(uint32_t)mark->line << 32) | (uint32_t)mark->column);
+        hash = fp_mix(hash, (uint64_t)mark->byte_offset);
+        hash = fp_mix(hash, (uint64_t)mark->pad);
+    }
+
+    return hash;
+}
+
 void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer, size_t len) {
     S_parser_feed(parser, (const unsigned char *)buffer, len, false);
 }
