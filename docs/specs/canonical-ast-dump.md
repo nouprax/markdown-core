@@ -81,9 +81,10 @@ The dump prints the native C parser's public scope coordinates exactly, without
 normalizing or interpreting particular line/column combinations. Its
 coordinate profile is `LINE_COLUMN`, which is the one profile whose `Position`
 is a line/column pair (`incremental-canonical-ast.md` §7.2); the dump never
-prints a byte, scalar, UTF-16, or binding-native offset. Scopes are resolved
-on demand from stable extents, so a commit that only shifts later content
-changes what the dump prints without changing any node's projection.
+prints a byte, scalar, UTF-16, or binding-native offset. Scopes are stored
+on the node in absolute coordinates and printed as stored; nothing is
+resolved on demand. A scope is not projection content: a node whose only
+difference is position keeps its revision.
 
 Directive parents have no `label=` scalar field. No `DirectiveLabel` child
 means the label is absent; a `DirectiveLabel` line with `children=0` means an

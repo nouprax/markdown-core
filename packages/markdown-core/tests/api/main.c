@@ -1205,7 +1205,7 @@ static void utf8(test_batch_runner *runner) {
  *     document, not an invalid one: a stream may stop mid-character and 8.2
  *     forbids a finalize step (14.8.2-3);
  *   - U+0000 becomes U+FFFD, because CommonMark requires it of canonical text
- *     and it is the one replacement this engine performs (the Editing
+ *     and it is the one replacement this engine performs (the Mutation
  *     section of markdown_core.h).
  *
  * That the engine does not CRASH on arbitrary bytes is a separate requirement,

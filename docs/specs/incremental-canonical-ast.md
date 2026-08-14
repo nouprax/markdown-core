@@ -1,26 +1,33 @@
 # Incremental canonical AST contract
 
-Status: **frozen design contract** for the next Markdown Core
-self-contained-AST and stable-trace session milestone, revised 2026-08-03. No
-current public API implements this target. Shipping requires every
-conformance, failure-injection, and complexity gate in this document. One
-decision has since gone the other way: `937d184` put `scope` back onto every
-node value, so 7.2's "a node therefore holds no coordinate" and the
-extent-materialization prohibitions in 11.2 and 16 no longer describe the
-shipped API.
+Status: **frozen design contract**, revised 2026-08-03, written for a
+self-contained-AST and stable-trace session milestone that has since been
+superseded: the shipped mutation surface is `new` + `append` only, and the
+session, edit, commit, and exact-base delta this document builds on are
+deleted (#98, #101, #103; `include/markdown_core.h` is the binding
+contract, `docs/reviews/2026-08-12-streaming-plan.md` and
+`2026-08-13-living-tree-plan.md` the plans). What shipped from here and
+stays normative for the engine's internals is the unified-CST material
+live code cites by section: the ownership-region classification (0, 11.1)
+and the concrete record doctrine (14.1). One earlier decision also went
+the other way: `937d184` put `scope` back onto every node value, so 7.2's
+"a node therefore holds no coordinate" and the extent-materialization
+prohibitions in 11.2 and 16 no longer describe the shipped API.
 
 Companion contracts:
 
 - `canonical-ast.md` defines Markdown Core's canonical node inventory and
   parser semantics.
-- `sessions-and-deltas.md` defines the current session baseline that this
-  SemVer-major contract replaces.
+- `archive/sessions-and-deltas.md` defined the session baseline this
+  SemVer-major contract was written to replace; both now predate the
+  append-only surface.
 
 This document defines the edit-optimized typed projection of one canonical
-Markdown CST and the exact-base delta that lets a consumer update its own
-state in work proportional to what actually changed. It does not define a
-renderer, layout model, document workspace, consumer state model, or second
-parser output.
+Markdown CST and the exact-base delta that was to let a consumer update its
+own state in work proportional to what actually changed. The projection
+shipped; the delta did not — what changed is asked of the new tree itself
+through (id, revision). It does not define a renderer, layout model,
+document workspace, consumer state model, or second parser output.
 
 The words **must**, **must not**, **should**, and **may** are normative.
 

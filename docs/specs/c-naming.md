@@ -76,3 +76,8 @@ removal), which renamed the node to `MARKDOWN_CORE_3.0` — the major the
 change ships in — so binaries built against the old ABI fail to resolve at
 load instead of calling a four-argument function through a three-argument
 symbol; the node now keeps that name until the next break.
+`markdown_core_document_edit` itself was later deleted from that same
+`MARKDOWN_CORE_3.0` node without a rename (#103, new + append as the whole
+mutation surface): this repository's SemVer policy accepts ABI drift within
+a major, so a symbol's removal retags nothing — the node renames only when
+a surviving symbol changes incompatibly.

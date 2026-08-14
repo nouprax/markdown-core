@@ -32,16 +32,17 @@
  *                        against the line bytes, cross-checked against
  *                        AST fields, counted per owner.
  *   capture_document     Document.concrete returns the one physical tree
- *                        from a one-shot document and from a document's
- *                        committed view alike (14.1.9), records reachable
+ *                        from a one-shot document and from an appended
+ *                        document alike (14.1.9), records reachable
  *                        through both.
- *   capture_equivalence  after every commit of an edit script that forces
- *                        suffix reflow, nested reparses, marker edits,
- *                        fence reflow, and definition flips, the document
- *                        tree's records equal a fresh parse's, node for
- *                        node — which is exactly the region-relative
- *                        encoding claim: a record an edit did not own
- *                        moved with its region, untouched.
+ *   capture_equivalence  after every append of a script whose chunks
+ *                        re-run every owner's capture — quotes, tables,
+ *                        checkboxes, directives, formulas, mid-marker
+ *                        splits, the definitions arriving last — the
+ *                        document tree's records equal a fresh parse of
+ *                        all bytes so far, node for node: the record
+ *                        encoding never depends on how the bytes
+ *                        arrived.
  *   capture_oom_sweep    a lost record is a failed parse, never a
  *                        silently thinner tree: under single-shot
  *                        allocation failure at every ordinal, the parse
@@ -454,7 +455,7 @@ static int case_region_of_walk(void) {
     markdown_core_document_free(document);
 
     /* The one NULL result the header documents: a detached non-region node
-     * has no region ancestor to resolve to. No committed tree contains one;
+     * has no region ancestor to resolve to. No document's tree contains one;
      * the contract edge is pinned directly. */
     if (!failed) {
         markdown_core_node *detached = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
@@ -2425,8 +2426,8 @@ static int case_capture_document(void) {
         markdown_core_document_free(document);
     }
 
-    /* Incremental: Document.concrete must reach the owner from a document's
-     * committed view, across commits — not only from a one-shot parse. */
+    /* Appended: Document.concrete must reach the owner from an appended
+     * document, across appends — not only from a one-shot parse. */
     if (!failed) {
         markdown_core_parse_options options = capture_options();
         static const char first[] = "> quoted *q*\n> more\n\n# head #\n";

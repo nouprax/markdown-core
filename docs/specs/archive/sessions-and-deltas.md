@@ -1,5 +1,17 @@
 # Documents, deltas, and platform surfaces
 
+> **ARCHIVED 2026-08-13 — this contract describes a deleted engine.** It
+> specifies `document.commit(markdown) -> Commit { Document, Delta }`,
+> forking descent, and explicitly denies `append`; the shipped surface is
+> the opposite — `new` + `append` only, with no commit, no delta, no fork,
+> and no session (#98, #101, #103). It is superseded by the append-only
+> contract in `packages/markdown-core/include/markdown_core.h` and by
+> `docs/reviews/2026-08-12-streaming-plan.md` and
+> `docs/reviews/2026-08-13-living-tree-plan.md`. Kept verbatim for the
+> historical record: nothing below describes current behavior, and
+> relative links are as written from the file's original location,
+> `docs/specs/`.
+
 Status: rewritten 2026-08-09 onto the document model — there is no session; a
 document is created from text and options, and `commit` hands it new text
 without taking it

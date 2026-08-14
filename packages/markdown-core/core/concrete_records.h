@@ -32,17 +32,16 @@ extern "C" {
  * fence lines to their CodeBlock, the `[^label]:` opener to its
  * FootnoteDefinition. Storing them on the owning node is what makes the
  * unified CST one physical tree rather than a parallel structure: the
- * records ride the node through adoption, suffix transplant, and the
- * one-shot detach with no id remapping and no synchronization pass
- * (14.1.9).
+ * records live and die with the node, with no id remapping and no
+ * synchronization pass (14.1.9).
  *
  * The coordinate encoding is what keeps every record out of every bound
  * that depends on document size (the first layout rule of section 0):
  *
  * - `line` is the offset of the marker's line from the owning node's own
- *   first line, so a suffix reflow that shifts the node moves every
- *   record with it, untouched — the same property the sealed
- *   parent-relative line encoding gives node positions.
+ *   first line: a record repeats no document coordinate the owning node
+ *   already carries, so a node's placement lives on the node alone
+ *   (blocks.c states the same rule at the capture site).
  * - `column` and `length` are byte extents within that line as the
  *   parser scanned it: the normalized line (each NUL replaced by the
  *   3-byte U+FFFD, EOL excluded). A normalized-line
@@ -199,14 +198,11 @@ const markdown_core_concrete_record *markdown_core_node_concrete_records(const m
  * implicit gap with no record.
  *
  * Records live on the node that owns the inline sequence per 11.1 — the
- * leaf block, TableCell, or block DirectiveLabel whose reparse unit the
- * sequence is — in a vector separate from the block-phase `concrete`
- * vector because the two belong to different ownership domains. The
- * block records describe the node's own marker lines and stay put when
- * only the inline domain is rebuilt; the inline records describe the
- * content buffer and must travel with it: a dependent rebuild swaps
- * {content, children, inline records} as one domain, and the domain swap
- * stays self-inverse.
+ * leaf block, TableCell, or block DirectiveLabel that owns the source
+ * backing the sequence — in a vector separate from the block-phase
+ * `concrete` vector because the two belong to different ownership
+ * domains: the block records describe the node's own marker lines, the
+ * inline records its content buffer.
  *
  * `start` and `length` are byte extents in the owning node's content
  * buffer — the exact substrate the inline pass scans, which the node

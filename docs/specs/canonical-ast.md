@@ -4,7 +4,7 @@ Status: frozen for Phase 5 on 2026-07-11; footnote contract revised for v2
 milestone M3 on 2026-07-16 (source-order definitions, label-carrying
 references, query-based numbering — see the reference and footnote semantics
 section and
-`sessions-and-deltas.md`); identity/equality contract added and scope moved
+`archive/sessions-and-deltas.md`); identity/equality contract added and scope moved
 off node values for v2 milestone M4 on 2026-07-17 (`MarkupSession` becomes a
 canonical entry point; the footnote label field is renamed `label` because
 `id` now names node identity); directive labels promoted to the public

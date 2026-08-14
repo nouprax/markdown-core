@@ -97,11 +97,13 @@ struct markdown_core_node {
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
 
-    // Commit-assigned identity: `id` is unique within the owning series and
-    // stable across commits while the node remains "the same
-    // thing"; `last_changed_rev` is the document revision at which the node's
-    // own fields, child list, or any descendant last changed. Both stay 0 for
-    // parses that never pass through a commit's adoption walk.
+    // Identity: `id` is unique within the owning series and stable across
+    // appends while the node remains "the same thing" — every document build
+    // mints ids for new subtrees, and the append diff (diff.c) hands the
+    // receiver's ids over to the successor's paired nodes.
+    // `last_changed_rev` is the document revision at which the node's own
+    // fields, child list, or any descendant last changed. Both stay 0 for
+    // raw parser trees that never pass through a document build.
     uint64_t id;
     uint64_t last_changed_rev;
     // A cheap order-sensitive fingerprint of this node's subtree: its
@@ -113,28 +115,28 @@ struct markdown_core_node {
     // it to live in the diff, where it grew a which-pass-pays-for-it question
     // and a has-this-tree-been-done flag; as a node property it has neither.
     //
-    // The diff reads it to decide WHICH nodes pair, and nothing else: a paired
-    // node's changes are still found by comparing it field by field and
-    // walking its children. So a collision, or a field the hash does not
-    // cover, can only produce worse identity matching; it can never make the
-    // delta miss a change. That is what makes the bounded literal sample safe.
+    // The append diff's pairing sweeps (diff.c:167/173) read it to decide
+    // WHICH nodes pair, and nothing else: a paired node's changes are still
+    // found by comparing it field by field and walking its children. So a
+    // collision, or a field the hash does not cover, can only produce worse
+    // identity matching; it can never let a changed node keep a stale
+    // revision. That is what makes the bounded literal sample safe.
     uint64_t subtree_hash;
 
     // The concrete marker records of this node's own ownership region
     // (concrete_records.h), lazily allocated by the block phase and owned by
-    // the node — they ride it through adoption, transplant, and detach, and
-    // are freed with it. NULL for the many nodes whose region owns no marker
-    // bytes. Invisible to the canonical dump and to
-    // markdown_core_ast_fields_equal by construction: concrete spelling is
-    // not canonical content, so it must not move deltas (9.1).
+    // the node for its whole life — freed with it. NULL for the many nodes
+    // whose region owns no marker bytes. Invisible to the canonical dump and
+    // to markdown_core_ast_projection_changed by construction: concrete
+    // spelling is not canonical content, so it must never decide the append
+    // diff's pairing sweeps (diff.c:167/173) or its changed classification.
     struct markdown_core_concrete_records *concrete;
 
     // The inline token records of this node's inline sequence, in content
     // buffer coordinates (concrete_records.h). A separate vector from
     // `concrete` because it belongs to the inline ownership domain, not to
-    // the node's marker lines: it moves with {content, children} when a
-    // dependent rebuild swaps that domain, while the marker records stay.
-    // NULL except on the inline-owning region nodes of 11.1.
+    // the node's marker lines. NULL except on the inline-owning region
+    // nodes of 11.1.
     struct markdown_core_inline_concrete_records *inline_concrete;
 
     int start_line;
@@ -166,15 +168,6 @@ static MARKDOWN_CORE_INLINE markdown_core_mem *markdown_core_node_mem(markdown_c
 }
 MARKDOWN_CORE_EXPORT int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
-/*
- * Parser-internal mutation primitives. Callers must already have proved
- * allocator, containment, and non-ancestry invariants from grammar state.
- * They exist so a delimiter reduction does not repeat an O(depth) defensive
- * ancestor walk for every node it creates or moves.
- */
-/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
- * children already carry. Called on the node's EXIT during the stamping walk
- * of the finished tree, so every child is complete and already stamped. */
 /** Mixes one scalar into a running subtree hash. */
 uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
 
@@ -182,11 +175,20 @@ uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
  * sample of both ends, never every byte — see the note on `subtree_hash`. */
 uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length);
 
+/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
+ * children already carry. Called on the node's EXIT during the stamping walk
+ * of the finished tree, so every child is complete and already stamped. */
 void markdown_core_node_stamp(markdown_core_node *node);
 
 /** Stamps every node of `root`'s subtree, each as the walk leaves it. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
 
+/*
+ * Parser-internal mutation primitives. Callers must already have proved
+ * allocator, containment, and non-ancestry invariants from grammar state.
+ * They exist so a delimiter reduction does not repeat an O(depth) defensive
+ * ancestor walk for every node it creates or moves.
+ */
 void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type);
 void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling);
 void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling);

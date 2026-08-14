@@ -356,10 +356,11 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
  * ListItem, the fence lines on their CodeBlock. `column` and `length` are
  * byte extents within the current normalized line; the stored line is the
  * offset from the node's own first line, which is what keeps every record
- * region-relative — a suffix reflow moves the node and every record moves
- * with it, untouched, exactly like the sealed parent-relative node lines.
- * Capture runs only while the node's parse is live, so start_line is still
- * the absolute opening line, never the sealed delta.
+ * region-relative — a record repeats no coordinate the owning node already
+ * carries, so a node's placement lives on the node alone and a record
+ * resolves through the node it is reached from. Capture runs only while the
+ * node's parse is live, when node->start_line is already the absolute
+ * opening line the subtraction needs.
  *
  * A lost record poisons the parse on the same terms as a lost line mark: a
  * parse that succeeded with silently thinner concrete material would differ

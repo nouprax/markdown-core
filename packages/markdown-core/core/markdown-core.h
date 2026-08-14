@@ -440,18 +440,18 @@ void markdown_core_parser_feed(markdown_core_parser *parser, const char *buffer,
 MARKDOWN_CORE_EXPORT
 markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 
-/** Commit staging, first half of a split markdown_core_parser_finish:
- * flushes any buffered partial line and finalizes every open block without
- * running the inline phase. Afterwards the tree is block-complete and the
- * parser's reference map holds every harvested definition, so a commit can
- * inspect and reconcile definitions before deciding to run (or abandon) the
- * inline phase.
+/** First half of a split markdown_core_parser_finish: flushes any buffered
+ * partial line and finalizes every open block without running the inline
+ * phase. Afterwards the tree is block-complete and the parser's reference
+ * map holds every harvested definition. Every caller runs
+ * markdown_core_parser_refine_blocks immediately after; the split is a
+ * seam between the two phases, not a decision point.
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);
 
-/** Commit staging, second half of a split markdown_core_parser_finish: runs
- * the inline phase and the per-block postprocess pipeline over the finalized
+/** Second half of a split markdown_core_parser_finish: runs the inline
+ * phase and the per-block postprocess pipeline over the finalized
  * tree, then detaches and returns it. Unlike markdown_core_parser_finish the
  * parser is not reset and no longer owns its reference map afterwards: the
  * caller keeps both the returned tree and parser->refmap (clear the field

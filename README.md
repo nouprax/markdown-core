@@ -141,10 +141,10 @@ after all access to that document has finished. The complete C contract is in
 There is no session type. A document is the live head of a CHAIN, and the
 chain grows one way: `append` adds bytes at the end — an LLM stream is
 `document = document.append(chunk)` per tick, and any byte split is legal,
-mid-word or mid-character. One rule: the successor supersedes the receiver
-(which from then on supports only close/free), the revision advances
-strictly by one on the chain's own counter, and mutating a superseded handle
-is a deterministic error, so history is linear. In one sentence: an append
+mid-word or mid-character. One rule: the successor supersedes the receiver,
+the revision advances strictly by one on the chain's own counter, and
+mutating a superseded handle is a deterministic error, so history is
+linear. In one sentence: an append
 advances the chain, old handles die, decoded values live forever. There is
 no whole-text edit: replacing the text describes a different document, and
 the way to say so is constructing a new one — a new chain with a new
