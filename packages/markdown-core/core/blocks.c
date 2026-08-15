@@ -2398,6 +2398,223 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
     }
 }
 
+/* --- publishing a projection from a parser that is still mid-stream ------- */
+
+/* One open block, as it was before the close touched it. `last_child` is the
+ * youngest child it had, so anything the close appended can be found and
+ * freed without asking the close to have recorded it. */
+typedef struct warm_open_block {
+    markdown_core_node *node;
+    markdown_core_node *last_child;
+    uint16_t flags;
+    int end_line;
+    int end_column;
+    markdown_core_bufsize content_size;
+} warm_open_block;
+
+struct markdown_core_warm_undo {
+    markdown_core_mem *mem;
+    warm_open_block *spine;
+    size_t spine_count;
+    markdown_core_node **refined; /* units the close settled and this refined */
+    size_t refined_count;
+    size_t refined_capacity;
+    struct markdown_core_line_mark *marks;
+    size_t mark_count;
+    unsigned char *held;
+    markdown_core_bufsize held_size;
+    int line_number;
+    int last_line_length;
+    markdown_core_node *current;
+    bool last_buffer_ended_with_cr;
+    bool failed;
+};
+
+static void warm_undo_free(markdown_core_warm_undo *undo) {
+    markdown_core_mem *mem = undo->mem;
+    mem->free(mem, undo->spine);
+    mem->free(mem, undo->refined);
+    mem->free(mem, undo->marks);
+    mem->free(mem, undo->held);
+    mem->free(mem, undo);
+}
+
+static bool warm_undo_record_refined(markdown_core_warm_undo *undo, markdown_core_node *unit) {
+    if (undo->refined_count == undo->refined_capacity) {
+        size_t capacity = undo->refined_capacity ? undo->refined_capacity * 2 : 8;
+        markdown_core_node **grown =
+            (markdown_core_node **)undo->mem->realloc(undo->mem, undo->refined, capacity * sizeof(*grown));
+        if (!grown) {
+            return false;
+        }
+        undo->refined = grown;
+        undo->refined_capacity = capacity;
+    }
+    undo->refined[undo->refined_count++] = unit;
+    return true;
+}
+
+/* The open chain, root down, plus everything on the parser that outlives a
+ * line. Taken before the close so the close has something to be undone to. */
+static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
+    markdown_core_node *node;
+    size_t depth = 0;
+
+    for (node = parser->root; node && (node->flags & MARKDOWN_CORE_NODE__OPEN); node = node->last_child) {
+        depth++;
+    }
+    if (depth) {
+        size_t i = 0;
+        undo->spine = (warm_open_block *)undo->mem->calloc(undo->mem, depth, sizeof(*undo->spine));
+        if (!undo->spine) {
+            return false;
+        }
+        for (node = parser->root; node && (node->flags & MARKDOWN_CORE_NODE__OPEN); node = node->last_child) {
+            warm_open_block *entry = &undo->spine[i++];
+            entry->node = node;
+            entry->last_child = node->last_child;
+            entry->flags = node->flags;
+            entry->end_line = node->end_line;
+            entry->end_column = node->end_column;
+            entry->content_size = node->content.size;
+        }
+        undo->spine_count = depth;
+    }
+    if (parser->line_mark_count) {
+        undo->marks = (struct markdown_core_line_mark *)
+                          undo->mem->calloc(undo->mem, parser->line_mark_count, sizeof(*undo->marks));
+        if (!undo->marks) {
+            return false;
+        }
+        memcpy(undo->marks, parser->line_marks, parser->line_mark_count * sizeof(*undo->marks));
+    }
+    undo->mark_count = parser->line_mark_count;
+    if (parser->linebuf.size) {
+        undo->held = (unsigned char *)undo->mem->calloc(undo->mem, parser->linebuf.size, 1);
+        if (!undo->held) {
+            return false;
+        }
+        memcpy(undo->held, parser->linebuf.ptr, parser->linebuf.size);
+    }
+    undo->held_size = parser->linebuf.size;
+    undo->line_number = parser->line_number;
+    undo->last_line_length = parser->last_line_length;
+    undo->current = parser->current;
+    undo->last_buffer_ended_with_cr = parser->last_buffer_ended_with_cr;
+    return true;
+}
+
+/* Refines every unit the close just settled, recording each so the retract
+ * can retire exactly those. Units that settled EARLIER keep the refine they
+ * already have — that is what lets a settled node stay the same node. */
+static bool warm_refine_closed(
+    markdown_core_parser *parser,
+    markdown_core_warm_undo *undo,
+    markdown_core_node *parent
+) {
+    markdown_core_node *child = parent->first_child;
+    while (child) {
+        markdown_core_node *next = child->next;
+        if (contains_inlines(child)) {
+            if (child->first_child == NULL && child->content.size > 0) {
+                markdown_core_node *survivor = markdown_core_parser_warm_refine_settled(parser, child);
+                if (!warm_undo_record_refined(undo, survivor)) {
+                    return false;
+                }
+                next = survivor->next;
+            }
+        } else if (!warm_refine_closed(parser, undo, child)) {
+            return false;
+        }
+        child = next;
+    }
+    return true;
+}
+
+markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser) {
+    markdown_core_warm_undo *undo;
+
+    if (!parser->root) {
+        return NULL;
+    }
+    undo = (markdown_core_warm_undo *)parser->mem->calloc(parser->mem, 1, sizeof(*undo));
+    if (!undo) {
+        return NULL;
+    }
+    undo->mem = parser->mem;
+    if (!warm_undo_save(parser, undo)) {
+        warm_undo_free(undo);
+        return NULL;
+    }
+    markdown_core_parser_finalize_blocks(parser);
+    if (!warm_refine_closed(parser, undo, parser->root)) {
+        undo->failed = true;
+    }
+    return undo;
+}
+
+void markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
+    size_t i;
+
+    if (!undo) {
+        return;
+    }
+    /* The refines go first: a unit's inline children borrow its content
+     * buffer, and the spine restore below shortens exactly that buffer. */
+    for (i = 0; i < undo->refined_count; i++) {
+        markdown_core_node *unit = undo->refined[i];
+        markdown_core_node *child = unit->first_child;
+        while (child) {
+            markdown_core_node *next = child->next;
+            markdown_core_node_free(child);
+            child = next;
+        }
+        unit->first_child = NULL;
+        unit->last_child = NULL;
+        if (unit->inline_concrete) {
+            markdown_core_inline_concrete_records_free(markdown_core_node_mem(unit), unit->inline_concrete);
+            unit->inline_concrete = NULL;
+        }
+    }
+    /* Deepest spine entry first: a block the close minted hangs under the one
+     * that was open when it was minted, so its owner is put back after it is
+     * gone. */
+    i = undo->spine_count;
+    while (i-- > 0) {
+        warm_open_block *entry = &undo->spine[i];
+        markdown_core_node *node = entry->node;
+        markdown_core_node *child = entry->last_child ? entry->last_child->next : node->first_child;
+        while (child) {
+            markdown_core_node *next = child->next;
+            markdown_core_node_free(child);
+            child = next;
+        }
+        node->last_child = entry->last_child;
+        if (entry->last_child) {
+            entry->last_child->next = NULL;
+        } else {
+            node->first_child = NULL;
+        }
+        node->flags = entry->flags;
+        node->end_line = entry->end_line;
+        node->end_column = entry->end_column;
+        markdown_core_strbuf_truncate(&node->content, entry->content_size);
+    }
+    parser->line_number = undo->line_number;
+    parser->last_line_length = undo->last_line_length;
+    parser->current = undo->current;
+    parser->last_buffer_ended_with_cr = undo->last_buffer_ended_with_cr;
+    parser->line_mark_count = undo->mark_count;
+    if (undo->mark_count) {
+        memcpy(parser->line_marks, undo->marks, undo->mark_count * sizeof(*undo->marks));
+    }
+    markdown_core_strbuf_clear(&parser->linebuf);
+    if (undo->held_size) {
+        markdown_core_strbuf_put(&parser->linebuf, undo->held, undo->held_size);
+    }
+    warm_undo_free(undo);
+}
+
 markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parser *parser, markdown_core_node *unit) {
     bool owns_inlines = contains_inlines(unit);
 

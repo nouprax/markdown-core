@@ -3097,32 +3097,6 @@ static int case_warm_tick_ledger(void) {
  * tell the difference. */
 
 #define WC_MAX_REFINED 64
-#define WC_MAX_DEPTH 16
-#define WC_MAX_MARKS 128
-#define WC_MAX_HELD 512
-
-typedef struct wc_node_state {
-    markdown_core_node *node;
-    uint16_t flags;
-    int end_line;
-    int end_column;
-    markdown_core_bufsize content_size;
-    markdown_core_node *last_child;
-} wc_node_state;
-
-typedef struct wc_state {
-    wc_node_state spine[WC_MAX_DEPTH];
-    size_t depth;
-    int line_number;
-    int last_line_length;
-    markdown_core_node *current;
-    size_t line_mark_count;
-    struct markdown_core_line_mark marks[WC_MAX_MARKS];
-    unsigned char held[WC_MAX_HELD];
-    markdown_core_bufsize held_size;
-    bool last_cr;
-    bool overflowed;
-} wc_state;
 
 /* Bytes that cannot open a block, retype one, or start a definition. The set
  * is deliberately coarse: L1's warm subset is prose, and a byte this test is
@@ -3158,9 +3132,6 @@ static bool wc_eligible(const markdown_core_parser *parser) {
     if (markdown_core_node_get_type(root) != MARKDOWN_CORE_NODE_DOCUMENT || !(root->flags & MARKDOWN_CORE_NODE__OPEN)) {
         return false;
     }
-    if (parser->linebuf.size >= WC_MAX_HELD || parser->line_mark_count >= WC_MAX_MARKS) {
-        return false;
-    }
     if (parser->linebuf.size > 0) {
         if (parser->linebuf.ptr[0] == ' ' ||
             !wc_plain_run((const unsigned char *)parser->linebuf.ptr, parser->linebuf.size)) {
@@ -3177,96 +3148,6 @@ static bool wc_eligible(const markdown_core_parser *parser) {
         return false;
     }
     return wc_plain_run((const unsigned char *)child->content.ptr, child->content.size);
-}
-
-/* memcpy is declared to take non-null pointers even for a zero count, and an
- * empty parser has NULL where its line marks will go. The sanitizer that
- * reports this runs on Linux and not on Apple, so the guard is written once
- * here rather than remembered at four call sites. */
-static void wc_copy(void *destination, const void *source, size_t length) {
-    if (length) {
-        memcpy(destination, source, length);
-    }
-}
-
-static void wc_save(const markdown_core_parser *parser, wc_state *state) {
-    markdown_core_node *node;
-    memset(state, 0, sizeof(*state));
-    state->line_number = parser->line_number;
-    state->last_line_length = parser->last_line_length;
-    state->current = parser->current;
-    state->last_cr = parser->last_buffer_ended_with_cr;
-    state->line_mark_count = parser->line_mark_count;
-    wc_copy(state->marks, parser->line_marks, parser->line_mark_count * sizeof(state->marks[0]));
-    state->held_size = parser->linebuf.size;
-    wc_copy(state->held, parser->linebuf.ptr, parser->linebuf.size);
-    for (node = parser->root; node && (node->flags & MARKDOWN_CORE_NODE__OPEN); node = node->last_child) {
-        wc_node_state *entry;
-        if (state->depth == WC_MAX_DEPTH) {
-            state->overflowed = true;
-            return;
-        }
-        entry = &state->spine[state->depth++];
-        entry->node = node;
-        entry->flags = node->flags;
-        entry->end_line = node->end_line;
-        entry->end_column = node->end_column;
-        entry->content_size = node->content.size;
-        entry->last_child = node->last_child;
-    }
-}
-
-static void wc_restore(markdown_core_parser *parser, const wc_state *state) {
-    size_t i = state->depth;
-    /* Deepest first: a node minted by the close hangs under the node that
-     * was open when it was minted, so its owner is restored after it is
-     * gone. */
-    while (i-- > 0) {
-        const wc_node_state *entry = &state->spine[i];
-        markdown_core_node *node = entry->node;
-        markdown_core_node *child = entry->last_child ? entry->last_child->next : node->first_child;
-        while (child) {
-            markdown_core_node *next = child->next;
-            markdown_core_node_free(child);
-            child = next;
-        }
-        node->last_child = entry->last_child;
-        if (entry->last_child) {
-            entry->last_child->next = NULL;
-        } else {
-            node->first_child = NULL;
-        }
-        node->flags = entry->flags;
-        node->end_line = entry->end_line;
-        node->end_column = entry->end_column;
-        markdown_core_strbuf_truncate(&node->content, entry->content_size);
-    }
-    parser->line_number = state->line_number;
-    parser->last_line_length = state->last_line_length;
-    parser->current = state->current;
-    parser->last_buffer_ended_with_cr = state->last_cr;
-    parser->line_mark_count = state->line_mark_count;
-    wc_copy(parser->line_marks, state->marks, state->line_mark_count * sizeof(state->marks[0]));
-    markdown_core_strbuf_clear(&parser->linebuf);
-    markdown_core_strbuf_put(&parser->linebuf, state->held, state->held_size);
-}
-
-/* Retires one unit's refine: its inline children borrow its content buffer,
- * so they die before anything can grow it, and the records vector is
- * assigned rather than merged, so it goes with them. */
-static void wc_retire_unit(markdown_core_node *block) {
-    markdown_core_node *child = block->first_child;
-    while (child) {
-        markdown_core_node *next = child->next;
-        markdown_core_node_free(child);
-        child = next;
-    }
-    block->first_child = NULL;
-    block->last_child = NULL;
-    if (block->inline_concrete) {
-        markdown_core_inline_concrete_records_free(markdown_core_node_mem(block), block->inline_concrete);
-        block->inline_concrete = NULL;
-    }
 }
 
 /* Refines every unit that has settled and has not been refined yet, in
@@ -3300,28 +3181,6 @@ static size_t wc_refine_unrefined(
         block = refined[count - 1];
     }
     return count;
-}
-
-static void wc_unrefine(markdown_core_node *root) {
-    markdown_core_node *block;
-    for (block = root->first_child; block; block = block->next) {
-        markdown_core_node *child;
-        if (markdown_core_node_get_type(block) != MARKDOWN_CORE_NODE_PARAGRAPH) {
-            continue;
-        }
-        child = block->first_child;
-        while (child) {
-            markdown_core_node *next = child->next;
-            markdown_core_node_free(child);
-            child = next;
-        }
-        block->first_child = NULL;
-        block->last_child = NULL;
-        if (block->inline_concrete) {
-            markdown_core_inline_concrete_records_free(markdown_core_node_mem(block), block->inline_concrete);
-            block->inline_concrete = NULL;
-        }
-    }
 }
 
 /* The projection a tick would publish at this cut, against the only thing it
@@ -3398,7 +3257,7 @@ static int case_warm_close_undo(void) {
         for (cut = 0; cut <= length; cut++) {
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
-            wc_state state;
+            markdown_core_warm_undo *undo;
             uint64_t before, after, continued, uninterrupted;
             int result = 0;
 
@@ -3415,35 +3274,25 @@ static int case_warm_close_undo(void) {
                 markdown_core_parser_free(twin);
                 continue;
             }
-            wc_save(parser, &state);
-            if (state.overflowed) {
+            before = markdown_core_parser_warm_fingerprint(parser);
+            /* The engine's own tick: publish a projection, check it against
+             * a one-shot parse of the same bytes, and give it back. */
+            undo = markdown_core_parser_warm_publish(parser);
+            if (!undo) {
+                fprintf(stderr, "warm_close_undo: text %zu cut %zu could not publish\n", text_index, cut);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
-                continue;
+                return -1;
             }
             eligible++;
-
-            before = markdown_core_parser_warm_fingerprint(parser);
-            markdown_core_parser_finalize_blocks(parser);
-
-            /* What the tick is FOR: the closed tree refined into a projection,
-             * which must be the projection a one-shot parse of the same bytes
-             * would have produced. Then everything the refine minted is
-             * retired, because the undo below puts back a tree of blocks. */
-            if (!markdown_core_parser_warm_refine(parser)) {
-                fprintf(stderr, "warm_close_undo: text %zu cut %zu could not refine\n", text_index, cut);
-                markdown_core_parser_free(parser);
-                markdown_core_parser_free(twin);
-                return -1;
-            }
             if (wc_projection_matches(parser, text, cut) != 0) {
                 fprintf(stderr, "warm_close_undo: text %zu cut %zu published a wrong projection\n", text_index, cut);
+                markdown_core_parser_warm_retract(parser, undo);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
                 return -1;
             }
-            wc_unrefine(parser->root);
-            wc_restore(parser, &state);
+            markdown_core_parser_warm_retract(parser, undo);
             after = markdown_core_parser_warm_fingerprint(parser);
             if (before != after) {
                 fprintf(
@@ -3526,10 +3375,8 @@ static int case_warm_tick_stream(void) {
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
             markdown_core_node *kept[WC_MAX_REFINED];
-            markdown_core_node *tentative[WC_MAX_REFINED];
+            markdown_core_warm_undo *undo;
             size_t settled = 0;
-            size_t closed = 0;
-            size_t retire;
             size_t fed = 0;
             int failed = 0;
 
@@ -3541,16 +3388,11 @@ static int case_warm_tick_stream(void) {
             }
             while (fed < length && !failed) {
                 size_t piece = length - fed < stride ? length - fed : stride;
-                wc_state state;
                 uint64_t before, after;
 
                 markdown_core_parser_feed(parser, text + fed, piece);
                 fed += piece;
                 if (!wc_eligible(parser)) {
-                    continue;
-                }
-                wc_save(parser, &state);
-                if (state.overflowed) {
                     continue;
                 }
                 ticks++;
@@ -3567,15 +3409,13 @@ static int case_warm_tick_stream(void) {
                 }
                 /* The state the undo has to restore is THIS one: the feed and
                  * what it settled are the tick's permanent work, and only the
-                 * close that follows is speculative. */
+                 * projection that follows is speculative. */
                 before = markdown_core_parser_warm_fingerprint(parser);
 
-                /* The close settles the rest for the projection's sake only:
-                 * these units reopen at the undo, so their refine is the part
-                 * that has to be retired. */
-                markdown_core_parser_finalize_blocks(parser);
-                closed = wc_refine_unrefined(parser, parser->root, tentative, WC_MAX_REFINED);
-                if (closed > WC_MAX_REFINED || wc_projection_matches(parser, text, fed) != 0) {
+                /* THE ENGINE'S OWN TICK: publish a projection, check it, and
+                 * give it back. */
+                undo = markdown_core_parser_warm_publish(parser);
+                if (!undo || wc_projection_matches(parser, text, fed) != 0) {
                     fprintf(
                         stderr,
                         "warm_tick_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
@@ -3583,13 +3423,11 @@ static int case_warm_tick_stream(void) {
                         stride,
                         fed
                     );
+                    markdown_core_parser_warm_retract(parser, undo);
                     failed = 1;
                     break;
                 }
-                for (retire = 0; retire < closed; retire++) {
-                    wc_retire_unit(tentative[retire]);
-                }
-                wc_restore(parser, &state);
+                markdown_core_parser_warm_retract(parser, undo);
                 after = markdown_core_parser_warm_fingerprint(parser);
                 if (before != after) {
                     fprintf(

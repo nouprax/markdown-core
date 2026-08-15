@@ -139,6 +139,38 @@ struct markdown_core_parser {
     size_t line_mark_capacity;
 };
 
+/** What a projection took, so it can be given back.
+ *
+ * Opaque, and owned by the caller between the publish and the retract that
+ * consumes it. */
+typedef struct markdown_core_warm_undo markdown_core_warm_undo;
+
+/** PUBLISHES a projection from a parser that is still mid-stream: the held
+ * partial line is processed for real, every open block is finalized up to
+ * the root, and every unit that is not refined yet is refined — which, for a
+ * caller that refines units as they settle, is exactly the ones this close
+ * just closed. What comes back is
+ * the record of what that took — pass it to markdown_core_parser_warm_retract
+ * to put the parser back exactly as it was, so the next chunk continues as
+ * if the projection had never been asked for.
+ *
+ * Returns NULL if the record cannot be allocated, in which case nothing was
+ * closed and the parser is untouched.
+ *
+ * The projection is the whole point and the cost is the reason: this is the
+ * only way to answer with a tree that includes the bytes after the last line
+ * ending, and the alternative — a second tree, or a reparse per tick — is
+ * what this design exists to avoid. */
+markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser);
+
+/** Gives back everything the publish took and frees the record: the units it
+ * refined are retired, the blocks it closed are reopened with their end
+ * coordinates and content restored, the nodes it created are freed, and the
+ * line counters, the marks and the held partial line return to what they
+ * were. A parser that has been retracted is fed exactly as if it had never
+ * been published from. */
+void markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo);
+
 /** Refines ONE unit that has just settled: its inlines, then its own
  * block-local postprocess. The whole-tree refine parses every unit's inlines
  * on every call, which a stream cannot afford and — worse — cannot survive,
