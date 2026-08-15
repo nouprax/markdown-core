@@ -157,6 +157,17 @@ typedef struct markdown_core_warm_undo markdown_core_warm_undo;
  * Returns NULL if the record cannot be allocated, in which case nothing was
  * closed and the parser is untouched.
  *
+ * WHAT IT REFINES, AND WHY THAT IS A PRECONDITION ON THE CALLER: inlines and
+ * the block-local postprocess of INLINE-OWNING units. It does not
+ * postprocess containers or leaves that own no inlines, which matters for
+ * exactly one shape — a fenced code block whose info line is `formula` is
+ * promoted by that extension's block postprocess, and this would leave it
+ * unpromoted. The omission is not an oversight to fix later: that promotion
+ * REPLACES the unit and frees what it replaced, and a retract cannot put a
+ * freed node back. A caller must therefore publish only from parsers whose
+ * trees hold no shape whose block postprocess would change them — which is
+ * what a prose eligibility test buys, and why the warm path has one.
+ *
  * The projection is the whole point and the cost is the reason: this is the
  * only way to answer with a tree that includes the bytes after the last line
  * ending, and the alternative — a second tree, or a reparse per tick — is

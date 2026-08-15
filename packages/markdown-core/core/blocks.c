@@ -2506,7 +2506,14 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
 
 /* Refines every unit the close just settled, recording each so the retract
  * can retire exactly those. Units that settled EARLIER keep the refine they
- * already have — that is what lets a settled node stay the same node. */
+ * already have — that is what lets a settled node stay the same node.
+ *
+ * Inline-owning units only: a unit whose block postprocess would REPLACE it
+ * (the formula extension does, for a fenced block whose info is `formula`)
+ * cannot be published from at all, because the replacement frees what it
+ * replaced and no retract can undo that. The caller's eligibility test is
+ * what keeps such a tree away from here — see the note on
+ * markdown_core_parser_warm_publish. */
 static bool warm_refine_closed(
     markdown_core_parser *parser,
     markdown_core_warm_undo *undo,
