@@ -3096,6 +3096,7 @@ static int case_warm_tick_ledger(void) {
  * twin parser that was never interrupted, which says nothing downstream could
  * tell the difference. */
 
+#define WC_MAX_REFINED 64
 #define WC_MAX_DEPTH 16
 #define WC_MAX_MARKS 128
 #define WC_MAX_HELD 512
@@ -3250,10 +3251,57 @@ static void wc_restore(markdown_core_parser *parser, const wc_state *state) {
     markdown_core_strbuf_put(&parser->linebuf, state->held, state->held_size);
 }
 
-/* Retires what a warm refine minted: a unit's inline children borrow its
- * content buffer, so they die before anything can grow it, and the records
- * vector is assigned rather than merged, so it has to go with them. The prose
- * subset keeps this to the document's own paragraphs. */
+/* Retires one unit's refine: its inline children borrow its content buffer,
+ * so they die before anything can grow it, and the records vector is
+ * assigned rather than merged, so it goes with them. */
+static void wc_retire_unit(markdown_core_node *block) {
+    markdown_core_node *child = block->first_child;
+    while (child) {
+        markdown_core_node *next = child->next;
+        markdown_core_node_free(child);
+        child = next;
+    }
+    block->first_child = NULL;
+    block->last_child = NULL;
+    if (block->inline_concrete) {
+        markdown_core_inline_concrete_records_free(markdown_core_node_mem(block), block->inline_concrete);
+        block->inline_concrete = NULL;
+    }
+}
+
+/* Refines every unit that has settled and has not been refined yet, in
+ * document order, and records which ones so the caller can retire exactly
+ * those. A unit that was refined on an earlier tick is left alone — that is
+ * the whole point: its inline nodes stay the same objects, and so do their
+ * identities. */
+static size_t wc_refine_unrefined(
+    markdown_core_parser *parser,
+    markdown_core_node *root,
+    markdown_core_node **refined,
+    size_t capacity
+) {
+    markdown_core_node *block;
+    size_t count = 0;
+    for (block = root->first_child; block; block = block->next) {
+        /* Settled means CLOSED. An open unit is still growing, and refining
+         * it would put inline children on a buffer the next line appends to
+         * — the borrow that becomes a use-after-free. It is refined by the
+         * close instead, tentatively, and retired again at the undo. */
+        if (markdown_core_node_get_type(block) != MARKDOWN_CORE_NODE_PARAGRAPH ||
+            (block->flags & MARKDOWN_CORE_NODE__OPEN) || block->first_child || block->content.size == 0) {
+            continue;
+        }
+        if (count == capacity) {
+            return capacity + 1; /* the caller treats this as "cannot prove" */
+        }
+        /* The survivor, not the pointer passed in: a postprocessor may have
+         * replaced this unit and freed it. */
+        refined[count++] = markdown_core_parser_warm_refine_settled(parser, block);
+        block = refined[count - 1];
+    }
+    return count;
+}
+
 static void wc_unrefine(markdown_core_node *root) {
     markdown_core_node *block;
     for (block = root->first_child; block; block = block->next) {
@@ -3477,6 +3525,11 @@ static int case_warm_tick_stream(void) {
             size_t stride = strides[stride_index];
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
+            markdown_core_node *kept[WC_MAX_REFINED];
+            markdown_core_node *tentative[WC_MAX_REFINED];
+            size_t settled = 0;
+            size_t closed = 0;
+            size_t retire;
             size_t fed = 0;
             int failed = 0;
 
@@ -3501,9 +3554,28 @@ static int case_warm_tick_stream(void) {
                     continue;
                 }
                 ticks++;
+
+                /* Whatever the FEED settled is refined once, here, and keeps
+                 * its inline children from now on — that is what makes a
+                 * settled node stay the same node, and its ids stay the same
+                 * ids, tick after tick. */
+                settled = wc_refine_unrefined(parser, parser->root, kept, WC_MAX_REFINED);
+                if (settled > WC_MAX_REFINED) {
+                    failed = 1;
+                    fprintf(stderr, "warm_tick_stream: too many units settled at once\n");
+                    break;
+                }
+                /* The state the undo has to restore is THIS one: the feed and
+                 * what it settled are the tick's permanent work, and only the
+                 * close that follows is speculative. */
                 before = markdown_core_parser_warm_fingerprint(parser);
+
+                /* The close settles the rest for the projection's sake only:
+                 * these units reopen at the undo, so their refine is the part
+                 * that has to be retired. */
                 markdown_core_parser_finalize_blocks(parser);
-                if (!markdown_core_parser_warm_refine(parser) || wc_projection_matches(parser, text, fed) != 0) {
+                closed = wc_refine_unrefined(parser, parser->root, tentative, WC_MAX_REFINED);
+                if (closed > WC_MAX_REFINED || wc_projection_matches(parser, text, fed) != 0) {
                     fprintf(
                         stderr,
                         "warm_tick_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
@@ -3514,7 +3586,9 @@ static int case_warm_tick_stream(void) {
                     failed = 1;
                     break;
                 }
-                wc_unrefine(parser->root);
+                for (retire = 0; retire < closed; retire++) {
+                    wc_retire_unit(tentative[retire]);
+                }
                 wc_restore(parser, &state);
                 after = markdown_core_parser_warm_fingerprint(parser);
                 if (before != after) {
@@ -3529,8 +3603,16 @@ static int case_warm_tick_stream(void) {
                 }
             }
             if (!failed) {
+                /* The twin is fed once and settle-refined once, which is the
+                 * comparison that matters: refining unit by unit as a stream
+                 * settles them must leave exactly the state that refining the
+                 * same units at the end would. */
                 markdown_core_parser_feed(twin, text, length);
-                if (markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
+                if (wc_refine_unrefined(twin, twin->root, kept, WC_MAX_REFINED) > WC_MAX_REFINED) {
+                    failed = 1;
+                }
+                if (!failed &&
+                    markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
                     fprintf(
                         stderr,
                         "warm_tick_stream: text %zu stride %zu drifted from an uninterrupted parse\n",

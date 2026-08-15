@@ -139,6 +139,27 @@ struct markdown_core_parser {
     size_t line_mark_capacity;
 };
 
+/** Refines ONE unit that has just settled: its inlines, then its own
+ * block-local postprocess. The whole-tree refine parses every unit's inlines
+ * on every call, which a stream cannot afford and — worse — cannot survive,
+ * because re-parsing a settled unit would retire and re-mint every inline
+ * node it owns, and identity is what a consumer keys on. Refining each unit
+ * once, as it closes, is what lets settled nodes keep being the same nodes.
+ *
+ * RETURNS THE NODE NOW AT THE UNIT'S POSITION. A postprocessor may replace a
+ * unit and free what it replaced (a fenced code block whose info is
+ * `formula`, and a paragraph that is nothing but a display formula, both in
+ * the formula extension), so the returned pointer is the only one a caller
+ * may keep. Two rules come with it: anything caching the unit's CHILD
+ * pointers must run AFTER this call, because the autolink pass splices that
+ * list; and no stamp is performed, which is the caller's to do if the tree
+ * may still meet the append diff.
+ *
+ * Call order is close order — children before the containers that closed
+ * them — because a container's call only refines children it can still find
+ * unrefined. */
+markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parser *parser, markdown_core_node *unit);
+
 /** Parses inlines and postprocesses the tree WITHOUT ending the parse.
  *
  * markdown_core_parser_refine_blocks does the same two passes and then takes

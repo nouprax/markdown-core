@@ -2286,10 +2286,20 @@ finished:
 
 /* Runs the block-local postprocess pipeline for one unit: text
  * consolidation, extension block postprocess hooks in attachment order,
- * and HTML-comment stripping. The caller precomputes its traversal successor
- * because a postprocessor may replace the unit; the replacement takes the
- * unit's place in the tree itself, so nothing is handed back. */
-static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node *unit, bool owns_inlines) {
+ * and HTML-comment stripping.
+ *
+ * RETURNS THE NODE NOW AT THE UNIT'S POSITION, which is the unit itself
+ * unless a postprocessor replaced it — and a replacement FREES what it
+ * replaced (extensions/formula.c does, in two of its arms). The whole-tree
+ * driver below does not need the answer, because it precomputes its
+ * traversal successor; a caller that refines ONE unit and then does anything
+ * else with it does, and handing it back is the difference between that
+ * caller being correct and it holding a pointer to freed memory. */
+static markdown_core_node *S_postprocess_unit(
+    markdown_core_parser *parser,
+    markdown_core_node *unit,
+    bool owns_inlines
+) {
     markdown_core_llist *extensions;
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
@@ -2336,6 +2346,7 @@ static void S_postprocess_unit(markdown_core_parser *parser, markdown_core_node 
             }
         }
     }
+    return unit;
 }
 
 /* Drives S_postprocess_unit over a bounded subtree in document order.
@@ -2385,6 +2396,30 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
     if (parser->root->first_child) {
         S_postprocess_subtree(parser, parser->root, parser->root->first_child);
     }
+}
+
+markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parser *parser, markdown_core_node *unit) {
+    bool owns_inlines = contains_inlines(unit);
+
+    if (owns_inlines) {
+        S_parse_node_inlines(parser, unit, parser->refmap, parser->options);
+    } else {
+        /* A container settles after its children, in close order, and each
+         * of those settled through its own call. What can still be waiting
+         * is a child the caller never saw settle: a block born closed inside
+         * the finalize whose parent this call IS. */
+        markdown_core_node *child;
+        for (child = unit->first_child; child; child = child->next) {
+            if (contains_inlines(child) && child->first_child == NULL && child->content.size > 0) {
+                S_parse_node_inlines(parser, child, parser->refmap, parser->options);
+            }
+        }
+    }
+    /* This unit alone: its children postprocessed as they settled. The
+     * survivor comes back because a postprocessor may have replaced this
+     * node and freed what it replaced — a caller that keeps the pointer it
+     * passed in keeps a pointer to freed memory. */
+    return S_postprocess_unit(parser, unit, owns_inlines);
 }
 
 bool markdown_core_parser_warm_refine(markdown_core_parser *parser) {
