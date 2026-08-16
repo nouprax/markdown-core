@@ -3721,6 +3721,17 @@ static int case_warm_append_stream(void) {
          * cut, and a node the definition did not touch must keep its id. */
         "intro [a] and [b] then *em*\n\n[a]: /a\n[b]: /b 'title'\n\nafter [a] and [^n]\n\n[^n]: a footnote\n\n"
         "[\nc\n]: /c\nend [c]\n",
+        /* A definition harvested out of a paragraph that survives it (the
+         * next line is not a title), then prose for a while: the flip's
+         * correction of the root's carried prefix fold is what the ticks
+         * after it restamp from, and a stale fold shows on the first of
+         * them. And a unit that raises a diagnostic AND asks about a label
+         * defined later: the flip re-raises its diagnostic, and the one its
+         * first refine raised must go, or the count doubles. */
+        "see [q] here\n\n> quote\n\n[q]: /q\nnot a title line\n\nplain prose follows for a while\nand more of it\n\n"
+        "then again\n",
+        "see [^n] here\n\n> quote\n\n[^n]: note\n\nplain prose follows for a while\nand more of it\n\nthen again\n",
+        "prose with :e{=bad} and [foo] here\n\n[foo]: /url\n\nmore [foo] and :g{=x} again\n",
         NULL,
     };
     static const size_t strides[] = {1, 3, 7};

@@ -3312,22 +3312,12 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
                 node->concrete->count = entry->concrete_count;
             }
         }
-        /* A list's tentative finalize memoized "ends with a blank line" on
-         * the items and youngest-child chains it looked at. On a settled
-         * item the memo is as good as a one-shot parse's — nothing under it
-         * changes again — and stays; on the list's youngest child and the
-         * chain of youngest children below it, the open ones, its value may
-         * still change, and it comes off. That chain is the open spine, so
-         * this costs the depth, not the list. */
-        if (S_type(node) == MARKDOWN_CORE_NODE_LIST) {
-            markdown_core_node *chain = node->last_child;
-            while (chain) {
-                chain->flags &= (uint16_t)~(MARKDOWN_CORE_NODE__LAST_LINE_CHECKED | MARKDOWN_CORE_NODE__ENDS_BLANK);
-                chain = (S_type(chain) == MARKDOWN_CORE_NODE_LIST || S_type(chain) == MARKDOWN_CORE_NODE_LIST_ITEM)
-                            ? chain->last_child
-                            : NULL;
-            }
-        }
+        /* A list's tentative finalize memoized "ends with a blank line" and
+         * "weighed tight" on nodes it looked at (node.h), and every one of
+         * them is closed — an item it weighs has a sibling after it, a block
+         * it asks has a sibling after it or sits under such an item, and a
+         * closed node's blank-line answer never changes — so the memos are
+         * as good as a one-shot parse's and stay. Nothing to take back. */
     }
     parser->line_number = undo->line_number;
     parser->last_line_length = undo->last_line_length;
