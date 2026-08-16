@@ -3131,6 +3131,34 @@ static int case_warm_tick_ledger(void) {
  * twin parser that was never interrupted, which says nothing downstream could
  * tell the difference. */
 
+/* The diagnostics a document reports, against a one-shot parse of the same
+ * bytes: their count, and every row. A warm tick's tentative refine records
+ * diagnostics the retract must take back, and the rows are rebuilt at every
+ * publish, so this is where a count that only ever grows would show. */
+static int wc_diagnostics_match(const markdown_core_document *document, const char *text, size_t cut) {
+    markdown_core_parse_options options;
+    markdown_core_document *reference;
+    const markdown_core_diagnostic *rows = NULL;
+    const markdown_core_diagnostic *expected = NULL;
+    size_t count;
+    size_t expected_count;
+    int result = 0;
+
+    markdown_core_parse_options_init(&options);
+    reference = markdown_core_document_new(mc_sv(text, cut), &options, NULL);
+    if (!reference) {
+        return -1;
+    }
+    count = markdown_core_document_diagnostics(document, &rows);
+    expected_count = markdown_core_document_diagnostics(reference, &expected);
+    if (count != expected_count || (count && memcmp(rows, expected, count * sizeof(*rows)) != 0)) {
+        fprintf(stderr, "  %zu diagnostics where a one-shot parse reports %zu\n", count, expected_count);
+        result = -1;
+    }
+    markdown_core_document_free(reference);
+    return result;
+}
+
 /* The projection a tick would publish at this cut, against the only thing it
  * is allowed to be: a one-shot parse of exactly the bytes fed so far. */
 static int wc_projection_matches(markdown_core_parser *parser, const char *text, size_t cut) {
@@ -3593,6 +3621,11 @@ static int case_warm_append_stream(void) {
          * it cannot reopen, or a table it never refined. */
         "intro line\nheader a | header b\n\x0b---|---\nrow | row\n\nprose after the table\n",
         "\xef\xbb\xbf[foo]: /url\n\nsee [foo] and more prose\n",
+        /* An inline directive whose attribute block does not parse raises
+         * the one diagnostic the engine has, at INLINE time — so a warm
+         * tick's tentative refine records it, and the retract must take it
+         * back, or a stream reports one more of it per tick. */
+        "prose with :e{=bad} inside it keeps going\nand going\n\nthen :f{=worse} again",
         NULL,
     };
     static const size_t strides[] = {1, 3, 7};
@@ -3647,6 +3680,17 @@ static int case_warm_append_stream(void) {
                     fprintf(
                         stderr,
                         "warm_append_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                    break;
+                }
+                if (wc_diagnostics_match(document, text, fed) != 0) {
+                    fprintf(
+                        stderr,
+                        "warm_append_stream: text %zu stride %zu reports the wrong diagnostics at %zu bytes\n",
                         text_index,
                         stride,
                         fed
@@ -3764,14 +3808,14 @@ static int case_warm_append_stream(void) {
  * the chain, after which every further mutation fails deterministically (the
  * guards fire before any allocation, so the errors are deterministic even
  * under the failing allocator) and only free remains. */
-static int chain_poison_sweep(const char *const *chunks, const char *name) {
+static int chain_poison_sweep(const char *const *chunks, const char *name, bool pooled) {
     long fail_at;
     bool exhausted = false;
 
     for (fail_at = 1; fail_at < 100000 && !exhausted; fail_at++) {
         sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
         markdown_core_error *error = NULL;
-        markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, true, &error);
+        markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, pooled, &error);
         markdown_core_document *next = NULL;
         size_t served = 0;
         size_t i;
@@ -3874,14 +3918,21 @@ static int chain_poison_sweep(const char *const *chunks, const char *name) {
  * takes the rebuild (a `[` at a line start), and the prose stream takes the
  * warm tick on every append after the first — retract, feed, settle, publish,
  * frontier handover, restamp — so the sweep reaches every allocation on both
- * and every one of them must poison or succeed whole. */
+ * and every one of them must poison or succeed whole. Each runs pooled and
+ * unpooled: an arena carves most of a build's allocations from slabs the
+ * sweep never sees, so only the unpooled run fails every ordinal — the
+ * held line's growth among them, which the pooled run cannot reach. */
 static int case_chain_poison(void) {
     static const char *const rebuilt[] = {"alpha [x] and *emph*\n\n[x]: /url\n", NULL};
     static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", NULL};
-    if (chain_poison_sweep(rebuilt, "rebuilt") != 0) {
+    if (chain_poison_sweep(rebuilt, "rebuilt, pooled", true) != 0 ||
+        chain_poison_sweep(rebuilt, "rebuilt", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(warm, "warm");
+    if (chain_poison_sweep(warm, "warm, pooled", true) != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(warm, "warm", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */
