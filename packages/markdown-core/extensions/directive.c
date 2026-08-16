@@ -920,6 +920,37 @@ static void directive_opaque_free(
     mem->free(mem, directive);
 }
 
+/* What a line writes behind the payload pointer while the block is open:
+ * `closed` and `consume_line`, when the terminator arrives; the name and
+ * the attribute list are the opener's and never move. So a warm tick's
+ * record snapshots the struct whole. */
+static size_t directive_opaque_size(markdown_core_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->as.opaque ? sizeof(node_directive) : 0;
+}
+
+/* The attributes JSON is a lazy render an accessor may have cached between
+ * the snapshot and now — on a published projection, say — and it is not the
+ * close's to keep: whatever was rendered since is freed, then the bytes go
+ * back. */
+static void directive_restore_opaque(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node,
+    const void *snapshot
+) {
+    node_directive *directive = (node_directive *)node->as.opaque;
+    const node_directive *was = (const node_directive *)snapshot;
+    (void)extension;
+    if (!directive) {
+        return;
+    }
+    if (directive->attributes_json.data != was->attributes_json.data) {
+        markdown_core_chunk_free(mem, &directive->attributes_json);
+    }
+    memcpy(directive, was, sizeof(*directive));
+}
+
 /* Attribute names follow micromark-extension-directive: a name may not begin
  * with whitespace or punctuation, except that `-` and `_` are allowed there,
  * and from the second character `.` and `:` are allowed as well. `:` and `.`
@@ -2095,6 +2126,8 @@ static const markdown_core_extension directive_extension = {
     .accepts_lines = accepts_lines,
     .alloc_opaque = directive_opaque_alloc,
     .free_opaque = directive_opaque_free,
+    .opaque_size = directive_opaque_size,
+    .restore_opaque = directive_restore_opaque,
     .hash_value = directive_hash_value,
     .special_inline_chars = directive_special_chars,
     .special_inline_char_count = sizeof(directive_special_chars),

@@ -219,6 +219,7 @@ static void S_free_nodes(markdown_core_node *e) {
 
         markdown_core_concrete_records_free(NODE_MEM(e), e->concrete);
         markdown_core_inline_concrete_records_free(NODE_MEM(e), e->inline_concrete);
+        markdown_core_probes_free(e->probes);
 
         free_node_as(e);
 
@@ -1005,18 +1006,42 @@ uint64_t markdown_core_node_stamp_own(const markdown_core_node *node) {
     return h;
 }
 
-uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, const markdown_core_node *from) {
-    const markdown_core_node *child;
+uint64_t markdown_core_node_hash_weight(uint32_t index) {
+    uint64_t result = 1;
+    uint64_t base = MARKDOWN_CORE_NODE_HASH_STEP;
+    uint64_t exponent = (uint64_t)index + 1;
+    while (exponent) {
+        if (exponent & 1) {
+            result *= base;
+        }
+        base *= base;
+        exponent >>= 1;
+    }
+    return result;
+}
+
+uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, markdown_core_node *from) {
+    markdown_core_node *child;
+    uint32_t index;
+    uint64_t weight;
+    if (!from) {
+        return h;
+    }
+    index = from->prev ? from->prev->hash_index + 1 : 0;
+    weight = markdown_core_node_hash_weight(index);
     for (child = from; child; child = child->next) {
-        h = markdown_core_hash_mix(h, child->subtree_hash);
+        child->hash_index = index;
+        h += child->subtree_hash * weight;
         if (child == node->last_child) {
             break;
         }
+        index++;
+        weight *= MARKDOWN_CORE_NODE_HASH_STEP;
     }
     return h;
 }
 
-void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, const markdown_core_node *from) {
+void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, markdown_core_node *from) {
     node->subtree_hash = markdown_core_node_hash_children(node, prefix, from);
 }
 

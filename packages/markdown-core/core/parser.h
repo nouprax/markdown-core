@@ -14,6 +14,21 @@ extern "C" {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
+/* ONE FLIPPED UNIT: a settled unit whose answer a definition changed, so it
+ * was refined again. The unit keeps its identity; its children as they were
+ * are kept here, detached and still borrowing the unit's bytes, for the
+ * caller to pair the new ones against. When the flip was the close's, the
+ * retract does not put the old children back — it takes the flip's children
+ * off (kept in `published`, for the caller to pair the unit's next children
+ * against) and REFINES THE UNIT AGAIN against the tables as they are then:
+ * the same bytes and the same tables give the same answer the old children
+ * gave, in new objects. */
+struct markdown_core_warm_flip {
+    struct markdown_core_node *unit;
+    struct markdown_core_node *children;  /* the run as it was; dead once paired */
+    struct markdown_core_node *published; /* the run the flip published, set by the retract */
+};
+
 struct markdown_core_parser {
     struct markdown_core_mem *mem;
     /* A hashtable of urls in the current document for cross-references */
@@ -103,20 +118,64 @@ struct markdown_core_parser {
      * A paragraph is a leaf, so at most one is ever open and one array on the
      * parser suffices — no node grows a field. It is not an asymptotic cost:
      * three ints per line describing a buffer that already holds the line. */
-    /* Diagnostics raised while parsing, in source order. Kept as plain
-     * ints because core cannot see the facade's types; the document
-     * converts them when it takes the tree. One code exists today
-     * (a directive's attribute block that did not parse), and the vector
-     * stays empty for every document that has none. */
+    /* Diagnostics raised while parsing, in the order raised — source order
+     * for a parse that refines once; a unit refined again (a definition
+     * flipped it) raises its own again at the end, and the document sorts
+     * when it takes them. Kept as plain ints because core cannot see the
+     * facade's types. One code exists today (a directive's attribute block
+     * that did not parse), and the vector stays empty for every document
+     * that has none. `unit` is the inline-owning block whose refine raised
+     * the diagnostic (NULL for the block phase), so a refine that is undone
+     * takes its diagnostics with it; `dead` hides one a close's flip
+     * superseded until the retract drops it. */
     struct markdown_core_parser_diagnostic {
         int code;
         int start_line;
         int start_column;
         int end_line;
         int end_column;
+        const struct markdown_core_node *unit;
+        bool dead;
     } *diagnostics;
     size_t diagnostic_count;
     size_t diagnostic_capacity;
+    /* The inline-owning block being refined, while it is. */
+    const struct markdown_core_node *refining;
+    /* THE PROBE SCRATCH: the labels the unit being parsed has asked the
+     * definition tables about, handed to the unit as its `probes` when its
+     * parse ends. Parser-lifetime storage, empty between units. */
+    uint64_t *probe_hashes;
+    size_t probe_count;
+    size_t probe_capacity;
+    /* THE PROBE INDEX (map.h): every unit's probes, threaded by label, so a
+     * definition finds the units it flips in the size of that set. Made on
+     * first use; released with the parser, and outlives it while any probed
+     * node does. */
+    markdown_core_probe_index *probe_index;
+    /* THE PENDING FLIPS: labels a definition arrived for that changed what a
+     * lookup answers, recorded by the block phase where the definition
+     * registered and consumed by the next settle or publish, which
+     * re-refines the units that asked about them. */
+    uint64_t *pending_flips;
+    size_t pending_count;
+    size_t pending_capacity;
+    /* THE FLIPPED UNITS: units a settle re-refined for good because a
+     * definition changed their answer, each with its old children — for the
+     * caller to pair the new against, then drain with
+     * markdown_core_parser_warm_flipped_free. */
+    struct markdown_core_warm_flip *flipped;
+    size_t flipped_count;
+    size_t flipped_capacity;
+    /* THE VANISHED PARAGRAPHS: a paragraph that was nothing but definitions
+     * is unlinked by its own finalize and kept here — a list through the
+     * unlinked nodes' `next`, youngest first, each `prev` the sibling it
+     * followed — since a close that is to be undone must put it back, and a
+     * record that named it as its open leaf must be told it left rather
+     * than read it freed. The close's own is claimed by its record at the
+     * publish; the feed's stay until markdown_core_parser_warm_vanished_free
+     * (the caller's, once its identity step has looked), a fresh build's
+     * settle, or the end of the parse. */
+    struct markdown_core_node *vanished;
     struct markdown_core_line_mark {
         markdown_core_bufsize content_offset;
         int line;
@@ -152,11 +211,21 @@ typedef struct markdown_core_warm_open_block {
      * paragraph split off a table — is inside the run a step refines. */
     markdown_core_node *prev;
     markdown_core_node *retired;
+    /* Likewise what the close INSERTED before the youngest child — the
+     * definitions harvested out of a paragraph, the lead paragraph split off
+     * a table — retired at the retract for the next publish's insertions to
+     * pair against. */
+    markdown_core_node *retired_inserted;
     /* The block itself, when the close's refine REPLACED it — a paragraph
      * that is one display formula is promoted to a formula block, which
      * takes its place while the block is kept here, unlinked, for the
      * retract to put back. `node` then names the survivor. */
     markdown_core_node *replaced;
+    /* The block VANISHED at the close — a paragraph that was nothing but
+     * definitions is unlinked by its own finalize — and is put back at the
+     * retract after its parent's youngest-but-one child. */
+    bool vanished;
+    markdown_core_node *vanished_prev;
     /* THE FACADE'S, carried here because the spine is its index: the fold
      * of this block's own fields and of every child BEFORE `last_child` —
      * all settled, all the same objects with the same hashes from now on —
@@ -192,6 +261,7 @@ typedef struct markdown_core_warm_open_block {
      * every other block. */
     unsigned char *content_copy;
     markdown_core_bufsize content_copy_size;
+    bool content_moved; /* the close moves the bytes: restore from the copy */
     /* A close may RETYPE the block — a setext underline turns the paragraph
      * into a heading, a table's delimiter row turns it into a table with an
      * extension, a payload behind `as.opaque`, and a start moved to its
@@ -238,12 +308,22 @@ struct markdown_core_warm_undo {
     markdown_core_node *current;
     bool last_buffer_ended_with_cr;
     size_t diagnostic_count;
-    /* The close did something no retract puts back — replaced a spine block
-     * with another object, retyped one, grew a definition table, or closed a
-     * block whose close moves its bytes out (a code or HTML block, an
-     * extension's) — so the record describes a projection that can be read
-     * but not reopened: the build it belongs to is closed for good, and the
-     * next append rebuilds. */
+    /* Both definition tables' sizes before the close: what the close
+     * harvested is taken back to these. */
+    size_t definitions;
+    size_t footnotes;
+    /* THE FLIPS THE CLOSE MADE: a definition the close registered changed
+     * what settled units answered, and those units were re-refined for the
+     * projection; each keeps its old inline children here, detached, and the
+     * retract refines the unit again as it stood. */
+    struct markdown_core_warm_flip *flips;
+    size_t flip_count;
+    size_t flip_capacity;
+    /* A spine block is one the record cannot put back — an extension's
+     * block whose payload the extension has not described (opaque_size) —
+     * so the record describes a projection that can be read but not
+     * reopened: the build it belongs to is closed for good, and the next
+     * append rebuilds. Nothing built in comes back final. */
     bool final;
     bool retracted;
 };
@@ -265,27 +345,15 @@ static inline markdown_core_node *markdown_core_warm_run_next(
 }
 typedef struct markdown_core_warm_undo markdown_core_warm_undo;
 
-/** Whether the parser's open state at end of feed is one a publish can be
- * retracted from — the prose predicate: the open spine is the document, or
- * the document over one paragraph or heading, and the held line and that
- * paragraph's content are lines that can only continue or open a paragraph
- * or be blank (see the predicate's comment in blocks.c for the byte sets
- * and why). A
- * fresh build asks this at EOF to decide whether to publish or to close for
- * good; there is no chunk yet, so only the state is judged. */
+/** Whether a parser at end of feed can publish: it has a tree and has not
+ * failed. Every open state is one a publish can be retracted from (see the
+ * note above markdown_core_parser_warm_eligible in blocks.c). */
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser);
 
-/** The same predicate for a tick: the open state is read off the record of
- * the previous publish — which must be PUBLISHED, not final and not yet
- * retracted — and every line the arriving chunk begins or continues is
- * judged too. A pure probe: nothing is retracted, fed or written, so a
- * caller that gets `false` still holds exactly the projection it had. */
-bool markdown_core_parser_warm_eligible(
-    const markdown_core_parser *parser,
-    const markdown_core_warm_undo *published,
-    const unsigned char *chunk,
-    size_t length
-);
+/** Whether a tick can reopen the build: the record of the previous publish
+ * exists, is not final and not yet retracted, and the parser has not
+ * failed. Nothing about the arriving bytes enters into it. */
+bool markdown_core_parser_warm_eligible(const markdown_core_parser *parser, const markdown_core_warm_undo *published);
 
 /** SETTLES what a step closed: refines, once and for good, every unit that
  * is closed and lies in the region a record describes — for each saved open
@@ -298,11 +366,23 @@ bool markdown_core_parser_warm_eligible(
  *
  * A warm tick calls this after the feed with the record it retracted, so
  * exactly the units the feed closed are refined and keep their inline
- * children — and therefore their identities — from then on. Answers false
- * when a spine block was replaced by its own refine; the entry is repointed
- * at the survivor so nothing dangles, and the caller decides what that
- * means (under the eligibility predicate it cannot happen). */
+ * children — and therefore their identities — from then on. A spine block
+ * its own refine replaces (a formula promotion) is swapped for the survivor
+ * in the entry, so nothing dangles; the replaced block is freed here, since
+ * a settle is for good. */
 bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_core_warm_undo *before);
+
+/* Frees the old children the settle's flips kept, once the caller has paired
+ * against them. */
+void markdown_core_parser_warm_flipped_free(markdown_core_parser *parser);
+
+/* Frees the paragraphs the feed took (nothing but definitions), once the
+ * caller has seen which of them a record named. */
+void markdown_core_parser_warm_vanished_free(markdown_core_parser *parser);
+
+/* Whether `node` is a paragraph the feed took: unlinked, kept on the
+ * parser's list, and about to be freed. */
+bool markdown_core_parser_warm_vanished(const markdown_core_parser *parser, const struct markdown_core_node *node);
 
 /** PUBLISHES a projection from a parser that is still mid-stream: the held
  * partial line is processed for real, every open block is finalized up to
@@ -317,13 +397,12 @@ bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_cor
  *
  * Returns NULL if the record cannot be allocated, in which case nothing was
  * closed and the parser is untouched. A record that comes back `final`
- * describes a projection whose close replaced a spine block; it can be
- * read and freed, not retracted.
+ * describes a projection whose spine held a block the record cannot put
+ * back (see `final`); it can be read and freed, not retracted.
  *
- * WHAT MAKES A RECORD RETRACTABLE is the eligibility predicate: only a close
- * whose effects stay inside the record (see the predicate's comment in
- * blocks.c) can be undone, and callers publish only from states that pass
- * it, or accept a projection they will not reopen. */
+ * WHAT MAKES A RECORD RETRACTABLE: every close's effects stay inside the
+ * record — see the note above markdown_core_parser_warm_eligible in
+ * blocks.c for the one exception, and what the record holds. */
 markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser);
 
 /** Gives back everything the publish took: the blocks it closed are reopened
@@ -366,24 +445,6 @@ markdown_core_node *markdown_core_parser_warm_refine_settled(
     markdown_core_node *unit,
     markdown_core_node **replaced
 );
-
-/** Parses inlines and postprocesses the tree WITHOUT ending the parse.
- *
- * markdown_core_parser_refine_blocks does the same two passes and then takes
- * the tree away — `res = parser->root; parser->root = NULL` — after which the
- * parser ignores every further feed. This is the second form: no stamp, no
- * detach, and a false return where refine_blocks would have freed the tree.
- * It is the TERMINAL close of a build whose end state cannot be published
- * from — the parser keeps owning the tree, and is simply never fed again.
- *
- * NO STAMP is a caller obligation, not a saving: subtree hashes are what the
- * append diff pairs on, so a tree that may still be handed to it has to be
- * stamped by whoever closed it.
- *
- * PRECONDITION: no unit in the tree already holds inline children. A unit is
- * parsed for inlines exactly once — the records vector is assigned, not
- * merged — so this is for a parser nothing has settled. */
-bool markdown_core_parser_warm_refine(markdown_core_parser *parser);
 
 /** Everything a projection may read but must not change, in one value: the
  * line counters and sticky failure bits, the held partial line and its

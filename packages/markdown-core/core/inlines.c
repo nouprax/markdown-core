@@ -1413,6 +1413,31 @@ static markdown_core_node *make_footnote_reference_or_text(
 }
 
 // Return a link, an image, or a literal close bracket.
+/* A unit's inline parse asks the definition tables; what it asked is
+ * remembered on the parser until the unit's parse ends, then on the unit
+ * (node.h `probes`), so a definition that arrives later finds exactly the
+ * units whose answer it changes. A hash of zero is a label that could never
+ * match and is not remembered; a lost allocation loses the probe, and the
+ * parser's sticky bit says so, since a forgotten probe would be a unit a
+ * later definition silently fails to reach. */
+static void S_record_probe(markdown_core_parser *parser, uint64_t hash) {
+    if (!parser || hash == 0) {
+        return;
+    }
+    if (parser->probe_count == parser->probe_capacity) {
+        size_t capacity = parser->probe_capacity ? parser->probe_capacity * 2 : 4;
+        uint64_t *grown =
+            (uint64_t *)parser->mem->realloc(parser->mem, parser->probe_hashes, capacity * sizeof(*grown));
+        if (!grown) {
+            parser->oom = true;
+            return;
+        }
+        parser->probe_hashes = grown;
+        parser->probe_capacity = capacity;
+    }
+    parser->probe_hashes[parser->probe_count++] = hash;
+}
+
 static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, subject *subj) {
     markdown_core_bufsize initial_pos, after_link_text_pos;
     markdown_core_bufsize endurl, starttitle, endtitle, endall;
@@ -1535,7 +1560,9 @@ static markdown_core_node *handle_close_bracket(markdown_core_parser *parser, su
     }
 
     if (found_label) {
-        ref = (markdown_core_reference *)markdown_core_map_lookup(subj->refmap, &raw_label);
+        uint64_t probe_hash = 0;
+        ref = (markdown_core_reference *)markdown_core_map_lookup_probe(subj->refmap, &raw_label, &probe_hash);
+        S_record_probe(parser, probe_hash);
         if (ref != NULL) {
             /* Kept for the node: the label as written, which is what the
              * source says. Its normalized form stays the map's. chunk_dup
@@ -1609,7 +1636,9 @@ footnoteForm:
             // a definition a hundred lines further down as readily as one
             // above.
             markdown_core_chunk probe = {literal->data + 1, label_span, 0};
-            bool defined = markdown_core_map_lookup(parser->footnote_defs, &probe) != NULL;
+            uint64_t probe_hash = 0;
+            bool defined = markdown_core_map_lookup_probe(parser->footnote_defs, &probe, &probe_hash) != NULL;
+            S_record_probe(parser, probe_hash);
 
             // Before we got this far, the `handle_close_bracket` function may have
             // advanced the current state beyond our footnote's actual closing
@@ -2122,6 +2151,7 @@ void markdown_core_parse_inlines(
 ) {
     subject subj;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
+    const markdown_core_node *refining = parser->refining;
     subject_from_buf(
         parser,
         parser->mem,
@@ -2133,8 +2163,12 @@ void markdown_core_parse_inlines(
     );
     markdown_core_chunk_rtrim(&subj.input);
 
+    /* Diagnostics raised in here are this unit's, so a refine that is
+     * undone takes them with it. */
+    parser->refining = parent;
     while (!is_eof(&subj) && parse_inline(parser, &subj, parent, options))
         ;
+    parser->refining = refining;
 
     process_delimiters(parser, &subj, (markdown_core_delimiter_mark){0, 0, 0});
     // free bracket stack
@@ -2159,6 +2193,24 @@ void markdown_core_parse_inlines(
          * visits it once; a dependent rebuild parses a fresh shell), so
          * nothing is ever overwritten here. */
         parent->inline_concrete = markdown_core_concrete_capture_take(&subj.capture);
+    }
+    /* What this unit asked the definition tables becomes its own; the
+     * scratch is empty again for the next unit. A unit re-refined after a
+     * definition arrived asks afresh, and its old probes go. */
+    markdown_core_probes_free(parent->probes);
+    parent->probes = NULL;
+    if (parser && parser->probe_count) {
+        if (!parser->probe_index) {
+            parser->probe_index = markdown_core_probe_index_new(parser->mem);
+        }
+        if (parser->probe_index) {
+            parent->probes =
+                markdown_core_probes_attach(parser->probe_index, parent, parser->probe_hashes, parser->probe_count);
+        }
+        if (!parent->probes) {
+            parser->oom = true;
+        }
+        parser->probe_count = 0;
     }
 }
 

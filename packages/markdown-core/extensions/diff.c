@@ -365,6 +365,7 @@ bool markdown_core_diff_frontier(
     markdown_core_mem *mem,
     markdown_core_node *retired,
     markdown_core_node *fresh,
+    const markdown_core_node *fresh_end,
     uint64_t rev,
     bool *changed
 ) {
@@ -377,15 +378,18 @@ bool markdown_core_diff_frontier(
     for (node = retired; node; node = node->next) {
         n_old++;
     }
-    for (node = fresh; node; node = node->next) {
+    for (node = fresh; node && node != fresh_end; node = node->next) {
         n_new++;
     }
-    *changed = false;
+    /* Accumulates: a caller diffs a block's inserted and appended runs in
+     * two calls, and either changing changes the block. */
     if (n_new == 0 && n_old == 0) {
         return true;
     }
     if (diff_plan(&ctx, &stack, NULL, NULL, retired, n_old, fresh, n_new)) {
-        *changed = diff_run(&ctx, &stack);
+        if (diff_run(&ctx, &stack)) {
+            *changed = true;
+        }
     }
     if (stack.frames) {
         mem->free(mem, stack.frames);

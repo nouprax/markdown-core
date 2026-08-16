@@ -196,16 +196,19 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * lists — hash sweeps, positional middle by type, residue minted, each pair
  * classified by its fields and its children — so a paired node keeps its id,
  * keeps its revision if nothing about it changed and takes `rev` otherwise,
- * and unpaired retired ids are never minted again. `*changed` answers
- * whether the runs differ at all, which is what the spine block above them
- * inherits. Requires the fresh run to be stamped. Frees nothing. Returns
- * false on allocation failure with the fresh run partly assigned — the
- * caller discards the tick. */
+ * and unpaired retired ids are never minted again. `*changed` is SET when
+ * the runs differ at all — never cleared, so a block's two runs accumulate
+ * into one verdict — which is what the spine block above them inherits; the
+ * fresh run ends at `fresh_end` (exclusive; NULL for the end of the sibling
+ * list). Requires the fresh run to be stamped. Frees nothing. Returns false
+ * on allocation failure with the fresh run partly assigned — the caller
+ * discards the tick. */
 bool markdown_core_diff_frontier(
     markdown_core_chain *chain,
     markdown_core_mem *mem,
     markdown_core_node *retired,
     markdown_core_node *fresh,
+    const markdown_core_node *fresh_end,
     uint64_t rev,
     bool *changed
 );

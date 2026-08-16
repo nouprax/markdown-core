@@ -150,6 +150,60 @@ int markdown_core_key_index_insert(
     return 1;
 }
 
+/* Removes `key`, if present, by backward shift: the slots after it in its
+ * probe run move up over the hole when their home lies at or before it, so
+ * no run is broken and no tombstone is left to borrow freed key bytes.
+ * Answers whether it was present. */
+int markdown_core_key_index_remove(
+    markdown_core_key_index *index,
+    const unsigned char *key,
+    markdown_core_bufsize key_len
+) {
+    uint64_t hash = hash_key(key, key_len);
+    size_t mask = index->capacity - 1;
+    size_t hole;
+    size_t probe;
+    markdown_core_key_index_slot *slot = NULL;
+    size_t position = (size_t)hash & mask;
+    for (probe = 0; probe < KEY_INDEX_MAX_PROBES; probe++) {
+        markdown_core_key_index_slot *candidate = &index->slots[position];
+        if (!candidate->key) {
+            return 0;
+        }
+        if (candidate->hash == hash && candidate->key_len == key_len &&
+            memcmp(candidate->key, key, (size_t)key_len) == 0) {
+            slot = candidate;
+            break;
+        }
+        position = (position + 1) & mask;
+    }
+    if (!slot) {
+        return 0;
+    }
+    hole = position;
+    for (;;) {
+        size_t next = (position + 1) & mask;
+        size_t home;
+        markdown_core_key_index_slot *mover = &index->slots[next];
+        if (!mover->key) {
+            break;
+        }
+        home = (size_t)mover->hash & mask;
+        /* The mover may fill the hole only if its home is not in the open
+         * interval (hole, next] — cyclically. */
+        if (hole <= next ? (hole < home && home <= next) : (hole < home || home <= next)) {
+            position = next;
+            continue;
+        }
+        index->slots[hole] = *mover;
+        hole = next;
+        position = next;
+    }
+    memset(&index->slots[hole], 0, sizeof(index->slots[hole]));
+    index->size--;
+    return 1;
+}
+
 void *markdown_core_key_index_lookup(
     const markdown_core_key_index *index,
     const unsigned char *key,
@@ -301,16 +355,87 @@ static markdown_core_map_entry *sorted_winner(markdown_core_map *map, const unsi
     return map->sorted[lo];
 }
 
+uint64_t markdown_core_map_label_hash(const unsigned char *label) {
+    uint64_t h = UINT64_C(0xcbf29ce484222325);
+    for (; *label; label++) {
+        h = (h ^ *label) * UINT64_C(0x100000001b3);
+    }
+    return h ? h : 1;
+}
+
+int markdown_core_map_entry_wins(markdown_core_map *map, markdown_core_map_entry *entry) {
+    /* Through the prepared lookup: the winner of the label is what a lookup
+     * answers. A map that cannot be prepared (an allocation lost, and the
+     * sticky bit set) answers yes — a flip too many is a refine, not a
+     * wrong answer. */
+    if (!prepare_map(map)) {
+        map->oom = 1;
+        return 1;
+    }
+    if (map->indexed) {
+        return markdown_core_key_index_lookup(
+                   &map->index,
+                   entry->label,
+                   (markdown_core_bufsize)strlen((char *)entry->label)
+               ) == entry;
+    }
+    return sorted_winner(map, entry->label) == entry;
+}
+
+void markdown_core_map_truncate(markdown_core_map *map, size_t size) {
+    if (!map || map->size <= size) {
+        return;
+    }
+    while (map->size > size) {
+        markdown_core_map_entry *head = map->refs;
+        map->refs = head->next;
+        map->size--;
+        map->next_order--;
+        /* The hash path forgets the entry in place: it is in the index only
+         * if it won its label, and then no older definition of that label
+         * exists to take its slot. The sorted path cannot absorb removals. */
+        if (map->prepared) {
+            if (map->indexed) {
+                if (markdown_core_key_index_lookup(
+                        &map->index,
+                        head->label,
+                        (markdown_core_bufsize)strlen((char *)head->label)
+                    ) == head) {
+                    markdown_core_key_index_remove(
+                        &map->index,
+                        head->label,
+                        (markdown_core_bufsize)strlen((char *)head->label)
+                    );
+                }
+            } else {
+                unprepare_map(map);
+            }
+        }
+        map->free(map, head);
+    }
+}
+
 markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
+    return markdown_core_map_lookup_probe(map, label, NULL);
+}
+
+markdown_core_map_entry *markdown_core_map_lookup_probe(
+    markdown_core_map *map,
+    markdown_core_chunk *label,
+    uint64_t *hash
+) {
     markdown_core_map_entry *r = NULL;
     unsigned char *norm;
 
+    if (hash) {
+        *hash = 0;
+    }
     /* Labels over the scanner cap can never match any definition. */
     if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
         return NULL;
     }
 
-    if (map == NULL || !map->size) {
+    if (map == NULL) {
         return NULL;
     }
 
@@ -323,6 +448,13 @@ markdown_core_map_entry *markdown_core_map_lookup(markdown_core_map *map, markdo
             }
             return NULL;
         }
+    }
+    if (hash) {
+        *hash = markdown_core_map_label_hash(norm);
+    }
+    if (!map->size) {
+        map->mem->free(map->mem, norm);
+        return NULL;
     }
 
     if (!prepare_map(map)) {
@@ -398,4 +530,165 @@ markdown_core_map *markdown_core_map_new(markdown_core_mem *mem, markdown_core_m
     map->mem = mem;
     map->free = free;
     return map;
+}
+
+/* --- the probe index ---------------------------------------------------- */
+
+markdown_core_probe_index *markdown_core_probe_index_new(markdown_core_mem *mem) {
+    markdown_core_probe_index *index = (markdown_core_probe_index *)mem->calloc(mem, 1, sizeof(*index));
+    if (!index) {
+        return NULL;
+    }
+    index->mem = mem;
+    index->bucket_count = 64;
+    index->buckets = (struct markdown_core_probe_link **)mem->calloc(mem, index->bucket_count, sizeof(*index->buckets));
+    if (!index->buckets) {
+        mem->free(mem, index);
+        return NULL;
+    }
+    return index;
+}
+
+static void probe_index_free(markdown_core_probe_index *index) {
+    markdown_core_mem *mem = index->mem;
+    mem->free(mem, index->buckets);
+    mem->free(mem, index);
+}
+
+void markdown_core_probe_index_release(markdown_core_probe_index *index) {
+    if (!index) {
+        return;
+    }
+    index->orphaned = 1;
+    if (index->link_count == 0) {
+        probe_index_free(index);
+    }
+}
+
+static void probe_link_thread(markdown_core_probe_index *index, struct markdown_core_probe_link *link) {
+    struct markdown_core_probe_link **bucket = &index->buckets[link->hash % index->bucket_count];
+    link->next = *bucket;
+    link->pprev = bucket;
+    if (*bucket) {
+        (*bucket)->pprev = &link->next;
+    }
+    *bucket = link;
+}
+
+static void probe_link_unthread(struct markdown_core_probe_link *link) {
+    *link->pprev = link->next;
+    if (link->next) {
+        link->next->pprev = link->pprev;
+    }
+    link->next = NULL;
+    link->pprev = NULL;
+}
+
+/* Twice the links per bucket on average is where the chains are rehashed
+ * into twice the buckets: every link is rethreaded, so the walk is the
+ * links'. */
+static int probe_index_grow(markdown_core_probe_index *index) {
+    markdown_core_mem *mem = index->mem;
+    size_t old_count = index->bucket_count;
+    struct markdown_core_probe_link **old = index->buckets;
+    struct markdown_core_probe_link **grown;
+    size_t i;
+    if (index->link_count < old_count * 2) {
+        return 1;
+    }
+    grown = (struct markdown_core_probe_link **)mem->calloc(mem, old_count * 2, sizeof(*grown));
+    if (!grown) {
+        /* Not a loss: the chains are longer than they would be, and every
+         * answer is still right. */
+        return 1;
+    }
+    index->buckets = grown;
+    index->bucket_count = old_count * 2;
+    for (i = 0; i < old_count; i++) {
+        struct markdown_core_probe_link *link = old[i];
+        while (link) {
+            struct markdown_core_probe_link *next = link->next;
+            probe_link_thread(index, link);
+            link = next;
+        }
+    }
+    mem->free(mem, old);
+    return 1;
+}
+
+struct markdown_core_probes *markdown_core_probes_attach(
+    markdown_core_probe_index *index,
+    struct markdown_core_node *unit,
+    const uint64_t *hashes,
+    size_t count
+) {
+    markdown_core_mem *mem = index->mem;
+    struct markdown_core_probes *probes;
+    size_t i;
+    if (count == 0) {
+        return NULL;
+    }
+    probes =
+        (struct markdown_core_probes *)mem->calloc(mem, 1, sizeof(*probes) + (count - 1) * sizeof(probes->links[0]));
+    if (!probes) {
+        return NULL;
+    }
+    probes->index = index;
+    probes->count = count;
+    index->link_count += count;
+    probe_index_grow(index);
+    for (i = 0; i < count; i++) {
+        probes->links[i].hash = hashes[i];
+        probes->links[i].unit = unit;
+        probe_link_thread(index, &probes->links[i]);
+    }
+    return probes;
+}
+
+void markdown_core_probes_free(struct markdown_core_probes *probes) {
+    markdown_core_probe_index *index;
+    size_t i;
+    if (!probes) {
+        return;
+    }
+    index = probes->index;
+    for (i = 0; i < probes->count; i++) {
+        probe_link_unthread(&probes->links[i]);
+    }
+    index->link_count -= probes->count;
+    index->mem->free(index->mem, probes);
+    if (index->orphaned && index->link_count == 0) {
+        probe_index_free(index);
+    }
+}
+
+int markdown_core_probe_index_units(
+    const markdown_core_probe_index *index,
+    uint64_t hash,
+    markdown_core_mem *mem,
+    struct markdown_core_node ***units,
+    size_t *count,
+    size_t *capacity
+) {
+    const struct markdown_core_probe_link *link;
+    if (!index) {
+        return 1;
+    }
+    for (link = index->buckets[hash % index->bucket_count]; link; link = link->next) {
+        if (link->hash != hash) {
+            continue;
+        }
+        if (*count == *capacity) {
+            size_t grown_capacity = *capacity ? *capacity * 2 : 16;
+            struct markdown_core_node **grown =
+                (struct markdown_core_node **)mem->realloc(mem, *units, grown_capacity * sizeof(*grown));
+            if (!grown) {
+                return 0;
+            }
+            *units = grown;
+            *capacity = grown_capacity;
+        }
+        (*units)[(*count)++] = link->unit;
+    }
+    return 1;
 }
