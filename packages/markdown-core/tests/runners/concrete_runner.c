@@ -3584,12 +3584,14 @@ static int case_warm_append_stream(void) {
         /* Two lines the predicate refuses for reasons a census had to find:
          * a table delimiter row whose leading spacing is a vertical tab (the
          * table scanner accepts \v and \f where nothing else in the block
-         * phase skips them), which retypes the paragraph above it, and the
+         * phase skips them), which retypes the paragraph above it and splits
+         * its earlier line off into a paragraph INSERTED BEFORE it — outside
+         * every run a warm tick refines — and the
          * document's byte-order mark hiding a definition at the first line's
          * true start. Both must land on the rebuild and equal a one-shot
          * parse; a predicate that admitted either would publish a projection
          * it cannot reopen, or a table it never refined. */
-        "header a | header b\n\x0b---|---\nrow | row\n\nprose after the table\n",
+        "intro line\nheader a | header b\n\x0b---|---\nrow | row\n\nprose after the table\n",
         "\xef\xbb\xbf[foo]: /url\n\nsee [foo] and more prose\n",
         NULL,
     };
