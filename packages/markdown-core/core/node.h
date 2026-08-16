@@ -180,6 +180,19 @@ uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length
  * of the finished tree, so every child is complete and already stamped. */
 void markdown_core_node_stamp(markdown_core_node *node);
 
+/** The stamp in two halves, for a node whose leading children have not
+ * changed since it was last stamped — an open block on a stream's spine,
+ * whose settled children are the same objects with the same hashes tick
+ * after tick, and whose youngest children are what grew. `stamp_own` is the
+ * fold over the node's own fields, where every stamp begins;
+ * `hash_children` continues a fold over the children from `from` to the
+ * youngest; `stamp_from` writes the stamp continued from `prefix` — a fold
+ * already carried over everything before `from`. A caller that keeps that
+ * prefix restamps in the size of what grew, not the size of the node. */
+uint64_t markdown_core_node_stamp_own(const markdown_core_node *node);
+uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, const markdown_core_node *from);
+void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, const markdown_core_node *from);
+
 /** Stamps every node of `root`'s subtree, each as the walk leaves it. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
 

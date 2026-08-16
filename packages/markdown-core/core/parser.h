@@ -148,6 +148,12 @@ typedef struct markdown_core_warm_open_block {
     markdown_core_node *node;
     markdown_core_node *last_child;
     markdown_core_node *retired;
+    /* THE FACADE'S, carried here because the spine is its index: the fold
+     * of this block's own fields and of every child BEFORE `last_child` —
+     * all settled, all the same objects with the same hashes from now on —
+     * so the block is restamped from here in the size of what grew. The
+     * engine writes nothing to it. */
+    uint64_t prefix_hash;
     uint16_t type;
     uint16_t flags;
     int end_line;

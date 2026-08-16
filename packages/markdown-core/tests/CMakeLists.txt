@@ -513,7 +513,8 @@ set(MARKDOWN_CORE_BENCH_WORKLOADS
     extensions
     large_table
     adversarial
-    append_baseline)
+    append_baseline
+    append_amortized)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

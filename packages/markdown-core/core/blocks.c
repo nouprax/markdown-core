@@ -2467,9 +2467,11 @@ static bool warm_byte_replaces(unsigned char c) { return c == '$'; }
  * document's very first line, whose byte-order mark the block phase skips
  * before it judges anything — so the predicate skips it too, or a mark
  * would hide the byte behind it. */
+static const unsigned char warm_bom[3] = {0xef, 0xbb, 0xbf};
+
 static bool warm_run_eligible(const unsigned char *bytes, size_t length, bool at_line_start, bool first_line) {
     size_t i = 0;
-    if (first_line && at_line_start && length >= 3 && bytes[0] == 0xef && bytes[1] == 0xbb && bytes[2] == 0xbf) {
+    if (first_line && at_line_start && length >= 3 && memcmp(bytes, warm_bom, 3) == 0) {
         i = 3;
     }
     for (; i < length; i++) {
@@ -2556,8 +2558,29 @@ static bool warm_state_eligible(
     if (!warm_run_eligible(state->held, state->held_size, true, state->line_number == 0)) {
         return false;
     }
-    /* The chunk's first byte begins a line only when nothing is held. */
-    return length == 0 || warm_run_eligible(chunk, length, state->held_size == 0, state->line_number == 0);
+    if (length == 0) {
+        return true;
+    }
+    /* The chunk's first byte begins a line only when nothing is held — with
+     * one exception the block phase makes: on the document's first line the
+     * byte-order mark is skipped, so a held line that is the mark, or part
+     * of it, puts the line's true start INSIDE the chunk — after whatever
+     * completes the mark — or nowhere yet. */
+    if (state->line_number == 0 && state->held_size > 0 && state->held_size <= 3 &&
+        memcmp(state->held, warm_bom, state->held_size) == 0) {
+        size_t need = 3 - state->held_size;
+        if (length < need) {
+            /* Still inside the mark, or a line that merely begins with its
+             * first byte: nothing here begins a line. */
+            return memcmp(chunk, warm_bom + state->held_size, length) == 0 ||
+                   warm_run_eligible(chunk, length, false, false);
+        }
+        if (memcmp(chunk, warm_bom + state->held_size, need) == 0) {
+            return warm_run_eligible(chunk + need, length - need, true, false);
+        }
+        return warm_run_eligible(chunk, length, false, false);
+    }
+    return warm_run_eligible(chunk, length, state->held_size == 0, state->line_number == 0);
 }
 
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
@@ -2820,18 +2843,27 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
         markdown_core_parser_warm_undo_free(undo);
         return NULL;
     }
-    markdown_core_parser_finalize_blocks(parser);
-    /* A spine block the held line RETYPED (a setext underline, a table
-     * delimiter row) is one the record cannot put back: the predicate keeps
-     * such lines out, and this is what makes a predicate that missed one
-     * fail loudly — a projection that can be read, not reopened — instead of
-     * reopening a heading as a paragraph. */
     {
+        size_t definitions = parser->refmap ? parser->refmap->size : 0;
+        size_t footnotes = parser->footnote_defs ? parser->footnote_defs->size : 0;
         size_t i;
+        markdown_core_parser_finalize_blocks(parser);
+        /* A spine block the held line RETYPED (a setext underline, a table
+         * delimiter row), or a close that GREW a definition table (a held
+         * definition harvested, a footnote definition opened), is one the
+         * record cannot put back: the predicate keeps such lines out, and
+         * this is what makes a predicate that missed one fail loudly — a
+         * projection that can be read, not reopened — instead of reopening
+         * a heading as a paragraph or refining the next tick against a
+         * table the close polluted. */
         for (i = 0; i < undo->spine_count; i++) {
             if (undo->spine[i].node->type != undo->spine[i].type) {
                 undo->final = true;
             }
+        }
+        if ((parser->refmap && parser->refmap->size != definitions) ||
+            (parser->footnote_defs && parser->footnote_defs->size != footnotes)) {
+            undo->final = true;
         }
     }
     /* Only what the close closed: the spine, and whatever the held line put

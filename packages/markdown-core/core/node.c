@@ -927,9 +927,8 @@ static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
  * alignments, a row's header bit, a formula's mode. An extension that
  * registers a node type and does not implement it leaves its own nodes
  * pairing on type and children alone. */
-void markdown_core_node_stamp(markdown_core_node *node) {
+uint64_t markdown_core_node_stamp_own(const markdown_core_node *node) {
     uint64_t h = 0xcbf29ce484222325ull;
-    markdown_core_node *child;
 
     h = markdown_core_hash_mix(h, (uint64_t)node->type);
     switch (node->type) {
@@ -994,15 +993,28 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     // mode. The extension that registered the type is the only thing that
     // can read them, so it is the thing that mixes them.
     if (node->extension && node->extension->hash_value) {
-        h = node->extension->hash_value(node->extension, node, h);
+        h = node->extension->hash_value(node->extension, (markdown_core_node *)node, h);
     }
-    for (child = node->first_child; child; child = child->next) {
+    return h;
+}
+
+uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, const markdown_core_node *from) {
+    const markdown_core_node *child;
+    for (child = from; child; child = child->next) {
         h = markdown_core_hash_mix(h, child->subtree_hash);
         if (child == node->last_child) {
             break;
         }
     }
-    node->subtree_hash = h;
+    return h;
+}
+
+void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, const markdown_core_node *from) {
+    node->subtree_hash = markdown_core_node_hash_children(node, prefix, from);
+}
+
+void markdown_core_node_stamp(markdown_core_node *node) {
+    markdown_core_node_stamp_from(node, markdown_core_node_stamp_own(node), node->first_child);
 }
 
 void markdown_core_node_stamp_tree(markdown_core_node *root) {

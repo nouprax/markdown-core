@@ -181,6 +181,46 @@ static void set_parse_error(const markdown_core_parser *parser, markdown_core_er
     );
 }
 
+/* THE PREFIX FOLDS a record's spine blocks are restamped from. A spine
+ * block's children before its saved youngest child are settled — the same
+ * objects with the same hashes for the rest of the stream — so its stamp is
+ * that fold continued over what grew, and a tick restamps a block in the
+ * size of what grew rather than the size of the block: without this, the
+ * root's restamp alone is a fold over every top-level block per tick, an
+ * O(document) term the amortized bound cannot carry. `previous` may be
+ * NULL; when a block was on the previous record too, its fold is carried
+ * forward over the children that settled since (they were stamped by the
+ * tick before this is called), and only a block new to the spine is folded
+ * from its own fields. */
+static void record_prefix_hashes(markdown_core_warm_undo *record, const markdown_core_warm_undo *previous) {
+    size_t i;
+    for (i = 0; i < record->spine_count; i++) {
+        markdown_core_warm_open_block *entry = &record->spine[i];
+        const markdown_core_node *node = entry->node;
+        const markdown_core_warm_open_block *carried = NULL;
+        uint64_t h;
+        const markdown_core_node *child;
+        size_t j;
+        for (j = 0; previous && j < previous->spine_count; j++) {
+            if (previous->spine[j].node == node) {
+                carried = &previous->spine[j];
+                break;
+            }
+        }
+        if (carried) {
+            h = carried->prefix_hash;
+            child = carried->last_child ? carried->last_child : node->first_child;
+        } else {
+            h = markdown_core_node_stamp_own(node);
+            child = node->first_child;
+        }
+        for (; child && child != entry->last_child; child = child->next) {
+            h = markdown_core_hash_mix(h, child->subtree_hash);
+        }
+        entry->prefix_hash = h;
+    }
+}
+
 /* HOW EVERY BUILD ENDS. The parser is at end of feed with the tree still
  * open. If its open state is one a publish can be retracted from — the
  * eligibility predicate, asked of the state alone since no chunk has
@@ -221,6 +261,9 @@ static bool generation_close(document_generation *generation, markdown_core_erro
      * one pass over the settled tree and nothing earlier): the append diff
      * pairs on these hashes, and a warm tick restamps only what it touches. */
     markdown_core_node_stamp_tree(parser->root);
+    if (generation->undo) {
+        record_prefix_hashes(generation->undo, NULL);
+    }
     generation_take_diagnostics(generation, parser);
     return true;
 }
@@ -301,6 +344,16 @@ static bool document_tick_warm(
         goto done;
     }
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
+    /* The predicate promised this state; the state is asked directly before
+     * the close is allowed to touch it, because a close on a state the
+     * record cannot put back is not merely wrong — a definitions-only
+     * paragraph is FREED by its own finalize, and the record would name it.
+     * A refusal here is the engine contradicting itself, and it poisons the
+     * chain rather than publishing what it cannot reopen. */
+    if (!markdown_core_parser_warm_eligible_at_eof(parser)) {
+        parser->internal_error = true;
+        goto done;
+    }
     if (!markdown_core_parser_warm_settle(parser, before)) {
         /* A spine block replaced by its own refine: the predicate excludes
          * every shape that can, so this is the engine contradicting itself. */
@@ -345,9 +398,14 @@ static bool document_tick_warm(
             if (changed_below) {
                 node->last_changed_rev = revision;
             }
-            markdown_core_node_stamp(node);
+            markdown_core_node_stamp_from(
+                node,
+                entry->prefix_hash,
+                entry->last_child ? entry->last_child : node->first_child
+            );
         }
     }
+    record_prefix_hashes(after, before);
     generation_take_diagnostics(generation, parser);
     generation->undo = after;
     after = NULL;
