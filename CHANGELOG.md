@@ -10,18 +10,23 @@ promised to remain compatible between releases.
   document is the live head of a chain; `append(chunk)` adds bytes at the
   end — any byte split is legal, mid-word or mid-character — and returns
   the document all bytes so far describe. One rule: an append supersedes
-  its receiver (which keeps free at any time, and read-only access until
-  the chain's next mutation begins), the revision advances strictly by one
+  its receiver (which keeps free at any time and its revision, series and
+  length, and answers for no tree), the revision advances strictly by one
   on the chain's own counter, and mutating a superseded handle is a
   deterministic error, so history is linear and derived state can be
   destroyed and rebuilt in place. A failed `append` ends the chain. The
   bindings decode O(changed) per append: an unchanged (id, revision)
   subtree reuses the previously decoded value outright, so a stream's
-  per-tick decode cost follows the change, not the document. The engine
-  side of `append` is currently the documented fallback — concatenate and
-  rebuild whole — with the amortized O(affected) engine arriving behind the
-  same signature and oracle
-  (`docs/reviews/2026-08-13-living-tree-plan.md`).
+  per-tick decode cost follows the change, not the document. On the engine
+  side the head's tree now GROWS IN PLACE for prose ticks — a paragraph
+  continuing, a blank line, a new paragraph or heading opening — retracting
+  the previous projection, feeding the chunk, settling what it closed and
+  publishing again, with ids handed over at the frontier by the same diff
+  a rebuild uses; every other shape (lists, quotes, fences, tables,
+  definitions, formulas, directives) still rebuilds from scratch on that
+  tick, and a failed append leaves the head answering for no tree. The
+  chain counts both kinds of tick; the shapes still rebuilding are the next
+  milestone's (`docs/reviews/2026-08-13-living-tree-plan.md`).
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
   mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

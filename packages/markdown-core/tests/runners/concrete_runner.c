@@ -3013,19 +3013,37 @@ static int case_warm_fingerprint(void) {
 
 /* --- warm_tick_ledger ------------------------------------------------------ */
 
-/* The ledger every later claim about the warm path will be read off, landed
- * and exercised before the path exists so that the first warm tick is
- * measured by a gate that has been honest all along.
+/* The ledger every claim about the warm path is read off. It landed and was
+ * exercised before the path existed, pinning "four appends, four rebuilds,
+ * rebuilt bytes equal to the running sum of the document's own lengths" —
+ * today's quadratic as an assertion. Now it pins the other side of that
+ * line: which ticks the eligibility predicate lets grow the tree in place,
+ * which it sends to the rebuild, and that the rebuild's bytes are exactly
+ * the lengths of the documents it rebuilt and nothing else.
  *
- * It also states today's cost in numbers rather than in prose: each tick
- * reparses every byte the document describes, so the bytes the chain rebuilds
- * are the running sum of its own lengths — the quadratic this milestone
- * exists to retire, written down where a change to it cannot go unnoticed. */
+ * Every chunk names why it lands where it does, and the reasons are the
+ * predicate's own: a line-start byte that could open a block, and an end
+ * state the previous build could not publish from. */
 static int case_warm_tick_ledger(void) {
-    static const char *const chunks[] = {"alpha beta\n", "\ngamma delta\n", "epsilon", " zeta\n"};
+    static const struct {
+        const char *chunk;
+        bool warm;
+        const char *why;
+    } ticks[] = {
+        {"alpha beta\n", true, "prose on an empty document"},
+        {"\ngamma delta\n", true, "a blank line closes the paragraph, prose opens the next"},
+        {"epsilon", true, "a held partial line"},
+        {" zeta\n", true, "continues the held line, so its space is not at a line start"},
+        {"# heading\n", false, "`#` at a line start: an ATX heading is not a prose shape"},
+        {"more prose\n", true, "the rebuild ended with only the document open, so it published"},
+        {"- item\n", false, "`-` at a line start: a list is not a prose shape"},
+        {"tail", false, "prose bytes, but the rebuild ended inside a list item and could not publish"},
+    };
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    uint64_t expected_bytes = 0;
+    uint64_t expected_rebuilt_bytes = 0;
+    uint64_t expected_warm = 0;
+    uint64_t expected_rebuilt = 0;
     size_t i;
     int result = 0;
 
@@ -3041,9 +3059,9 @@ static int case_warm_tick_ledger(void) {
         return -1;
     }
 
-    for (i = 0; i < sizeof(chunks) / sizeof(chunks[0]); i++) {
+    for (i = 0; i < sizeof(ticks) / sizeof(ticks[0]); i++) {
         markdown_core_document *successor =
-            markdown_core_document_append(document, mc_sv(chunks[i], strlen(chunks[i])), &error);
+            markdown_core_document_append(document, mc_sv(ticks[i].chunk, strlen(ticks[i].chunk)), &error);
         if (!successor) {
             markdown_core_error_free(error);
             fprintf(stderr, "warm_tick_ledger: append %zu failed\n", i);
@@ -3052,25 +3070,41 @@ static int case_warm_tick_ledger(void) {
         }
         markdown_core_document_free(document);
         document = successor;
-        expected_bytes += (uint64_t)markdown_core_document_length(document);
+        if (ticks[i].warm) {
+            expected_warm++;
+        } else {
+            expected_rebuilt++;
+            expected_rebuilt_bytes += (uint64_t)markdown_core_document_length(document);
+        }
+        if (document->chain->warm_ticks != expected_warm || document->chain->rebuilt_ticks != expected_rebuilt) {
+            fprintf(
+                stderr,
+                "warm_tick_ledger: after append %zu (%s) the ledger reads %llu warm / %llu rebuilt, expected %llu / "
+                "%llu\n",
+                i,
+                ticks[i].why,
+                (unsigned long long)document->chain->warm_ticks,
+                (unsigned long long)document->chain->rebuilt_ticks,
+                (unsigned long long)expected_warm,
+                (unsigned long long)expected_rebuilt
+            );
+            result = -1;
+            break;
+        }
     }
-
-    if (document->chain->rebuilt_ticks != 4 || document->chain->warm_ticks != 0) {
+    if (result == 0 && document->chain->rebuilt_bytes != expected_rebuilt_bytes) {
         fprintf(
             stderr,
-            "warm_tick_ledger: %llu rebuilt and %llu warm ticks, expected 4 and 0\n",
-            (unsigned long long)document->chain->rebuilt_ticks,
-            (unsigned long long)document->chain->warm_ticks
+            "warm_tick_ledger: %llu bytes rebuilt, expected %llu — the lengths of the rebuilt documents alone\n",
+            (unsigned long long)document->chain->rebuilt_bytes,
+            (unsigned long long)expected_rebuilt_bytes
         );
         result = -1;
     }
-    if (document->chain->rebuilt_bytes != expected_bytes) {
-        fprintf(
-            stderr,
-            "warm_tick_ledger: %llu bytes rebuilt, expected %llu — every tick reparses the whole document\n",
-            (unsigned long long)document->chain->rebuilt_bytes,
-            (unsigned long long)expected_bytes
-        );
+    /* The end state says why the last tick could not be warm: a build that
+     * ends inside a list item leaves no record to reopen from. */
+    if (result == 0 && document->chain->head.undo != NULL) {
+        fprintf(stderr, "warm_tick_ledger: a build that ended inside a list item still published a record\n");
         result = -1;
     }
     markdown_core_document_free(document);
@@ -3085,103 +3119,17 @@ static int case_warm_tick_ledger(void) {
  * happened. If that is false, the only answers left are a second tree or a
  * reparse per tick — both redesigns.
  *
- * It is proven COLD here: no living tree, no ownership change, nothing on the
- * shipping path. The undo lives in the test rather than in the engine on
- * purpose — what is under test is whether the state is restorable AT ALL, and
- * the mechanism moves into the engine once it is known to be.
+ * It was first proven COLD, with the undo living in this runner, because
+ * what was in question was whether the state is restorable AT ALL; the
+ * mechanism then moved into the engine (publish, retract, settle), and this
+ * case now drives those entry points on a bare parser — no chain, no
+ * document — at every cut the engine's own predicate accepts.
  *
  * Two verdicts per cut. The fingerprint before the close must equal the one
  * after the undo, which says the state came back and localizes what did not.
  * Then the rest of the text is fed and the warm state is compared against a
  * twin parser that was never interrupted, which says nothing downstream could
  * tell the difference. */
-
-#define WC_MAX_REFINED 64
-
-/* Bytes that cannot open a block, retype one, or start a definition. The set
- * is deliberately coarse: L1's warm subset is prose, and a byte this test is
- * unsure about belongs to the fallback rather than to the proof. */
-static bool wc_plain_byte(unsigned char c) {
-    return !(
-        c == '#' || c == '>' || c == '*' || c == '-' || c == '+' || c == '_' || c == '=' || c == '~' || c == ':' ||
-        c == '$' || c == '`' || c == '[' || c == ']' || c == '|' || c == '<' || c == '!' || c == '\t' ||
-        (c >= '0' && c <= '9')
-    );
-}
-
-static bool wc_plain_run(const unsigned char *bytes, markdown_core_bufsize length) {
-    markdown_core_bufsize i;
-    for (i = 0; i < length; i++) {
-        if (!wc_plain_byte(bytes[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-/* The open spine must be the document with at most one paragraph under it,
- * and every byte in play — the held line and the paragraph's accumulated
- * content — must be prose. Anything else takes the fallback in L1, so it is
- * not this proof's subject. */
-static bool wc_eligible(const markdown_core_parser *parser) {
-    markdown_core_node *root = parser->root;
-    markdown_core_node *child;
-    if (!root || parser->oom || parser->internal_error) {
-        return false;
-    }
-    if (markdown_core_node_get_type(root) != MARKDOWN_CORE_NODE_DOCUMENT || !(root->flags & MARKDOWN_CORE_NODE__OPEN)) {
-        return false;
-    }
-    if (parser->linebuf.size > 0) {
-        if (parser->linebuf.ptr[0] == ' ' ||
-            !wc_plain_run((const unsigned char *)parser->linebuf.ptr, parser->linebuf.size)) {
-            return false;
-        }
-    }
-    child = root->last_child;
-    if (!child || !(child->flags & MARKDOWN_CORE_NODE__OPEN)) {
-        /* Nothing open below the document: the held line, if any, will open
-         * whatever it opens, and the close has only the root to undo. */
-        return true;
-    }
-    if (markdown_core_node_get_type(child) != MARKDOWN_CORE_NODE_PARAGRAPH || child->last_child) {
-        return false;
-    }
-    return wc_plain_run((const unsigned char *)child->content.ptr, child->content.size);
-}
-
-/* Refines every unit that has settled and has not been refined yet, in
- * document order, and records which ones so the caller can retire exactly
- * those. A unit that was refined on an earlier tick is left alone — that is
- * the whole point: its inline nodes stay the same objects, and so do their
- * identities. */
-static size_t wc_refine_unrefined(
-    markdown_core_parser *parser,
-    markdown_core_node *root,
-    markdown_core_node **refined,
-    size_t capacity
-) {
-    markdown_core_node *block;
-    size_t count = 0;
-    for (block = root->first_child; block; block = block->next) {
-        /* Settled means CLOSED. An open unit is still growing, and refining
-         * it would put inline children on a buffer the next line appends to
-         * — the borrow that becomes a use-after-free. It is refined by the
-         * close instead, tentatively, and retired again at the undo. */
-        if (markdown_core_node_get_type(block) != MARKDOWN_CORE_NODE_PARAGRAPH ||
-            (block->flags & MARKDOWN_CORE_NODE__OPEN) || block->first_child || block->content.size == 0) {
-            continue;
-        }
-        if (count == capacity) {
-            return capacity + 1; /* the caller treats this as "cannot prove" */
-        }
-        /* The survivor, not the pointer passed in: a postprocessor may have
-         * replaced this unit and freed it. */
-        refined[count++] = markdown_core_parser_warm_refine_settled(parser, block);
-        block = refined[count - 1];
-    }
-    return count;
-}
 
 /* The projection a tick would publish at this cut, against the only thing it
  * is allowed to be: a one-shot parse of exactly the bytes fed so far. */
@@ -3233,6 +3181,11 @@ static const char *const WC_TEXTS[] = {
     "prose that keeps going and going and stops mid word here",
     "first para\n\nsecond para\r\nwith a crlf line\r\n",
     "a\n\nb\n\nc\n\nd",
+    /* Headings: an ATX heading is the open leaf after its line ending and a
+     * setext one after its underline, and both are shapes the predicate
+     * admits; the cuts inside "# Ti" and inside "==" are its to refuse. */
+    "# Title\n\nbody text\nmore\n",
+    "Title\n===\n\nbody\n",
     /* Multi-byte text, so cuts land inside characters as well as inside
      * words — the split the streaming contract calls legal and the one a
      * token stream produces constantly. */
@@ -3269,11 +3222,18 @@ static int case_warm_close_undo(void) {
             }
             markdown_core_parser_feed(parser, text, cut);
             total++;
-            if (!wc_eligible(parser)) {
+            /* The engine's own predicate decides which cuts are this proof's
+             * subject; the oracle below is what makes that a proof rather
+             * than the engine agreeing with itself. */
+            if (!markdown_core_parser_warm_eligible_at_eof(parser)) {
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
                 continue;
             }
+            /* Whatever the feed settled is refined once, here, and is the
+             * tick's PERMANENT work: the state the undo has to restore is the
+             * one after it. A fresh parser settles its whole closed part. */
+            markdown_core_parser_warm_settle(parser, NULL);
             before = markdown_core_parser_warm_fingerprint(parser);
             /* The engine's own tick: publish a projection, check it against
              * a one-shot parse of the same bytes, and give it back. */
@@ -3288,6 +3248,7 @@ static int case_warm_close_undo(void) {
             if (wc_projection_matches(parser, text, cut) != 0) {
                 fprintf(stderr, "warm_close_undo: text %zu cut %zu published a wrong projection\n", text_index, cut);
                 markdown_core_parser_warm_retract(parser, undo);
+                markdown_core_parser_warm_undo_free(undo);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
                 return -1;
@@ -3307,9 +3268,16 @@ static int case_warm_close_undo(void) {
             }
 
             /* The verdict that matters: whatever the fingerprint covers, the
-             * bytes that follow must land exactly where they would have. */
+             * bytes that follow must land exactly where they would have. The
+             * continued parser settles what the rest of the text closed, over
+             * the record it retracted; the twin is fed once and settles once.
+             * Refining unit by unit as a stream settles them must leave
+             * exactly the state that refining everything at the end would. */
             markdown_core_parser_feed(parser, text + cut, length - cut);
+            markdown_core_parser_warm_settle(parser, undo);
+            markdown_core_parser_warm_undo_free(undo);
             markdown_core_parser_feed(twin, text, length);
+            markdown_core_parser_warm_settle(twin, NULL);
             continued = markdown_core_parser_warm_fingerprint(parser);
             uninterrupted = markdown_core_parser_warm_fingerprint(twin);
             if (result == 0 && continued != uninterrupted) {
@@ -3374,9 +3342,7 @@ static int case_warm_tick_stream(void) {
             size_t stride = strides[stride_index];
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
-            markdown_core_node *kept[WC_MAX_REFINED];
-            markdown_core_warm_undo *undo;
-            size_t settled = 0;
+            markdown_core_warm_undo *previous = NULL;
             size_t fed = 0;
             int failed = 0;
 
@@ -3388,28 +3354,41 @@ static int case_warm_tick_stream(void) {
             }
             while (fed < length && !failed) {
                 size_t piece = length - fed < stride ? length - fed : stride;
+                markdown_core_warm_undo *undo;
                 uint64_t before, after;
 
+                /* The tick, in the engine's own order: feed, settle what the
+                 * feed closed over the record retracted at the end of the
+                 * previous tick, publish. The first tick has no record, so it
+                 * settles as a fresh parser does. */
                 markdown_core_parser_feed(parser, text + fed, piece);
                 fed += piece;
-                if (!wc_eligible(parser)) {
-                    continue;
+                markdown_core_parser_warm_settle(parser, previous);
+                markdown_core_parser_warm_undo_free(previous);
+                previous = NULL;
+                if (!markdown_core_parser_warm_eligible_at_eof(parser)) {
+                    /* The texts are chosen to stay inside the prose subset at
+                     * every cut; a stream that leaves it would need a record
+                     * to settle over that no publish made, so this fails
+                     * loudly instead of proving less. */
+                    fprintf(
+                        stderr,
+                        "warm_tick_stream: text %zu stride %zu left the prose subset at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                    break;
                 }
                 ticks++;
 
-                /* Whatever the FEED settled is refined once, here, and keeps
+                /* Whatever the feed settled is refined once, above, and keeps
                  * its inline children from now on — that is what makes a
                  * settled node stay the same node, and its ids stay the same
-                 * ids, tick after tick. */
-                settled = wc_refine_unrefined(parser, parser->root, kept, WC_MAX_REFINED);
-                if (settled > WC_MAX_REFINED) {
-                    failed = 1;
-                    fprintf(stderr, "warm_tick_stream: too many units settled at once\n");
-                    break;
-                }
-                /* The state the undo has to restore is THIS one: the feed and
-                 * what it settled are the tick's permanent work, and only the
-                 * projection that follows is speculative. */
+                 * ids, tick after tick. The state the undo has to restore is
+                 * THIS one: the feed and what it settled are the tick's
+                 * permanent work, and only the projection is speculative. */
                 before = markdown_core_parser_warm_fingerprint(parser);
 
                 /* THE ENGINE'S OWN TICK: publish a projection, check it, and
@@ -3423,7 +3402,10 @@ static int case_warm_tick_stream(void) {
                         stride,
                         fed
                     );
-                    markdown_core_parser_warm_retract(parser, undo);
+                    if (undo) {
+                        markdown_core_parser_warm_retract(parser, undo);
+                        markdown_core_parser_warm_undo_free(undo);
+                    }
                     failed = 1;
                     break;
                 }
@@ -3439,18 +3421,19 @@ static int case_warm_tick_stream(void) {
                     );
                     failed = 1;
                 }
+                /* The retracted record is what the NEXT tick settles over, and
+                 * what carries the retired frontier it will pair against. */
+                previous = undo;
             }
+            markdown_core_parser_warm_undo_free(previous);
             if (!failed) {
-                /* The twin is fed once and settle-refined once, which is the
+                /* The twin is fed once and settled once, which is the
                  * comparison that matters: refining unit by unit as a stream
                  * settles them must leave exactly the state that refining the
                  * same units at the end would. */
                 markdown_core_parser_feed(twin, text, length);
-                if (wc_refine_unrefined(twin, twin->root, kept, WC_MAX_REFINED) > WC_MAX_REFINED) {
-                    failed = 1;
-                }
-                if (!failed &&
-                    markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
+                markdown_core_parser_warm_settle(twin, NULL);
+                if (markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
                     fprintf(
                         stderr,
                         "warm_tick_stream: text %zu stride %zu drifted from an uninterrupted parse\n",
@@ -3475,6 +3458,273 @@ static int case_warm_tick_stream(void) {
     return 0;
 }
 
+/* --- warm_append_stream ---------------------------------------------------- */
+
+/* THE ENGINE'S APPEND PATH, streamed. warm_tick_stream proves the tick on a
+ * bare parser; this drives markdown_core_document_append itself, in
+ * token-sized pieces, over texts that keep crossing the prose boundary — so
+ * warm ticks, rebuilds, and every transition between them happen — and pins
+ * two things the equivalence corpus cannot see from outside the engine:
+ *
+ *   - after every append the head's tree dumps as a one-shot parse of the
+ *     bytes so far (the corpus pins this too; here it is one shape away from
+ *     the second check),
+ *   - at the end of the stream the head's PARSER is exactly where a parser
+ *     that was fed all bytes once, settled once and closed the same way would
+ *     be — the warm fingerprint, which sees the parser's state, the tables,
+ *     the marks and every node's flags and coordinates, not just the dump.
+ *
+ * And a third: the id of the first settled block never changes across the
+ * whole stream, warm ticks and rebuilds alike. That is what "a node the
+ * append did not reach keeps its id" means at the boundary the design moves.
+ *
+ * The ledger is printed and gated: a stream this prose-heavy that did not go
+ * warm on most ticks is a predicate that narrowed, and the gate says so. */
+/* Every (id, revision) of a tree in document order, so two trees can be
+ * compared as identity ledgers without either being alive at the same time
+ * as the other — a superseded receiver answers for no tree. */
+typedef struct was_ledger {
+    uint64_t *rows; /* id, rev, id, rev, ... */
+    size_t count;
+    size_t capacity;
+    bool failed;
+} was_ledger;
+
+static void was_ledger_capture(was_ledger *ledger, const markdown_core_node *node) {
+    for (; node; node = markdown_core_node_get_next_sibling(node)) {
+        if (ledger->count + 2 > ledger->capacity) {
+            size_t capacity = ledger->capacity ? ledger->capacity * 2 : 256;
+            uint64_t *grown = (uint64_t *)realloc(ledger->rows, capacity * sizeof(*grown));
+            if (!grown) {
+                ledger->failed = true;
+                return;
+            }
+            ledger->rows = grown;
+            ledger->capacity = capacity;
+        }
+        ledger->rows[ledger->count++] = markdown_core_node_get_id(node);
+        ledger->rows[ledger->count++] = markdown_core_node_get_revision(node);
+        was_ledger_capture(ledger, markdown_core_node_get_first_child(node));
+    }
+}
+
+/* An EMPTY append is a mutation that changes no projection, and the revision
+ * contract says a revision moves only when a projection does: on the warm
+ * path that is the frontier being retracted and re-published as the same
+ * nodes, and every one of them must keep both its id and its revision. */
+static int was_empty_append_moves_nothing(markdown_core_document **document, size_t text_index, size_t stride) {
+    was_ledger before = {NULL, 0, 0, false};
+    was_ledger after = {NULL, 0, 0, false};
+    markdown_core_error *error = NULL;
+    markdown_core_document *successor;
+    int result = 0;
+
+    was_ledger_capture(&before, markdown_core_document_root(*document));
+    successor = markdown_core_document_append(*document, mc_sv("", 0), &error);
+    if (!successor) {
+        markdown_core_error_free(error);
+        free(before.rows);
+        fprintf(stderr, "warm_append_stream: text %zu stride %zu empty append failed\n", text_index, stride);
+        return -1;
+    }
+    markdown_core_document_free(*document);
+    *document = successor;
+    was_ledger_capture(&after, markdown_core_document_root(*document));
+    if (before.failed || after.failed) {
+        result = -1;
+    } else if (
+        before.count != after.count || memcmp(before.rows, after.rows, before.count * sizeof(*before.rows)) != 0
+    ) {
+        fprintf(
+            stderr,
+            "warm_append_stream: text %zu stride %zu: an empty append moved an id or a revision\n",
+            text_index,
+            stride
+        );
+        result = -1;
+    }
+    free(before.rows);
+    free(after.rows);
+    return result;
+}
+
+static int case_warm_append_stream(void) {
+    static const char *const texts[] = {
+        "Streaming prose arrives a few bytes at a time, and the paragraph keeps going\n"
+        "across lines until a blank line ends it.\n\n"
+        "# A heading forces a rebuild\n\n"
+        "Then prose again, which the rebuild's end state lets grow in place, with an\n"
+        "email like a@b.co and www.example.com and *emphasis* and `code` in it.\n\n"
+        "- a list item sends the tick to the rebuild\n- and so does the next\n\n"
+        "Back to prose for the tail, which stops mid",
+        "\xc3\xbc"
+        "ber caf\xc3\xa9 und stra"
+        "\xc3\x9f"
+        "e\n\nzweiter absatz mit \xe2\x80\x9c"
+        "quotes\xe2\x80\x9d und einem [link](http://x.y) drin\n\n"
+        "> a quote\n\ndanach wieder prosa\r\nmit crlf\r\n\r\nund ende",
+        /* Two lines the predicate refuses for reasons a census had to find:
+         * a table delimiter row whose leading spacing is a vertical tab (the
+         * table scanner accepts \v and \f where nothing else in the block
+         * phase skips them), which retypes the paragraph above it, and the
+         * document's byte-order mark hiding a definition at the first line's
+         * true start. Both must land on the rebuild and equal a one-shot
+         * parse; a predicate that admitted either would publish a projection
+         * it cannot reopen, or a table it never refined. */
+        "header a | header b\n\x0b---|---\nrow | row\n\nprose after the table\n",
+        "\xef\xbb\xbf[foo]: /url\n\nsee [foo] and more prose\n",
+        NULL,
+    };
+    static const size_t strides[] = {1, 3, 7};
+    markdown_core_parse_options options;
+    size_t text_index;
+    uint64_t warm_total = 0;
+    uint64_t rebuilt_total = 0;
+
+    markdown_core_parse_options_init(&options);
+    for (text_index = 0; texts[text_index]; text_index++) {
+        const char *text = texts[text_index];
+        size_t length = strlen(text);
+        size_t stride_index;
+        for (stride_index = 0; stride_index < sizeof(strides) / sizeof(strides[0]); stride_index++) {
+            size_t stride = strides[stride_index];
+            markdown_core_error *error = NULL;
+            markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+            markdown_core_parser *twin;
+            markdown_core_node_id first_id = 0;
+            size_t fed = 0;
+            size_t appends = 0;
+            int failed = 0;
+
+            if (!document) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "warm_append_stream: open failed\n");
+                return -1;
+            }
+            while (fed < length && !failed) {
+                size_t piece = length - fed < stride ? length - fed : stride;
+                markdown_core_document *successor =
+                    markdown_core_document_append(document, mc_sv(text + fed, piece), &error);
+                const markdown_core_node *first;
+                if (!successor) {
+                    fprintf(
+                        stderr,
+                        "warm_append_stream: text %zu stride %zu append at %zu failed: %s\n",
+                        text_index,
+                        stride,
+                        fed,
+                        error ? (const char *)markdown_core_error_get_message(error).data : "?"
+                    );
+                    markdown_core_error_free(error);
+                    failed = 1;
+                    break;
+                }
+                markdown_core_document_free(document);
+                document = successor;
+                fed += piece;
+                appends++;
+                if (wc_projection_matches(document->chain->head.parser, text, fed) != 0) {
+                    fprintf(
+                        stderr,
+                        "warm_append_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                    break;
+                }
+                first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+                if (first) {
+                    markdown_core_node_id id = markdown_core_node_get_id(first);
+                    /* The first block settles once its second line or its
+                     * blank line arrives; from then on nothing may re-mint it,
+                     * warm tick or rebuild. Before that it is the frontier
+                     * itself and may legitimately be a different node. */
+                    if (fed > 90 && first_id == 0) {
+                        first_id = id;
+                    } else if (first_id != 0 && id != first_id) {
+                        fprintf(
+                            stderr,
+                            "warm_append_stream: text %zu stride %zu re-minted the first block at %zu bytes\n",
+                            text_index,
+                            stride,
+                            fed
+                        );
+                        failed = 1;
+                        break;
+                    }
+                }
+            }
+            if (!failed) {
+                /* The twin: fed once, settled once, closed the way the head's
+                 * last build closed. */
+                twin = sweep_parser_new(NULL);
+                if (!twin) {
+                    failed = 1;
+                } else {
+                    markdown_core_parser_feed(twin, text, length);
+                    if (markdown_core_parser_warm_eligible_at_eof(twin)) {
+                        markdown_core_warm_undo *undo;
+                        markdown_core_parser_warm_settle(twin, NULL);
+                        undo = markdown_core_parser_warm_publish(twin);
+                        markdown_core_parser_warm_undo_free(undo);
+                    } else {
+                        markdown_core_parser_finalize_blocks(twin);
+                        markdown_core_parser_warm_refine(twin);
+                    }
+                    if (markdown_core_parser_warm_fingerprint(document->chain->head.parser) !=
+                        markdown_core_parser_warm_fingerprint(twin)) {
+                        fprintf(
+                            stderr,
+                            "warm_append_stream: text %zu stride %zu ended somewhere a once-fed parser does not\n",
+                            text_index,
+                            stride
+                        );
+                        failed = 1;
+                    }
+                    markdown_core_parser_free(twin);
+                }
+            }
+            if (!failed && was_empty_append_moves_nothing(&document, text_index, stride) != 0) {
+                failed = 1;
+            } else if (!failed) {
+                appends++;
+            }
+            if (!failed && document->chain->warm_ticks + document->chain->rebuilt_ticks != appends) {
+                fprintf(stderr, "warm_append_stream: the ledger does not add up to the appends served\n");
+                failed = 1;
+            }
+            warm_total += document->chain->warm_ticks;
+            rebuilt_total += document->chain->rebuilt_ticks;
+            markdown_core_document_free(document);
+            if (failed) {
+                return -1;
+            }
+        }
+    }
+    printf(
+        "warm_append_stream: %llu warm ticks, %llu rebuilds\n",
+        (unsigned long long)warm_total,
+        (unsigned long long)rebuilt_total
+    );
+    /* Prose-heavy texts must go warm on most ticks — every byte inside a
+     * list or a quote is a rebuild, and that is the honest price of a
+     * predicate that admits prose only — but a share below sixty percent on
+     * these texts is a predicate that narrowed, and it fails here rather
+     * than passing quietly on the fallback's correctness. */
+    if (warm_total * 10 < (warm_total + rebuilt_total) * 6) {
+        fprintf(
+            stderr,
+            "warm_append_stream: only %llu of %llu ticks were warm\n",
+            (unsigned long long)warm_total,
+            (unsigned long long)(warm_total + rebuilt_total)
+        );
+        return -1;
+    }
+    return 0;
+}
+
 /* --- chain_poison --------------------------------------------------------- */
 
 /* D5 under systematic allocation loss: sweep the failure across the whole
@@ -3483,8 +3733,7 @@ static int case_warm_tick_stream(void) {
  * the chain, after which every further mutation fails deterministically (the
  * guards fire before any allocation, so the errors are deterministic even
  * under the failing allocator) and only free remains. */
-static int case_chain_poison(void) {
-    static const char seed[] = "alpha [x] and *emph*\n\n[x]: /url\n";
+static int chain_poison_sweep(const char *const *chunks, const char *name) {
     long fail_at;
     bool exhausted = false;
 
@@ -3492,21 +3741,61 @@ static int case_chain_poison(void) {
         sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
         markdown_core_error *error = NULL;
         markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, true, &error);
-        markdown_core_document *next;
+        markdown_core_document *next = NULL;
+        size_t served = 0;
+        size_t i;
         if (!head) {
             /* The loss fell inside the open: not this case's subject. */
             markdown_core_error_free(error);
             continue;
         }
-        next = markdown_core_document_append(head, mc_sv(seed, sizeof(seed) - 1), &error);
+        for (i = 0; chunks[i]; i++) {
+            next = markdown_core_document_append(head, mc_sv(chunks[i], strlen(chunks[i])), &error);
+            if (!next) {
+                break;
+            }
+            markdown_core_document_free(head);
+            head = next;
+            served++;
+        }
         if (next) {
-            /* Success must be whole: the chain stays usable, and once the
-             * countdown outlives the pipeline the sweep has covered every
-             * ordinal. */
+            /* Success must be WHOLE — the tree is the one-shot parse of every
+             * chunk, not a quietly thinner one (a held line the feed could
+             * not grow was once exactly that) — and the chain stays usable.
+             * Once the countdown outlives the pipeline the sweep has covered
+             * every ordinal. */
+            size_t total = 0;
+            for (i = 0; chunks[i]; i++) {
+                total += strlen(chunks[i]);
+            }
+            {
+                char *joined = (char *)malloc(total + 1);
+                size_t at = 0;
+                if (!joined) {
+                    markdown_core_document_free(head);
+                    return -1;
+                }
+                for (i = 0; chunks[i]; i++) {
+                    memcpy(joined + at, chunks[i], strlen(chunks[i]));
+                    at += strlen(chunks[i]);
+                }
+                joined[total] = 0;
+                if (wc_projection_matches(head->chain->head.parser, joined, total) != 0) {
+                    fprintf(
+                        stderr,
+                        "chain_poison(%s): a successful pipeline published a wrong tree at allocation %ld\n",
+                        name,
+                        fail_at
+                    );
+                    free(joined);
+                    markdown_core_document_free(head);
+                    return -1;
+                }
+                free(joined);
+            }
             if (sweep.countdown > 0) {
                 exhausted = true;
             }
-            markdown_core_document_free(next);
             markdown_core_document_free(head);
             continue;
         }
@@ -3514,17 +3803,28 @@ static int case_chain_poison(void) {
         error = NULL;
         /* The receiver still describes exactly its own bytes. The chain holds
          * the text now, so a failed append is only safe if it never handed
-         * its chunk to the chain: the bytes are stored after the parse and
-         * the diff have both succeeded, and the reservation that makes that
+         * its chunk to the chain: the bytes are stored only once the tick has
+         * succeeded — warm or rebuilt — and the reservation that makes that
          * storing infallible happens before either. */
-        if (markdown_core_document_length(head) != 0) {
-            fprintf(stderr, "chain_poison: a failed append extended the receiver's text at allocation %ld\n", fail_at);
-            markdown_core_document_free(head);
-            return -1;
+        {
+            size_t expected = 0;
+            for (i = 0; i < served; i++) {
+                expected += strlen(chunks[i]);
+            }
+            if (markdown_core_document_length(head) != expected) {
+                fprintf(
+                    stderr,
+                    "chain_poison(%s): a failed append extended the receiver's text at allocation %ld\n",
+                    name,
+                    fail_at
+                );
+                markdown_core_document_free(head);
+                return -1;
+            }
         }
         if (markdown_core_document_append(head, mc_sv("x", 1), &error) != NULL || !error ||
             markdown_core_error_get_code(error) != MARKDOWN_CORE_ERROR_INVALID_ARGUMENT) {
-            fprintf(stderr, "chain_poison: a poisoned chain accepted an append at allocation %ld\n", fail_at);
+            fprintf(stderr, "chain_poison(%s): a poisoned chain accepted an append at allocation %ld\n", name, fail_at);
             markdown_core_error_free(error);
             markdown_core_document_free(head);
             return -1;
@@ -3533,10 +3833,24 @@ static int case_chain_poison(void) {
         markdown_core_document_free(head);
     }
     if (!exhausted) {
-        fprintf(stderr, "chain_poison: the sweep never outlived the pipeline\n");
+        fprintf(stderr, "chain_poison(%s): the sweep never outlived the pipeline\n", name);
         return -1;
     }
     return 0;
+}
+
+/* Two pipelines, because the append has two: the definition-bearing seed
+ * takes the rebuild (a `[` at a line start), and the prose stream takes the
+ * warm tick on every append after the first — retract, feed, settle, publish,
+ * frontier handover, restamp — so the sweep reaches every allocation on both
+ * and every one of them must poison or succeed whole. */
+static int case_chain_poison(void) {
+    static const char *const rebuilt[] = {"alpha [x] and *emph*\n\n[x]: /url\n", NULL};
+    static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", NULL};
+    if (chain_poison_sweep(rebuilt, "rebuilt") != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(warm, "warm");
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */
@@ -5037,6 +5351,7 @@ static const concrete_case CASES[] = {
     {"warm_close_undo", case_warm_close_undo},
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_ledger", case_warm_tick_ledger},
+    {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
     {"inline_shape", case_inline_shape},

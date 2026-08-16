@@ -601,10 +601,11 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * canonical text, and nothing else is.
  *
  * A failed append POISONS THE CHAIN — "the chain is done": every further
- * mutation fails deterministically, only free remains, the caller holds
- * every byte it ever sent, and recovery is a new chain. A rejected argument
- * (NULL data with nonzero length, a stale receiver) fails the call, never
- * the chain.
+ * mutation fails deterministically, only free remains — the head answers
+ * for no tree from then on, exactly as a superseded handle does, because a
+ * failure may have left the tree half-grown — the caller holds every byte
+ * it ever sent, and recovery is a new chain. A rejected argument (NULL data
+ * with nonzero length, a stale receiver) fails the call, never the chain.
  */
 
 /**

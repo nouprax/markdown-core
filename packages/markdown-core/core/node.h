@@ -183,6 +183,14 @@ void markdown_core_node_stamp(markdown_core_node *node);
 /** Stamps every node of `root`'s subtree, each as the walk leaves it. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
 
+/** Makes every chunk-valued field of ONE node its own: a literal, a label,
+ * a destination or a title that borrows another buffer's bytes is copied
+ * out, and one already owned is left alone. The union's chunk fields are
+ * exactly the ones markdown_core_node_free releases, so this and that free
+ * are the two readers of one list. Returns false when a copy could not be
+ * allocated; whatever was copied stays copied and correct. */
+bool markdown_core_node_own_chunks(markdown_core_node *node);
+
 /*
  * Parser-internal mutation primitives. Callers must already have proved
  * allocator, containment, and non-ancestry invariants from grammar state.

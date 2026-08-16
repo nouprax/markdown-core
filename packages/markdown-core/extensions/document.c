@@ -24,18 +24,29 @@
 #include <node.h>
 #include <parser.h>
 
-// A document owns its committed tree and its diagnostics; its TEXT belongs
-// to the chain, which every handle shares along with the revision counter,
-// the series salt, the poison flag, and the base allocator. A document
-// names its text by watermark — the chain's first `length` bytes — because
-// appends only ever add at the end, so what a document describes is fixed
-// the moment it is built even though the chain keeps growing.
+// A document is a handle onto its chain: the chain owns the TEXT (one buffer
+// every handle shares, a document being a length watermark into it), the
+// revision counter, the series salt, the poison flag, the base allocator, and
+// ONE GENERATION — the head's tree, its diagnostics, and the parser that
+// built it, kept at end of feed. A document names its text by watermark
+// because appends only ever add at the end, so what a document describes is
+// fixed the moment it is built even though the chain keeps growing.
 //
-// Every append is still one full parse of all bytes so far plus a diff
-// against the previous document (document_build below); the equivalence
-// suite pins that the result always equals a one-shot parse of the same
-// text. What a tick no longer pays is the bytes: the chunk is copied once
-// into the chain's buffer instead of the whole document being copied twice.
+// An append is one of two ticks, and which one is decided BEFORE anything is
+// written (core/blocks.c, the eligibility predicate):
+//
+//   WARM  — the head's tree grows in place: the previous projection is
+//           retracted, the chunk is fed, what the feed closed is settled, and
+//           a new projection is published; ids hand over at the frontier and
+//           the touched spine is restamped. Cost: the chunk, the units it
+//           closed, and the open leaf. Prose shapes only, for now.
+//   REBUILT — today's D6: a fresh parser over every byte so far, diffed
+//           against the head for the (id, revision) handover. Exactly as
+//           correct as the warm tick and O(document); every shape the warm
+//           path does not take yet lands here, and the ledger counts it.
+//
+// Either way the equivalence suite pins the same thing: after every append
+// the result equals a one-shot parse of the same text.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -105,12 +116,121 @@ markdown_core_parser *markdown_core_document_new_parser(
     return parser;
 }
 
-/* PARSE. A pure function of (bytes, options): it fills this freshly built
- * document's tree from the chain's stored bytes plus the ones this mutation
- * brought, which together are exactly the document's text. The
- * parser's definition maps serve the parse's own inline phase and die with
- * the parser: the tree carries every published answer. No predecessor, no
- * ids — identity is the diff's to assign. */
+/* The parser's diagnostics become the generation's, converted from the
+ * core-side record to the facade type, and rebuilt whole at every close: a
+ * warm generation's parser keeps raising them as the stream grows, and a
+ * retract takes back the ones its close raised. A conversion that cannot
+ * allocate leaves the generation with none: a missing underline is not a
+ * wrong tree, and failing an otherwise good parse over one would be the
+ * worse trade. */
+static void generation_take_diagnostics(document_generation *generation, const markdown_core_parser *parser) {
+    markdown_core_mem *mem = generation->mem;
+    if (generation->diagnostics) {
+        mem->free(mem, generation->diagnostics);
+        generation->diagnostics = NULL;
+    }
+    generation->diagnostic_count = 0;
+    if (parser->diagnostic_count > 0) {
+        markdown_core_diagnostic *rows =
+            (markdown_core_diagnostic *)mem->calloc(mem, parser->diagnostic_count, sizeof(*rows));
+        if (rows) {
+            size_t i;
+            for (i = 0; i < parser->diagnostic_count; i++) {
+                rows[i].code = (markdown_core_diagnostic_code)parser->diagnostics[i].code;
+                rows[i].scope.start.line = parser->diagnostics[i].start_line;
+                rows[i].scope.start.column = parser->diagnostics[i].start_column;
+                rows[i].scope.end.line = parser->diagnostics[i].end_line;
+                rows[i].scope.end.column = parser->diagnostics[i].end_column;
+            }
+            generation->diagnostics = rows;
+            generation->diagnostic_count = parser->diagnostic_count;
+        }
+    }
+}
+
+/* Every allocation-loss route a parse has converges on `oom`: block and
+ * inline structures set it directly, the definition maps carry their own
+ * sticky flag, and a capture lost after the last line boundary — the
+ * finalize-time harvest has no later line to fold it into — surfaces through
+ * capture_lost. refine_blocks folds them before its verdict; a build that
+ * closes some other way must fold them itself. */
+static bool parser_failed(markdown_core_parser *parser) {
+    if ((parser->refmap && parser->refmap->oom) || (parser->footnote_defs && parser->footnote_defs->oom)) {
+        parser->oom = true;
+    }
+    if (parser->capture_lost) {
+        parser->oom = true;
+    }
+    /* A held partial line the feed could not grow is bytes the parse never
+     * saw: a lost line, not a wrong tree — and a lost line is a failed
+     * parse, whichever way the build closes. */
+    if (parser->linebuf.oom) {
+        parser->oom = true;
+    }
+    return parser->oom || parser->internal_error;
+}
+
+static void set_parse_error(const markdown_core_parser *parser, markdown_core_error **error) {
+    bool allocation_failed = parser->oom;
+    bool internal_error = parser->internal_error;
+    markdown_core_ast_set_error(
+        error,
+        allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
+        allocation_failed || !internal_error ? "could not parse the document text"
+                                             : "parser refinement invariant failed"
+    );
+}
+
+/* HOW EVERY BUILD ENDS. The parser is at end of feed with the tree still
+ * open. If its open state is one a publish can be retracted from — the
+ * eligibility predicate, asked of the state alone since no chunk has
+ * arrived — the closed part is settled once and for good and the spine is
+ * PUBLISHED, so the record that comes back lets the next append reopen the
+ * parser and grow this very tree. Otherwise the parser is closed for good:
+ * the same two passes refine_blocks runs, without the detach that would
+ * end its ownership, and no record — the next append rebuilds. Either way
+ * the tree equals a one-shot parse of the same bytes, is stamped for the
+ * diff, and the parser stays with the generation as the tree's owner. */
+static bool generation_close(document_generation *generation, markdown_core_error **error) {
+    markdown_core_parser *parser = generation->parser;
+
+    if (markdown_core_parser_warm_eligible_at_eof(parser)) {
+        /* Settle before close: exact here, because an eligible open state
+         * harvests nothing at its close — the definition tables are already
+         * what a one-shot parse would refine against. */
+        markdown_core_parser_warm_settle(parser, NULL);
+        generation->undo = markdown_core_parser_warm_publish(parser);
+        if (!generation->undo) {
+            markdown_core_ast_set_error(
+                error,
+                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                "could not parse the document text"
+            );
+            return false;
+        }
+    } else {
+        markdown_core_parser_finalize_blocks(parser);
+        markdown_core_parser_warm_refine(parser);
+    }
+    if (parser_failed(parser)) {
+        set_parse_error(parser, error);
+        return false;
+    }
+    generation->root = parser->root;
+    /* WHERE THE TREE IS FINGERPRINTED (see refine_blocks' note on why it is
+     * one pass over the settled tree and nothing earlier): the append diff
+     * pairs on these hashes, and a warm tick restamps only what it touches. */
+    markdown_core_node_stamp_tree(parser->root);
+    generation_take_diagnostics(generation, parser);
+    return true;
+}
+
+/* PARSE. A pure function of (bytes, options): it fills this fresh generation
+ * from the chain's stored bytes plus the ones this mutation brought, which
+ * together are exactly the document's text. The parser's definition maps
+ * serve its own inline phase and stay with it: the tree carries every
+ * published answer. No predecessor, no ids — identity is the diff's to
+ * assign. */
 static bool document_parse_text(
     markdown_core_chain *chain,
     document_generation *generation,
@@ -118,12 +238,12 @@ static bool document_parse_text(
     markdown_core_error **error
 ) {
     markdown_core_parser *parser;
-    markdown_core_node *root;
 
     parser = markdown_core_document_new_parser(&chain->options, generation->mem, error);
     if (!parser) {
         return false;
     }
+    generation->parser = parser;
 
     // Fed in two pieces: the chain's stored bytes, then the ones this
     // mutation brought. They are separate only because the arriving bytes are
@@ -145,45 +265,111 @@ static bool document_parse_text(
          * seam a later chunk may still complete. */
         markdown_core_parser_feed(parser, (const char *)arriving.data, arriving.length);
     }
-    markdown_core_parser_finalize_blocks(parser);
-    root = markdown_core_parser_refine_blocks(parser);
-    if (!root) {
-        bool allocation_failed = parser->oom;
-        bool internal_error = parser->internal_error;
-        markdown_core_parser_free(parser); // frees the definition maps with it
-        markdown_core_ast_set_error(
-            error,
-            allocation_failed || !internal_error ? MARKDOWN_CORE_ERROR_ALLOCATION_FAILED : MARKDOWN_CORE_ERROR_INTERNAL,
-            allocation_failed || !internal_error ? "could not parse the document text"
-                                                 : "parser refinement invariant failed"
-        );
-        return false;
+    return generation_close(generation, error);
+}
+
+/* THE WARM TICK: the head's tree grows in place. The record of the previous
+ * publish is retracted, which reopens the spine and puts the held line back
+ * while keeping what that close had appended — the frontier — detached on
+ * the record; the chunk is fed; the units the feed closed are settled once
+ * and for good; and a new projection is published. Then identity: for each
+ * block that was open before the feed, deepest first, the run of children it
+ * gained pairs against the retired frontier of the same block, the run is
+ * stamped, and the block takes the tick's revision and a fresh stamp — so
+ * revisions cover by touch up the spine, and a later rebuild's diff reads
+ * hashes that are true at every level. Nothing else in the tree is visited.
+ *
+ * Only after eligibility said yes, and the caller has reserved the bytes: a
+ * failure here leaves the chain poisoned, with a tree that is structurally
+ * whole and semantically abandoned, which is what "only free remains" says. */
+static bool document_tick_warm(
+    markdown_core_chain *chain,
+    markdown_core_string chunk,
+    uint64_t revision,
+    markdown_core_error **error
+) {
+    document_generation *generation = &chain->head;
+    markdown_core_parser *parser = generation->parser;
+    markdown_core_warm_undo *before = generation->undo;
+    markdown_core_warm_undo *after = NULL;
+    bool ok = false;
+    size_t i;
+
+    generation->undo = NULL;
+    if (!markdown_core_parser_warm_retract(parser, before)) {
+        parser->internal_error = true;
+        goto done;
     }
-    /* The parser's diagnostics become this document's, converted from the
-     * core-side record to the facade type. A conversion that cannot allocate
-     * leaves the document with none: a missing underline is not a wrong
-     * tree, and failing an otherwise good parse over one would be the worse
-     * trade. */
-    if (parser->diagnostic_count > 0) {
-        markdown_core_diagnostic *rows =
-            (markdown_core_diagnostic *)
-                generation->mem->calloc(generation->mem, parser->diagnostic_count, sizeof(*rows));
-        if (rows) {
-            size_t i;
-            for (i = 0; i < parser->diagnostic_count; i++) {
-                rows[i].code = (markdown_core_diagnostic_code)parser->diagnostics[i].code;
-                rows[i].scope.start.line = parser->diagnostics[i].start_line;
-                rows[i].scope.start.column = parser->diagnostics[i].start_column;
-                rows[i].scope.end.line = parser->diagnostics[i].end_line;
-                rows[i].scope.end.column = parser->diagnostics[i].end_column;
+    markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
+    if (!markdown_core_parser_warm_settle(parser, before)) {
+        /* A spine block replaced by its own refine: the predicate excludes
+         * every shape that can, so this is the engine contradicting itself. */
+        parser->internal_error = true;
+        goto done;
+    }
+    after = markdown_core_parser_warm_publish(parser);
+    if (!after || parser_failed(parser)) {
+        goto done;
+    }
+    if (after->final) {
+        /* The close retyped or replaced a spine block. The predicate keeps
+         * every line that can out of a warm tick, so this too is the engine
+         * contradicting itself — and the record's own spine may now name a
+         * freed node, so nothing below may run. */
+        parser->internal_error = true;
+        goto done;
+    }
+    /* Identity and revision, deepest block first. The run a block gained is
+     * stamped, then diffed against the block's retired frontier — the same
+     * plan and machine a rebuild's diff runs — and the block itself takes
+     * the tick's revision only if that diff or a deeper block says something
+     * under it changed: an empty append moves no revision at all, and a byte
+     * that grows the leaf moves the leaf's and every block above it. */
+    {
+        bool changed_below = false;
+        i = before->spine_count;
+        while (i-- > 0) {
+            markdown_core_warm_open_block *entry = &before->spine[i];
+            markdown_core_node *node = entry->node;
+            markdown_core_node *run = entry->last_child ? entry->last_child->next : node->first_child;
+            markdown_core_node *child;
+            bool changed = false;
+            for (child = run; child; child = child->next) {
+                markdown_core_node_stamp_tree(child);
             }
-            generation->diagnostics = rows;
-            generation->diagnostic_count = parser->diagnostic_count;
+            if (!markdown_core_diff_frontier(chain, generation->mem, entry->retired, run, revision, &changed)) {
+                parser->oom = true;
+                goto done;
+            }
+            changed_below = changed_below || changed;
+            if (changed_below) {
+                node->last_changed_rev = revision;
+            }
+            markdown_core_node_stamp(node);
         }
     }
-    markdown_core_parser_free(parser);
-    generation->root = root;
-    return true;
+    generation_take_diagnostics(generation, parser);
+    generation->undo = after;
+    after = NULL;
+    ok = true;
+
+done:
+    if (!ok) {
+        if (after) {
+            set_parse_error(parser, error);
+        } else if (parser_failed(parser)) {
+            set_parse_error(parser, error);
+        } else {
+            markdown_core_ast_set_error(
+                error,
+                MARKDOWN_CORE_ERROR_ALLOCATION_FAILED,
+                "could not parse the document text"
+            );
+        }
+        markdown_core_parser_warm_undo_free(after);
+    }
+    markdown_core_parser_warm_undo_free(before);
+    return ok;
 }
 
 /* DIFF. `new` has a tree and no identities; `old` may be NULL. This assigns
@@ -290,13 +476,18 @@ static bool generation_open(markdown_core_chain *chain, document_generation *gen
 }
 
 /* Releases a generation whole. Pooled, that is one arena release and the
- * tree and diagnostics go with it; unpooled, it is the per-structure
- * teardown the sanitizer builds need in order to see each free. */
+ * parser, the tree, the record and the diagnostics go with it; unpooled, it
+ * is the per-structure teardown the sanitizer builds need in order to see
+ * each free: the record first (it may hold a retired frontier, detached
+ * from the tree), then the parser, which frees the tree it owns. */
 static void generation_release(document_generation *generation) {
     if (generation->arena) {
         markdown_core_arena_release(generation->arena);
     } else {
-        if (generation->root) {
+        markdown_core_parser_warm_undo_free(generation->undo);
+        if (generation->parser) {
+            markdown_core_parser_free(generation->parser);
+        } else if (generation->root) {
             markdown_core_node_free(generation->root);
         }
         if (generation->diagnostics && generation->mem) {
@@ -361,15 +552,15 @@ static void chain_release(markdown_core_chain *chain) {
 
 // --- public API -------------------------------------------------------------
 
-/* BUILD ONE DOCUMENT FROM TEXT, and diff it against `prev` if there is one.
+/* BUILD ONE DOCUMENT. `new` starts a chain; `append` extends one, and takes
+ * whichever tick the eligibility predicate allows — decided here, before a
+ * byte is written anywhere:
  *
- *     new = Document(markdown, options)
- *     diff(prev, new)
+ *     warm:    tick(head, chunk)                     — the tree grows in place
+ *     rebuilt: new = parse(all bytes); diff(head, new) — today's D6
  *
- * That is the whole of both constructors — new starts a chain, append
- * extends one. There is no incremental path, no reuse of the previous tree:
- * the previous document is INPUT to the diff and nothing else, and it is
- * untouched by this call. */
+ * Both publish the same way: the successor is the head, the receiver is
+ * superseded, the bytes are the chain's. */
 static markdown_core_document *document_build(
     const markdown_core_parse_options *options,
     markdown_core_string markdown,
@@ -380,7 +571,7 @@ static markdown_core_document *document_build(
 ) {
     markdown_core_chain *chain;
     markdown_core_document *doc;
-    document_generation generation;
+    bool warm;
 
     clear_error(error);
     /* `options` and `pooled` describe a CHAIN, so they are read only when one
@@ -401,9 +592,9 @@ static markdown_core_document *document_build(
         return NULL;
     }
     doc->chain = chain;
-    /* The revision is CLAIMED here (the diff below stamps it into nodes) but
-     * the counter advances only on success, so a failed build burns no number
-     * and adjacent published documents stay strictly +1. */
+    /* The revision is CLAIMED here (stamped into nodes below) but the counter
+     * advances only on success, so a failed build burns no number and
+     * adjacent published documents stay strictly +1. */
     doc->revision = prev ? chain->next_revision : 0;
     /* This document's text is everything the chain holds plus what arrived.
      * Room for the arriving bytes is taken BEFORE the parse so that storing
@@ -420,34 +611,61 @@ static markdown_core_document *document_build(
         markdown_core_document_free(doc);
         return NULL;
     }
-    if (!generation_open(chain, &generation, error)) {
-        markdown_core_document_free(doc);
-        return NULL;
+    /* THE DECISION, a pure probe over the previous publish's record and the
+     * arriving bytes: nothing has been retracted, fed or written yet, so a
+     * refusal costs exactly this read. */
+    warm = prev && chain->head.parser &&
+           markdown_core_parser_warm_eligible(
+               chain->head.parser,
+               chain->head.undo,
+               (const unsigned char *)markdown.data,
+               markdown.length
+           );
+    if (warm) {
+        if (!document_tick_warm(chain, markdown, doc->revision, error)) {
+            markdown_core_document_free(doc);
+            return NULL;
+        }
+        chain->warm_ticks++;
+    } else {
+        document_generation generation;
+        if (!generation_open(chain, &generation, error)) {
+            markdown_core_document_free(doc);
+            return NULL;
+        }
+        if (!document_parse_text(chain, &generation, markdown, error) || !markdown_core_document_diff(
+                                                                             chain,
+                                                                             generation.mem,
+                                                                             chain->head.root,
+                                                                             generation.root,
+                                                                             doc->revision,
+                                                                             error
+                                                                         )) {
+            generation_release(&generation);
+            markdown_core_document_free(doc);
+            return NULL;
+        }
+        /* PUBLICATION of a rebuild, in one place: the new generation replaces
+         * the head. What it replaces is released here rather than when its
+         * handle is freed, because a superseded handle answers for no tree —
+         * the chain keeps one, and this is the moment it changes hands. */
+        generation_release(&chain->head);
+        chain->head = generation;
+        if (prev) {
+            /* THE TICK LEDGER: this mutation rebuilt the document from
+             * nothing, so it reparsed every byte the document describes —
+             * which is what the bound is about, and why the bytes are
+             * counted next to the ticks. */
+            chain->rebuilt_ticks++;
+            chain->rebuilt_bytes += (uint64_t)doc->length;
+        }
     }
-    if (!document_parse_text(chain, &generation, markdown, error) ||
-        !markdown_core_document_diff(chain, generation.mem, chain->head.root, generation.root, doc->revision, error)) {
-        generation_release(&generation);
-        markdown_core_document_free(doc);
-        return NULL;
-    }
-    /* PUBLICATION, in one place: the new generation replaces the head and
-     * takes its bytes with it. What it replaces is released here rather than
-     * when its handle is freed, because a superseded handle answers for no
-     * tree — the chain keeps one, and this is the moment it changes hands. */
-    generation_release(&chain->head);
-    chain->head = generation;
     markdown_core_source_commit(chain->source, markdown.data, markdown.length);
     if (prev) {
         /* SUPERSESSION, in one place: advancing the chain clock makes the
          * successor the head (its claimed revision is now the one behind the
          * clock) and stops the receiver matching, in the same increment. */
         chain->next_revision++;
-        /* THE TICK LEDGER. This mutation rebuilt the document from nothing,
-         * so it reparsed every byte the document describes — which is what
-         * the bound is about, and why the bytes are counted next to the
-         * ticks. */
-        chain->rebuilt_ticks++;
-        chain->rebuilt_bytes += (uint64_t)doc->length;
     }
     return doc;
 }
@@ -535,12 +753,11 @@ static bool mutation_permitted(
     return true;
 }
 
-/* APPEND: the one mutation. Any byte
- * split is legal — mid-UTF-8, mid-CRLF, mid-line — because the successor's
- * projection is defined as a fresh parse of all bytes so far, and bytes are
- * all the chunk adds. The implementation is exactly that definition:
- * concatenate and rebuild whole, then diff against the receiver for the
- * (id, revision) handover.
+/* APPEND: the one mutation. Any byte split is legal — mid-UTF-8, mid-CRLF,
+ * mid-line — because the successor's projection is defined as a fresh parse
+ * of all bytes so far, and bytes are all the chunk adds. Whether the engine
+ * gets there by growing the head's tree or by rebuilding it is decided per
+ * chunk (document_build) and changes nothing a caller can see but the cost.
  *
  * A failed append poisons the chain (D5): the engine cannot say which side
  * of the failure the chunk landed on, the caller still holds every byte it
@@ -560,9 +777,8 @@ markdown_core_document *markdown_core_document_append(
      * chain's, and the successor describes them by watermark rather than by
      * copy. An empty chunk still mutates — the chain advances and the
      * receiver is superseded, and the successor's projection is
-     * byte-identical to its predecessor's. */
-    /* The chain carries the options and the pooling; an append brings only
-     * bytes. */
+     * byte-identical to its predecessor's. The chain carries the options and
+     * the pooling; an append brings only bytes. */
     successor = document_build(NULL, chunk, document, document->chain->mem, false, error);
     if (!successor) {
         document->chain->poisoned = true;

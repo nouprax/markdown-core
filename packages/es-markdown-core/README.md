@@ -122,7 +122,10 @@ the DECODE: appended bytes never move settled content, so after an append the
 binding re-decodes only what changed — decode and value construction are
 O(changed) per tick, while the JS-side index bookkeeping behind
 `document.node(id)` is O(live nodes) of pure map writes. The native append
-itself still reparses every byte sent so far. A node the append did not
+grows the tree in place for prose ticks — a paragraph continuing, a blank
+line, a new paragraph or heading — and still rebuilds from scratch on a
+tick that brings any other shape (a list, a quote, a fence, a table, a
+definition). A node the append did not
 reach is the predecessor's very value object — same `id`, same `revision`,
 same `scope`, `===`. Any split of the text is legal, mid-word,
 mid-marker, mid-line — even between the two halves of a surrogate pair: a

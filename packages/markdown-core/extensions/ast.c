@@ -83,11 +83,14 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
 }
 
 /* Whether this handle is still the chain's head — the one document whose
- * tree the chain keeps. Reads that would otherwise answer with a tree route
- * through here, so a superseded handle answers as if it had none rather than
- * describing text that has since grown past it. */
+ * tree the chain keeps — on a chain that is still whole. Reads that would
+ * otherwise answer with a tree route through here, so a superseded handle
+ * answers as if it had none rather than describing text that has since
+ * grown past it, and a poisoned chain answers as if it had none rather than
+ * showing the tree a failed append left half-grown: "only free remains" is
+ * enforced, not just documented. */
 static bool document_is_head(const markdown_core_document *document) {
-    return document && document->revision + 1 == document->chain->next_revision;
+    return document && !document->chain->poisoned && document->revision + 1 == document->chain->next_revision;
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {

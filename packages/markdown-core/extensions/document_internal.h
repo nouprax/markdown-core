@@ -7,6 +7,7 @@
 
 #include <map.h>
 #include <markdown-core.h>
+#include <parser.h>
 
 #include "source.h"
 
@@ -37,14 +38,19 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
-/* ONE BUILD'S OUTPUT: the tree and the diagnostics that describe it, and the
- * arena they came from. A generation is taken whole and released whole,
- * which is what makes a failed build cost exactly one release and a
- * successful one exactly one swap. */
+/* ONE BUILD'S OUTPUT, AND THE PARSER THAT MAY STILL GROW IT: the tree, the
+ * diagnostics that describe it, the parser that owns the tree and is kept
+ * at end of feed, the record of the publish that closed it — NULL when the
+ * close was terminal — and the arena they all came from. A generation is
+ * taken whole and released whole, which is what makes a failed build cost
+ * exactly one release and a successful one exactly one swap; a WARM tick
+ * does not make a generation, it grows this one in place. */
 typedef struct document_generation {
     markdown_core_arena *arena;
     markdown_core_mem *mem;
-    markdown_core_node *root;
+    markdown_core_parser *parser;
+    markdown_core_warm_undo *undo;
+    markdown_core_node *root; /* == parser->root; the accessors' answer */
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
 } document_generation;
@@ -86,14 +92,14 @@ typedef struct markdown_core_chain {
      * the caller holds the text, and recovery is a rebuild. */
     bool poisoned;
     /* THE TICK LEDGER. Every mutation lands in exactly one of these, and
-     * their sum is the number of mutations the chain has served. Today the
-     * warm count is structurally zero — there is no warm path yet — and the
-     * counter exists at full corpus exercise BEFORE the path it will measure,
-     * so that when the first warm tick lands the share it takes is read off a
-     * gate that has been honest all along rather than one written to greet
-     * it. The milestone's bound is about bytes, not ticks: `rebuilt_bytes` is
-     * what the fallback actually costs, since a tenth of the ticks each
-     * reparsing the whole document is not a tenth of a problem. */
+     * their sum is the number of mutations the chain has served: a WARM tick
+     * grew the head's tree in place, a REBUILT one reparsed every byte the
+     * document describes and diffed the result against the head. The
+     * counters landed at full corpus exercise BEFORE the warm path did, so
+     * its share is read off a gate that has been honest all along. The
+     * milestone's bound is about bytes, not ticks: `rebuilt_bytes` is what
+     * the fallback actually costs, since a tenth of the ticks each reparsing
+     * the whole document is not a tenth of a problem. */
     uint64_t warm_ticks;
     uint64_t rebuilt_ticks;
     uint64_t rebuilt_bytes;
@@ -171,6 +177,28 @@ bool markdown_core_diff_trees(
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev
+);
+
+/** IDENTITY HANDOVER AT THE FRONTIER of a warm tick. `fresh` is the run of
+ * children a spine block gained since the previous publish — what the feed
+ * appended and what this close appended, in that order — and `retired` is
+ * the run the previous close had appended there, detached at the retract and
+ * owning its bytes. The two are diffed exactly as a rebuild diffs two child
+ * lists — hash sweeps, positional middle by type, residue minted, each pair
+ * classified by its fields and its children — so a paired node keeps its id,
+ * keeps its revision if nothing about it changed and takes `rev` otherwise,
+ * and unpaired retired ids are never minted again. `*changed` answers
+ * whether the runs differ at all, which is what the spine block above them
+ * inherits. Requires the fresh run to be stamped. Frees nothing. Returns
+ * false on allocation failure with the fresh run partly assigned — the
+ * caller discards the tick. */
+bool markdown_core_diff_frontier(
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *retired,
+    markdown_core_node *fresh,
+    uint64_t rev,
+    bool *changed
 );
 
 /** Creates a parser configured with the document's options and extensions.

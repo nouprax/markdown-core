@@ -171,6 +171,35 @@ static void free_node_as(markdown_core_node *node) {
     }
 }
 
+bool markdown_core_node_own_chunks(markdown_core_node *node) {
+    markdown_core_mem *mem = NODE_MEM(node);
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        return markdown_core_chunk_to_cstr(mem, &node->as.code.info) != NULL &&
+               markdown_core_chunk_to_cstr(mem, &node->as.code.literal) != NULL;
+    case MARKDOWN_CORE_NODE_TEXT:
+    case MARKDOWN_CORE_NODE_HTML:
+    case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return markdown_core_chunk_to_cstr(mem, &node->as.literal) != NULL;
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return markdown_core_chunk_to_cstr(mem, &node->as.link.url) != NULL &&
+               markdown_core_chunk_to_cstr(mem, &node->as.link.title) != NULL;
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        return markdown_core_chunk_to_cstr(mem, &node->as.definition.label) != NULL &&
+               markdown_core_chunk_to_cstr(mem, &node->as.definition.url) != NULL &&
+               markdown_core_chunk_to_cstr(mem, &node->as.definition.title) != NULL;
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        return markdown_core_chunk_to_cstr(mem, &node->as.reference.label) != NULL;
+    default:
+        return true;
+    }
+}
+
 // Free a markdown_core_node list and any children.
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
