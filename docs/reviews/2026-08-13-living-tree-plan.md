@@ -219,6 +219,18 @@ FFI the nodes were fresh on.
   ladder (prose wall, appendix, flip storm) record their documented
   shapes.
 
+**Where the milestones stand (2026-08-16).** L0 merged (#104). The L1
+branch (`living-tree-l1`, PR #105) carries L1, then L2's totality and L3's
+bound gate on top of it: every close is retractable, definitions flip
+exactly the units that asked (through the probes threaded as an index),
+the fallback rate is asserted zero on every corpus, and the amortized gate
+holds prose and the nested list flat. What L3 also named — deleting
+`diff.c`'s tree diff and the whole-tree stamp — is not done and is not
+owed by the bound: the frontier pairs by the same machine, and the one
+fallback left (a third-party extension block whose payload the record
+cannot describe) is what the tree diff serves. See
+`2026-08-14-l1-slices.md` §4–5.
+
 ## 7 · Non-goals (inherited verbatim)
 
 Incremental edit of any kind; intra-unit incremental inline parsing;
