@@ -2649,7 +2649,8 @@ bool markdown_core_parser_warm_eligible(
  * ancestors. That, and not the OPEN flag, is what "still growing" means:
  * the flag stays set for life on a block an extension made and never routed
  * through the block phase (a table cell), while a settled block is simply
- * one the chain has left behind. */
+ * one the chain has left behind. O(depth); the region walk below never
+ * needs it per node. */
 static bool warm_on_chain(const markdown_core_parser *parser, const markdown_core_node *node) {
     const markdown_core_node *cursor;
     for (cursor = parser->current; cursor; cursor = cursor->parent) {
@@ -2662,24 +2663,43 @@ static bool warm_on_chain(const markdown_core_parser *parser, const markdown_cor
 
 /* Refines the settled units of one subtree, children before their container
  * (close order), and answers with the node now at the subtree's position —
- * a refine may replace a leaf and free what it replaced. `on_chain` says
- * whether this node is still open in the block phase's sense; such a node
- * is descended into and left alone, because the step that closes it will
- * refine it. Its youngest child is on the chain too unless the node is the
- * current block itself, below which nothing is open. */
-static markdown_core_node *warm_settle_subtree(markdown_core_parser *parser, markdown_core_node *node, bool on_chain) {
-    if (!contains_inlines(node)) {
-        markdown_core_node *child = node->first_child;
-        while (child) {
-            bool child_on_chain = on_chain && node != parser->current && child == node->last_child;
-            markdown_core_node *survivor = warm_settle_subtree(parser, child, child_on_chain);
-            child = survivor->next;
+ * a refine may replace a leaf and free what it replaced. Nodes on the open
+ * chain are walked through and left alone: the step that closes them will
+ * refine them.
+ *
+ * Iterative, like every walk in this engine — nesting is bounded only by
+ * the input. Chain membership costs nothing extra: a block is on the chain
+ * exactly when it is the current block or when its youngest child was, and
+ * in a postorder walk the youngest child is the node that exited just
+ * before its parent, so one remembered exit answers it. */
+static markdown_core_node *warm_settle_subtree(markdown_core_parser *parser, markdown_core_node *root) {
+    markdown_core_node *node = root;
+    markdown_core_node *last_exited = NULL;
+    bool last_exited_on_chain = false;
+
+    for (;;) {
+        /* Down to the first unit that owns inlines or has no children —
+         * inline-owning units are leaves of this walk, their subtrees being
+         * the inline parse's to make. */
+        while (!contains_inlines(node) && node->first_child) {
+            node = node->first_child;
+        }
+        for (;;) {
+            bool on_chain = node == parser->current ||
+                            (node->last_child && last_exited == node->last_child && last_exited_on_chain);
+            markdown_core_node *survivor = on_chain ? node : markdown_core_parser_warm_refine_settled(parser, node);
+            last_exited = survivor;
+            last_exited_on_chain = on_chain;
+            if (node == root) {
+                return survivor;
+            }
+            if (survivor->next) {
+                node = survivor->next;
+                break;
+            }
+            node = survivor->parent;
         }
     }
-    if (on_chain) {
-        return node;
-    }
-    return markdown_core_parser_warm_refine_settled(parser, node);
 }
 
 /* The region a snapshot describes: for each saved open block, deepest first,
@@ -2695,16 +2715,14 @@ static bool warm_refine_region(markdown_core_parser *parser, markdown_core_warm_
     while (i-- > 0) {
         markdown_core_warm_open_block *entry = &spine[i];
         markdown_core_node *node = entry->node;
-        bool on_chain = warm_on_chain(parser, node);
         markdown_core_node *child = entry->last_child ? entry->last_child->next : node->first_child;
         while (child) {
-            bool child_on_chain = on_chain && node != parser->current && child == node->last_child;
-            markdown_core_node *survivor = warm_settle_subtree(parser, child, child_on_chain);
+            markdown_core_node *survivor = warm_settle_subtree(parser, child);
             child = survivor->next;
         }
         /* The document root is never refined: refine_blocks starts below it,
          * and every hook expects a block. */
-        if (i > 0 && !on_chain) {
+        if (i > 0 && !warm_on_chain(parser, node)) {
             markdown_core_node *survivor = markdown_core_parser_warm_refine_settled(parser, node);
             if (survivor != node) {
                 /* The survivor sits where the block sat, so its parent's
@@ -2730,11 +2748,9 @@ bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_cor
     }
     /* No record: a fresh parser, whose whole settled part is unrefined. */
     {
-        markdown_core_node *root = parser->root;
-        markdown_core_node *child = root->first_child;
+        markdown_core_node *child = parser->root->first_child;
         while (child) {
-            bool child_on_chain = root != parser->current && child == root->last_child;
-            markdown_core_node *survivor = warm_settle_subtree(parser, child, child_on_chain);
+            markdown_core_node *survivor = warm_settle_subtree(parser, child);
             child = survivor->next;
         }
     }

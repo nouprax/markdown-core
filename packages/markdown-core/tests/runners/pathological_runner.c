@@ -328,6 +328,26 @@ static int case_nested_block_quotes(pc_context *context) {
     return pc_expect_text(context, "a", 1);
 }
 
+/* The same depth, CLOSED before the document ends: a blank line shuts all
+ * 50000 quotes and a paragraph follows, so the build's end state is one the
+ * warm path publishes from, and the settle that precedes the publish walks
+ * every closed quote. That walk is the one place a fresh build refines a
+ * whole tree unit by unit rather than through the iterators refine_blocks
+ * uses, so it is where a recursion would have hidden — the first cut of it
+ * did recurse, and 50000 frames is what this pins against. */
+static int case_nested_block_quotes_then_prose(pc_context *context) {
+    if (pc_build(context, NULL, "> ", 50000, "a\n\nprose after\n") != 0) {
+        return -1;
+    }
+    if (pc_parse(context, PC_TABLE_ONLY) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_BLOCK_QUOTE, 50000, "BlockQuote") != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, 2, "Paragraph");
+}
+
 /* Builds one "* a" item per level, indented two spaces per depth. */
 static int pc_build_nested_list(pc_context *context, size_t levels) {
     size_t depth;
@@ -1266,6 +1286,7 @@ static const pc_case_entry PC_CASES[] = {
     {"hard_link_emph", case_hard_link_emph},
     {"nested_brackets", case_nested_brackets},
     {"nested_block_quotes", case_nested_block_quotes},
+    {"nested_block_quotes_then_prose", case_nested_block_quotes_then_prose},
     {"deeply_nested_lists", case_deeply_nested_lists},
     {"nul_in_input", case_nul_in_input},
     {"backticks", case_backticks},

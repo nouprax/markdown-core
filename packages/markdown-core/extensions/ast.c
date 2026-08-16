@@ -94,14 +94,14 @@ static bool document_is_head(const markdown_core_document *document) {
 }
 
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
-    return document_is_head(document) ? document->chain->head.root : NULL;
+    return document_is_head(document) ? document_generation_root(&document->chain->head) : NULL;
 }
 
 const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document) {
     /* Internal boundary: callers hold a parsed document, so there is no NULL
      * to tolerate — the semantic root and the concrete owner are the same
      * retained tree (ast_internal.h). */
-    return document->chain->head.root;
+    return document_generation_root(&document->chain->head);
 }
 
 size_t markdown_core_document_diagnostics(
@@ -1394,7 +1394,7 @@ bool markdown_core_document_dump(
     markdown_core_error **error
 ) {
     return markdown_core_ast_dump_root(
-        document_is_head(document) ? document->chain->head.root : NULL,
+        document_is_head(document) ? document_generation_root(&document->chain->head) : NULL,
         output,
         length,
         error

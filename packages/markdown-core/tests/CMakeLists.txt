@@ -419,6 +419,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     hard_link_emph
     nested_brackets
     nested_block_quotes
+    nested_block_quotes_then_prose
     deeply_nested_lists
     nul_in_input
     backticks

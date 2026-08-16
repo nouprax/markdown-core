@@ -48,12 +48,17 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 typedef struct document_generation {
     markdown_core_arena *arena;
     markdown_core_mem *mem;
-    markdown_core_parser *parser;
+    markdown_core_parser *parser; /* owns the tree: parser->root */
     markdown_core_warm_undo *undo;
-    markdown_core_node *root; /* == parser->root; the accessors' answer */
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
 } document_generation;
+
+/** The generation's tree — the parser's, which owns it — or NULL before a
+ * build has produced one. The one place the answer lives. */
+static inline markdown_core_node *document_generation_root(const document_generation *generation) {
+    return generation->parser ? generation->parser->root : NULL;
+}
 
 /* THE CHAIN OWNER. One per chain — a document and every successor an
  * append produced from it — shared by every live handle on the chain and

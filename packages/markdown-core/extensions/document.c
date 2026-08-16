@@ -256,7 +256,6 @@ static bool generation_close(document_generation *generation, markdown_core_erro
         set_parse_error(parser, error);
         return false;
     }
-    generation->root = parser->root;
     /* WHERE THE TREE IS FINGERPRINTED (see refine_blocks' note on why it is
      * one pass over the settled tree and nothing earlier): the append diff
      * pairs on these hashes, and a warm tick restamps only what it touches. */
@@ -545,8 +544,6 @@ static void generation_release(document_generation *generation) {
         markdown_core_parser_warm_undo_free(generation->undo);
         if (generation->parser) {
             markdown_core_parser_free(generation->parser);
-        } else if (generation->root) {
-            markdown_core_node_free(generation->root);
         }
         if (generation->diagnostics && generation->mem) {
             generation->mem->free(generation->mem, generation->diagnostics);
@@ -694,8 +691,8 @@ static markdown_core_document *document_build(
         if (!document_parse_text(chain, &generation, markdown, error) || !markdown_core_document_diff(
                                                                              chain,
                                                                              generation.mem,
-                                                                             chain->head.root,
-                                                                             generation.root,
+                                                                             document_generation_root(&chain->head),
+                                                                             document_generation_root(&generation),
                                                                              doc->revision,
                                                                              error
                                                                          )) {
