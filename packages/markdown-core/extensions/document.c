@@ -214,7 +214,12 @@ static void record_prefix_hashes(markdown_core_warm_undo *record, const markdown
              * inline children — is what the restamp folds, not the prefix.) */
             h = markdown_core_node_stamp_own(node);
         } else {
-            if (carried && carried->last_child) {
+            /* Carry forward only if nothing was INSERTED before the carried
+             * youngest child since (a paragraph split off a table is): the
+             * sibling that preceded it must still be the one. */
+            bool carriable = carried && carried->last_child &&
+                             (carried->prev ? carried->prev->next : node->first_child) == carried->last_child;
+            if (carriable) {
                 h = carried->prefix_hash;
                 child = carried->last_child;
             } else {
@@ -421,10 +426,12 @@ static bool document_tick_warm(
                     node->last_changed_rev = revision;
                 }
                 /* The prefix fold was taken over the block's own fields as
-                 * they were published last; a block whose own fields moved,
-                 * or that gained children before its youngest, is stamped
-                 * whole — once, for the tick that moved it. */
-                inserted = inserted || own_changed;
+                 * they were published last; a block whose own fields moved
+                 * (in the union, or behind an extension's payload pointer —
+                 * the own-fold sees both), or that gained children before
+                 * its youngest, is stamped whole — once, for the tick that
+                 * moved it. */
+                inserted = inserted || own_changed || markdown_core_node_stamp_own(node) != entry->published_own_hash;
             }
             if (inserted) {
                 markdown_core_node_stamp(node);

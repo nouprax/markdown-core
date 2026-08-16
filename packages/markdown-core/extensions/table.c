@@ -891,6 +891,20 @@ static int contains_inlines(markdown_core_extension *extension, markdown_core_no
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
+/* What a table's lines write after it exists: the table's row and
+ * non-empty-cell counters (every row line), and nothing on a row or a cell.
+ * The alignments live behind a pointer the counters' snapshot keeps. */
+static size_t opaque_size(markdown_core_extension *self, markdown_core_node *node) {
+    (void)self;
+    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+        return sizeof(node_table);
+    }
+    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        return sizeof(node_table_row);
+    }
+    return 0;
+}
+
 static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
     /* A NULL payload is tolerated by every table property helper; the node
      * then reports zero columns/alignments. */
@@ -947,6 +961,7 @@ static const markdown_core_extension table_extension = {
     .contains_inlines = contains_inlines,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .opaque_size = opaque_size,
     .hash_value = table_hash_value,
 };
 

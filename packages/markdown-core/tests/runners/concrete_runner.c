@@ -3044,11 +3044,12 @@ static int case_warm_tick_ledger(void) {
         {"code\n", true, "a line inside the fence"},
         {"```\n\n", true, "the fence closes and the feed settles it"},
         {"| a |\n", true, "a paragraph that a table might grow from"},
-        {"|---|\n",
+        {"|---|\n", true, "the feed converts it into a table; the record keeps what the retype overwrote"},
+        {"| row |\n", true, "a row inside the open table, whose counters the record snapshots"},
+        {":::note\n",
          true,
-         "the feed converts it into a table — an extension's block, which the record cannot put back, so this record "
-         "comes back final"},
-        {"| row |\n", false, "a final record reopens nothing"},
+         "a directive container opens; its extension declares no payload size, so this record comes back final"},
+        {"body\n", false, "a final record reopens nothing"},
     };
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -3113,10 +3114,10 @@ static int case_warm_tick_ledger(void) {
         result = -1;
     }
     /* The end state says why the last tick could not be warm: a rebuild
-     * that ends inside a table closes for good, and its record — kept, since
-     * a projection was published from it — is final. */
+     * that ends inside a directive container closes for good, and its record
+     * — kept, since a projection was published from it — is final. */
     if (result == 0 && (document->chain->head.undo == NULL || !document->chain->head.undo->final)) {
-        fprintf(stderr, "warm_tick_ledger: a build that ended inside a table did not come back final\n");
+        fprintf(stderr, "warm_tick_ledger: a build that ended inside a directive did not come back final\n");
         result = -1;
     }
     markdown_core_document_free(document);
@@ -3237,6 +3238,12 @@ static const char *const WC_TEXTS[] = {
      * blank lines dropped at the close), an HTML block. The record keeps
      * the bytes and puts them back. */
     "```js\nlet x = 1;\n\nmore\n```\n\nafter\n",
+    /* Retypes: a setext underline turns the paragraph into a heading, a
+     * delimiter row turns it into a table with an extension, a payload and
+     * a split-off lead paragraph inserted before it; the record puts the
+     * paragraph back. */
+    "Title\n---\n\nbody\n",
+    "lead line\nh1 | h2\n---|---\nc1 | c2\n\nafter\n",
     "text\n\n    indented code\n\n    more\n\nafter\n",
     "<div>\nhtml here\n</div>\n\nafter\n",
     /* Multi-byte text, so cuts land inside characters as well as inside
@@ -3400,6 +3407,7 @@ static int case_warm_tick_stream(void) {
          * warm_close_undo, which skips what the predicate skips. */
         "- one\n- two\nlazy\n\n- three\n\n> quote\n> more\n\n# heading\nafter it",
         "```js\nlet x = 1;\nmore\n```\n\n<div>\nhtml\n</div>\n\nafter",
+        "Title\n===\n\nlead\nh1 | h2\n---|---\nc1 | c2\nc3 | c4\n\nafter",
         "\xc3\xbc"
         "ber caf\xc3\xa9 und stra"
         "\xc3\x9f"

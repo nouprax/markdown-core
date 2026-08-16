@@ -337,6 +337,14 @@ typedef void (*markdown_core_free_opaque_func)(
     markdown_core_node *node
 );
 
+/** The size in bytes of the plain-data payload `node->as.opaque` points at,
+ * so a stream can snapshot it before a speculative close and put it back
+ * after — a table's row and cell counters grow with every row line. Return
+ * 0 for a node whose payload is fixed once it exists or absent. An extension
+ * that leaves this NULL keeps a block of its own closed for good in a
+ * stream: the engine will not guess what its lines write. */
+typedef size_t (*markdown_core_opaque_size_func)(markdown_core_extension *extension, markdown_core_node *node);
+
 /** Return the index of the line currently being parsed, starting with 1.
  */
 MARKDOWN_CORE_EXPORT

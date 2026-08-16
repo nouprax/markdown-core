@@ -35,6 +35,7 @@ struct markdown_core_extension {
     markdown_core_alloc_opaque_func alloc_opaque;
     markdown_core_free_opaque_func free_opaque;
     markdown_core_hash_value_func hash_value;
+    markdown_core_opaque_size_func opaque_size;
 };
 
 #endif

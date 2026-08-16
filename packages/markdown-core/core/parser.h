@@ -171,6 +171,11 @@ typedef struct markdown_core_warm_open_block {
      * into a heading takes the tick's. */
     union markdown_core_node_payload published_payload;
     uint16_t published_type;
+    /* The fold over the block's own fields as last published — what the
+     * prefix fold began with — so a block whose own fields moved (a table
+     * counting one more row behind its payload pointer) is stamped whole
+     * rather than continued from a prefix that no longer holds. */
+    uint64_t published_own_hash;
     /* The youngest child's flags: a blank line at the close writes "ends
      * with a blank line" onto the current block's youngest child, which is
      * a SETTLED node the record would otherwise not hold. */
@@ -182,6 +187,17 @@ typedef struct markdown_core_warm_open_block {
      * every other block. */
     unsigned char *content_copy;
     markdown_core_bufsize content_copy_size;
+    /* A close may RETYPE the block — a setext underline turns the paragraph
+     * into a heading, a table's delimiter row turns it into a table with an
+     * extension, a payload behind `as.opaque`, and a start moved to its
+     * header row — so the record keeps what a retype overwrites: the
+     * extension, the start, and a copy of an extension payload's bytes
+     * (its declared plain-data size) for a block that already carried one. */
+    markdown_core_extension *extension;
+    int start_line;
+    int start_column;
+    void *opaque_copy;
+    size_t opaque_copy_size;
     /* How many marker records the block carried: a line captures markers on
      * a container it continues (a quote's `>`), and the close's held line
      * would leave one more. */

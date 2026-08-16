@@ -2517,7 +2517,10 @@ static bool warm_content_admitted(const unsigned char *content, size_t size) {
  * extension's state is closed for good. */
 static bool warm_block_retractable(const markdown_core_node *node) {
     if (node->extension) {
-        return false;
+        /* An extension's block is retractable when the extension says what
+         * its lines write behind the payload pointer; the record snapshots
+         * exactly that. */
+        return node->extension->opaque_size != NULL;
     }
     switch (S_type(node)) {
     case MARKDOWN_CORE_NODE_DOCUMENT:
@@ -2752,6 +2755,7 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
     for (i = 0; i < undo->spine_count; i++) {
         warm_free_run(undo->spine[i].retired);
         mem->free(mem, undo->spine[i].content_copy);
+        mem->free(mem, undo->spine[i].opaque_copy);
     }
     mem->free(mem, undo->spine);
     mem->free(mem, undo->marks);
@@ -2791,6 +2795,20 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
             entry->payload = node->as;
             entry->concrete_count = node->concrete ? node->concrete->count : 0;
             entry->last_child_flags = node->last_child ? node->last_child->flags : 0;
+            entry->extension = node->extension;
+            entry->start_line = node->start_line;
+            entry->start_column = node->start_column;
+            if (node->extension && node->extension->opaque_size && node->as.opaque) {
+                size_t size = node->extension->opaque_size(node->extension, node);
+                if (size) {
+                    entry->opaque_copy = undo->mem->calloc(undo->mem, size, 1);
+                    if (!entry->opaque_copy) {
+                        return false;
+                    }
+                    memcpy(entry->opaque_copy, node->as.opaque, size);
+                    entry->opaque_copy_size = size;
+                }
+            }
             if (warm_close_moves_content(node) && node->content.size) {
                 entry->content_copy = (unsigned char *)undo->mem->calloc(undo->mem, node->content.size, 1);
                 if (!entry->content_copy) {
@@ -2852,19 +2870,12 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
             }
         }
         markdown_core_parser_finalize_blocks(parser);
-        /* A spine block the held line RETYPED (a setext underline, a table
-         * delimiter row), or a close that GREW a definition table (a held
-         * definition harvested, a footnote definition opened), is one the
-         * record cannot put back: the predicate keeps such lines out, and
-         * this is what makes a predicate that missed one fail loudly — a
-         * projection that can be read, not reopened — instead of reopening
-         * a heading as a paragraph or refining the next tick against a
+        /* A close that GREW a definition table (a held definition harvested,
+         * a footnote definition opened) is one the record cannot put back
+         * yet: the predicate keeps such lines out, and this is what makes a
+         * predicate that missed one fail loudly — a projection that can be
+         * read, not reopened — instead of refining the next tick against a
          * table the close polluted. */
-        for (i = 0; i < undo->spine_count; i++) {
-            if (undo->spine[i].node->type != undo->spine[i].type) {
-                undo->final = true;
-            }
-        }
         if ((parser->refmap && parser->refmap->size != definitions) ||
             (parser->footnote_defs && parser->footnote_defs->size != footnotes)) {
             undo->final = true;
@@ -2935,6 +2946,30 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         markdown_core_warm_open_block *entry = &undo->spine[i];
         markdown_core_node *node = entry->node;
         markdown_core_node *run = entry->last_child ? entry->last_child->next : node->first_child;
+        markdown_core_node *inserted = entry->prev ? entry->prev->next : node->first_child;
+        /* What the close INSERTED before the youngest child — a paragraph
+         * split off a table — was published and pairs against nothing:
+         * it goes. (A block with no youngest child had nothing to insert
+         * before; everything under it is the appended run.) */
+        if (entry->last_child && inserted != entry->last_child) {
+            markdown_core_node *cursor = inserted;
+            while (cursor && cursor != entry->last_child) {
+                markdown_core_node *next = cursor->next;
+                cursor->parent = NULL;
+                cursor->prev = NULL;
+                cursor->next = NULL;
+                markdown_core_node_free(cursor);
+                cursor = next;
+            }
+            if (entry->prev) {
+                entry->prev->next = entry->last_child;
+            } else {
+                node->first_child = entry->last_child;
+            }
+            if (entry->last_child) {
+                entry->last_child->prev = entry->prev;
+            }
+        }
         if (entry->last_child) {
             entry->last_child->next = NULL;
         } else {
@@ -2955,8 +2990,24 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         node->flags = entry->flags;
         node->end_line = entry->end_line;
         node->end_column = entry->end_column;
+        node->start_line = entry->start_line;
+        node->start_column = entry->start_column;
         entry->published_type = node->type;
         entry->published_payload = node->as;
+        entry->published_own_hash = markdown_core_node_stamp_own(node);
+        /* A retype that attached an extension (a paragraph turned table)
+         * minted a payload the extension frees; a block that had one keeps
+         * it and gets its bytes back. */
+        if (node->extension != entry->extension) {
+            if (node->extension && node->extension->free_opaque && node->as.opaque) {
+                node->extension->free_opaque(node->extension, markdown_core_node_mem(node), node);
+            }
+            node->as.opaque = NULL;
+            node->extension = entry->extension;
+        } else if (entry->opaque_copy && node->as.opaque) {
+            memcpy(node->as.opaque, entry->opaque_copy, entry->opaque_copy_size);
+        }
+        node->type = entry->type;
         if (warm_close_moves_content(node)) {
             /* The close moved the bytes into the literal (and, for a fenced
              * block, minted the info from their first line): those chunks
