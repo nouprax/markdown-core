@@ -295,23 +295,6 @@ typedef int (*markdown_core_contains_inlines_func)(markdown_core_extension *exte
 
 typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extension, markdown_core_node *node);
 
-/**
- * Builds a detached shell for an extension-owned inline owner whose complete
- * child list can be reparsed when a reference-definition answer changes.
- * Before refinement the shell owns a copy of the owner's raw inline source;
- * after refinement its complete child list is the replacement domain.
- *
- * The returned shell must have the same semantic node type, extension
- * descriptor, and allocator as `committed_owner`; refinement must not replace
- * it. NULL reports allocation failure. An ownership domain is always the
- * complete child list of one real semantic owner, never an optimization
- * subrange or a prefix selected by syntax-specific policy.
- */
-typedef markdown_core_node *(*markdown_core_prepare_inline_domain_func)(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner
-);
-
 /** Block-local postprocess hook. After inline parsing, footnote processing,
  * and per-block text consolidation, the parser calls this once for every
  * block (and every inline-owning node, such as a table cell or directive
@@ -320,7 +303,10 @@ typedef markdown_core_node *(*markdown_core_prepare_inline_domain_func)(
  *
  * Returns the node now occupying the block's position in the tree: the
  * block itself, or its replacement when the extension replaced or retyped
- * the block. Must not return NULL. */
+ * the block. Must not return NULL. A replacement is spliced in where the
+ * block was and the block UNLINKED, never freed: the pipeline owns what a
+ * replacement leaves behind — it frees it, or a stream keeps it to put the
+ * block back after a speculative close. */
 typedef markdown_core_node *(*markdown_core_postprocess_block_func)(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -352,6 +338,26 @@ typedef void (*markdown_core_free_opaque_func)(
     markdown_core_extension *extension,
     markdown_core_mem *mem,
     markdown_core_node *node
+);
+
+/** The size in bytes of the plain-data payload `node->as.opaque` points at,
+ * so a stream can snapshot it before a speculative close and put it back
+ * after — a table's row and cell counters grow with every row line. Return
+ * 0 for a node whose payload is fixed once it exists or absent. An extension
+ * that leaves this NULL keeps a block of its own closed for good in a
+ * stream: the engine will not guess what its lines write. */
+typedef size_t (*markdown_core_opaque_size_func)(markdown_core_extension *extension, markdown_core_node *node);
+
+/** Puts a payload back from a snapshot the size above describes. Optional:
+ * without it the engine copies the bytes back, which is right when nothing
+ * the close or the refine did allocated INTO the payload; an extension whose
+ * refine mints a literal into it (the formula block's) frees what it minted
+ * here, then copies. */
+typedef void (*markdown_core_restore_opaque_func)(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node,
+    const void *snapshot
 );
 
 /** Return the index of the line currently being parsed, starting with 1.

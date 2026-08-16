@@ -82,31 +82,42 @@ void markdown_core_parse_options_init(markdown_core_parse_options *options) {
     options->embeds = true;
 }
 
+/* Whether this handle is still the chain's head — the one document whose
+ * tree the chain keeps — on a chain that is still whole. Reads that would
+ * otherwise answer with a tree route through here, so a superseded handle
+ * answers as if it had none rather than describing text that has since
+ * grown past it, and a poisoned chain answers as if it had none rather than
+ * showing the tree a failed append left half-grown: "only free remains" is
+ * enforced, not just documented. */
+static bool document_is_head(const markdown_core_document *document) {
+    return document && !document->chain->poisoned && document->revision + 1 == document->chain->next_revision;
+}
+
 const markdown_core_node *markdown_core_document_root(const markdown_core_document *document) {
-    return document ? document->root : NULL;
+    return document_is_head(document) ? document_generation_root(&document->chain->head) : NULL;
 }
 
 const markdown_core_node *markdown_core_document_concrete(const markdown_core_document *document) {
     /* Internal boundary: callers hold a parsed document, so there is no NULL
      * to tolerate — the semantic root and the concrete owner are the same
      * retained tree (ast_internal.h). */
-    return document->root;
+    return document_generation_root(&document->chain->head);
 }
 
 size_t markdown_core_document_diagnostics(
     const markdown_core_document *document,
     const markdown_core_diagnostic **diagnostics
 ) {
-    if (!document) {
+    if (!document_is_head(document)) {
         if (diagnostics) {
             *diagnostics = NULL;
         }
         return 0;
     }
     if (diagnostics) {
-        *diagnostics = document->diagnostics;
+        *diagnostics = document->chain->head.diagnostics;
     }
-    return document->diagnostic_count;
+    return document->chain->head.diagnostic_count;
 }
 
 markdown_core_error_code markdown_core_error_get_code(const markdown_core_error *error) {
@@ -1382,7 +1393,12 @@ bool markdown_core_document_dump(
     size_t *length,
     markdown_core_error **error
 ) {
-    return markdown_core_ast_dump_root(document ? document->root : NULL, output, length, error);
+    return markdown_core_ast_dump_root(
+        document_is_head(document) ? document_generation_root(&document->chain->head) : NULL,
+        output,
+        length,
+        error
+    );
 }
 
 bool markdown_core_ast_dump_root(

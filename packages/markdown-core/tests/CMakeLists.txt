@@ -285,6 +285,11 @@ if(MARKDOWN_CORE_STATIC)
               capture_document
               capture_equivalence
               capture_oom_sweep
+              warm_fingerprint
+              warm_close_undo
+              warm_tick_stream
+              warm_tick_ledger
+              warm_append_stream
               chain_poison
               capture_growth_ceiling
               inline_shape
@@ -414,6 +419,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     hard_link_emph
     nested_brackets
     nested_block_quotes
+    nested_block_quotes_then_prose
     deeply_nested_lists
     nul_in_input
     backticks
@@ -508,7 +514,8 @@ set(MARKDOWN_CORE_BENCH_WORKLOADS
     extensions
     large_table
     adversarial
-    append_baseline)
+    append_baseline
+    append_amortized)
 foreach(workload IN LISTS MARKDOWN_CORE_BENCH_WORKLOADS)
     markdown_core_add_test(
         benchmark_${workload}

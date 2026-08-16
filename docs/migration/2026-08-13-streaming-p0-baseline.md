@@ -77,3 +77,106 @@ ctest --test-dir build/cmake -R benchmark_append_baseline --output-on-failure
 
 The workload is deterministic (fixed PRNG seed per shape, synthesized
 inputs); differences between machines are scale, not shape.
+
+## L1 slice 8: the same shapes on the living tree (2026-08-16)
+
+**Branch:** `living-tree-l1`, after slice 7 (the warm tick) · **Workloads:**
+`benchmark_append_baseline` and the new `benchmark_append_amortized` ·
+same machine, same build.
+
+The append is now one of two ticks, decided per chunk before anything is
+written: WARM when the eligibility predicate lets the head's tree grow in
+place (prose shapes: paragraph continuation, blank lines, new paragraphs
+and headings), REBUILT — today's full parse plus diff — for every other
+shape until the journal is total. Warm shapes are measured as the median
+over eight bursts of sixteen ticks each (a warm tick sits below what
+`CLOCK_MONOTONIC` resolves on macOS); rebuilt shapes as before.
+
+| Shape | tick class | 256 KiB | 512 KiB | 1 MiB | 2 MiB | 4 MiB | doubling ratio (bound) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| prose | warm, bounded leaf | 0.00063 | 0.00056 | 0.00056 | 0.00069 | 0.00056 | 1.00 (≤ 1.5, flat) |
+| giant_paragraph | warm, leaf = document | 0.838 | 1.745 | 3.828 | 8.600 | 20.393 | 2.25 (≤ 4, linear) |
+| nested_list | rebuilt | 5.117 | 12.273 | 30.733 | 65.613 | 134.456 | 2.40 (≤ 4) |
+| fence (unclosed) | rebuilt | 0.172 | 0.342 | 0.659 | 1.277 | 3.134 | 1.99 (≤ 4) |
+| footnote_dense | rebuilt | 4.198 | 8.378 | 20.630 | 51.187 | 127.493 | 2.48 (≤ 4) |
+| references_appendix | rebuilt | 3.404 | 8.494 | 21.952 | 56.854 | 152.842 | 2.59 (≤ 4) |
+
+Per-tick medians in ms. Prose: **~0.56 µs per tick at every size**, against
+4.278 ms at 1 MiB in the P0 baseline above — the tick no longer sees the
+document. The giant paragraph is the honest ladder's prose wall: the open
+leaf is the whole document and is re-refined, retired (owning its bytes) and
+re-diffed every tick, so it stays linear at roughly the P0 figure. Every
+rebuilt shape is within noise of P0, as it must be: that path did not change.
+
+**The amortized bound, executable** (`append_amortized`): stream N bytes from
+an empty document in 3–8 byte pieces and time the whole stream, T(N); parse
+the same bytes once, P(N); K = T/P is the price of streaming in units of one
+parse, and the living-tree plan's §1 says K must be flat across doublings.
+
+| Shape | 32 KiB | 64 KiB | 128 KiB | 256 KiB | K doubling ratio |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prose (gated ≤ 1.5) | K = 29.7 | 27.6 | 28.7 | 26.1 | 0.93 |
+| nested_list (record only, at 8–64 KiB) | K = 835 | 1682 | 3430 | 6406 | ~2.0 |
+
+Prose streams at token granularity for **~27 full parses' worth of work,
+whatever the size** — 47,596 ticks over 256 KiB in 21.7 ms against a
+0.83 ms one-shot parse. Building the gate found the O(document) term the
+plan warned of, in the one place it hid: restamping the root's subtree hash
+folded over every top-level block per tick, and K doubled with N until each
+spine block was restamped from a carried prefix fold of its settled
+children. The rebuilding shape's K doubles per doubling, as a full parse per
+tick must, and is printed unbounded until the journal makes it warm.
+
+## L1 total: every shape on the living tree (2026-08-16)
+
+**Branch:** `living-tree-l1`, after steps A–F of the slice doc's §4 (the
+closure record made total, definitions flipping what asked, the predicate
+and terminal close deleted) · **Workloads:** `benchmark_append_baseline`
+and `benchmark_append_amortized` · same machine, same build.
+
+Every tick is warm now, so the shapes divide by their open leaf rather than
+by tick class: a bounded leaf must be flat, and a leaf that is the whole
+document is the honest ladder's wall, linear at whatever speed the leaf's
+re-derivation runs. Every shape is measured as the median over eight bursts
+of sixteen ticks (a bounded-leaf tick sits below what `CLOCK_MONOTONIC`
+resolves on macOS); the wall shapes as before, one tick per burst.
+
+| Shape | leaf | 256 KiB | 512 KiB | 1 MiB | 2 MiB | 4 MiB | doubling ratio (bound) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| prose | bounded | 0.00056 | 0.00056 | 0.00056 | 0.00050 | 0.00050 | 1.00 (≤ 1.5, flat) |
+| nested_list (loose, one list of every item) | bounded | 0.00112 | 0.00100 | 0.00081 | 0.00088 | 0.00094 | 1.07 (≤ 1.5, flat) |
+| footnote_dense (a definition every other line) | bounded | 0.00094 | 0.00094 | 0.00094 | 0.00106 | 0.00106 | 1.00 (≤ 1.5, flat) |
+| giant_paragraph | the document | 0.713 | 1.486 | 3.410 | 7.200 | 17.430 | 2.30 (≤ 4, linear) |
+| fence (unclosed) | the document | 0.014 | 0.026 | 0.049 | 0.111 | 0.228 | 2.05 (≤ 4, memcpy speed) |
+| references_appendix (one paragraph of definitions) | the document | 4.808 | 14.510 | 40.736 | 105.331 | 238.384 | 2.81 (≤ 4) |
+
+Per-tick medians in ms. Against slice 8's table above: `nested_list` went
+from a rebuild per tick (5.1 → 134 ms) to ~1 µs flat, and `footnote_dense`
+from 4.2 → 127 ms to ~1 µs flat — the two shapes the flip machinery and the
+tightness weighing were built for; `fence` went from a rebuild (0.17 → 3.1
+ms) to a warm tick that copies the fence's bytes (0.014 → 0.23 ms), which
+is the memcpy-speed wall the plan names; `references_appendix` stays the
+appendix wall — the open paragraph is every definition so far, harvested
+whole at every close and its D definition nodes re-inserted and re-paired
+— at roughly its rebuild figure, since a rebuild was one parse of the same
+paragraph. Two O(document) terms were found and removed on the way, both
+hiding behind a definition: restamping a flipped unit's ancestors whole
+(the root is the document), which the positional fold turned into one
+product per level; and the tightness scan of an open list at every close,
+which now weighs only the items that grew. A third was in the one-shot
+parse itself, introduced by the first cut of the flip machinery and caught
+by this table: a map entry asked whether it wins its label by scanning the
+live chain made `footnote_dense`'s one-shot parse quadratic (30 ms at 256
+KiB, 4.9 ms once it asked the prepared index).
+
+**The amortized bound**, both gated shapes:
+
+| Shape | 32 KiB | 64 KiB | 128 KiB | 256 KiB | K doubling ratio (≤ 1.5) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| prose | K = 28.0 | 28.3 | 26.6 | 26.4 | 0.99 |
+| nested_list | K = 11.5 | 10.9 | 9.7 | 7.5 | 0.89 |
+
+Prose streams at token granularity for ~27 parses' worth of work whatever
+the size, exactly as at slice 8; the nested list — recorded unbounded at
+slice 8 with K doubling per doubling (835 → 6406 over 8–64 KiB) — streams
+for ~10 parses' worth and falls as it grows.

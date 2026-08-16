@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_SOURCE_H
 #define MARKDOWN_CORE_SOURCE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -12,29 +13,45 @@ extern "C" {
 
 /** The stored bytes.
  *
- * A markdown_core_source owns one buffer holding a document's exact text,
- * filled at construction and read-only from then on. The engine's one
- * mutation, append, builds a whole successor document rather than growing a
- * predecessor's buffer, so a chain of N appends copies O(N^2) bytes over its
- * lifetime; the living tree (docs/reviews/2026-08-13-living-tree-plan.md §2)
- * retires that by making the chain own one growable buffer, and this module
- * is where that buffer will live.
+ * One source holds one CHAIN's text: bytes only ever arrive at the end, and
+ * every document on the chain is a length watermark into them (the living
+ * tree, docs/reviews/2026-08-13-living-tree-plan.md §2). Growth is
+ * geometric, so a chain of appends totalling N bytes copies O(N) bytes over
+ * its whole life rather than O(N) per tick.
  *
- * Ownership: a source is confined to one thread, like the document it
- * serves. All allocation goes through the markdown_core_mem it was created
- * with.
+ * Nothing outside this module holds a pointer into the buffer across a
+ * mutation: the parse copies what it keeps into the tree, so growing the
+ * buffer — which may move it — is invisible to every document already
+ * built.
+ *
+ * Ownership: a source is confined to one thread, like the chain it serves.
+ * All allocation goes through the markdown_core_mem it was created with,
+ * which for a chain's source is the chain's base allocator rather than any
+ * document's arena — the bytes outlive every document that describes them.
  */
 
 typedef struct markdown_core_source markdown_core_source;
 
-/** Creates a source owning a copy of `bytes[0..length)`, or returns NULL on
- * allocation failure — the constructor's only failure. `bytes` may be NULL
- * when `length` is 0. A length above PTRDIFF_MAX is refused as an allocation
- * failure before a byte is read: the buffer would not be a C object, since a
- * difference of two pointers into it has to be representable. */
-markdown_core_source *markdown_core_source_new(markdown_core_mem *mem, const uint8_t *bytes, size_t length);
+/** Creates an empty source, or returns NULL on allocation failure. */
+markdown_core_source *markdown_core_source_new(markdown_core_mem *mem);
 
 void markdown_core_source_release(markdown_core_source *source);
+
+/** Guarantees room for `additional` bytes beyond the stored length, so the
+ * commit of that many cannot fail. Reserving is where growth — and its only
+ * failure — happens, which is what lets a caller take the bytes only after
+ * everything else about the mutation has succeeded.
+ *
+ * A total length above PTRDIFF_MAX is refused as an allocation failure
+ * before a byte is copied: the buffer would not be a C object, since a
+ * difference of two pointers into it has to be representable. */
+bool markdown_core_source_reserve(markdown_core_source *source, size_t additional);
+
+/** Copies `bytes[0..length)` onto the end. The caller must have reserved at
+ * least `length` and not committed since; that is what makes this
+ * infallible, and a mutation that cannot fail here is a mutation that can
+ * publish its bytes last. */
+void markdown_core_source_commit(markdown_core_source *source, const uint8_t *bytes, size_t length);
 
 size_t markdown_core_source_length(const markdown_core_source *source);
 

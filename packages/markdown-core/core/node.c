@@ -171,6 +171,42 @@ static void free_node_as(markdown_core_node *node) {
     }
 }
 
+/* One chunk made its own. A chunk with no data is NOT WRITTEN — a link
+ * without a title, a definition without one — and stays that way: giving it
+ * an owned empty string would turn "not written" into "written and empty",
+ * which is a different projection (view_optional_equal in the facade tells
+ * them apart), and a retired node whose projection changed by being retired
+ * would move a revision that nothing about the document moved. */
+static bool own_chunk(markdown_core_mem *mem, markdown_core_chunk *chunk) {
+    return chunk->data == NULL || markdown_core_chunk_to_cstr(mem, chunk) != NULL;
+}
+
+bool markdown_core_node_own_chunks(markdown_core_node *node) {
+    markdown_core_mem *mem = NODE_MEM(node);
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        return own_chunk(mem, &node->as.code.info) && own_chunk(mem, &node->as.code.literal);
+    case MARKDOWN_CORE_NODE_TEXT:
+    case MARKDOWN_CORE_NODE_HTML:
+    case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
+    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
+        return own_chunk(mem, &node->as.literal);
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return own_chunk(mem, &node->as.link.url) && own_chunk(mem, &node->as.link.title);
+    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
+        return own_chunk(mem, &node->as.definition.label) && own_chunk(mem, &node->as.definition.url) &&
+               own_chunk(mem, &node->as.definition.title);
+    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
+    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
+        return own_chunk(mem, &node->as.reference.label);
+    default:
+        return true;
+    }
+}
+
 // Free a markdown_core_node list and any children.
 static void S_free_nodes(markdown_core_node *e) {
     markdown_core_node *next;
@@ -183,6 +219,7 @@ static void S_free_nodes(markdown_core_node *e) {
 
         markdown_core_concrete_records_free(NODE_MEM(e), e->concrete);
         markdown_core_inline_concrete_records_free(NODE_MEM(e), e->inline_concrete);
+        markdown_core_probes_free(e->probes);
 
         free_node_as(e);
 
@@ -898,9 +935,8 @@ static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
  * alignments, a row's header bit, a formula's mode. An extension that
  * registers a node type and does not implement it leaves its own nodes
  * pairing on type and children alone. */
-void markdown_core_node_stamp(markdown_core_node *node) {
+uint64_t markdown_core_node_stamp_own(const markdown_core_node *node) {
     uint64_t h = 0xcbf29ce484222325ull;
-    markdown_core_node *child;
 
     h = markdown_core_hash_mix(h, (uint64_t)node->type);
     switch (node->type) {
@@ -965,15 +1001,52 @@ void markdown_core_node_stamp(markdown_core_node *node) {
     // mode. The extension that registered the type is the only thing that
     // can read them, so it is the thing that mixes them.
     if (node->extension && node->extension->hash_value) {
-        h = node->extension->hash_value(node->extension, node, h);
+        h = node->extension->hash_value(node->extension, (markdown_core_node *)node, h);
     }
-    for (child = node->first_child; child; child = child->next) {
-        h = markdown_core_hash_mix(h, child->subtree_hash);
+    return h;
+}
+
+uint64_t markdown_core_node_hash_weight(uint32_t index) {
+    uint64_t result = 1;
+    uint64_t base = MARKDOWN_CORE_NODE_HASH_STEP;
+    uint64_t exponent = (uint64_t)index + 1;
+    while (exponent) {
+        if (exponent & 1) {
+            result *= base;
+        }
+        base *= base;
+        exponent >>= 1;
+    }
+    return result;
+}
+
+uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, markdown_core_node *from) {
+    markdown_core_node *child;
+    uint32_t index;
+    uint64_t weight;
+    if (!from) {
+        return h;
+    }
+    index = from->prev ? from->prev->hash_index + 1 : 0;
+    weight = markdown_core_node_hash_weight(index);
+    for (child = from; child; child = child->next) {
+        child->hash_index = index;
+        h += child->subtree_hash * weight;
         if (child == node->last_child) {
             break;
         }
+        index++;
+        weight *= MARKDOWN_CORE_NODE_HASH_STEP;
     }
-    node->subtree_hash = h;
+    return h;
+}
+
+void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, markdown_core_node *from) {
+    node->subtree_hash = markdown_core_node_hash_children(node, prefix, from);
+}
+
+void markdown_core_node_stamp(markdown_core_node *node) {
+    markdown_core_node_stamp_from(node, markdown_core_node_stamp_own(node), node->first_child);
 }
 
 void markdown_core_node_stamp_tree(markdown_core_node *root) {

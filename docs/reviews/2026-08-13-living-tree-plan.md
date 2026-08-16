@@ -159,6 +159,30 @@ lockstep-duplicate; executable now as L0):
   `docs/specs/sessions-and-deltas.md` archived (it defines commit/fork
   semantics the header now contradicts line-for-line).
 
+## 4.5 · Erratum E3 — a superseded handle answers for no tree
+
+Recorded 2026-08-14, during L1. §5 below says a superseded view "supports
+free and read-only access, both only until the next mutation begins", and
+that sentence carries an ambiguity the living tree removes: does the
+mutation that SUPERSEDED a handle end its read right, or only the one after
+it? Every reader so far assumed the looser answer — an api case dumped a
+receiver while its successor was the head, and the old two-tree harness
+walked superseded snapshots.
+
+The looser answer cannot survive one tree. What a superseded handle would
+show is the text it described plus everything appended since, which is not
+the document it names. So the strict answer is the design: **the tree goes
+the moment the handle is superseded**, and what remains is free (at any
+time, from any thread) plus the three scalars that say which document it
+was — revision, series, length. Root answers NULL; dump and diagnostics
+answer as they would for no document.
+
+The cost was one test, which now captures the head's dump BEFORE the
+mutation and then asserts the narrowing itself. The bindings needed
+nothing: all three decode at build time and never call back in for a
+superseded document — the reason a consumer keeps decoded values rather
+than native handles is exactly this.
+
 ## 5 · Doctrine
 
 "No object reuse" (requirement audit #98) is REPLACED for the one
@@ -194,6 +218,18 @@ FFI the nodes were fresh on.
   the executable form of §1's requirement. Bench arms for the honest
   ladder (prose wall, appendix, flip storm) record their documented
   shapes.
+
+**Where the milestones stand (2026-08-16).** L0 merged (#104). The L1
+branch (`living-tree-l1`, PR #105) carries L1, then L2's totality and L3's
+bound gate on top of it: every close is retractable, definitions flip
+exactly the units that asked (through the probes threaded as an index),
+the fallback rate is asserted zero on every corpus, and the amortized gate
+holds prose and the nested list flat. What L3 also named — deleting
+`diff.c`'s tree diff and the whole-tree stamp — is not done and is not
+owed by the bound: the frontier pairs by the same machine, and the one
+fallback left (a third-party extension block whose payload the record
+cannot describe) is what the tree diff serves. See
+`2026-08-14-l1-slices.md` §4–5.
 
 ## 7 · Non-goals (inherited verbatim)
 

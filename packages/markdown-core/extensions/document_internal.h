@@ -7,6 +7,7 @@
 
 #include <map.h>
 #include <markdown-core.h>
+#include <parser.h>
 
 #include "source.h"
 
@@ -37,6 +38,28 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
     return x;
 }
 
+/* ONE BUILD'S OUTPUT, AND THE PARSER THAT MAY STILL GROW IT: the tree, the
+ * diagnostics that describe it, the parser that owns the tree and is kept
+ * at end of feed, the record of the publish that closed it — NULL when the
+ * close was terminal — and the arena they all came from. A generation is
+ * taken whole and released whole, which is what makes a failed build cost
+ * exactly one release and a successful one exactly one swap; a WARM tick
+ * does not make a generation, it grows this one in place. */
+typedef struct document_generation {
+    markdown_core_arena *arena;
+    markdown_core_mem *mem;
+    markdown_core_parser *parser; /* owns the tree: parser->root */
+    markdown_core_warm_undo *undo;
+    markdown_core_diagnostic *diagnostics;
+    size_t diagnostic_count;
+} document_generation;
+
+/** The generation's tree — the parser's, which owns it — or NULL before a
+ * build has produced one. The one place the answer lives. */
+static inline markdown_core_node *document_generation_root(const document_generation *generation) {
+    return generation->parser ? generation->parser->root : NULL;
+}
+
 /* THE CHAIN OWNER. One per chain — a document and every successor an
  * append produced from it — shared by every live handle on the chain and
  * released with the last of them.
@@ -58,6 +81,13 @@ typedef struct markdown_core_chain {
     uint64_t next_revision;
     uint64_t series; /* the salt every document on the chain shares,
                         minted once at chain birth */
+    /* THE CHAIN'S BYTES. One buffer for the whole chain: appends land at the
+     * end and every document is a length watermark into it (source.h), so a
+     * tick copies its own chunk rather than the document. The head's
+     * watermark is always the stored length — bytes are committed here only
+     * once the mutation that describes them has succeeded. Owned; released
+     * with the chain, after the last handle. */
+    markdown_core_source *source;
     /* The chain's base allocator: every successor builds over it, so a chain
      * opened over an injected allocator stays observable to the injection —
      * mutations do not silently fall back to the default. Borrowed; the
@@ -66,33 +96,49 @@ typedef struct markdown_core_chain {
     /* A failed append is "the chain is done": nothing further may mutate it,
      * the caller holds the text, and recovery is a rebuild. */
     bool poisoned;
+    /* THE TICK LEDGER. Every mutation lands in exactly one of these, and
+     * their sum is the number of mutations the chain has served: a WARM tick
+     * grew the head's tree in place, a REBUILT one reparsed every byte the
+     * document describes and diffed the result against the head. The
+     * counters landed at full corpus exercise BEFORE the warm path did, so
+     * its share is read off a gate that has been honest all along. The
+     * milestone's bound is about bytes, not ticks: `rebuilt_bytes` is what
+     * the fallback actually costs, since a tenth of the ticks each reparsing
+     * the whole document is not a tenth of a problem. */
+    uint64_t warm_ticks;
+    uint64_t rebuilt_ticks;
+    uint64_t rebuilt_bytes;
+    /* THE IDENTITY COUNTER. Monotonic, starts at 1, never reused, and one
+     * per chain because identity is what a consumer keys on across a whole
+     * stream. A build that fails after minting burns the numbers it took;
+     * they are unique either way, and a counter that could go backwards to
+     * reclaim them would be the defect. */
+    uint64_t next_id;
+    /* THE OPTIONS, fixed for the chain's whole life: changing what the
+     * parser means is a new chain, so every build on this one reads these. */
+    markdown_core_parse_options options;
+    /* Whether builds pool their allocations in an arena. Fixed at birth, so
+     * a generation is released the same way it was taken. */
+    bool pooled;
+    /* THE HEAD'S GENERATION. A build produces a tree and the diagnostics
+     * that describe it, out of one arena; publishing swaps the whole thing
+     * in and releases what it replaced. The head is the only generation the
+     * chain keeps, which is exactly what a superseded handle answering for
+     * no tree buys (the Mutation section of the public header). */
+    document_generation head;
 } markdown_core_chain;
 
+/* A HANDLE, and nothing more. Everything a document is made of belongs to
+ * the chain; what a handle carries is which document it names. */
 struct markdown_core_document {
-    markdown_core_mem *mem;
-    markdown_core_parse_options options;
-    // The document's bytes: one buffer, singly owned, filled when the
-    // document is built and read-only from then on (source.h). Append reads
-    // every stored byte back through run_at to assemble its successor's text
-    // — the per-tick copy the living-tree plan §2 retires.
-    markdown_core_source *source;
-    markdown_core_node *root; // the committed tree, owned
-    // What an editor underlines, in source order, owned. Taken from the
-    // parser when this document takes its tree, so it describes exactly the
-    // committed text.
-    markdown_core_diagnostic *diagnostics;
-    size_t diagnostic_count;
-    uint64_t next_id; // monotonic, starts at 1, never reused
+    // This document's text: the chain's first `length` bytes. A watermark,
+    // not a buffer — successors only ever add bytes past it, so what this
+    // document describes never moves and never changes.
+    size_t length;
     /* This handle's place on the chain: it is the live head — and mutation
      * legal — exactly while revision + 1 == chain->next_revision. */
     uint64_t revision;
     markdown_core_chain *chain;
-    // When pooled, every document-owned allocation flows through this arena
-    // (document->mem is its allocator face) and teardown is a wholesale
-    // release. NULL only for unpooled documents, which today means the ASan
-    // suites: the sanitizer build forces pooling off so it keeps seeing
-    // individual allocations.
-    markdown_core_arena *arena;
 };
 
 /** Internal constructor for an empty document over an explicit allocator;
@@ -118,8 +164,11 @@ bool markdown_core_ast_projection_changed(const markdown_core_node *a, const mar
  * revisions. Reads no text; reparses nothing. A pure function of two trees,
  * which is what lets the parse be a pure function of (bytes, options). */
 bool markdown_core_document_diff(
-    const markdown_core_document *old,
-    markdown_core_document *nw,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *old_root,
+    markdown_core_node *new_root,
+    uint64_t new_revision,
     markdown_core_error **error
 );
 
@@ -128,15 +177,49 @@ bool markdown_core_document_diff(
  * the old revision over for untouched subtrees. Returns false on allocation
  * failure (the trees are left consistent; the caller discards `new_root`). */
 bool markdown_core_diff_trees(
-    markdown_core_document *document,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev
 );
 
+/** Mints fresh identities over one subtree — every node id from the chain's
+ * counter, every revision `rev` — for a subtree nothing pairs against. */
+void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev);
+
+/** IDENTITY HANDOVER AT THE FRONTIER of a warm tick. `fresh` is the run of
+ * children a spine block gained since the previous publish — what the feed
+ * appended and what this close appended, in that order — and `retired` is
+ * the run the previous close had appended there, detached at the retract and
+ * owning its bytes. The two are diffed exactly as a rebuild diffs two child
+ * lists — hash sweeps, positional middle by type, residue minted, each pair
+ * classified by its fields and its children — so a paired node keeps its id,
+ * keeps its revision if nothing about it changed and takes `rev` otherwise,
+ * and unpaired retired ids are never minted again. `*changed` is SET when
+ * the runs differ at all — never cleared, so a block's two runs accumulate
+ * into one verdict — which is what the spine block above them inherits; the
+ * fresh run ends at `fresh_end` (exclusive; NULL for the end of the sibling
+ * list). Requires the fresh run to be stamped. Frees nothing. Returns false
+ * on allocation failure with the fresh run partly assigned — the caller
+ * discards the tick. */
+bool markdown_core_diff_frontier(
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *retired,
+    markdown_core_node *fresh,
+    const markdown_core_node *fresh_end,
+    uint64_t rev,
+    bool *changed
+);
+
 /** Creates a parser configured with the document's options and extensions.
  * Returns NULL on allocation or extension-registry failure with *error set
  * when non-NULL. Defined in document.c. */
-markdown_core_parser *markdown_core_document_new_parser(markdown_core_document *document, markdown_core_error **error);
+markdown_core_parser *markdown_core_document_new_parser(
+    const markdown_core_parse_options *options,
+    markdown_core_mem *mem,
+    markdown_core_error **error
+);
 
 #endif

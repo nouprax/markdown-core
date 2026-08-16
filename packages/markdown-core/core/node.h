@@ -12,6 +12,7 @@ extern "C" {
 #include "markdown-core-extension-api.h"
 #include "buffer.h"
 #include "chunk.h"
+#include "map.h"
 
 typedef struct {
     markdown_core_list_type list_type;
@@ -63,7 +64,22 @@ typedef struct {
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
+    /* The memo a list's finalize keeps of "ends with a blank line": CHECKED
+     * says the answer was taken, ENDS_BLANK is the answer. Both bits, so a
+     * second ask answers as the first did — a container's answer is its
+     * youngest chain's, not its own LAST_LINE_BLANK — which a one-shot parse
+     * never needs (it asks once) and a stream does (it asks at every close
+     * while the list is open, and keeps the memo on what has settled). */
     MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
+    MARKDOWN_CORE_NODE__ENDS_BLANK = (1 << 3),
+    /* A list's tightness, kept up as the list grows: TIGHT_SCANNED on an
+     * item says the item is settled (a sibling follows it), was weighed for
+     * looseness, and weighed tight; LOOSE_AT says the list is loose at or
+     * before this item. Both are permanent truths about settled items, so a
+     * finalize weighs only the items after the last marked one — the same
+     * answer as weighing them all, in the size of what grew. */
+    MARKDOWN_CORE_NODE__TIGHT_SCANNED = (1 << 14),
+    MARKDOWN_CORE_NODE__LOOSE_AT = (1 << 15),
 
     /* The block ended on the line being processed, having consumed its own
      * terminator, so its end position is that line rather than the one
@@ -139,6 +155,14 @@ struct markdown_core_node {
     // nodes of 11.1.
     struct markdown_core_inline_concrete_records *inline_concrete;
 
+    /* THE LABELS THIS UNIT'S INLINE PARSE ASKED THE DEFINITION TABLES ABOUT
+     * — hits and misses alike, as hashes of the normalized label, threaded
+     * through the parser's probe index (map.h) — so that when a definition
+     * arrives later, the units whose answer it changes are exactly the ones
+     * that asked, found in the size of that set. NULL for the many units
+     * that never asked. Owned by the node; unthreaded and freed with it. */
+    struct markdown_core_probes *probes;
+
     int start_line;
     int start_column;
     int end_line;
@@ -146,10 +170,17 @@ struct markdown_core_node {
     int internal_offset;
     uint16_t type;
     markdown_core_node_internal_flags flags;
+    /* The node's index among its siblings when its parent's stamp last
+     * folded it — the position its hash was weighted by (see the fold below).
+     * Meaningful only on a stamped tree. */
+    uint32_t hash_index;
 
     markdown_core_extension *extension;
 
-    union {
+    /* Named so a snapshot of it can be taken and put back: a close writes
+     * into it (a list's tightness, a code block's literal), and the record
+     * that undoes a close keeps the value it had. */
+    union markdown_core_node_payload {
         markdown_core_chunk literal;
         markdown_core_list list;
         markdown_core_code code;
@@ -177,11 +208,55 @@ uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length
 
 /** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
  * children already carry. Called on the node's EXIT during the stamping walk
- * of the finished tree, so every child is complete and already stamped. */
+ * of the finished tree, so every child is complete and already stamped.
+ *
+ * THE FOLD IS POSITIONAL: a subtree hash is the node's own fold plus each
+ * child's hash weighted by a power of one odd constant at the child's index
+ * — a polynomial in the children, order-sensitive like any, but a SUM, so
+ * a child's contribution depends on that child and its index alone. That
+ * is what a living tree needs: appending a child adds one term; a settled
+ * child that changes (a definition arrived and re-refined it) moves every
+ * ancestor by one product each, without refolding a sibling; and a fold
+ * over the leading children (a stream's spine keeps one per open block) is
+ * a partial sum, carried forward and corrected the same way. Every fold
+ * writes each child's `hash_index` as it passes, so a later correction
+ * knows the weight. */
 void markdown_core_node_stamp(markdown_core_node *node);
+
+/** The stamp in two halves, for a node whose leading children have not
+ * changed since it was last stamped — an open block on a stream's spine,
+ * whose settled children are the same objects with the same hashes tick
+ * after tick, and whose youngest children are what grew. `stamp_own` is the
+ * fold over the node's own fields, where every stamp begins;
+ * `hash_children` continues a fold over the children from `from` to the
+ * youngest, weighting `from` by the index after its predecessor's;
+ * `stamp_from` writes the stamp continued from `prefix` — a fold already
+ * carried over everything before `from`. A caller that keeps that prefix
+ * restamps in the size of what grew, not the size of the node. */
+uint64_t markdown_core_node_stamp_own(const markdown_core_node *node);
+uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, markdown_core_node *from);
+void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, markdown_core_node *from);
+
+/** The weight a child at `index` carries in its parent's fold: the odd
+ * constant to the power index + 1. What a caller multiplies a child's hash
+ * change by to correct the parent's stamp in place. */
+uint64_t markdown_core_node_hash_weight(uint32_t index);
+
+/* The fold's constant: odd, and 3 mod 4, so that two children swapped
+ * collide only when their hashes agree in all but the top bit. A fold that
+ * continues one index at a time multiplies its weight by this. */
+#define MARKDOWN_CORE_NODE_HASH_STEP UINT64_C(0x9E3779B97F4A7C13)
 
 /** Stamps every node of `root`'s subtree, each as the walk leaves it. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
+
+/** Makes every chunk-valued field of ONE node its own: a literal, a label,
+ * a destination or a title that borrows another buffer's bytes is copied
+ * out, and one already owned is left alone. The union's chunk fields are
+ * exactly the ones markdown_core_node_free releases, so this and that free
+ * are the two readers of one list. Returns false when a copy could not be
+ * allocated; whatever was copied stays copied and correct. */
+bool markdown_core_node_own_chunks(markdown_core_node *node);
 
 /*
  * Parser-internal mutation primitives. Callers must already have proved

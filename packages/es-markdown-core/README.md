@@ -121,8 +121,13 @@ as a one-shot parse of the concatenated text. What appending saves today is
 the DECODE: appended bytes never move settled content, so after an append the
 binding re-decodes only what changed — decode and value construction are
 O(changed) per tick, while the JS-side index bookkeeping behind
-`document.node(id)` is O(live nodes) of pure map writes. The native append
-itself still reparses every byte sent so far. A node the append did not
+`document.node(id)` is O(live nodes) of pure map writes. The native append grows the tree in
+place on every tick — prose, headings, quotes, lists, fences, HTML blocks,
+tables, formula blocks, directives, footnotes and definitions alike; a
+definition that arrives re-refines only the units that mention its label,
+and a node the append did not reach keeps its id and revision — so the
+engine's cost per tick is the chunk, what it closed and the open leaf, not
+the document. A node the append did not
 reach is the predecessor's very value object — same `id`, same `revision`,
 same `scope`, `===`. Any split of the text is legal, mid-word,
 mid-marker, mid-line — even between the two halves of a surrogate pair: a

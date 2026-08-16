@@ -891,34 +891,18 @@ static int contains_inlines(markdown_core_extension *extension, markdown_core_no
     return node->type == MARKDOWN_CORE_NODE_TABLE_CELL;
 }
 
-static markdown_core_node *prepare_inline_domain(
-    markdown_core_extension *extension,
-    const markdown_core_node *committed_owner
-) {
-    markdown_core_node *clone;
-
-    if (!committed_owner || committed_owner->type != MARKDOWN_CORE_NODE_TABLE_CELL ||
-        committed_owner->extension != extension) {
-        assert(0 && "table reparse requested for an unsupported owner");
-        return NULL;
+/* What a table's lines write after it exists: the table's row and
+ * non-empty-cell counters (every row line), and nothing on a row or a cell.
+ * The alignments live behind a pointer the counters' snapshot keeps. */
+static size_t opaque_size(markdown_core_extension *self, markdown_core_node *node) {
+    (void)self;
+    if (node->type == MARKDOWN_CORE_NODE_TABLE) {
+        return sizeof(node_table);
     }
-    clone = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_TABLE_CELL, committed_owner->content.mem);
-    if (!clone) {
-        return NULL;
+    if (node->type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        return sizeof(node_table_row);
     }
-    clone->extension = extension;
-    clone->as.cell_index = committed_owner->as.cell_index;
-    clone->start_line = clone->end_line = 1;
-    clone->start_column = committed_owner->start_column;
-    clone->end_column = committed_owner->end_column;
-    clone->internal_offset = committed_owner->internal_offset;
-    markdown_core_strbuf_put(&clone->content, committed_owner->content.ptr, committed_owner->content.size);
-    if (clone->content.oom) {
-        markdown_core_node_free(clone);
-        return NULL;
-    }
-
-    return clone;
+    return 0;
 }
 
 static void opaque_alloc(markdown_core_extension *self, markdown_core_mem *mem, markdown_core_node *node) {
@@ -975,9 +959,9 @@ static const markdown_core_extension table_extension = {
     .get_type_string = get_type_string,
     .can_contain = can_contain,
     .contains_inlines = contains_inlines,
-    .prepare_inline_domain = prepare_inline_domain,
     .alloc_opaque = opaque_alloc,
     .free_opaque = opaque_free,
+    .opaque_size = opaque_size,
     .hash_value = table_hash_value,
 };
 

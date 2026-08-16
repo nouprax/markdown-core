@@ -10,18 +10,35 @@ promised to remain compatible between releases.
   document is the live head of a chain; `append(chunk)` adds bytes at the
   end — any byte split is legal, mid-word or mid-character — and returns
   the document all bytes so far describe. One rule: an append supersedes
-  its receiver (which keeps free at any time, and read-only access until
-  the chain's next mutation begins), the revision advances strictly by one
+  its receiver (which keeps free at any time and its revision, series and
+  length, and answers for no tree), the revision advances strictly by one
   on the chain's own counter, and mutating a superseded handle is a
   deterministic error, so history is linear and derived state can be
   destroyed and rebuilt in place. A failed `append` ends the chain. The
   bindings decode O(changed) per append: an unchanged (id, revision)
   subtree reuses the previously decoded value outright, so a stream's
-  per-tick decode cost follows the change, not the document. The engine
-  side of `append` is currently the documented fallback — concatenate and
-  rebuild whole — with the amortized O(affected) engine arriving behind the
-  same signature and oracle
-  (`docs/reviews/2026-08-13-living-tree-plan.md`).
+  per-tick decode cost follows the change, not the document. On the engine
+  side the head's tree GROWS IN PLACE on every tick — retracting the
+  previous projection, feeding the chunk, settling what it closed and
+  publishing again, with ids handed over at the frontier by the same diff a
+  rebuild uses — whatever the chunk brings: prose, headings, quotes, lists,
+  fences, HTML blocks, tables, formula blocks, directives, footnotes and
+  definitions. A definition that arrives re-refines exactly the units whose
+  inline parse asked about its label (each unit's probes are threaded by
+  label through one index), pairs their new children against the old so an
+  untouched inline node keeps its id and revision, and undoes cleanly when
+  the definition was only the close's; a definition streamed in byte by
+  byte leaves the link that mentions it on one id across every tick. The
+  cost of a tick is the chunk, the units it closed, the units a definition
+  in it flipped, and the open leaf — flat across document size for prose,
+  lists, quotes and definition-dense text (a footnote per two lines streams
+  at 1–2 µs a tick from 256 KiB to 4 MiB); a leaf that is the whole
+  document (one paragraph, one fence, one paragraph of definitions) costs
+  the leaf. Nothing built in sends an append to a rebuild; a third-party
+  extension block whose payload the extension has not described
+  (`opaque_size`) closes the build for good and the next tick rebuilds, and
+  the chain counts both kinds of tick. A failed append leaves the head
+  answering for no tree.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
   mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

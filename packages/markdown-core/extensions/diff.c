@@ -34,7 +34,8 @@
 // not survive (especially under sanitizer instrumentation).
 
 typedef struct {
-    markdown_core_document *document;
+    markdown_core_chain *chain; /* where identity is counted from */
+    markdown_core_mem *mem;     /* the generation being built */
     uint64_t new_rev;
     bool failed;
 } diff_ctx;
@@ -44,7 +45,7 @@ static void mint_subtree(diff_ctx *ctx, markdown_core_node *root) {
 
     // Ids preorder, which for a wholly new subtree is document order.
     for (;;) {
-        node->id = ctx->document->next_id++;
+        node->id = ctx->chain->next_id++;
         node->last_changed_rev = ctx->new_rev;
         if (node->first_child) {
             node = node->first_child;
@@ -107,13 +108,21 @@ typedef struct diff_stack {
     markdown_core_mem *mem;
 } diff_stack;
 
-// Pushes a pair and computes its prefix/suffix pairing plan over the two
-// complete child lists.
-static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
-    markdown_core_node *o_start = old->first_child;
-    markdown_core_node *w_start = nw->first_child;
-    size_t n_old = child_count_raw(old);
-    size_t n_new = child_count_raw(nw);
+// Pushes a frame and computes its prefix/suffix pairing plan over two child
+// runs. `old` and `nw` are the pair those runs hang under, and are what the
+// frame classifies on exit; for THE FRONTIER they are NULL — the runs hang
+// under one and the same spine block, which the caller classifies from the
+// verdict — so the frame pairs and classifies the runs and nothing above.
+static bool diff_plan(
+    diff_ctx *ctx,
+    diff_stack *stack,
+    markdown_core_node *old,
+    markdown_core_node *nw,
+    markdown_core_node *o_start,
+    size_t n_old,
+    markdown_core_node *w_start,
+    size_t n_new
+) {
     markdown_core_node *o = o_start;
     markdown_core_node *w = w_start;
     markdown_core_node *o_end;
@@ -215,12 +224,20 @@ static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old,
     // paired children did to their own contents.
     frame->child_list_changed = frame->middle_old != 0 || frame->middle_new != 0;
 
-    nw->id = old->id;
+    if (nw) {
+        nw->id = old->id;
+    }
     return true;
 }
 
-// Runs the matching machine after diff_push has pushed the root pair.
-static void diff_run(diff_ctx *ctx, diff_stack *stack) {
+// Pushes a pair: its plan is over the two complete child lists.
+static bool diff_push(diff_ctx *ctx, diff_stack *stack, markdown_core_node *old, markdown_core_node *nw) {
+    return diff_plan(ctx, stack, old, nw, old->first_child, child_count_raw(old), nw->first_child, child_count_raw(nw));
+}
+
+// Runs the matching machine after diff_plan has pushed the root frame, and
+// answers that frame's verdict: whether anything under it changed.
+static bool diff_run(diff_ctx *ctx, diff_stack *stack) {
     bool child_result = false;
     bool have_result = false;
 
@@ -268,39 +285,44 @@ static void diff_run(diff_ctx *ctx, diff_stack *stack) {
         }
 
         // Exit: every child is resolved; classify this pair. Field equality
-        // is checked here (once) since node fields never change mid-walk.
-        bool changed = top->child_list_changed || top->descendant_changed ||
-                       markdown_core_ast_projection_changed(top->old, top->nw);
-        if (changed) {
-            top->nw->last_changed_rev = ctx->new_rev;
-        } else {
-            top->nw->last_changed_rev = top->old->last_changed_rev;
+        // is checked here (once) since node fields never change mid-walk. A
+        // frontier frame has no pair of its own: its verdict is its runs'.
+        bool changed = top->child_list_changed || top->descendant_changed;
+        if (top->nw) {
+            changed = changed || markdown_core_ast_projection_changed(top->old, top->nw);
+            if (changed) {
+                top->nw->last_changed_rev = ctx->new_rev;
+            } else {
+                top->nw->last_changed_rev = top->old->last_changed_rev;
+            }
         }
 
         child_result = changed;
         have_result = true;
         stack->length--;
     }
+    return child_result;
 }
 
 static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
-    diff_stack stack = {NULL, 0, 0, ctx->document->mem};
+    diff_stack stack = {NULL, 0, 0, ctx->mem};
 
     if (diff_push(ctx, &stack, old_root, new_root)) {
         diff_run(ctx, &stack);
     }
     if (stack.frames) {
-        ctx->document->mem->free(ctx->document->mem, stack.frames);
+        ctx->mem->free(ctx->mem, stack.frames);
     }
 }
 
 bool markdown_core_diff_trees(
-    markdown_core_document *document,
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
     markdown_core_node *old_root,
     markdown_core_node *new_root,
     uint64_t new_rev
 ) {
-    diff_ctx ctx = {document, new_rev, false};
+    diff_ctx ctx = {chain, mem, new_rev, false};
 
     if (!old_root) {
         // A first parse pairs no children, so the diff only mints. The tree
@@ -315,5 +337,62 @@ bool markdown_core_diff_trees(
 
     // Roots are both documents; pair them directly.
     diff_pair(&ctx, old_root, new_root);
+    return !ctx.failed;
+}
+
+void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev) {
+    diff_ctx ctx = {chain, NULL, rev, false};
+    mint_subtree(&ctx, root);
+}
+
+// THE FRONTIER. A warm tick keeps every settled node — same object, same id,
+// same revision — and re-creates only what lives past the open spine's saved
+// youngest children: the tentative subtree the previous close had minted, and
+// whatever the feed and this close appended in its place. Those two runs are
+// what this pairs, with the SAME plan and the same machine as a rebuild's
+// diff — hash sweeps front and back, positional middle by type, mint the
+// residue, classify each pair by its own fields and its children — so an
+// unchanged node keeps its revision here for exactly the reason it does
+// there, and an empty append moves nothing. The one difference is that the
+// runs hang under one spine block rather than under a pair, so the frame
+// they are planned in has no pair to classify; its verdict — did the runs
+// change — is what the caller stamps the block with.
+//
+// The retired run owns its bytes (the retract saw to that), so classifying a
+// pair by projection reads nothing that has moved.
+bool markdown_core_diff_frontier(
+    markdown_core_chain *chain,
+    markdown_core_mem *mem,
+    markdown_core_node *retired,
+    markdown_core_node *fresh,
+    const markdown_core_node *fresh_end,
+    uint64_t rev,
+    bool *changed
+) {
+    diff_ctx ctx = {chain, mem, rev, false};
+    diff_stack stack = {NULL, 0, 0, mem};
+    size_t n_old = 0;
+    size_t n_new = 0;
+    markdown_core_node *node;
+
+    for (node = retired; node; node = node->next) {
+        n_old++;
+    }
+    for (node = fresh; node && node != fresh_end; node = node->next) {
+        n_new++;
+    }
+    /* Accumulates: a caller diffs a block's inserted and appended runs in
+     * two calls, and either changing changes the block. */
+    if (n_new == 0 && n_old == 0) {
+        return true;
+    }
+    if (diff_plan(&ctx, &stack, NULL, NULL, retired, n_old, fresh, n_new)) {
+        if (diff_run(&ctx, &stack)) {
+            *changed = true;
+        }
+    }
+    if (stack.frames) {
+        mem->free(mem, stack.frames);
+    }
     return !ctx.failed;
 }

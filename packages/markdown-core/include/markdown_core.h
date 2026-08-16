@@ -270,13 +270,14 @@ MARKDOWN_CORE_API void markdown_core_parse_options_init(markdown_core_parse_opti
 /** NULL is allowed. Legal on a superseded handle at any time, from any
  * thread — freeing touches only the document's own state and the chain's
  * refcount, never the live head (the Mutation section states the
- * supersession rule; only READS expire there). Costs O(1) beyond the
+ * supersession rule; the TREE is what expires there). Costs O(1) beyond the
  * handle's own teardown; releasing a chain's last handle reclaims what the
  * chain itself owns. */
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 /** The root of the document's tree: kind DOCUMENT, scoped to the whole text.
  *
- * NULL only for a NULL document — a document that exists has a root. */
+ * NULL for a NULL document, and NULL once the document has been superseded:
+ * the chain keeps one tree, and it belongs to the head. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
 /** MARKDOWN_CORE_ERROR_NONE for a NULL error, so the code can be read before
@@ -569,13 +570,20 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * markdown_core_document_new, which opens a new chain with a new series.
  *
  * An append advances the chain and SUPERSEDES its receiver: the successor
- * is the new head, and the receiver keeps exactly two rights —
- * markdown_core_document_free, legal at any time, and read-only access to
- * the document and its nodes, legal only until the next mutation on the
- * chain begins. The moment that mutation begins, every READ of a superseded
- * document or node is invalid (that is a wording of undefined behavior, not
- * a checked error: a bare node pointer cannot carry the check); the free
- * right survives, because freeing never touches what the chain still owns. Same chain, same series,
+ * is the new head, and from that moment the receiver is a handle to its own
+ * identity and nothing else. It still answers markdown_core_document_free
+ * (at any time, from any thread) and the three scalars that describe WHICH
+ * document it was — revision, series, length — and its TREE is gone from
+ * it: root answers NULL, dump and diagnostics answer as they would for no
+ * document at all. A node pointer taken while it was the head is invalid
+ * too, and that one is undefined behaviour rather than a checked error,
+ * because a bare node pointer cannot carry the check.
+ *
+ * The tree goes because the chain keeps ONE of them. What a superseded
+ * handle could have shown is the text it described plus everything appended
+ * since, which is not the document it names; answering nothing is the only
+ * honest thing left, and it is why decoded values — not native handles —
+ * are what a consumer keeps. Same chain, same series,
  * revision strictly +1 on the chain's
  * own counter — and appending to a superseded handle is a deterministic
  * error, so history is linear and there is no forking. The result has the
@@ -593,10 +601,11 @@ MARKDOWN_CORE_API void markdown_core_dump_free(uint8_t *output);
  * canonical text, and nothing else is.
  *
  * A failed append POISONS THE CHAIN — "the chain is done": every further
- * mutation fails deterministically, only free remains, the caller holds
- * every byte it ever sent, and recovery is a new chain. A rejected argument
- * (NULL data with nonzero length, a stale receiver) fails the call, never
- * the chain.
+ * mutation fails deterministically, only free remains — the head answers
+ * for no tree from then on, exactly as a superseded handle does, because a
+ * failure may have left the tree half-grown — the caller holds every byte
+ * it ever sent, and recovery is a new chain. A rejected argument (NULL data
+ * with nonzero length, a stale receiver) fails the call, never the chain.
  */
 
 /**
@@ -621,8 +630,9 @@ MARKDOWN_CORE_API markdown_core_document *markdown_core_document_new(
  * Any byte split is legal — mid-UTF-8, mid-CRLF, mid-line — and settled
  * content never moves: a node the append did not reach keeps its id, its
  * revision, and its positions. The caller owns the returned document; the
- * receiver keeps free at any time, and read-only access until the next
- * mutation on the chain begins. On a stale or poisoned receiver
+ * receiver keeps free at any time and its own revision, series and length,
+ * and stops answering for a tree (see the Mutation section). On a stale or
+ * poisoned receiver
  * this is a deterministic error and nothing changes; a failure past the
  * guards poisons the chain (see the Mutation section). */
 MARKDOWN_CORE_API markdown_core_document *markdown_core_document_append(

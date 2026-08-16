@@ -202,6 +202,32 @@ static void formula_opaque_free(markdown_core_extension *extension, markdown_cor
     mem->free(mem, formula);
 }
 
+/* What a formula block's lines write behind the payload pointer — and what
+ * its refine writes there: the literal it mints from the content, which a
+ * restore frees before the bytes go back. */
+static size_t formula_opaque_size(markdown_core_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    return node->type == MARKDOWN_CORE_NODE_FORMULA_BLOCK ? sizeof(node_formula) : 0;
+}
+
+static void formula_restore_opaque(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node,
+    const void *snapshot
+) {
+    node_formula *formula = (node_formula *)node->as.opaque;
+    const node_formula *saved = (const node_formula *)snapshot;
+    (void)extension;
+    if (!formula) {
+        return;
+    }
+    if (formula->literal.data != saved->literal.data) {
+        markdown_core_chunk_free(mem, &formula->literal);
+    }
+    memcpy(formula, saved, sizeof(*formula));
+}
+
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, markdown_core_bufsize len) {
     node_formula *formula = get_formula(node);
     markdown_core_chunk literal = MARKDOWN_CORE_CHUNK_EMPTY;
@@ -663,6 +689,11 @@ static markdown_core_node *new_formula_block_shell(
     formula->start_column = oldnode->start_column;
     formula->end_line = oldnode->end_line;
     formula->end_column = oldnode->end_column;
+    /* It stands where the block stood, so what the block phase said about
+     * that place — a blank line followed it — is its now too; a list's
+     * tightness reads it, and reads it the same whether the promotion ran
+     * before or after the blank line arrived. */
+    formula->flags = oldnode->flags;
     return formula;
 }
 
@@ -697,8 +728,10 @@ static markdown_core_node *replace_with_formula_block(
         return NULL;
     }
 
+    /* The pipeline owns what a replacement leaves behind: it frees the old
+     * unit, or keeps it for a stream to put back. */
     markdown_core_node_insert_before_unchecked(oldnode, formula);
-    markdown_core_node_free(oldnode);
+    markdown_core_node_unlink(oldnode);
     return formula;
 }
 
@@ -732,7 +765,7 @@ static markdown_core_node *promote_standalone_formula(
     source->escaped_close = 0;
 
     markdown_core_node_insert_before_unchecked(paragraph, formula_block);
-    markdown_core_node_free(paragraph);
+    markdown_core_node_unlink(paragraph);
     return formula_block;
 }
 
@@ -836,6 +869,8 @@ static const markdown_core_extension formula_extension = {
     .accepts_lines = accepts_lines,
     .alloc_opaque = formula_opaque_alloc,
     .free_opaque = formula_opaque_free,
+    .opaque_size = formula_opaque_size,
+    .restore_opaque = formula_restore_opaque,
     .hash_value = formula_hash_value,
     .insert_inline_from_delim = insert_formula,
     .materialize_inline = materialize_inline,
