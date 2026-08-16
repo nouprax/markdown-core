@@ -1006,47 +1006,16 @@ uint64_t markdown_core_node_stamp_own(const markdown_core_node *node) {
     return h;
 }
 
-uint64_t markdown_core_node_hash_weight(uint32_t index) {
-    uint64_t result = 1;
-    uint64_t base = MARKDOWN_CORE_NODE_HASH_STEP;
-    uint64_t exponent = (uint64_t)index + 1;
-    while (exponent) {
-        if (exponent & 1) {
-            result *= base;
-        }
-        base *= base;
-        exponent >>= 1;
-    }
-    return result;
-}
-
-uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, markdown_core_node *from) {
-    markdown_core_node *child;
-    uint32_t index;
-    uint64_t weight;
-    if (!from) {
-        return h;
-    }
-    index = from->prev ? from->prev->hash_index + 1 : 0;
-    weight = markdown_core_node_hash_weight(index);
-    for (child = from; child; child = child->next) {
-        child->hash_index = index;
-        h += child->subtree_hash * weight;
-        if (child == node->last_child) {
-            break;
-        }
-        index++;
-        weight *= MARKDOWN_CORE_NODE_HASH_STEP;
+static uint64_t node_hash_children(const markdown_core_node *node, uint64_t h) {
+    const markdown_core_node *child;
+    for (child = node->first_child; child; child = child->next) {
+        h = markdown_core_hash_mix(h, child->subtree_hash);
     }
     return h;
 }
 
-void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, markdown_core_node *from) {
-    node->subtree_hash = markdown_core_node_hash_children(node, prefix, from);
-}
-
 void markdown_core_node_stamp(markdown_core_node *node) {
-    markdown_core_node_stamp_from(node, markdown_core_node_stamp_own(node), node->first_child);
+    node->subtree_hash = node_hash_children(node, markdown_core_node_stamp_own(node));
 }
 
 void markdown_core_node_stamp_tree(markdown_core_node *root) {

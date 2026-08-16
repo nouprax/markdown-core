@@ -34,11 +34,19 @@ promised to remain compatible between releases.
   lists, quotes and definition-dense text (a footnote per two lines streams
   at 1–2 µs a tick from 256 KiB to 4 MiB); a leaf that is the whole
   document (one paragraph, one fence, one paragraph of definitions) costs
-  the leaf. Nothing built in sends an append to a rebuild; a third-party
-  extension block whose payload the extension has not described
-  (`opaque_size`) closes the build for good and the next tick rebuilds, and
-  the chain counts both kinds of tick. A failed append leaves the head
-  answering for no tree.
+  the leaf. An append never rebuilds: there is no other kind of tick, and a
+  failed append leaves the head answering for no tree.
+- Breaking (C extension API): an extension that opens blocks
+  (`try_opening_block`) and allocates payloads (`alloc_opaque`) must also
+  provide `opaque_size` — the size of the plain-data payload behind a
+  block's pointer, which a stream snapshots before a speculative close and
+  puts back after — or `markdown_core_parser_attach_extension` refuses it.
+  Every bundled extension provides it; an extension whose payloads belong to
+  inline nodes only is unaffected. With that, no build can end in a state
+  the engine cannot reopen, so the rebuild path, the whole-tree diff and
+  the whole-tree hash stamp are gone — a one-shot parse no longer stamps
+  every node (6–11% of parse time on the throughput corpora), and the
+  subtree hash is stamped on exactly the subtrees a tick pairs.
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
   mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

@@ -4,30 +4,26 @@
 
 #include <node.h>
 
-// THE DIFF: what changed between the receiver's tree and the successor's
-// full reparse of all bytes so far, so ids hand over across an append. It
-// answers both of the requirements that need it — which node is which across
-// the append, so a reactive UI's `ForEach(id:)` reattaches row state to the
-// right row, and when each node last changed, which it stamps into the
-// node's revision so a consumer can prune its own traversal. Both fall out
-// of ONE decision: for each node in the new tree, which node in the old
-// tree it IS.
+// THE FRONTIER DIFF: how ids hand over across an append. A tick re-derives
+// the tail of the tree from the held partial line — the run of children each
+// open block gained since the last publish, and the children a definition
+// flip gave a unit — and pairs it against the run it replaces, so a reactive
+// UI's `ForEach(id:)` reattaches row state to the right row and a node that
+// did not change keeps its revision. It answers ONE decision, for each node
+// in the new run: which node in the old run it IS. Everything settled keeps
+// its identity by being the same object; nothing else in the tree is looked
+// at.
 //
-// It was called `adopt`, after its mechanism — the new tree adopting the old
-// tree's identities. The name hid the invariant. A DIFF OF THE SAME TWO TREES
-// IS THE SAME DIFF, whatever else is going on; under the old name it did not
-// sound wrong that the answer depended on how much of the document the caller
-// let the matcher see, and it does.
+// A DIFF OF THE SAME TWO RUNS IS THE SAME DIFF, whatever else is going on:
+// the answer depends on the two runs and nothing outside them.
 //
 // Children are paired with a prefix/suffix sweep on the refined child lists:
 // leading children pair front-to-back, trailing children back-to-front, the
 // middle left between them still pairs positionally by type, and the residue
 // retires (old) or is minted fresh (new). A kind change is a retirement and
-// a creation, never a pairing (5.2).
-//
-// Parser-only storage owners have already been eliminated by refinement, so
-// this tree is the canonical tree: every node receives an id and normal
-// changed-versus-bubbled classification applies uniformly.
+// a creation, never a pairing (5.2). The sweeps read each subtree's hash
+// (node.h), which is why a run is stamped before it is paired and stamped
+// nowhere else.
 //
 // Every walk here is iterative with an explicit heap stack: adversarial
 // inputs nest tens of thousands of levels deep, which native recursion does
@@ -304,42 +300,6 @@ static bool diff_run(diff_ctx *ctx, diff_stack *stack) {
     return child_result;
 }
 
-static void diff_pair(diff_ctx *ctx, markdown_core_node *old_root, markdown_core_node *new_root) {
-    diff_stack stack = {NULL, 0, 0, ctx->mem};
-
-    if (diff_push(ctx, &stack, old_root, new_root)) {
-        diff_run(ctx, &stack);
-    }
-    if (stack.frames) {
-        ctx->mem->free(ctx->mem, stack.frames);
-    }
-}
-
-bool markdown_core_diff_trees(
-    markdown_core_chain *chain,
-    markdown_core_mem *mem,
-    markdown_core_node *old_root,
-    markdown_core_node *new_root,
-    uint64_t new_rev
-) {
-    diff_ctx ctx = {chain, mem, new_rev, false};
-
-    if (!old_root) {
-        // A first parse pairs no children, so the diff only mints. The tree
-        // IS hashed — by the stamping walk at blocks.c:2320, like every
-        // parse's. When hashing was a diff-owned pass instead, running it
-        // here cost 24% of a 41 MB parse to build an answer that was thrown
-        // away, and it is what pushed that corpus's scaling gate from 3.44x
-        // to 4.03x against a 4.0x bound.
-        mint_subtree(&ctx, new_root);
-        return !ctx.failed;
-    }
-
-    // Roots are both documents; pair them directly.
-    diff_pair(&ctx, old_root, new_root);
-    return !ctx.failed;
-}
-
 void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev) {
     diff_ctx ctx = {chain, NULL, rev, false};
     mint_subtree(&ctx, root);
@@ -349,12 +309,10 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
 // same revision — and re-creates only what lives past the open spine's saved
 // youngest children: the tentative subtree the previous close had minted, and
 // whatever the feed and this close appended in its place. Those two runs are
-// what this pairs, with the SAME plan and the same machine as a rebuild's
-// diff — hash sweeps front and back, positional middle by type, mint the
-// residue, classify each pair by its own fields and its children — so an
-// unchanged node keeps its revision here for exactly the reason it does
-// there, and an empty append moves nothing. The one difference is that the
-// runs hang under one spine block rather than under a pair, so the frame
+// what this pairs — hash sweeps front and back, positional middle by type,
+// mint the residue, classify each pair by its own fields and its children —
+// so an unchanged node keeps its revision and an empty append moves nothing.
+// The runs hang under one spine block rather than under a pair, so the frame
 // they are planned in has no pair to classify; its verdict — did the runs
 // change — is what the caller stamps the block with.
 //

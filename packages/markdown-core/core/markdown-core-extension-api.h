@@ -343,9 +343,12 @@ typedef void (*markdown_core_free_opaque_func)(
 /** The size in bytes of the plain-data payload `node->as.opaque` points at,
  * so a stream can snapshot it before a speculative close and put it back
  * after — a table's row and cell counters grow with every row line. Return
- * 0 for a node whose payload is fixed once it exists or absent. An extension
- * that leaves this NULL keeps a block of its own closed for good in a
- * stream: the engine will not guess what its lines write. */
+ * 0 for a node whose payload is fixed once it exists or absent. REQUIRED of
+ * an extension that opens blocks (`try_opening_block`) and allocates
+ * payloads (`alloc_opaque`): the engine will not guess what its lines write
+ * behind the pointer, and markdown_core_parser_attach_extension refuses an
+ * extension that leaves both set and this NULL. An extension whose payloads
+ * belong to inline nodes only need not provide it. */
 typedef size_t (*markdown_core_opaque_size_func)(markdown_core_extension *extension, markdown_core_node *node);
 
 /** Puts a payload back from a snapshot the size above describes. Optional:
@@ -461,7 +464,9 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *  See the documentation for markdown_core_extension for more information.
  *
  *  Returns 'true' if the 'extension' was successfully attached,
- *  'false' otherwise.
+ *  'false' otherwise — among the reasons: the parser has already been fed,
+ *  the extension is already attached, or it opens blocks and allocates
+ *  payloads without an `opaque_size` (see markdown_core_opaque_size_func).
  */
 MARKDOWN_CORE_EXPORT
 int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown_core_extension *extension);

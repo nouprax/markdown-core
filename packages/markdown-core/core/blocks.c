@@ -130,6 +130,13 @@ int markdown_core_parser_attach_extension(markdown_core_parser *parser, markdown
     if (!parser || !extension || !parser->inline_config || parser->feed_started) {
         return 0;
     }
+    /* An extension that opens blocks and puts a payload behind a node's
+     * pointer must say how large it is: a stream's close is undone from a
+     * snapshot of it, and there is no other way to reopen a block that
+     * carries one. (An inline node's payload is never on the open spine.) */
+    if (extension->try_opening_block && extension->alloc_opaque && !extension->opaque_size) {
+        return 0;
+    }
     for (existing = parser->extensions; existing; existing = existing->next) {
         if (existing->data == extension) {
             return 0;
@@ -2469,15 +2476,9 @@ static markdown_core_node *S_postprocess_unit(
  * flatten the unit node; a replacement splices itself into the tree, so no
  * caller has to be told about it.
  *
- * Deliberately does NOT stamp `subtree_hash`. Stamping was folded into this
- * walk once, and it worked and was cheaper (+2.6% against +11.2% on
- * multiple_duplicate_references) -- but it took three shapes to do it: a
- * pipeline leaf stamped as it was processed, a container stamped as its last
- * child completed, and the root stamped by the caller because this walk stops
- * below its boundary. Correctness then depended on those three agreeing about
- * who covers whom, which is the same "some nodes stamped, some not" split that
- * produced the unstamped-inlines bug in the first place. One trailing pass
- * over the settled tree is worth the difference. */
+ * Does not stamp `subtree_hash`: the hash is the streaming frontier's to
+ * pair on, and the facade stamps exactly the subtrees the frontier will
+ * pair, when it publishes them (extensions/document.c). */
 static void S_postprocess_subtree(
     markdown_core_parser *parser,
     markdown_core_node *boundary,
@@ -2519,58 +2520,19 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
 
 /* --- the warm tick: settle, publish, retract ------------------------------- */
 
-/* WHEN A BUILD CAN BE REOPENED. Every close is retractable: what it writes
- * — into the open spine's flags, coordinates and payloads, into a leaf's
- * content, into the definition tables and the units those definitions
- * flip, and the leaf paragraph it takes for being nothing but definitions
- * — the record holds and the retract puts back. So a build is reopened
- * whenever it published a record that is not final and not yet retracted;
- * `final` is the one exception, and it is ordinary: a spine block that
- * carries an extension's payload the extension has not described
- * (opaque_size) closes for good, and the next append rebuilds. Nothing is
- * decided by the arriving bytes. */
+/* WHEN A BUILD CAN BE REOPENED: always. Every close is retractable — what
+ * it writes into the open spine's flags, coordinates and payloads, into a
+ * leaf's content, into the definition tables and the units those
+ * definitions flip, and the leaf paragraph it takes for being nothing but
+ * definitions, the record holds and the retract puts back; an extension's
+ * block carries a payload only if the extension has said how large it is
+ * (markdown_core_parser_attach_extension refuses one that has not), so the
+ * record snapshots exactly that. Nothing is decided by the arriving bytes,
+ * and a parser publishes from any state a feed can leave it in — unless it
+ * has failed. */
 
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
     return parser->root != NULL && !parser->oom && !parser->internal_error;
-}
-
-bool markdown_core_parser_warm_eligible(const markdown_core_parser *parser, const markdown_core_warm_undo *published) {
-    return published != NULL && !published->final && !published->retracted && published->spine_count > 0 &&
-           markdown_core_parser_warm_eligible_at_eof(parser);
-}
-
-/* The blocks whose close the record puts back: the core containers, whose
- * close writes flags, end coordinates and (a list's) tightness into the
- * payload; the leaves whose close writes nothing but flags and end
- * coordinates; the leaves whose close moves their content out of the
- * buffer, for which the record keeps the bytes; and an extension's block
- * whose payload the extension describes, or keeps in the union. */
-static bool warm_block_retractable(const markdown_core_node *node) {
-    if (node->extension) {
-        /* An extension's block is retractable when its state is in the union
-         * the record copies (an extension that allocates no payload — a task
-         * item's checkbox lives in the list payload) or when the extension
-         * says what its lines write behind the payload pointer, so the record
-         * can snapshot exactly that. */
-        return node->extension->alloc_opaque == NULL || node->extension->opaque_size != NULL;
-    }
-    switch (S_type(node)) {
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-    case MARKDOWN_CORE_NODE_LIST:
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-    case MARKDOWN_CORE_NODE_PARAGRAPH:
-    case MARKDOWN_CORE_NODE_HEADING:
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    /* A footnote definition's label is settled by its opening line and its
-     * finalize does nothing: the container closes like a block quote. */
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return true;
-    default:
-        return false;
-    }
 }
 
 /* Whether a block's close moves its content bytes out of the buffer, so
@@ -3042,14 +3004,8 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
         return NULL;
     }
     {
-        size_t i;
         undo->definitions = parser->refmap ? parser->refmap->size : 0;
         undo->footnotes = parser->footnote_defs ? parser->footnote_defs->size : 0;
-        for (i = 0; i < undo->spine_count; i++) {
-            if (!warm_block_retractable(undo->spine[i].node)) {
-                undo->final = true;
-            }
-        }
         markdown_core_parser_finalize_blocks(parser);
         /* The close took the leaf paragraph — nothing but definitions — and
          * the record keeps it, with the sibling it followed, to put back.
@@ -3125,7 +3081,7 @@ static bool warm_own_subtree(markdown_core_node *root) {
 bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
     size_t i;
 
-    if (!undo || undo->retracted || undo->final) {
+    if (!undo || undo->retracted) {
         return false;
     }
     /* Before anything moves: what is about to be retired must own its bytes,
@@ -3394,30 +3350,10 @@ markdown_core_node *markdown_core_parser_refine_blocks(markdown_core_parser *par
         return NULL;
     }
 
-    /* WHERE THE TREE IS FINGERPRINTED: one pass, over the settled tree, after
-     * every pass that could still move a node.
-     *
-     * Stamping used to ride along on process_inlines' walk, on the argument
-     * that the walk was already running. That walk cannot do the job, twice
-     * over. It never sees an inline node at all: it creates a unit's inline
-     * children on that unit's ENTER, and the iterator settles its successor
-     * before the caller gets the event, so the children appear behind the walk
-     * and are never entered. Every inline node kept hash 0, so a unit's hash
-     * mixed nothing but zeros and collapsed to a function of kind and child
-     * count -- precisely the discrimination diff.c's prefix sweep needs it to
-     * have. And it ran before S_postprocess_blocks, which merges adjacent
-     * text, splits text for autolinks and replaces whole units, so whatever it
-     * did compute described a tree that no longer existed by the time the diff
-     * read it. One cause behind both: it stamped too early.
-     *
-     * It costs a traversal -- ~6% of parse time on the throughput corpus and
-     * ~11% on multiple_duplicate_references, which is nearly all blocks and so
-     * pays for every node. Folding it into S_postprocess_subtree instead is
-     * measurably cheaper (+2.6%) and was rejected: it takes three stamping
-     * shapes to cover the tree that way, and a rule about which shape owns
-     * which node is the thing that failed here already. Placed after the
-     * failure check, so a tree that is about to be freed is never walked. */
-    markdown_core_node_stamp_tree(parser->root);
+    /* NO STAMP: the subtree hash is what the streaming frontier pairs on
+     * (extensions/diff.c), and a tree this hands over is finished — nothing
+     * pairs against it. Stamping it whole once cost ~6% of parse time on
+     * the throughput corpus and ~11% on multiple_duplicate_references. */
 
     res = parser->root;
     parser->root = NULL;

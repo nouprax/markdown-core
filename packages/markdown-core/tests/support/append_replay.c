@@ -6,8 +6,6 @@
 
 #include "test_support.h"
 
-#include "document_internal.h"
-
 static int er_fail(er_replay *replay, const char *message) {
     replay->report(replay->user, replay->context, message);
     return -1;
@@ -627,13 +625,6 @@ static int er_verify_successor(
     }
     if (markdown_core_document_revision(successor) != before->revision + 1) {
         er_fail(replay, "the document revision did not advance by exactly one");
-        goto done;
-    }
-    /* Every append grows the head's tree in place: nothing built in closes
-     * a build for good, so a rebuild here is a record that came back final
-     * for a reason no test knows. */
-    if (successor->chain->rebuilt_ticks != 0) {
-        er_fail(replay, "an append rebuilt instead of growing the tree");
         goto done;
     }
 

@@ -4,6 +4,7 @@
 
 #include "markdown-core.h"
 #include "node.h"
+#include "extension.h"
 #include "markdown-core-extensions.h"
 #include "directive.h"
 
@@ -318,6 +319,75 @@ static markdown_core_node *parse_with_directive_extension(const char *markdown) 
     markdown_core_parser_free(parser);
 
     return doc;
+}
+
+/* AN EXTENSION THAT OPENS BLOCKS AND ALLOCATES PAYLOADS MUST DESCRIBE THEM.
+ * A stream's close is undone from a snapshot of a block's payload, and the
+ * engine will not guess what an extension's lines write behind the pointer:
+ * an extension with `try_opening_block` and `alloc_opaque` but no
+ * `opaque_size` is refused at attach, so no build can ever end in a state
+ * it cannot reopen. One whose payloads belong to inline nodes only, or that
+ * describes them, attaches. */
+static markdown_core_node *contract_open_block(
+    markdown_core_extension *extension,
+    int indented,
+    markdown_core_parser *parser,
+    markdown_core_node *parent_container,
+    unsigned char *input,
+    int len
+) {
+    (void)extension;
+    (void)indented;
+    (void)parser;
+    (void)parent_container;
+    (void)input;
+    (void)len;
+    return NULL;
+}
+
+static void contract_alloc_opaque(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node
+) {
+    (void)extension;
+    (void)mem;
+    (void)node;
+}
+
+static size_t contract_opaque_size(markdown_core_extension *extension, markdown_core_node *node) {
+    (void)extension;
+    (void)node;
+    return 0;
+}
+
+static void extension_payload_contract(test_batch_runner *runner) {
+    markdown_core_extension undescribed;
+    markdown_core_extension described;
+    markdown_core_extension inline_only;
+    markdown_core_parser *parser = markdown_core_parser_new(MARKDOWN_CORE_OPT_DEFAULT);
+
+    memset(&undescribed, 0, sizeof(undescribed));
+    undescribed.name = "undescribed";
+    undescribed.try_opening_block = contract_open_block;
+    undescribed.alloc_opaque = contract_alloc_opaque;
+    described = undescribed;
+    described.name = "described";
+    described.opaque_size = contract_opaque_size;
+    memset(&inline_only, 0, sizeof(inline_only));
+    inline_only.name = "inline-only";
+    inline_only.alloc_opaque = contract_alloc_opaque;
+
+    OK(runner,
+       !markdown_core_parser_attach_extension(parser, &undescribed),
+       "an extension that opens blocks and allocates payloads without opaque_size is refused");
+    OK(runner,
+       markdown_core_parser_attach_extension(parser, &described),
+       "the same extension with opaque_size attaches");
+    OK(runner,
+       markdown_core_parser_attach_extension(parser, &inline_only),
+       "an extension whose payloads are inline nodes' attaches without opaque_size");
+    markdown_core_parser_free(parser);
 }
 
 static void formula_extension_accessors(test_batch_runner *runner) {
@@ -1823,65 +1893,6 @@ cleanup:
     markdown_core_error_free(error);
 }
 
-/* Every node of a finished tree carries a current `subtree_hash` -- not merely
- * a nonzero one, but the value a fresh bottom-up computation produces.
- *
- * Stated this way rather than by recomputing the hash in the test, because the
- * property that matters is not what the function returns; it is that the parse
- * left NO node unstamped and no node stale. Re-stamping the finished tree is
- * idempotent exactly when that holds: a node the parse skipped moves off 0
- * here, and a node stamped before a later pass reshaped it moves to its real
- * value -- and either way the change propagates into every ancestor, so one
- * missed node anywhere fails this. The document is deliberately built from the
- * constructs that reshape the tree after the nodes are created: emphasis
- * (delimiter re-parenting), adjacent text runs (consolidation), an email
- * autolink (text split into text/link/text), and code and entity spans. */
-static void subtree_hash_completeness(test_batch_runner *runner) {
-    static const char md[] = "para *one* two\n"
-                             "\n"
-                             "- item with a\\*escape and &amp; entity\n"
-                             "- mail me at nobody@example.com now\n"
-                             "\n"
-                             "> quoted `code` and **strong**\n"
-                             "\n"
-                             "```\nfenced\n```\n";
-    markdown_core_node *doc = markdown_core_node_parse_document(md, sizeof(md) - 1, MARKDOWN_CORE_OPT_DEFAULT);
-    enum { CAP = 512 };
-    uint64_t before[CAP];
-    markdown_core_node *nodes[CAP];
-    size_t count = 0;
-    size_t i;
-    int stale = 0;
-    markdown_core_iter *iter;
-    markdown_core_event_type ev;
-
-    OK(runner, doc != NULL, "hash-completeness document parses");
-    if (!doc) {
-        return;
-    }
-
-    iter = markdown_core_iter_new(doc);
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (ev == MARKDOWN_CORE_EVENT_EXIT && count < CAP) {
-            nodes[count] = markdown_core_iter_get_node(iter);
-            before[count] = nodes[count]->subtree_hash;
-            count++;
-        }
-    }
-    markdown_core_iter_free(iter);
-    OK(runner, count > 20 && count < CAP, "the document is big enough to be worth checking, and fits");
-
-    markdown_core_node_stamp_tree(doc);
-    for (i = 0; i < count; i++) {
-        if (nodes[i]->subtree_hash != before[i]) {
-            stale = 1;
-        }
-    }
-    OK(runner, !stale, "re-stamping a finished tree changes nothing: every node was stamped, and none stale");
-
-    markdown_core_node_free(doc);
-}
-
 static void document_append_id_stability(test_batch_runner *runner) {
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -2299,6 +2310,7 @@ int main(void) {
     node_type_values(runner);
     constructor(runner);
     accessors(runner);
+    extension_payload_contract(runner);
     formula_extension_accessors(runner);
     directive_extension_accessors(runner);
     directive_refined_tree_layout(runner);
@@ -2322,7 +2334,6 @@ int main(void) {
     autolink_source_pos(runner);
     document_streaming_equivalence(runner);
     document_append_id_stability(runner);
-    subtree_hash_completeness(runner);
     document_series_entropy(runner);
     document_utf8_split_append(runner);
     document_directive_label_parent(runner);
