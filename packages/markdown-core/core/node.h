@@ -149,7 +149,10 @@ struct markdown_core_node {
 
     markdown_core_extension *extension;
 
-    union {
+    /* Named so a snapshot of it can be taken and put back: a close writes
+     * into it (a list's tightness, a code block's literal), and the record
+     * that undoes a close keeps the value it had. */
+    union markdown_core_node_payload {
         markdown_core_chunk literal;
         markdown_core_list list;
         markdown_core_code code;

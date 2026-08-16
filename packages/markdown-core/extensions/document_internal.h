@@ -184,6 +184,10 @@ bool markdown_core_diff_trees(
     uint64_t new_rev
 );
 
+/** Mints fresh identities over one subtree — every node id from the chain's
+ * counter, every revision `rev` — for a subtree nothing pairs against. */
+void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev);
+
 /** IDENTITY HANDOVER AT THE FRONTIER of a warm tick. `fresh` is the run of
  * children a spine block gained since the previous publish — what the feed
  * appended and what this close appended, in that order — and `retired` is

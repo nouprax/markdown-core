@@ -147,6 +147,10 @@ struct markdown_core_parser {
 typedef struct markdown_core_warm_open_block {
     markdown_core_node *node;
     markdown_core_node *last_child;
+    /* The sibling before `last_child`, so what a close INSERTS before the
+     * youngest child — a definition harvested out of a paragraph, the lead
+     * paragraph split off a table — is inside the run a step refines. */
+    markdown_core_node *prev;
     markdown_core_node *retired;
     /* THE FACADE'S, carried here because the spine is its index: the fold
      * of this block's own fields and of every child BEFORE `last_child` —
@@ -154,6 +158,27 @@ typedef struct markdown_core_warm_open_block {
      * so the block is restamped from here in the size of what grew. The
      * engine writes nothing to it. */
     uint64_t prefix_hash;
+    /* The payload as it was: a close writes into it — a list's tightness at
+     * its finalize — and the retract puts the value back whole. Only for
+     * blocks whose close allocates nothing into it; the ones whose close
+     * moves their content buffer out (code, HTML) are not on a warm spine
+     * yet, and will carry their own entries. */
+    union markdown_core_node_payload payload;
+    /* What the close PUBLISHED for type and payload, taken at the retract
+     * before the open values go back: the identity step compares the next
+     * publish against it, so a list whose tightness the close recomputes to
+     * the same value keeps its revision, and a paragraph the feed retyped
+     * into a heading takes the tick's. */
+    union markdown_core_node_payload published_payload;
+    uint16_t published_type;
+    /* The youngest child's flags: a blank line at the close writes "ends
+     * with a blank line" onto the current block's youngest child, which is
+     * a SETTLED node the record would otherwise not hold. */
+    uint16_t last_child_flags;
+    /* How many marker records the block carried: a line captures markers on
+     * a container it continues (a quote's `>`), and the close's held line
+     * would leave one more. */
+    size_t concrete_count;
     uint16_t type;
     uint16_t flags;
     int end_line;
@@ -185,12 +210,31 @@ struct markdown_core_warm_undo {
     markdown_core_node *current;
     bool last_buffer_ended_with_cr;
     size_t diagnostic_count;
-    /* The close replaced a spine block with another object (a refine that
-     * promotes what it refines), which no retract can put back: the record
-     * describes a projection that can be read but not reopened. */
+    /* The close did something no retract puts back — replaced a spine block
+     * with another object, retyped one, grew a definition table, or closed a
+     * block whose close moves its bytes out (a code or HTML block, an
+     * extension's) — so the record describes a projection that can be read
+     * but not reopened: the build it belongs to is closed for good, and the
+     * next append rebuilds. */
     bool final;
     bool retracted;
 };
+
+/** The run of children a spine entry gained since its record was taken:
+ * from just after the sibling that preceded its saved youngest child (or
+ * from the first child), skipping that youngest child itself — which is the
+ * next spine entry, and has an entry of its own. */
+static inline markdown_core_node *markdown_core_warm_run_first(const markdown_core_warm_open_block *entry) {
+    markdown_core_node *first = entry->prev ? entry->prev->next : entry->node->first_child;
+    return first == entry->last_child && first ? first->next : first;
+}
+static inline markdown_core_node *markdown_core_warm_run_next(
+    const markdown_core_warm_open_block *entry,
+    const markdown_core_node *node
+) {
+    markdown_core_node *next = node->next;
+    return next == entry->last_child && next ? next->next : next;
+}
 typedef struct markdown_core_warm_undo markdown_core_warm_undo;
 
 /** Whether the parser's open state at end of feed is one a publish can be

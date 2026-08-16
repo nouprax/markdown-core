@@ -121,13 +121,11 @@ as a one-shot parse of the concatenated text. What appending saves today is
 the DECODE: appended bytes never move settled content, so after an append the
 binding re-decodes only what changed — decode and value construction are
 O(changed) per tick, while the JS-side index bookkeeping behind
-`document.node(id)` is O(live nodes) of pure map writes. The native append
-grows the tree in place for prose ticks — a paragraph continuing or opening
-on an ordinary character, a blank line, the line after a heading — and still
-rebuilds from scratch on a tick whose chunk begins a line with a marker (a
-heading's `#`, a bullet or a number, `>`, a fence, `|`, `[`, `<`, `*` or `_`,
-a backtick, `$`, `\`, or indentation), and on every tick while a list, quote,
-fence, table or definition is open. A node the append did not
+`document.node(id)` is O(live nodes) of pure map writes. The native append grows the tree in
+place for ticks whose open blocks are paragraphs, headings, block quotes,
+lists and items — most prose and most lists — and still rebuilds from
+scratch on the tick after one that opens a fence, an HTML block, a table, a
+formula block or a directive, and on a tick that brings a definition line. A node the append did not
 reach is the predecessor's very value object — same `id`, same `revision`,
 same `scope`, `===`. Any split of the text is legal, mid-word,
 mid-marker, mid-line — even between the two halves of a surrogate pair: a

@@ -159,12 +159,11 @@ O(document): appending never moves settled content, so a subtree the
 mutation did not touch crosses the native boundary as a single reuse record
 and resolves to the value the predecessor already decoded — the decode work
 per tick is proportional to what the appended bytes changed, plus the
-trailing spine. The native append grows the tree in place for prose ticks —
-a paragraph continuing or opening on an ordinary character, a blank line, the
-line after a heading — and still rebuilds from scratch on a tick whose chunk
-begins a line with a marker (a heading's `#`, a bullet or a number, `>`, a
-fence, `|`, `[`, `<`, `*` or `_`, a backtick, `$`, `\`, or indentation), and
-on every tick while a list, quote, fence, table or definition is open.
+trailing spine. The native append grows the tree in
+place for ticks whose open blocks are paragraphs, headings, block quotes,
+lists and items — most prose and most lists — and still rebuilds from
+scratch on the tick after one that opens a fence, an HTML block, a table, a
+formula block or a directive, and on a tick that brings a definition line.
 A failed append poisons the chain: every further mutation fails, every
 document's values and `close` remain, and recovery is a new `Document`.
 

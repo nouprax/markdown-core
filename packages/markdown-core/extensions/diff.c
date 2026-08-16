@@ -340,6 +340,11 @@ bool markdown_core_diff_trees(
     return !ctx.failed;
 }
 
+void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev) {
+    diff_ctx ctx = {chain, NULL, rev, false};
+    mint_subtree(&ctx, root);
+}
+
 // THE FRONTIER. A warm tick keeps every settled node — same object, same id,
 // same revision — and re-creates only what lives past the open spine's saved
 // youngest children: the tentative subtree the previous close had minted, and

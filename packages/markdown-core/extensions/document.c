@@ -357,32 +357,19 @@ static bool document_tick_warm(
         goto done;
     }
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
-    /* The predicate promised this state; the state is asked directly before
-     * the close is allowed to touch it, because a close on a state the
-     * record cannot put back is not merely wrong — a definitions-only
-     * paragraph is FREED by its own finalize, and the record would name it.
-     * A refusal here is the engine contradicting itself, and it poisons the
-     * chain rather than publishing what it cannot reopen. */
-    if (!markdown_core_parser_warm_eligible_at_eof(parser)) {
-        parser->internal_error = true;
-        goto done;
-    }
     if (!markdown_core_parser_warm_settle(parser, before)) {
         /* A spine block replaced by its own refine: the predicate excludes
          * every shape that can, so this is the engine contradicting itself. */
         parser->internal_error = true;
         goto done;
     }
+    /* The publish may come back `final`: the close did something the record
+     * cannot put back — closed a fence, retyped a paragraph, moved a block's
+     * bytes out. The projection is right all the same, the identity below
+     * runs all the same, and the record stays with the generation to say
+     * that the next append rebuilds. */
     after = markdown_core_parser_warm_publish(parser);
     if (!after || parser_failed(parser)) {
-        goto done;
-    }
-    if (after->final) {
-        /* The close retyped or replaced a spine block. The predicate keeps
-         * every line that can out of a warm tick, so this too is the engine
-         * contradicting itself — and the record's own spine may now name a
-         * freed node, so nothing below may run. */
-        parser->internal_error = true;
         goto done;
     }
     /* Identity and revision, deepest block first. The run a block gained is
@@ -397,25 +384,57 @@ static bool document_tick_warm(
         while (i-- > 0) {
             markdown_core_warm_open_block *entry = &before->spine[i];
             markdown_core_node *node = entry->node;
-            markdown_core_node *run = entry->last_child ? entry->last_child->next : node->first_child;
+            markdown_core_node *appended = entry->last_child ? entry->last_child->next : node->first_child;
+            markdown_core_node *run = markdown_core_warm_run_first(entry);
             markdown_core_node *child;
+            bool inserted = run != appended;
             bool changed = false;
-            for (child = run; child; child = child->next) {
+            for (child = run; child; child = markdown_core_warm_run_next(entry, child)) {
                 markdown_core_node_stamp_tree(child);
             }
-            if (!markdown_core_diff_frontier(chain, generation->mem, entry->retired, run, revision, &changed)) {
+            /* The run pairs against the retired frontier only where the two
+             * line up: nothing was retired before the youngest child, so a
+             * close that INSERTED there (a definition harvested, a lead
+             * paragraph split off a table) hands the appended part over
+             * positionally and mints what came before it. */
+            if (inserted) {
+                for (child = run; child && child != appended; child = markdown_core_warm_run_next(entry, child)) {
+                    markdown_core_diff_mint(chain, child, revision);
+                }
+                changed = true;
+            }
+            if (!markdown_core_diff_frontier(chain, generation->mem, entry->retired, appended, revision, &changed)) {
                 parser->oom = true;
                 goto done;
             }
-            changed_below = changed_below || changed;
-            if (changed_below) {
-                node->last_changed_rev = revision;
+            /* The block's own projection: the feed may have retyped it (a
+             * setext underline turns the open paragraph into a heading), and
+             * the close writes into its payload (a list's tightness) — a
+             * value the last close published too, and the same value keeps
+             * the revision. */
+            {
+                bool own_changed = node->type != entry->published_type ||
+                                   memcmp(&node->as, &entry->published_payload, sizeof(node->as)) != 0;
+                changed = changed || own_changed;
+                changed_below = changed_below || changed;
+                if (changed_below) {
+                    node->last_changed_rev = revision;
+                }
+                /* The prefix fold was taken over the block's own fields as
+                 * they were published last; a block whose own fields moved,
+                 * or that gained children before its youngest, is stamped
+                 * whole — once, for the tick that moved it. */
+                inserted = inserted || own_changed;
             }
-            markdown_core_node_stamp_from(
-                node,
-                entry->prefix_hash,
-                entry->last_child ? entry->last_child : node->first_child
-            );
+            if (inserted) {
+                markdown_core_node_stamp(node);
+            } else {
+                markdown_core_node_stamp_from(
+                    node,
+                    entry->prefix_hash,
+                    entry->last_child ? entry->last_child : node->first_child
+                );
+            }
         }
     }
     record_prefix_hashes(after, before);

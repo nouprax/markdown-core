@@ -2400,162 +2400,184 @@ static void S_postprocess_blocks(markdown_core_parser *parser) {
 
 /* --- the warm tick: eligibility, settle, publish, retract ------------------ */
 
-/* THE ELIGIBILITY PREDICATE. A publish can be retracted only when the close's
- * side effects stay inside what the undo record restores: the open blocks'
- * flags, end coordinates, content sizes and youngest children; the parser's
- * line counters, current block, CR seam, marks, held line and diagnostics
- * count; and whatever the close APPENDED past each open block's youngest
- * child. Everything a line can do to an open block beyond that — retype it
- * (setext underline, table delimiter row), free it (a definitions-only
- * paragraph, a formula promotion), drop or detach its content (definition
- * harvest, fence info, code literal), write a payload (list tightness) — or
- * do to the parser (grow a definition table) is outside the record, and the
- * predicate is exactly the guard that keeps a close inside it.
+/* THE ELIGIBILITY PREDICATE, and what it is for. A publish can be retracted
+ * only when the close's effects stay inside what the record restores; a
+ * close whose effects escape it is still SAFE to run — the record then comes
+ * back `final`, the build is closed for good, and the next append rebuilds
+ * — with exactly one exception, which is what this predicate exists to keep
+ * out: a paragraph that is nothing but link reference definitions is FREED
+ * by its own finalize, and a record that named it would then name freed
+ * memory. Definitions also change what settled units mean, which no close
+ * may do until the units that mention a label are re-refined when it
+ * arrives (the plan's flip machinery). So the predicate refuses a line that
+ * would begin a paragraph with `[` — a definition, or a footnote's — and a
+ * paragraph whose content already does; and it refuses the two bytes that
+ * make a paragraph's refine REPLACE it (a display formula standing alone,
+ * `$$` or `\\[` at content start), because a spine block replaced during
+ * SETTLE would leave the record's identity step holding a node the refine
+ * freed. Everything else a line can do — open any block, retype a paragraph
+ * into a heading or a table, close a fence — is either put back by the
+ * record or ends the build cleanly.
  *
- * It is a pure probe over bytes and the open spine's SHAPE, decided before
- * the first write of a tick: the spine must be the document alone or the
- * document over one open paragraph or heading, and every line in play — the
- * held one, each line the chunk begins, and (through its first byte) the
- * paragraph's accumulated content — must be one that can only continue or
- * open a paragraph, or be blank. Coarse on purpose: a byte the predicate is unsure
- * about belongs to the fallback, which is exactly as correct as this and
- * only slower. */
+ * It is a pure probe over bytes and the record: decided before a retract, a
+ * feed or a write; a refusal costs the read. */
 
-/* A byte that, at the start of a line, may open a block other than a
- * paragraph, close the open one into something else, or start a definition.
- * Each entry names the construct that puts it here. */
-static bool warm_byte_opens(unsigned char c) {
-    switch (c) {
-    case ' ':
-    case '\t': /* indentation: an indented code block, or a continuation
-                  the block phase must judge */
-    case 0x0b:
-    case 0x0c: /* the table delimiter-row scanner accepts these as spacing
-                  before its markers, and nothing else in the block phase
-                  skips them — the one place a byte outside this set could
-                  precede a marker */
-    case '#':  /* ATX heading */
-    case '>':  /* block quote */
-    case '*':
-    case '-':
-    case '+': /* list item, thematic break, setext H2 underline */
-    case '_': /* thematic break */
-    case '=': /* setext H1 underline */
-    case '~':
-    case '`': /* fenced code */
-    case '<': /* HTML block */
-    case '|':
-    case ':': /* table delimiter row; `:::` directive */
-    case '[': /* link reference definition; footnote definition */
-    case '$':
-    case '\\': /* formula block: `$$`, `\\[` */
-        return true;
-    default:
-        return c >= '0' && c <= '9'; /* ordered list marker */
-    }
-}
-
-/* A byte that, anywhere, can make the refine REPLACE the unit it refines: a
- * paragraph that is nothing but a display formula is promoted to a formula
- * block, and the promotion frees the paragraph (extensions/formula.c). The
- * spine leaf is the one unit a retract must find where it left it. */
-static bool warm_byte_replaces(unsigned char c) { return c == '$'; }
-
-/* Whether every line a byte run begins is one the warm path may feed:
- * `at_line_start` says whether the first byte begins a line, and a line end
- * inside the run begins the next. `first_line` says the run begins the
- * document's very first line, whose byte-order mark the block phase skips
- * before it judges anything — so the predicate skips it too, or a mark
- * would hide the byte behind it. */
 static const unsigned char warm_bom[3] = {0xef, 0xbb, 0xbf};
 
-static bool warm_run_eligible(const unsigned char *bytes, size_t length, bool at_line_start, bool first_line) {
+/* The byte a line's innermost block-level meaning starts at: after its
+ * leading spaces and tabs, after the document's byte-order mark on the
+ * first line (which the block phase skips before it judges anything), and
+ * after every container marker the line opens or continues — a quote's `>`,
+ * a bullet or an ordinal with its delimiter — since a definition inside a
+ * quote or an item is as much a definition as one at the margin. */
+static unsigned char warm_line_marker(const unsigned char *bytes, size_t length, bool first_line) {
     size_t i = 0;
-    if (first_line && at_line_start && length >= 3 && memcmp(bytes, warm_bom, 3) == 0) {
+    if (first_line && length >= 3 && memcmp(bytes, warm_bom, 3) == 0) {
         i = 3;
     }
-    for (; i < length; i++) {
-        unsigned char c = bytes[i];
-        if (warm_byte_replaces(c) || (at_line_start && warm_byte_opens(c))) {
-            return false;
+    for (;;) {
+        size_t start;
+        while (i < length && (bytes[i] == ' ' || bytes[i] == '\t')) {
+            i++;
         }
-        at_line_start = c == '\n' || c == '\r';
+        if (i >= length) {
+            return 0;
+        }
+        start = i;
+        if (bytes[i] == '>') {
+            i++;
+            continue;
+        }
+        if ((bytes[i] == '-' || bytes[i] == '*' || bytes[i] == '+') && i + 1 < length &&
+            (bytes[i + 1] == ' ' || bytes[i + 1] == '\t')) {
+            i += 2;
+            continue;
+        }
+        while (i < length && bytes[i] >= '0' && bytes[i] <= '9') {
+            i++;
+        }
+        if (i > start && i + 1 < length && (bytes[i] == '.' || bytes[i] == ')') &&
+            (bytes[i + 1] == ' ' || bytes[i + 1] == '\t')) {
+            i += 2;
+            continue;
+        }
+        return bytes[start];
+    }
+}
+
+/* Whether a line that begins with this marker byte may be fed or held: not
+ * one that begins a definition, and not one that begins a standalone
+ * formula that would replace the paragraph it opens. */
+static bool warm_marker_admitted(unsigned char marker) { return marker != '[' && marker != '$' && marker != '\\'; }
+
+/* Every line a byte run begins is judged by its marker; `at_line_start` says
+ * whether the run's first byte begins a line, `first_line` whether that line
+ * is the document's first (its byte-order mark is skipped). */
+static bool warm_run_eligible(const unsigned char *bytes, size_t length, bool at_line_start, bool first_line) {
+    size_t i = 0;
+    while (i < length) {
+        if (at_line_start) {
+            size_t end = i;
+            while (end < length && bytes[end] != '\n' && bytes[end] != '\r') {
+                end++;
+            }
+            if (!warm_marker_admitted(warm_line_marker(bytes + i, end - i, first_line))) {
+                return false;
+            }
+            first_line = false;
+            i = end;
+            at_line_start = false;
+            continue;
+        }
+        at_line_start = bytes[i] == '\n' || bytes[i] == '\r';
+        i++;
     }
     return true;
 }
 
-/* An open paragraph's accumulated content: its lines were already judged by
- * the block phase, so what matters is what its CLOSE would still do with it
- * — harvest definitions from a content that begins with `[`, or promote a
- * paragraph that is one display formula (which needs the formula at content
- * start, `$$` or `\\[`) — plus the replacing byte anywhere. */
-static bool warm_content_eligible(const unsigned char *content, size_t size) {
-    size_t i;
-    if (size == 0) {
-        return true;
-    }
-    if (content[0] == '[' || content[0] == '\\') {
+/* A held line is judged by its marker like any other; a held line that is
+ * only spaces is a blank line at the close, and what a blank line writes —
+ * onto the current block's youngest child — the record holds. */
+static bool warm_held_admitted(const unsigned char *held, size_t size, bool first_line) {
+    return size == 0 || warm_marker_admitted(warm_line_marker(held, size, first_line));
+}
+
+/* An open paragraph's content: its close harvests definitions from a content
+ * that begins with `[`, and its refine replaces it when the content is one
+ * standalone formula, which needs `$$` or `\\[` at its start. */
+static bool warm_content_admitted(const unsigned char *content, size_t size) {
+    return size == 0 || warm_marker_admitted(content[0]);
+}
+
+/* The blocks whose close the record puts back: the core containers, whose
+ * close writes flags, end coordinates and (a list's) tightness into the
+ * payload; and the leaves whose close writes nothing but flags and end
+ * coordinates. A block whose close moves its content out of its buffer (a
+ * code or HTML block) or carries an extension's state is closed for good. */
+static bool warm_block_retractable(const markdown_core_node *node) {
+    if (node->extension) {
         return false;
     }
-    for (i = 0; i < size; i++) {
-        if (warm_byte_replaces(content[i])) {
-            return false;
-        }
+    switch (S_type(node)) {
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
+    case MARKDOWN_CORE_NODE_LIST:
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+    case MARKDOWN_CORE_NODE_PARAGRAPH:
+    case MARKDOWN_CORE_NODE_HEADING:
+    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
+    const markdown_core_node *leaf;
+    if (!parser->root || parser->oom || parser->internal_error) {
+        return false;
+    }
+    if (!warm_held_admitted(
+            (const unsigned char *)parser->linebuf.ptr,
+            parser->linebuf.size,
+            parser->line_number == 0
+        )) {
+        return false;
+    }
+    /* THE OPEN CHAIN is root down to parser->current along youngest
+     * children; the leaf is the current block. */
+    leaf = parser->current;
+    if (leaf && leaf != parser->root && S_type(leaf) == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !warm_content_admitted((const unsigned char *)leaf->content.ptr, leaf->content.size)) {
+        return false;
     }
     return true;
 }
 
-/* The open state a tick begins from, as the predicate sees it: the root, the
- * one open block under it (or NULL) with the flags it had while open, that
- * block's content, and the held partial line. Built either from the live
- * parser (a fresh build at EOF) or from the record of the previous publish
- * (a warm tick, before it has retracted anything). */
-typedef struct warm_open_state {
-    const markdown_core_node *root;
-    const markdown_core_node *leaf;
-    const unsigned char *content;
-    size_t content_size;
-    const unsigned char *held;
-    size_t held_size;
-    int line_number; /* 0 while the document's first line is still held */
-    bool root_open;
-    bool leaf_open;
-    bool spine_shallow; /* nothing is open below the leaf */
-} warm_open_state;
-
-static bool warm_state_eligible(
+bool markdown_core_parser_warm_eligible(
     const markdown_core_parser *parser,
-    const warm_open_state *state,
+    const markdown_core_warm_undo *published,
     const unsigned char *chunk,
     size_t length
 ) {
-    if (parser->oom || parser->internal_error || !state->root || !state->root_open || !state->spine_shallow) {
+    const markdown_core_warm_open_block *leaf;
+
+    if (!published || published->final || published->retracted || published->spine_count == 0) {
         return false;
     }
-    if (S_type(state->root) != MARKDOWN_CORE_NODE_DOCUMENT) {
+    if (parser->oom || parser->internal_error) {
         return false;
     }
-    if (state->leaf) {
-        /* A paragraph, subject to what its close would still do with its
-         * content; or a heading, which nothing continues and whose close
-         * does nothing but stamp its end — an ATX heading is the open leaf
-         * after every "# Title\n", and a setext one after its underline. */
-        if (!state->leaf_open) {
-            return false;
-        }
-        switch (S_type(state->leaf)) {
-        case MARKDOWN_CORE_NODE_PARAGRAPH:
-            if (!warm_content_eligible(state->content, state->content_size)) {
-                return false;
-            }
-            break;
-        case MARKDOWN_CORE_NODE_HEADING:
-            break;
-        default:
-            return false;
-        }
+    /* Read off the record, not the tree: the close changed the spine, but it
+     * saved what it changed, and the content bytes below a saved size are
+     * exactly the ones the block had, since appends only ever add past
+     * them. */
+    leaf = &published->spine[published->spine_count - 1];
+    if (published->spine_count > 1 && leaf->type == MARKDOWN_CORE_NODE_PARAGRAPH &&
+        !warm_content_admitted((const unsigned char *)leaf->node->content.ptr, leaf->content_size)) {
+        return false;
     }
-    if (!warm_run_eligible(state->held, state->held_size, true, state->line_number == 0)) {
+    if (!warm_held_admitted(published->held, published->held_size, published->line_number == 0)) {
         return false;
     }
     if (length == 0) {
@@ -2566,81 +2588,19 @@ static bool warm_state_eligible(
      * byte-order mark is skipped, so a held line that is the mark, or part
      * of it, puts the line's true start INSIDE the chunk — after whatever
      * completes the mark — or nowhere yet. */
-    if (state->line_number == 0 && state->held_size > 0 && state->held_size <= 3 &&
-        memcmp(state->held, warm_bom, state->held_size) == 0) {
-        size_t need = 3 - state->held_size;
+    if (published->line_number == 0 && published->held_size > 0 && published->held_size <= 3 &&
+        memcmp(published->held, warm_bom, published->held_size) == 0) {
+        size_t need = 3 - published->held_size;
         if (length < need) {
-            /* Still inside the mark, or a line that merely begins with its
-             * first byte: nothing here begins a line. */
-            return memcmp(chunk, warm_bom + state->held_size, length) == 0 ||
+            return memcmp(chunk, warm_bom + published->held_size, length) == 0 ||
                    warm_run_eligible(chunk, length, false, false);
         }
-        if (memcmp(chunk, warm_bom + state->held_size, need) == 0) {
+        if (memcmp(chunk, warm_bom + published->held_size, need) == 0) {
             return warm_run_eligible(chunk + need, length - need, true, false);
         }
         return warm_run_eligible(chunk, length, false, false);
     }
-    return warm_run_eligible(chunk, length, state->held_size == 0, state->line_number == 0);
-}
-
-bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
-    warm_open_state state;
-
-    memset(&state, 0, sizeof(state));
-    state.root = parser->root;
-    state.root_open = parser->root && (parser->root->flags & MARKDOWN_CORE_NODE__OPEN);
-    state.held = (const unsigned char *)parser->linebuf.ptr;
-    state.held_size = parser->linebuf.size;
-    state.line_number = parser->line_number;
-    /* THE OPEN CHAIN is root down to parser->current along youngest children
-     * — the block phase's own definition, and the one to use: an OPEN flag
-     * alone does not say it, since a block an extension made without ever
-     * routing it through the block phase keeps the flag for life (a table
-     * cell). So the leaf is the root's youngest child when the root is not
-     * itself the current block, and the chain is shallow exactly when that
-     * leaf is the current block. */
-    state.spine_shallow = true;
-    if (parser->root && parser->current != parser->root) {
-        const markdown_core_node *leaf = parser->root->last_child;
-        state.leaf = leaf;
-        state.leaf_open = leaf && (leaf->flags & MARKDOWN_CORE_NODE__OPEN);
-        state.content = leaf ? (const unsigned char *)leaf->content.ptr : NULL;
-        state.content_size = leaf ? leaf->content.size : 0;
-        state.spine_shallow = leaf == parser->current;
-    }
-    return warm_state_eligible(parser, &state, NULL, 0);
-}
-
-bool markdown_core_parser_warm_eligible(
-    const markdown_core_parser *parser,
-    const markdown_core_warm_undo *published,
-    const unsigned char *chunk,
-    size_t length
-) {
-    warm_open_state state;
-
-    if (!published || published->final || published->retracted || published->spine_count == 0) {
-        return false;
-    }
-    /* Read off the record, not the tree: the close changed the spine, but it
-     * saved what it changed — every entry was open, and the content bytes
-     * below a saved size are exactly the ones the block had, since appends
-     * only ever add past them. */
-    memset(&state, 0, sizeof(state));
-    state.root = published->spine[0].node;
-    state.root_open = true;
-    state.spine_shallow = published->spine_count <= 2;
-    if (published->spine_count >= 2) {
-        const markdown_core_warm_open_block *entry = &published->spine[1];
-        state.leaf = entry->node;
-        state.leaf_open = true;
-        state.content = (const unsigned char *)entry->node->content.ptr;
-        state.content_size = entry->content_size;
-    }
-    state.held = published->held;
-    state.held_size = published->held_size;
-    state.line_number = published->line_number;
-    return warm_state_eligible(parser, &state, chunk, length);
+    return warm_run_eligible(chunk, length, published->held_size == 0, published->line_number == 0);
 }
 
 /* --- settle: refine what a step closed ------------------------------------ */
@@ -2715,10 +2675,10 @@ static bool warm_refine_region(markdown_core_parser *parser, markdown_core_warm_
     while (i-- > 0) {
         markdown_core_warm_open_block *entry = &spine[i];
         markdown_core_node *node = entry->node;
-        markdown_core_node *child = entry->last_child ? entry->last_child->next : node->first_child;
+        markdown_core_node *child = markdown_core_warm_run_first(entry);
         while (child) {
             markdown_core_node *survivor = warm_settle_subtree(parser, child);
-            child = survivor->next;
+            child = markdown_core_warm_run_next(entry, survivor);
         }
         /* The document root is never refined: refine_blocks starts below it,
          * and every hook expects a block. */
@@ -2811,11 +2771,15 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
             markdown_core_warm_open_block *entry = &undo->spine[i++];
             entry->node = node;
             entry->last_child = node->last_child;
+            entry->prev = node->last_child ? node->last_child->prev : NULL;
             entry->type = node->type;
             entry->flags = node->flags;
             entry->end_line = node->end_line;
             entry->end_column = node->end_column;
             entry->content_size = node->content.size;
+            entry->payload = node->as;
+            entry->concrete_count = node->concrete ? node->concrete->count : 0;
+            entry->last_child_flags = node->last_child ? node->last_child->flags : 0;
         }
         undo->spine_count = depth;
     }
@@ -2863,6 +2827,11 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
         size_t definitions = parser->refmap ? parser->refmap->size : 0;
         size_t footnotes = parser->footnote_defs ? parser->footnote_defs->size : 0;
         size_t i;
+        for (i = 0; i < undo->spine_count; i++) {
+            if (!warm_block_retractable(undo->spine[i].node)) {
+                undo->final = true;
+            }
+        }
         markdown_core_parser_finalize_blocks(parser);
         /* A spine block the held line RETYPED (a setext underline, a table
          * delimiter row), or a close that GREW a definition table (a held
@@ -2953,6 +2922,9 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             node->first_child = NULL;
         }
         node->last_child = entry->last_child;
+        if (entry->last_child) {
+            entry->last_child->flags = entry->last_child_flags;
+        }
         if (run) {
             run->prev = NULL;
         }
@@ -2965,6 +2937,39 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         node->end_line = entry->end_line;
         node->end_column = entry->end_column;
         markdown_core_strbuf_truncate(&node->content, entry->content_size);
+        entry->published_type = node->type;
+        entry->published_payload = node->as;
+        node->as = entry->payload;
+        if (node->concrete) {
+            if (entry->concrete_count == 0) {
+                markdown_core_concrete_records_free(markdown_core_node_mem(node), node->concrete);
+                node->concrete = NULL;
+            } else {
+                node->concrete->count = entry->concrete_count;
+            }
+        }
+        /* A list's tentative finalize memoized "ends with a blank line" on
+         * its items and their youngest-child chains — a cache whose value
+         * may still change while the list is open, and which the real
+         * finalize would otherwise trust. The memo comes off exactly where
+         * the finalize put it. */
+        if (S_type(node) == MARKDOWN_CORE_NODE_LIST) {
+            markdown_core_node *item;
+            for (item = node->first_child; item; item = item->next) {
+                markdown_core_node *sub;
+                item->flags &= (uint16_t)~MARKDOWN_CORE_NODE__LAST_LINE_CHECKED;
+                for (sub = item->first_child; sub; sub = sub->next) {
+                    markdown_core_node *chain = sub;
+                    while (chain) {
+                        chain->flags &= (uint16_t)~MARKDOWN_CORE_NODE__LAST_LINE_CHECKED;
+                        chain =
+                            (S_type(chain) == MARKDOWN_CORE_NODE_LIST || S_type(chain) == MARKDOWN_CORE_NODE_LIST_ITEM)
+                                ? chain->last_child
+                                : NULL;
+                    }
+                }
+            }
+        }
     }
     parser->line_number = undo->line_number;
     parser->last_line_length = undo->last_line_length;

@@ -3034,10 +3034,14 @@ static int case_warm_tick_ledger(void) {
         {"\ngamma delta\n", true, "a blank line closes the paragraph, prose opens the next"},
         {"epsilon", true, "a held partial line"},
         {" zeta\n", true, "continues the held line, so its space is not at a line start"},
-        {"# heading\n", false, "`#` at a line start: an ATX heading is not a prose shape"},
-        {"more prose\n", true, "the rebuild ended with only the document open, so it published"},
-        {"- item\n", false, "`-` at a line start: a list is not a prose shape"},
-        {"tail", false, "prose bytes, but the rebuild ended inside a list item and could not publish"},
+        {"# heading\n", true, "an ATX heading, open at end of feed, is a leaf the record puts back"},
+        {"more prose\n", true, "the heading closed by the feed, prose after it"},
+        {"- item\n", true, "a list, its item and its paragraph are blocks the record puts back"},
+        {"tail\n", true, "a lazy continuation inside the item"},
+        {"[x]: /y\n", false, "a definition would change what settled units mean, and nothing re-refines them yet"},
+        {"after it\n", true, "the rebuild ended in prose and published"},
+        {"```\n", true, "the fence opens in the feed; the close cannot be put back, so the record comes back final"},
+        {"code\n", false, "a final record reopens nothing"},
     };
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
@@ -3102,9 +3106,10 @@ static int case_warm_tick_ledger(void) {
         result = -1;
     }
     /* The end state says why the last tick could not be warm: a build that
-     * ends inside a list item leaves no record to reopen from. */
-    if (result == 0 && document->chain->head.undo != NULL) {
-        fprintf(stderr, "warm_tick_ledger: a build that ended inside a list item still published a record\n");
+     * ends inside a fence closes for good, and its record — kept, since a
+     * projection was published from it — is final. */
+    if (result == 0 && (document->chain->head.undo == NULL || !document->chain->head.undo->final)) {
+        fprintf(stderr, "warm_tick_ledger: a build that ended inside a fence did not come back final\n");
         result = -1;
     }
     markdown_core_document_free(document);
@@ -3214,6 +3219,12 @@ static const char *const WC_TEXTS[] = {
      * admits; the cuts inside "# Ti" and inside "==" are its to refuse. */
     "# Title\n\nbody text\nmore\n",
     "Title\n===\n\nbody\n",
+    /* Containers: a list with a lazy continuation and an indented paragraph
+     * in an item, then a block quote — the record puts back their flags,
+     * end coordinates and (the list's) tightness, and takes the memo the
+     * list's finalize leaves on its items back off. */
+    "- one\n- two\nlazy\n\n  para in item\n- three\n\n> quote\n> more\n\nafter\n",
+    "1. first\n2. second\n   > nested quote\n   > goes on\n\nend\n",
     /* Multi-byte text, so cuts land inside characters as well as inside
      * words — the split the streaming contract calls legal and the one a
      * token stream produces constantly. */
@@ -3229,6 +3240,7 @@ static const char *const WC_TEXTS[] = {
 static int case_warm_close_undo(void) {
     size_t text_index;
     size_t eligible = 0;
+    size_t closed_for_good = 0;
     size_t total = 0;
 
     for (text_index = 0; WC_TEXTS[text_index]; text_index++) {
@@ -3281,6 +3293,17 @@ static int case_warm_close_undo(void) {
                 markdown_core_parser_free(twin);
                 return -1;
             }
+            if (undo->final) {
+                /* The close did what no retract puts back — a held setext
+                 * underline retyped the paragraph — and the projection was
+                 * still the one-shot parse; that is the whole claim for a
+                 * final record, and the parser is done. */
+                closed_for_good++;
+                markdown_core_parser_warm_undo_free(undo);
+                markdown_core_parser_free(parser);
+                markdown_core_parser_free(twin);
+                continue;
+            }
             markdown_core_parser_warm_retract(parser, undo);
             after = markdown_core_parser_warm_fingerprint(parser);
             if (before != after) {
@@ -3332,7 +3355,12 @@ static int case_warm_close_undo(void) {
         fprintf(stderr, "warm_close_undo: only %zu of %zu cuts were eligible\n", eligible, total);
         return -1;
     }
-    printf("warm_close_undo: %zu of %zu cuts closed and came back\n", eligible, total);
+    printf(
+        "warm_close_undo: %zu of %zu cuts closed and came back (%zu of them closed for good)\n",
+        eligible - closed_for_good,
+        total,
+        closed_for_good
+    );
     return 0;
 }
 
@@ -3352,6 +3380,11 @@ static int case_warm_close_undo(void) {
 static int case_warm_tick_stream(void) {
     static const char *const texts[] = {
         "streaming prose arrives a few bytes at a time\n\nand paragraphs end\n\nwhile more follows",
+        /* No line here begins with whitespace: a held line that is only
+         * spaces would be a blank line at the close, which writes onto a
+         * settled node, and the predicate refuses it — that cut belongs to
+         * warm_close_undo, which skips what the predicate skips. */
+        "- one\n- two\nlazy\n\n- three\n\n> quote\n> more\n\n# heading\nafter it",
         "\xc3\xbc"
         "ber caf\xc3\xa9 und stra"
         "\xc3\x9f"

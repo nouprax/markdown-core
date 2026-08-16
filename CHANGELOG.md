@@ -18,17 +18,18 @@ promised to remain compatible between releases.
   bindings decode O(changed) per append: an unchanged (id, revision)
   subtree reuses the previously decoded value outright, so a stream's
   per-tick decode cost follows the change, not the document. On the engine
-  side the head's tree now GROWS IN PLACE for prose ticks — a paragraph
-  continuing or opening on an ordinary character, a blank line, the line
-  after a heading — retracting the previous projection, feeding the chunk,
-  settling what it closed and publishing again, with ids handed over at
-  the frontier by the same diff a rebuild uses. A tick whose chunk begins
-  a line with a marker (`#`, a bullet or a number, `>`, a fence, `|`, `[`,
-  `<`, `*` or `_`, a backtick, `$`, `\`, or indentation) still rebuilds
-  from scratch, as does every tick while a list, quote, fence, table or
-  definition is open, and a failed append leaves the head answering for no
-  tree. The chain counts both kinds of tick; the shapes still rebuilding
-  are the next milestone's (`docs/reviews/2026-08-13-living-tree-plan.md`).
+  side the head's tree now GROWS IN PLACE — retracting the previous
+  projection, feeding the chunk, settling what it closed and publishing
+  again, with ids handed over at the frontier by the same diff a rebuild
+  uses — for every tick whose open blocks are paragraphs, headings, thematic
+  breaks, block quotes, lists and items, and whose lines begin neither a
+  definition (`[` after any container markers) nor a standalone formula
+  (`$`, `\`). A tick that opens a fence, an HTML block, a table, a formula
+  block or a directive still publishes correctly but closes the build for
+  good, so the next tick rebuilds from scratch; a definition line rebuilds
+  at once; and a failed append leaves the head answering for no tree. The
+  chain counts both kinds of tick; the shapes still rebuilding are the next
+  milestone's (`docs/reviews/2026-08-13-living-tree-plan.md`).
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
   mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

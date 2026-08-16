@@ -117,12 +117,10 @@ node the append did not reach keeps its id, revision, and positions, and the
 binding reuses its already-decoded value whole — subtree and all — rather
 than rebuilding it, so decode work is proportional to what the append
 changed plus the open frontier it grew. The native append grows the tree in
-place for prose ticks — a paragraph continuing or opening on an ordinary
-character, a blank line, the line after a heading — and still rebuilds from
-scratch on a tick whose chunk begins a line with a marker (a heading's `#`,
-a bullet or a number, `>`, a fence, `|`, `[`, `<`, `*` or `_`, a backtick,
-`$`, `\`, or indentation), and on every tick while a list, quote, fence,
-table or definition is open.
+place for ticks whose open blocks are paragraphs, headings, block quotes,
+lists and items — most prose and most lists — and still rebuilds from
+scratch on the tick after one that opens a fence, an HTML block, a table, a
+formula block or a directive, and on a tick that brings a definition line.
 
 Hand the returned document to SwiftUI and stop. The stability a reactive
 framework needs is on the TREE: an unchanged node keeps its `id` and its
