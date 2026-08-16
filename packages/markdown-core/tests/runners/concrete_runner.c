@@ -3548,6 +3548,24 @@ static int was_empty_append_moves_nothing(markdown_core_document **document, siz
     return result;
 }
 
+/* Every node's subtree hash equals what stamping it afresh would give — the
+ * property the append diff pairs on, and the one a warm tick maintains
+ * incrementally: from a carried prefix fold for spine blocks, whole for
+ * what they gained. A tree walked here is small; the check is O(tree). */
+static bool was_stamps_are_fresh(const markdown_core_node *node) {
+    for (; node; node = node->next) {
+        uint64_t expected;
+        if (!was_stamps_are_fresh(node->first_child)) {
+            return false;
+        }
+        expected = markdown_core_node_hash_children(node, markdown_core_node_stamp_own(node), node->first_child);
+        if (expected != node->subtree_hash) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static int case_warm_append_stream(void) {
     static const char *const texts[] = {
         "Streaming prose arrives a few bytes at a time, and the paragraph keeps going\n"
@@ -3627,6 +3645,17 @@ static int case_warm_append_stream(void) {
                     fprintf(
                         stderr,
                         "warm_append_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
+                        text_index,
+                        stride,
+                        fed
+                    );
+                    failed = 1;
+                    break;
+                }
+                if (!was_stamps_are_fresh(document->chain->head.parser->root)) {
+                    fprintf(
+                        stderr,
+                        "warm_append_stream: text %zu stride %zu left a stale subtree hash at %zu bytes\n",
                         text_index,
                         stride,
                         fed

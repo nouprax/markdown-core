@@ -207,15 +207,23 @@ static void record_prefix_hashes(markdown_core_warm_undo *record, const markdown
                 break;
             }
         }
-        if (carried) {
-            h = carried->prefix_hash;
-            child = carried->last_child ? carried->last_child : node->first_child;
-        } else {
+        if (!entry->last_child) {
+            /* No child preceded the youngest: the fold is the block's own
+             * fields alone. (An unrefined leaf at its save; the root of an
+             * empty document. What hangs under it NOW — a leaf's tentative
+             * inline children — is what the restamp folds, not the prefix.) */
             h = markdown_core_node_stamp_own(node);
-            child = node->first_child;
-        }
-        for (; child && child != entry->last_child; child = child->next) {
-            h = markdown_core_hash_mix(h, child->subtree_hash);
+        } else {
+            if (carried && carried->last_child) {
+                h = carried->prefix_hash;
+                child = carried->last_child;
+            } else {
+                h = markdown_core_node_stamp_own(node);
+                child = node->first_child;
+            }
+            for (; child && child != entry->last_child; child = child->next) {
+                h = markdown_core_hash_mix(h, child->subtree_hash);
+            }
         }
         entry->prefix_hash = h;
     }
