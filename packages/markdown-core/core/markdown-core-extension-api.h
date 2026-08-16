@@ -303,7 +303,10 @@ typedef int (*markdown_core_accepts_lines_func)(markdown_core_extension *extensi
  *
  * Returns the node now occupying the block's position in the tree: the
  * block itself, or its replacement when the extension replaced or retyped
- * the block. Must not return NULL. */
+ * the block. Must not return NULL. A replacement is spliced in where the
+ * block was and the block UNLINKED, never freed: the pipeline owns what a
+ * replacement leaves behind — it frees it, or a stream keeps it to put the
+ * block back after a speculative close. */
 typedef markdown_core_node *(*markdown_core_postprocess_block_func)(
     markdown_core_extension *extension,
     markdown_core_parser *parser,
@@ -344,6 +347,18 @@ typedef void (*markdown_core_free_opaque_func)(
  * that leaves this NULL keeps a block of its own closed for good in a
  * stream: the engine will not guess what its lines write. */
 typedef size_t (*markdown_core_opaque_size_func)(markdown_core_extension *extension, markdown_core_node *node);
+
+/** Puts a payload back from a snapshot the size above describes. Optional:
+ * without it the engine copies the bytes back, which is right when nothing
+ * the close or the refine did allocated INTO the payload; an extension whose
+ * refine mints a literal into it (the formula block's) frees what it minted
+ * here, then copies. */
+typedef void (*markdown_core_restore_opaque_func)(
+    markdown_core_extension *extension,
+    markdown_core_mem *mem,
+    markdown_core_node *node,
+    const void *snapshot
+);
 
 /** Return the index of the line currently being parsed, starting with 1.
  */

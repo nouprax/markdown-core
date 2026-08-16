@@ -152,6 +152,11 @@ typedef struct markdown_core_warm_open_block {
      * paragraph split off a table — is inside the run a step refines. */
     markdown_core_node *prev;
     markdown_core_node *retired;
+    /* The block itself, when the close's refine REPLACED it — a paragraph
+     * that is one display formula is promoted to a formula block, which
+     * takes its place while the block is kept here, unlinked, for the
+     * retract to put back. `node` then names the survivor. */
+    markdown_core_node *replaced;
     /* THE FACADE'S, carried here because the spine is its index: the fold
      * of this block's own fields and of every child BEFORE `last_child` —
      * all settled, all the same objects with the same hashes from now on —
@@ -346,17 +351,21 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo);
  * consumer keys on.
  *
  * RETURNS THE NODE NOW AT THE UNIT'S POSITION. A postprocessor may replace a
- * unit and free what it replaced (a fenced code block whose info is
- * `formula`, and a paragraph that is nothing but a display formula, both in
- * the formula extension), so the returned pointer is the only one a caller
- * may keep. Two rules come with it: anything caching the unit's CHILD
+ * unit (a fenced code block whose info is `formula`, and a paragraph that is
+ * nothing but a display formula, both in the formula extension); the
+ * replaced unit comes back through `replaced`, unlinked and alive, for the
+ * caller to free or to keep. Two rules come with it: anything caching the unit's CHILD
  * pointers must run AFTER this call, because the autolink pass splices that
  * list; and no stamp is performed, which is the caller's to do if the tree
  * may still meet the append diff.
  *
  * Call order is close order — children before the containers that closed
  * them — which markdown_core_parser_warm_settle keeps for its callers. */
-markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parser *parser, markdown_core_node *unit);
+markdown_core_node *markdown_core_parser_warm_refine_settled(
+    markdown_core_parser *parser,
+    markdown_core_node *unit,
+    markdown_core_node **replaced
+);
 
 /** Parses inlines and postprocesses the tree WITHOUT ending the parse.
  *

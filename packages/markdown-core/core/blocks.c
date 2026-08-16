@@ -2289,18 +2289,19 @@ finished:
  * and HTML-comment stripping.
  *
  * RETURNS THE NODE NOW AT THE UNIT'S POSITION, which is the unit itself
- * unless a postprocessor replaced it — and a replacement FREES what it
- * replaced (extensions/formula.c does, in two of its arms). The whole-tree
- * driver below does not need the answer, because it precomputes its
- * traversal successor; a caller that refines ONE unit and then does anything
- * else with it does, and handing it back is the difference between that
- * caller being correct and it holding a pointer to freed memory. */
+ * unless a postprocessor replaced it — and hands the replaced unit back
+ * through `replaced`, unlinked and alive (extensions/formula.c replaces in
+ * two of its arms): the whole-tree driver frees it, and a stream may keep
+ * it to put the unit back after a speculative close. */
 static markdown_core_node *S_postprocess_unit(
     markdown_core_parser *parser,
     markdown_core_node *unit,
-    bool owns_inlines
+    bool owns_inlines,
+    markdown_core_node **replaced
 ) {
     markdown_core_llist *extensions;
+
+    *replaced = NULL;
 
     if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
         parser->oom = true;
@@ -2340,7 +2341,16 @@ static markdown_core_node *S_postprocess_unit(
              * hook does it; tolerating it silently is what would make it
              * possible. */
             assert(processed != NULL);
-            if (processed) {
+            if (processed && processed != unit) {
+                /* The hook unlinked the unit and spliced the survivor in; the
+                 * unit is the caller's now — freed by the whole-tree walk,
+                 * kept by a stream that may need to put it back. A second
+                 * replacement in one pipeline would orphan the first; no
+                 * bundled hook replaces what another already did. */
+                if (*replaced) {
+                    markdown_core_node_free(*replaced);
+                }
+                *replaced = unit;
                 unit = processed;
                 owns_inlines = contains_inlines(unit);
             }
@@ -2387,7 +2397,13 @@ static void S_postprocess_subtree(
             }
         }
 
-        S_postprocess_unit(parser, node, owns_inlines);
+        {
+            markdown_core_node *replaced;
+            S_postprocess_unit(parser, node, owns_inlines, &replaced);
+            if (replaced) {
+                markdown_core_node_free(replaced);
+            }
+        }
         node = next;
     }
 }
@@ -2466,9 +2482,8 @@ static unsigned char warm_line_marker(const unsigned char *bytes, size_t length,
 }
 
 /* Whether a line that begins with this marker byte may be fed or held: not
- * one that begins a definition, and not one that begins a standalone
- * formula that would replace the paragraph it opens. */
-static bool warm_marker_admitted(unsigned char marker) { return marker != '[' && marker != '$' && marker != '\\'; }
+ * one that begins a definition. */
+static bool warm_marker_admitted(unsigned char marker) { return marker != '['; }
 
 /* Every line a byte run begins is judged by its marker; `at_line_start` says
  * whether the run's first byte begins a line, `first_line` whether that line
@@ -2503,8 +2518,7 @@ static bool warm_held_admitted(const unsigned char *held, size_t size, bool firs
 }
 
 /* An open paragraph's content: its close harvests definitions from a content
- * that begins with `[`, and its refine replaces it when the content is one
- * standalone formula, which needs `$$` or `\\[` at its start. */
+ * that begins with `[`. */
 static bool warm_content_admitted(const unsigned char *content, size_t size) {
     return size == 0 || warm_marker_admitted(content[0]);
 }
@@ -2541,8 +2555,15 @@ static bool warm_block_retractable(const markdown_core_node *node) {
 /* Whether a block's close moves its content bytes out of the buffer, so
  * the record must keep a copy of them. */
 static bool warm_close_moves_content(const markdown_core_node *node) {
-    return !node->extension &&
-           (S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK || S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK);
+    if (node->extension) {
+        /* An extension's block that takes lines does something with them
+         * at its close or its refine (a formula block's literal is minted
+         * from its content, and the content cleared); the copy costs what
+         * the block is, and pays for not guessing. */
+        return node->extension->accepts_lines &&
+               node->extension->accepts_lines(node->extension, (markdown_core_node *)node);
+    }
+    return S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK || S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK;
 }
 
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
@@ -2660,7 +2681,14 @@ static markdown_core_node *warm_settle_subtree(markdown_core_parser *parser, mar
         for (;;) {
             bool on_chain = node == parser->current ||
                             (node->last_child && last_exited == node->last_child && last_exited_on_chain);
-            markdown_core_node *survivor = on_chain ? node : markdown_core_parser_warm_refine_settled(parser, node);
+            markdown_core_node *replaced = NULL;
+            markdown_core_node *survivor =
+                on_chain ? node : markdown_core_parser_warm_refine_settled(parser, node, &replaced);
+            if (replaced) {
+                /* A settled unit its own refine replaced: what it replaced
+                 * is nothing to anyone now. */
+                markdown_core_node_free(replaced);
+            }
             last_exited = survivor;
             last_exited_on_chain = on_chain;
             if (node == root) {
@@ -2682,8 +2710,15 @@ static markdown_core_node *warm_settle_subtree(markdown_core_parser *parser, mar
  * refine (a paragraph promoted to a formula block) is one the record can no
  * longer put back, and the entry is repointed at the survivor so nothing
  * dangles. */
-static bool warm_refine_region(markdown_core_parser *parser, markdown_core_warm_open_block *spine, size_t count) {
-    bool intact = true;
+/* `keep_replaced` says a spine block its refine replaces is kept on its
+ * entry (a publish, whose retract puts it back) rather than freed (a settle,
+ * whose replacement is for good). */
+static void warm_refine_region(
+    markdown_core_parser *parser,
+    markdown_core_warm_open_block *spine,
+    size_t count,
+    bool keep_replaced
+) {
     size_t i = count;
     while (i-- > 0) {
         markdown_core_warm_open_block *entry = &spine[i];
@@ -2696,20 +2731,25 @@ static bool warm_refine_region(markdown_core_parser *parser, markdown_core_warm_
         /* The document root is never refined: refine_blocks starts below it,
          * and every hook expects a block. */
         if (i > 0 && !warm_on_chain(parser, node)) {
-            markdown_core_node *survivor = markdown_core_parser_warm_refine_settled(parser, node);
+            markdown_core_node *replaced = NULL;
+            markdown_core_node *survivor = markdown_core_parser_warm_refine_settled(parser, node, &replaced);
             if (survivor != node) {
                 /* The survivor sits where the block sat, so its parent's
                  * saved youngest child — this very block — is repointed too,
-                 * and the parent's run still begins after it. */
+                 * and the parent's run still begins after it. The block
+                 * itself is kept for the retract to put back, or freed. */
                 entry->node = survivor;
                 if (spine[i - 1].last_child == node) {
                     spine[i - 1].last_child = survivor;
                 }
-                intact = false;
+                if (keep_replaced) {
+                    entry->replaced = replaced;
+                } else {
+                    markdown_core_node_free(replaced);
+                }
             }
         }
     }
-    return intact;
 }
 
 bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_core_warm_undo *before) {
@@ -2717,7 +2757,8 @@ bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_cor
         return false;
     }
     if (before) {
-        return warm_refine_region(parser, before->spine, before->spine_count);
+        warm_refine_region(parser, before->spine, before->spine_count, false);
+        return true;
     }
     /* No record: a fresh parser, whose whole settled part is unrefined. */
     {
@@ -2754,6 +2795,9 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
     mem = undo->mem;
     for (i = 0; i < undo->spine_count; i++) {
         warm_free_run(undo->spine[i].retired);
+        if (undo->spine[i].replaced) {
+            markdown_core_node_free(undo->spine[i].replaced);
+        }
         mem->free(mem, undo->spine[i].content_copy);
         mem->free(mem, undo->spine[i].opaque_copy);
     }
@@ -2883,9 +2927,7 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
     }
     /* Only what the close closed: the spine, and whatever the held line put
      * under it. Units the feed closed are the caller's to settle, and were. */
-    if (!warm_refine_region(parser, undo->spine, undo->spine_count)) {
-        undo->final = true;
-    }
+    warm_refine_region(parser, undo->spine, undo->spine_count, true);
     return undo;
 }
 
@@ -2944,9 +2986,27 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
     i = undo->spine_count;
     while (i-- > 0) {
         markdown_core_warm_open_block *entry = &undo->spine[i];
-        markdown_core_node *node = entry->node;
-        markdown_core_node *run = entry->last_child ? entry->last_child->next : node->first_child;
-        markdown_core_node *inserted = entry->prev ? entry->prev->next : node->first_child;
+        markdown_core_node *node;
+        markdown_core_node *run;
+        markdown_core_node *inserted;
+        if (entry->replaced) {
+            /* The close's refine replaced this block (a paragraph promoted to
+             * a formula block): the block goes back where the survivor
+             * stands, and the survivor — published, paired, and now gone —
+             * is freed. */
+            markdown_core_node *survivor = entry->node;
+            markdown_core_node_insert_before_unchecked(survivor, entry->replaced);
+            markdown_core_node_unlink(survivor);
+            markdown_core_node_free(survivor);
+            entry->node = entry->replaced;
+            entry->replaced = NULL;
+            if (i > 0 && undo->spine[i - 1].last_child == survivor) {
+                undo->spine[i - 1].last_child = entry->node;
+            }
+        }
+        node = entry->node;
+        run = entry->last_child ? entry->last_child->next : node->first_child;
+        inserted = entry->prev ? entry->prev->next : node->first_child;
         /* What the close INSERTED before the youngest child — a paragraph
          * split off a table — was published and pairs against nothing:
          * it goes. (A block with no youngest child had nothing to insert
@@ -3005,17 +3065,24 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             node->as.opaque = NULL;
             node->extension = entry->extension;
         } else if (entry->opaque_copy && node->as.opaque) {
-            memcpy(node->as.opaque, entry->opaque_copy, entry->opaque_copy_size);
+            if (node->extension->restore_opaque) {
+                node->extension
+                    ->restore_opaque(node->extension, markdown_core_node_mem(node), node, entry->opaque_copy);
+            } else {
+                memcpy(node->as.opaque, entry->opaque_copy, entry->opaque_copy_size);
+            }
         }
         node->type = entry->type;
         if (warm_close_moves_content(node)) {
             /* The close moved the bytes into the literal (and, for a fenced
              * block, minted the info from their first line): those chunks
-             * go, and the buffer gets its bytes back from the copy. */
-            if (S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+             * go, and the buffer gets its bytes back from the copy. An
+             * extension's block frees what its payload minted in its own
+             * restore below. */
+            if (!node->extension && S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
                 markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.info);
                 markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.literal);
-            } else {
+            } else if (!node->extension) {
                 markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.literal);
             }
             markdown_core_strbuf_clear(&node->content);
@@ -3074,7 +3141,11 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
     return true;
 }
 
-markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parser *parser, markdown_core_node *unit) {
+markdown_core_node *markdown_core_parser_warm_refine_settled(
+    markdown_core_parser *parser,
+    markdown_core_node *unit,
+    markdown_core_node **replaced
+) {
     bool owns_inlines = contains_inlines(unit);
 
     if (owns_inlines) {
@@ -3082,9 +3153,9 @@ markdown_core_node *markdown_core_parser_warm_refine_settled(markdown_core_parse
     }
     /* This unit alone: its children settled through their own calls. The
      * survivor comes back because a postprocessor may have replaced this
-     * node and freed what it replaced — a caller that keeps the pointer it
-     * passed in keeps a pointer to freed memory. */
-    return S_postprocess_unit(parser, unit, owns_inlines);
+     * node; the replaced unit comes back too, unlinked, for the caller to
+     * free or to keep. */
+    return S_postprocess_unit(parser, unit, owns_inlines, replaced);
 }
 
 bool markdown_core_parser_warm_refine(markdown_core_parser *parser) {

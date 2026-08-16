@@ -362,12 +362,7 @@ static bool document_tick_warm(
         goto done;
     }
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
-    if (!markdown_core_parser_warm_settle(parser, before)) {
-        /* A spine block replaced by its own refine: the predicate excludes
-         * every shape that can, so this is the engine contradicting itself. */
-        parser->internal_error = true;
-        goto done;
-    }
+    markdown_core_parser_warm_settle(parser, before);
     /* The publish may come back `final`: the close did something the record
      * cannot put back — closed a fence, retyped a paragraph, moved a block's
      * bytes out. The projection is right all the same, the identity below
@@ -390,6 +385,12 @@ static bool document_tick_warm(
             markdown_core_warm_open_block *entry = &before->spine[i];
             markdown_core_node *node = entry->node;
             markdown_core_node *appended = entry->last_child ? entry->last_child->next : node->first_child;
+            /* A spine block the settle's refine replaced is a new object
+             * standing where the old stood: minted, as any new node. */
+            if (node->id == 0) {
+                markdown_core_diff_mint(chain, node, revision);
+                changed_below = true;
+            }
             markdown_core_node *run = markdown_core_warm_run_first(entry);
             markdown_core_node *child;
             bool inserted = run != appended;

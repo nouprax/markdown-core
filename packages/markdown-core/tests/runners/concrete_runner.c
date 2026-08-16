@@ -3244,6 +3244,13 @@ static const char *const WC_TEXTS[] = {
      * paragraph back. */
     "Title\n---\n\nbody\n",
     "lead line\nh1 | h2\n---|---\nc1 | c2\n\nafter\n",
+    /* Replacements: a paragraph that is one display formula is promoted to
+     * a formula block by its own refine, and a fenced block whose info is
+     * `formula` likewise; the replaced block is kept on the record and put
+     * back at the retract. */
+    "$$\nx + y\n$$\n\nafter\n",
+    "```formula\nE = mc^2\n```\n\nafter\n",
+    "text with $a$ inline and $$b$$ mid-line\n\nafter\n",
     "text\n\n    indented code\n\n    more\n\nafter\n",
     "<div>\nhtml here\n</div>\n\nafter\n",
     /* Multi-byte text, so cuts land inside characters as well as inside
@@ -3408,6 +3415,7 @@ static int case_warm_tick_stream(void) {
         "- one\n- two\nlazy\n\n- three\n\n> quote\n> more\n\n# heading\nafter it",
         "```js\nlet x = 1;\nmore\n```\n\n<div>\nhtml\n</div>\n\nafter",
         "Title\n===\n\nlead\nh1 | h2\n---|---\nc1 | c2\nc3 | c4\n\nafter",
+        "$$\nx + y\n$$\n\n```formula\nE = mc^2\n```\n\nafter",
         "\xc3\xbc"
         "ber caf\xc3\xa9 und stra"
         "\xc3\x9f"
