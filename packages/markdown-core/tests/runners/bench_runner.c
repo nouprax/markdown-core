@@ -395,14 +395,16 @@ static int workload_adversarial(const bench_options *options) {
  *
  * Shapes follow the plan's list; each is measured at doubling prefix
  * checkpoints with a burst of token-sized, non-line-aligned ticks (3-8 byte
- * strides). Each shape carries the bound its documented tick class implies:
- * a shape whose ticks are warm and whose open leaf is bounded must not grow
- * with the document at all (`prose`), one whose ticks are warm but whose
- * open leaf IS the document grows linearly (`giant_paragraph`, the honest
- * ladder's prose-wall entry), and one that rebuilds grows linearly because
- * a tick is a full parse of the prefix (every other shape, until the
- * journal is total). The flat bound is slice 8's gate in its per-tick form;
- * the amortized form is the workload below. */
+ * strides). Every tick is warm; each shape carries the bound its open leaf
+ * implies: a bounded leaf must not grow with the document at all (`prose`,
+ * `nested_list`, `footnote_dense` — a definition every other line, whose
+ * flips reach into settled territory and must not cost it), and a leaf
+ * that IS the document grows linearly — one paragraph (`giant_paragraph`,
+ * the honest ladder's prose wall), one growing fence (`fence`, whose bytes
+ * the record copies at memcpy speed), one paragraph of consecutive
+ * definitions (`references_appendix`, harvested whole at every close). The
+ * flat bound is slice 8's gate in its per-tick form; the amortized form is
+ * the workload below. */
 
 typedef char *(*append_shape_build)(size_t target, size_t *length);
 
@@ -520,14 +522,15 @@ static int append_tick(markdown_core_document **document, const char *chunk, siz
 }
 
 /* A checkpoint's per-tick figure is the MEDIAN over bursts of a burst's
- * mean tick. A rebuilt tick at 4 MiB is a full parse, so a burst is one
- * tick and five bursts are plenty; a warm tick is a microsecond or less,
- * below what CLOCK_MONOTONIC resolves on every platform, so a burst is
- * sixteen ticks timed together and there are eight of them — enough that
- * one burst carrying the source buffer's growth cannot move the median. */
+ * mean tick. A tick over a leaf that is the document is milliseconds at
+ * 4 MiB, so a burst is one tick and five bursts are plenty; a tick over a
+ * bounded leaf is a microsecond or less, below what CLOCK_MONOTONIC
+ * resolves on every platform, so a burst is sixteen ticks timed together
+ * and there are eight of them — enough that one burst carrying the source
+ * buffer's growth cannot move the median. */
 #define APPEND_BURSTS 8
-#define APPEND_REBUILT_BURSTS 5
-#define APPEND_REBUILT_TICKS_PER_BURST 1
+#define APPEND_WALL_BURSTS 5
+#define APPEND_WALL_TICKS_PER_BURST 1
 #define APPEND_WARM_TICKS_PER_BURST 16
 #define APPEND_WARMUP_TICKS 1
 #define APPEND_CHECKPOINTS 5
@@ -689,38 +692,44 @@ static int workload_append_baseline(const bench_options *options) {
                   APPEND_BURSTS,
                   APPEND_WARM_TICKS_PER_BURST
               ) != 0;
-    /* Rebuilt every tick until the journal is total: linear. */
+    /* Warm, bounded leaf under a list of every item so far: flat — the
+     * list's tightness is weighed as it grows, not per tick. */
     failed |= bench_append_shape(
                   "nested_list",
                   build_append_nested_list,
                   options,
-                  BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_REBUILT_BURSTS,
-                  APPEND_REBUILT_TICKS_PER_BURST
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
               ) != 0;
+    /* Warm, the leaf is the whole fence: linear at memcpy speed. */
     failed |= bench_append_shape(
                   "fence",
                   build_append_fence,
                   options,
                   BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_REBUILT_BURSTS,
-                  APPEND_REBUILT_TICKS_PER_BURST
+                  APPEND_WALL_BURSTS,
+                  APPEND_WALL_TICKS_PER_BURST
               ) != 0;
+    /* Warm, bounded leaf, a definition every other line that flips the
+     * unit before it: flat — the flip costs the unit and the depth. */
     failed |= bench_append_shape(
                   "footnote_dense",
                   build_append_footnote_dense,
                   options,
-                  BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_REBUILT_BURSTS,
-                  APPEND_REBUILT_TICKS_PER_BURST
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
               ) != 0;
+    /* Warm, the leaf is one paragraph of every definition so far, harvested
+     * whole at every close: linear, the ladder's appendix entry. */
     failed |= bench_append_shape(
                   "references_appendix",
                   build_append_references_appendix,
                   options,
                   BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_REBUILT_BURSTS,
-                  APPEND_REBUILT_TICKS_PER_BURST
+                  APPEND_WALL_BURSTS,
+                  APPEND_WALL_TICKS_PER_BURST
               ) != 0;
     if (!failed) {
         printf("append_baseline peak_rss_kib=%ld\n", peak_rss_kib());
@@ -736,10 +745,8 @@ static int workload_append_baseline(const bench_options *options) {
  * the same N bytes once, P(N); the ratio K(N) = T(N) / P(N) is the price
  * of streaming in units of one parse, and the bound says K is FLAT across
  * doublings of N — a K that doubles with N is the quadratic the plan
- * forbids. Prose is the shape the warm path covers, so it is the one gated;
- * a rebuilding shape is run alongside for the record and its K is printed
- * unbounded, since its ticks are full parses by design until the journal is
- * total and the ledger already says so. */
+ * forbids. Prose and the nested list (a list of every item so far, loose,
+ * with a bounded leaf) are gated flat. */
 
 #define AMORTIZED_STEPS 4
 
@@ -864,11 +871,8 @@ static int bench_append_amortized(
 
 static int workload_append_amortized(const bench_options *options) {
     int failed = 0;
-    /* The gated shape streams to 256 KiB; the rebuilding shape is run at a
-     * quarter of that, since its price is quadratic by design and the record
-     * only has to show the growth, not pay for it. */
     failed |= bench_append_amortized("prose", build_append_prose, options, 32 * 1024, true) != 0;
-    failed |= bench_append_amortized("nested_list", build_append_nested_list, options, 8 * 1024, false) != 0;
+    failed |= bench_append_amortized("nested_list", build_append_nested_list, options, 32 * 1024, true) != 0;
     return failed ? -1 : 0;
 }
 

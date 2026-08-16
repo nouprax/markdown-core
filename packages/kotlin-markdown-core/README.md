@@ -160,10 +160,12 @@ mutation did not touch crosses the native boundary as a single reuse record
 and resolves to the value the predecessor already decoded — the decode work
 per tick is proportional to what the appended bytes changed, plus the
 trailing spine. The native append grows the tree in
-place for ticks whose open blocks are paragraphs, headings, block quotes,
-lists and items — most prose and most lists — and still rebuilds from
-scratch on the tick after one that opens a fence, an HTML block, a table, a
-formula block or a directive, and on a tick that brings a definition line.
+place on every tick — prose, headings, quotes, lists, fences, HTML blocks,
+tables, formula blocks, directives, footnotes and definitions alike; a
+definition that arrives re-refines only the units that mention its label,
+and a node the append did not reach keeps its id and revision — so the
+engine's cost per tick is the chunk, what it closed and the open leaf, not
+the document.
 A failed append poisons the chain: every further mutation fails, every
 document's values and `close` remain, and recovery is a new `Document`.
 
