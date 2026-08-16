@@ -160,9 +160,11 @@ mutation did not touch crosses the native boundary as a single reuse record
 and resolves to the value the predecessor already decoded — the decode work
 per tick is proportional to what the appended bytes changed, plus the
 trailing spine. The native append grows the tree in place for prose ticks —
-a paragraph continuing, a blank line, a new paragraph or heading — and still
-rebuilds from scratch on a tick that brings any other shape (a list, a quote,
-a fence, a table, a definition).
+a paragraph continuing or opening on an ordinary character, a blank line, the
+line after a heading — and still rebuilds from scratch on a tick whose chunk
+begins a line with a marker (a heading's `#`, a bullet or a number, `>`, a
+fence, `|`, `[`, `<`, `*` or `_`, a backtick, `$`, `\`, or indentation), and
+on every tick while a list, quote, fence, table or definition is open.
 A failed append poisons the chain: every further mutation fails, every
 document's values and `close` remain, and recovery is a new `Document`.
 

@@ -2928,6 +2928,9 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         markdown_core_node *child = entry->last_child ? entry->last_child->next : entry->node->first_child;
         for (; child; child = child->next) {
             if (!warm_own_subtree(child)) {
+                /* An allocation lost, and the sticky bit says so, so the
+                 * caller reports it as one and not as a broken record. */
+                parser->oom = true;
                 return false;
             }
         }

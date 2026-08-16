@@ -171,30 +171,37 @@ static void free_node_as(markdown_core_node *node) {
     }
 }
 
+/* One chunk made its own. A chunk with no data is NOT WRITTEN — a link
+ * without a title, a definition without one — and stays that way: giving it
+ * an owned empty string would turn "not written" into "written and empty",
+ * which is a different projection (view_optional_equal in the facade tells
+ * them apart), and a retired node whose projection changed by being retired
+ * would move a revision that nothing about the document moved. */
+static bool own_chunk(markdown_core_mem *mem, markdown_core_chunk *chunk) {
+    return chunk->data == NULL || markdown_core_chunk_to_cstr(mem, chunk) != NULL;
+}
+
 bool markdown_core_node_own_chunks(markdown_core_node *node) {
     markdown_core_mem *mem = NODE_MEM(node);
     switch (node->type) {
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return markdown_core_chunk_to_cstr(mem, &node->as.code.info) != NULL &&
-               markdown_core_chunk_to_cstr(mem, &node->as.code.literal) != NULL;
+        return own_chunk(mem, &node->as.code.info) && own_chunk(mem, &node->as.code.literal);
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
     case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
     case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return markdown_core_chunk_to_cstr(mem, &node->as.literal) != NULL;
+        return own_chunk(mem, &node->as.literal);
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-        return markdown_core_chunk_to_cstr(mem, &node->as.link.url) != NULL &&
-               markdown_core_chunk_to_cstr(mem, &node->as.link.title) != NULL;
+        return own_chunk(mem, &node->as.link.url) && own_chunk(mem, &node->as.link.title);
     case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return markdown_core_chunk_to_cstr(mem, &node->as.definition.label) != NULL &&
-               markdown_core_chunk_to_cstr(mem, &node->as.definition.url) != NULL &&
-               markdown_core_chunk_to_cstr(mem, &node->as.definition.title) != NULL;
+        return own_chunk(mem, &node->as.definition.label) && own_chunk(mem, &node->as.definition.url) &&
+               own_chunk(mem, &node->as.definition.title);
     case MARKDOWN_CORE_NODE_LINK_REFERENCE:
     case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return markdown_core_chunk_to_cstr(mem, &node->as.reference.label) != NULL;
+        return own_chunk(mem, &node->as.reference.label);
     default:
         return true;
     }

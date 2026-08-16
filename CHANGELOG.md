@@ -19,14 +19,16 @@ promised to remain compatible between releases.
   subtree reuses the previously decoded value outright, so a stream's
   per-tick decode cost follows the change, not the document. On the engine
   side the head's tree now GROWS IN PLACE for prose ticks — a paragraph
-  continuing, a blank line, a new paragraph or heading opening — retracting
-  the previous projection, feeding the chunk, settling what it closed and
-  publishing again, with ids handed over at the frontier by the same diff
-  a rebuild uses; every other shape (lists, quotes, fences, tables,
-  definitions, formulas, directives) still rebuilds from scratch on that
-  tick, and a failed append leaves the head answering for no tree. The
-  chain counts both kinds of tick; the shapes still rebuilding are the next
-  milestone's (`docs/reviews/2026-08-13-living-tree-plan.md`).
+  continuing or opening on an ordinary character, a blank line, the line
+  after a heading — retracting the previous projection, feeding the chunk,
+  settling what it closed and publishing again, with ids handed over at
+  the frontier by the same diff a rebuild uses. A tick whose chunk begins
+  a line with a marker (`#`, a bullet or a number, `>`, a fence, `|`, `[`,
+  `<`, `*` or `_`, a backtick, `$`, `\`, or indentation) still rebuilds
+  from scratch, as does every tick while a list, quote, fence, table or
+  definition is open, and a failed append leaves the head answering for no
+  tree. The chain counts both kinds of tick; the shapes still rebuilding
+  are the next milestone's (`docs/reviews/2026-08-13-living-tree-plan.md`).
 - Breaking (C, Swift, Kotlin, and ECMAScript): the delta is gone. A
   mutation returns the successor document and nothing else — `markdown_core_commit`,
   `markdown_core_delta`, `markdown_core_diff`, the part flags, and the three

@@ -3539,7 +3539,9 @@ static void was_ledger_capture(was_ledger *ledger, const markdown_core_node *nod
 /* An EMPTY append is a mutation that changes no projection, and the revision
  * contract says a revision moves only when a projection does: on the warm
  * path that is the frontier being retracted and re-published as the same
- * nodes, and every one of them must keep both its id and its revision. */
+ * nodes, and every one of them must keep both its id and its revision — a
+ * link without a title among them, whose "not written" title must survive
+ * the retired frontier taking ownership of its bytes as exactly that. */
 static int was_empty_append_moves_nothing(markdown_core_document **document, size_t text_index, size_t stride) {
     was_ledger before = {NULL, 0, 0, false};
     was_ledger after = {NULL, 0, 0, false};
@@ -3602,7 +3604,8 @@ static int case_warm_append_stream(void) {
         "Then prose again, which the rebuild's end state lets grow in place, with an\n"
         "email like a@b.co and www.example.com and *emphasis* and `code` in it.\n\n"
         "- a list item sends the tick to the rebuild\n- and so does the next\n\n"
-        "Back to prose for the tail, which stops mid",
+        "Prose after the list closes it, and only a completed line does, so the tail\n"
+        "goes warm again with a [link](u) and www.x.y in the frontier that stops mid",
         "\xc3\xbc"
         "ber caf\xc3\xa9 und stra"
         "\xc3\x9f"

@@ -347,7 +347,13 @@ static bool document_tick_warm(
 
     generation->undo = NULL;
     if (!markdown_core_parser_warm_retract(parser, before)) {
-        parser->internal_error = true;
+        /* Refused: a record the predicate should never have admitted (the
+         * engine contradicting itself), or an allocation lost while the
+         * frontier took ownership of its bytes, which the parser's sticky
+         * bit already says. */
+        if (!parser->oom) {
+            parser->internal_error = true;
+        }
         goto done;
     }
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
