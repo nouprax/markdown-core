@@ -175,6 +175,13 @@ typedef struct markdown_core_warm_open_block {
      * with a blank line" onto the current block's youngest child, which is
      * a SETTLED node the record would otherwise not hold. */
     uint16_t last_child_flags;
+    /* The content bytes of a block whose close MOVES them — a code block's
+     * into its literal (its info line taken off the front, an indented
+     * block's trailing blank lines dropped), an HTML block's into its
+     * literal — so the retract can put them back where they were. NULL for
+     * every other block. */
+    unsigned char *content_copy;
+    markdown_core_bufsize content_copy_size;
     /* How many marker records the block carried: a line captures markers on
      * a container it continues (a quote's `>`), and the close's held line
      * would leave one more. */

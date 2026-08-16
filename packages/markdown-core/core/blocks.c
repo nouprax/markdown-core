@@ -2511,9 +2511,10 @@ static bool warm_content_admitted(const unsigned char *content, size_t size) {
 
 /* The blocks whose close the record puts back: the core containers, whose
  * close writes flags, end coordinates and (a list's) tightness into the
- * payload; and the leaves whose close writes nothing but flags and end
- * coordinates. A block whose close moves its content out of its buffer (a
- * code or HTML block) or carries an extension's state is closed for good. */
+ * payload; the leaves whose close writes nothing but flags and end
+ * coordinates; and the leaves whose close moves their content out of the
+ * buffer, for which the record keeps the bytes. A block carrying an
+ * extension's state is closed for good. */
 static bool warm_block_retractable(const markdown_core_node *node) {
     if (node->extension) {
         return false;
@@ -2526,10 +2527,19 @@ static bool warm_block_retractable(const markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_PARAGRAPH:
     case MARKDOWN_CORE_NODE_HEADING:
     case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
         return true;
     default:
         return false;
     }
+}
+
+/* Whether a block's close moves its content bytes out of the buffer, so
+ * the record must keep a copy of them. */
+static bool warm_close_moves_content(const markdown_core_node *node) {
+    return !node->extension &&
+           (S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK || S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK);
 }
 
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser) {
@@ -2741,6 +2751,7 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
     mem = undo->mem;
     for (i = 0; i < undo->spine_count; i++) {
         warm_free_run(undo->spine[i].retired);
+        mem->free(mem, undo->spine[i].content_copy);
     }
     mem->free(mem, undo->spine);
     mem->free(mem, undo->marks);
@@ -2780,6 +2791,14 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
             entry->payload = node->as;
             entry->concrete_count = node->concrete ? node->concrete->count : 0;
             entry->last_child_flags = node->last_child ? node->last_child->flags : 0;
+            if (warm_close_moves_content(node) && node->content.size) {
+                entry->content_copy = (unsigned char *)undo->mem->calloc(undo->mem, node->content.size, 1);
+                if (!entry->content_copy) {
+                    return false;
+                }
+                memcpy(entry->content_copy, node->content.ptr, node->content.size);
+                entry->content_copy_size = node->content.size;
+            }
         }
         undo->spine_count = depth;
     }
@@ -2936,9 +2955,25 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         node->flags = entry->flags;
         node->end_line = entry->end_line;
         node->end_column = entry->end_column;
-        markdown_core_strbuf_truncate(&node->content, entry->content_size);
         entry->published_type = node->type;
         entry->published_payload = node->as;
+        if (warm_close_moves_content(node)) {
+            /* The close moved the bytes into the literal (and, for a fenced
+             * block, minted the info from their first line): those chunks
+             * go, and the buffer gets its bytes back from the copy. */
+            if (S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.info);
+                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.literal);
+            } else {
+                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.literal);
+            }
+            markdown_core_strbuf_clear(&node->content);
+            if (entry->content_copy_size) {
+                markdown_core_strbuf_put(&node->content, entry->content_copy, entry->content_copy_size);
+            }
+        } else {
+            markdown_core_strbuf_truncate(&node->content, entry->content_size);
+        }
         node->as = entry->payload;
         if (node->concrete) {
             if (entry->concrete_count == 0) {
