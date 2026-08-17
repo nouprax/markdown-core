@@ -117,8 +117,8 @@ the chain ("the chain is done": only `close` remains, you still hold every
 byte you sent, recovery is a new document).
 
 `append` produces the same tree, the same dump, and the same node structure
-as a one-shot parse of the concatenated text. What appending saves today is
-the DECODE: appended bytes never move settled content, so after an append the
+as a one-shot parse of the concatenated text. Appending saves the DECODE as
+well as the parse: appended bytes never move settled content, so after an append the
 binding re-decodes only what changed — decode and value construction are
 O(changed) per tick, while the JS-side index bookkeeping behind
 `document.node(id)` is O(live nodes) of pure map writes. The native append grows the tree in

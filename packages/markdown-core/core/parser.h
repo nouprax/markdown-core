@@ -221,35 +221,32 @@ typedef struct markdown_core_warm_open_block {
      * takes its place while the block is kept here, unlinked, for the
      * retract to put back. `node` then names the survivor. */
     markdown_core_node *replaced;
+    /* The survivor, once the retract has put the block back: published, so
+     * kept — at the end of the PARENT's retired inserted run, where it stood
+     * — for the next publish to pair what takes its place against. Set on
+     * the entry above the replaced one while the retract runs; NULL
+     * otherwise. */
+    markdown_core_node *survivor;
     /* The block VANISHED at the close — a paragraph that was nothing but
      * definitions is unlinked by its own finalize — and is put back at the
      * retract after its parent's youngest-but-one child. */
     bool vanished;
     markdown_core_node *vanished_prev;
-    /* THE FACADE'S, carried here because the spine is its index: the fold
-     * of this block's own fields and of every child BEFORE `last_child` —
-     * all settled, all the same objects with the same hashes from now on —
-     * so the block is restamped from here in the size of what grew. The
-     * engine writes nothing to it. */
-    uint64_t prefix_hash;
     /* The payload as it was: a close writes into it — a list's tightness at
-     * its finalize — and the retract puts the value back whole. Only for
-     * blocks whose close allocates nothing into it; the ones whose close
-     * moves their content buffer out (code, HTML) are not on a warm spine
-     * yet, and will carry their own entries. */
+     * its finalize — and the retract puts the value back whole. A block
+     * whose close moves its content buffer out (code, HTML) has that buffer
+     * kept below (`content_copy`) and its literal freed at the retract
+     * before the value goes back. */
     union markdown_core_node_payload payload;
-    /* What the close PUBLISHED for type and payload, taken at the retract
-     * before the open values go back: the identity step compares the next
-     * publish against it, so a list whose tightness the close recomputes to
-     * the same value keeps its revision, and a paragraph the feed retyped
-     * into a heading takes the tick's. */
-    union markdown_core_node_payload published_payload;
-    uint16_t published_type;
-    /* The fold over the block's own fields as last published — what the
-     * prefix fold began with — so a block whose own fields moved (a table
-     * counting one more row behind its payload pointer) is stamped whole
-     * rather than continued from a prefix that no longer holds. */
-    uint64_t published_own_hash;
+    /* THE FACADE'S, carried here because the spine is its index: the
+     * block's own projection as this record PUBLISHED it, written as bytes
+     * (extensions/ast.c), so the next publish is compared against it
+     * exactly — a list whose tightness the close recomputes to the same
+     * value keeps its revision, a paragraph the feed retyped into a heading
+     * takes the tick's, a table counting one more row behind its payload
+     * pointer likewise. The engine writes nothing to it and only frees it. */
+    unsigned char *published_projection;
+    size_t published_projection_size;
     /* The youngest child's flags: a blank line at the close writes "ends
      * with a blank line" onto the current block's youngest child, which is
      * a SETTLED node the record would otherwise not hold. */
@@ -319,12 +316,6 @@ struct markdown_core_warm_undo {
     struct markdown_core_warm_flip *flips;
     size_t flip_count;
     size_t flip_capacity;
-    /* A spine block is one the record cannot put back — an extension's
-     * block whose payload the extension has not described (opaque_size) —
-     * so the record describes a projection that can be read but not
-     * reopened: the build it belongs to is closed for good, and the next
-     * append rebuilds. Nothing built in comes back final. */
-    bool final;
     bool retracted;
 };
 
@@ -347,13 +338,8 @@ typedef struct markdown_core_warm_undo markdown_core_warm_undo;
 
 /** Whether a parser at end of feed can publish: it has a tree and has not
  * failed. Every open state is one a publish can be retracted from (see the
- * note above markdown_core_parser_warm_eligible in blocks.c). */
+ * note above this function's definition in blocks.c). */
 bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parser);
-
-/** Whether a tick can reopen the build: the record of the previous publish
- * exists, is not final and not yet retracted, and the parser has not
- * failed. Nothing about the arriving bytes enters into it. */
-bool markdown_core_parser_warm_eligible(const markdown_core_parser *parser, const markdown_core_warm_undo *published);
 
 /** SETTLES what a step closed: refines, once and for good, every unit that
  * is closed and lies in the region a record describes — for each saved open
@@ -380,10 +366,6 @@ void markdown_core_parser_warm_flipped_free(markdown_core_parser *parser);
  * caller has seen which of them a record named. */
 void markdown_core_parser_warm_vanished_free(markdown_core_parser *parser);
 
-/* Whether `node` is a paragraph the feed took: unlinked, kept on the
- * parser's list, and about to be freed. */
-bool markdown_core_parser_warm_vanished(const markdown_core_parser *parser, const struct markdown_core_node *node);
-
 /** PUBLISHES a projection from a parser that is still mid-stream: the held
  * partial line is processed for real, every open block is finalized up to
  * the root, and every unit THAT CLOSE closed — the spine, and whatever the
@@ -395,14 +377,14 @@ bool markdown_core_parser_warm_vanished(const markdown_core_parser *parser, cons
  * was, so the next chunk continues as if the projection had never been
  * asked for.
  *
- * Returns NULL if the record cannot be allocated, in which case nothing was
- * closed and the parser is untouched. A record that comes back `final`
- * describes a projection whose spine held a block the record cannot put
- * back (see `final`); it can be read and freed, not retracted.
+ * Returns NULL if the record cannot be allocated, or if the parser has
+ * failed (see markdown_core_parser_warm_eligible_at_eof); in either case
+ * nothing was closed and the parser is untouched.
  *
  * WHAT MAKES A RECORD RETRACTABLE: every close's effects stay inside the
- * record — see the note above markdown_core_parser_warm_eligible in
- * blocks.c for the one exception, and what the record holds. */
+ * record — see the note above markdown_core_parser_warm_eligible_at_eof in
+ * blocks.c for what the record holds, and for the one thing an extension
+ * must say for that to be true of its blocks. */
 markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser);
 
 /** Gives back everything the publish took: the blocks it closed are reopened
@@ -415,9 +397,12 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
  * frontier is made to own its bytes, which its literals borrow from the leaf's
  * content buffer that the next feed will grow. The parser is then fed exactly
  * as if it had never been published from. Returns false, touching nothing,
- * for a record that is final or already retracted, and — with the parser's
- * sticky allocation bit set — when the frontier could not be given its
- * bytes; the record is still the published one either way. */
+ * for a record already retracted, and — with the parser's sticky allocation
+ * bit set — when the frontier could not be given its bytes before anything
+ * moved (the record is still the published one), or when, once things have
+ * moved, a block could not get its bytes back or the block that had
+ * replaced the leaf could not be given its (the parser is not where it was,
+ * and the caller's tick fails and takes the chain with it). */
 bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo);
 
 /** Frees a record, and with it any retired frontier it still holds. */

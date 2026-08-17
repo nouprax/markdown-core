@@ -17,7 +17,10 @@ extern "C" {
  * walk: the predecessor and successor trees are walked against a cumulative
  * id ledger, which pins that ids never resurrect, revisions never regress,
  * and a node whose (id, revision) did not move has an unchanged own
- * projection and child list.
+ * projection and child list; a postorder walk pins the converse, that a
+ * subtree unchanged in projection, child ids and descendants keeps its
+ * revision; and an empty append must carry every id at every revision the
+ * head did, node for node.
  *
  * The equivalence runner and the fuzzing entry points share this harness so
  * every driver checks the same invariants: failures are routed through the

@@ -32,24 +32,18 @@
 // because appends only ever add at the end, so what a document describes is
 // fixed the moment it is built even though the chain keeps growing.
 //
-// An append is one of two ticks, and which one is read off the head's record
-// BEFORE anything is written:
+// An append is ONE TICK: the head's tree grows in place. The previous
+// projection is retracted, the chunk is fed, what the feed closed is
+// settled, and a new projection is published; ids hand over at the
+// frontier by pairing, and revisions move by touch. Cost: the chunk, the
+// units it closed, the units a definition in it flips, and the open leaf —
+// never the document. There is no other kind of tick: every close is
+// retractable, an extension that puts a payload behind a block's pointer
+// must say how large it is or it is not attached, and a failed tick
+// poisons the chain rather than falling back to anything.
 //
-//   WARM  — the head's tree grows in place: the previous projection is
-//           retracted, the chunk is fed, what the feed closed is settled, and
-//           a new projection is published; ids hand over at the frontier and
-//           the touched spine is restamped. Cost: the chunk, the units it
-//           closed, the units a definition in it flips, and the open leaf.
-//           Every shape the engine's own blocks and extensions produce.
-//   REBUILT — a fresh parser over every byte so far, diffed against the
-//           head for the (id, revision) handover. Exactly as correct and
-//           O(document); reached only when the head's record came back
-//           `final` — a spine block whose payload its extension has not
-//           described — which nothing built in does; the ledger counts it,
-//           and the append oracles assert it never happens on their corpora.
-//
-// Either way the equivalence suite pins the same thing: after every append
-// the result equals a one-shot parse of the same text.
+// The equivalence suite pins the one thing that matters: after every
+// append the result equals a one-shot parse of the same text.
 
 static void clear_error(markdown_core_error **error) {
     if (error) {
@@ -204,85 +198,58 @@ static void set_parse_error(const markdown_core_parser *parser, markdown_core_er
     );
 }
 
-/* THE PREFIX FOLDS a record's spine blocks are restamped from. A spine
- * block's children before its saved youngest child are settled — the same
- * objects with the same hashes for the rest of the stream — so its stamp is
- * that fold continued over what grew, and a tick restamps a block in the
- * size of what grew rather than the size of the block: without this, the
- * root's restamp alone is a fold over every top-level block per tick, an
- * O(document) term the amortized bound cannot carry. `previous` may be
- * NULL; when a block was on the previous record too, its fold is carried
- * forward over the children that settled since (they were stamped by the
- * tick before this is called), and only a block new to the spine is folded
- * from its own fields. */
-static void record_prefix_hashes(markdown_core_warm_undo *record, const markdown_core_warm_undo *previous) {
+/* THE PUBLISHED PROJECTIONS a record's spine blocks carry: each block's own
+ * projection as this publish shows it, written as bytes by the one
+ * projection definition (markdown_core_ast_projection_write), for the next
+ * tick to compare its next publish against exactly. A block on the spine
+ * is the same object tick after tick, so there is no second node to hand
+ * markdown_core_ast_projection_changed; its past is these bytes. Written
+ * at the end of every build — the first build's close and each tick — so a
+ * lost allocation here is the tick's, not the record's. */
+static bool record_published_projections(markdown_core_warm_undo *record, markdown_core_parser *parser) {
     size_t i;
     for (i = 0; i < record->spine_count; i++) {
         markdown_core_warm_open_block *entry = &record->spine[i];
-        markdown_core_node *node = entry->node;
-        const markdown_core_warm_open_block *carried = NULL;
-        uint64_t h;
-        markdown_core_node *child;
-        size_t j;
-        for (j = 0; previous && j < previous->spine_count; j++) {
-            if (previous->spine[j].node == node) {
-                carried = &previous->spine[j];
-                break;
-            }
+        markdown_core_strbuf out;
+        markdown_core_strbuf_init(record->mem, &out, 32);
+        markdown_core_ast_projection_write(entry->node, &out);
+        if (out.oom) {
+            markdown_core_strbuf_free(&out);
+            parser->oom = true;
+            return false;
         }
-        if (!entry->last_child || !entry->prev) {
-            /* No child preceded the youngest: the fold is the block's own
-             * fields alone. (An unrefined leaf at its save; the root of an
-             * empty document. What hangs under it NOW — a leaf's tentative
-             * inline children — is what the restamp folds, not the prefix.) */
-            h = markdown_core_node_stamp_own(node);
-        } else {
-            /* The fold runs up to the sibling that preceded the youngest
-             * child AT THE SAVE — not to the youngest child itself, since
-             * the close may have inserted between them (the definitions
-             * harvested out of a paragraph, a lead paragraph split off a
-             * table), or taken the youngest child out (a paragraph that was
-             * nothing but definitions), and neither is what the next tick
-             * leaves alone. Carried forward only if nothing was inserted
-             * before the carried youngest child since: the sibling that
-             * preceded it must still be the one. */
-            const markdown_core_node *stop = entry->prev->next;
-            bool carriable = carried && carried->last_child &&
-                             (carried->prev ? carried->prev->next : node->first_child) == carried->last_child;
-            if (carriable) {
-                h = carried->prefix_hash;
-                child = carried->last_child;
-            } else {
-                h = markdown_core_node_stamp_own(node);
-                child = node->first_child;
-            }
-            /* The fold is a sum of index-weighted terms (node.h): continued
-             * from the carried prefix at the next index, or begun at the
-             * first child. */
-            if (child && child != stop) {
-                uint32_t index = child->prev ? child->prev->hash_index + 1 : 0;
-                uint64_t weight = markdown_core_node_hash_weight(index);
-                for (; child && child != stop; child = child->next) {
-                    child->hash_index = index;
-                    h += child->subtree_hash * weight;
-                    index++;
-                    weight *= MARKDOWN_CORE_NODE_HASH_STEP;
-                }
-            }
-        }
-        entry->prefix_hash = h;
+        record->mem->free(record->mem, entry->published_projection);
+        entry->published_projection_size = (size_t)out.size;
+        entry->published_projection = markdown_core_strbuf_detach(&out);
     }
+    return true;
 }
 
-/* HOW EVERY BUILD ENDS. The parser is at end of feed with the tree still
- * open. The closed part is settled once and for good and the spine is
- * PUBLISHED, so the record that comes back lets the next append reopen the
- * parser and grow this very tree — or, when a spine block is one the record
- * cannot put back (an extension's block whose payload it cannot describe),
- * the record comes back `final` and the next append rebuilds. Either way
- * the tree equals a one-shot parse of the same bytes, is stamped for the
- * diff, and the parser stays with the generation as the tree's owner. A
- * parser that failed publishes nothing. */
+/* Whether a spine block's own projection is other than the one its record
+ * published. */
+static bool published_projection_moved(
+    const markdown_core_warm_open_block *entry,
+    const markdown_core_node *node,
+    markdown_core_strbuf *scratch,
+    bool *lost
+) {
+    markdown_core_strbuf_clear(scratch);
+    markdown_core_ast_projection_write(node, scratch);
+    if (scratch->oom) {
+        *lost = true;
+        return true;
+    }
+    return (size_t)scratch->size != entry->published_projection_size ||
+           (scratch->size && memcmp(scratch->ptr, entry->published_projection, (size_t)scratch->size) != 0);
+}
+
+/* HOW THE FIRST BUILD ENDS (an append ends in its own tick's publish). The
+ * parser is at end of feed with the tree still open. The closed part is
+ * settled once and for good and the spine is PUBLISHED, so the record that
+ * comes back lets the first append reopen the parser and grow this very
+ * tree; the tree equals a one-shot parse of the same bytes, and the parser
+ * stays with the generation as the tree's owner. A parser that failed
+ * publishes nothing. */
 static bool generation_close(document_generation *generation, markdown_core_error **error) {
     markdown_core_parser *parser = generation->parser;
 
@@ -304,23 +271,50 @@ static bool generation_close(document_generation *generation, markdown_core_erro
         set_parse_error(parser, error);
         return false;
     }
-    /* WHERE THE TREE IS FINGERPRINTED (see refine_blocks' note on why it is
-     * one pass over the settled tree and nothing earlier): the append diff
-     * pairs on these hashes, and a warm tick restamps only what it touches. */
-    markdown_core_node_stamp_tree(parser->root);
-    if (generation->undo) {
-        record_prefix_hashes(generation->undo, NULL);
+    /* WHAT IS STAMPED: exactly the subtrees the next tick's frontier diff
+     * will pair against — the run each spine block gained at this close,
+     * and the children the close's flips gave their units — and nothing
+     * else in the tree. A settled node's hash is read only when it stands
+     * in such a run, or as a flipped unit's old child, and the tick stamps
+     * both when it pairs them. */
+    {
+        markdown_core_warm_undo *record = generation->undo;
+        size_t i;
+        for (i = 0; i < record->spine_count; i++) {
+            markdown_core_node *child;
+            for (child = markdown_core_warm_run_first(&record->spine[i]); child;
+                 child = markdown_core_warm_run_next(&record->spine[i], child)) {
+                markdown_core_node_stamp_tree(child);
+            }
+            /* A leaf this close's refine replaced: the block that stands in
+             * its slot is the entry's node and its parent's youngest child
+             * — outside every run — and the first append retires it onto
+             * the parent's run to be paired against, so it is stamped too. */
+            if (record->spine[i].replaced) {
+                markdown_core_node_stamp_tree(record->spine[i].node);
+            }
+        }
+        for (i = 0; i < record->flip_count; i++) {
+            markdown_core_node *child;
+            for (child = record->flips[i].unit->first_child; child; child = child->next) {
+                markdown_core_node_stamp_tree(child);
+            }
+        }
+        if (!record_published_projections(record, parser)) {
+            set_parse_error(parser, error);
+            return false;
+        }
     }
     generation_take_diagnostics(generation, parser);
     return true;
 }
 
-/* PARSE. A pure function of (bytes, options): it fills this fresh generation
- * from the chain's stored bytes plus the ones this mutation brought, which
- * together are exactly the document's text. The parser's definition maps
- * serve its own inline phase and stay with it: the tree carries every
- * published answer. No predecessor, no ids — identity is the diff's to
- * assign. */
+/* THE FIRST BUILD'S PARSE. A pure function of (bytes, options): it fills a
+ * fresh chain's first generation from the bytes this build brought — the
+ * chain has stored none yet — which are exactly the document's text. The
+ * parser's definition maps serve its own inline phase and stay with it: the
+ * tree carries every published answer. No predecessor, no ids — the caller
+ * mints the tree whole. */
 static bool document_parse_text(
     markdown_core_chain *chain,
     document_generation *generation,
@@ -365,10 +359,9 @@ static bool document_parse_text(
  * and for good; and a new projection is published. Then identity: for each
  * block that was open before the feed, deepest first, the run of children it
  * gained pairs against the retired frontier of the same block, the run is
- * stamped, and the block takes the tick's revision and a fresh stamp — so
- * revisions cover by touch up the spine, and every hash in the tree is true
- * at every level. Then the units a definition flipped, and nothing else in
- * the tree is visited.
+ * stamped for that pairing, and the block takes the tick's revision — so
+ * revisions cover by touch up the spine. Then the units a definition
+ * flipped, and nothing else in the tree is visited.
  *
  * Only with a record that can be reopened, and after the caller has
  * reserved the bytes: a failure here leaves the chain poisoned, with a tree
@@ -386,58 +379,69 @@ static bool document_tick_warm(
     markdown_core_warm_undo *after = NULL;
     bool ok = false;
     bool revived = false;
+    markdown_core_node *leaf_before = NULL;
+    markdown_core_strbuf projection;
     size_t i;
 
+    markdown_core_strbuf_init(generation->mem, &projection, 64);
     generation->undo = NULL;
-    /* A leaf paragraph the last close took (nothing but definitions) is
-     * put back by the retract — the same object, but to the identity
-     * ledger it left the tree when the close published, and a retired id
-     * never returns: it comes back as a new node. */
-    revived = before->spine_count > 0 && before->spine[before->spine_count - 1].vanished;
+    /* A leaf paragraph the last close took (nothing but definitions), or
+     * replaced (promoted to a formula block), is put back by the retract —
+     * the same object, but to the identity ledger it left the tree when the
+     * close published, and a retired id never returns: if this close
+     * publishes it, it is a new node. */
+    revived = before->spine_count > 0 && (before->spine[before->spine_count - 1].vanished ||
+                                          before->spine[before->spine_count - 1].replaced != NULL);
     if (!markdown_core_parser_warm_retract(parser, before)) {
-        /* Refused: a record that was final or already retracted (the
-         * engine contradicting itself, since the decision above read it), or
-         * an allocation lost while the frontier took ownership of its bytes,
-         * which the parser's sticky bit already says. */
+        /* Refused: a record already retracted (the engine contradicting
+         * itself, since the caller read it), or an allocation lost while the
+         * frontier took ownership of its bytes or a block got its bytes
+         * back, which the parser's sticky bit already says. */
         if (!parser->oom) {
             parser->internal_error = true;
         }
         goto done;
     }
-    if (revived) {
-        markdown_core_diff_mint(chain, before->spine[before->spine_count - 1].node, revision);
-    }
+    leaf_before = before->spine_count > 0 ? before->spine[before->spine_count - 1].node : NULL;
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
+    if (parser_failed(parser)) {
+        goto done;
+    }
     markdown_core_parser_warm_settle(parser, before);
-    /* The publish may come back `final`: the close did something the record
-     * cannot put back — closed a fence, retyped a paragraph, moved a block's
-     * bytes out. The projection is right all the same, the identity below
-     * runs all the same, and the record stays with the generation to say
-     * that the next append rebuilds. */
     after = markdown_core_parser_warm_publish(parser);
     if (!after || parser_failed(parser)) {
         goto done;
     }
     /* Identity and revision, deepest block first. The run a block gained is
-     * stamped, then diffed against the block's retired frontier — the same
-     * plan and machine a rebuild's diff runs — and the block itself takes
-     * the tick's revision only if that diff or a deeper block says something
-     * under it changed: an empty append moves no revision at all, and a byte
-     * that grows the leaf moves the leaf's and every block above it. */
+     * stamped, then diffed against the block's retired frontier — hash
+     * sweeps front and back, a positional middle by type, residue minted,
+     * each pair classified by its fields and children — and the block itself
+     * takes the tick's revision only if that diff or a deeper block says
+     * something under it changed: an empty append moves no revision at all,
+     * and a byte that grows the leaf moves the leaf's and every block above
+     * it. */
     {
         bool changed_below = false;
-        bool gone = false;
-        /* THE LEAF THE FEED TOOK. A leaf paragraph that came to be nothing
-         * but definitions left the tree at the feed's close — for good, and
-         * the parser keeps it, unlinked, so this can know rather than read
-         * it freed. Its frontier retires whole and its id with it; and its
-         * parent's saved youngest child is no longer a child, so the
-         * parent's run is everything after the sibling it followed, paired
-         * against both of what the last close retired there, as one run. */
-        if (before->spine_count > 1 &&
-            markdown_core_parser_warm_vanished(parser, before->spine[before->spine_count - 1].node)) {
+        bool leaf_off = false;
+        /* THE LEAF THAT IS NOT WHAT IT WAS. The record's leaf may be out
+         * of its parent's child list when the identity step runs — the
+         * FEED took it (a paragraph that came to be nothing but
+         * definitions, for good; the parser keeps it, unlinked, so this can
+         * know rather than read it freed), or the CLOSE took it again (the
+         * same, for this projection; the record holds it), or the close's
+         * refine REPLACED it (a paragraph promoted to a formula block, which
+         * stands in its slot) — or the SETTLE's refine replaced it for good
+         * and the entry names the block that stands there now. Either way
+         * the parent's saved youngest child is not the child it saved, so
+         * the parent's run is everything after the sibling it followed,
+         * paired against both of what the last close retired there, as one
+         * run — with the block that had replaced it between them, where it
+         * stood, so a promoted block that closes for good keeps its id — and
+         * the leaf entry pairs nothing of its own. */
+        if (before->spine_count > 1 && (before->spine[before->spine_count - 1].node->parent == NULL ||
+                                        before->spine[before->spine_count - 1].node != leaf_before)) {
             markdown_core_warm_open_block *parent = &before->spine[before->spine_count - 2];
-            gone = true;
+            leaf_off = true;
             if (parent->retired_inserted) {
                 markdown_core_node *tail = parent->retired_inserted;
                 while (tail->next) {
@@ -461,24 +465,36 @@ static bool document_tick_warm(
             markdown_core_node *child;
             bool inserted;
             bool changed = false;
-            if (gone && i == before->spine_count - 1) {
-                changed_below = true;
+            if (leaf_off && i == before->spine_count - 1) {
+                /* Its leaving is a change only if it had been published: a
+                 * leaf the last close had already taken or replaced was
+                 * never in the tree a consumer saw. */
+                changed_below = changed_below || !revived;
                 continue;
             }
             appended =
                 entry->last_child ? entry->last_child->next : (entry->prev ? entry->prev->next : node->first_child);
-            /* A spine block the settle's refine replaced is a new object
-             * standing where the old stood: minted, as any new node; so is
-             * a leaf paragraph the retract revived. */
-            if (node->id == 0) {
-                markdown_core_diff_mint(chain, node, revision);
-                changed_below = true;
-            }
+            /* A leaf the retract revived is a new object IF this close
+             * published it (as itself, or as the block that replaced it
+             * again); one that vanished again (the same definitions, an
+             * empty chunk) left the tree as it found it, and moves nothing
+             * — whatever id it carries, or does not. */
             if (revived && i == before->spine_count - 1) {
+                /* The leaf itself is the new node; its children are the run
+                 * below, minted or paired there. */
+                node->id = chain->next_id++;
+                node->last_changed_rev = revision;
+                changed_below = true;
+            } else if (node->id == 0) {
+                /* A spine block the settle's refine replaced is a new object
+                 * standing where the old stood: minted, as any new node. */
+                markdown_core_diff_mint(chain, node, revision);
                 changed_below = true;
             }
             run = markdown_core_warm_run_first(entry);
             inserted = run != appended;
+            /* Stamped here and nowhere else: these are the subtrees the
+             * next tick's frontier diff will pair against. */
             for (child = run; child; child = markdown_core_warm_run_next(entry, child)) {
                 markdown_core_node_stamp_tree(child);
             }
@@ -515,33 +531,21 @@ static bool document_tick_warm(
             }
             /* The block's own projection: the feed may have retyped it (a
              * setext underline turns the open paragraph into a heading), and
-             * the close writes into its payload (a list's tightness) — a
-             * value the last close published too, and the same value keeps
-             * the revision. */
+             * the close writes into its payload (a list's tightness, a
+             * table's count behind its pointer) — a value the last close
+             * published too, and the same value keeps the revision. */
             {
-                bool own_changed = node->type != entry->published_type ||
-                                   memcmp(&node->as, &entry->published_payload, sizeof(node->as)) != 0;
+                bool lost = false;
+                bool own_changed = published_projection_moved(entry, node, &projection, &lost);
+                if (lost) {
+                    parser->oom = true;
+                    goto done;
+                }
                 changed = changed || own_changed;
                 changed_below = changed_below || changed;
                 if (changed_below) {
                     node->last_changed_rev = revision;
                 }
-                /* The prefix fold was taken over the block's own fields as
-                 * they were published last; a block whose own fields moved
-                 * (in the union, or behind an extension's payload pointer —
-                 * the own-fold sees both), or that gained children before
-                 * its youngest, is stamped whole — once, for the tick that
-                 * moved it. */
-                inserted = inserted || own_changed || markdown_core_node_stamp_own(node) != entry->published_own_hash;
-            }
-            if (inserted) {
-                markdown_core_node_stamp(node);
-            } else {
-                markdown_core_node_stamp_from(
-                    node,
-                    entry->prefix_hash,
-                    entry->last_child ? entry->last_child : (entry->prev ? entry->prev->next : node->first_child)
-                );
             }
         }
     }
@@ -555,17 +559,14 @@ static bool document_tick_warm(
      * identity and its children as they stand pair against what was last
      * published under it, by the frontier's own diff, so a child the
      * definition did not touch keeps its id and revision; and if that diff
-     * finds a change, the unit is stamped whole and every block above it
-     * takes the tick's revision and is CORRECTED by the weighted change of
-     * the child below it — one product per level, whatever its width, which
-     * is what the positional fold (node.h) is for: a flip reaches into
-     * settled territory, and no block on the way up is refolded for it. A
-     * spine block whose carried prefix fold covers that child is corrected
-     * the same way, so the record's folds stay true. A close's flip of a
-     * unit refined THIS tick — one the feed appended, or one the last close
-     * flipped — pairs against nothing from its record: those old children
-     * were never published; the run they stand in, or the last flip's
-     * published run, is what pairs. */
+     * finds a change, the unit and every block above it take the tick's
+     * revision — by touch, up the ancestors, whatever their width. A close's
+     * flip of a unit refined THIS tick — one the feed appended, or one the
+     * last close flipped — pairs against nothing from its record: those old
+     * children were never published; the run they stand in, or the last
+     * flip's published run, is what pairs. Both runs are stamped for the
+     * pairing here: the old one may have been refined by a fresh build,
+     * which stamps nothing it will not pair. */
     {
         size_t j;
         for (j = 0; j < parser->flipped_count + before->flip_count + after->flip_count; j++) {
@@ -582,9 +583,16 @@ static bool document_tick_warm(
             } else {
                 unit = after->flips[j - parser->flipped_count - before->flip_count].unit;
                 old = after->flips[j - parser->flipped_count - before->flip_count].children;
-                if (!old || old->id == 0) {
-                    continue;
-                }
+            }
+            /* Old children that were never published — a unit the retract
+             * refined again and the feed then flipped for good, or a unit
+             * refined this tick that the close flipped — pair nothing; the
+             * published run they replaced pairs, on its own entry. */
+            if (!old || old->id == 0) {
+                continue;
+            }
+            for (child = old; child; child = child->next) {
+                markdown_core_node_stamp_tree(child);
             }
             for (child = unit->first_child; child; child = child->next) {
                 markdown_core_node_stamp_tree(child);
@@ -602,38 +610,16 @@ static bool document_tick_warm(
                 goto done;
             }
             if (changed) {
-                markdown_core_node *parent;
-                uint64_t was = unit->subtree_hash;
-                uint64_t delta;
-                /* The spine is a chain from the root and so are the unit's
-                 * ancestors: once one ancestor is a spine block, the ones
-                 * above it are the entries above that one, in order. */
-                size_t cursor = before->spine_count;
-                unit->last_changed_rev = revision;
-                markdown_core_node_stamp(unit);
-                delta = unit->subtree_hash - was;
-                for (child = unit, parent = unit->parent; parent; child = parent, parent = parent->parent) {
-                    uint64_t weighted = delta * markdown_core_node_hash_weight(child->hash_index);
-                    size_t m = cursor;
-                    parent->last_changed_rev = revision;
-                    parent->subtree_hash += weighted;
-                    while (m > 0 && before->spine[m - 1].node != parent) {
-                        m--;
-                    }
-                    if (m > 0) {
-                        markdown_core_warm_open_block *entry = &before->spine[m - 1];
-                        cursor = m - 1;
-                        if (entry->prev && child->hash_index <= entry->prev->hash_index) {
-                            entry->prefix_hash += weighted;
-                        }
-                    }
-                    delta = weighted;
+                for (child = unit; child; child = child->parent) {
+                    child->last_changed_rev = revision;
                 }
             }
         }
         markdown_core_parser_warm_flipped_free(parser);
         markdown_core_parser_warm_vanished_free(parser);
-        record_prefix_hashes(after, before);
+    }
+    if (!record_published_projections(after, parser)) {
+        goto done;
     }
     generation_take_diagnostics(generation, parser);
     generation->undo = after;
@@ -641,6 +627,7 @@ static bool document_tick_warm(
     ok = true;
 
 done:
+    markdown_core_strbuf_free(&projection);
     if (!ok) {
         if (after) {
             set_parse_error(parser, error);
@@ -657,29 +644,6 @@ done:
     }
     markdown_core_parser_warm_undo_free(before);
     return ok;
-}
-
-/* DIFF. `new` has a tree and no identities; `old` may be NULL. This assigns
- * `new`'s identities from `old` — the one decision both requirements rest on
- * — and stamps each node's revision. It reads no text and reparses nothing.
- *
- * A diff of the same two trees is the same diff. That is the invariant the
- * old `adopt` name hid, and keeping parse and diff apart is what makes it
- * statable: a tree is a pure function of (bytes, options), and the identity
- * assignment is a pure function of two trees. */
-bool markdown_core_document_diff(
-    markdown_core_chain *chain,
-    markdown_core_mem *mem,
-    markdown_core_node *old_root,
-    markdown_core_node *new_root,
-    uint64_t new_revision,
-    markdown_core_error **error
-) {
-    if (!markdown_core_diff_trees(chain, mem, old_root, new_root, new_revision)) {
-        markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not match identities");
-        return false;
-    }
-    return true;
 }
 
 /* The chain owner's one atomic: handles on a chain may be freed from
@@ -837,14 +801,9 @@ static void chain_release(markdown_core_chain *chain) {
 
 // --- public API -------------------------------------------------------------
 
-/* BUILD ONE DOCUMENT. `new` starts a chain; `append` extends one, and takes
- * the warm tick whenever the head's record can be reopened — decided here,
- * before a byte is written anywhere:
- *
- *     warm:    tick(head, chunk)                     — the tree grows in place
- *     rebuilt: new = parse(all bytes); diff(head, new) — after a final record
- *
- * Both publish the same way: the successor is the head, the receiver is
+/* BUILD ONE DOCUMENT. `new` starts a chain with a fresh parse, minted
+ * whole; `append` extends one by growing the head's tree in place. Both
+ * publish the same way: the successor is the head, the receiver is
  * superseded, the bytes are the chain's. */
 static markdown_core_document *document_build(
     const markdown_core_parse_options *options,
@@ -856,7 +815,6 @@ static markdown_core_document *document_build(
 ) {
     markdown_core_chain *chain;
     markdown_core_document *doc;
-    bool warm;
 
     clear_error(error);
     /* `options` and `pooled` describe a CHAIN, so they are read only when one
@@ -896,48 +854,35 @@ static markdown_core_document *document_build(
         markdown_core_document_free(doc);
         return NULL;
     }
-    /* THE DECISION, read off the previous publish's record: a build that
-     * published and did not close for good is reopened, whatever the bytes.
-     * Nothing has been retracted, fed or written yet. */
-    warm = prev && chain->head.parser && markdown_core_parser_warm_eligible(chain->head.parser, chain->head.undo);
-    if (warm) {
+    if (prev) {
+        /* THE TICK: the head's tree grows in place. Every successful build
+         * leaves a record that can be reopened, and a chain whose head has
+         * none is one no mutation may reach (a failed tick poisons it), so
+         * a head without a record is the engine contradicting itself. */
+        if (!chain->head.parser || !chain->head.undo || chain->head.undo->retracted) {
+            markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "the head has no record to reopen");
+            markdown_core_document_free(doc);
+            return NULL;
+        }
         if (!document_tick_warm(chain, markdown, doc->revision, error)) {
             markdown_core_document_free(doc);
             return NULL;
         }
-        chain->warm_ticks++;
     } else {
+        /* THE FIRST BUILD: a fresh parser over the text, minted whole. */
         document_generation generation;
         if (!generation_open(chain, &generation, error)) {
             markdown_core_document_free(doc);
             return NULL;
         }
-        if (!document_parse_text(chain, &generation, markdown, error) || !markdown_core_document_diff(
-                                                                             chain,
-                                                                             generation.mem,
-                                                                             document_generation_root(&chain->head),
-                                                                             document_generation_root(&generation),
-                                                                             doc->revision,
-                                                                             error
-                                                                         )) {
+        if (!document_parse_text(chain, &generation, markdown, error)) {
             generation_release(&generation);
             markdown_core_document_free(doc);
             return NULL;
         }
-        /* PUBLICATION of a rebuild, in one place: the new generation replaces
-         * the head. What it replaces is released here rather than when its
-         * handle is freed, because a superseded handle answers for no tree —
-         * the chain keeps one, and this is the moment it changes hands. */
+        markdown_core_diff_mint(chain, document_generation_root(&generation), doc->revision);
         generation_release(&chain->head);
         chain->head = generation;
-        if (prev) {
-            /* THE TICK LEDGER: this mutation rebuilt the document from
-             * nothing, so it reparsed every byte the document describes —
-             * which is what the bound is about, and why the bytes are
-             * counted next to the ticks. */
-            chain->rebuilt_ticks++;
-            chain->rebuilt_bytes += (uint64_t)doc->length;
-        }
     }
     markdown_core_source_commit(chain->source, markdown.data, markdown.length);
     if (prev) {
@@ -1034,14 +979,14 @@ static bool mutation_permitted(
 
 /* APPEND: the one mutation. Any byte split is legal — mid-UTF-8, mid-CRLF,
  * mid-line — because the successor's projection is defined as a fresh parse
- * of all bytes so far, and bytes are all the chunk adds. Whether the engine
- * gets there by growing the head's tree or by rebuilding it is decided per
- * chunk (document_build) and changes nothing a caller can see but the cost.
+ * of all bytes so far, and bytes are all the chunk adds; the engine gets
+ * there by growing the head's tree (document_build), which changes nothing
+ * a caller can see but the cost.
  *
  * A failed append poisons the chain (D5): the engine cannot say which side
  * of the failure the chunk landed on, the caller still holds every byte it
- * ever sent, and recovery is a rebuild — so the chain reports itself done
- * rather than pretending to a state it cannot prove. */
+ * ever sent, and recovery is a new document — so the chain reports itself
+ * done rather than pretending to a state it cannot prove. */
 markdown_core_document *markdown_core_document_append(
     markdown_core_document *document,
     markdown_core_string chunk,

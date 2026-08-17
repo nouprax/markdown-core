@@ -158,8 +158,8 @@ private fun deepBuildBenchmark(
 // tick is one append crossing plus the PRUNED decode,
 // where every subtree the encoder proved unchanged arrives as a single reuse
 // record and resolves from the predecessor's values — the per-tick DECODE
-// this milestone claims is O(changed), while the native append inside the
-// same crossing still reparses every byte sent so far. The whole trace is
+// is O(changed), and the native append inside the same crossing grows the
+// head's tree in place. The whole trace is
 // timed and the tick count rides in `commits`, so per-tick cost is
 // median_ns / commits.
 private fun appendStreamBenchmark(

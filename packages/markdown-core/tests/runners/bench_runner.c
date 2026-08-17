@@ -387,11 +387,10 @@ static int workload_adversarial(const bench_options *options) {
 
 /* --- append baseline (streaming plan P0.2; living tree L1 slice 8) --------
  *
- * The per-tick cost of consuming a stream. A tick is one of two things
- * (extensions/document.c): WARM, when the eligibility predicate lets the
- * head's tree grow in place — the tick then costs the chunk, the units it
- * closed and the open leaf, and nothing of the document's size — or
- * REBUILT, a full parse of the bytes-so-far plus a whole-tree diff.
+ * The per-tick cost of consuming a stream. A tick grows the head's tree in
+ * place (extensions/document.c) and costs the chunk, the units it closed,
+ * the units a definition in it flipped and the open leaf — nothing of the
+ * document's size unless the open leaf is the document.
  *
  * Shapes follow the plan's list; each is measured at doubling prefix
  * checkpoints with a burst of token-sized, non-line-aligned ticks (3-8 byte
@@ -428,7 +427,7 @@ static char *build_append_fence(size_t target, size_t *length) {
         return NULL;
     }
     /* One growing, never-closed fence: the shape the plan calls memcpy-speed
-     * for the warm path, full-parse speed today. */
+     * — the close moves its bytes out and the retract copies them back. */
     input = (char *)malloc(*length + 5);
     if (!input) {
         free(body);

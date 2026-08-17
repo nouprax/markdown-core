@@ -125,18 +125,22 @@ struct markdown_core_node {
     // A cheap order-sensitive fingerprint of this node's subtree: its
     // type, its literal bytes when it has any, and its children's hashes.
     //
-    // IT IS A PROPERTY OF THE NODE, a pure function of the document text,
-    // stamped when the walk leaves the node for the last time -- not a thing
-    // some later pass derives. Calling it "the matcher's digest" is what led
-    // it to live in the diff, where it grew a which-pass-pays-for-it question
-    // and a has-this-tree-been-done flag; as a node property it has neither.
+    // It is what the streaming frontier pairs on (extensions/diff.c): when
+    // a tick re-derives the tail of the tree from the held partial line,
+    // the new tail's subtrees are stamped and paired against the retired
+    // tail's by hash sweeps and a positional middle, so an unchanged node
+    // keeps its id and revision. Meaningful on exactly the subtrees the
+    // facade stamps for that — a spine block's run of children as it
+    // publishes, a re-refined unit's children — and on nothing else: a
+    // settled node's value is whatever it was when it last stood in a run,
+    // and no reader asks it again.
     //
-    // The append diff's pairing sweeps (diff.c:167/173) read it to decide
-    // WHICH nodes pair, and nothing else: a paired node's changes are still
-    // found by comparing it field by field and walking its children. So a
-    // collision, or a field the hash does not cover, can only produce worse
-    // identity matching; it can never let a changed node keep a stale
-    // revision. That is what makes the bounded literal sample safe.
+    // The pairing sweeps read it to decide WHICH nodes pair, and nothing
+    // else: a paired node's changes are still found by comparing it field
+    // by field and walking its children. So a collision, or a field the
+    // hash does not cover, can only produce worse identity matching; it can
+    // never let a changed node keep a stale revision. That is what makes
+    // the bounded literal sample safe.
     uint64_t subtree_hash;
 
     // The concrete marker records of this node's own ownership region
@@ -170,10 +174,6 @@ struct markdown_core_node {
     int internal_offset;
     uint16_t type;
     markdown_core_node_internal_flags flags;
-    /* The node's index among its siblings when its parent's stamp last
-     * folded it — the position its hash was weighted by (see the fold below).
-     * Meaningful only on a stamped tree. */
-    uint32_t hash_index;
 
     markdown_core_extension *extension;
 
@@ -206,48 +206,10 @@ uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
  * sample of both ends, never every byte — see the note on `subtree_hash`. */
 uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length);
 
-/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
- * children already carry. Called on the node's EXIT during the stamping walk
- * of the finished tree, so every child is complete and already stamped.
- *
- * THE FOLD IS POSITIONAL: a subtree hash is the node's own fold plus each
- * child's hash weighted by a power of one odd constant at the child's index
- * — a polynomial in the children, order-sensitive like any, but a SUM, so
- * a child's contribution depends on that child and its index alone. That
- * is what a living tree needs: appending a child adds one term; a settled
- * child that changes (a definition arrived and re-refined it) moves every
- * ancestor by one product each, without refolding a sibling; and a fold
- * over the leading children (a stream's spine keeps one per open block) is
- * a partial sum, carried forward and corrected the same way. Every fold
- * writes each child's `hash_index` as it passes, so a later correction
- * knows the weight. */
-void markdown_core_node_stamp(markdown_core_node *node);
-
-/** The stamp in two halves, for a node whose leading children have not
- * changed since it was last stamped — an open block on a stream's spine,
- * whose settled children are the same objects with the same hashes tick
- * after tick, and whose youngest children are what grew. `stamp_own` is the
- * fold over the node's own fields, where every stamp begins;
- * `hash_children` continues a fold over the children from `from` to the
- * youngest, weighting `from` by the index after its predecessor's;
- * `stamp_from` writes the stamp continued from `prefix` — a fold already
- * carried over everything before `from`. A caller that keeps that prefix
- * restamps in the size of what grew, not the size of the node. */
-uint64_t markdown_core_node_stamp_own(const markdown_core_node *node);
-uint64_t markdown_core_node_hash_children(const markdown_core_node *node, uint64_t h, markdown_core_node *from);
-void markdown_core_node_stamp_from(markdown_core_node *node, uint64_t prefix, markdown_core_node *from);
-
-/** The weight a child at `index` carries in its parent's fold: the odd
- * constant to the power index + 1. What a caller multiplies a child's hash
- * change by to correct the parent's stamp in place. */
-uint64_t markdown_core_node_hash_weight(uint32_t index);
-
-/* The fold's constant: odd, and 3 mod 4, so that two children swapped
- * collide only when their hashes agree in all but the top bit. A fold that
- * continues one index at a time multiplies its weight by this. */
-#define MARKDOWN_CORE_NODE_HASH_STEP UINT64_C(0x9E3779B97F4A7C13)
-
-/** Stamps every node of `root`'s subtree, each as the walk leaves it. */
+/** Stamps every node of `root`'s subtree — `subtree_hash` from its type,
+ * its literal and the hashes its children carry — each as the walk leaves
+ * it, so children first. The one stamping entry point: what the streaming
+ * frontier stamps before it pairs. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
 
 /** Makes every chunk-valued field of ONE node its own: a literal, a label,

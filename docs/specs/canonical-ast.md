@@ -313,9 +313,12 @@ case and not in the second. That is the same argument §4 already uses to
 forbid per-field, per-text and per-edge stamps: a stamp every node pays for
 is the wrong place to put information only a changed node carries.
 
-Which identities survive an append is decided by a whole-tree pairing of the
-predecessor's tree against the new one: identity never crosses a parent or a
-kind (a changed kind is a retirement and a creation, never a pairing),
+Which identities survive an append is decided at the FRONTIER: a settled
+node keeps its identity by being the same object, and only the tail the
+append re-derives from its held partial line — the run of children each
+open block gained, and the children a late definition re-refined — is
+paired against the tail it replaces. That pairing never crosses a parent or
+a kind (a changed kind is a retirement and a creation, never a pairing),
 leading and trailing children whose subtrees are identical pair first, and
 what falls between still pairs positionally while the kinds agree, so a node
 whose own text changed keeps its identity instead of being retired and

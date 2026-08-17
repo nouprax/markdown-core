@@ -12,7 +12,7 @@
 #include "source.h"
 
 // AddressSanitizer detection: document pooling is bypassed under ASan so the
-// sanitizer keeps seeing individual allocations (see markdown_core_document_alloc).
+// sanitizer keeps seeing individual allocations (see chain_new in document.c).
 #ifndef MARKDOWN_CORE_ASAN
 #if defined(__SANITIZE_ADDRESS__)
 #define MARKDOWN_CORE_ASAN 1
@@ -40,8 +40,9 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 
 /* ONE BUILD'S OUTPUT, AND THE PARSER THAT MAY STILL GROW IT: the tree, the
  * diagnostics that describe it, the parser that owns the tree and is kept
- * at end of feed, the record of the publish that closed it — NULL when the
- * close was terminal — and the arena they all came from. A generation is
+ * at end of feed, the record of the publish that closed it — NULL only
+ * before a build, and after a failed tick — and the arena they all came
+ * from. A generation is
  * taken whole and released whole, which is what makes a failed build cost
  * exactly one release and a successful one exactly one swap; a WARM tick
  * does not make a generation, it grows this one in place. */
@@ -94,20 +95,8 @@ typedef struct markdown_core_chain {
      * opener guarantees it outlives the chain. */
     markdown_core_mem *mem;
     /* A failed append is "the chain is done": nothing further may mutate it,
-     * the caller holds the text, and recovery is a rebuild. */
+     * the caller holds the text, and recovery is a new document. */
     bool poisoned;
-    /* THE TICK LEDGER. Every mutation lands in exactly one of these, and
-     * their sum is the number of mutations the chain has served: a WARM tick
-     * grew the head's tree in place, a REBUILT one reparsed every byte the
-     * document describes and diffed the result against the head. The
-     * counters landed at full corpus exercise BEFORE the warm path did, so
-     * its share is read off a gate that has been honest all along. The
-     * milestone's bound is about bytes, not ticks: `rebuilt_bytes` is what
-     * the fallback actually costs, since a tenth of the ticks each reparsing
-     * the whole document is not a tenth of a problem. */
-    uint64_t warm_ticks;
-    uint64_t rebuilt_ticks;
-    uint64_t rebuilt_bytes;
     /* THE IDENTITY COUNTER. Monotonic, starts at 1, never reused, and one
      * per chain because identity is what a consumer keys on across a whole
      * stream. A build that fails after minting burns the numbers it took;
@@ -120,9 +109,10 @@ typedef struct markdown_core_chain {
     /* Whether builds pool their allocations in an arena. Fixed at birth, so
      * a generation is released the same way it was taken. */
     bool pooled;
-    /* THE HEAD'S GENERATION. A build produces a tree and the diagnostics
-     * that describe it, out of one arena; publishing swaps the whole thing
-     * in and releases what it replaced. The head is the only generation the
+    /* THE HEAD'S GENERATION. The first build produces a tree and the
+     * diagnostics that describe it, out of one arena, and swaps the whole
+     * thing in; every append grows it in place (document_tick_warm), and it
+     * is released only with the chain. The head is the only generation the
      * chain keeps, which is exactly what a superseded handle answering for
      * no tree buys (the Mutation section of the public header). */
     document_generation head;
@@ -160,29 +150,13 @@ markdown_core_document *markdown_core_document_open_with_mem(
  * the dump implementation, which reads the same fields. */
 bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b);
 
-/** DIFF: assigns `nw`'s identities from `old` (which may be NULL) and stamps
- * revisions. Reads no text; reparses nothing. A pure function of two trees,
- * which is what lets the parse be a pure function of (bytes, options). */
-bool markdown_core_document_diff(
-    markdown_core_chain *chain,
-    markdown_core_mem *mem,
-    markdown_core_node *old_root,
-    markdown_core_node *new_root,
-    uint64_t new_revision,
-    markdown_core_error **error
-);
-
-/** Adopts ids from `old_root` (may be NULL) onto `new_root`, assigns
- * last_changed_rev = new_rev to every added/changed/bubbled node, and carries
- * the old revision over for untouched subtrees. Returns false on allocation
- * failure (the trees are left consistent; the caller discards `new_root`). */
-bool markdown_core_diff_trees(
-    markdown_core_chain *chain,
-    markdown_core_mem *mem,
-    markdown_core_node *old_root,
-    markdown_core_node *new_root,
-    uint64_t new_rev
-);
+/** The same projection, written to `out` as bytes: two nodes whose bytes
+ * are equal are nodes the comparison above calls unchanged. What a
+ * streaming tick keeps of a spine block's PUBLISHED projection, so the
+ * next publish can be compared against it exactly — the block is the same
+ * object, so there is no second node to compare — with no hash trusted
+ * for a revision. Answers false when the buffer lost an allocation. */
+bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out);
 
 /** Mints fresh identities over one subtree — every node id from the chain's
  * counter, every revision `rev` — for a subtree nothing pairs against. */
@@ -192,9 +166,9 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * children a spine block gained since the previous publish — what the feed
  * appended and what this close appended, in that order — and `retired` is
  * the run the previous close had appended there, detached at the retract and
- * owning its bytes. The two are diffed exactly as a rebuild diffs two child
- * lists — hash sweeps, positional middle by type, residue minted, each pair
- * classified by its fields and its children — so a paired node keeps its id,
+ * owning its bytes. The two are diffed as two child lists — hash sweeps,
+ * positional middle by type, residue minted, each pair classified by its
+ * fields and its children — so a paired node keeps its id,
  * keeps its revision if nothing about it changed and takes `rev` otherwise,
  * and unpaired retired ids are never minted again. `*changed` is SET when
  * the runs differ at all — never cleared, so a block's two runs accumulate

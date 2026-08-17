@@ -2749,29 +2749,47 @@ static int case_capture_equivalence(void) {
  * loss must yield a failed parse or a complete tree, never a quietly
  * thinner one — the property the line-mark machinery already pins and the
  * capture inherits. */
+/* The failing allocator, and its ledger: `live` counts blocks handed out
+ * and not yet freed, so a sweep can say — on every platform, with no leak
+ * sanitizer — that whatever an ordinal's failure left behind was freed by
+ * the time the last handle went. */
 typedef struct sweep_mem {
     markdown_core_mem mem;
     long countdown;
+    long live;
 } sweep_mem;
 
 static void *sweep_calloc(markdown_core_mem *mem, size_t count, size_t size) {
     sweep_mem *sweep = (sweep_mem *)mem;
+    void *block;
     if (--sweep->countdown == 0) {
         return NULL;
     }
-    return calloc(count, size);
+    block = calloc(count, size);
+    if (block) {
+        sweep->live++;
+    }
+    return block;
 }
 
 static void *sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
     sweep_mem *sweep = (sweep_mem *)mem;
+    void *block;
     if (--sweep->countdown == 0) {
         return NULL;
     }
-    return realloc(pointer, size);
+    block = realloc(pointer, size);
+    if (block && !pointer) {
+        sweep->live++;
+    }
+    return block;
 }
 
 static void sweep_free(markdown_core_mem *mem, void *pointer) {
-    (void)mem;
+    sweep_mem *sweep = (sweep_mem *)mem;
+    if (pointer) {
+        sweep->live--;
+    }
     free(pointer);
 }
 
@@ -2868,7 +2886,7 @@ static int case_capture_oom_sweep(void) {
     }
 
     for (fail_at = 1; fail_at < 100000 && !succeeded; fail_at++) {
-        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
+        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at, 0};
         markdown_core_parser *parser = sweep_parser_new(&sweep.mem);
         markdown_core_node *root;
         if (!parser) {
@@ -3011,142 +3029,406 @@ static int case_warm_fingerprint(void) {
     return 0;
 }
 
-/* --- warm_tick_ledger ------------------------------------------------------ */
+/* --- warm_tick_living_tree ------------------------------------------------- */
 
-/* The ledger every claim about the warm path is read off. It landed and was
- * exercised before the path existed, pinning "four appends, four rebuilds,
- * rebuilt bytes equal to the running sum of the document's own lengths" —
- * the old quadratic as an assertion. Now it pins the other side of that
- * line: every tick grows the tree in place, whatever the chunk brings — a
- * definition, a fence, a table, a directive — and only a record marked
- * final by hand sends the next append to the rebuild, whose bytes are
- * exactly the length of the document it rebuilt and nothing else.
- *
- * Every chunk names what the record puts back for it. */
-static int case_warm_tick_ledger(void) {
+/* The living tree, as a claim about objects: across every append the head's
+ * PARSER is the same parser and its ROOT is the same node, whatever the
+ * chunk brings — prose, headings, lists, a definition, a fence, a table, a
+ * directive — and after every append the head holds a record that can be
+ * reopened. This case landed as a ledger of warm against rebuilt ticks
+ * before the warm path existed and pinned the old quadratic as an
+ * assertion; the ledger is gone with the rebuild, and what it pins now is
+ * that there is nothing else an append could be. Every chunk names what
+ * the record puts back for it. */
+static int case_warm_tick_living_tree(void) {
     static const struct {
         const char *chunk;
-        bool warm;
         const char *why;
     } ticks[] = {
-        {"alpha beta\n", true, "prose on an empty document"},
-        {"\ngamma delta\n", true, "a blank line closes the paragraph, prose opens the next"},
-        {"epsilon", true, "a held partial line"},
-        {" zeta\n", true, "continues the held line, so its space is not at a line start"},
-        {"# heading\n", true, "an ATX heading, open at end of feed, is a leaf the record puts back"},
-        {"more prose\n", true, "the heading closed by the feed, prose after it"},
-        {"- item\n", true, "a list, its item and its paragraph are blocks the record puts back"},
-        {"tail\n", true, "a lazy continuation inside the item"},
-        {"[x]: /y\n",
-         true,
-         "a definition: the units that asked about it are refined again, and the close is retractable"},
-        {"after it\n", true, "prose after the definition, which is now the feed's for good"},
-        {"```\n", true, "a fence opens in the feed; its close moves the bytes out and the record keeps them"},
-        {"code\n", true, "a line inside the fence"},
-        {"```\n\n", true, "the fence closes and the feed settles it"},
-        {"| a |\n", true, "a paragraph that a table might grow from"},
-        {"|---|\n", true, "the feed converts it into a table; the record keeps what the retype overwrote"},
-        {"| row |\n", true, "a row inside the open table, whose counters the record snapshots"},
-        {":::note\n",
-         true,
-         "a directive container opens; its extension describes its payload, so the record puts it back"},
-        {"body\n", true, "a line inside the open directive"},
-        {":::\n", true, "the terminator, whose write into the payload the record snapshots"},
+        {"alpha beta\n", "prose on an empty document"},
+        {"\ngamma delta\n", "a blank line closes the paragraph, prose opens the next"},
+        {"epsilon", "a held partial line"},
+        {" zeta\n", "continues the held line, so its space is not at a line start"},
+        {"# heading\n", "an ATX heading, open at end of feed, is a leaf the record puts back"},
+        {"more prose\n", "the heading closed by the feed, prose after it"},
+        {"- item\n", "a list, its item and its paragraph are blocks the record puts back"},
+        {"tail\n", "a lazy continuation inside the item"},
+        {"[x]: /y\n", "a definition: the units that asked about it are refined again, and the close is retractable"},
+        {"after it\n", "prose after the definition, which is now the feed's for good"},
+        {"```\n", "a fence opens in the feed; its close moves the bytes out and the record keeps them"},
+        {"code\n", "a line inside the fence"},
+        {"```\n\n", "the fence closes and the feed settles it"},
+        {"| a |\n", "a paragraph that a table might grow from"},
+        {"|---|\n", "the feed converts it into a table; the record keeps what the retype overwrote"},
+        {"| row |\n", "a row inside the open table, whose counters the record snapshots"},
+        {":::note\n", "a directive container opens; its extension describes its payload, so the record puts it back"},
+        {"body\n", "a line inside the open directive"},
+        {":::\n", "the terminator, whose write into the payload the record snapshots"},
     };
     markdown_core_error *error = NULL;
     markdown_core_document *document = markdown_core_document_new(mc_sv("", 0), NULL, &error);
-    uint64_t expected_rebuilt_bytes = 0;
-    uint64_t expected_warm = 0;
-    uint64_t expected_rebuilt = 0;
+    const markdown_core_parser *parser;
+    const markdown_core_node *root;
     size_t i;
     int result = 0;
 
     if (!document) {
         markdown_core_error_free(error);
-        fprintf(stderr, "warm_tick_ledger: open failed\n");
+        fprintf(stderr, "warm_tick_living_tree: open failed\n");
         return -1;
     }
-    if (document->chain->rebuilt_ticks != 0 || document->chain->warm_ticks != 0 ||
-        document->chain->rebuilt_bytes != 0) {
-        fprintf(stderr, "warm_tick_ledger: a fresh chain has already served a tick\n");
+    parser = document->chain->head.parser;
+    root = markdown_core_document_root(document);
+    if (!parser || !root || !document->chain->head.undo) {
+        fprintf(stderr, "warm_tick_living_tree: a fresh document has no parser, root or record\n");
         markdown_core_document_free(document);
         return -1;
     }
-
     for (i = 0; i < sizeof(ticks) / sizeof(ticks[0]); i++) {
         markdown_core_document *successor =
             markdown_core_document_append(document, mc_sv(ticks[i].chunk, strlen(ticks[i].chunk)), &error);
         if (!successor) {
             markdown_core_error_free(error);
-            fprintf(stderr, "warm_tick_ledger: append %zu failed\n", i);
+            fprintf(stderr, "warm_tick_living_tree: append %zu (%s) failed\n", i, ticks[i].why);
             markdown_core_document_free(document);
             return -1;
         }
         markdown_core_document_free(document);
         document = successor;
-        if (ticks[i].warm) {
-            expected_warm++;
-        } else {
-            expected_rebuilt++;
-            expected_rebuilt_bytes += (uint64_t)markdown_core_document_length(document);
-        }
-        if (document->chain->warm_ticks != expected_warm || document->chain->rebuilt_ticks != expected_rebuilt) {
+        if (document->chain->head.parser != parser || markdown_core_document_root(document) != root) {
             fprintf(
                 stderr,
-                "warm_tick_ledger: after append %zu (%s) the ledger reads %llu warm / %llu rebuilt, expected %llu / "
-                "%llu\n",
+                "warm_tick_living_tree: after append %zu (%s) the head is not the same parser over the same root\n",
                 i,
-                ticks[i].why,
-                (unsigned long long)document->chain->warm_ticks,
-                (unsigned long long)document->chain->rebuilt_ticks,
-                (unsigned long long)expected_warm,
-                (unsigned long long)expected_rebuilt
+                ticks[i].why
+            );
+            result = -1;
+            break;
+        }
+        if (document->chain->head.undo == NULL || document->chain->head.undo->retracted) {
+            fprintf(
+                stderr,
+                "warm_tick_living_tree: after append %zu (%s) the head holds no record to reopen\n",
+                i,
+                ticks[i].why
             );
             result = -1;
             break;
         }
     }
-    if (result == 0 && document->chain->rebuilt_bytes != expected_rebuilt_bytes) {
+    markdown_core_document_free(document);
+    return result;
+}
+
+/* --- warm_identity_pins ---------------------------------------------------- */
+
+/* IDS THAT MUST NOT MOVE. The replay oracles pin what they can see: an id
+ * never resurrects, an unchanged (id, revision) is an unchanged subtree, an
+ * unchanged subtree keeps its revision, an empty append moves nothing. What
+ * they cannot see is a node RE-MINTED on a non-empty append — the new id
+ * has no ledger entry, the old one legitimately never returns, and the
+ * parent's child list did change — which is exactly how a promoted formula
+ * block, a heading typed beside a definitions-only leaf, or a link whose
+ * definition streams in byte by byte lost their ids in the reviews. So each
+ * scenario here names a node by kind and the append it must be stable
+ * from, and its id is read after every append and compared. */
+/* The first node of `kind` in document order, or NULL. */
+static const markdown_core_node *wip_first_of_kind(const markdown_core_node *node, markdown_core_node_kind kind) {
+    while (node) {
+        if (markdown_core_node_get_kind(node) == kind) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return NULL;
+}
+
+static int case_warm_identity_pins(void) {
+    static const struct {
+        const char *chunks[8];
+        markdown_core_node_kind kind;
+        size_t stable_from; /* the append after which the id must not move */
+        bool formulas;
+        const char *why;
+    } scenarios[] = {
+        {{"$$x$$\n", "\n", "after\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted formula block keeps its id across the blank line that closes it for good"},
+        {{"```formula\nx+y\n", "```\n", "\nz\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a formula fence keeps its id across its closing fence"},
+        {{"- $$x$$\n", "- y\n", "- z\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted block inside a list item keeps its id when the next item opens"},
+        {{"$$x$$", "\n", "", "\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted block keeps its id while the leaf stays open, on empty appends and on the close"},
+        {{"$$x$$", "\n| a |\n|---|", "\n| b |\n", "\nafter\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted lead paragraph split off a table keeps the id its promotion had before the retype"},
+        {{"$$x$$\n", "| a |\n|---|", "\n| b |\n", "\nafter\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "the same, with the promoted paragraph OPEN on the spine when the table lines arrive: the survivor the "
+         "retract kept closes the inserted run, and the split-off lead's promotion pairs against it"},
+        {{"[a]: /1\n", "#", " ", "H", "e", "\n", NULL},
+         MARKDOWN_CORE_KIND_HEADING,
+         2,
+         false,
+         "a heading typed beside a definitions-only leaf the close takes again keeps its id"},
+        {{"> [a]: /1\n", "> # h", "", "\n", NULL},
+         MARKDOWN_CORE_KIND_HEADING,
+         2,
+         false,
+         "the same, under a block quote"},
+        {{"[a]: /1\n", "- x", "y", "\n", NULL},
+         MARKDOWN_CORE_KIND_LIST_ITEM,
+         2,
+         false,
+         "a list item typed beside a definitions-only leaf keeps its id"},
+        {{"[foo] and *x*\n\n", "[foo]: /u", "r", "l\n", NULL},
+         MARKDOWN_CORE_KIND_LINK_REFERENCE,
+         2,
+         false,
+         "a link whose definition streams in byte by byte keeps its id"},
+        {{"[foo] and *x*\n\n", "[foo]: /u", "r", "l\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a sibling a definition did not touch keeps its id through the flips"},
+        {{"see [q] here\n\n> quote\n\n[q]: /q\n", "not a title\n", "\n", "prose\n", NULL},
+         MARKDOWN_CORE_KIND_LINK_REFERENCE,
+         1,
+         false,
+         "a link flipped for good keeps its id when the definition's paragraph survives"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(scenarios) / sizeof(scenarios[0]); i++) {
+        markdown_core_parse_options options;
+        markdown_core_error *error = NULL;
+        markdown_core_document *document;
+        markdown_core_node_id pinned = 0;
+        size_t step;
+
+        markdown_core_parse_options_init(&options);
+        options.formulas = scenarios[i].formulas;
+        document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+        if (!document) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "warm_identity_pins: open failed\n");
+            return -1;
+        }
+        for (step = 0; scenarios[i].chunks[step]; step++) {
+            const char *chunk = scenarios[i].chunks[step];
+            markdown_core_document *successor =
+                markdown_core_document_append(document, mc_sv(chunk, strlen(chunk)), &error);
+            const markdown_core_node *found;
+            if (!successor) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "warm_identity_pins: scenario %zu append %zu failed\n", i, step);
+                markdown_core_document_free(document);
+                return -1;
+            }
+            markdown_core_document_free(document);
+            document = successor;
+            if (step + 1 < scenarios[i].stable_from) {
+                continue;
+            }
+            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind);
+            if (!found) {
+                fprintf(
+                    stderr,
+                    "warm_identity_pins: scenario %zu (%s): no %s after append %zu\n",
+                    i,
+                    scenarios[i].why,
+                    markdown_core_node_kind_name(scenarios[i].kind),
+                    step
+                );
+                markdown_core_document_free(document);
+                return -1;
+            }
+            if (step + 1 == scenarios[i].stable_from) {
+                pinned = markdown_core_node_get_id(found);
+            } else if (markdown_core_node_get_id(found) != pinned) {
+                fprintf(
+                    stderr,
+                    "warm_identity_pins: scenario %zu (%s): the %s was id %llu after append %zu and id %llu after "
+                    "append %zu\n",
+                    i,
+                    scenarios[i].why,
+                    markdown_core_node_kind_name(scenarios[i].kind),
+                    (unsigned long long)pinned,
+                    scenarios[i].stable_from - 1,
+                    (unsigned long long)markdown_core_node_get_id(found),
+                    step
+                );
+                markdown_core_document_free(document);
+                return -1;
+            }
+        }
+        markdown_core_document_free(document);
+    }
+    return 0;
+}
+
+/* --- projection_write_agrees ----------------------------------------------- */
+
+/* ONE PROJECTION, TWO READERS. markdown_core_ast_projection_changed
+ * compares two nodes' own projections field by field; the streaming tick
+ * has no second node for a spine block — it is the same object tick after
+ * tick — so its record keeps the block's published projection as bytes,
+ * written by markdown_core_ast_projection_write. Both are one field list,
+ * spelled twice in ast.c, and this holds them to it: over every node of
+ * texts that reach every kind and every option, two nodes of one kind have
+ * equal bytes exactly when the comparison calls them unchanged, and a node
+ * against itself is unchanged with equal bytes. */
+static int case_projection_write_agrees(void) {
+    static const char *const texts[] = {
+        "# H1\n## H2\nSetext\n===\n\n- a\n- b\n\n1. one\n2. two\n\n3) three\n\n- [ ] todo\n- [x] done\n\n"
+        "> quote\n\n```js\ncode\n```\n\n```\nplain\n```\n\n~~~py\ntilde\n~~~\n\n    "
+        "indented\n\n<div>\nhtml\n</div>\n\n***\n",
+        "[a]: /url \"title\"\n[b]: /other\n[c]: <angle> 'single'\n\n[a] [b][a] [c][] ![a] ![b][a] ![c][]\n\n"
+        "[link](/l \"t\") [link2](/l2) ![img](/i \"it\") ![img2](/i2) <https://auto.link> www.auto.link a@b.co\n\n"
+        "*em* **strong** ~~del~~ `code` <b>html</b> :d[label]{k=v} :e{k=w} [[cross]] ![[embed]]\n\n"
+        "Foot[^1] and [^2].\n\n[^1]: one\n[^2]: two\n",
+        "| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n\n| x |\n|---|\n\n$$\nx+y\n$$\n\n$$z$$\n\n$$w$$\n\ninline $a+b$ "
+        "and $c$\n\n"
+        "```formula\nE=mc^2\n```\n\n:::note[lbl]{#id .cls "
+        "key=\"v\"}\nbody\n:::\n\n:::warn\nbody\n:::\n\n::::outer\n:::inner{a=b}\nx\n:::\n::::\n",
+        NULL,
+    };
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    markdown_core_document **documents = NULL;
+    size_t document_count = 0;
+    markdown_core_parse_options options;
+    size_t t;
+    size_t i;
+    size_t j;
+    size_t compared = 0;
+    int result = 0;
+
+    markdown_core_parse_options_init(&options);
+    for (t = 0; texts[t]; t++) {
+        document_count++;
+    }
+    documents = (markdown_core_document **)calloc(document_count, sizeof(*documents));
+    if (!documents) {
+        return -1;
+    }
+    for (t = 0; texts[t]; t++) {
+        markdown_core_error *error = NULL;
+        const markdown_core_node *node;
+        documents[t] = markdown_core_document_new(mc_sv(texts[t], strlen(texts[t])), &options, &error);
+        if (!documents[t]) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "projection_write_agrees: text %zu did not parse\n", t);
+            result = -1;
+            goto done;
+        }
+        node = markdown_core_document_root(documents[t]);
+        while (node) {
+            if (count == capacity) {
+                size_t grown_capacity = capacity ? capacity * 2 : 256;
+                const markdown_core_node **grown =
+                    (const markdown_core_node **)realloc((void *)nodes, grown_capacity * sizeof(*grown));
+                if (!grown) {
+                    result = -1;
+                    goto done;
+                }
+                nodes = grown;
+                capacity = grown_capacity;
+            }
+            nodes[count++] = node;
+            if (markdown_core_node_get_first_child(node)) {
+                node = markdown_core_node_get_first_child(node);
+                continue;
+            }
+            while (node && !markdown_core_node_get_next_sibling(node)) {
+                node = markdown_core_node_get_parent(node);
+            }
+            node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+        }
+    }
+    for (i = 0; i < count && result == 0; i++) {
+        markdown_core_strbuf a = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        markdown_core_ast_projection_write(nodes[i], &a);
+        if (a.oom) {
+            result = -1;
+        } else if (markdown_core_ast_projection_changed(nodes[i], nodes[i])) {
+            fprintf(stderr, "projection_write_agrees: node %zu differs from itself\n", i);
+            result = -1;
+        }
+        for (j = i + 1; j < count && result == 0; j++) {
+            markdown_core_strbuf b = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+            bool changed;
+            bool equal;
+            if (markdown_core_node_get_kind(nodes[i]) != markdown_core_node_get_kind(nodes[j])) {
+                continue;
+            }
+            markdown_core_ast_projection_write(nodes[j], &b);
+            if (b.oom) {
+                markdown_core_strbuf_free(&b);
+                result = -1;
+                break;
+            }
+            changed = markdown_core_ast_projection_changed(nodes[i], nodes[j]);
+            equal = a.size == b.size && (a.size == 0 || memcmp(a.ptr, b.ptr, (size_t)a.size) == 0);
+            markdown_core_strbuf_free(&b);
+            compared++;
+            if (changed == equal) {
+                fprintf(
+                    stderr,
+                    "projection_write_agrees: two %s nodes (%zu, %zu) are %s by the comparison and %s by their bytes\n",
+                    markdown_core_node_kind_name(markdown_core_node_get_kind(nodes[i])),
+                    i,
+                    j,
+                    changed ? "changed" : "unchanged",
+                    equal ? "equal" : "unequal"
+                );
+                result = -1;
+            }
+        }
+        markdown_core_strbuf_free(&a);
+    }
+    if (result == 0 && (count < 100 || compared < 500)) {
         fprintf(
             stderr,
-            "warm_tick_ledger: %llu bytes rebuilt, expected %llu — the lengths of the rebuilt documents alone\n",
-            (unsigned long long)document->chain->rebuilt_bytes,
-            (unsigned long long)expected_rebuilt_bytes
+            "projection_write_agrees: only %zu nodes and %zu pairs — the texts reach too little\n",
+            count,
+            compared
         );
         result = -1;
     }
-    /* Nothing built in closes a build for good any more, so the rebuild
-     * pipeline — an ordinary outcome, for an extension block the record
-     * cannot describe — is reached by marking the record final by hand: the
-     * next append rebuilds, counts as such, and ends published again. */
     if (result == 0) {
-        markdown_core_document *successor;
-        if (document->chain->head.undo == NULL || document->chain->head.undo->final) {
-            fprintf(stderr, "warm_tick_ledger: the stream did not end on a record that can be reopened\n");
-            result = -1;
-        } else {
-            document->chain->head.undo->final = true;
-            successor = markdown_core_document_append(document, mc_sv("after a final record\n", 21), &error);
-            if (!successor) {
-                markdown_core_error_free(error);
-                fprintf(stderr, "warm_tick_ledger: the append after a final record failed\n");
-                result = -1;
-            } else {
-                markdown_core_document_free(document);
-                document = successor;
-                expected_rebuilt++;
-                expected_rebuilt_bytes += (uint64_t)markdown_core_document_length(document);
-                if (document->chain->rebuilt_ticks != expected_rebuilt ||
-                    document->chain->warm_ticks != expected_warm ||
-                    document->chain->rebuilt_bytes != expected_rebuilt_bytes || document->chain->head.undo == NULL ||
-                    document->chain->head.undo->final) {
-                    fprintf(stderr, "warm_tick_ledger: a final record did not send the next append to the rebuild\n");
-                    result = -1;
-                }
-            }
-        }
+        printf("projection_write_agrees: %zu nodes, %zu same-kind pairs agree\n", count, compared);
     }
-    markdown_core_document_free(document);
+done:
+    for (t = 0; t < document_count; t++) {
+        markdown_core_document_free(documents[t]);
+    }
+    free(documents);
+    free((void *)nodes);
     return result;
 }
 
@@ -3353,16 +3635,6 @@ static int case_warm_close_undo(void) {
             if (wc_projection_matches(parser, text, cut) != 0) {
                 fprintf(stderr, "warm_close_undo: text %zu cut %zu published a wrong projection\n", text_index, cut);
                 markdown_core_parser_warm_retract(parser, undo);
-                markdown_core_parser_warm_undo_free(undo);
-                markdown_core_parser_free(parser);
-                markdown_core_parser_free(twin);
-                return -1;
-            }
-            if (undo->final) {
-                /* Nothing built in closes a build for good: every block the
-                 * engine's own extensions put on the spine describes its
-                 * payload to the record. */
-                fprintf(stderr, "warm_close_undo: text %zu cut %zu came back final\n", text_index, cut);
                 markdown_core_parser_warm_undo_free(undo);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
@@ -3576,9 +3848,10 @@ static int case_warm_tick_stream(void) {
 
 /* THE ENGINE'S APPEND PATH, streamed. warm_tick_stream proves the tick on a
  * bare parser; this drives markdown_core_document_append itself, in
- * token-sized pieces, over texts that keep crossing the prose boundary — so
- * warm ticks, rebuilds, and every transition between them happen — and pins
- * two things the equivalence corpus cannot see from outside the engine:
+ * token-sized pieces, over texts that cross every block shape the engine
+ * has — prose, headings, lists, quotes, fences, HTML, tables, formulas,
+ * directives, definitions — and pins two things the equivalence corpus
+ * cannot see from outside the engine:
  *
  *   - after every append the head's tree dumps as a one-shot parse of the
  *     bytes so far (the corpus pins this too; here it is one shape away from
@@ -3589,11 +3862,8 @@ static int case_warm_tick_stream(void) {
  *     the marks and every node's flags and coordinates, not just the dump.
  *
  * And a third: the id of the first settled block never changes across the
- * whole stream, warm ticks and rebuilds alike. That is what "a node the
- * append did not reach keeps its id" means at the boundary the design moves.
- *
- * The ledger is printed and gated: every tick is warm, and a rebuild on
- * these texts is a record that came back final for a reason no test knows. */
+ * whole stream. That is what "a node the append did not reach keeps its id"
+ * means at the boundary the design moves. */
 /* Every (id, revision) of a tree in document order, so two trees can be
  * compared as identity ledgers without either being alive at the same time
  * as the other — a superseded receiver answers for no tree. */
@@ -3664,32 +3934,14 @@ static int was_empty_append_moves_nothing(markdown_core_document **document, siz
     return result;
 }
 
-/* Every node's subtree hash equals what stamping it afresh would give — the
- * property the append diff pairs on, and the one a warm tick maintains
- * incrementally: from a carried prefix fold for spine blocks, whole for
- * what they gained. A tree walked here is small; the check is O(tree). */
-static bool was_stamps_are_fresh(const markdown_core_node *node) {
-    for (; node; node = node->next) {
-        uint64_t expected;
-        if (!was_stamps_are_fresh(node->first_child)) {
-            return false;
-        }
-        expected = markdown_core_node_hash_children(node, markdown_core_node_stamp_own(node), node->first_child);
-        if (expected != node->subtree_hash) {
-            return false;
-        }
-    }
-    return true;
-}
-
 static int case_warm_append_stream(void) {
     static const char *const texts[] = {
         "Streaming prose arrives a few bytes at a time, and the paragraph keeps going\n"
         "across lines until a blank line ends it.\n\n"
-        "# A heading forces a rebuild\n\n"
-        "Then prose again, which the rebuild's end state lets grow in place, with an\n"
+        "# A heading closes it\n\n"
+        "Then prose again, which grows in place, with an\n"
         "email like a@b.co and www.example.com and *emphasis* and `code` in it.\n\n"
-        "- a list item sends the tick to the rebuild\n- and so does the next\n\n"
+        "- a list item opens a container\n- and so does the next\n\n"
         "Prose after the list closes it, and only a completed line does, so the tail\n"
         "goes warm again with a [link](u) and www.x.y in the frontier that stops mid",
         "\xc3\xbc"
@@ -3722,12 +3974,12 @@ static int case_warm_append_stream(void) {
         "intro [a] and [b] then *em*\n\n[a]: /a\n[b]: /b 'title'\n\nafter [a] and [^n]\n\n[^n]: a footnote\n\n"
         "[\nc\n]: /c\nend [c]\n",
         /* A definition harvested out of a paragraph that survives it (the
-         * next line is not a title), then prose for a while: the flip's
-         * correction of the root's carried prefix fold is what the ticks
-         * after it restamp from, and a stale fold shows on the first of
-         * them. And a unit that raises a diagnostic AND asks about a label
-         * defined later: the flip re-raises its diagnostic, and the one its
-         * first refine raised must go, or the count doubles. */
+         * next line is not a title), behind a block quote, then prose for a
+         * while — a flip in settled territory followed by ticks that touch
+         * nothing near it. And a unit that raises a diagnostic AND asks
+         * about a label defined later: the flip re-raises its diagnostic,
+         * and the one its first refine raised must go, or the count
+         * doubles. */
         "see [q] here\n\n> quote\n\n[q]: /q\nnot a title line\n\nplain prose follows for a while\nand more of it\n\n"
         "then again\n",
         "see [^n] here\n\n> quote\n\n[^n]: note\n\nplain prose follows for a while\nand more of it\n\nthen again\n",
@@ -3737,8 +3989,7 @@ static int case_warm_append_stream(void) {
     static const size_t strides[] = {1, 3, 7};
     markdown_core_parse_options options;
     size_t text_index;
-    uint64_t warm_total = 0;
-    uint64_t rebuilt_total = 0;
+    uint64_t ticks_total = 0;
 
     markdown_core_parse_options_init(&options);
     for (text_index = 0; texts[text_index]; text_index++) {
@@ -3804,24 +4055,13 @@ static int case_warm_append_stream(void) {
                     failed = 1;
                     break;
                 }
-                if (!was_stamps_are_fresh(document->chain->head.parser->root)) {
-                    fprintf(
-                        stderr,
-                        "warm_append_stream: text %zu stride %zu left a stale subtree hash at %zu bytes\n",
-                        text_index,
-                        stride,
-                        fed
-                    );
-                    failed = 1;
-                    break;
-                }
                 first = markdown_core_node_get_first_child(markdown_core_document_root(document));
                 if (first) {
                     markdown_core_node_id id = markdown_core_node_get_id(first);
                     /* The first block settles once its second line or its
-                     * blank line arrives; from then on nothing may re-mint it,
-                     * warm tick or rebuild. Before that it is the frontier
-                     * itself and may legitimately be a different node. */
+                     * blank line arrives; from then on nothing may re-mint it.
+                     * Before that it is the frontier itself and may
+                     * legitimately be a different node. */
                     if (fed > 90 && first_id == 0) {
                         first_id = id;
                     } else if (first_id != 0 && id != first_id) {
@@ -3869,36 +4109,14 @@ static int case_warm_append_stream(void) {
             } else if (!failed) {
                 appends++;
             }
-            if (!failed && document->chain->warm_ticks + document->chain->rebuilt_ticks != appends) {
-                fprintf(stderr, "warm_append_stream: the ledger does not add up to the appends served\n");
-                failed = 1;
-            }
-            warm_total += document->chain->warm_ticks;
-            rebuilt_total += document->chain->rebuilt_ticks;
+            ticks_total += appends;
             markdown_core_document_free(document);
             if (failed) {
                 return -1;
             }
         }
     }
-    printf(
-        "warm_append_stream: %llu warm ticks, %llu rebuilds\n",
-        (unsigned long long)warm_total,
-        (unsigned long long)rebuilt_total
-    );
-    /* Every tick is warm: nothing built in closes a build for good, so a
-     * rebuild on these texts is a record that came back final for a reason
-     * this case does not know, and it fails here rather than passing
-     * quietly on the fallback's correctness. */
-    if (rebuilt_total != 0) {
-        fprintf(
-            stderr,
-            "warm_append_stream: %llu of %llu ticks rebuilt\n",
-            (unsigned long long)rebuilt_total,
-            (unsigned long long)(warm_total + rebuilt_total)
-        );
-        return -1;
-    }
+    printf("warm_append_stream: %llu ticks\n", (unsigned long long)ticks_total);
     return 0;
 }
 
@@ -3910,15 +4128,12 @@ static int case_warm_append_stream(void) {
  * the chain, after which every further mutation fails deterministically (the
  * guards fire before any allocation, so the errors are deterministic even
  * under the failing allocator) and only free remains. */
-/* `final` drives every append down the rebuild pipeline by marking the
- * head's record final before it — what an extension block the record cannot
- * describe would do, and nothing built in does any more. */
-static int chain_poison_sweep(const char *const *chunks, const char *name, bool pooled, bool final) {
+static int chain_poison_sweep(const char *const *chunks, const char *name, bool pooled) {
     long fail_at;
     bool exhausted = false;
 
     for (fail_at = 1; fail_at < 100000 && !exhausted; fail_at++) {
-        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
+        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at, 0};
         markdown_core_error *error = NULL;
         markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, pooled, &error);
         markdown_core_document *next = NULL;
@@ -3930,10 +4145,35 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
             continue;
         }
         for (i = 0; chunks[i]; i++) {
-            if (final && head->chain->head.undo) {
-                head->chain->head.undo->final = true;
+            /* An EMPTY chunk that succeeds must have moved nothing — no id,
+             * no revision — however the allocator behaved on the way: a lost
+             * allocation inside a comparison must fail the tick or leave it
+             * exact, never move a revision and report success. */
+            was_ledger before = {NULL, 0, 0, false};
+            if (chunks[i][0] == 0) {
+                was_ledger_capture(&before, markdown_core_document_root(head));
             }
             next = markdown_core_document_append(head, mc_sv(chunks[i], strlen(chunks[i])), &error);
+            if (next && chunks[i][0] == 0) {
+                was_ledger after = {NULL, 0, 0, false};
+                was_ledger_capture(&after, markdown_core_document_root(next));
+                if (before.failed || after.failed || before.count != after.count ||
+                    memcmp(before.rows, after.rows, before.count * sizeof(*before.rows)) != 0) {
+                    fprintf(
+                        stderr,
+                        "chain_poison(%s): an empty append moved an id or a revision at allocation %ld\n",
+                        name,
+                        fail_at
+                    );
+                    free(before.rows);
+                    free(after.rows);
+                    markdown_core_document_free(head);
+                    markdown_core_document_free(next);
+                    return -1;
+                }
+                free(after.rows);
+            }
+            free(before.rows);
             if (!next) {
                 break;
             }
@@ -3980,6 +4220,10 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
                 exhausted = true;
             }
             markdown_core_document_free(head);
+            if (sweep.live != 0) {
+                fprintf(stderr, "chain_poison(%s): %ld blocks outlived a successful pipeline\n", name, sweep.live);
+                return -1;
+            }
             continue;
         }
         markdown_core_error_free(error);
@@ -3987,8 +4231,8 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
         /* The receiver still describes exactly its own bytes. The chain holds
          * the text now, so a failed append is only safe if it never handed
          * its chunk to the chain: the bytes are stored only once the tick has
-         * succeeded — warm or rebuilt — and the reservation that makes that
-         * storing infallible happens before either. */
+         * succeeded, and the reservation that makes that storing infallible
+         * happens before it. */
         {
             size_t expected = 0;
             for (i = 0; i < served; i++) {
@@ -4014,6 +4258,18 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
         }
         markdown_core_error_free(error);
         markdown_core_document_free(head);
+        /* Only free remains — and once it has run, nothing does: whatever
+         * the failed tick had taken and left half-built went with the chain. */
+        if (sweep.live != 0) {
+            fprintf(
+                stderr,
+                "chain_poison(%s): %ld blocks outlived the chain after the failure at allocation %ld\n",
+                name,
+                sweep.live,
+                fail_at
+            );
+            return -1;
+        }
     }
     if (!exhausted) {
         fprintf(stderr, "chain_poison(%s): the sweep never outlived the pipeline\n", name);
@@ -4022,25 +4278,66 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     return 0;
 }
 
-/* Two pipelines, because the append has two: the definition-bearing seed
- * takes the rebuild (a `[` at a line start), and the prose stream takes the
- * warm tick on every append after the first — retract, feed, settle, publish,
- * frontier handover, restamp — so the sweep reaches every allocation on both
- * and every one of them must poison or succeed whole. Each runs pooled and
- * unpooled: an arena carves most of a build's allocations from slabs the
- * sweep never sees, so only the unpooled run fails every ordinal — the
- * held line's growth among them, which the pooled run cannot reach. */
+/* Six streams, so the sweep reaches every allocation the tick has —
+ * retract, feed, settle, publish, frontier handover — and the flip's, the
+ * moved-content restore's and the close's own harvest on top of them: a
+ * definition-bearing stream, whose definition re-refines the unit that
+ * mentions it; a prose stream; a fence, whose bytes the retract copies
+ * back, with an empty append that closes right after a restore; a
+ * definitions-only paragraph closed by a held block opener, then a formula
+ * promotion; a fence inside a directive, two spine entries with copies at
+ * once; and a directive with attributes under empty appends. Every
+ * allocation lost must
+ * poison or succeed whole. Each runs pooled and unpooled: an arena carves
+ * most of a build's allocations from slabs the sweep never sees, so only
+ * the unpooled run fails every ordinal — the held line's growth among
+ * them, which the pooled run cannot reach. */
 static int case_chain_poison(void) {
-    static const char *const rebuilt[] = {"alpha [x] and *emph*\n\n[x]: /url\n", NULL};
-    static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", NULL};
-    if (chain_poison_sweep(rebuilt, "rebuilt, pooled", true, true) != 0 ||
-        chain_poison_sweep(rebuilt, "rebuilt", false, true) != 0) {
+    static const char *const definitions[] = {"alpha [x] and *emph*\n\n[x]: /url\n", " and [x] again\n", "", NULL};
+    static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", "", NULL};
+    /* An inline directive with attributes in the OPEN leaf — so the
+     * frontier diff compares it on every tick — then an empty append: the
+     * comparison of its projection once rendered the attributes as JSON,
+     * allocating, and a lost render on one side moved its revision on an
+     * empty append while the tick reported success; then a directive block
+     * on the spine, whose published projection the record writes. */
+    static const char *const directive[] =
+        {"x :d{k=v} y", "", " and :e{a=b}", "", "\n\n:::note{.c #i}\nbody", "", NULL};
+    /* A block whose close moves its bytes out and whose retract puts them
+     * back — the one restore that allocates, and once aborted an assert-
+     * enabled build instead of poisoning the chain when it failed. */
+    static const char *const fence[] = {"```\nx", "y\n", "", "z\n```\n", "", NULL};
+    /* Two spine entries with copies at once — a directive's payload above a
+     * fence's bytes — so a copy lost on the deeper entry leaves the shallower
+     * one's to the record's free, and the ledger sees a leak that a
+     * one-copy spine cannot show. */
+    static const char *const nested_copies[] = {":::note\n```\nx", "y\n", "```\n:::\n", NULL};
+    /* A held line whose block open closes a definitions-only paragraph:
+     * the close harvests inside the publish, and a harvest that loses an
+     * allocation once left the parser's cursor on the paragraph it had
+     * unlinked, which the close then read through a NULL parent. */
+    static const char *const held_opener[] = {"[a]: /1\n", "# h", "\n[b]: /2\n", "$$x$$", "\n", NULL};
+    if (chain_poison_sweep(definitions, "definitions, pooled", true) != 0 ||
+        chain_poison_sweep(definitions, "definitions", false) != 0) {
         return -1;
     }
-    if (chain_poison_sweep(warm, "warm, pooled", true, false) != 0) {
+    if (chain_poison_sweep(warm, "prose, pooled", true) != 0 || chain_poison_sweep(warm, "prose", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(warm, "warm", false, false);
+    if (chain_poison_sweep(fence, "fence, pooled", true) != 0 || chain_poison_sweep(fence, "fence", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(held_opener, "held opener, pooled", true) != 0 ||
+        chain_poison_sweep(held_opener, "held opener", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0 ||
+        chain_poison_sweep(nested_copies, "nested copies", false) != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(directive, "directive, pooled", true) != 0
+               ? -1
+               : chain_poison_sweep(directive, "directive", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */
@@ -4902,10 +5199,10 @@ static int case_inline_extension_funnel(void) {
  *
  * This case used to assert, by pointer identity, that the seam
  * fast-forward and the dependent rebuild had actually engaged. Those
- * assertions are gone with the mechanism they described — a mutation is a
- * full reparse now, so no node survives one and pointer identity across a
- * mutation is not a property this engine has. What is asserted is what a
- * consumer can observe: the records equal a fresh parse\'s. */
+ * assertions are gone with the mechanism they described; the living tree
+ * keeps settled nodes as the same objects, but that is warm_tick_living_tree's
+ * claim to make. What is asserted here is what a consumer can observe: the
+ * records equal a fresh parse\'s. */
 static int case_inline_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
@@ -5540,7 +5837,9 @@ static const concrete_case CASES[] = {
     {"warm_fingerprint", case_warm_fingerprint},
     {"warm_close_undo", case_warm_close_undo},
     {"warm_tick_stream", case_warm_tick_stream},
-    {"warm_tick_ledger", case_warm_tick_ledger},
+    {"warm_tick_living_tree", case_warm_tick_living_tree},
+    {"warm_identity_pins", case_warm_identity_pins},
+    {"projection_write_agrees", case_projection_write_agrees},
     {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},

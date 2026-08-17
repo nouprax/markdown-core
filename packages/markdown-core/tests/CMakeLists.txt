@@ -2,10 +2,10 @@
 # grouped by label:
 #
 #   api facade consumer spec equivalence extensions regression pathological
-#   complexity fuzz packaging benchmark
+#   fuzz packaging benchmark
 #
-# The default correctness preset excludes conformance and benchmark; sanitizer
-# correctness presets also exclude wall-clock complexity gates.  The benchmark
+# The default correctness preset excludes conformance and benchmark; the
+# sanitizer correctness presets exclude the same two.  The benchmark
 # preset selects only its label.  Every suite is native (C/C++); the test tree
 # has no scripting-language dependency and never touches the network.
 
@@ -288,7 +288,9 @@ if(MARKDOWN_CORE_STATIC)
               warm_fingerprint
               warm_close_undo
               warm_tick_stream
-              warm_tick_ledger
+              warm_tick_living_tree
+              warm_identity_pins
+              projection_write_agrees
               warm_append_stream
               chain_poison
               capture_growth_ceiling
@@ -325,6 +327,7 @@ markdown_core_add_test(
     spec
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+markdown_core_add_test(equivalence_regressions equivalence 240 equivalence_runner --case regressions)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(
@@ -404,7 +407,7 @@ if(MARKDOWN_CORE_STATIC)
 endif()
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
-# `pathological_runner --list` and `complexity_runner --list`.
+# `pathological_runner --list`.
 set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_strong_emph
     many_emph_closers
