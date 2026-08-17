@@ -4145,7 +4145,35 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
             continue;
         }
         for (i = 0; chunks[i]; i++) {
+            /* An EMPTY chunk that succeeds must have moved nothing — no id,
+             * no revision — however the allocator behaved on the way: a lost
+             * allocation inside a comparison must fail the tick or leave it
+             * exact, never move a revision and report success. */
+            was_ledger before = {NULL, 0, 0, false};
+            if (chunks[i][0] == 0) {
+                was_ledger_capture(&before, markdown_core_document_root(head));
+            }
             next = markdown_core_document_append(head, mc_sv(chunks[i], strlen(chunks[i])), &error);
+            if (next && chunks[i][0] == 0) {
+                was_ledger after = {NULL, 0, 0, false};
+                was_ledger_capture(&after, markdown_core_document_root(next));
+                if (before.failed || after.failed || before.count != after.count ||
+                    memcmp(before.rows, after.rows, before.count * sizeof(*before.rows)) != 0) {
+                    fprintf(
+                        stderr,
+                        "chain_poison(%s): an empty append moved an id or a revision at allocation %ld\n",
+                        name,
+                        fail_at
+                    );
+                    free(before.rows);
+                    free(after.rows);
+                    markdown_core_document_free(head);
+                    markdown_core_document_free(next);
+                    return -1;
+                }
+                free(after.rows);
+            }
+            free(before.rows);
             if (!next) {
                 break;
             }
@@ -4250,22 +4278,28 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     return 0;
 }
 
-/* Five streams, so the sweep reaches every allocation the tick has —
+/* Six streams, so the sweep reaches every allocation the tick has —
  * retract, feed, settle, publish, frontier handover — and the flip's, the
  * moved-content restore's and the close's own harvest on top of them: a
  * definition-bearing stream, whose definition re-refines the unit that
  * mentions it; a prose stream; a fence, whose bytes the retract copies
  * back, with an empty append that closes right after a restore; a
  * definitions-only paragraph closed by a held block opener, then a formula
- * promotion; and a fence inside a directive, two spine entries with copies
- * at once. Every allocation lost must
+ * promotion; a fence inside a directive, two spine entries with copies at
+ * once; and a directive with attributes under empty appends. Every
+ * allocation lost must
  * poison or succeed whole. Each runs pooled and unpooled: an arena carves
  * most of a build's allocations from slabs the sweep never sees, so only
  * the unpooled run fails every ordinal — the held line's growth among
  * them, which the pooled run cannot reach. */
 static int case_chain_poison(void) {
-    static const char *const definitions[] = {"alpha [x] and *emph*\n\n[x]: /url\n", " and [x] again\n", NULL};
-    static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", NULL};
+    static const char *const definitions[] = {"alpha [x] and *emph*\n\n[x]: /url\n", " and [x] again\n", "", NULL};
+    static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", "", NULL};
+    /* A directive with attributes, then an empty append: the comparison of
+     * its projection once rendered the attributes as JSON, allocating, and
+     * a lost render on one side moved its revision on an empty append while
+     * the tick reported success. */
+    static const char *const directive[] = {"x :d{k=v} y\n\n:::note{.c #i}\nbody", "", " more", "", NULL};
     /* A block whose close moves its bytes out and whose retract puts them
      * back — the one restore that allocates, and once aborted an assert-
      * enabled build instead of poisoning the chain when it failed. */
@@ -4294,9 +4328,13 @@ static int case_chain_poison(void) {
         chain_poison_sweep(held_opener, "held opener", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0
+    if (chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0 ||
+        chain_poison_sweep(nested_copies, "nested copies", false) != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(directive, "directive, pooled", true) != 0
                ? -1
-               : chain_poison_sweep(nested_copies, "nested copies", false);
+               : chain_poison_sweep(directive, "directive", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */

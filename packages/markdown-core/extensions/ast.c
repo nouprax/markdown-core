@@ -1293,19 +1293,44 @@ bool markdown_core_ast_projection_changed(const markdown_core_node *a, const mar
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        /* The name, and the attribute LIST as each node holds it — presence,
+         * count, each pair in source order — which is what the rendered
+         * JSON is a rendering of, read without the rendering: the render
+         * allocates and answers NULL when it cannot, and two lost renders
+         * would compare equal. A name the accessor could not produce (it
+         * allocates only for a node no parser made) reports "differs", so a
+         * revision bump can never be missed. */
         const char *name_a = markdown_core_extensions_get_directive_name((markdown_core_node *)a);
         const char *name_b = markdown_core_extensions_get_directive_name((markdown_core_node *)b);
-        const char *attributes_a = markdown_core_extensions_get_directive_attributes((markdown_core_node *)a);
-        const char *attributes_b = markdown_core_extensions_get_directive_attributes((markdown_core_node *)b);
+        bool present_a = markdown_core_extensions_directive_attributes_present(a);
+        bool present_b = markdown_core_extensions_directive_attributes_present(b);
+        size_t count_a = present_a ? markdown_core_extensions_directive_attribute_count(a) : 0;
+        size_t count_b = present_b ? markdown_core_extensions_directive_attribute_count(b) : 0;
+        size_t i;
+        if (!name_a || !name_b) {
+            value = true;
+            break;
+        }
         a1.data = (const uint8_t *)name_a;
-        a1.length = name_a ? strlen(name_a) : 0;
+        a1.length = strlen(name_a);
         b1.data = (const uint8_t *)name_b;
-        b1.length = name_b ? strlen(name_b) : 0;
-        a2.data = (const uint8_t *)attributes_a;
-        a2.length = attributes_a ? strlen(attributes_a) : 0;
-        b2.data = (const uint8_t *)attributes_b;
-        b2.length = attributes_b ? strlen(attributes_b) : 0;
-        value = !(view_content_equal(a1, b1) && view_optional_equal(a2, b2));
+        b1.length = strlen(name_b);
+        value = !view_content_equal(a1, b1) || present_a != present_b || count_a != count_b;
+        for (i = 0; i < count_a && !value; i++) {
+            const uint8_t *key_a = NULL, *value_a = NULL, *key_b = NULL, *value_b = NULL;
+            size_t key_a_length = 0, value_a_length = 0, key_b_length = 0, value_b_length = 0;
+            markdown_core_extensions_directive_attribute_at(a, i, &key_a, &key_a_length, &value_a, &value_a_length);
+            markdown_core_extensions_directive_attribute_at(b, i, &key_b, &key_b_length, &value_b, &value_b_length);
+            a2.data = key_a;
+            a2.length = key_a_length;
+            b2.data = key_b;
+            b2.length = key_b_length;
+            a3.data = value_a;
+            a3.length = value_a_length;
+            b3.data = value_b;
+            b3.length = value_b_length;
+            value = !(view_content_equal(a2, b2) && view_content_equal(a3, b3));
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
