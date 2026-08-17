@@ -491,6 +491,19 @@ v2 design = a stable-prefix hint on TEXT + segmented literal exposure.
 
 ## Errata
 
+**E3 — WHAT SHIPPED INSTEAD (2026-08-17).** The D6 shape E2 left append
+on — one full parse plus one whole-tree diff per tick — is gone. The engine
+mechanism that replaced this plan's parser-tail fork is the LIVING TREE
+(`2026-08-13-living-tree-plan.md`, landed as #104, #105 and #106): the
+head's tree grows in place on every append, the previous projection is
+retracted by a record and re-published, definitions flip exactly the units
+that asked, and identity is object identity plus a pairing of the
+re-derived tail against the tail it replaces. Nothing here about the D6
+fallback, its ledger, the whole-tree diff or the whole-tree hash stamp
+describes the shipped engine any longer; the identity contract this plan
+states (an id names the same thing across an append, equal (id, revision)
+means an identical subtree) is what the living tree keeps.
+
 **E2 — THE RESHAPE (user ruling, 2026-08-13).** Edit and the parser-tail
 fork (§4.2) are DELETED. The API is `new` + `append`, nothing else: a
 whole-text edit is indistinguishable from constructing a new document, so it
