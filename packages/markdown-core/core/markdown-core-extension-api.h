@@ -347,8 +347,8 @@ typedef void (*markdown_core_free_opaque_func)(
  * an extension that opens blocks (`try_opening_block`) and allocates
  * payloads (`alloc_opaque`): the engine will not guess what its lines write
  * behind the pointer, and markdown_core_parser_attach_extension refuses an
- * extension that leaves both set and this NULL. An extension whose payloads
- * belong to inline nodes only need not provide it. */
+ * extension that leaves both set and this NULL. An extension that opens no
+ * blocks need not provide it, whatever payloads its inline nodes carry. */
 typedef size_t (*markdown_core_opaque_size_func)(markdown_core_extension *extension, markdown_core_node *node);
 
 /** Puts a payload back from a snapshot the size above describes. Optional:

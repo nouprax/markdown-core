@@ -325,6 +325,13 @@ markdown_core_add_test(
     spec
     --spec
     "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/spec.txt")
+markdown_core_add_test(
+    equivalence_regressions
+    equivalence
+    240
+    equivalence_runner
+    --case
+    regressions)
 
 # extensions: GFM extensions, formulas, directives, and option gates.
 markdown_core_add_test(

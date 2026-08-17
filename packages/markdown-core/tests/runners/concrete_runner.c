@@ -3644,12 +3644,12 @@ static int case_warm_append_stream(void) {
         "intro [a] and [b] then *em*\n\n[a]: /a\n[b]: /b 'title'\n\nafter [a] and [^n]\n\n[^n]: a footnote\n\n"
         "[\nc\n]: /c\nend [c]\n",
         /* A definition harvested out of a paragraph that survives it (the
-         * next line is not a title), then prose for a while: the flip's
-         * correction of the root's carried prefix fold is what the ticks
-         * after it restamp from, and a stale fold shows on the first of
-         * them. And a unit that raises a diagnostic AND asks about a label
-         * defined later: the flip re-raises its diagnostic, and the one its
-         * first refine raised must go, or the count doubles. */
+         * next line is not a title), behind a block quote, then prose for a
+         * while — a flip in settled territory followed by ticks that touch
+         * nothing near it. And a unit that raises a diagnostic AND asks
+         * about a label defined later: the flip re-raises its diagnostic,
+         * and the one its first refine raised must go, or the count
+         * doubles. */
         "see [q] here\n\n> quote\n\n[q]: /q\nnot a title line\n\nplain prose follows for a while\nand more of it\n\n"
         "then again\n",
         "see [^n] here\n\n> quote\n\n[^n]: note\n\nplain prose follows for a while\nand more of it\n\nthen again\n",
@@ -3904,25 +3904,30 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     return 0;
 }
 
-/* Two streams, so the sweep reaches every allocation the tick has —
- * retract, feed, settle, publish, frontier handover — and the flip's on top
- * of them: a definition-bearing stream, whose definition re-refines the unit
- * that mentions it, and a prose stream. Every allocation lost must poison or
- * succeed whole. Each runs pooled and unpooled: an arena carves most of a
- * build's allocations from slabs the sweep never sees, so only the unpooled
- * run fails every ordinal — the held line's growth among them, which the
- * pooled run cannot reach. */
+/* Three streams, so the sweep reaches every allocation the tick has —
+ * retract, feed, settle, publish, frontier handover — and the flip's and the
+ * moved-content restore's on top of them: a definition-bearing stream, whose
+ * definition re-refines the unit that mentions it; a prose stream; and a
+ * fence, whose bytes the retract copies back. Every allocation lost must
+ * poison or succeed whole. Each runs pooled and unpooled: an arena carves
+ * most of a build's allocations from slabs the sweep never sees, so only
+ * the unpooled run fails every ordinal — the held line's growth among
+ * them, which the pooled run cannot reach. */
 static int case_chain_poison(void) {
     static const char *const definitions[] = {"alpha [x] and *emph*\n\n[x]: /url\n", " and [x] again\n", NULL};
     static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", NULL};
+    /* A block whose close moves its bytes out and whose retract puts them
+     * back — the one restore that allocates, and once aborted an assert-
+     * enabled build instead of poisoning the chain when it failed. */
+    static const char *const fence[] = {"```\nx", "y\n", "z\n```\n", NULL};
     if (chain_poison_sweep(definitions, "definitions, pooled", true) != 0 ||
         chain_poison_sweep(definitions, "definitions", false) != 0) {
         return -1;
     }
-    if (chain_poison_sweep(warm, "prose, pooled", true) != 0) {
+    if (chain_poison_sweep(warm, "prose, pooled", true) != 0 || chain_poison_sweep(warm, "prose", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(warm, "prose", false);
+    return chain_poison_sweep(fence, "fence, pooled", true) != 0 ? -1 : chain_poison_sweep(fence, "fence", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */

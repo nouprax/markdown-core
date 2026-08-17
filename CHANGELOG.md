@@ -20,8 +20,9 @@ promised to remain compatible between releases.
   per-tick decode cost follows the change, not the document. On the engine
   side the head's tree GROWS IN PLACE on every tick — retracting the
   previous projection, feeding the chunk, settling what it closed and
-  publishing again, with ids handed over at the frontier by the same diff a
-  rebuild uses — whatever the chunk brings: prose, headings, quotes, lists,
+  publishing again, with ids handed over at the frontier by pairing the
+  re-derived tail against the tail it replaces — whatever the chunk brings:
+  prose, headings, quotes, lists,
   fences, HTML blocks, tables, formula blocks, directives, footnotes and
   definitions. A definition that arrives re-refines exactly the units whose
   inline parse asked about its label (each unit's probes are threaded by
@@ -41,8 +42,10 @@ promised to remain compatible between releases.
   provide `opaque_size` — the size of the plain-data payload behind a
   block's pointer, which a stream snapshots before a speculative close and
   puts back after — or `markdown_core_parser_attach_extension` refuses it.
-  Every bundled extension provides it; an extension whose payloads belong to
-  inline nodes only is unaffected. With that, no build can end in a state
+  Every bundled extension that opens blocks and allocates payloads (table,
+  formula, directive) provides it; one that opens blocks without payloads
+  (task lists) or allocates payloads without opening blocks (cross links,
+  embeds) is unaffected. With that, no build can end in a state
   the engine cannot reopen, so the rebuild path, the whole-tree diff and
   the whole-tree hash stamp are gone — a one-shot parse no longer stamps
   every node (6–11% of parse time on the throughput corpora), and the

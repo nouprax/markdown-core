@@ -40,8 +40,9 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 
 /* ONE BUILD'S OUTPUT, AND THE PARSER THAT MAY STILL GROW IT: the tree, the
  * diagnostics that describe it, the parser that owns the tree and is kept
- * at end of feed, the record of the publish that closed it — NULL when the
- * close was terminal — and the arena they all came from. A generation is
+ * at end of feed, the record of the publish that closed it — NULL only
+ * before a build, and after a failed tick — and the arena they all came
+ * from. A generation is
  * taken whole and released whole, which is what makes a failed build cost
  * exactly one release and a successful one exactly one swap; a WARM tick
  * does not make a generation, it grows this one in place. */

@@ -396,9 +396,10 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
  * frontier is made to own its bytes, which its literals borrow from the leaf's
  * content buffer that the next feed will grow. The parser is then fed exactly
  * as if it had never been published from. Returns false, touching nothing,
- * for a record that is final or already retracted, and — with the parser's
- * sticky allocation bit set — when the frontier could not be given its
- * bytes; the record is still the published one either way. */
+ * for a record already retracted, and — with the parser's sticky allocation
+ * bit set — when the frontier could not be given its bytes (the record is
+ * still the published one) or a block could not get its bytes back (the
+ * parser is not, and the caller's tick fails). */
 bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo);
 
 /** Frees a record, and with it any retired frontier it still holds. */

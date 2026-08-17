@@ -243,9 +243,106 @@ static int case_spec(const char *spec_path) {
     return failures ? -1 : 0;
 }
 
+/* --- streaming regressions ----------------------------------------------- */
+
+/* Texts the living tree's adversarial reviews found, each once a wrong
+ * projection, a lost id, a spurious revision or a read of freed memory, kept
+ * here under the same oracle every corpus runs — and additionally with an
+ * EMPTY APPEND AFTER EVERY BYTE, since two of them moved a revision only
+ * when the tree was asked to stay exactly as it was. The mask is the
+ * per-token replay's option string (smart, footnotes, tables, strikethrough,
+ * autolinks, task lists, formulas, directives, cross links, embeds). */
+static const struct {
+    const char *text;
+    const char *mask;
+    const char *why;
+} EQ_REGRESSIONS[] = {
+    {"[a]: /1\n> [b]\n\n[b]: /2\nx\n",
+     "0000000000",
+     "the run behind a vanished leaf was retired unowned and unthreaded, and a definition flipped it after retirement"},
+    {"[a]: /1\n> [b]: /2\n",
+     "0000000000",
+     "the held line closed the leaf (nothing but definitions) and itself yielded a second such paragraph, and the leaf "
+     "was second on the parser's list"},
+    {"[x]: /y\n> [a]: /u\n\nz\n",
+     "0000000000",
+     "the same, under a block quote whose first line is a complete definition"},
+    {"[x]: /y\n- [a]: /u\n\nz\n", "0000000000", "the same, under a list item"},
+    {"$$x$$\np\n", "0000001000", "a paragraph promoted to a formula block kept its pre-promotion inline child"},
+    {"$$x$$\n[a]: /u\n[a]\n", "0000001000", "the same, followed by a definition and a mention"},
+    {"[a] x\n\n[a]: /1\n$$x$$\n[a]: /u\n[a]\n", "0000001000", "the same, after a settled mention"},
+    {"[a] [b] [c]\n\n[a]: /a\n[b]: /b\n[c]: /c\nnot title\n\n[a] [b] [c]\n",
+     "0000000000",
+     "a definition closing for good paired its units against children the retract had refined and never published"},
+    {"```\ncode [a]\n```\n", "0000000000", "an open fence's literal is re-allocated by every close"},
+    {"| h | b |\n|---|---|\n\nafter\n", "0010000000", "a held delimiter row re-mints the table's payload every close"},
+    {"<div>\nx\n", "0000000000", "an open HTML block's literal is re-allocated by every close"},
+    {"[a] first\n\n[a]: /aa \"tt\"\n",
+     "0000000000",
+     "a definitions-only leaf revived by the retract vanished again and had moved the root"},
+    {"$$\n`\nx+y\n$$\n\nafter\n",
+     "0000001000",
+     "a display formula's literal grew behind a stable payload pointer (PR #105 review)"},
+    {"see [foo] and :e{=bad} here\n\n[foo]: /url\n\nmore [foo]\n",
+     "0000000100",
+     "a flipped unit raised its diagnostic twice"},
+    {"[^1] note\n\n[^1]: the footnote\n\nafter\n", "0100000000", "a footnote definition on the spine"},
+    {":::note\nbody [q]\n:::\n\n[q]: /q\n",
+     "0000000100",
+     "a directive container on the spine, flipped by a definition after it"},
+};
+
+static int eq_replay_per_byte_with_empties(
+    const char *context,
+    const uint8_t *text,
+    size_t length,
+    const markdown_core_parse_options *options
+) {
+    er_replay replay;
+    size_t offset;
+    int result = -1;
+
+    if (eq_open(&replay, context, options) != 0) {
+        return -1;
+    }
+    for (offset = 0; offset < length; offset++) {
+        if (er_replay_append(&replay, text + offset, 1) != 0 || er_replay_append(&replay, text, 0) != 0) {
+            goto done;
+        }
+    }
+    result = 0;
+done:
+    er_replay_close(&replay);
+    return result;
+}
+
+static int case_regressions(void) {
+    size_t i;
+    for (i = 0; i < sizeof(EQ_REGRESSIONS) / sizeof(EQ_REGRESSIONS[0]); i++) {
+        const uint8_t *text = (const uint8_t *)EQ_REGRESSIONS[i].text;
+        size_t length = strlen(EQ_REGRESSIONS[i].text);
+        char context[256];
+        markdown_core_parse_options options;
+        markdown_core_parse_options_init(&options);
+        if (!parse_option_mask(EQ_REGRESSIONS[i].mask, &options)) {
+            eq_fail(EQ_REGRESSIONS[i].why, "regression option mask is invalid");
+            continue;
+        }
+        snprintf(context, sizeof(context), "regression %zu (%s) per-line", i, EQ_REGRESSIONS[i].why);
+        eq_replay_per_line(context, text, length, &options);
+        snprintf(context, sizeof(context), "regression %zu (%s) per-token", i, EQ_REGRESSIONS[i].why);
+        eq_replay_per_token(context, text, length, &options);
+        snprintf(context, sizeof(context), "regression %zu (%s) per-byte", i, EQ_REGRESSIONS[i].why);
+        eq_replay_per_byte(context, text, length, &options);
+        snprintf(context, sizeof(context), "regression %zu (%s) per-byte with empties", i, EQ_REGRESSIONS[i].why);
+        eq_replay_per_byte_with_empties(context, text, length, &options);
+    }
+    return failures ? -1 : 0;
+}
+
 /* --- entry point ---------------------------------------------------------- */
 
-static const char *const EQ_CASES[] = {"canonical", "spec"};
+static const char *const EQ_CASES[] = {"canonical", "spec", "regressions"};
 
 int main(int argc, char **argv) {
     const char *case_name = NULL;
@@ -295,6 +392,8 @@ int main(int argc, char **argv) {
         case_canonical(fixtures_dir, positional, positional_count);
     } else if (case_name && strcmp(case_name, "spec") == 0 && spec_path) {
         case_spec(spec_path);
+    } else if (case_name && strcmp(case_name, "regressions") == 0) {
+        case_regressions();
     } else {
         fputs("usage: equivalence_runner [--list] --case NAME [--fixtures DIR NAME MASK ...] [--spec FILE]\n", stderr);
         goto done;

@@ -528,6 +528,107 @@ static int er_walk_visit(const markdown_core_node *node, void *context) {
     return 0;
 }
 
+/* THE CONVERSE OF THE (id, revision) PROMISE: a node whose own projection,
+ * child-id list and every descendant are as the captured head showed them
+ * is an unchanged subtree, and its revision must be the one the head
+ * carried — "the document revision at which the node last changed" is a
+ * claim about the last change, and a revision that moves for nothing is a
+ * consumer re-decoding a subtree that did not. Postorder, so a node knows
+ * its children's verdicts; iterative, so depth costs no stack. */
+typedef struct er_post_frame {
+    const markdown_core_node *node;
+    bool children_unchanged;
+} er_post_frame;
+
+static int er_verify_no_spurious_bumps(
+    er_replay *replay,
+    const markdown_core_document *document,
+    const er_capture *before
+) {
+    er_post_frame *stack = NULL;
+    size_t depth = 0;
+    size_t capacity = 0;
+    er_blob scratch = {NULL, 0, 0, false};
+    const markdown_core_node *node = markdown_core_document_root(document);
+    int result = 0;
+
+    if (!node) {
+        return 0;
+    }
+    for (;;) {
+        /* Descend to the leftmost leaf, opening a frame per level. */
+        for (;;) {
+            if (depth == capacity) {
+                size_t grown_capacity = capacity ? capacity * 2 : 64;
+                er_post_frame *grown = (er_post_frame *)realloc(stack, grown_capacity * sizeof(*grown));
+                if (!grown) {
+                    result = er_fail(replay, "postorder walk failed to allocate");
+                    goto done;
+                }
+                stack = grown;
+                capacity = grown_capacity;
+            }
+            stack[depth].node = node;
+            stack[depth].children_unchanged = true;
+            depth++;
+            if (!markdown_core_node_get_first_child(node)) {
+                break;
+            }
+            node = markdown_core_node_get_first_child(node);
+        }
+        /* Finish frames until one has a next sibling to descend into. */
+        for (;;) {
+            er_post_frame *frame = &stack[depth - 1];
+            const er_capture_entry *entry;
+            bool unchanged = frame->children_unchanged;
+            node = frame->node;
+            entry = er_capture_find(before, markdown_core_node_get_id(node));
+            if (!entry) {
+                unchanged = false;
+            }
+            if (unchanged) {
+                scratch.length = 0;
+                er_projection_write(node, &scratch);
+                if (scratch.failed) {
+                    result = er_fail(replay, "projection capture allocation failed");
+                    goto done;
+                }
+                unchanged =
+                    scratch.length == entry->projection_length &&
+                    memcmp(scratch.bytes, before->blob.bytes + entry->projection_offset, entry->projection_length) == 0;
+            }
+            if (unchanged) {
+                scratch.length = 0;
+                er_child_ids_write(node, &scratch);
+                if (scratch.failed) {
+                    result = er_fail(replay, "child list capture allocation failed");
+                    goto done;
+                }
+                unchanged =
+                    scratch.length == entry->children_length &&
+                    memcmp(scratch.bytes, before->blob.bytes + entry->children_offset, entry->children_length) == 0;
+            }
+            if (unchanged && markdown_core_node_get_revision(node) != entry->revision) {
+                result = er_fail(replay, "a node's revision moved without a change under it");
+                goto done;
+            }
+            depth--;
+            if (depth == 0) {
+                goto done;
+            }
+            stack[depth - 1].children_unchanged = stack[depth - 1].children_unchanged && unchanged;
+            if (markdown_core_node_get_next_sibling(node)) {
+                node = markdown_core_node_get_next_sibling(node);
+                break;
+            }
+        }
+    }
+done:
+    er_blob_release(&scratch);
+    free(stack);
+    return result;
+}
+
 /* Walks `document`'s tree against the ledger. `previous` holds the
  * predecessor's nodes (empty for the seeding walk); afterwards, live ledger
  * entries the walk did not meet are retired. */
@@ -629,6 +730,9 @@ static int er_verify_successor(
     }
 
     if (er_verify_tree(replay, successor, before) != 0) {
+        goto done;
+    }
+    if (er_verify_no_spurious_bumps(replay, successor, before) != 0) {
         goto done;
     }
 
