@@ -234,9 +234,9 @@ typedef struct markdown_core_warm_open_block {
     markdown_core_node *vanished_prev;
     /* The payload as it was: a close writes into it — a list's tightness at
      * its finalize — and the retract puts the value back whole. A block
-     * whose close moves its content buffer out (code, HTML) has that buffer
-     * kept below (`content_copy`) and its literal freed at the retract
-     * before the value goes back. */
+     * whose close moves its content buffer into its literal (code, HTML)
+     * has the buffer moved back at the retract, before the value goes
+     * back (`content`, below). */
     union markdown_core_node_payload payload;
     /* THE FACADE'S, carried here because the spine is its index: the
      * block's own projection as this record PUBLISHED it, written as bytes
@@ -251,14 +251,30 @@ typedef struct markdown_core_warm_open_block {
      * with a blank line" onto the current block's youngest child, which is
      * a SETTLED node the record would otherwise not hold. */
     uint16_t last_child_flags;
-    /* The content bytes of a block whose close MOVES them — a code block's
-     * into its literal (its info line taken off the front, an indented
-     * block's trailing blank lines dropped), an HTML block's into its
-     * literal — so the retract can put them back where they were. NULL for
-     * every other block. */
+    /* WHAT THE CLOSE DOES TO THE BLOCK'S CONTENT BUFFER, and so how the
+     * retract puts it back. */
+    enum markdown_core_warm_content {
+        /* The buffer stays where it is; the retract truncates the held
+         * line's bytes off its end (`content_size`). */
+        MARKDOWN_CORE_WARM_CONTENT_KEPT,
+        /* The close moves the buffer WHOLE into the block's literal — a code
+         * block's, an HTML block's — and the retract moves it back: no byte
+         * is copied, so a growing fence costs a tick nothing per line it
+         * already holds. An indented code block's close first cuts the
+         * trailing blank lines the literal must not hold; those bytes are
+         * the copy below, and go back on the end. */
+        MARKDOWN_CORE_WARM_CONTENT_MOVED,
+        /* The close CONSUMES the buffer — a paragraph beginning with a
+         * definition has definitions harvested off its front, an
+         * extension's block that takes lines mints its payload from them —
+         * and the retract restores it from the copy below, whole. */
+        MARKDOWN_CORE_WARM_CONTENT_CONSUMED
+    } content;
+    /* The bytes the retract puts back that the block's literal will not
+     * hold: an indented code block's trailing blank lines (MOVED), or the
+     * whole buffer (CONSUMED). NULL when there are none. */
     unsigned char *content_copy;
     markdown_core_bufsize content_copy_size;
-    bool content_moved; /* the close moves the bytes: restore from the copy */
     /* A close may RETYPE the block — a setext underline turns the paragraph
      * into a heading, a table's delimiter row turns it into a table with an
      * extension, a payload behind `as.opaque`, and a start moved to its

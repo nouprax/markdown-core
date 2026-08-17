@@ -501,7 +501,11 @@ static void warm_diagnostics_drop(markdown_core_parser *parser, const markdown_c
     parser->diagnostic_count = kept;
 }
 
-static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
+/* Where an indented code block's trailing blank lines begin: the first line
+ * ending after the last byte that is not blank, or 0 when every byte is,
+ * or the whole size when no line ending follows. Everything from here is
+ * what the block's close cuts. */
+static markdown_core_bufsize trailing_blank_cut(const markdown_core_strbuf *ln) {
     markdown_core_bufsize i;
     unsigned char c;
 
@@ -514,20 +518,19 @@ static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
     }
 
     if (i < 0) {
-        markdown_core_strbuf_clear(ln);
-        return;
+        return 0;
     }
 
     for (; i < ln->size; ++i) {
-        c = ln->ptr[i];
-
-        if (!S_is_line_end_char(c)) {
-            continue;
+        if (S_is_line_end_char(ln->ptr[i])) {
+            return i;
         }
-
-        markdown_core_strbuf_truncate(ln, i);
-        break;
     }
+    return ln->size;
+}
+
+static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
+    markdown_core_strbuf_truncate(ln, trailing_blank_cut(ln));
 }
 
 // Check to see if a node ends with a blank line, descending
@@ -839,7 +842,6 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
 }
 
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_bufsize pos;
     markdown_core_node *item;
     markdown_core_node *subitem;
     markdown_core_node *parent;
@@ -892,34 +894,13 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
     }
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        /* The content is the code: a fenced block's info was minted at its
+         * open and its fence line never entered the buffer, so the buffer
+         * moves into the literal whole. An indented block's trailing blank
+         * lines are cut first — they belong to no line of code. */
         if (!b->as.code.fenced) { // indented code
             remove_trailing_blank_lines(node_content);
             markdown_core_strbuf_putc(node_content, '\n');
-        } else {
-            // first line of contents becomes info
-            for (pos = 0; pos < node_content->size; ++pos) {
-                if (S_is_line_end_char(node_content->ptr[pos])) {
-                    break;
-                }
-            }
-            assert(pos < node_content->size);
-
-            markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT(parser->mem);
-            markdown_core_houdini_unescape_html_f(&tmp, node_content->ptr, pos);
-            markdown_core_strbuf_trim(&tmp);
-            markdown_core_strbuf_unescape(&tmp);
-            b->as.code.info = markdown_core_chunk_buf_detach(&tmp);
-            if (!b->as.code.info.data) {
-                parser->oom = true;
-            }
-
-            if (node_content->ptr[pos] == '\r') {
-                pos += 1;
-            }
-            if (node_content->ptr[pos] == '\n') {
-                pos += 1;
-            }
-            markdown_core_strbuf_drop(node_content, pos);
         }
         b->as.code.literal = markdown_core_chunk_buf_detach(node_content);
         if (!b->as.code.literal.data) {
@@ -1906,7 +1887,6 @@ static void open_new_blocks(
             (*container)->as.code.fence_length = (matched > 255) ? 255 : (uint8_t)matched;
             (*container)->as.code.fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
             (*container)->as.code.fence_closed = false;
-            (*container)->as.code.info = markdown_core_chunk_literal("");
             /* The fence run, at its true length where fence_length clamps. */
             markdown_core_parser_capture_marker(
                 parser,
@@ -1917,12 +1897,25 @@ static void open_new_blocks(
             );
             S_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
             {
-                /* The rest of the fence line is the raw info spelling,
-                 * whitespace-trimmed on the terms finalize trims the decoded
-                 * scalar; its bytes ride the content buffer only until
-                 * finalize drops them, so the record is captured here. */
+                /* THE INFO IS MINTED HERE, from the rest of the fence line,
+                 * and the line never enters the block's content: the content
+                 * is the code and nothing else, so the close moves it whole
+                 * (finalize) and a stream's retract moves it back whole. The
+                 * raw spelling, whitespace-trimmed on the terms the decoded
+                 * scalar is trimmed, is the FENCE_INFO record. */
                 markdown_core_bufsize info_start = parser->offset;
-                markdown_core_bufsize info_end = input->len;
+                markdown_core_bufsize info_end = parser->offset;
+                markdown_core_strbuf decoded = MARKDOWN_CORE_BUF_INIT(parser->mem);
+                while (info_end < input->len && !S_is_line_end_char(peek_at(input, info_end))) {
+                    info_end++;
+                }
+                markdown_core_houdini_unescape_html_f(&decoded, input->data + info_start, info_end - info_start);
+                markdown_core_strbuf_trim(&decoded);
+                markdown_core_strbuf_unescape(&decoded);
+                (*container)->as.code.info = markdown_core_chunk_buf_detach(&decoded);
+                if (!(*container)->as.code.info.data) {
+                    parser->oom = true;
+                }
                 while (info_end > info_start && markdown_core_isspace(peek_at(input, info_end - 1))) {
                     info_end--;
                 }
@@ -2242,7 +2235,11 @@ static void add_text_to_container(
         }
 
         if (S_type(container) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-            add_line(container, input, parser);
+            /* A fenced block's opening line is its info, minted at the open;
+             * its code starts on the next line. */
+            if (!(container->as.code.fenced && container->start_line == parser->line_number)) {
+                add_line(container, input, parser);
+            }
         } else if (S_type(container) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
             add_line(container, input, parser);
 
@@ -2543,23 +2540,30 @@ bool markdown_core_parser_warm_eligible_at_eof(const markdown_core_parser *parse
     return parser->root != NULL && !parser->oom && !parser->internal_error;
 }
 
-/* Whether a block's close moves its content bytes out of the buffer, so
- * the record must keep a copy of them. */
-static bool warm_close_moves_content(const markdown_core_node *node) {
+/* What a block's close does to its content buffer (parser.h,
+ * markdown_core_warm_content): moves it whole into the literal, consumes
+ * it, or leaves it. */
+static enum markdown_core_warm_content warm_content_at_close(const markdown_core_node *node) {
     if (node->extension) {
         /* An extension's block that takes lines does something with them
          * at its close or its refine (a formula block's literal is minted
          * from its content, and the content cleared); the copy costs what
          * the block is, and pays for not guessing. */
         return node->extension->accepts_lines &&
-               node->extension->accepts_lines(node->extension, (markdown_core_node *)node);
+                       node->extension->accepts_lines(node->extension, (markdown_core_node *)node)
+                   ? MARKDOWN_CORE_WARM_CONTENT_CONSUMED
+                   : MARKDOWN_CORE_WARM_CONTENT_KEPT;
     }
     if (S_type(node) == MARKDOWN_CORE_NODE_PARAGRAPH) {
         /* Its close harvests definitions off the FRONT of the content when
          * it begins with one; the bytes come back from the copy. */
-        return node->content.size > 0 && node->content.ptr[0] == '[';
+        return node->content.size > 0 && node->content.ptr[0] == '[' ? MARKDOWN_CORE_WARM_CONTENT_CONSUMED
+                                                                     : MARKDOWN_CORE_WARM_CONTENT_KEPT;
     }
-    return S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK || S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK;
+    if (S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK || S_type(node) == MARKDOWN_CORE_NODE_HTML_BLOCK) {
+        return MARKDOWN_CORE_WARM_CONTENT_MOVED;
+    }
+    return MARKDOWN_CORE_WARM_CONTENT_KEPT;
 }
 
 /* --- settle: refine what a step closed ------------------------------------ */
@@ -2968,14 +2972,30 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
                     entry->opaque_copy_size = size;
                 }
             }
-            entry->content_moved = warm_close_moves_content(node);
-            if (entry->content_moved && node->content.size) {
-                entry->content_copy = (unsigned char *)undo->mem->calloc(undo->mem, node->content.size, 1);
-                if (!entry->content_copy) {
-                    return false;
+            entry->content = warm_content_at_close(node);
+            {
+                /* The bytes the literal will not hold: the whole buffer of
+                 * a block whose close consumes it; of a moved buffer, only
+                 * an indented code block's trailing blank lines, which its
+                 * close cuts. A fenced block and an HTML block copy nothing:
+                 * their literal IS the buffer, and comes back whole. */
+                markdown_core_bufsize from = node->content.size;
+                if (entry->content == MARKDOWN_CORE_WARM_CONTENT_CONSUMED) {
+                    from = 0;
+                } else if (
+                    entry->content == MARKDOWN_CORE_WARM_CONTENT_MOVED &&
+                    S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK && !node->as.code.fenced
+                ) {
+                    from = trailing_blank_cut(&node->content);
                 }
-                memcpy(entry->content_copy, node->content.ptr, node->content.size);
-                entry->content_copy_size = node->content.size;
+                if (from < node->content.size) {
+                    entry->content_copy_size = node->content.size - from;
+                    entry->content_copy = (unsigned char *)undo->mem->calloc(undo->mem, entry->content_copy_size, 1);
+                    if (!entry->content_copy) {
+                        return false;
+                    }
+                    memcpy(entry->content_copy, node->content.ptr + from, entry->content_copy_size);
+                }
             }
         }
     }
@@ -3313,18 +3333,48 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             }
         }
         node->type = entry->type;
-        if (entry->content_moved) {
-            /* The close moved the bytes into the literal (and, for a fenced
-             * block, minted the info from their first line): those chunks
-             * go, and the buffer gets its bytes back from the copy. An
-             * extension's block frees what its payload minted in its own
-             * restore below. */
-            if (!node->extension && S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK) {
-                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.info);
-                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.code.literal);
-            } else if (!node->extension) {
-                markdown_core_chunk_free(markdown_core_node_mem(node), &node->as.literal);
+        switch (entry->content) {
+        case MARKDOWN_CORE_WARM_CONTENT_MOVED: {
+            /* The close moved the buffer whole into the literal — after the
+             * held line had gone onto its end, and, for an indented block,
+             * with its trailing blank lines cut and a newline put — so the
+             * literal is the buffer as it was, then what the close added,
+             * and it MOVES BACK: the chunk's bytes become the buffer again,
+             * cut to the size the record saw, and an indented block's cut
+             * blank lines go back on the end from the copy. Nothing is
+             * copied but those; a fence a stream grows costs its tick
+             * nothing per byte it already holds. */
+            markdown_core_chunk *literal =
+                S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK ? &node->as.code.literal : &node->as.literal;
+            markdown_core_bufsize kept = entry->content_size - entry->content_copy_size;
+            if (!literal->alloc || !literal->data || literal->len < kept) {
+                /* Not the buffer the close moved: the parser is not where
+                 * it was, and its sticky bit says so — the caller's tick
+                 * fails, and with it the chain. */
+                parser->internal_error = true;
+                return false;
             }
+            markdown_core_strbuf_free(&node->content);
+            node->content.ptr = literal->data;
+            node->content.size = literal->len;
+            node->content.asize = literal->len + 1;
+            literal->data = NULL;
+            literal->len = 0;
+            literal->alloc = 0;
+            markdown_core_strbuf_truncate(&node->content, kept);
+            if (entry->content_copy_size) {
+                markdown_core_strbuf_put(&node->content, entry->content_copy, entry->content_copy_size);
+                if (node->content.oom) {
+                    parser->oom = true;
+                    return false;
+                }
+            }
+            break;
+        }
+        case MARKDOWN_CORE_WARM_CONTENT_CONSUMED:
+            /* The close consumed the buffer; it comes back from the copy.
+             * An extension's block frees what its payload minted in its own
+             * restore below. */
             markdown_core_strbuf_clear(&node->content);
             if (entry->content_copy_size) {
                 markdown_core_strbuf_put(&node->content, entry->content_copy, entry->content_copy_size);
@@ -3336,8 +3386,10 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
                     return false;
                 }
             }
-        } else {
+            break;
+        case MARKDOWN_CORE_WARM_CONTENT_KEPT:
             markdown_core_strbuf_truncate(&node->content, entry->content_size);
+            break;
         }
         node->as = entry->payload;
         if (node->concrete) {
