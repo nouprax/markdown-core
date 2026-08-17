@@ -167,8 +167,8 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * appended and what this close appended, in that order — and `retired` is
  * the run the previous close had appended there, detached at the retract and
  * owning its bytes. The two are diffed as two child lists — hash sweeps,
- * positional middle by type, residue minted, each pair classified by its
- * fields and its children — so a paired node keeps its id,
+ * the middle aligned, residue minted, each pair classified by its fields
+ * and its children — so a paired node keeps its id,
  * keeps its revision if nothing about it changed and takes `rev` otherwise,
  * and unpaired retired ids are never minted again. `*changed` is SET when
  * the runs differ at all — never cleared, so a block's two runs accumulate

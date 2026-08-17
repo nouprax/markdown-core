@@ -3219,6 +3219,22 @@ static int case_warm_identity_pins(void) {
          1,
          false,
          "a link flipped for good keeps its id when the definition's paragraph survives"},
+        {{"[a] *b* c", "\nd\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a run changed at both ends in one tick — the flip at its front, the tail growing at its back — keeps "
+         "the sibling between: the middle is aligned, not paired positionally from a kind mismatch"},
+        {{"[a] *b* `c`", "\nd\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_CODE,
+         1,
+         false,
+         "the same, for the second of two unchanged siblings the alignment anchors"},
+        {{"[a] *b* [c]\n\n", "[a]: /u\n[c]: /v\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "two definitions in one chunk flip both ends of a settled paragraph; the sibling between keeps its id"},
     };
     size_t i;
 
