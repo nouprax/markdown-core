@@ -90,9 +90,8 @@ struct markdown_core_parser {
      * folded into `oom` immediately: the oom guard between open_new_blocks and
      * add_text_to_container cuts a line short, and several capture sites
      * sit where that skip would strand parser->current on a block the line
-     * already finalized or leave a fenced block without its info line. The
-     * line completes with consistent structure and S_process_line folds
-     * this into `oom` at the line boundary. */
+     * already finalized. The line completes with consistent structure and
+     * S_process_line folds this into `oom` at the line boundary. */
     bool capture_lost;
     /* Sticky engine-invariant failure. This is separate from allocation loss
      * so facade callers can report MARKDOWN_CORE_ERROR_INTERNAL rather than

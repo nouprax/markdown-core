@@ -390,9 +390,8 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
  * precisely what the OOM sweep compares. The poison is deferred to the end
  * of the current line rather than raised here: several capture sites sit
  * between add_child's can-contain finalizes and add_text_to_container's
- * re-anchoring of parser->current, and others precede the content append
- * that establishes a fenced block's info line, so cutting the line short at
- * the S_process_line oom guard would leave block structure violating the
+ * re-anchoring of parser->current, so cutting the line short at the
+ * S_process_line oom guard would leave block structure violating the
  * invariants finalize asserts. The line runs to completion — every capture
  * failure leaves the tree exactly as a successful capture would — and the
  * loss becomes parser->oom at the line boundary, before the next line

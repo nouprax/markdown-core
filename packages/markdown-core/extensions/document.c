@@ -415,7 +415,7 @@ static bool document_tick_warm(
     }
     /* Identity and revision, deepest block first. The run a block gained is
      * stamped, then diffed against the block's retired frontier — hash
-     * sweeps front and back, a positional middle by type, residue minted,
+     * sweeps front and back, the middle aligned, residue minted,
      * each pair classified by its fields and children — and the block itself
      * takes the tick's revision only if that diff or a deeper block says
      * something under it changed: an empty append moves no revision at all,
