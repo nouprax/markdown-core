@@ -3254,14 +3254,27 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             run->prev = NULL;
         }
         /* The block that replaced this block's leaf, put back by the entry
-         * below: it stood where the leaf stands, before everything the
-         * close appended after, so it heads the retired run. */
+         * below: it stood where the leaf stands — after everything the
+         * close inserted before the leaf, before everything it appended
+         * after — so it closes the inserted run. What takes its place at
+         * the next publish is either the leaf's replacement again (the leaf
+         * is then off the tree, and the caller pairs both runs as one, in
+         * this order) or a block the close inserted before the leaf (a lead
+         * paragraph split off a table and promoted), which the inserted run
+         * pairs from its end. */
         if (entry->survivor) {
-            entry->survivor->next = run;
-            if (run) {
-                run->prev = entry->survivor;
+            markdown_core_node *tail = entry->retired_inserted;
+            entry->survivor->prev = NULL;
+            entry->survivor->next = NULL;
+            if (!tail) {
+                entry->retired_inserted = entry->survivor;
+            } else {
+                while (tail->next) {
+                    tail = tail->next;
+                }
+                tail->next = entry->survivor;
+                entry->survivor->prev = tail;
             }
-            run = entry->survivor;
             entry->survivor = NULL;
         }
         entry->retired = run;

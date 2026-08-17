@@ -400,7 +400,7 @@ static bool document_tick_warm(
          * the parent's saved youngest child is not the child it saved, so
          * the parent's run is everything after the sibling it followed,
          * paired against both of what the last close retired there, as one
-         * run — with the block that had replaced it at the front, where it
+         * run — with the block that had replaced it between them, where it
          * stood, so a promoted block that closes for good keeps its id — and
          * the leaf entry pairs nothing of its own. */
         if (before->spine_count > 1 && (before->spine[before->spine_count - 1].node->parent == NULL ||

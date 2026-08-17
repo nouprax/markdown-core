@@ -23,7 +23,12 @@
 // retires (old) or is minted fresh (new). A kind change is a retirement and
 // a creation, never a pairing (5.2). The sweeps read each subtree's hash
 // (node.h), which is why a run is stamped before it is paired and stamped
-// nowhere else.
+// nowhere else. This is not an alignment: when one tick changes a run at
+// both ends — a definition flip inserting a node in the middle AND the tail
+// growing in the same chunk — the middle stops at the first kind change and
+// unchanged siblings past it are minted afresh; the same bytes delivered so
+// that the two land in different ticks keep every id. The bound the plan
+// asks for is per tick, and an alignment would be O(run²) at the wall.
 //
 // Every walk here is iterative with an explicit heap stack: adversarial
 // inputs nest tens of thousands of levels deep, which native recursion does

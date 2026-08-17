@@ -222,9 +222,10 @@ typedef struct markdown_core_warm_open_block {
      * retract to put back. `node` then names the survivor. */
     markdown_core_node *replaced;
     /* The survivor, once the retract has put the block back: published, so
-     * kept — at the front of the PARENT's retired run, where it stood — for
-     * the next publish to pair what takes its place against. Set on the
-     * entry above the replaced one; NULL otherwise. */
+     * kept — at the end of the PARENT's retired inserted run, where it stood
+     * — for the next publish to pair what takes its place against. Set on
+     * the entry above the replaced one while the retract runs; NULL
+     * otherwise. */
     markdown_core_node *survivor;
     /* The block VANISHED at the close — a paragraph that was nothing but
      * definitions is unlinked by its own finalize — and is put back at the

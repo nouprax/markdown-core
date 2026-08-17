@@ -3102,6 +3102,170 @@ static int case_warm_tick_living_tree(void) {
     return result;
 }
 
+/* --- warm_identity_pins ---------------------------------------------------- */
+
+/* IDS THAT MUST NOT MOVE. The replay oracles pin what they can see: an id
+ * never resurrects, an unchanged (id, revision) is an unchanged subtree, an
+ * unchanged subtree keeps its revision, an empty append moves nothing. What
+ * they cannot see is a node RE-MINTED on a non-empty append — the new id
+ * has no ledger entry, the old one legitimately never returns, and the
+ * parent's child list did change — which is exactly how a promoted formula
+ * block, a heading typed beside a definitions-only leaf, or a link whose
+ * definition streams in byte by byte lost their ids in the reviews. So each
+ * scenario here names a node by kind and the append it must be stable
+ * from, and its id is read after every append and compared. */
+/* The first node of `kind` in document order, or NULL. */
+static const markdown_core_node *wip_first_of_kind(const markdown_core_node *node, markdown_core_node_kind kind) {
+    while (node) {
+        if (markdown_core_node_get_kind(node) == kind) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return NULL;
+}
+
+static int case_warm_identity_pins(void) {
+    static const struct {
+        const char *chunks[8];
+        markdown_core_node_kind kind;
+        size_t stable_from; /* the append after which the id must not move */
+        bool formulas;
+        const char *why;
+    } scenarios[] = {
+        {{"$$x$$\n", "\n", "after\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted formula block keeps its id across the blank line that closes it for good"},
+        {{"```formula\nx+y\n", "```\n", "\nz\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a formula fence keeps its id across its closing fence"},
+        {{"- $$x$$\n", "- y\n", "- z\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted block inside a list item keeps its id when the next item opens"},
+        {{"$$x$$", "\n", "", "\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted block keeps its id while the leaf stays open, on empty appends and on the close"},
+        {{"$$x$$", "\n| a |\n|---|", "\n| b |\n", "\nafter\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "a promoted lead paragraph split off a table keeps the id its promotion had before the retype"},
+        {{"[a]: /1\n", "#", " ", "H", "e", "\n", NULL},
+         MARKDOWN_CORE_KIND_HEADING,
+         2,
+         false,
+         "a heading typed beside a definitions-only leaf the close takes again keeps its id"},
+        {{"> [a]: /1\n", "> # h", "", "\n", NULL},
+         MARKDOWN_CORE_KIND_HEADING,
+         2,
+         false,
+         "the same, under a block quote"},
+        {{"[a]: /1\n", "- x", "y", "\n", NULL},
+         MARKDOWN_CORE_KIND_LIST_ITEM,
+         2,
+         false,
+         "a list item typed beside a definitions-only leaf keeps its id"},
+        {{"[foo] and *x*\n\n", "[foo]: /u", "r", "l\n", NULL},
+         MARKDOWN_CORE_KIND_LINK_REFERENCE,
+         2,
+         false,
+         "a link whose definition streams in byte by byte keeps its id"},
+        {{"[foo] and *x*\n\n", "[foo]: /u", "r", "l\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a sibling a definition did not touch keeps its id through the flips"},
+        {{"see [q] here\n\n> quote\n\n[q]: /q\n", "not a title\n", "\n", "prose\n", NULL},
+         MARKDOWN_CORE_KIND_LINK_REFERENCE,
+         1,
+         false,
+         "a link flipped for good keeps its id when the definition's paragraph survives"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(scenarios) / sizeof(scenarios[0]); i++) {
+        markdown_core_parse_options options;
+        markdown_core_error *error = NULL;
+        markdown_core_document *document;
+        markdown_core_node_id pinned = 0;
+        size_t step;
+
+        markdown_core_parse_options_init(&options);
+        options.formulas = scenarios[i].formulas;
+        document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+        if (!document) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "warm_identity_pins: open failed\n");
+            return -1;
+        }
+        for (step = 0; scenarios[i].chunks[step]; step++) {
+            const char *chunk = scenarios[i].chunks[step];
+            markdown_core_document *successor =
+                markdown_core_document_append(document, mc_sv(chunk, strlen(chunk)), &error);
+            const markdown_core_node *found;
+            if (!successor) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "warm_identity_pins: scenario %zu append %zu failed\n", i, step);
+                markdown_core_document_free(document);
+                return -1;
+            }
+            markdown_core_document_free(document);
+            document = successor;
+            if (step + 1 < scenarios[i].stable_from) {
+                continue;
+            }
+            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind);
+            if (!found) {
+                fprintf(
+                    stderr,
+                    "warm_identity_pins: scenario %zu (%s): no %s after append %zu\n",
+                    i,
+                    scenarios[i].why,
+                    markdown_core_node_kind_name(scenarios[i].kind),
+                    step
+                );
+                markdown_core_document_free(document);
+                return -1;
+            }
+            if (step + 1 == scenarios[i].stable_from) {
+                pinned = markdown_core_node_get_id(found);
+            } else if (markdown_core_node_get_id(found) != pinned) {
+                fprintf(
+                    stderr,
+                    "warm_identity_pins: scenario %zu (%s): the %s was id %llu after append %zu and id %llu after "
+                    "append %zu\n",
+                    i,
+                    scenarios[i].why,
+                    markdown_core_node_kind_name(scenarios[i].kind),
+                    (unsigned long long)pinned,
+                    scenarios[i].stable_from - 1,
+                    (unsigned long long)markdown_core_node_get_id(found),
+                    step
+                );
+                markdown_core_document_free(document);
+                return -1;
+            }
+        }
+        markdown_core_document_free(document);
+    }
+    return 0;
+}
+
 /* --- warm_close_undo ------------------------------------------------------- */
 
 /* The claim this milestone cannot afford to be wrong about: a parser can be
@@ -5440,6 +5604,7 @@ static const concrete_case CASES[] = {
     {"warm_close_undo", case_warm_close_undo},
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_living_tree", case_warm_tick_living_tree},
+    {"warm_identity_pins", case_warm_identity_pins},
     {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},
