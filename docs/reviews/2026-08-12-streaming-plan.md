@@ -491,6 +491,21 @@ v2 design = a stable-prefix hint on TEXT + segmented literal exposure.
 
 ## Errata
 
+**E4 — THE FENCE LEFT THE LADDER (2026-08-17).** §4.4's ladder and §9's
+budget name the growing fence as the memcpy-speed shape ("Only fences are
+memcpy speed"), which was true of every design in this document: the
+close moved the block's buffer out into its literal and the tick moved it
+back. It is no longer true of the engine. A fenced block's info is decoded
+at its OPEN, so its buffer holds the code and nothing else; a close that
+can be taken back publishes THE BUFFER as the literal — the literal
+borrows it, the retract hands the borrow back — and the block's record
+witnesses it by length rather than by bytes. Nothing is copied and nothing
+is reallocated per tick, and the bench arm is gated flat (0.19 µs a tick
+from 256 KiB to 4 MiB). What stays on the ladder is what a tick RE-DERIVES:
+the giant open paragraph (parse speed, as this document says) and the
+references appendix (re-harvested; still no harvest prefix memo). See
+`2026-08-14-l1-slices.md` §6.
+
 **E3 — WHAT SHIPPED INSTEAD (2026-08-17).** The D6 shape E2 left append
 on — one full parse plus one whole-tree diff per tick — is gone. The engine
 mechanism that replaced this plan's parser-tail fork is the LIVING TREE

@@ -19,16 +19,18 @@
 //
 // Children are paired with a prefix/suffix sweep on the refined child lists:
 // leading children pair front-to-back, trailing children back-to-front; the
-// middle left between them is ALIGNED — its identical subtrees anchored by a
-// longest common subsequence over (type, hash), under a budget so a run
-// rewritten wholesale is not squared — and between anchors it still pairs
-// positionally by type; the residue retires (old) or is minted fresh (new).
-// A kind change is a retirement and a creation, never a pairing (5.2). The
-// sweeps and the alignment read each subtree's hash (node.h), which is why
-// a run is stamped before it is paired and stamped nowhere else. So the
-// same bytes pair the same way whether one tick or two delivered them: a
-// definition flip in the middle of a run and the tail growing in the same
-// chunk keep every unchanged sibling's id.
+// middle left between them is ALIGNED — its identical subtrees matched by
+// EDIT DISTANCE, so the alignment costs the change and not the run — and
+// between the matches it still pairs positionally by type; the residue
+// retires (old) or is minted fresh (new). A kind change is a retirement and
+// a creation, never a pairing (5.2). The sweeps and the alignment read each
+// subtree's hash (node.h), which is why a run is stamped before it is
+// paired and stamped nowhere else. So the same bytes pair the same way
+// whether one tick or two delivered them — a definition flip at the front
+// of a run and the tail growing in the same chunk keep the unchanged
+// siblings between, however long the run is — until the two sides differ by
+// more than the alignment's bounds below, where a run is being rewritten
+// rather than edited and the middle pairs positionally alone.
 //
 // Every walk here is iterative with an explicit heap stack: adversarial
 // inputs nest tens of thousands of levels deep, which native recursion does
