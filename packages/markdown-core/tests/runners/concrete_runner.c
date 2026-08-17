@@ -4295,11 +4295,14 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
 static int case_chain_poison(void) {
     static const char *const definitions[] = {"alpha [x] and *emph*\n\n[x]: /url\n", " and [x] again\n", "", NULL};
     static const char *const warm[] = {"alpha beta", " gamma\n", "\ndelta *eps", "ilon* zeta\nand www.x.y", "", NULL};
-    /* A directive with attributes, then an empty append: the comparison of
-     * its projection once rendered the attributes as JSON, allocating, and
-     * a lost render on one side moved its revision on an empty append while
-     * the tick reported success. */
-    static const char *const directive[] = {"x :d{k=v} y\n\n:::note{.c #i}\nbody", "", " more", "", NULL};
+    /* An inline directive with attributes in the OPEN leaf — so the
+     * frontier diff compares it on every tick — then an empty append: the
+     * comparison of its projection once rendered the attributes as JSON,
+     * allocating, and a lost render on one side moved its revision on an
+     * empty append while the tick reported success; then a directive block
+     * on the spine, whose published projection the record writes. */
+    static const char *const directive[] =
+        {"x :d{k=v} y", "", " and :e{a=b}", "", "\n\n:::note{.c #i}\nbody", "", NULL};
     /* A block whose close moves its bytes out and whose retract puts them
      * back — the one restore that allocates, and once aborted an assert-
      * enabled build instead of poisoning the chain when it failed. */
