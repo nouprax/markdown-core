@@ -150,6 +150,14 @@ markdown_core_document *markdown_core_document_open_with_mem(
  * the dump implementation, which reads the same fields. */
 bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b);
 
+/** The same projection, written to `out` as bytes: two nodes whose bytes
+ * are equal are nodes the comparison above calls unchanged. What a
+ * streaming tick keeps of a spine block's PUBLISHED projection, so the
+ * next publish can be compared against it exactly — the block is the same
+ * object, so there is no second node to compare — with no hash trusted
+ * for a revision. Answers false when the buffer lost an allocation. */
+bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out);
+
 /** Mints fresh identities over one subtree — every node id from the chain's
  * counter, every revision `rev` — for a subtree nothing pairs against. */
 void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev);

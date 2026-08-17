@@ -3266,6 +3266,148 @@ static int case_warm_identity_pins(void) {
     return 0;
 }
 
+/* --- projection_write_agrees ----------------------------------------------- */
+
+/* ONE PROJECTION, TWO READERS. markdown_core_ast_projection_changed
+ * compares two nodes' own projections field by field; the streaming tick
+ * has no second node for a spine block — it is the same object tick after
+ * tick — so its record keeps the block's published projection as bytes,
+ * written by markdown_core_ast_projection_write. Both are one field list,
+ * spelled twice in ast.c, and this holds them to it: over every node of
+ * texts that reach every kind and every option, two nodes of one kind have
+ * equal bytes exactly when the comparison calls them unchanged, and a node
+ * against itself is unchanged with equal bytes. */
+static int case_projection_write_agrees(void) {
+    static const char *const texts[] = {
+        "# H1\n## H2\nSetext\n===\n\n- a\n- b\n\n1. one\n2. two\n\n3) three\n\n- [ ] todo\n- [x] done\n\n"
+        "> quote\n\n```js\ncode\n```\n\n```\nplain\n```\n\n~~~py\ntilde\n~~~\n\n    "
+        "indented\n\n<div>\nhtml\n</div>\n\n***\n",
+        "[a]: /url \"title\"\n[b]: /other\n[c]: <angle> 'single'\n\n[a] [b][a] [c][] ![a] ![b][a] ![c][]\n\n"
+        "[link](/l \"t\") [link2](/l2) ![img](/i \"it\") ![img2](/i2) <https://auto.link> www.auto.link a@b.co\n\n"
+        "*em* **strong** ~~del~~ `code` <b>html</b> :d[label]{k=v} :e{k=w} [[cross]] ![[embed]]\n\n"
+        "Foot[^1] and [^2].\n\n[^1]: one\n[^2]: two\n",
+        "| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n\n| x |\n|---|\n\n$$\nx+y\n$$\n\n$$z$$\n\n$$w$$\n\ninline $a+b$ "
+        "and $c$\n\n"
+        "```formula\nE=mc^2\n```\n\n:::note[lbl]{#id .cls "
+        "key=\"v\"}\nbody\n:::\n\n:::warn\nbody\n:::\n\n::::outer\n:::inner{a=b}\nx\n:::\n::::\n",
+        NULL,
+    };
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    size_t capacity = 0;
+    markdown_core_document **documents = NULL;
+    size_t document_count = 0;
+    markdown_core_parse_options options;
+    size_t t;
+    size_t i;
+    size_t j;
+    size_t compared = 0;
+    int result = 0;
+
+    markdown_core_parse_options_init(&options);
+    for (t = 0; texts[t]; t++) {
+        document_count++;
+    }
+    documents = (markdown_core_document **)calloc(document_count, sizeof(*documents));
+    if (!documents) {
+        return -1;
+    }
+    for (t = 0; texts[t]; t++) {
+        markdown_core_error *error = NULL;
+        const markdown_core_node *node;
+        documents[t] = markdown_core_document_new(mc_sv(texts[t], strlen(texts[t])), &options, &error);
+        if (!documents[t]) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "projection_write_agrees: text %zu did not parse\n", t);
+            result = -1;
+            goto done;
+        }
+        node = markdown_core_document_root(documents[t]);
+        while (node) {
+            if (count == capacity) {
+                size_t grown_capacity = capacity ? capacity * 2 : 256;
+                const markdown_core_node **grown =
+                    (const markdown_core_node **)realloc((void *)nodes, grown_capacity * sizeof(*grown));
+                if (!grown) {
+                    result = -1;
+                    goto done;
+                }
+                nodes = grown;
+                capacity = grown_capacity;
+            }
+            nodes[count++] = node;
+            if (markdown_core_node_get_first_child(node)) {
+                node = markdown_core_node_get_first_child(node);
+                continue;
+            }
+            while (node && !markdown_core_node_get_next_sibling(node)) {
+                node = markdown_core_node_get_parent(node);
+            }
+            node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+        }
+    }
+    for (i = 0; i < count && result == 0; i++) {
+        markdown_core_strbuf a = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+        markdown_core_ast_projection_write(nodes[i], &a);
+        if (a.oom) {
+            result = -1;
+        } else if (markdown_core_ast_projection_changed(nodes[i], nodes[i])) {
+            fprintf(stderr, "projection_write_agrees: node %zu differs from itself\n", i);
+            result = -1;
+        }
+        for (j = i + 1; j < count && result == 0; j++) {
+            markdown_core_strbuf b = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+            bool changed;
+            bool equal;
+            if (markdown_core_node_get_kind(nodes[i]) != markdown_core_node_get_kind(nodes[j])) {
+                continue;
+            }
+            markdown_core_ast_projection_write(nodes[j], &b);
+            if (b.oom) {
+                markdown_core_strbuf_free(&b);
+                result = -1;
+                break;
+            }
+            changed = markdown_core_ast_projection_changed(nodes[i], nodes[j]);
+            equal = a.size == b.size && (a.size == 0 || memcmp(a.ptr, b.ptr, (size_t)a.size) == 0);
+            markdown_core_strbuf_free(&b);
+            compared++;
+            if (changed == equal) {
+                fprintf(
+                    stderr,
+                    "projection_write_agrees: two %s nodes (%zu, %zu) are %s by the comparison and %s by their bytes\n",
+                    markdown_core_node_kind_name(markdown_core_node_get_kind(nodes[i])),
+                    i,
+                    j,
+                    changed ? "changed" : "unchanged",
+                    equal ? "equal" : "unequal"
+                );
+                result = -1;
+            }
+        }
+        markdown_core_strbuf_free(&a);
+    }
+    if (result == 0 && (count < 100 || compared < 500)) {
+        fprintf(
+            stderr,
+            "projection_write_agrees: only %zu nodes and %zu pairs — the texts reach too little\n",
+            count,
+            compared
+        );
+        result = -1;
+    }
+    if (result == 0) {
+        printf("projection_write_agrees: %zu nodes, %zu same-kind pairs agree\n", count, compared);
+    }
+done:
+    for (t = 0; t < document_count; t++) {
+        markdown_core_document_free(documents[t]);
+    }
+    free(documents);
+    free((void *)nodes);
+    return result;
+}
+
 /* --- warm_close_undo ------------------------------------------------------- */
 
 /* The claim this milestone cannot afford to be wrong about: a parser can be
@@ -5605,6 +5747,7 @@ static const concrete_case CASES[] = {
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_living_tree", case_warm_tick_living_tree},
     {"warm_identity_pins", case_warm_identity_pins},
+    {"projection_write_agrees", case_projection_write_agrees},
     {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},

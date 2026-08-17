@@ -6,6 +6,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "buffer.h"
 #include "document_internal.h"
 #include "cross_reference.h"
 #include "directive.h"
@@ -1337,6 +1338,152 @@ bool markdown_core_ast_projection_changed(const markdown_core_node *a, const mar
         break;
     }
     return value || text;
+}
+
+/* The same fields, written. One byte says whether a string is present
+ * (the dump distinguishes null from empty), then its length and bytes;
+ * scalars are written as bytes and 64-bit words. Two nodes whose blobs are
+ * equal are nodes markdown_core_ast_projection_changed calls unchanged, and
+ * the concrete runner's projection_write_agrees case holds the two to that
+ * over every node of every fixture. */
+static void projection_view(markdown_core_strbuf *out, markdown_core_string view) {
+    uint64_t length = (uint64_t)view.length;
+    markdown_core_strbuf_putc(out, view.data ? 1 : 0);
+    markdown_core_strbuf_put(out, (const unsigned char *)&length, sizeof(length));
+    if (view.length) {
+        markdown_core_strbuf_put(out, view.data, (markdown_core_bufsize)view.length);
+    }
+}
+
+static void projection_u64(markdown_core_strbuf *out, uint64_t value) {
+    markdown_core_strbuf_put(out, (const unsigned char *)&value, sizeof(value));
+}
+
+bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out) {
+    markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    markdown_core_string v1 = {NULL, 0}, v2 = {NULL, 0}, v3 = {NULL, 0};
+
+    projection_u64(out, (uint64_t)kind);
+    switch (kind) {
+    case MARKDOWN_CORE_KIND_HEADING: {
+        int32_t level = 0;
+        markdown_core_node_heading_level(node, &level);
+        projection_u64(out, (uint64_t)level);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_LIST: {
+        markdown_core_list_flavor flavor;
+        markdown_core_optional_i64 start;
+        bool tight = false;
+        markdown_core_node_list_properties(node, &flavor, &start, &tight);
+        projection_u64(out, (uint64_t)flavor);
+        markdown_core_strbuf_putc(out, tight ? 1 : 0);
+        markdown_core_strbuf_putc(out, start.has_value ? 1 : 0);
+        projection_u64(out, start.has_value ? (uint64_t)start.value : 0);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_LIST_ITEM: {
+        markdown_core_optional_bool checked;
+        markdown_core_node_list_item_checked(node, &checked);
+        markdown_core_strbuf_putc(out, checked.has_value ? 1 : 0);
+        markdown_core_strbuf_putc(out, checked.has_value && checked.value ? 1 : 0);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_CODE_BLOCK: {
+        bool fenced = false, closed = false;
+        markdown_core_node_code_block_properties(node, &v1, &v2, &v3, &fenced, &closed);
+        markdown_core_strbuf_putc(out, fenced ? 1 : 0);
+        markdown_core_strbuf_putc(out, closed ? 1 : 0);
+        projection_view(out, v1);
+        projection_view(out, v2);
+        projection_view(out, v3);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_HTML_BLOCK:
+    case MARKDOWN_CORE_KIND_TEXT:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_CODE:
+        markdown_core_node_literal(node, &v1);
+        projection_view(out, v1);
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE_DEFINITION:
+        markdown_core_node_reference_definition_properties(node, &v1, &v2, &v3);
+        projection_view(out, v1);
+        projection_view(out, v2);
+        projection_view(out, v3);
+        break;
+    case MARKDOWN_CORE_KIND_LINK_REFERENCE:
+    case MARKDOWN_CORE_KIND_IMAGE_REFERENCE: {
+        markdown_core_reference_form form;
+        markdown_core_node_reference_properties(node, &v1, &form);
+        projection_u64(out, (uint64_t)form);
+        projection_view(out, v1);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FORMULA_BLOCK:
+    case MARKDOWN_CORE_KIND_FORMULA: {
+        markdown_core_placement_mode mode;
+        markdown_core_node_formula_properties(node, &mode, &v1);
+        projection_u64(out, (uint64_t)mode);
+        projection_view(out, v1);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_TABLE: {
+        size_t count = 0, i;
+        markdown_core_node_table_column_count(node, &count);
+        projection_u64(out, (uint64_t)count);
+        for (i = 0; i < count; i++) {
+            markdown_core_table_alignment alignment;
+            markdown_core_node_table_alignment_at(node, i, &alignment);
+            projection_u64(out, (uint64_t)alignment);
+        }
+        break;
+    }
+    case MARKDOWN_CORE_KIND_TABLE_ROW: {
+        bool header = false;
+        markdown_core_node_table_row_is_header(node, &header);
+        markdown_core_strbuf_putc(out, header ? 1 : 0);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
+    case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        const char *name = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
+        const char *attributes = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
+        v1.data = (const uint8_t *)name;
+        v1.length = name ? strlen(name) : 0;
+        v2.data = (const uint8_t *)attributes;
+        v2.length = attributes ? strlen(attributes) : 0;
+        projection_view(out, v1);
+        projection_view(out, v2);
+        break;
+    }
+    case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:
+    case MARKDOWN_CORE_KIND_FOOTNOTE_REFERENCE:
+        markdown_core_node_footnote_id(node, &v1);
+        projection_view(out, v1);
+        break;
+    case MARKDOWN_CORE_KIND_CROSS_LINK:
+        markdown_core_node_cross_link_reference(node, &v1);
+        projection_view(out, v1);
+        break;
+    case MARKDOWN_CORE_KIND_EMBED:
+        markdown_core_node_embed_reference(node, &v1);
+        projection_view(out, v1);
+        break;
+    case MARKDOWN_CORE_KIND_LINK:
+        markdown_core_node_link_properties(node, &v1, &v2);
+        projection_view(out, v1);
+        projection_view(out, v2);
+        break;
+    case MARKDOWN_CORE_KIND_IMAGE:
+        markdown_core_node_image_properties(node, &v1, &v2);
+        projection_view(out, v1);
+        projection_view(out, v2);
+        break;
+    default:
+        break;
+    }
+    return !out->oom;
 }
 
 // Depth is input-controlled (nested block quotes nest one node per two input

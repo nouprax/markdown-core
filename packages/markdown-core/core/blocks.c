@@ -2904,6 +2904,7 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
         }
         mem->free(mem, undo->spine[i].content_copy);
         mem->free(mem, undo->spine[i].opaque_copy);
+        mem->free(mem, undo->spine[i].published_projection);
     }
     /* What the close's flips took off their units, and what the retract
      * did: both runs are dead once the caller has paired against them. */
@@ -3291,9 +3292,6 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         node->end_column = entry->end_column;
         node->start_line = entry->start_line;
         node->start_column = entry->start_column;
-        entry->published_type = node->type;
-        entry->published_payload = node->as;
-        entry->published_own_hash = markdown_core_node_stamp_own(node);
         /* A retype that attached an extension (a paragraph turned table)
          * minted a payload the extension frees; a block that had one keeps
          * it and gets its bytes back. */

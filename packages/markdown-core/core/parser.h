@@ -238,17 +238,15 @@ typedef struct markdown_core_warm_open_block {
      * kept below (`content_copy`) and its literal freed at the retract
      * before the value goes back. */
     union markdown_core_node_payload payload;
-    /* What the close PUBLISHED for type and payload, taken at the retract
-     * before the open values go back: the identity step compares the next
-     * publish against it, so a list whose tightness the close recomputes to
-     * the same value keeps its revision, and a paragraph the feed retyped
-     * into a heading takes the tick's. */
-    union markdown_core_node_payload published_payload;
-    uint16_t published_type;
-    /* The fold over the block's own fields as last published, so a payload
-     * that moved BEHIND an extension's pointer — a table counting one more
-     * row — is seen where the union comparison above cannot see it. */
-    uint64_t published_own_hash;
+    /* THE FACADE'S, carried here because the spine is its index: the
+     * block's own projection as this record PUBLISHED it, written as bytes
+     * (extensions/ast.c), so the next publish is compared against it
+     * exactly — a list whose tightness the close recomputes to the same
+     * value keeps its revision, a paragraph the feed retyped into a heading
+     * takes the tick's, a table counting one more row behind its payload
+     * pointer likewise. The engine writes nothing to it and only frees it. */
+    unsigned char *published_projection;
+    size_t published_projection_size;
     /* The youngest child's flags: a blank line at the close writes "ends
      * with a blank line" onto the current block's youngest child, which is
      * a SETTLED node the record would otherwise not hold. */

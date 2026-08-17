@@ -290,6 +290,7 @@ if(MARKDOWN_CORE_STATIC)
               warm_tick_stream
               warm_tick_living_tree
               warm_identity_pins
+              projection_write_agrees
               warm_append_stream
               chain_poison
               capture_growth_ceiling

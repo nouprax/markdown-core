@@ -198,27 +198,49 @@ static void set_parse_error(const markdown_core_parser *parser, markdown_core_er
     );
 }
 
-/* Whether a block's payload union holds plain values and no pointer, so
- * two of them compare byte for byte. A code or HTML block's literal, and an
- * extension's payload, are re-allocated by every close — the same bytes
- * behind a fresh pointer — and compare through the own-fold instead, which
- * reads what they point at. */
-static bool payload_is_plain(const markdown_core_node *node) {
-    if (node->extension) {
-        return false;
+/* THE PUBLISHED PROJECTIONS a record's spine blocks carry: each block's own
+ * projection as this publish shows it, written as bytes by the one
+ * projection definition (markdown_core_ast_projection_write), for the next
+ * tick to compare its next publish against exactly. A block on the spine
+ * is the same object tick after tick, so there is no second node to hand
+ * markdown_core_ast_projection_changed; its past is these bytes. Written
+ * at the end of every build — the first build's close and each tick — so a
+ * lost allocation here is the tick's, not the record's. */
+static bool record_published_projections(markdown_core_warm_undo *record, markdown_core_parser *parser) {
+    size_t i;
+    for (i = 0; i < record->spine_count; i++) {
+        markdown_core_warm_open_block *entry = &record->spine[i];
+        markdown_core_strbuf out;
+        markdown_core_strbuf_init(record->mem, &out, 32);
+        markdown_core_ast_projection_write(entry->node, &out);
+        if (out.oom) {
+            markdown_core_strbuf_free(&out);
+            parser->oom = true;
+            return false;
+        }
+        record->mem->free(record->mem, entry->published_projection);
+        entry->published_projection_size = (size_t)out.size;
+        entry->published_projection = markdown_core_strbuf_detach(&out);
     }
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-    case MARKDOWN_CORE_NODE_BLOCK_QUOTE:
-    case MARKDOWN_CORE_NODE_LIST:
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-    case MARKDOWN_CORE_NODE_PARAGRAPH:
-    case MARKDOWN_CORE_NODE_HEADING:
-    case MARKDOWN_CORE_NODE_THEMATIC_BREAK:
+    return true;
+}
+
+/* Whether a spine block's own projection is other than the one its record
+ * published. */
+static bool published_projection_moved(
+    const markdown_core_warm_open_block *entry,
+    const markdown_core_node *node,
+    markdown_core_strbuf *scratch,
+    bool *lost
+) {
+    markdown_core_strbuf_clear(scratch);
+    markdown_core_ast_projection_write(node, scratch);
+    if (scratch->oom) {
+        *lost = true;
         return true;
-    default:
-        return false;
     }
+    return (size_t)scratch->size != entry->published_projection_size ||
+           (scratch->size && memcmp(scratch->ptr, entry->published_projection, (size_t)scratch->size) != 0);
 }
 
 /* HOW THE FIRST BUILD ENDS (an append ends in its own tick's publish). The
@@ -270,6 +292,10 @@ static bool generation_close(document_generation *generation, markdown_core_erro
             for (child = record->flips[i].unit->first_child; child; child = child->next) {
                 markdown_core_node_stamp_tree(child);
             }
+        }
+        if (!record_published_projections(record, parser)) {
+            set_parse_error(parser, error);
+            return false;
         }
     }
     generation_take_diagnostics(generation, parser);
@@ -347,8 +373,10 @@ static bool document_tick_warm(
     bool ok = false;
     bool revived = false;
     markdown_core_node *leaf_before = NULL;
+    markdown_core_strbuf projection;
     size_t i;
 
+    markdown_core_strbuf_init(generation->mem, &projection, 64);
     generation->undo = NULL;
     /* A leaf paragraph the last close took (nothing but definitions), or
      * replaced (promoted to a formula block), is put back by the retract —
@@ -500,10 +528,12 @@ static bool document_tick_warm(
              * table's count behind its pointer) — a value the last close
              * published too, and the same value keeps the revision. */
             {
-                bool own_changed =
-                    node->type != entry->published_type ||
-                    markdown_core_node_stamp_own(node) != entry->published_own_hash ||
-                    (payload_is_plain(node) && memcmp(&node->as, &entry->published_payload, sizeof(node->as)) != 0);
+                bool lost = false;
+                bool own_changed = published_projection_moved(entry, node, &projection, &lost);
+                if (lost) {
+                    parser->oom = true;
+                    goto done;
+                }
                 changed = changed || own_changed;
                 changed_below = changed_below || changed;
                 if (changed_below) {
@@ -581,12 +611,16 @@ static bool document_tick_warm(
         markdown_core_parser_warm_flipped_free(parser);
         markdown_core_parser_warm_vanished_free(parser);
     }
+    if (!record_published_projections(after, parser)) {
+        goto done;
+    }
     generation_take_diagnostics(generation, parser);
     generation->undo = after;
     after = NULL;
     ok = true;
 
 done:
+    markdown_core_strbuf_free(&projection);
     if (!ok) {
         if (after) {
             set_parse_error(parser, error);
