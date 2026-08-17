@@ -397,13 +397,15 @@ static int workload_adversarial(const bench_options *options) {
  * strides). Every tick is warm; each shape carries the bound its open leaf
  * implies: a bounded leaf must not grow with the document at all (`prose`,
  * `nested_list`, `footnote_dense` — a definition every other line, whose
- * flips reach into settled territory and must not cost it), and a leaf
- * that IS the document grows linearly — one paragraph (`giant_paragraph`,
- * the honest ladder's prose wall), one growing fence (`fence`, whose bytes
- * the record copies at memcpy speed), one paragraph of consecutive
- * definitions (`references_appendix`, harvested whole at every close). The
- * flat bound is slice 8's gate in its per-tick form; the amortized form is
- * the workload below. */
+ * flips reach into settled territory and must not cost it; and `fence`,
+ * one growing fence, whose buffer the close moves into the literal whole
+ * and the retract moves back, and whose record witnesses it by length —
+ * so a leaf that is the document costs the tick nothing per byte it
+ * already holds), and a leaf that IS the document and is re-derived grows
+ * linearly — one paragraph (`giant_paragraph`, the honest ladder's prose
+ * wall), one paragraph of consecutive definitions (`references_appendix`,
+ * harvested whole at every close). The flat bound is slice 8's gate in its
+ * per-tick form; the amortized form is the workload below. */
 
 typedef char *(*append_shape_build)(size_t target, size_t *length);
 
@@ -426,8 +428,9 @@ static char *build_append_fence(size_t target, size_t *length) {
     if (!body) {
         return NULL;
     }
-    /* One growing, never-closed fence: the shape the plan calls memcpy-speed
-     * — the close moves its bytes out and the retract copies them back. */
+    /* One growing, never-closed fence: the close moves its bytes into the
+     * literal and the retract moves them back, so the tick never touches a
+     * byte the fence already holds. */
     input = (char *)malloc(*length + 5);
     if (!input) {
         free(body);
@@ -701,14 +704,16 @@ static int workload_append_baseline(const bench_options *options) {
                   APPEND_BURSTS,
                   APPEND_WARM_TICKS_PER_BURST
               ) != 0;
-    /* Warm, the leaf is the whole fence: linear at memcpy speed. */
+    /* Warm, the leaf is the whole fence, and the tick never copies it: the
+     * buffer moves into the literal and back, and its record witnesses it
+     * by length. Flat. */
     failed |= bench_append_shape(
                   "fence",
                   build_append_fence,
                   options,
-                  BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_WALL_BURSTS,
-                  APPEND_WALL_TICKS_PER_BURST
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
               ) != 0;
     /* Warm, bounded leaf, a definition every other line that flips the
      * unit before it: flat — the flip costs the unit and the depth. */

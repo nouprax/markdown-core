@@ -1380,11 +1380,21 @@ static void projection_view(markdown_core_strbuf *out, markdown_core_string view
     }
 }
 
+/* A GROWING text, witnessed by its length alone: presence and length, no
+ * bytes (markdown_core_ast_projection_witness). */
+static void projection_view_length(markdown_core_strbuf *out, markdown_core_string view) {
+    uint64_t length = (uint64_t)view.length;
+    markdown_core_strbuf_putc(out, view.data ? 1 : 0);
+    markdown_core_strbuf_put(out, (const unsigned char *)&length, sizeof(length));
+}
+
 static void projection_u64(markdown_core_strbuf *out, uint64_t value) {
     markdown_core_strbuf_put(out, (const unsigned char *)&value, sizeof(value));
 }
 
-bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out) {
+/* The one field list behind both writers: exact, or with a block's own
+ * content buffer witnessed by its length. */
+static bool projection_write_fields(const markdown_core_node *node, markdown_core_strbuf *out, bool growing_by_length) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_string v1 = {NULL, 0}, v2 = {NULL, 0}, v3 = {NULL, 0};
 
@@ -1421,10 +1431,23 @@ bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown
         markdown_core_strbuf_putc(out, closed ? 1 : 0);
         projection_view(out, v1);
         projection_view(out, v2);
-        projection_view(out, v3);
+        /* The literal is the block's content buffer, moved whole. */
+        if (growing_by_length) {
+            projection_view_length(out, v3);
+        } else {
+            projection_view(out, v3);
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_HTML_BLOCK:
+        /* Likewise: the literal is the buffer. */
+        markdown_core_node_literal(node, &v1);
+        if (growing_by_length) {
+            projection_view_length(out, v1);
+        } else {
+            projection_view(out, v1);
+        }
+        break;
     case MARKDOWN_CORE_KIND_TEXT:
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_CODE:
@@ -1540,6 +1563,14 @@ bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown
         break;
     }
     return !out->oom;
+}
+
+bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out) {
+    return projection_write_fields(node, out, false);
+}
+
+bool markdown_core_ast_projection_witness(const markdown_core_node *node, markdown_core_strbuf *out) {
+    return projection_write_fields(node, out, true);
 }
 
 // Depth is input-controlled (nested block quotes nest one node per two input

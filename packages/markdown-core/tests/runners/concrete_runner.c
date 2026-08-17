@@ -3448,6 +3448,213 @@ done:
     return result;
 }
 
+/* --- projection_witness_agrees --------------------------------------------- */
+
+/* THE WITNESS IS THE BYTES, for one block across publishes. The record
+ * keeps a spine block's published projection as its witness
+ * (markdown_core_ast_projection_witness): the exact bytes, but a code
+ * block's or an HTML block's literal by its length, on the premise that the
+ * literal is the block's content buffer and the buffer only grows for the
+ * block's life — the close moves it into the literal whole, the retract
+ * moves it back, an indented block's cut trailing blanks come back from the
+ * copy. This holds the premise: streams whose leaf is a fence (with an info
+ * line, with tabs, closed and reopened), an indented block with blank lines
+ * inside and at its end, an HTML block, a formula fence, a table, a
+ * paragraph of definitions, are fed per byte and per line, and after every
+ * append each spine block of the record — the same object, by pointer and
+ * by id — has its exact projection compared with the one it had after the
+ * previous append, and its witness likewise: they must change together. A
+ * fence whose held line moves back wrong, or a retract that lost a byte,
+ * would leave the exact bytes changed and the witness not. */
+static int case_projection_witness_agrees(void) {
+    static const char *const streams[] = {
+        "```c  hello &amp; world\nint main(void) {\n\treturn 0;\n}\n\n```\n\nafter\n\n```\nx\n",
+        "    indented\n\n    more\n    \n\n\n    tail\n\n\nprose\n\n    again\n  \n",
+        "<div>\n<p>html\n\n</p>\n</div>\n\nafter\n\n<!-- comment\nstill\n-->\n",
+        "```formula\nx+y\n\nz\n```\n\n$$\na\n$$\n",
+        "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\n[x]: /u\n[y]: /v \"t\"\n\n[x] and [y]\n",
+        "> ```\n> quoted\n> code\n> ```\n>\n> - item\n>\n>       indented in item\n>\n",
+        "~~~py\nline one\nline two\n\nline four\n  \n~~~\n\n- item\n\n      code in item\n      more\n\n  tail\n",
+        "<pre>\nkept\n  spaces\n\n</pre>\n<table>\n<tr>\n</table>\n\n````\n```\nnot closed\n````\n",
+        NULL,
+    };
+    /* One entry per spine block seen: what it was after the previous
+     * append. Keyed by pointer AND id — an id is never reused, so a freed
+     * block's address coming back as a new one pairs nothing. */
+    struct seen {
+        const markdown_core_node *node;
+        markdown_core_node_id id;
+        unsigned char *exact;
+        size_t exact_size;
+        unsigned char *witness;
+        size_t witness_size;
+        bool alive;
+    } *seen = NULL;
+    size_t seen_count = 0;
+    size_t seen_capacity = 0;
+    size_t compared = 0;
+    size_t moved = 0;
+    size_t t;
+    int result = 0;
+
+    for (t = 0; streams[t] && result == 0; t++) {
+        size_t mode;
+        for (mode = 0; mode < 2 && result == 0; mode++) {
+            markdown_core_parse_options options;
+            markdown_core_error *error = NULL;
+            markdown_core_document *document;
+            const char *text = streams[t];
+            size_t length = strlen(text);
+            size_t offset = 0;
+            size_t k;
+
+            markdown_core_parse_options_init(&options);
+            options.formulas = true;
+            document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+            if (!document) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "projection_witness_agrees: open failed\n");
+                result = -1;
+                break;
+            }
+            for (k = 0; k < seen_count; k++) {
+                free(seen[k].exact);
+                free(seen[k].witness);
+            }
+            seen_count = 0;
+            while (offset < length && result == 0) {
+                size_t step = 1;
+                markdown_core_document *successor;
+                const markdown_core_warm_undo *record;
+                size_t i;
+                if (mode == 1) {
+                    while (offset + step < length && text[offset + step - 1] != '\n') {
+                        step++;
+                    }
+                }
+                successor = markdown_core_document_append(document, mc_sv(text + offset, step), &error);
+                if (!successor) {
+                    markdown_core_error_free(error);
+                    fprintf(stderr, "projection_witness_agrees: stream %zu append at %zu failed\n", t, offset);
+                    result = -1;
+                    break;
+                }
+                markdown_core_document_free(document);
+                document = successor;
+                offset += step;
+                record = document->chain->head.undo;
+                for (k = 0; k < seen_count; k++) {
+                    seen[k].alive = false;
+                }
+                for (i = 0; record && i < record->spine_count && result == 0; i++) {
+                    const markdown_core_node *node = record->spine[i].node;
+                    markdown_core_node_id id = markdown_core_node_get_id(node);
+                    markdown_core_strbuf exact = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                    markdown_core_strbuf witness = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                    struct seen *entry = NULL;
+                    if (id == 0) {
+                        continue;
+                    }
+                    markdown_core_ast_projection_write(node, &exact);
+                    markdown_core_ast_projection_witness(node, &witness);
+                    if (exact.oom || witness.oom) {
+                        markdown_core_strbuf_free(&exact);
+                        markdown_core_strbuf_free(&witness);
+                        result = -1;
+                        break;
+                    }
+                    for (k = 0; k < seen_count; k++) {
+                        if (seen[k].node == node && seen[k].id == id) {
+                            entry = &seen[k];
+                            break;
+                        }
+                    }
+                    if (entry) {
+                        bool exact_same = entry->exact_size == (size_t)exact.size &&
+                                          (exact.size == 0 || memcmp(entry->exact, exact.ptr, (size_t)exact.size) == 0);
+                        bool witness_same =
+                            entry->witness_size == (size_t)witness.size &&
+                            (witness.size == 0 || memcmp(entry->witness, witness.ptr, (size_t)witness.size) == 0);
+                        compared++;
+                        moved += exact_same ? 0 : 1;
+                        if (exact_same != witness_same) {
+                            fprintf(
+                                stderr,
+                                "projection_witness_agrees: stream %zu (%s) at byte %zu: %s id %llu is %s by its exact "
+                                "projection and %s by its witness\n",
+                                t,
+                                mode ? "per line" : "per byte",
+                                offset,
+                                markdown_core_node_kind_name(markdown_core_node_get_kind(node)),
+                                (unsigned long long)id,
+                                exact_same ? "unchanged" : "changed",
+                                witness_same ? "unchanged" : "changed"
+                            );
+                            result = -1;
+                        }
+                        free(entry->exact);
+                        free(entry->witness);
+                    } else {
+                        if (seen_count == seen_capacity) {
+                            size_t grown_capacity = seen_capacity ? seen_capacity * 2 : 16;
+                            struct seen *grown = (struct seen *)realloc(seen, grown_capacity * sizeof(*grown));
+                            if (!grown) {
+                                markdown_core_strbuf_free(&exact);
+                                markdown_core_strbuf_free(&witness);
+                                result = -1;
+                                break;
+                            }
+                            seen = grown;
+                            seen_capacity = grown_capacity;
+                        }
+                        entry = &seen[seen_count++];
+                        entry->node = node;
+                        entry->id = id;
+                    }
+                    entry->alive = true;
+                    entry->exact_size = (size_t)exact.size;
+                    entry->exact = markdown_core_strbuf_detach(&exact);
+                    entry->witness_size = (size_t)witness.size;
+                    entry->witness = markdown_core_strbuf_detach(&witness);
+                    if (!entry->exact || !entry->witness) {
+                        result = -1;
+                    }
+                }
+                /* A block that left the spine is closed for good; its record
+                 * is done with. */
+                for (k = 0; k < seen_count;) {
+                    if (!seen[k].alive) {
+                        free(seen[k].exact);
+                        free(seen[k].witness);
+                        seen[k] = seen[--seen_count];
+                    } else {
+                        k++;
+                    }
+                }
+            }
+            markdown_core_document_free(document);
+        }
+    }
+    for (t = 0; t < seen_count; t++) {
+        free(seen[t].exact);
+        free(seen[t].witness);
+    }
+    free(seen);
+    if (result == 0 && (compared < 400 || moved < 100)) {
+        fprintf(
+            stderr,
+            "projection_witness_agrees: only %zu comparisons and %zu moves — the streams reach too little\n",
+            compared,
+            moved
+        );
+        result = -1;
+    }
+    if (result == 0) {
+        printf("projection_witness_agrees: %zu spine-block comparisons, %zu moved, witness agrees\n", compared, moved);
+    }
+    return result;
+}
+
 /* --- warm_close_undo ------------------------------------------------------- */
 
 /* The claim this milestone cannot afford to be wrong about: a parser can be
@@ -5856,6 +6063,7 @@ static const concrete_case CASES[] = {
     {"warm_tick_living_tree", case_warm_tick_living_tree},
     {"warm_identity_pins", case_warm_identity_pins},
     {"projection_write_agrees", case_projection_write_agrees},
+    {"projection_witness_agrees", case_projection_witness_agrees},
     {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},

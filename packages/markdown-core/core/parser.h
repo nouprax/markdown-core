@@ -240,11 +240,13 @@ typedef struct markdown_core_warm_open_block {
     union markdown_core_node_payload payload;
     /* THE FACADE'S, carried here because the spine is its index: the
      * block's own projection as this record PUBLISHED it, written as bytes
-     * (extensions/ast.c), so the next publish is compared against it
-     * exactly — a list whose tightness the close recomputes to the same
-     * value keeps its revision, a paragraph the feed retyped into a heading
-     * takes the tick's, a table counting one more row behind its payload
-     * pointer likewise. The engine writes nothing to it and only frees it. */
+     * (extensions/ast.c; a moved content buffer by its length, which is
+     * what MARKDOWN_CORE_WARM_CONTENT_MOVED below guarantees suffices), so
+     * the next publish is compared against it — a list whose tightness the
+     * close recomputes to the same value keeps its revision, a paragraph
+     * the feed retyped into a heading takes the tick's, a table counting
+     * one more row behind its payload pointer likewise. The engine writes
+     * nothing to it and only frees it. */
     unsigned char *published_projection;
     size_t published_projection_size;
     /* The youngest child's flags: a blank line at the close writes "ends
