@@ -145,15 +145,23 @@ static void diff_stack_release(diff_stack *stack) {
     stack->capacity = 0;
 }
 
-// THE ALIGNMENT'S BUDGET, in table cells. The middle the sweeps leave is
-// aligned by a longest common subsequence over identical subtrees when its
-// table fits this many cells, and pairs positionally alone when it does not.
-// A frame's alignment then costs at most this many cell steps on top of the
-// walk of its runs, and the tick's bound stays what the plan asks for: linear
-// in the frontier, not squared at the wall. Runs are the children of one
-// block; a middle wider than 64 × 64 identical-subtree candidates is a run
-// rewritten wholesale, where an alignment has little left to find.
-#define DIFF_ALIGN_BUDGET 4096
+// THE ALIGNMENT COSTS THE CHANGE, NOT THE RUN. The middle the sweeps leave
+// is aligned by Myers' greedy diff over identical subtrees: it walks the
+// edit graph outward by EDIT DISTANCE, so two sides that differ by D
+// elementary edits are aligned in O((m + n) · D) whatever m and n are —
+// and a stream's middle differs by a handful of edits however long the
+// paragraph is. A table over the middle would have been O(m · n), which for
+// a paragraph of 32 lines already costs more than the parse that produced
+// it, so identity would have quietly depended on the paragraph's length.
+//
+// Two bounds keep the tick honest: a distance past DIFF_ALIGN_MAX_EDITS is
+// a run rewritten rather than edited, and a frame never spends more than
+// DIFF_ALIGN_WORK subtree compares (which also bounds the arrays the walk
+// needs). Past either, the middle pairs positionally, as it did before
+// there was an alignment.
+#define DIFF_ALIGN_MAX_EDITS 64
+#define DIFF_ALIGN_WORK (1 << 17)
+#define DIFF_ALIGN_ROW (2 * DIFF_ALIGN_MAX_EDITS + 1)
 
 static bool same_subtree(const markdown_core_node *a, const markdown_core_node *b) {
     return a->type == b->type && a->subtree_hash == b->subtree_hash;
@@ -176,20 +184,23 @@ static uint32_t gap_positional_pairs(
     return (uint32_t)i;
 }
 
-// The scratch an alignment of an m × n middle works in: the two runs as
-// arrays, the anchor pairs it answers (old index, new index — before the
-// table, so both stay aligned), and the table itself.
+// The scratch one alignment works in: the two runs as arrays, the walk's
+// frontier (the furthest old index reached on each diagonal), that frontier
+// as it stood at every distance so the path can be walked back, and the
+// SNAKES the path is made of — runs of identical subtrees, {old index, new
+// index, length}, at most one more than the distance.
 typedef struct diff_align {
     markdown_core_node **olds;
     markdown_core_node **news;
-    uint32_t *anchors;
-    uint16_t *table;
+    int32_t *v;       // indexed [k + DIFF_ALIGN_MAX_EDITS]
+    int32_t *trace;   // row d at trace + d * DIFF_ALIGN_ROW
+    uint32_t *snakes; // three per snake, in document order
 } diff_align;
 
 static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, diff_align *out) {
-    size_t fewer = m < n ? m : n;
-    size_t need =
-        (m + n) * sizeof(markdown_core_node *) + fewer * 2 * sizeof(uint32_t) + (m + 1) * (n + 1) * sizeof(uint16_t);
+    size_t need = (m + n) * sizeof(markdown_core_node *) +
+                  (size_t)(DIFF_ALIGN_ROW + (DIFF_ALIGN_MAX_EDITS + 1) * DIFF_ALIGN_ROW) * sizeof(int32_t) +
+                  (size_t)(DIFF_ALIGN_MAX_EDITS + 2) * 3 * sizeof(uint32_t);
     if (need > ctx->scratch_capacity) {
         void *grown = ctx->mem->realloc(ctx->mem, ctx->scratch, need);
         if (!grown) {
@@ -201,60 +212,107 @@ static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, diff_align *out) {
     }
     out->olds = (markdown_core_node **)ctx->scratch;
     out->news = out->olds + m;
-    out->anchors = (uint32_t *)(out->news + n);
-    out->table = (uint16_t *)(out->anchors + fewer * 2);
+    out->v = (int32_t *)(out->news + n);
+    out->trace = out->v + DIFF_ALIGN_ROW;
+    out->snakes = (uint32_t *)(out->trace + (DIFF_ALIGN_MAX_EDITS + 1) * DIFF_ALIGN_ROW);
     return true;
 }
 
-// Aligns an m × n middle: answers the number of anchors, written into
-// `align->anchors` as (old, new) index pairs in order. The LCS is over
-// identical subtrees, and its length is at most min(m, n) ≤ 64 under the
-// budget, so a 16-bit table cell holds it.
-static size_t align_middle(diff_align *align, markdown_core_node *o, markdown_core_node *w, size_t m, size_t n) {
-    size_t width = n + 1;
+// Aligns an m × n middle within `max_edits`: answers how many snakes the
+// path is made of, written into `align->snakes` in document order, or 0
+// when the two sides differ by more than that.
+//
+// The walk extends every snake as far as it goes before spending another
+// edit, which is what makes a subtree with several identical candidates —
+// every soft break hashes the same, so does a repeated word — pair with the
+// EARLIEST one: a run grows at its end, so the change the sweeps could not
+// reach is a flip at the front, and the trailing gap must be left holding
+// the node being typed into against what it became. Paired with a later
+// candidate instead, the growing text's id hops onto the line after it.
+static size_t align_middle(
+    diff_align *align,
+    markdown_core_node *o,
+    markdown_core_node *w,
+    size_t m,
+    size_t n,
+    size_t max_edits
+) {
+    int32_t *v = align->v + DIFF_ALIGN_MAX_EDITS;
+    size_t d;
     size_t i;
-    size_t j;
-    size_t k;
+    int32_t k;
+
     for (i = 0; i < m; i++, o = o->next) {
         align->olds[i] = o;
     }
-    for (j = 0; j < n; j++, w = w->next) {
-        align->news[j] = w;
+    for (i = 0; i < n; i++, w = w->next) {
+        align->news[i] = w;
     }
-    for (j = 0; j <= n; j++) {
-        align->table[j] = 0;
-    }
-    for (i = 1; i <= m; i++) {
-        align->table[i * width] = 0;
-        for (j = 1; j <= n; j++) {
-            if (same_subtree(align->olds[i - 1], align->news[j - 1])) {
-                align->table[i * width + j] = (uint16_t)(align->table[(i - 1) * width + j - 1] + 1);
+    v[1] = 0;
+    for (d = 0; d <= max_edits; d++) {
+        for (k = -(int32_t)d; k <= (int32_t)d; k += 2) {
+            int32_t x;
+            int32_t y;
+            // Reach diagonal k by the cheaper of the two moves that lead to
+            // it: down the diagonal above (a new child inserted) or right
+            // from the one below (an old child retired).
+            if (k == -(int32_t)d || (k != (int32_t)d && v[k - 1] < v[k + 1])) {
+                x = v[k + 1];
             } else {
-                uint16_t up = align->table[(i - 1) * width + j];
-                uint16_t left = align->table[i * width + j - 1];
-                align->table[i * width + j] = up > left ? up : left;
+                x = v[k - 1] + 1;
+            }
+            y = x - k;
+            while (x < (int32_t)m && y < (int32_t)n && same_subtree(align->olds[x], align->news[y])) {
+                x++;
+                y++;
+            }
+            v[k] = x;
+            align->trace[d * DIFF_ALIGN_ROW + k + DIFF_ALIGN_MAX_EDITS] = x;
+            if (x < (int32_t)m || y < (int32_t)n) {
+                continue;
+            }
+            // Both sides are consumed: walk the path back, writing its
+            // snakes last to first into the end of the array, then move
+            // them to its front.
+            {
+                size_t room = d + 1;
+                size_t written = 0;
+                int32_t px = (int32_t)m;
+                int32_t py = (int32_t)n;
+                size_t back;
+                for (back = d; back > 0; back--) {
+                    const int32_t *prev = align->trace + (back - 1) * DIFF_ALIGN_ROW + DIFF_ALIGN_MAX_EDITS;
+                    int32_t here = px - py;
+                    int32_t from =
+                        (here == -(int32_t)back || (here != (int32_t)back && prev[here - 1] < prev[here + 1]))
+                            ? here + 1
+                            : here - 1;
+                    int32_t prev_x = prev[from];
+                    int32_t prev_y = prev_x - from;
+                    int32_t snake_x = from == here + 1 ? prev_x : prev_x + 1;
+                    if (px > snake_x) {
+                        uint32_t *snake = align->snakes + 3 * (room - ++written);
+                        snake[0] = (uint32_t)snake_x;
+                        snake[1] = (uint32_t)(snake_x - here);
+                        snake[2] = (uint32_t)(px - snake_x);
+                    }
+                    px = prev_x;
+                    py = prev_y;
+                }
+                if (px > 0) {
+                    uint32_t *snake = align->snakes + 3 * (room - ++written);
+                    snake[0] = 0;
+                    snake[1] = 0;
+                    snake[2] = (uint32_t)px;
+                }
+                if (written && room > written) {
+                    memmove(align->snakes, align->snakes + 3 * (room - written), written * 3 * sizeof(uint32_t));
+                }
+                return written;
             }
         }
     }
-    // Backtrack, writing the anchors last to first.
-    k = align->table[m * width + n];
-    i = m;
-    j = n;
-    while (k > 0) {
-        if (same_subtree(align->olds[i - 1], align->news[j - 1]) &&
-            align->table[i * width + j] == (uint16_t)(align->table[(i - 1) * width + j - 1] + 1)) {
-            k--;
-            align->anchors[2 * k] = (uint32_t)(i - 1);
-            align->anchors[2 * k + 1] = (uint32_t)(j - 1);
-            i--;
-            j--;
-        } else if (align->table[(i - 1) * width + j] >= align->table[i * width + j - 1]) {
-            i--;
-        } else {
-            j--;
-        }
-    }
-    return align->table[m * width + n];
+    return 0;
 }
 
 // Pushes a frame and computes its pairing plan over two child runs. `old`
@@ -278,13 +336,13 @@ static bool diff_plan(
     markdown_core_node *w_end;
     diff_frame *frame;
     diff_step *steps;
-    diff_align align = {NULL, NULL, NULL, NULL};
+    diff_align align = {NULL, NULL, NULL, NULL, NULL};
     size_t pairable;
     size_t prefix = 0;
     size_t suffix = 0;
     size_t middle_old;
     size_t middle_new;
-    size_t anchors = 0;
+    size_t snakes = 0;
     size_t step_count;
     size_t at;
     size_t k;
@@ -339,25 +397,29 @@ static bool diff_plan(
     middle_new = n_new - prefix - suffix;
 
     // WHAT THE SWEEPS LEAVE IS ALIGNED, THEN PAIRED. A change at both ends
-    // of one run — a definition flip inserting a node in the middle while
-    // the tail grew in the same chunk — leaves neither sweep any budget, and
-    // a middle paired positionally alone would mint every unchanged sibling
+    // of one run — a definition flip inserting a node at its front while the
+    // tail grew in the same chunk — leaves neither sweep any budget, and a
+    // middle paired positionally alone would mint every unchanged sibling
     // past the first kind change afresh, so that the same bytes kept every
     // id when the two changes came in different ticks and lost them when
-    // they came in one. So the middle's identical subtrees are anchored
-    // first, by a longest common subsequence over (type, hash) under the
-    // budget, and what lies between anchors pairs positionally by raw type
-    // from its start for as far as the types agree — a node whose own text
-    // changed keeps its identity, a KIND change is a genuine retirement
-    // (5.2) — and the residue retires or is minted.
-    if (middle_old > 0 && middle_new > 0 && middle_old * middle_new <= DIFF_ALIGN_BUDGET) {
+    // they came in one. So the middle's identical subtrees are matched first
+    // (over type and hash, by edit distance), and what lies between the
+    // matches pairs positionally by raw type from its start for as far as
+    // the types agree — a node whose own text changed keeps its identity, a
+    // KIND change is a genuine retirement (5.2) — and the residue retires or
+    // is minted.
+    if (middle_old > 0 && middle_new > 0 && middle_old + middle_new <= DIFF_ALIGN_WORK) {
+        size_t max_edits = DIFF_ALIGN_WORK / (middle_old + middle_new);
+        if (max_edits > DIFF_ALIGN_MAX_EDITS) {
+            max_edits = DIFF_ALIGN_MAX_EDITS;
+        }
         if (!align_scratch(ctx, middle_old, middle_new, &align)) {
             return false;
         }
-        anchors = align_middle(&align, o, w, middle_old, middle_new);
+        snakes = align_middle(&align, o, w, middle_old, middle_new, max_edits);
     }
 
-    step_count = 3 + 2 * anchors;
+    step_count = 3 + 2 * snakes;
     frame = &stack->frames[stack->length++];
     memset(frame, 0, sizeof(*frame));
     frame->old = old;
@@ -375,15 +437,15 @@ static bool diff_plan(
     steps = frame_steps(frame);
     frame->step_count = step_count;
     steps[0].pairs = (uint32_t)prefix;
-    // The middle: a gap before each anchor, the anchor, and the gap after the
+    // The middle: a gap before each snake, the snake, and the gap after the
     // last — each gap paired positionally from its start.
     at = 1;
     {
         size_t oi = 0;
         size_t wi = 0;
-        for (k = 0; k <= anchors; k++) {
-            size_t gap_old = (k < anchors ? align.anchors[2 * k] : middle_old) - oi;
-            size_t gap_new = (k < anchors ? align.anchors[2 * k + 1] : middle_new) - wi;
+        for (k = 0; k <= snakes; k++) {
+            size_t gap_old = (k < snakes ? align.snakes[3 * k] : middle_old) - oi;
+            size_t gap_new = (k < snakes ? align.snakes[3 * k + 1] : middle_new) - wi;
             uint32_t p = gap_positional_pairs(o, w, gap_old, gap_new);
             size_t step;
             steps[at].pairs = p;
@@ -401,13 +463,16 @@ static bool diff_plan(
             }
             oi += gap_old;
             wi += gap_new;
-            if (k < anchors) {
-                steps[at].pairs = 1;
+            if (k < snakes) {
+                size_t length = align.snakes[3 * k + 2];
+                steps[at].pairs = (uint32_t)length;
                 at++;
-                o = o->next;
-                w = w->next;
-                oi++;
-                wi++;
+                for (step = 0; step < length; step++) {
+                    o = o->next;
+                    w = w->next;
+                }
+                oi += length;
+                wi += length;
             }
         }
     }

@@ -3132,11 +3132,23 @@ static int case_warm_tick_living_tree(void) {
  * definition streams in byte by byte lost their ids in the reviews. So each
  * scenario here names a node by kind and the append it must be stable
  * from, and its id is read after every append and compared. */
-/* The first node of `kind` in document order, or NULL. */
-static const markdown_core_node *wip_first_of_kind(const markdown_core_node *node, markdown_core_node_kind kind) {
+/* The first node of `kind` in document order — whose literal begins with
+ * `literal` when that is given — or NULL. */
+static const markdown_core_node *wip_first_of_kind(
+    const markdown_core_node *node,
+    markdown_core_node_kind kind,
+    const char *literal
+) {
     while (node) {
         if (markdown_core_node_get_kind(node) == kind) {
-            return node;
+            markdown_core_string text = {NULL, 0};
+            if (!literal) {
+                return node;
+            }
+            markdown_core_node_literal(node, &text);
+            if (text.data && text.length >= strlen(literal) && memcmp(text.data, literal, strlen(literal)) == 0) {
+                return node;
+            }
         }
         if (markdown_core_node_get_first_child(node)) {
             node = markdown_core_node_get_first_child(node);
@@ -3157,6 +3169,7 @@ static int case_warm_identity_pins(void) {
         size_t stable_from; /* the append after which the id must not move */
         bool formulas;
         const char *why;
+        const char *literal; /* names the node among its kind: the first whose literal begins so */
     } scenarios[] = {
         {{"$$x$$\n", "\n", "after\n", NULL},
          MARKDOWN_CORE_KIND_FORMULA_BLOCK,
@@ -3235,6 +3248,36 @@ static int case_warm_identity_pins(void) {
          1,
          false,
          "two definitions in one chunk flip both ends of a settled paragraph; the sibling between keeps its id"},
+        {{"[a] x\ny\nz", " q\nw\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the text being typed into keeps its id through a both-ends tick whose middle holds identical soft breaks: "
+         "the alignment anchors leftmost, so the trailing gap pairs 'z' with 'z q' and not with the next line",
+         "z"},
+        {{"[^1] x\nb\nc", "d\ne\n\n[^1]: note\n", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the same, for a footnote reference flipping at the front",
+         "c"},
+        {{"'a\nb\nc", "x'\nd", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the same, when the front changes without any node being retired — a closing quote re-curls the opening "
+         "one — and the tail grows in the same tick",
+         "c"},
+        {{"[a] *b* c\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc"
+          "\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc",
+          "\nd\n\n[a]: /u\n",
+          NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a both-ends tick over a FORTY-LINE paragraph: the alignment walks the edit distance, so identity does not "
+         "depend on how wide the run is",
+         NULL},
     };
     size_t i;
 
@@ -3269,7 +3312,7 @@ static int case_warm_identity_pins(void) {
             if (step + 1 < scenarios[i].stable_from) {
                 continue;
             }
-            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind);
+            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind, scenarios[i].literal);
             if (!found) {
                 fprintf(
                     stderr,
@@ -3466,6 +3509,25 @@ done:
  * previous append, and its witness likewise: they must change together. A
  * fence whose held line moves back wrong, or a retract that lost a byte,
  * would leave the exact bytes changed and the witness not. */
+/* The node carrying `id` in the tree under `root`, or NULL. */
+static const markdown_core_node *pwa_find_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    while (node) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return NULL;
+}
+
 static int case_projection_witness_agrees(void) {
     static const char *const streams[] = {
         "```c  hello &amp; world\nint main(void) {\n\treturn 0;\n}\n\n```\n\nafter\n\n```\nx\n",
@@ -3620,10 +3682,52 @@ static int case_projection_witness_agrees(void) {
                         result = -1;
                     }
                 }
-                /* A block that left the spine is closed for good; its record
-                 * is done with. */
-                for (k = 0; k < seen_count;) {
+                /* A block that left the spine on this tick — the chunk
+                 * closed it — is compared by the engine on exactly this
+                 * tick, against its record, so it is compared here too: by
+                 * id, in the tree as it stands (a leaf that vanished or was
+                 * replaced is not in it, and pairs by the frontier's exact
+                 * comparison, not by witness). Then its record is done with. */
+                for (k = 0; k < seen_count && result == 0;) {
                     if (!seen[k].alive) {
+                        const markdown_core_node *closed =
+                            pwa_find_by_id(markdown_core_document_root(document), seen[k].id);
+                        if (closed) {
+                            markdown_core_strbuf exact = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                            markdown_core_strbuf witness = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                            bool exact_same;
+                            bool witness_same;
+                            markdown_core_ast_projection_write(closed, &exact);
+                            markdown_core_ast_projection_witness(closed, &witness);
+                            if (exact.oom || witness.oom) {
+                                result = -1;
+                            }
+                            exact_same = seen[k].exact_size == (size_t)exact.size &&
+                                         (exact.size == 0 || memcmp(seen[k].exact, exact.ptr, (size_t)exact.size) == 0);
+                            witness_same =
+                                seen[k].witness_size == (size_t)witness.size &&
+                                (witness.size == 0 || memcmp(seen[k].witness, witness.ptr, (size_t)witness.size) == 0);
+                            markdown_core_strbuf_free(&exact);
+                            markdown_core_strbuf_free(&witness);
+                            compared++;
+                            moved += exact_same ? 0 : 1;
+                            if (exact_same != witness_same) {
+                                fprintf(
+                                    stderr,
+                                    "projection_witness_agrees: stream %zu (%s) at byte %zu: %s id %llu, closed by "
+                                    "this "
+                                    "append, is %s by its exact projection and %s by its witness\n",
+                                    t,
+                                    mode ? "per line" : "per byte",
+                                    offset,
+                                    markdown_core_node_kind_name(markdown_core_node_get_kind(closed)),
+                                    (unsigned long long)seen[k].id,
+                                    exact_same ? "unchanged" : "changed",
+                                    witness_same ? "unchanged" : "changed"
+                                );
+                                result = -1;
+                            }
+                        }
                         free(seen[k].exact);
                         free(seen[k].witness);
                         seen[k] = seen[--seen_count];

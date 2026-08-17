@@ -840,6 +840,41 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     return !is_blank(&b->content, 0);
 }
 
+/* THE BYTES GET ONE HOME. A block whose literal is its own content buffer —
+ * code, HTML — publishes the buffer ITSELF while the close that made it can
+ * still be taken back (a stream's every close, markdown_core_parser_warm_publish):
+ * the literal borrows the buffer, which keeps its bytes and its capacity,
+ * and the retract hands the borrow back. Nothing is copied and nothing is
+ * reallocated, so a fence a stream grows costs its tick nothing per byte it
+ * already holds — where detaching the buffer and copying it back cost two
+ * passes over the whole block, and even reattaching it cost one reallocation
+ * per tick, since a detached chunk cannot say how much room it has.
+ *
+ * A FINAL close — one the feed makes mid-chunk, or the terminal
+ * markdown_core_parser_finish — detaches the buffer as it always did: nothing
+ * will put it back, and a borrow would leave two owners of one allocation.
+ * (A borrow that outlives its buffer is the caller's to take ownership of,
+ * which is what markdown_core_node_own_chunks does for a retired subtree.) */
+static markdown_core_chunk literal_of_content(markdown_core_parser *parser, markdown_core_strbuf *content) {
+    markdown_core_chunk literal;
+
+    if (!parser->retractable_close) {
+        literal = markdown_core_chunk_buf_detach(content);
+        if (!literal.data) {
+            parser->oom = true;
+        }
+        return literal;
+    }
+    if (content->oom) {
+        /* The buffer lost bytes; the parse is over either way. */
+        parser->oom = true;
+    }
+    literal.data = content->ptr;
+    literal.len = content->size;
+    literal.alloc = 0;
+    return literal;
+}
+
 static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *item;
     markdown_core_node *subitem;
@@ -894,24 +929,18 @@ static markdown_core_node *finalize(markdown_core_parser *parser, markdown_core_
 
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
         /* The content is the code: a fenced block's info was minted at its
-         * open and its fence line never entered the buffer, so the buffer
-         * moves into the literal whole. An indented block's trailing blank
-         * lines are cut first — they belong to no line of code. */
+         * open and its fence line never entered the buffer, so the buffer IS
+         * the literal. An indented block's trailing blank lines are cut
+         * first — they belong to no line of code. */
         if (!b->as.code.fenced) { // indented code
             remove_trailing_blank_lines(node_content);
             markdown_core_strbuf_putc(node_content, '\n');
         }
-        b->as.code.literal = markdown_core_chunk_buf_detach(node_content);
-        if (!b->as.code.literal.data) {
-            parser->oom = true;
-        }
+        b->as.code.literal = literal_of_content(parser, node_content);
         break;
 
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        b->as.literal = markdown_core_chunk_buf_detach(node_content);
-        if (!b->as.literal.data) {
-            parser->oom = true;
-        }
+        b->as.literal = literal_of_content(parser, node_content);
         break;
 
     case MARKDOWN_CORE_NODE_LIST: { // determine tight/loose status
@@ -3044,7 +3073,10 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
     {
         undo->definitions = parser->refmap ? parser->refmap->size : 0;
         undo->footnotes = parser->footnote_defs ? parser->footnote_defs->size : 0;
+        /* This close is the one the next tick takes back (parser.h). */
+        parser->retractable_close = true;
         markdown_core_parser_finalize_blocks(parser);
+        parser->retractable_close = false;
         /* The close took the leaf paragraph — nothing but definitions — and
          * the record keeps it, with the sibling it followed, to put back.
          * (What the feed took stays on the parser's list for the caller.) */
@@ -3334,32 +3366,32 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         node->type = entry->type;
         switch (entry->content) {
         case MARKDOWN_CORE_WARM_CONTENT_MOVED: {
-            /* The close moved the buffer whole into the literal — after the
-             * held line had gone onto its end, and, for an indented block,
-             * with its trailing blank lines cut and a newline put — so the
-             * literal is the buffer as it was, then what the close added,
-             * and it MOVES BACK: the chunk's bytes become the buffer again,
-             * cut to the size the record saw, and an indented block's cut
-             * blank lines go back on the end from the copy. Nothing is
-             * copied but those; a fence a stream grows costs its tick
-             * nothing per byte it already holds. */
+            /* The close published the buffer as the block's literal (see
+             * literal_of_content): the borrow is dropped — or a copy a
+             * reader materialized out of it is freed — and the buffer,
+             * which never went anywhere, is cut back to the size the record
+             * saw, so the held line's bytes go. An indented block's trailing
+             * blank lines, which its close cut before putting a newline,
+             * come back from the record's only copy. */
             markdown_core_chunk *literal =
                 S_type(node) == MARKDOWN_CORE_NODE_CODE_BLOCK ? &node->as.code.literal : &node->as.literal;
             markdown_core_bufsize kept = entry->content_size - entry->content_copy_size;
-            if (!literal->alloc || !literal->data || literal->len < kept) {
-                /* Not the buffer the close moved: the parser is not where
-                 * it was, and its sticky bit says so — the caller's tick
-                 * fails, and with it the chain. */
+            if (literal->alloc) {
+                markdown_core_chunk_free(markdown_core_node_mem(node), literal);
+            } else if (literal->data && literal->data != node->content.ptr) {
+                /* Neither the buffer nor a copy of it: the parser is not
+                 * where it was, and its sticky bit says so — the caller's
+                 * tick fails, and with it the chain. */
                 parser->internal_error = true;
                 return false;
             }
-            markdown_core_strbuf_free(&node->content);
-            node->content.ptr = literal->data;
-            node->content.size = literal->len;
-            node->content.asize = literal->len + 1;
             literal->data = NULL;
             literal->len = 0;
             literal->alloc = 0;
+            if (node->content.size < kept) {
+                parser->internal_error = true;
+                return false;
+            }
             markdown_core_strbuf_truncate(&node->content, kept);
             if (entry->content_copy_size) {
                 markdown_core_strbuf_put(&node->content, entry->content_copy, entry->content_copy_size);

@@ -93,6 +93,15 @@ struct markdown_core_parser {
      * already finalized. The line completes with consistent structure and
      * S_process_line folds this into `oom` at the line boundary. */
     bool capture_lost;
+    /* Whether the close now running can be RETRACTED. A stream's publish
+     * closes the open spine to show it and takes it back at the next tick,
+     * so a block whose literal is its own content buffer (code, HTML)
+     * publishes the buffer itself — the literal borrows it, and the retract
+     * hands the borrow back, copying and reallocating nothing. A close the
+     * FEED makes, or the terminal one markdown_core_parser_finish makes, is
+     * final: it detaches the buffer, because nothing will put it back. Set
+     * only around markdown_core_parser_warm_publish's close. */
+    bool retractable_close;
     /* Sticky engine-invariant failure. This is separate from allocation loss
      * so facade callers can report MARKDOWN_CORE_ERROR_INTERNAL rather than
      * misclassifying a broken refinement lifecycle as OOM. */
