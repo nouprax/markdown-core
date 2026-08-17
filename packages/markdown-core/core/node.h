@@ -206,14 +206,10 @@ uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value);
  * sample of both ends, never every byte — see the note on `subtree_hash`. */
 uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length);
 
-/** Stamps `node->subtree_hash` from its type, its literal, and the hashes its
- * children already carry — so a subtree is stamped children first, which
- * is what markdown_core_node_stamp_tree does. `stamp_own` is the fold over
- * the node's own fields alone. */
-void markdown_core_node_stamp(markdown_core_node *node);
-uint64_t markdown_core_node_stamp_own(const markdown_core_node *node);
-
-/** Stamps every node of `root`'s subtree, each as the walk leaves it. */
+/** Stamps every node of `root`'s subtree — `subtree_hash` from its type,
+ * its literal and the hashes its children carry — each as the walk leaves
+ * it, so children first. The one stamping entry point: what the streaming
+ * frontier stamps before it pairs. */
 void markdown_core_node_stamp_tree(markdown_core_node *root);
 
 /** Makes every chunk-valued field of ONE node its own: a literal, a label,

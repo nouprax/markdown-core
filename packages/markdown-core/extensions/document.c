@@ -286,6 +286,13 @@ static bool generation_close(document_generation *generation, markdown_core_erro
                  child = markdown_core_warm_run_next(&record->spine[i], child)) {
                 markdown_core_node_stamp_tree(child);
             }
+            /* A leaf this close's refine replaced: the block that stands in
+             * its slot is the entry's node and its parent's youngest child
+             * — outside every run — and the first append retires it onto
+             * the parent's run to be paired against, so it is stamped too. */
+            if (record->spine[i].replaced) {
+                markdown_core_node_stamp_tree(record->spine[i].node);
+            }
         }
         for (i = 0; i < record->flip_count; i++) {
             markdown_core_node *child;

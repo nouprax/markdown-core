@@ -1424,6 +1424,12 @@ bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown
     case MARKDOWN_CORE_KIND_FORMULA: {
         markdown_core_placement_mode mode;
         markdown_core_node_formula_properties(node, &mode, &v1);
+        /* A formula always has a literal (an empty one is written and
+         * empty); the accessor materializes it and answers NULL only for an
+         * allocation it lost — a loss this write reports, not records. */
+        if (!v1.data) {
+            out->oom = 1;
+        }
         projection_u64(out, (uint64_t)mode);
         projection_view(out, v1);
         break;
@@ -1447,14 +1453,39 @@ bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown
     }
     case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
     case MARKDOWN_CORE_KIND_DIRECTIVE: {
+        /* The name (every directive has one; NULL is an allocation the
+         * accessor lost, reported here) and the attribute LIST as the node
+         * holds it — presence, count, and each pair in source order — which
+         * is what the JSON the comparison reads is a rendering of, read
+         * without the rendering, so a lost render cannot be written down as
+         * "no attributes". */
         const char *name = markdown_core_extensions_get_directive_name((markdown_core_node *)node);
-        const char *attributes = markdown_core_extensions_get_directive_attributes((markdown_core_node *)node);
+        bool present = markdown_core_extensions_directive_attributes_present(node);
+        size_t count = present ? markdown_core_extensions_directive_attribute_count(node) : 0;
+        size_t i;
+        if (!name) {
+            out->oom = 1;
+        }
         v1.data = (const uint8_t *)name;
         v1.length = name ? strlen(name) : 0;
-        v2.data = (const uint8_t *)attributes;
-        v2.length = attributes ? strlen(attributes) : 0;
         projection_view(out, v1);
-        projection_view(out, v2);
+        markdown_core_strbuf_putc(out, present ? 1 : 0);
+        projection_u64(out, (uint64_t)count);
+        for (i = 0; i < count; i++) {
+            const uint8_t *key = NULL;
+            const uint8_t *value = NULL;
+            size_t key_length = 0;
+            size_t value_length = 0;
+            markdown_core_string k;
+            markdown_core_string v;
+            markdown_core_extensions_directive_attribute_at(node, i, &key, &key_length, &value, &value_length);
+            k.data = key;
+            k.length = key_length;
+            v.data = value;
+            v.length = value_length;
+            projection_view(out, k);
+            projection_view(out, v);
+        }
         break;
     }
     case MARKDOWN_CORE_KIND_FOOTNOTE_DEFINITION:

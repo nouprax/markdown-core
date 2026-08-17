@@ -2749,29 +2749,47 @@ static int case_capture_equivalence(void) {
  * loss must yield a failed parse or a complete tree, never a quietly
  * thinner one — the property the line-mark machinery already pins and the
  * capture inherits. */
+/* The failing allocator, and its ledger: `live` counts blocks handed out
+ * and not yet freed, so a sweep can say — on every platform, with no leak
+ * sanitizer — that whatever an ordinal's failure left behind was freed by
+ * the time the last handle went. */
 typedef struct sweep_mem {
     markdown_core_mem mem;
     long countdown;
+    long live;
 } sweep_mem;
 
 static void *sweep_calloc(markdown_core_mem *mem, size_t count, size_t size) {
     sweep_mem *sweep = (sweep_mem *)mem;
+    void *block;
     if (--sweep->countdown == 0) {
         return NULL;
     }
-    return calloc(count, size);
+    block = calloc(count, size);
+    if (block) {
+        sweep->live++;
+    }
+    return block;
 }
 
 static void *sweep_realloc(markdown_core_mem *mem, void *pointer, size_t size) {
     sweep_mem *sweep = (sweep_mem *)mem;
+    void *block;
     if (--sweep->countdown == 0) {
         return NULL;
     }
-    return realloc(pointer, size);
+    block = realloc(pointer, size);
+    if (block && !pointer) {
+        sweep->live++;
+    }
+    return block;
 }
 
 static void sweep_free(markdown_core_mem *mem, void *pointer) {
-    (void)mem;
+    sweep_mem *sweep = (sweep_mem *)mem;
+    if (pointer) {
+        sweep->live--;
+    }
     free(pointer);
 }
 
@@ -2868,7 +2886,7 @@ static int case_capture_oom_sweep(void) {
     }
 
     for (fail_at = 1; fail_at < 100000 && !succeeded; fail_at++) {
-        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
+        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at, 0};
         markdown_core_parser *parser = sweep_parser_new(&sweep.mem);
         markdown_core_node *root;
         if (!parser) {
@@ -3165,6 +3183,12 @@ static int case_warm_identity_pins(void) {
          1,
          true,
          "a promoted lead paragraph split off a table keeps the id its promotion had before the retype"},
+        {{"$$x$$\n", "| a |\n|---|", "\n| b |\n", "\nafter\n", NULL},
+         MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+         1,
+         true,
+         "the same, with the promoted paragraph OPEN on the spine when the table lines arrive: the survivor the "
+         "retract kept closes the inserted run, and the split-off lead's promotion pairs against it"},
         {{"[a]: /1\n", "#", " ", "H", "e", "\n", NULL},
          MARKDOWN_CORE_KIND_HEADING,
          2,
@@ -4109,7 +4133,7 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     bool exhausted = false;
 
     for (fail_at = 1; fail_at < 100000 && !exhausted; fail_at++) {
-        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at};
+        sweep_mem sweep = {{sweep_calloc, sweep_realloc, sweep_free}, fail_at, 0};
         markdown_core_error *error = NULL;
         markdown_core_document *head = markdown_core_document_open_with_mem(NULL, &sweep.mem, pooled, &error);
         markdown_core_document *next = NULL;
@@ -4168,6 +4192,10 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
                 exhausted = true;
             }
             markdown_core_document_free(head);
+            if (sweep.live != 0) {
+                fprintf(stderr, "chain_poison(%s): %ld blocks outlived a successful pipeline\n", name, sweep.live);
+                return -1;
+            }
             continue;
         }
         markdown_core_error_free(error);
@@ -4202,6 +4230,18 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
         }
         markdown_core_error_free(error);
         markdown_core_document_free(head);
+        /* Only free remains — and once it has run, nothing does: whatever
+         * the failed tick had taken and left half-built went with the chain. */
+        if (sweep.live != 0) {
+            fprintf(
+                stderr,
+                "chain_poison(%s): %ld blocks outlived the chain after the failure at allocation %ld\n",
+                name,
+                sweep.live,
+                fail_at
+            );
+            return -1;
+        }
     }
     if (!exhausted) {
         fprintf(stderr, "chain_poison(%s): the sweep never outlived the pipeline\n", name);
@@ -4210,13 +4250,15 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     return 0;
 }
 
-/* Four streams, so the sweep reaches every allocation the tick has —
+/* Five streams, so the sweep reaches every allocation the tick has —
  * retract, feed, settle, publish, frontier handover — and the flip's, the
  * moved-content restore's and the close's own harvest on top of them: a
  * definition-bearing stream, whose definition re-refines the unit that
  * mentions it; a prose stream; a fence, whose bytes the retract copies
- * back; and a definitions-only paragraph closed by a held block opener,
- * then a formula promotion. Every allocation lost must
+ * back, with an empty append that closes right after a restore; a
+ * definitions-only paragraph closed by a held block opener, then a formula
+ * promotion; and a fence inside a directive, two spine entries with copies
+ * at once. Every allocation lost must
  * poison or succeed whole. Each runs pooled and unpooled: an arena carves
  * most of a build's allocations from slabs the sweep never sees, so only
  * the unpooled run fails every ordinal — the held line's growth among
@@ -4227,7 +4269,12 @@ static int case_chain_poison(void) {
     /* A block whose close moves its bytes out and whose retract puts them
      * back — the one restore that allocates, and once aborted an assert-
      * enabled build instead of poisoning the chain when it failed. */
-    static const char *const fence[] = {"```\nx", "y\n", "z\n```\n", NULL};
+    static const char *const fence[] = {"```\nx", "y\n", "", "z\n```\n", "", NULL};
+    /* Two spine entries with copies at once — a directive's payload above a
+     * fence's bytes — so a copy lost on the deeper entry leaves the shallower
+     * one's to the record's free, and the ledger sees a leak that a
+     * one-copy spine cannot show. */
+    static const char *const nested_copies[] = {":::note\n```\nx", "y\n", "```\n:::\n", NULL};
     /* A held line whose block open closes a definitions-only paragraph:
      * the close harvests inside the publish, and a harvest that loses an
      * allocation once left the parser's cursor on the paragraph it had
@@ -4243,9 +4290,13 @@ static int case_chain_poison(void) {
     if (chain_poison_sweep(fence, "fence, pooled", true) != 0 || chain_poison_sweep(fence, "fence", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(held_opener, "held opener, pooled", true) != 0
+    if (chain_poison_sweep(held_opener, "held opener, pooled", true) != 0 ||
+        chain_poison_sweep(held_opener, "held opener", false) != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0
                ? -1
-               : chain_poison_sweep(held_opener, "held opener", false);
+               : chain_poison_sweep(nested_copies, "nested copies", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */

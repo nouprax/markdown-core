@@ -1232,6 +1232,9 @@ static markdown_core_node *handle_pointy_brace(subject *subj, int options) {
          * the consumer classifies through the facade's comment bit, never
          * a deletion. */
         markdown_core_node *node = make_raw_html(subj, subj->pos - matchlen - 1, subj->pos - 1, contents);
+        if (!node) {
+            return NULL;
+        }
         adjust_subj_node_newlines(subj, node, matchlen, 1);
         return node;
     }

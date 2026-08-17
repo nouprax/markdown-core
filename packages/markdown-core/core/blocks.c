@@ -2630,11 +2630,11 @@ static markdown_core_node *warm_settle_subtree(markdown_core_parser *parser, mar
 
 /* The region a snapshot describes: for each saved open block, deepest first,
  * every child the step appended past its saved youngest child, then the
- * block itself if the step closed it. Answers whether every spine block is
- * still the object the snapshot named — a spine block replaced by its own
- * refine (a paragraph promoted to a formula block) is one the record can no
- * longer put back, and the entry is repointed at the survivor so nothing
- * dangles. */
+ * block itself if the step closed it. A spine block replaced by its own
+ * refine (a paragraph promoted to a formula block) has its entry repointed
+ * at the survivor so nothing dangles; the replaced block is kept on the
+ * entry for the retract to put back (a publish, `keep_replaced`) or freed
+ * (a settle, whose replacement is for good). */
 /* `keep_replaced` says a spine block its refine replaces is kept on its
  * entry (a publish, whose retract puts it back) rather than freed (a settle,
  * whose replacement is for good). */
@@ -3175,8 +3175,11 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             /* The close's refine replaced this block (a paragraph promoted to
              * a formula block): the block goes back where the survivor
              * stands, and the survivor — published, so a node the next
-             * publish must pair against, not free — is retired onto the
-             * parent's run, at its front, where it stood. */
+             * publish must pair against, not free — is kept on the parent's
+             * entry and retired, when the parent's turn comes, at the end of
+             * its retired inserted run: after everything the close inserted
+             * before the leaf, before everything it appended, where it
+             * stood. */
             markdown_core_node *survivor = entry->node;
             markdown_core_node_insert_before_unchecked(survivor, entry->replaced);
             markdown_core_node_unlink(survivor);

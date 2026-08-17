@@ -935,13 +935,15 @@ static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
  * alignments, a row's header bit, a formula's mode. An extension that
  * registers a node type and does not implement it leaves its own nodes
  * pairing on type and children alone. */
-uint64_t markdown_core_node_stamp_own(const markdown_core_node *node) {
+/* The fold over the node's own fields, where every stamp begins. */
+static uint64_t node_stamp_own(const markdown_core_node *node) {
     uint64_t h = 0xcbf29ce484222325ull;
 
     h = markdown_core_hash_mix(h, (uint64_t)node->type);
     switch (node->type) {
     // The raw type, not the facade kind: this runs on every node of every
-    // parse, and for these the union member IS the literal chunk.
+    // subtree the frontier stamps, and for these the union member IS the
+    // literal chunk.
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_HTML:
@@ -1014,8 +1016,8 @@ static uint64_t node_hash_children(const markdown_core_node *node, uint64_t h) {
     return h;
 }
 
-void markdown_core_node_stamp(markdown_core_node *node) {
-    node->subtree_hash = node_hash_children(node, markdown_core_node_stamp_own(node));
+static void node_stamp(markdown_core_node *node) {
+    node->subtree_hash = node_hash_children(node, node_stamp_own(node));
 }
 
 void markdown_core_node_stamp_tree(markdown_core_node *root) {
@@ -1023,20 +1025,14 @@ void markdown_core_node_stamp_tree(markdown_core_node *root) {
 
     /* Postorder, so a node is stamped only once its children carry their own
      * hashes. Iterative and allocation-free: document depth costs no stack.
-     *
-     * It sits beside markdown_core_node_stamp because that is where a node
-     * operation belongs, NOT for speed -- putting the walk in the same
-     * translation unit so the per-node stamp could inline was measured and
-     * changed nothing (2.745 s against 2.743 s on multiple_duplicate_references).
-     * The pass costs what it costs because it is one more traversal of every
-     * node in the tree; neither the call, the iterator, nor the literal
-     * sampling is the term that matters. */
+     * The pass costs a traversal of the subtree, which is why it runs over
+     * exactly the subtrees the frontier will pair and never the tree. */
     for (;;) {
         while (node->first_child) {
             node = node->first_child;
         }
         for (;;) {
-            markdown_core_node_stamp(node);
+            node_stamp(node);
             if (node == root) {
                 return;
             }

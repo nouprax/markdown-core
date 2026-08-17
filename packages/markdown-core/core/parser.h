@@ -377,8 +377,9 @@ void markdown_core_parser_warm_vanished_free(markdown_core_parser *parser);
  * was, so the next chunk continues as if the projection had never been
  * asked for.
  *
- * Returns NULL if the record cannot be allocated, in which case nothing was
- * closed and the parser is untouched.
+ * Returns NULL if the record cannot be allocated, or if the parser has
+ * failed (see markdown_core_parser_warm_eligible_at_eof); in either case
+ * nothing was closed and the parser is untouched.
  *
  * WHAT MAKES A RECORD RETRACTABLE: every close's effects stay inside the
  * record — see the note above markdown_core_parser_warm_eligible_at_eof in
@@ -397,9 +398,11 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
  * content buffer that the next feed will grow. The parser is then fed exactly
  * as if it had never been published from. Returns false, touching nothing,
  * for a record already retracted, and — with the parser's sticky allocation
- * bit set — when the frontier could not be given its bytes (the record is
- * still the published one) or a block could not get its bytes back (the
- * parser is not, and the caller's tick fails). */
+ * bit set — when the frontier could not be given its bytes before anything
+ * moved (the record is still the published one), or when, once things have
+ * moved, a block could not get its bytes back or the block that had
+ * replaced the leaf could not be given its (the parser is not where it was,
+ * and the caller's tick fails and takes the chain with it). */
 bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo);
 
 /** Frees a record, and with it any retired frontier it still holds. */
