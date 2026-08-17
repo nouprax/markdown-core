@@ -163,7 +163,6 @@ static void diff_stack_release(diff_stack *stack) {
 // there was an alignment.
 #define DIFF_ALIGN_MAX_EDITS 64
 #define DIFF_ALIGN_WORK (1 << 17)
-#define DIFF_ALIGN_ROW (2 * DIFF_ALIGN_MAX_EDITS + 1)
 
 static bool same_subtree(const markdown_core_node *a, const markdown_core_node *b) {
     return a->type == b->type && a->subtree_hash == b->subtree_hash;
@@ -194,17 +193,29 @@ static uint32_t gap_positional_pairs(
 typedef struct diff_align {
     markdown_core_node **olds;
     markdown_core_node **news;
-    int32_t *v;       // indexed [k + DIFF_ALIGN_MAX_EDITS]
-    int32_t *trace;   // row d at trace + d * DIFF_ALIGN_ROW
+    int32_t *v;       // indexed [k + max_edits]
+    int32_t *trace;   // row d at trace + d * row
+    size_t row;       // 2 * max_edits + 1
     uint32_t *snakes; // three per snake, in document order
 } diff_align;
 
-static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, diff_align *out) {
-    size_t need = (m + n) * sizeof(markdown_core_node *) +
-                  (size_t)(DIFF_ALIGN_ROW + (DIFF_ALIGN_MAX_EDITS + 1) * DIFF_ALIGN_ROW) * sizeof(int32_t) +
-                  (size_t)(DIFF_ALIGN_MAX_EDITS + 2) * 3 * sizeof(uint32_t);
+/* Lays the walk out in the chain's scratch, GROWN TO THE WALK: a distance
+ * of at most `max_edits` needs that many rows of that many diagonals, and
+ * the middles a stream actually aligns are a handful of children wide, so
+ * the common tick's alignment fits in a few hundred bytes of a buffer the
+ * chain already holds — where a layout sized for the bound would have
+ * asked the allocator for thirty kilobytes per spine block per tick, which
+ * measured as a fifth of a microsecond on every warm shape. */
+static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, size_t max_edits, diff_align *out) {
+    size_t row = 2 * max_edits + 1;
+    size_t need = (m + n) * sizeof(markdown_core_node *) + (row + (max_edits + 1) * row) * sizeof(int32_t) +
+                  (max_edits + 2) * 3 * sizeof(uint32_t);
     if (need > ctx->scratch_capacity) {
-        void *grown = ctx->mem->realloc(ctx->mem, ctx->scratch, need);
+        /* From the CHAIN's allocator, never the generation's: the buffer
+         * outlives the tick that grew it, and a generation's may be an
+         * arena released whole with that generation. */
+        markdown_core_mem *mem = ctx->chain->mem;
+        void *grown = mem->realloc(mem, ctx->scratch, need);
         if (!grown) {
             ctx->failed = true;
             return false;
@@ -215,8 +226,9 @@ static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, diff_align *out) {
     out->olds = (markdown_core_node **)ctx->scratch;
     out->news = out->olds + m;
     out->v = (int32_t *)(out->news + n);
-    out->trace = out->v + DIFF_ALIGN_ROW;
-    out->snakes = (uint32_t *)(out->trace + (DIFF_ALIGN_MAX_EDITS + 1) * DIFF_ALIGN_ROW);
+    out->trace = out->v + row;
+    out->row = row;
+    out->snakes = (uint32_t *)(out->trace + (max_edits + 1) * row);
     return true;
 }
 
@@ -239,7 +251,7 @@ static size_t align_middle(
     size_t n,
     size_t max_edits
 ) {
-    int32_t *v = align->v + DIFF_ALIGN_MAX_EDITS;
+    int32_t *v = align->v + (align->row - 1) / 2;
     size_t d;
     size_t i;
     int32_t k;
@@ -269,7 +281,7 @@ static size_t align_middle(
                 y++;
             }
             v[k] = x;
-            align->trace[d * DIFF_ALIGN_ROW + k + DIFF_ALIGN_MAX_EDITS] = x;
+            align->trace[d * align->row + k + (int32_t)((align->row - 1) / 2)] = x;
             if (x < (int32_t)m || y < (int32_t)n) {
                 continue;
             }
@@ -283,7 +295,7 @@ static size_t align_middle(
                 int32_t py = (int32_t)n;
                 size_t back;
                 for (back = d; back > 0; back--) {
-                    const int32_t *prev = align->trace + (back - 1) * DIFF_ALIGN_ROW + DIFF_ALIGN_MAX_EDITS;
+                    const int32_t *prev = align->trace + (back - 1) * align->row + (align->row - 1) / 2;
                     int32_t here = px - py;
                     int32_t from =
                         (here == -(int32_t)back || (here != (int32_t)back && prev[here - 1] < prev[here + 1]))
@@ -342,7 +354,7 @@ static bool diff_plan(
     markdown_core_node *w_end;
     diff_frame *frame;
     diff_step *steps;
-    diff_align align = {NULL, NULL, NULL, NULL, NULL};
+    diff_align align = {NULL, NULL, NULL, NULL, 0, NULL};
     size_t pairable;
     size_t prefix = 0;
     size_t suffix = 0;
@@ -415,11 +427,18 @@ static bool diff_plan(
     // KIND change is a genuine retirement (5.2) — and the residue retires or
     // is minted.
     if (middle_old > 0 && middle_new > 0 && middle_old + middle_new <= DIFF_ALIGN_WORK) {
+        /* Never further than the work a frame may spend, never further than
+         * a rewrite, and never further than the distance the two sides can
+         * possibly be apart — which is what keeps a small middle's walk
+         * small. */
         size_t max_edits = DIFF_ALIGN_WORK / (middle_old + middle_new);
         if (max_edits > DIFF_ALIGN_MAX_EDITS) {
             max_edits = DIFF_ALIGN_MAX_EDITS;
         }
-        if (!align_scratch(ctx, middle_old, middle_new, &align)) {
+        if (max_edits > middle_old + middle_new) {
+            max_edits = middle_old + middle_new;
+        }
+        if (!align_scratch(ctx, middle_old, middle_new, max_edits, &align)) {
             return false;
         }
         snakes = align_middle(&align, o, w, middle_old, middle_new, max_edits);
@@ -569,6 +588,14 @@ static bool diff_run(diff_ctx *ctx, diff_stack *stack) {
     return child_result;
 }
 
+void markdown_core_diff_scratch_release(markdown_core_chain *chain) {
+    if (chain && chain->pairing_scratch) {
+        chain->mem->free(chain->mem, chain->pairing_scratch);
+        chain->pairing_scratch = NULL;
+        chain->pairing_scratch_size = 0;
+    }
+}
+
 void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *root, uint64_t rev) {
     diff_ctx ctx = {chain, NULL, rev, false, NULL, 0};
     mint_subtree(&ctx, root);
@@ -596,7 +623,7 @@ bool markdown_core_diff_frontier(
     uint64_t rev,
     bool *changed
 ) {
-    diff_ctx ctx = {chain, mem, rev, false, NULL, 0};
+    diff_ctx ctx = {chain, mem, rev, false, chain->pairing_scratch, chain->pairing_scratch_size};
     diff_stack stack = {NULL, 0, 0, mem};
     size_t n_old = 0;
     size_t n_new = 0;
@@ -619,8 +646,9 @@ bool markdown_core_diff_frontier(
         }
     }
     diff_stack_release(&stack);
-    if (ctx.scratch) {
-        mem->free(mem, ctx.scratch);
-    }
+    /* Back to the chain, grown: the next tick's pairing starts where this
+     * one left off, and only the chain's release frees it. */
+    chain->pairing_scratch = ctx.scratch;
+    chain->pairing_scratch_size = ctx.scratch_capacity;
     return !ctx.failed;
 }

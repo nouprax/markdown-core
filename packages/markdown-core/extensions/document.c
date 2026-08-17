@@ -795,6 +795,7 @@ static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
 static void chain_release(markdown_core_chain *chain) {
     if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
         generation_release(&chain->head);
+        markdown_core_diff_scratch_release(chain);
         markdown_core_source_release(chain->source);
         free(chain);
     }

@@ -109,6 +109,14 @@ typedef struct markdown_core_chain {
     /* Whether builds pool their allocations in an arena. Fixed at birth, so
      * a generation is released the same way it was taken. */
     bool pooled;
+    /* THE PAIRING'S SCRATCH, kept on the chain because every tick's pairing
+     * wants it and none of them wants to allocate it: the frontier diff
+     * walks its runs in it (extensions/diff.c) and hands it back grown.
+     * Owned; released with the chain. Legal as one buffer per chain because
+     * mutations on a chain are externally serialized by contract, and no
+     * pairing outlives the call that borrowed it. */
+    void *pairing_scratch;
+    size_t pairing_scratch_size;
     /* THE HEAD'S GENERATION. The first build produces a tree and the
      * diagnostics that describe it, out of one arena, and swaps the whole
      * thing in; every append grows it in place (document_tick_warm), and it
@@ -192,6 +200,9 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * list). Requires the fresh run to be stamped. Frees nothing. Returns false
  * on allocation failure with the fresh run partly assigned — the caller
  * discards the tick. */
+/* Frees whatever a chain's pairings left in `pairing_scratch`. */
+void markdown_core_diff_scratch_release(markdown_core_chain *chain);
+
 bool markdown_core_diff_frontier(
     markdown_core_chain *chain,
     markdown_core_mem *mem,
