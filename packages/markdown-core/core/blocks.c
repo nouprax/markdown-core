@@ -2729,16 +2729,6 @@ void markdown_core_parser_warm_vanished_free(markdown_core_parser *parser) {
     parser->vanished = NULL;
 }
 
-bool markdown_core_parser_warm_vanished(const markdown_core_parser *parser, const markdown_core_node *node) {
-    const markdown_core_node *item;
-    for (item = parser->vanished; item; item = item->next) {
-        if (item == node) {
-            return true;
-        }
-    }
-    return false;
-}
-
 void markdown_core_parser_warm_flipped_free(markdown_core_parser *parser) {
     size_t i;
     for (i = 0; i < parser->flipped_count; i++) {
@@ -2840,7 +2830,7 @@ static void warm_flip_pending(markdown_core_parser *parser, markdown_core_warm_u
 }
 
 bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_core_warm_undo *before) {
-    if (!parser->root) {
+    if (!parser->root || parser->oom || parser->internal_error) {
         return false;
     }
     if (before) {
@@ -2891,6 +2881,11 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
     for (i = 0; i < undo->spine_count; i++) {
         warm_free_run(undo->spine[i].retired);
         warm_free_run(undo->spine[i].retired_inserted);
+        if (undo->spine[i].survivor) {
+            /* A retract that failed between putting the block back and
+             * retiring what had replaced it. */
+            markdown_core_node_free(undo->spine[i].survivor);
+        }
         if (undo->spine[i].replaced) {
             markdown_core_node_free(undo->spine[i].replaced);
         }
@@ -2934,8 +2929,11 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
         if (!undo->spine) {
             return false;
         }
+        /* The count advances with the entries, so a copy lost on a later
+         * entry leaves the earlier entries' copies to markdown_core_parser_warm_undo_free. */
         for (node = parser->root; i < depth; node = node->last_child) {
             markdown_core_warm_open_block *entry = &undo->spine[i++];
+            undo->spine_count = i;
             entry->node = node;
             entry->last_child = node->last_child;
             entry->prev = node->last_child ? node->last_child->prev : NULL;
@@ -2971,7 +2969,6 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
                 entry->content_copy_size = node->content.size;
             }
         }
-        undo->spine_count = depth;
     }
     if (parser->line_mark_count) {
         undo->marks = (struct markdown_core_line_mark *)
@@ -3001,7 +2998,10 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
 markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser) {
     markdown_core_warm_undo *undo;
 
-    if (!parser->root) {
+    /* A parser that has failed is not closed: a lost allocation inside a
+     * block open can leave `current` on a block the open had already
+     * finalized — even unlinked — and there is nothing to publish from it. */
+    if (!parser->root || parser->oom || parser->internal_error) {
         return NULL;
     }
     undo = (markdown_core_warm_undo *)parser->mem->calloc(parser->mem, 1, sizeof(*undo));
@@ -3165,17 +3165,29 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         if (entry->replaced) {
             /* The close's refine replaced this block (a paragraph promoted to
              * a formula block): the block goes back where the survivor
-             * stands, and the survivor — published, paired, and now gone —
-             * is freed. */
+             * stands, and the survivor — published, so a node the next
+             * publish must pair against, not free — is retired onto the
+             * parent's run, at its front, where it stood. */
             markdown_core_node *survivor = entry->node;
             markdown_core_node_insert_before_unchecked(survivor, entry->replaced);
             markdown_core_node_unlink(survivor);
-            markdown_core_node_free(survivor);
+            if (!warm_own_subtree(survivor)) {
+                parser->oom = true;
+                markdown_core_node_free(survivor);
+                entry->node = entry->replaced;
+                entry->replaced = NULL;
+                return false;
+            }
+            if (i > 0) {
+                undo->spine[i - 1].survivor = survivor;
+                if (undo->spine[i - 1].last_child == survivor) {
+                    undo->spine[i - 1].last_child = entry->replaced;
+                }
+            } else {
+                markdown_core_node_free(survivor);
+            }
             entry->node = entry->replaced;
             entry->replaced = NULL;
-            if (i > 0 && undo->spine[i - 1].last_child == survivor) {
-                undo->spine[i - 1].last_child = entry->node;
-            }
         }
         node = entry->node;
         /* A leaf paragraph the close took goes back where it stood — after
@@ -3232,6 +3244,17 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
         }
         if (run) {
             run->prev = NULL;
+        }
+        /* The block that replaced this block's leaf, put back by the entry
+         * below: it stood where the leaf stands, before everything the
+         * close appended after, so it heads the retired run. */
+        if (entry->survivor) {
+            entry->survivor->next = run;
+            if (run) {
+                run->prev = entry->survivor;
+            }
+            run = entry->survivor;
+            entry->survivor = NULL;
         }
         entry->retired = run;
         if (node->inline_concrete) {

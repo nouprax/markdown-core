@@ -629,6 +629,48 @@ done:
     return result;
 }
 
+/* AN EMPTY APPEND CHANGES NOTHING: the successor's tree carries exactly the
+ * head's ids at exactly the head's revisions, node for node. The walk above
+ * cannot see a subtree that was re-minted rather than paired — a new id has
+ * no entry to compare against, and its parent's child list did change — so
+ * the one mutation whose answer is fully known pins it directly. */
+static int er_verify_empty_append_identity(
+    er_replay *replay,
+    const markdown_core_document *document,
+    const er_capture *before
+) {
+    const markdown_core_node *node = markdown_core_document_root(document);
+    size_t seen = 0;
+    if (!node) {
+        return before->count == 0 ? 0 : er_fail(replay, "an empty append lost the tree");
+    }
+    for (;;) {
+        const er_capture_entry *entry = er_capture_find(before, markdown_core_node_get_id(node));
+        if (!entry) {
+            return er_fail(replay, "an empty append minted a node");
+        }
+        if (entry->revision != markdown_core_node_get_revision(node)) {
+            return er_fail(replay, "an empty append moved a revision");
+        }
+        seen++;
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        if (!node) {
+            break;
+        }
+        node = markdown_core_node_get_next_sibling(node);
+    }
+    if (seen != before->count) {
+        return er_fail(replay, "an empty append changed the number of nodes");
+    }
+    return 0;
+}
+
 /* Walks `document`'s tree against the ledger. `previous` holds the
  * predecessor's nodes (empty for the seeding walk); afterwards, live ledger
  * entries the walk did not meet are retired. */
@@ -705,7 +747,8 @@ static int er_verify_successor(
     er_replay *replay,
     markdown_core_document *previous,
     markdown_core_document *successor,
-    const er_capture *before
+    const er_capture *before,
+    bool empty
 ) {
     markdown_core_error *error = NULL;
     markdown_core_document *reference = NULL;
@@ -733,6 +776,9 @@ static int er_verify_successor(
         goto done;
     }
     if (er_verify_no_spurious_bumps(replay, successor, before) != 0) {
+        goto done;
+    }
+    if (empty && er_verify_empty_append_identity(replay, successor, before) != 0) {
         goto done;
     }
 
@@ -816,7 +862,7 @@ int er_replay_append(er_replay *replay, const uint8_t *bytes, size_t length) {
         markdown_core_error_free(error);
         return er_fail(replay, "append failed");
     }
-    result = er_verify_successor(replay, previous, successor, &before);
+    result = er_verify_successor(replay, previous, successor, &before, length == 0);
     er_capture_release(&before);
     return result;
 }

@@ -12,7 +12,7 @@
 #include "source.h"
 
 // AddressSanitizer detection: document pooling is bypassed under ASan so the
-// sanitizer keeps seeing individual allocations (see markdown_core_document_alloc).
+// sanitizer keeps seeing individual allocations (see chain_new in document.c).
 #ifndef MARKDOWN_CORE_ASAN
 #if defined(__SANITIZE_ADDRESS__)
 #define MARKDOWN_CORE_ASAN 1

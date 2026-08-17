@@ -411,7 +411,7 @@ if(MARKDOWN_CORE_STATIC)
 endif()
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
-# `pathological_runner --list` and `complexity_runner --list`.
+# `pathological_runner --list`.
 set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_strong_emph
     many_emph_closers

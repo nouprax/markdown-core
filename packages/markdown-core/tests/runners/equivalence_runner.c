@@ -1,7 +1,8 @@
 /* Document equivalence suite: an incrementally appended document must
  * always dump byte-identically to a one-shot parse of the same final text,
  * and its identities must behave — ids never resurrect, revisions never
- * regress, and an unchanged (id, revision) means an unchanged projection.
+ * regress, an unchanged (id, revision) means an unchanged projection, an
+ * unchanged subtree keeps its revision, and an empty append moves nothing.
  *
  * Every replay drives the public facade only, through the shared append
  * replay harness (support/append_replay.h): a shadow text buffer receives
@@ -14,6 +15,7 @@
  *   equivalence_runner --list
  *   equivalence_runner --case canonical --fixtures DIR NAME MASK [NAME MASK ...]
  *   equivalence_runner --case spec --spec FILE
+ *   equivalence_runner --case regressions
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -290,6 +292,20 @@ static const struct {
     {":::note\nbody [q]\n:::\n\n[q]: /q\n",
      "0000000100",
      "a directive container on the spine, flipped by a definition after it"},
+    {"[a]: /1\n# Head\n",
+     "0000000000",
+     "a leaf the close takes again, with a block the held line appended beside it, re-minted that block every tick"},
+    {"> [a]: /1\n> # h\n", "0000000000", "the same, under a block quote"},
+    {"[a]: /1\n- x\ny\n", "0000000000", "the same, with a list beside it"},
+    {"> [a]: /1\n> > [b]: /2\n", "0000000000", "the same, with a nested quote whose first line is a definition"},
+    {"[a]: /1\n<div>\nx\n", "0000000000", "the same, with an HTML block beside it"},
+    {"[a]: /1\n***\n", "0000000000", "the same, with a thematic break beside it"},
+    {"$$x$$\n\nafter\n",
+     "0000001000",
+     "a leaf promoted to a formula block was re-minted every tick while it stayed open: the survivor is retired, not "
+     "freed"},
+    {"```formula\nx+y\n\nz\n```\n\nafter\n", "0000001000", "the same, for a formula fence"},
+    {"> $$x$$\n\n- $$y$$\n\n- $$z$$\n", "0000001000", "the same, inside a quote and inside list items"},
 };
 
 static int eq_replay_per_byte_with_empties(

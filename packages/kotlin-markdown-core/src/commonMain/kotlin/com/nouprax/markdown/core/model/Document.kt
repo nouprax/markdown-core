@@ -188,7 +188,8 @@ public class Document private constructor(
      * content and position crosses the boundary as one reuse record and
      * resolves to the value this document already decoded, making the
      * per-append decode cost O(changed), not O(document). The native append
-     * itself still reparses every byte sent so far.
+     * grows the head's tree in place: its cost is the chunk, what it closed
+     * and the open leaf, not the document.
      *
      * The successor is its chain's new head; this document keeps its decoded
      * values and its [close], and refuses further mutation deterministically.

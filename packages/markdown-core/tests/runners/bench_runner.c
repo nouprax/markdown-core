@@ -427,7 +427,7 @@ static char *build_append_fence(size_t target, size_t *length) {
         return NULL;
     }
     /* One growing, never-closed fence: the shape the plan calls memcpy-speed
-     * for the warm path, full-parse speed today. */
+     * — the close moves its bytes out and the retract copies them back. */
     input = (char *)malloc(*length + 5);
     if (!input) {
         free(body);

@@ -1,6 +1,7 @@
 # The living tree: O(affected) append for an append-only engine
 
-Status: DESIGN, awaiting adoption. Baseline: branch `new-and-append-only`
+Status: ADOPTED AND LANDED — see §6 for where each milestone stands.
+Baseline when written: branch `new-and-append-only`
 (PR #103), where the API is `new` + `append` and nothing else. Supersedes
 the parser-tail fork of `2026-08-12-streaming-plan.md` §4.2 (buried by its
 erratum E2); revives that plan's per-settle refine, probe/flip, and gate
@@ -227,8 +228,10 @@ nested list flat. The funeral followed on `living-tree-l3`: an extension
 that opens blocks and allocates payloads must describe them or is not
 attached, so no build can end in a state it cannot reopen, and with that
 `final`, the rebuild, `diff.c`'s tree diff, the tick ledger and the
-whole-tree stamp are deleted — an append is one tick, and a one-shot parse
-stamps nothing. What §4 lists and this keeps: the pairing machine over two
+whole-tree stamp are deleted — an append is one tick, and a build stamps
+only the subtrees the frontier will pair (a one-shot parse: the run its
+close publishes, not the tree). What §4 lists and this keeps: the pairing
+machine over two
 child lists and the subtree hash it sweeps on, because the tail a tick
 re-derives from the held line must PAIR against the tail it replaces (the
 contract's "an empty append moves no revision"), and that is the frontier

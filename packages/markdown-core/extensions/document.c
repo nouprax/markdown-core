@@ -221,12 +221,13 @@ static bool payload_is_plain(const markdown_core_node *node) {
     }
 }
 
-/* HOW EVERY BUILD ENDS. The parser is at end of feed with the tree still
- * open. The closed part is settled once and for good and the spine is
- * PUBLISHED, so the record that comes back lets the next append reopen the
- * parser and grow this very tree; the tree equals a one-shot parse of the
- * same bytes, and the parser stays with the generation as the tree's owner.
- * A parser that failed publishes nothing. */
+/* HOW THE FIRST BUILD ENDS (an append ends in its own tick's publish). The
+ * parser is at end of feed with the tree still open. The closed part is
+ * settled once and for good and the spine is PUBLISHED, so the record that
+ * comes back lets the first append reopen the parser and grow this very
+ * tree; the tree equals a one-shot parse of the same bytes, and the parser
+ * stays with the generation as the tree's owner. A parser that failed
+ * publishes nothing. */
 static bool generation_close(document_generation *generation, markdown_core_error **error) {
     markdown_core_parser *parser = generation->parser;
 
@@ -275,12 +276,12 @@ static bool generation_close(document_generation *generation, markdown_core_erro
     return true;
 }
 
-/* PARSE. A pure function of (bytes, options): it fills this fresh generation
- * from the chain's stored bytes plus the ones this mutation brought, which
- * together are exactly the document's text. The parser's definition maps
- * serve its own inline phase and stay with it: the tree carries every
- * published answer. No predecessor, no ids — identity is the diff's to
- * assign. */
+/* THE FIRST BUILD'S PARSE. A pure function of (bytes, options): it fills a
+ * fresh chain's first generation from the bytes this build brought — the
+ * chain has stored none yet — which are exactly the document's text. The
+ * parser's definition maps serve its own inline phase and stay with it: the
+ * tree carries every published answer. No predecessor, no ids — the caller
+ * mints the tree whole. */
 static bool document_parse_text(
     markdown_core_chain *chain,
     document_generation *generation,
@@ -366,6 +367,9 @@ static bool document_tick_warm(
         goto done;
     }
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
+    if (parser_failed(parser)) {
+        goto done;
+    }
     markdown_core_parser_warm_settle(parser, before);
     after = markdown_core_parser_warm_publish(parser);
     if (!after || parser_failed(parser)) {
@@ -381,18 +385,22 @@ static bool document_tick_warm(
      * it. */
     {
         bool changed_below = false;
-        bool gone = false;
-        /* THE LEAF THE FEED TOOK. A leaf paragraph that came to be nothing
-         * but definitions left the tree at the feed's close — for good, and
-         * the parser keeps it, unlinked, so this can know rather than read
-         * it freed. Its frontier retires whole and its id with it; and its
-         * parent's saved youngest child is no longer a child, so the
-         * parent's run is everything after the sibling it followed, paired
-         * against both of what the last close retired there, as one run. */
-        if (before->spine_count > 1 &&
-            markdown_core_parser_warm_vanished(parser, before->spine[before->spine_count - 1].node)) {
+        bool leaf_off = false;
+        /* THE LEAF THAT IS OFF THE TREE. The record's leaf may be out of
+         * its parent's child list when the identity step runs: the FEED
+         * took it (a paragraph that came to be nothing but definitions,
+         * for good — the parser keeps it, unlinked, so this can know rather
+         * than read it freed), or the CLOSE took it again (the same, for
+         * this projection; the record holds it), or the close's refine
+         * REPLACED it (a paragraph promoted to a formula block, which
+         * stands in its slot). Either way its saved `next` says nothing,
+         * so the parent's run is everything after the sibling it followed,
+         * paired against both of what the last close retired there, as one
+         * run — with the block that had replaced it at the front, where it
+         * stood — and the leaf's own frontier retires whole. */
+        if (before->spine_count > 1 && before->spine[before->spine_count - 1].node->parent == NULL) {
             markdown_core_warm_open_block *parent = &before->spine[before->spine_count - 2];
-            gone = true;
+            leaf_off = true;
             if (parent->retired_inserted) {
                 markdown_core_node *tail = parent->retired_inserted;
                 while (tail->next) {
@@ -416,10 +424,10 @@ static bool document_tick_warm(
             markdown_core_node *child;
             bool inserted;
             bool changed = false;
-            if (gone && i == before->spine_count - 1) {
+            if (leaf_off && i == before->spine_count - 1) {
                 /* Its leaving is a change only if it had been published: a
-                 * leaf the last close had already taken was never in the
-                 * tree a consumer saw. */
+                 * leaf the last close had already taken or replaced was
+                 * never in the tree a consumer saw. */
                 changed_below = changed_below || !revived;
                 continue;
             }
@@ -431,10 +439,10 @@ static bool document_tick_warm(
              * empty chunk) left the tree as it found it, and moves nothing
              * — whatever id it carries, or does not. */
             if (revived && i == before->spine_count - 1) {
-                if (!node->parent) {
-                    continue;
-                }
-                markdown_core_diff_mint(chain, node, revision);
+                /* The leaf itself is the new node; its children are the run
+                 * below, minted or paired there. */
+                node->id = chain->next_id++;
+                node->last_changed_rev = revision;
                 changed_below = true;
             } else if (node->id == 0) {
                 /* A spine block the settle's refine replaced is a new object

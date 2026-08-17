@@ -2189,9 +2189,9 @@ void markdown_core_parse_inlines(
     if (subject_has_failure(parser, &subj)) {
         markdown_core_concrete_capture_abandon(&subj.capture);
     } else {
-        /* Each inline-owning node is parsed exactly once (process_inlines
-         * visits it once; a dependent rebuild parses a fresh shell), so
-         * nothing is ever overwritten here. */
+        /* Each inline-owning node is parsed exactly once per refine — a
+         * flip or a retract that refines it again frees its records first —
+         * so nothing is ever overwritten here. */
         parent->inline_concrete = markdown_core_concrete_capture_take(&subj.capture);
     }
     /* What this unit asked the definition tables becomes its own; the

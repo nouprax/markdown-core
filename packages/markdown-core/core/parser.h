@@ -221,16 +221,21 @@ typedef struct markdown_core_warm_open_block {
      * takes its place while the block is kept here, unlinked, for the
      * retract to put back. `node` then names the survivor. */
     markdown_core_node *replaced;
+    /* The survivor, once the retract has put the block back: published, so
+     * kept — at the front of the PARENT's retired run, where it stood — for
+     * the next publish to pair what takes its place against. Set on the
+     * entry above the replaced one; NULL otherwise. */
+    markdown_core_node *survivor;
     /* The block VANISHED at the close — a paragraph that was nothing but
      * definitions is unlinked by its own finalize — and is put back at the
      * retract after its parent's youngest-but-one child. */
     bool vanished;
     markdown_core_node *vanished_prev;
     /* The payload as it was: a close writes into it — a list's tightness at
-     * its finalize — and the retract puts the value back whole. Only for
-     * blocks whose close allocates nothing into it; the ones whose close
-     * moves their content buffer out (code, HTML) are not on a warm spine
-     * yet, and will carry their own entries. */
+     * its finalize — and the retract puts the value back whole. A block
+     * whose close moves its content buffer out (code, HTML) has that buffer
+     * kept below (`content_copy`) and its literal freed at the retract
+     * before the value goes back. */
     union markdown_core_node_payload payload;
     /* What the close PUBLISHED for type and payload, taken at the retract
      * before the open values go back: the identity step compares the next
@@ -361,10 +366,6 @@ void markdown_core_parser_warm_flipped_free(markdown_core_parser *parser);
 /* Frees the paragraphs the feed took (nothing but definitions), once the
  * caller has seen which of them a record named. */
 void markdown_core_parser_warm_vanished_free(markdown_core_parser *parser);
-
-/* Whether `node` is a paragraph the feed took: unlinked, kept on the
- * parser's list, and about to be freed. */
-bool markdown_core_parser_warm_vanished(const markdown_core_parser *parser, const struct markdown_core_node *node);
 
 /** PUBLISHES a projection from a parser that is still mid-stream: the held
  * partial line is processed for real, every open block is finalized up to

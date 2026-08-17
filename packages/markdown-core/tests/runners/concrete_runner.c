@@ -4789,10 +4789,10 @@ static int case_inline_extension_funnel(void) {
  *
  * This case used to assert, by pointer identity, that the seam
  * fast-forward and the dependent rebuild had actually engaged. Those
- * assertions are gone with the mechanism they described — a mutation is a
- * full reparse now, so no node survives one and pointer identity across a
- * mutation is not a property this engine has. What is asserted is what a
- * consumer can observe: the records equal a fresh parse\'s. */
+ * assertions are gone with the mechanism they described; the living tree
+ * keeps settled nodes as the same objects, but that is warm_tick_living_tree's
+ * claim to make. What is asserted here is what a consumer can observe: the
+ * records equal a fresh parse\'s. */
 static int case_inline_equivalence(void) {
     int failed = 0;
     markdown_core_parse_options options = capture_options();
