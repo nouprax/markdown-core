@@ -302,6 +302,10 @@ static size_t align_middle(
                     py = prev_y;
                 }
                 if (px > 0) {
+                    /* A path that opens with a match. Every caller sweeps
+                     * the identical leading children off first, so this
+                     * cannot happen where the middle is what is aligned; it
+                     * is the algorithm's, not the caller's, and stays. */
                     uint32_t *snake = align->snakes + 3 * (room - ++written);
                     snake[0] = 0;
                     snake[1] = 0;

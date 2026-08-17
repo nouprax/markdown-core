@@ -4639,6 +4639,16 @@ static int case_chain_poison(void) {
      * one's to the record's free, and the ledger sees a leak that a
      * one-copy spine cannot show. */
     static const char *const nested_copies[] = {":::note\n```\nx", "y\n", "```\n:::\n", NULL};
+    /* A RUN CHANGED AT BOTH ENDS IN ONE TICK: a definition flips the link at
+     * the paragraph's front while its tail grows, so the frontier's middle
+     * is aligned and its plan is longer than a frame holds inline — the
+     * one allocation the pairing itself makes, plus the walk's scratch. A
+     * plan lost half way must leave neither behind. */
+    static const char *const both_ends[] = {"[a] *b* `c` d\ne\nf", "g\nh\n\n[a]: /u\n", "", NULL};
+    /* The same, with the emphasis GROWING in the same tick, so a paired
+     * child has a middle of its own to align under a frame that already
+     * holds a plan on the heap. */
+    static const char *const both_ends_nested[] = {"[a] *b `c` d", "e* f\ng\n\n[a]: /u\n", "", NULL};
     /* A held line whose block open closes a definitions-only paragraph:
      * the close harvests inside the publish, and a harvest that loses an
      * allocation once left the parser's cursor on the paragraph it had
@@ -4660,6 +4670,14 @@ static int case_chain_poison(void) {
     }
     if (chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0 ||
         chain_poison_sweep(nested_copies, "nested copies", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(both_ends, "both ends, pooled", true) != 0 ||
+        chain_poison_sweep(both_ends, "both ends", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(both_ends_nested, "both ends nested, pooled", true) != 0 ||
+        chain_poison_sweep(both_ends_nested, "both ends nested", false) != 0) {
         return -1;
     }
     return chain_poison_sweep(directive, "directive, pooled", true) != 0
