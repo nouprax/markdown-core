@@ -34,17 +34,20 @@ promised to remain compatible between releases.
   in it flipped, and the open leaf — flat across document size for prose,
   lists, quotes and definition-dense text (a footnote per two lines streams
   at 1–2 µs a tick from 256 KiB to 4 MiB), and flat for a growing fence or
-  HTML block too (its buffer moves into the literal and back rather than
-  being copied, and its record witnesses it by length: 0.2 µs a tick at
-  4 MiB); a leaf that is the whole document and is re-derived (one
+  HTML block too (the block's literal borrows its own content buffer, which
+  therefore never moves, and its record witnesses that buffer by length:
+  0.19 µs a tick at every size from 256 KiB to 4 MiB, against 21 µs and
+  396 µs before); a leaf that is the whole document and is re-derived (one
   paragraph, one paragraph of definitions) costs the leaf. The pairing at
   the frontier aligns what its sweeps leave, so a run changed at both ends
   in one chunk — a definition flipping a link at its front while its tail
   grows — keeps the unchanged siblings between: what a chunk BRINGS is not
-  charged to the pairing and neither is the run's width, so a paragraph of
-  twenty thousand lines and a chunk of three hundred both keep their ids.
-  What is bounded is the CHANGES, at 64 unmatched children per run; past
-  that the run is being rewritten rather than edited and it pairs
+  charged to the pairing, so a chunk of three hundred lines keeps them, and
+  neither is the run's width until the work a pairing may spend runs out,
+  which for a small change is some hundreds of thousands of children (a
+  paragraph of 140 000 lines keeps every id; one of 200 000 does not). What
+  is otherwise bounded is the CHANGES, at 64 unmatched children per run;
+  past that the run is being rewritten rather than edited and it pairs
   positionally, as it always did. An append never rebuilds:
   there is no other kind of tick, and a failed append leaves the head
   answering for no tree.

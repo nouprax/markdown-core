@@ -395,11 +395,12 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `bench
 - 串行/资源锁:benchmark 测试标记 `RUN_SERIAL`;benchmark preset
   以单 job 执行。
 - Performance 测量固定 warmup/repeat。benchmark runner 使用 monotonic
-  wall-clock，warmup 1 + repeats 取中位数（append 的 bounded-leaf shape 以 8
-  burst × 16 tick 的中位数计，因为一个 tick 低于时钟分辨率；leaf 即整个文档
-  且每 tick 重新推导的 giant_paragraph 与 references_appendix 以 5 burst ×
-  1 tick 计——`fence` 自 2026-08-17 起属于前者：它的 buffer 由 close 借出、
-  由 retract 收回，tick 不再触碰它已持有的字节）；所有 gate 都是 doubling
+  wall-clock，warmup 1 + repeats 取中位数（append 的每-tick 成本低于时钟
+  分辨率的 shape 以 8 burst × 16 tick 的中位数计——prose、nested_list、
+  footnote_dense、giant_paragraph，以及自 2026-08-17 起的 `fence`：它的
+  buffer 由 close 借出、由 retract 收回，tick 不再触碰它已持有的字节；只有
+  每 tick 重新 harvest 整个 leaf 的 references_appendix 以 5 burst × 1 tick
+  计，因为它的单 tick 已是毫秒量级）；所有 gate 都是 doubling
   之间的相对比率——parse-scaling 的渐近趋势、append 每 tick 成本的 flat/linear
   bound、amortized K 的 flat bound——均不使用易波动的绝对时间 gate。
 - Scope-table complexity 使用 512 → 32768 的 adversarial deep-chain doubling
