@@ -306,6 +306,11 @@ static const struct {
      "freed"},
     {"```formula\nx+y\n\nz\n```\n\nafter\n", "0000001000", "the same, for a formula fence"},
     {"> $$x$$\n\n- $$y$$\n\n- $$z$$\n", "0000001000", "the same, inside a quote and inside list items"},
+    {"$$x$$\n\n- $$y$$\n- z\n\n```formula\na\n```\n",
+     "0000001000",
+     "a promoted block closed for good by the feed kept its id: the settle's replacement pairs against the retired "
+     "survivor"},
+    {"$$x$$\nno longer standalone\n\n$$y$$\n", "0000001000", "a promotion undone by the next line"},
 };
 
 static int eq_replay_per_byte_with_empties(

@@ -109,9 +109,10 @@ typedef struct markdown_core_chain {
     /* Whether builds pool their allocations in an arena. Fixed at birth, so
      * a generation is released the same way it was taken. */
     bool pooled;
-    /* THE HEAD'S GENERATION. A build produces a tree and the diagnostics
-     * that describe it, out of one arena; publishing swaps the whole thing
-     * in and releases what it replaced. The head is the only generation the
+    /* THE HEAD'S GENERATION. The first build produces a tree and the
+     * diagnostics that describe it, out of one arena, and swaps the whole
+     * thing in; every append grows it in place (document_tick_warm), and it
+     * is released only with the chain. The head is the only generation the
      * chain keeps, which is exactly what a superseded handle answering for
      * no tree buys (the Mutation section of the public header). */
     document_generation head;

@@ -1175,6 +1175,14 @@ void markdown_core_parser_finalize_blocks(markdown_core_parser *parser) {
         S_process_line(parser, parser->linebuf.ptr, parser->linebuf.size);
         markdown_core_strbuf_clear(&parser->linebuf);
     }
+    /* A line that lost an allocation stops where it was: `current` may name
+     * a block that line's block open had already finalized — even one it
+     * unlinked (a definitions-only paragraph) — and there is nothing to
+     * close from there. The parser has failed; its callers read the sticky
+     * bit and abandon the tree. */
+    if (parser->oom || parser->internal_error) {
+        return;
+    }
 
     while (parser->current != parser->root) {
         parser->current = finalize(parser, parser->current);

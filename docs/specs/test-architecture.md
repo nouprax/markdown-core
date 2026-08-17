@@ -130,8 +130,7 @@ correctness 下的 `robustness` cases 断言结果、错误与生命周期；ben
 workloads 负责 warmup/repeat、计时、吞吐量、relative scaling 与性能基线。两者可以
 复用确定性 input generator，但不得复用测试注册、断言或执行入口。
 
-C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 是
-唯一的次级调度 label):
+C 侧 CTest label taxonomy(每个测试恰有一个主 suite label):
 
 | Label | 覆盖 |
 | --- | --- |
@@ -144,7 +143,6 @@ C 侧 CTest label taxonomy(每个测试恰有一个主 suite label;`complexity` 
 | `extensions` | GFM/formula/directive extension specs 与 option gates |
 | `regression` | 固定回归语料与 registry 生命周期(`regression_commonmark`、`regression_registry_lifecycle`) |
 | `pathological` | 逐 case 注册的对抗输入与 directive 复杂度(`pathological_*`) |
-| `complexity` | `pathological_complexity_*` 附加的次级调度 label:sanitizer presets 用它排除 process-CPU 复杂度 gate,这些 case 的主 label 仍是 `pathological` |
 | `fuzz` | 确定性 fuzz smoke(`fuzz_smoke`) |
 | `packaging` | corpus/workspace 政策 guard(`packaging_corpus_guard`) |
 | `benchmark` | 独立调度的性能 workloads(`benchmark_*`) |
@@ -365,9 +363,9 @@ source 输入都到达不了的代码，是缺陷或死代码，需要决策，*
 - 某项 required metric **完全没有计数**时判失败——插桩器悄悄停止产出分支数据，
   否则会通过全部逐文件规则却什么都没证明。
 
-C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `complexity`：那些 case
+C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `benchmark`：那些 case
 断言的是**用时**而不是输出，且其执行路径受调度影响，会让 required gate 变成 flaky。
-它们在普通 preset 下仍是 required gate，被排除的是覆盖率归属，不是测试本身。
+它们在 benchmark preset 下仍是 required gate，被排除的是覆盖率归属，不是测试本身。
 
 `unpinned` 不是永久豁免。其收敛排期由
 `docs/migration/2026-08-01-incremental-canonical-ast-plan.md` 的里程碑拥有；
@@ -387,23 +385,20 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
   规范化过程无从隐藏 drift。
 - 文本产物使用 LF 与单一 final newline。
 - Timeout 由 runner 声明层持有:CTest `TIMEOUT` 属性(pathological 30s、
-  spec/extension 120–240s、complexity 120s、fuzz 240s、benchmark 600s);Swift
+  spec/extension 120–240s、fuzz 240s、benchmark 600s);Swift
   由 Swift Testing traits 持有。
 - Expected failure 必须显式建模(当前无);禁止静默 skip;缺少必需工具时在
   configure 阶段失败(`MARKDOWN_CORE_TESTS=ON` 而无库目标时 FATAL_ERROR),不
   降级跳过。
 - 临时文件只进入 build 目录;进程清理由 runner 负责(in-process 转换,无子进
   程残留;CLI 测试通过管道等待退出)。
-- 串行/资源锁:benchmark 与 complexity 测试标记 `RUN_SERIAL`;benchmark preset
+- 串行/资源锁:benchmark 测试标记 `RUN_SERIAL`;benchmark preset
   以单 job 执行。
-- Performance 测量固定 warmup/repeat。complexity runner 统一使用 process
-  user+kernel CPU time，排除 hosted runner 将进程 deschedule 的时间：parse-scaling
-  每个 endpoint warmup 1，随后长样本单次完整 parse、短样本 3 个至少 25 ms CPU
-  的 sample 取中位数。benchmark runner 单独使用 monotonic wall-clock，warmup 1 +
-  repeats 5 取中位数。complexity 的 parse-scaling cases 分别以
-  scanner/map/reference 4 KiB → 128 MiB 与 delimiter-dense 4 KiB → 64 KiB
-  endpoint 的每字节 CPU 成本断言渐近趋势；benchmark 使用 doubling 相对比率；
-  均不使用易波动的绝对时间 gate。
+- Performance 测量固定 warmup/repeat。benchmark runner 使用 monotonic
+  wall-clock，warmup 1 + repeats 取中位数（append 的 warm shape 以 8 burst ×
+  16 tick 的中位数计，因为一个 tick 低于时钟分辨率）；所有 gate 都是 doubling
+  之间的相对比率——parse-scaling 的渐近趋势、append 每 tick 成本的 flat/linear
+  bound、amortized K 的 flat bound——均不使用易波动的绝对时间 gate。
 - Scope-table complexity 使用 512 → 32768 的 adversarial deep-chain doubling
   序列：每个深度先 warmup，再取 3 个至少 25 ms CPU sample 的中位数；gate
   比较六个相邻区间 normalized growth 的中位数。这样持续的 ancestor-walk
@@ -412,9 +407,11 @@ C 侧 `coverage` preset 在断言解析输出的 label 集合内再排除 `compl
 - Benchmark runner 的 append shapes 同样是 trend-based：六个 shape（其中
   `footnote_dense` 继承了旧 footnote-renumber complexity case 的职责）各以
   256 KiB → 4 MiB 的 doubling 序列驱动，gate 比较四个相邻区间 normalized
-  growth 的中位数。`footnote_dense` 的 per-append 成本按构造就是 footnote
-  数量的线性函数（每个被重编号的 footnote 都是一个被重新盖章的 changed
-  node），所以被测的信号只是**对线性的偏离**，两个孤立 endpoint 之间的一次
+  growth 的中位数。`footnote_dense`（每两行一个 footnote 定义）的 per-tick
+  成本按构造是常数——一个 flip 只重精炼提到该 label 的单元——所以它与
+  prose、nested_list 一样以 FLAT（≤1.5×/doubling）为 gate；线性 bound 只留给
+  leaf 即整个文档的 shape（giant_paragraph、fence、references_appendix）。
+  两个孤立 endpoint 之间的一次
   allocator/cache 切换与该信号同量级。旧 case 的两点比值形式正是这样失效
   的：同一份 C 代码在一个 git commit 上通过、在只改了一个文本文件的下一个
   commit 上以 4.099x 失败。中位数形式当时实测健康实现为 0.984x–0.996x；把

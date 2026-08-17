@@ -346,6 +346,7 @@ static bool document_tick_warm(
     markdown_core_warm_undo *after = NULL;
     bool ok = false;
     bool revived = false;
+    markdown_core_node *leaf_before = NULL;
     size_t i;
 
     generation->undo = NULL;
@@ -366,6 +367,7 @@ static bool document_tick_warm(
         }
         goto done;
     }
+    leaf_before = before->spine_count > 0 ? before->spine[before->spine_count - 1].node : NULL;
     markdown_core_parser_feed(parser, (const char *)chunk.data, chunk.length);
     if (parser_failed(parser)) {
         goto done;
@@ -386,19 +388,23 @@ static bool document_tick_warm(
     {
         bool changed_below = false;
         bool leaf_off = false;
-        /* THE LEAF THAT IS OFF THE TREE. The record's leaf may be out of
-         * its parent's child list when the identity step runs: the FEED
-         * took it (a paragraph that came to be nothing but definitions,
-         * for good — the parser keeps it, unlinked, so this can know rather
-         * than read it freed), or the CLOSE took it again (the same, for
-         * this projection; the record holds it), or the close's refine
-         * REPLACED it (a paragraph promoted to a formula block, which
-         * stands in its slot). Either way its saved `next` says nothing,
-         * so the parent's run is everything after the sibling it followed,
+        /* THE LEAF THAT IS NOT WHAT IT WAS. The record's leaf may be out
+         * of its parent's child list when the identity step runs — the
+         * FEED took it (a paragraph that came to be nothing but
+         * definitions, for good; the parser keeps it, unlinked, so this can
+         * know rather than read it freed), or the CLOSE took it again (the
+         * same, for this projection; the record holds it), or the close's
+         * refine REPLACED it (a paragraph promoted to a formula block, which
+         * stands in its slot) — or the SETTLE's refine replaced it for good
+         * and the entry names the block that stands there now. Either way
+         * the parent's saved youngest child is not the child it saved, so
+         * the parent's run is everything after the sibling it followed,
          * paired against both of what the last close retired there, as one
          * run — with the block that had replaced it at the front, where it
-         * stood — and the leaf's own frontier retires whole. */
-        if (before->spine_count > 1 && before->spine[before->spine_count - 1].node->parent == NULL) {
+         * stood, so a promoted block that closes for good keeps its id — and
+         * the leaf entry pairs nothing of its own. */
+        if (before->spine_count > 1 && (before->spine[before->spine_count - 1].node->parent == NULL ||
+                                        before->spine[before->spine_count - 1].node != leaf_before)) {
             markdown_core_warm_open_block *parent = &before->spine[before->spine_count - 2];
             leaf_off = true;
             if (parent->retired_inserted) {

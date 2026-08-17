@@ -3904,11 +3904,13 @@ static int chain_poison_sweep(const char *const *chunks, const char *name, bool 
     return 0;
 }
 
-/* Three streams, so the sweep reaches every allocation the tick has —
- * retract, feed, settle, publish, frontier handover — and the flip's and the
- * moved-content restore's on top of them: a definition-bearing stream, whose
- * definition re-refines the unit that mentions it; a prose stream; and a
- * fence, whose bytes the retract copies back. Every allocation lost must
+/* Four streams, so the sweep reaches every allocation the tick has —
+ * retract, feed, settle, publish, frontier handover — and the flip's, the
+ * moved-content restore's and the close's own harvest on top of them: a
+ * definition-bearing stream, whose definition re-refines the unit that
+ * mentions it; a prose stream; a fence, whose bytes the retract copies
+ * back; and a definitions-only paragraph closed by a held block opener,
+ * then a formula promotion. Every allocation lost must
  * poison or succeed whole. Each runs pooled and unpooled: an arena carves
  * most of a build's allocations from slabs the sweep never sees, so only
  * the unpooled run fails every ordinal — the held line's growth among
@@ -3920,6 +3922,11 @@ static int case_chain_poison(void) {
      * back — the one restore that allocates, and once aborted an assert-
      * enabled build instead of poisoning the chain when it failed. */
     static const char *const fence[] = {"```\nx", "y\n", "z\n```\n", NULL};
+    /* A held line whose block open closes a definitions-only paragraph:
+     * the close harvests inside the publish, and a harvest that loses an
+     * allocation once left the parser's cursor on the paragraph it had
+     * unlinked, which the close then read through a NULL parent. */
+    static const char *const held_opener[] = {"[a]: /1\n", "# h", "\n[b]: /2\n", "$$x$$", "\n", NULL};
     if (chain_poison_sweep(definitions, "definitions, pooled", true) != 0 ||
         chain_poison_sweep(definitions, "definitions", false) != 0) {
         return -1;
@@ -3927,7 +3934,12 @@ static int case_chain_poison(void) {
     if (chain_poison_sweep(warm, "prose, pooled", true) != 0 || chain_poison_sweep(warm, "prose", false) != 0) {
         return -1;
     }
-    return chain_poison_sweep(fence, "fence, pooled", true) != 0 ? -1 : chain_poison_sweep(fence, "fence", false);
+    if (chain_poison_sweep(fence, "fence, pooled", true) != 0 || chain_poison_sweep(fence, "fence", false) != 0) {
+        return -1;
+    }
+    return chain_poison_sweep(held_opener, "held opener, pooled", true) != 0
+               ? -1
+               : chain_poison_sweep(held_opener, "held opener", false);
 }
 
 /* --- capture_growth_ceiling --------------------------------------------- */

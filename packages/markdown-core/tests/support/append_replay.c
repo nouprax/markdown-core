@@ -671,9 +671,9 @@ static int er_verify_empty_append_identity(
     return 0;
 }
 
-/* Walks `document`'s tree against the ledger. `previous` holds the
- * predecessor's nodes (empty for the seeding walk); afterwards, live ledger
- * entries the walk did not meet are retired. */
+/* Walks `document`'s tree against the ledger. `before` is the head as
+ * captured before the mutation (empty for the seeding walk); afterwards,
+ * live ledger entries the walk did not meet are retired. */
 static int er_verify_tree(er_replay *replay, const markdown_core_document *document, const er_capture *before) {
     er_walk_state state;
     size_t i;
@@ -759,8 +759,9 @@ static int er_verify_successor(
     int result = -1;
 
     /* The successor is adopted first so every failure path below leaves the
-     * replay closeable; the predecessor stays alive until the double walk
-     * has compared against it, and is released at `done`. */
+     * replay closeable; the predecessor is released only at `done` — every
+     * comparison reads `before`, since a superseded handle answers for no
+     * tree. */
     replay->document = successor;
 
     if (markdown_core_document_series(successor) != before->series) {

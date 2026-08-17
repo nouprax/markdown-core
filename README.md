@@ -212,7 +212,10 @@ The language-neutral AST contract is
 [`docs/specs/canonical-ast.md`](docs/specs/canonical-ast.md). The adopted
 plan for the streaming redesign — `append` as the hot path, documents as
 chain heads — is
-[`docs/reviews/2026-08-12-streaming-plan.md`](docs/reviews/2026-08-12-streaming-plan.md);
+[`docs/reviews/2026-08-12-streaming-plan.md`](docs/reviews/2026-08-12-streaming-plan.md),
+and the engine mechanism that replaced its parser-tail fork — the living
+tree, one tick per append — is
+[`docs/reviews/2026-08-13-living-tree-plan.md`](docs/reviews/2026-08-13-living-tree-plan.md);
 [`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md)
 is a frozen earlier design that plan supersedes, and no current public API
 implements it.

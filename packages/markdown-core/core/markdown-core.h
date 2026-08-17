@@ -437,9 +437,12 @@ markdown_core_node *markdown_core_parser_finish(markdown_core_parser *parser);
 /** First half of a split markdown_core_parser_finish: flushes any buffered
  * partial line and finalizes every open block without running the inline
  * phase. Afterwards the tree is block-complete and the parser's reference
- * map holds every harvested definition. Every caller runs
- * markdown_core_parser_refine_blocks immediately after; the split is a
- * seam between the two phases, not a decision point.
+ * map holds every harvested definition. A one-shot finish runs
+ * markdown_core_parser_refine_blocks immediately after; a streaming
+ * publish (markdown_core_parser_warm_publish) closes the same way and then
+ * refines only the units that close closed, so the tree stays the
+ * parser's to reopen. A parser that lost an allocation on the held line
+ * stops there and closes nothing: its callers read the sticky bit.
  */
 MARKDOWN_CORE_EXPORT
 void markdown_core_parser_finalize_blocks(markdown_core_parser *parser);

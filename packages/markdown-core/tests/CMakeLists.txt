@@ -2,10 +2,10 @@
 # grouped by label:
 #
 #   api facade consumer spec equivalence extensions regression pathological
-#   complexity fuzz packaging benchmark
+#   fuzz packaging benchmark
 #
-# The default correctness preset excludes conformance and benchmark; sanitizer
-# correctness presets also exclude wall-clock complexity gates.  The benchmark
+# The default correctness preset excludes conformance and benchmark; the
+# sanitizer correctness presets exclude the same two.  The benchmark
 # preset selects only its label.  Every suite is native (C/C++); the test tree
 # has no scripting-language dependency and never touches the network.
 
