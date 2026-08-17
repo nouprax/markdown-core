@@ -290,6 +290,7 @@ if(MARKDOWN_CORE_STATIC)
               warm_tick_stream
               warm_tick_living_tree
               warm_identity_pins
+              warm_identity_reach
               projection_write_agrees
               projection_witness_agrees
               warm_append_stream

@@ -3275,8 +3275,8 @@ static int case_warm_identity_pins(void) {
          MARKDOWN_CORE_KIND_EMPHASIS,
          1,
          false,
-         "a both-ends tick over a FORTY-LINE paragraph: the alignment walks the edit distance, so identity does not "
-         "depend on how wide the run is",
+         "a both-ends tick over a FORTY-LINE paragraph, where a table over the middle would already have given up "
+         "(warm_identity_reach measures how far this reaches)",
          NULL},
     };
     size_t i;
@@ -3347,6 +3347,177 @@ static int case_warm_identity_pins(void) {
         markdown_core_document_free(document);
     }
     return 0;
+}
+
+/* --- warm_identity_reach --------------------------------------------------- */
+
+/* HOW FAR THE PAIRING REACHES, in ids kept. The pins above name one node
+ * each; this asks the question the contract answers for a consumer — of the
+ * nodes that existed before an append, how many still exist after it — over
+ * the two shapes that decide it: a chunk that BRINGS a lot (a client
+ * flushing a hundred lines at once) arriving together with a change that
+ * defeats both sweeps, and a run that IS a lot (a paragraph of thousands of
+ * lines) taking a small change. Both once collapsed to nothing: the first
+ * because the walk was charged for every child the chunk brought, the
+ * second because it was charged for the run's width. Neither is charged for
+ * now, and what remains bounded is the CHANGES, which is what these
+ * measure. */
+static size_t wir_collect(const markdown_core_node *node, markdown_core_node_id *out, size_t capacity) {
+    size_t count = 0;
+    while (node) {
+        if (count == capacity) {
+            return count;
+        }
+        out[count++] = markdown_core_node_get_id(node);
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return count;
+}
+
+static int wir_compare_id(const void *a, const void *b) {
+    markdown_core_node_id x = *(const markdown_core_node_id *)a;
+    markdown_core_node_id y = *(const markdown_core_node_id *)b;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+/* Builds `prefix` followed by `count` copies of `unit`. */
+static char *wir_build(const char *prefix, const char *unit, size_t count) {
+    size_t prefix_length = strlen(prefix);
+    size_t unit_length = strlen(unit);
+    char *text = (char *)malloc(prefix_length + unit_length * count + 1);
+    size_t i;
+    if (!text) {
+        return NULL;
+    }
+    memcpy(text, prefix, prefix_length);
+    for (i = 0; i < count; i++) {
+        memcpy(text + prefix_length + i * unit_length, unit, unit_length);
+    }
+    text[prefix_length + unit_length * count] = 0;
+    return text;
+}
+
+static int case_warm_identity_reach(void) {
+    static const struct {
+        const char *prefix;
+        const char *unit;
+        size_t count;
+        const char *appended_prefix;
+        const char *appended_unit;
+        size_t appended_count;
+        const char *appended_suffix;
+        size_t keep_all_but; /* the ids that may legitimately go */
+        const char *why;
+    } scenarios[] = {
+        {"[a] x\n",
+         "y\n",
+         2,
+         " q",
+         "\nw",
+         30,
+         "\n\n[a]: /u\n",
+         1,
+         "a chunk bringing thirty lines beside the definition that flips the paragraph's front: the growth is not "
+         "charged to the pairing, so only the text the flip consumed goes"},
+        {"[a] x\n", "y\n", 2, " q", "\nw", 300, "\n\n[a]: /u\n", 1, "the same, ten times the chunk"},
+        {"[a] x",
+         "\ny",
+         3000,
+         " q",
+         "\nw",
+         1,
+         "\n\n[a]: /u\n",
+         1,
+         "a three-thousand-line paragraph taking the same small change: the pairing is not charged for the run's "
+         "width either"},
+        {"[a] x", "\ny", 20000, " q", "\nw", 1, "\n\n[a]: /u\n", 1, "the same, seven times the run"},
+    };
+    size_t i;
+    int result = 0;
+
+    for (i = 0; i < sizeof(scenarios) / sizeof(scenarios[0]) && result == 0; i++) {
+        markdown_core_error *error = NULL;
+        markdown_core_document *document;
+        char *first = wir_build(scenarios[i].prefix, scenarios[i].unit, scenarios[i].count);
+        char *appended = NULL;
+        markdown_core_node_id *before = NULL;
+        markdown_core_node_id *after = NULL;
+        size_t capacity = (scenarios[i].count + scenarios[i].appended_count + 8) * 4;
+        size_t n_before;
+        size_t n_after;
+        size_t kept = 0;
+        size_t b;
+
+        {
+            char *body =
+                wir_build(scenarios[i].appended_prefix, scenarios[i].appended_unit, scenarios[i].appended_count);
+            if (body) {
+                appended = wir_build(body, scenarios[i].appended_suffix, 1);
+                free(body);
+            }
+        }
+        before = (markdown_core_node_id *)malloc(capacity * sizeof(*before));
+        after = (markdown_core_node_id *)malloc(capacity * sizeof(*after));
+        if (!first || !appended || !before || !after) {
+            result = -1;
+            goto next;
+        }
+        document = markdown_core_document_new(mc_sv(first, strlen(first)), NULL, &error);
+        if (!document) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "warm_identity_reach: scenario %zu did not parse\n", i);
+            result = -1;
+            goto next;
+        }
+        n_before = wir_collect(markdown_core_document_root(document), before, capacity);
+        {
+            markdown_core_document *successor =
+                markdown_core_document_append(document, mc_sv(appended, strlen(appended)), &error);
+            markdown_core_document_free(document);
+            if (!successor) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "warm_identity_reach: scenario %zu did not append\n", i);
+                result = -1;
+                goto next;
+            }
+            document = successor;
+        }
+        n_after = wir_collect(markdown_core_document_root(document), after, capacity);
+        qsort(after, n_after, sizeof(*after), wir_compare_id);
+        for (b = 0; b < n_before; b++) {
+            if (bsearch(&before[b], after, n_after, sizeof(*after), wir_compare_id)) {
+                kept++;
+            }
+        }
+        if (n_before < 5 || n_after <= n_before || kept + scenarios[i].keep_all_but < n_before) {
+            fprintf(
+                stderr,
+                "warm_identity_reach: scenario %zu (%s): %zu of %zu ids survived the append (%zu nodes after); at "
+                "most %zu may go\n",
+                i,
+                scenarios[i].why,
+                kept,
+                n_before,
+                n_after,
+                scenarios[i].keep_all_but
+            );
+            result = -1;
+        }
+        markdown_core_document_free(document);
+    next:
+        free(first);
+        free(appended);
+        free(before);
+        free(after);
+    }
+    return result;
 }
 
 /* --- projection_write_agrees ----------------------------------------------- */
@@ -6184,6 +6355,7 @@ static const concrete_case CASES[] = {
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_living_tree", case_warm_tick_living_tree},
     {"warm_identity_pins", case_warm_identity_pins},
+    {"warm_identity_reach", case_warm_identity_reach},
     {"projection_write_agrees", case_projection_write_agrees},
     {"projection_witness_agrees", case_projection_witness_agrees},
     {"warm_append_stream", case_warm_append_stream},

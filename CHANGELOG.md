@@ -38,12 +38,14 @@ promised to remain compatible between releases.
   being copied, and its record witnesses it by length: 0.2 µs a tick at
   4 MiB); a leaf that is the whole document and is re-derived (one
   paragraph, one paragraph of definitions) costs the leaf. The pairing at
-  the frontier aligns what its sweeps leave by edit distance, so a run
-  changed at both ends in one chunk — a definition flipping a link at its
-  front while its tail grows — keeps the unchanged siblings between,
-  however long the run is; a run rewritten rather than edited (more than
-  64 elementary changes at once) pairs positionally, as it always did. An
-  append never rebuilds:
+  the frontier aligns what its sweeps leave, so a run changed at both ends
+  in one chunk — a definition flipping a link at its front while its tail
+  grows — keeps the unchanged siblings between: what a chunk BRINGS is not
+  charged to the pairing and neither is the run's width, so a paragraph of
+  twenty thousand lines and a chunk of three hundred both keep their ids.
+  What is bounded is the CHANGES, at 64 unmatched children per run; past
+  that the run is being rewritten rather than edited and it pairs
+  positionally, as it always did. An append never rebuilds:
   there is no other kind of tick, and a failed append leaves the head
   answering for no tree.
 - Breaking (C extension API): an extension that opens blocks

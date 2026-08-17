@@ -154,15 +154,29 @@ static void diff_stack_release(diff_stack *stack) {
 // and a stream's middle differs by a handful of edits however long the
 // paragraph is. A table over the middle would have been O(m · n), which for
 // a paragraph of 32 lines already costs more than the parse that produced
-// it, so identity would have quietly depended on the paragraph's length.
+// it, so identity would have depended on the paragraph's length at every
+// size; it now depends on it only past the bounds below.
 //
-// Two bounds keep the tick honest: a distance past DIFF_ALIGN_MAX_EDITS is
-// a run rewritten rather than edited, and a frame never spends more than
-// DIFF_ALIGN_WORK subtree compares (which also bounds the arrays the walk
-// needs). Past either, the middle pairs positionally, as it did before
-// there was an alignment.
-#define DIFF_ALIGN_MAX_EDITS 64
-#define DIFF_ALIGN_WORK (1 << 17)
+// THE GROWTH IS FREE; THE CHANGES ARE WHAT IS BOUNDED. A run that gained
+// children must spend one move per child gained whatever else happened to
+// it, so a bound on the distance alone would charge a tick for the SIZE of
+// its chunk: a hundred lines arriving beside a definition flip would
+// exhaust it, and a run nothing had rewritten would pair positionally and
+// lose every id. The walk is therefore indexed by the moves that CONSUME
+// THE SHORTER SIDE — at most DIFF_ALIGN_CHANGES of them, one per child of
+// the shorter run left unmatched — while the moves that consume the longer
+// side are unbounded and free. That is also what makes the walk's memory
+// O(distance × changes) rather than O(distance²), so a chunk may bring any
+// number of children without the alignment growing quadratically.
+//
+// Two ceilings hold the worst case: DIFF_ALIGN_MAX_EDITS caps the distance
+// outright, and a frame never spends more than DIFF_ALIGN_WORK subtree
+// compares, so the wider a run is the shallower the look it gets. Past the
+// reach the middle pairs positionally, as it did before there was an
+// alignment.
+#define DIFF_ALIGN_CHANGES 64
+#define DIFF_ALIGN_MAX_EDITS 4096
+#define DIFF_ALIGN_WORK (1 << 22)
 
 static bool same_subtree(const markdown_core_node *a, const markdown_core_node *b) {
     return a->type == b->type && a->subtree_hash == b->subtree_hash;
@@ -185,31 +199,26 @@ static uint32_t gap_positional_pairs(
     return (uint32_t)i;
 }
 
-// The scratch one alignment works in: the two runs as arrays, the walk's
-// frontier (the furthest old index reached on each diagonal), that frontier
-// as it stood at every distance so the path can be walked back, and the
-// SNAKES the path is made of — runs of identical subtrees, {old index, new
-// index, length}, at most one more than the distance.
+// The scratch one alignment works in: the two runs as arrays (`few` is the
+// shorter, `many` the longer), the walk's frontier — how far into the
+// shorter run each number of unmatched children reaches — that frontier as
+// it stood at every distance so the path can be walked back, and the SNAKES
+// the path is made of: runs of identical subtrees, {old index, new index,
+// length}.
 typedef struct diff_align {
-    markdown_core_node **olds;
-    markdown_core_node **news;
-    int32_t *v;       // indexed [k + max_edits]
-    int32_t *trace;   // row d at trace + d * row
-    size_t row;       // 2 * max_edits + 1
-    uint32_t *snakes; // three per snake, in document order
+    markdown_core_node **few;
+    markdown_core_node **many;
+    bool swapped; // the shorter run is the NEW one
+    int32_t *v;   // indexed by unmatched children, 0..changes
+    int32_t *trace;
+    size_t changes; // the most children of the shorter run that may go unmatched
+    uint32_t *snakes;
 } diff_align;
 
-/* Lays the walk out in the chain's scratch, GROWN TO THE WALK: a distance
- * of at most `max_edits` needs that many rows of that many diagonals, and
- * the middles a stream actually aligns are a handful of children wide, so
- * the common tick's alignment fits in a few hundred bytes of a buffer the
- * chain already holds — where a layout sized for the bound would have
- * asked the allocator for thirty kilobytes per spine block per tick, which
- * measured as a fifth of a microsecond on every warm shape. */
-static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, size_t max_edits, diff_align *out) {
-    size_t row = 2 * max_edits + 1;
-    size_t need = (m + n) * sizeof(markdown_core_node *) + (row + (max_edits + 1) * row) * sizeof(int32_t) +
-                  (max_edits + 2) * 3 * sizeof(uint32_t);
+static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, size_t reach, size_t changes, diff_align *out) {
+    size_t row = changes + 1;
+    size_t need = (m + n) * sizeof(markdown_core_node *) + (row + (reach + 1) * row) * sizeof(int32_t) +
+                  (reach + 2) * 3 * sizeof(uint32_t);
     if (need > ctx->scratch_capacity) {
         /* From the CHAIN's allocator, never the generation's: the buffer
          * outlives the tick that grew it, and a generation's may be an
@@ -223,21 +232,21 @@ static bool align_scratch(diff_ctx *ctx, size_t m, size_t n, size_t max_edits, d
         ctx->scratch = grown;
         ctx->scratch_capacity = need;
     }
-    out->olds = (markdown_core_node **)ctx->scratch;
-    out->news = out->olds + m;
-    out->v = (int32_t *)(out->news + n);
+    out->few = (markdown_core_node **)ctx->scratch;
+    out->many = out->few + (m < n ? m : n);
+    out->v = (int32_t *)(out->few + m + n);
     out->trace = out->v + row;
-    out->row = row;
-    out->snakes = (uint32_t *)(out->trace + (max_edits + 1) * row);
+    out->changes = changes;
+    out->snakes = (uint32_t *)(out->trace + (reach + 1) * row);
     return true;
 }
 
-// Aligns an m × n middle within `max_edits`: answers how many snakes the
-// path is made of, written into `align->snakes` in document order, or 0
-// when the two sides differ by more than that.
+// Aligns an m × n middle within `reach` moves: answers how many snakes the
+// path is made of, written into `align->snakes` in document order, or 0 when
+// the two sides are further apart than that.
 //
 // The walk extends every snake as far as it goes before spending another
-// edit, which is what makes a subtree with several identical candidates —
+// move, which is what makes a subtree with several identical candidates —
 // every soft break hashes the same, so does a repeated word — pair with the
 // EARLIEST one: a run grows at its end, so the change the sweeps could not
 // reach is a flip at the front, and the trailing gap must be left holding
@@ -249,69 +258,68 @@ static size_t align_middle(
     markdown_core_node *w,
     size_t m,
     size_t n,
-    size_t max_edits
+    size_t reach
 ) {
-    int32_t *v = align->v + (align->row - 1) / 2;
+    size_t few_length = m < n ? m : n;
+    size_t many_length = m < n ? n : m;
+    size_t row = align->changes + 1;
     size_t d;
     size_t i;
-    int32_t k;
 
+    align->swapped = n < m;
     for (i = 0; i < m; i++, o = o->next) {
-        align->olds[i] = o;
+        (align->swapped ? align->many : align->few)[i] = o;
     }
     for (i = 0; i < n; i++, w = w->next) {
-        align->news[i] = w;
+        (align->swapped ? align->few : align->many)[i] = w;
     }
-    v[1] = 0;
-    for (d = 0; d <= max_edits; d++) {
-        for (k = -(int32_t)d; k <= (int32_t)d; k += 2) {
+    for (d = 0; d <= reach; d++) {
+        size_t r = d < align->changes ? d : align->changes;
+        // Descending, so each step still reads the previous distance's
+        // frontier where it needs it.
+        for (;; r--) {
             int32_t x;
             int32_t y;
-            // Reach diagonal k by the cheaper of the two moves that lead to
-            // it: down the diagonal above (a new child inserted) or right
-            // from the one below (an old child retired).
-            if (k == -(int32_t)d || (k != (int32_t)d && v[k - 1] < v[k + 1])) {
-                x = v[k + 1];
+            // Reach this many unmatched children by the cheaper of the two
+            // moves that lead to it: one more child of the LONGER run taken
+            // (free), or one more child of the shorter run left behind.
+            if (d == 0) {
+                x = 0;
+            } else if (r == 0 || (r != d && align->v[r - 1] < align->v[r])) {
+                x = align->v[r];
             } else {
-                x = v[k - 1] + 1;
+                x = align->v[r - 1] + 1;
             }
-            y = x - k;
-            while (x < (int32_t)m && y < (int32_t)n && same_subtree(align->olds[x], align->news[y])) {
+            y = x + (int32_t)(d - 2 * r);
+            while (x < (int32_t)few_length && y < (int32_t)many_length && same_subtree(align->few[x], align->many[y])) {
                 x++;
                 y++;
             }
-            v[k] = x;
-            align->trace[d * align->row + k + (int32_t)((align->row - 1) / 2)] = x;
-            if (x < (int32_t)m || y < (int32_t)n) {
-                continue;
-            }
-            // Both sides are consumed: walk the path back, writing its
-            // snakes last to first into the end of the array, then move
-            // them to its front.
-            {
+            align->v[r] = x;
+            align->trace[d * row + r] = x;
+            if (x >= (int32_t)few_length && y >= (int32_t)many_length) {
+                // Both sides are consumed: walk the path back, writing its
+                // snakes last to first into the end of the array, then move
+                // them to its front.
                 size_t room = d + 1;
                 size_t written = 0;
-                int32_t px = (int32_t)m;
-                int32_t py = (int32_t)n;
+                int32_t px = (int32_t)few_length;
                 size_t back;
+                size_t at = r;
                 for (back = d; back > 0; back--) {
-                    const int32_t *prev = align->trace + (back - 1) * align->row + (align->row - 1) / 2;
-                    int32_t here = px - py;
-                    int32_t from =
-                        (here == -(int32_t)back || (here != (int32_t)back && prev[here - 1] < prev[here + 1]))
-                            ? here + 1
-                            : here - 1;
+                    const int32_t *prev = align->trace + (back - 1) * row;
+                    bool free_move = at == 0 || (at != back && prev[at - 1] < prev[at]);
+                    size_t from = free_move ? at : at - 1;
                     int32_t prev_x = prev[from];
-                    int32_t prev_y = prev_x - from;
-                    int32_t snake_x = from == here + 1 ? prev_x : prev_x + 1;
+                    int32_t snake_x = free_move ? prev_x : prev_x + 1;
                     if (px > snake_x) {
                         uint32_t *snake = align->snakes + 3 * (room - ++written);
                         snake[0] = (uint32_t)snake_x;
-                        snake[1] = (uint32_t)(snake_x - here);
+                        snake[1] = (uint32_t)(snake_x + (int32_t)(back - 2 * at));
                         snake[2] = (uint32_t)(px - snake_x);
                     }
                     px = prev_x;
-                    py = prev_y;
+                    at = from;
                 }
                 if (px > 0) {
                     /* A path that opens with a match. Every caller sweeps
@@ -326,7 +334,19 @@ static size_t align_middle(
                 if (written && room > written) {
                     memmove(align->snakes, align->snakes + 3 * (room - written), written * 3 * sizeof(uint32_t));
                 }
+                if (align->swapped) {
+                    // The walk read the new run as the shorter one; the
+                    // plan is written in the old run's terms.
+                    for (i = 0; i < written; i++) {
+                        uint32_t swap = align->snakes[3 * i];
+                        align->snakes[3 * i] = align->snakes[3 * i + 1];
+                        align->snakes[3 * i + 1] = swap;
+                    }
+                }
                 return written;
+            }
+            if (r == 0) {
+                break;
             }
         }
     }
@@ -354,7 +374,7 @@ static bool diff_plan(
     markdown_core_node *w_end;
     diff_frame *frame;
     diff_step *steps;
-    diff_align align = {NULL, NULL, NULL, NULL, 0, NULL};
+    diff_align align = {NULL, NULL, false, NULL, NULL, 0, NULL};
     size_t pairable;
     size_t prefix = 0;
     size_t suffix = 0;
@@ -426,22 +446,40 @@ static bool diff_plan(
     // the types agree — a node whose own text changed keeps its identity, a
     // KIND change is a genuine retirement (5.2) — and the residue retires or
     // is minted.
-    if (middle_old > 0 && middle_new > 0 && middle_old + middle_new <= DIFF_ALIGN_WORK) {
-        /* Never further than the work a frame may spend, never further than
-         * a rewrite, and never further than the distance the two sides can
-         * possibly be apart — which is what keeps a small middle's walk
-         * small. */
-        size_t max_edits = DIFF_ALIGN_WORK / (middle_old + middle_new);
-        if (max_edits > DIFF_ALIGN_MAX_EDITS) {
-            max_edits = DIFF_ALIGN_MAX_EDITS;
+    if (middle_old > 0 && middle_new > 0) {
+        /* How far the walk may go: the difference in length, which every
+         * path pays and no bound may refuse, plus the changes allowed on top
+         * of it — then cut to the memory ceiling, to the work this frame may
+         * spend, and to the distance the two sides can possibly be apart. A
+         * reach short of the difference in length cannot reach the end at
+         * all, and that middle pairs positionally without a walk. */
+        size_t spread = middle_old > middle_new ? middle_old - middle_new : middle_new - middle_old;
+        size_t budget = DIFF_ALIGN_WORK / (middle_old + middle_new);
+        size_t reach = spread + 2 * DIFF_ALIGN_CHANGES;
+        if (reach > DIFF_ALIGN_MAX_EDITS) {
+            reach = DIFF_ALIGN_MAX_EDITS;
         }
-        if (max_edits > middle_old + middle_new) {
-            max_edits = middle_old + middle_new;
+        if (reach > budget) {
+            reach = budget;
         }
-        if (!align_scratch(ctx, middle_old, middle_new, max_edits, &align)) {
-            return false;
+        if (reach > middle_old + middle_new) {
+            reach = middle_old + middle_new;
         }
-        snakes = align_middle(&align, o, w, middle_old, middle_new, max_edits);
+        /* A reach short of the difference in length cannot reach the end at
+         * all, and that middle pairs positionally without a walk. What is
+         * left over the difference pays for the children of the shorter run
+         * that go unmatched, two moves each. */
+        if (reach >= spread) {
+            size_t changes = (reach - spread) / 2;
+            size_t fewer = middle_old < middle_new ? middle_old : middle_new;
+            if (changes > fewer) {
+                changes = fewer;
+            }
+            if (!align_scratch(ctx, middle_old, middle_new, reach, changes, &align)) {
+                return false;
+            }
+            snakes = align_middle(&align, o, w, middle_old, middle_new, reach);
+        }
     }
 
     step_count = 3 + 2 * snakes;
