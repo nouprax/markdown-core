@@ -169,14 +169,22 @@ static void diff_stack_release(diff_stack *stack) {
 // O(distance × changes) rather than O(distance²), so a chunk may bring any
 // number of children without the alignment growing quadratically.
 //
-// Two ceilings hold the worst case: DIFF_ALIGN_MAX_EDITS caps the distance
-// outright, and a frame never spends more than DIFF_ALIGN_WORK subtree
-// compares, so the wider a run is the shallower the look it gets. Past the
-// reach the middle pairs positionally, as it did before there was an
-// alignment.
+// WHAT BOUNDS THE WALK IS THE CHANGES AND NOTHING ELSE. The band is
+// DIFF_ALIGN_CHANGES wide however long the two runs are, so the walk costs
+// O(changes × (shorter run + distance)) — linear in the run, which is the
+// order the pairing already pays to visit it and a fraction of what the
+// parse that produced it paid. A budget divided by the run's width would
+// buy a constant factor with the ANSWER: the same small change would be
+// paired in a short paragraph and abandoned in a long one, which is
+// identity depending on the document's size. There was one, and it is gone.
+//
+// One ceiling remains and it bounds the walk's MEMORY, which is
+// O(distance × changes): an append that brings DIFF_ALIGN_MAX_EDITS more
+// children than it replaces pairs positionally rather than allocating
+// without limit for one tick. It bounds the CHUNK, never the document — a
+// run of any length pairs the same way.
 #define DIFF_ALIGN_CHANGES 64
 #define DIFF_ALIGN_MAX_EDITS 4096
-#define DIFF_ALIGN_WORK (1 << 22)
 
 static bool same_subtree(const markdown_core_node *a, const markdown_core_node *b) {
     return a->type == b->type && a->subtree_hash == b->subtree_hash;
@@ -454,13 +462,9 @@ static bool diff_plan(
          * reach short of the difference in length cannot reach the end at
          * all, and that middle pairs positionally without a walk. */
         size_t spread = middle_old > middle_new ? middle_old - middle_new : middle_new - middle_old;
-        size_t budget = DIFF_ALIGN_WORK / (middle_old + middle_new);
         size_t reach = spread + 2 * DIFF_ALIGN_CHANGES;
         if (reach > DIFF_ALIGN_MAX_EDITS) {
             reach = DIFF_ALIGN_MAX_EDITS;
-        }
-        if (reach > budget) {
-            reach = budget;
         }
         if (reach > middle_old + middle_new) {
             reach = middle_old + middle_new;

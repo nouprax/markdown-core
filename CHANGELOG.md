@@ -41,14 +41,13 @@ promised to remain compatible between releases.
   paragraph, one paragraph of definitions) costs the leaf. The pairing at
   the frontier aligns what its sweeps leave, so a run changed at both ends
   in one chunk — a definition flipping a link at its front while its tail
-  grows — keeps the unchanged siblings between: what a chunk BRINGS is not
-  charged to the pairing, so a chunk of three hundred lines keeps them, and
-  neither is the run's width until the work a pairing may spend runs out,
-  which for a small change is some hundreds of thousands of children (a
-  paragraph of 140 000 lines keeps every id; one of 200 000 does not). What
-  is otherwise bounded is the CHANGES, at 64 unmatched children per run;
-  past that the run is being rewritten rather than edited and it pairs
-  positionally, as it always did. An append never rebuilds:
+  grows — keeps the unchanged siblings between. Neither what a chunk BRINGS
+  nor the length of the run it lands in is charged to the pairing: a chunk
+  of three hundred lines and a paragraph of two hundred thousand keep every
+  id alike, so no document's size decides an identity. What is bounded is
+  the CHANGES, at 64 unmatched children per run; past that the run is being
+  rewritten rather than edited and it pairs positionally, as it always did.
+  An append never rebuilds:
   there is no other kind of tick, and a failed append leaves the head
   answering for no tree.
 - Breaking (C extension API): an extension that opens blocks

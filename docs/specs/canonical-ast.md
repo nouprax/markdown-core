@@ -325,11 +325,11 @@ distance, each as early as it can be — and what lies between those matches
 pairs positionally while the kinds agree, so a node whose own text changed
 keeps its identity instead of being retired and recreated. What an append
 BRINGS is not charged against the alignment, and neither is the length of
-the run it lands in; what is bounded is the number of children left
-unmatched, and the work one pairing may spend. Past those bounds the whole
-middle pairs positionally: a run REWRITTEN rather than edited, or one so
-long that the work bound leaves it only a shallow look, may retire ids a
-longer look would have kept. Retired ids are never reused.
+the run it lands in: the same change pairs the same way in a run of any
+size. What is bounded is the number of children left UNMATCHED, and past
+that bound the whole middle pairs positionally — a run REWRITTEN rather
+than edited may retire ids a longer look would have kept. Retired ids are
+never reused.
 
 ### Relationship to upstream cmark-gfm
 

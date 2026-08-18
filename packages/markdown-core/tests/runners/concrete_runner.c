@@ -3438,6 +3438,16 @@ static int case_warm_identity_reach(void) {
          "a three-thousand-line paragraph taking the same small change: the pairing is not charged for the run's "
          "width either"},
         {"[a] x", "\ny", 20000, " q", "\nw", 1, "\n\n[a]: /u\n", 1, "the same, seven times the run"},
+        {"[a] x",
+         "\ny",
+         200000,
+         " q",
+         "\nw",
+         1,
+         "\n\n[a]: /u\n",
+         1,
+         "the same, seventy times the run: what the pairing may spend is not divided by the run's width, so a "
+         "document's size never decides an identity (AGENTS.md)"},
     };
     size_t i;
     int result = 0;
