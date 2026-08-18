@@ -311,6 +311,25 @@ static const struct {
      "a promoted block closed for good by the feed kept its id: the settle's replacement pairs against the retired "
      "survivor"},
     {"$$x$$\nno longer standalone\n\n$$y$$\n", "0000001000", "a promotion undone by the next line"},
+    {"```c &amp; \\* title  \nx\n```\n\n  ~~~\tpy \ny\n  ~~~\n",
+     "0000000000",
+     "the info is minted at the open from the fence line — entities, escapes, tabs and trailing spaces decoded as "
+     "finalize once decoded them off the content — and the line never enters the content"},
+    {"- ```\n  code\n\n  more\n  ```\n- > ```js\n  > q\n  > ```\n",
+     "0000000000",
+     "the same, for fences under a list item and under a quote in an item, whose continuation prefixes precede the "
+     "code"},
+    {"    a\n\n    b\n   \n\n    c\n  \n\nprose\n",
+     "0000000000",
+     "an indented block's trailing blank lines are the record's only copy: cut at every close, moved back with the "
+     "literal, re-appended from the copy"},
+    {"```\n", "0000000000", "an empty fence: the moved-back buffer is the literal's one allocated byte"},
+    {"<div>\na\n\n</div>\n\n<!-- c\n\n-->\n", "0000000000", "an HTML block's buffer moves back whole"},
+    {"[a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] "
+     "[a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a] [a]\n\n[a]: /u\n",
+     "0000000000",
+     "one definition flips forty mentions at once: the middle differs by more than the alignment's edit bound, so it "
+     "pairs positionally — the tree must still be the one-shot tree"},
 };
 
 static int eq_replay_per_byte_with_empties(

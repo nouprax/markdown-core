@@ -200,9 +200,10 @@ static void set_parse_error(const markdown_core_parser *parser, markdown_core_er
 
 /* THE PUBLISHED PROJECTIONS a record's spine blocks carry: each block's own
  * projection as this publish shows it, written as bytes by the one
- * projection definition (markdown_core_ast_projection_write), for the next
- * tick to compare its next publish against exactly. A block on the spine
- * is the same object tick after tick, so there is no second node to hand
+ * projection definition's witness (markdown_core_ast_projection_witness:
+ * exact, but a block's growing content buffer by its length), for the next
+ * tick to compare its next publish against. A block on the spine is the
+ * same object tick after tick, so there is no second node to hand
  * markdown_core_ast_projection_changed; its past is these bytes. Written
  * at the end of every build — the first build's close and each tick — so a
  * lost allocation here is the tick's, not the record's. */
@@ -212,7 +213,7 @@ static bool record_published_projections(markdown_core_warm_undo *record, markdo
         markdown_core_warm_open_block *entry = &record->spine[i];
         markdown_core_strbuf out;
         markdown_core_strbuf_init(record->mem, &out, 32);
-        markdown_core_ast_projection_write(entry->node, &out);
+        markdown_core_ast_projection_witness(entry->node, &out);
         if (out.oom) {
             markdown_core_strbuf_free(&out);
             parser->oom = true;
@@ -234,7 +235,7 @@ static bool published_projection_moved(
     bool *lost
 ) {
     markdown_core_strbuf_clear(scratch);
-    markdown_core_ast_projection_write(node, scratch);
+    markdown_core_ast_projection_witness(node, scratch);
     if (scratch->oom) {
         *lost = true;
         return true;
@@ -414,7 +415,7 @@ static bool document_tick_warm(
     }
     /* Identity and revision, deepest block first. The run a block gained is
      * stamped, then diffed against the block's retired frontier — hash
-     * sweeps front and back, a positional middle by type, residue minted,
+     * sweeps front and back, the middle aligned, residue minted,
      * each pair classified by its fields and children — and the block itself
      * takes the tick's revision only if that diff or a deeper block says
      * something under it changed: an empty append moves no revision at all,
@@ -794,6 +795,7 @@ static markdown_core_chain *chain_retain(markdown_core_chain *chain) {
 static void chain_release(markdown_core_chain *chain) {
     if (chain && chain_fetch_add32(&chain->refcount, -1) == 1) {
         generation_release(&chain->head);
+        markdown_core_diff_scratch_release(chain);
         markdown_core_source_release(chain->source);
         free(chain);
     }

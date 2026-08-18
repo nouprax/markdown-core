@@ -128,7 +128,7 @@ struct markdown_core_node {
     // It is what the streaming frontier pairs on (extensions/diff.c): when
     // a tick re-derives the tail of the tree from the held partial line,
     // the new tail's subtrees are stamped and paired against the retired
-    // tail's by hash sweeps and a positional middle, so an unchanged node
+    // tail's by hash sweeps and an aligned middle, so an unchanged node
     // keeps its id and revision. Meaningful on exactly the subtrees the
     // facade stamps for that — a spine block's run of children as it
     // publishes, a re-refined unit's children — and on nothing else: a

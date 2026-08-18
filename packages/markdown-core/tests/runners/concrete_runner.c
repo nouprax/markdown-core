@@ -3132,11 +3132,23 @@ static int case_warm_tick_living_tree(void) {
  * definition streams in byte by byte lost their ids in the reviews. So each
  * scenario here names a node by kind and the append it must be stable
  * from, and its id is read after every append and compared. */
-/* The first node of `kind` in document order, or NULL. */
-static const markdown_core_node *wip_first_of_kind(const markdown_core_node *node, markdown_core_node_kind kind) {
+/* The first node of `kind` in document order — whose literal begins with
+ * `literal` when that is given — or NULL. */
+static const markdown_core_node *wip_first_of_kind(
+    const markdown_core_node *node,
+    markdown_core_node_kind kind,
+    const char *literal
+) {
     while (node) {
         if (markdown_core_node_get_kind(node) == kind) {
-            return node;
+            markdown_core_string text = {NULL, 0};
+            if (!literal) {
+                return node;
+            }
+            markdown_core_node_literal(node, &text);
+            if (text.data && text.length >= strlen(literal) && memcmp(text.data, literal, strlen(literal)) == 0) {
+                return node;
+            }
         }
         if (markdown_core_node_get_first_child(node)) {
             node = markdown_core_node_get_first_child(node);
@@ -3157,6 +3169,7 @@ static int case_warm_identity_pins(void) {
         size_t stable_from; /* the append after which the id must not move */
         bool formulas;
         const char *why;
+        const char *literal; /* names the node among its kind: the first whose literal begins so */
     } scenarios[] = {
         {{"$$x$$\n", "\n", "after\n", NULL},
          MARKDOWN_CORE_KIND_FORMULA_BLOCK,
@@ -3219,6 +3232,52 @@ static int case_warm_identity_pins(void) {
          1,
          false,
          "a link flipped for good keeps its id when the definition's paragraph survives"},
+        {{"[a] *b* c", "\nd\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a run changed at both ends in one tick — the flip at its front, the tail growing at its back — keeps "
+         "the sibling between: the middle is aligned, not paired positionally from a kind mismatch"},
+        {{"[a] *b* `c`", "\nd\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_CODE,
+         1,
+         false,
+         "the same, for the second of two unchanged siblings the alignment anchors"},
+        {{"[a] *b* [c]\n\n", "[a]: /u\n[c]: /v\n", NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "two definitions in one chunk flip both ends of a settled paragraph; the sibling between keeps its id"},
+        {{"[a] x\ny\nz", " q\nw\n\n[a]: /u\n", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the text being typed into keeps its id through a both-ends tick whose middle holds identical soft breaks: "
+         "the alignment anchors leftmost, so the trailing gap pairs 'z' with 'z q' and not with the next line",
+         "z"},
+        {{"[^1] x\nb\nc", "d\ne\n\n[^1]: note\n", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the same, for a footnote reference flipping at the front",
+         "c"},
+        {{"'a\nb\nc", "x'\nd", NULL},
+         MARKDOWN_CORE_KIND_TEXT,
+         1,
+         false,
+         "the same, when the front changes without any node being retired — a closing quote re-curls the opening "
+         "one — and the tail grows in the same tick",
+         "c"},
+        {{"[a] *b* c\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc"
+          "\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc\nc",
+          "\nd\n\n[a]: /u\n",
+          NULL},
+         MARKDOWN_CORE_KIND_EMPHASIS,
+         1,
+         false,
+         "a both-ends tick over a FORTY-LINE paragraph, where a table over the middle would already have given up "
+         "(warm_identity_reach measures how far this reaches)",
+         NULL},
     };
     size_t i;
 
@@ -3253,7 +3312,7 @@ static int case_warm_identity_pins(void) {
             if (step + 1 < scenarios[i].stable_from) {
                 continue;
             }
-            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind);
+            found = wip_first_of_kind(markdown_core_document_root(document), scenarios[i].kind, scenarios[i].literal);
             if (!found) {
                 fprintf(
                     stderr,
@@ -3288,6 +3347,187 @@ static int case_warm_identity_pins(void) {
         markdown_core_document_free(document);
     }
     return 0;
+}
+
+/* --- warm_identity_reach --------------------------------------------------- */
+
+/* HOW FAR THE PAIRING REACHES, in ids kept. The pins above name one node
+ * each; this asks the question the contract answers for a consumer — of the
+ * nodes that existed before an append, how many still exist after it — over
+ * the two shapes that decide it: a chunk that BRINGS a lot (a client
+ * flushing a hundred lines at once) arriving together with a change that
+ * defeats both sweeps, and a run that IS a lot (a paragraph of thousands of
+ * lines) taking a small change. Both once collapsed to nothing: the first
+ * because the walk was charged for every child the chunk brought, the
+ * second because it was charged for the run's width. Neither is charged for
+ * now, and what remains bounded is the CHANGES, which is what these
+ * measure. */
+static size_t wir_collect(const markdown_core_node *node, markdown_core_node_id *out, size_t capacity) {
+    size_t count = 0;
+    while (node) {
+        if (count == capacity) {
+            return count;
+        }
+        out[count++] = markdown_core_node_get_id(node);
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return count;
+}
+
+static int wir_compare_id(const void *a, const void *b) {
+    markdown_core_node_id x = *(const markdown_core_node_id *)a;
+    markdown_core_node_id y = *(const markdown_core_node_id *)b;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+/* Builds `prefix` followed by `count` copies of `unit`. */
+static char *wir_build(const char *prefix, const char *unit, size_t count) {
+    size_t prefix_length = strlen(prefix);
+    size_t unit_length = strlen(unit);
+    char *text = (char *)malloc(prefix_length + unit_length * count + 1);
+    size_t i;
+    if (!text) {
+        return NULL;
+    }
+    memcpy(text, prefix, prefix_length);
+    for (i = 0; i < count; i++) {
+        memcpy(text + prefix_length + i * unit_length, unit, unit_length);
+    }
+    text[prefix_length + unit_length * count] = 0;
+    return text;
+}
+
+static int case_warm_identity_reach(void) {
+    static const struct {
+        const char *prefix;
+        const char *unit;
+        size_t count;
+        const char *appended_prefix;
+        const char *appended_unit;
+        size_t appended_count;
+        const char *appended_suffix;
+        size_t keep_all_but; /* the ids that may legitimately go */
+        const char *why;
+    } scenarios[] = {
+        {"[a] x\n",
+         "y\n",
+         2,
+         " q",
+         "\nw",
+         30,
+         "\n\n[a]: /u\n",
+         1,
+         "a chunk bringing thirty lines beside the definition that flips the paragraph's front: the growth is not "
+         "charged to the pairing, so only the text the flip consumed goes"},
+        {"[a] x\n", "y\n", 2, " q", "\nw", 300, "\n\n[a]: /u\n", 1, "the same, ten times the chunk"},
+        {"[a] x",
+         "\ny",
+         3000,
+         " q",
+         "\nw",
+         1,
+         "\n\n[a]: /u\n",
+         1,
+         "a three-thousand-line paragraph taking the same small change: the pairing is not charged for the run's "
+         "width either"},
+        {"[a] x", "\ny", 20000, " q", "\nw", 1, "\n\n[a]: /u\n", 1, "the same, seven times the run"},
+        {"[a] x",
+         "\ny",
+         200000,
+         " q",
+         "\nw",
+         1,
+         "\n\n[a]: /u\n",
+         1,
+         "the same, seventy times the run: what the pairing may spend is not divided by the run's width, so a "
+         "document's size never decides an identity (AGENTS.md)"},
+    };
+    size_t i;
+    int result = 0;
+
+    for (i = 0; i < sizeof(scenarios) / sizeof(scenarios[0]) && result == 0; i++) {
+        markdown_core_error *error = NULL;
+        markdown_core_document *document;
+        char *first = wir_build(scenarios[i].prefix, scenarios[i].unit, scenarios[i].count);
+        char *appended = NULL;
+        markdown_core_node_id *before = NULL;
+        markdown_core_node_id *after = NULL;
+        size_t capacity = (scenarios[i].count + scenarios[i].appended_count + 8) * 4;
+        size_t n_before;
+        size_t n_after;
+        size_t kept = 0;
+        size_t b;
+
+        {
+            char *body =
+                wir_build(scenarios[i].appended_prefix, scenarios[i].appended_unit, scenarios[i].appended_count);
+            if (body) {
+                appended = wir_build(body, scenarios[i].appended_suffix, 1);
+                free(body);
+            }
+        }
+        before = (markdown_core_node_id *)malloc(capacity * sizeof(*before));
+        after = (markdown_core_node_id *)malloc(capacity * sizeof(*after));
+        if (!first || !appended || !before || !after) {
+            result = -1;
+            goto next;
+        }
+        document = markdown_core_document_new(mc_sv(first, strlen(first)), NULL, &error);
+        if (!document) {
+            markdown_core_error_free(error);
+            fprintf(stderr, "warm_identity_reach: scenario %zu did not parse\n", i);
+            result = -1;
+            goto next;
+        }
+        n_before = wir_collect(markdown_core_document_root(document), before, capacity);
+        {
+            markdown_core_document *successor =
+                markdown_core_document_append(document, mc_sv(appended, strlen(appended)), &error);
+            markdown_core_document_free(document);
+            if (!successor) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "warm_identity_reach: scenario %zu did not append\n", i);
+                result = -1;
+                goto next;
+            }
+            document = successor;
+        }
+        n_after = wir_collect(markdown_core_document_root(document), after, capacity);
+        qsort(after, n_after, sizeof(*after), wir_compare_id);
+        for (b = 0; b < n_before; b++) {
+            if (bsearch(&before[b], after, n_after, sizeof(*after), wir_compare_id)) {
+                kept++;
+            }
+        }
+        if (n_before < 5 || n_after <= n_before || kept + scenarios[i].keep_all_but < n_before) {
+            fprintf(
+                stderr,
+                "warm_identity_reach: scenario %zu (%s): %zu of %zu ids survived the append (%zu nodes after); at "
+                "most %zu may go\n",
+                i,
+                scenarios[i].why,
+                kept,
+                n_before,
+                n_after,
+                scenarios[i].keep_all_but
+            );
+            result = -1;
+        }
+        markdown_core_document_free(document);
+    next:
+        free(first);
+        free(appended);
+        free(before);
+        free(after);
+    }
+    return result;
 }
 
 /* --- projection_write_agrees ----------------------------------------------- */
@@ -3429,6 +3669,274 @@ done:
     }
     free(documents);
     free((void *)nodes);
+    return result;
+}
+
+/* --- projection_witness_agrees --------------------------------------------- */
+
+/* THE WITNESS IS THE BYTES, for one block across publishes. The record
+ * keeps a spine block's published projection as its witness
+ * (markdown_core_ast_projection_witness): the exact bytes, but a code
+ * block's or an HTML block's literal by its length, on the premise that the
+ * literal is the block's content buffer and the buffer only grows for the
+ * block's life — the close moves it into the literal whole, the retract
+ * moves it back, an indented block's cut trailing blanks come back from the
+ * copy. This holds the premise: streams whose leaf is a fence (with an info
+ * line, with tabs, closed and reopened), an indented block with blank lines
+ * inside and at its end, an HTML block, a formula fence, a table, a
+ * paragraph of definitions, are fed per byte and per line, and after every
+ * append each spine block of the record — the same object, by pointer and
+ * by id — has its exact projection compared with the one it had after the
+ * previous append, and its witness likewise: they must change together. A
+ * fence whose held line moves back wrong, or a retract that lost a byte,
+ * would leave the exact bytes changed and the witness not. */
+/* The node carrying `id` in the tree under `root`, or NULL. */
+static const markdown_core_node *pwa_find_by_id(const markdown_core_node *root, markdown_core_node_id id) {
+    const markdown_core_node *node = root;
+    while (node) {
+        if (markdown_core_node_get_id(node) == id) {
+            return node;
+        }
+        if (markdown_core_node_get_first_child(node)) {
+            node = markdown_core_node_get_first_child(node);
+            continue;
+        }
+        while (node && !markdown_core_node_get_next_sibling(node)) {
+            node = markdown_core_node_get_parent(node);
+        }
+        node = node ? markdown_core_node_get_next_sibling(node) : NULL;
+    }
+    return NULL;
+}
+
+static int case_projection_witness_agrees(void) {
+    static const char *const streams[] = {
+        "```c  hello &amp; world\nint main(void) {\n\treturn 0;\n}\n\n```\n\nafter\n\n```\nx\n",
+        "    indented\n\n    more\n    \n\n\n    tail\n\n\nprose\n\n    again\n  \n",
+        "<div>\n<p>html\n\n</p>\n</div>\n\nafter\n\n<!-- comment\nstill\n-->\n",
+        "```formula\nx+y\n\nz\n```\n\n$$\na\n$$\n",
+        "| a | b |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n\n[x]: /u\n[y]: /v \"t\"\n\n[x] and [y]\n",
+        "> ```\n> quoted\n> code\n> ```\n>\n> - item\n>\n>       indented in item\n>\n",
+        "~~~py\nline one\nline two\n\nline four\n  \n~~~\n\n- item\n\n      code in item\n      more\n\n  tail\n",
+        "<pre>\nkept\n  spaces\n\n</pre>\n<table>\n<tr>\n</table>\n\n````\n```\nnot closed\n````\n",
+        NULL,
+    };
+    /* One entry per spine block seen: what it was after the previous
+     * append. Keyed by pointer AND id — an id is never reused, so a freed
+     * block's address coming back as a new one pairs nothing. */
+    struct seen {
+        const markdown_core_node *node;
+        markdown_core_node_id id;
+        unsigned char *exact;
+        size_t exact_size;
+        unsigned char *witness;
+        size_t witness_size;
+        bool alive;
+    } *seen = NULL;
+    size_t seen_count = 0;
+    size_t seen_capacity = 0;
+    size_t compared = 0;
+    size_t moved = 0;
+    size_t t;
+    int result = 0;
+
+    for (t = 0; streams[t] && result == 0; t++) {
+        size_t mode;
+        for (mode = 0; mode < 2 && result == 0; mode++) {
+            markdown_core_parse_options options;
+            markdown_core_error *error = NULL;
+            markdown_core_document *document;
+            const char *text = streams[t];
+            size_t length = strlen(text);
+            size_t offset = 0;
+            size_t k;
+
+            markdown_core_parse_options_init(&options);
+            options.formulas = true;
+            document = markdown_core_document_new(mc_sv("", 0), &options, &error);
+            if (!document) {
+                markdown_core_error_free(error);
+                fprintf(stderr, "projection_witness_agrees: open failed\n");
+                result = -1;
+                break;
+            }
+            for (k = 0; k < seen_count; k++) {
+                free(seen[k].exact);
+                free(seen[k].witness);
+            }
+            seen_count = 0;
+            while (offset < length && result == 0) {
+                size_t step = 1;
+                markdown_core_document *successor;
+                const markdown_core_warm_undo *record;
+                size_t i;
+                if (mode == 1) {
+                    while (offset + step < length && text[offset + step - 1] != '\n') {
+                        step++;
+                    }
+                }
+                successor = markdown_core_document_append(document, mc_sv(text + offset, step), &error);
+                if (!successor) {
+                    markdown_core_error_free(error);
+                    fprintf(stderr, "projection_witness_agrees: stream %zu append at %zu failed\n", t, offset);
+                    result = -1;
+                    break;
+                }
+                markdown_core_document_free(document);
+                document = successor;
+                offset += step;
+                record = document->chain->head.undo;
+                for (k = 0; k < seen_count; k++) {
+                    seen[k].alive = false;
+                }
+                for (i = 0; record && i < record->spine_count && result == 0; i++) {
+                    const markdown_core_node *node = record->spine[i].node;
+                    markdown_core_node_id id = markdown_core_node_get_id(node);
+                    markdown_core_strbuf exact = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                    markdown_core_strbuf witness = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                    struct seen *entry = NULL;
+                    if (id == 0) {
+                        continue;
+                    }
+                    markdown_core_ast_projection_write(node, &exact);
+                    markdown_core_ast_projection_witness(node, &witness);
+                    if (exact.oom || witness.oom) {
+                        markdown_core_strbuf_free(&exact);
+                        markdown_core_strbuf_free(&witness);
+                        result = -1;
+                        break;
+                    }
+                    for (k = 0; k < seen_count; k++) {
+                        if (seen[k].node == node && seen[k].id == id) {
+                            entry = &seen[k];
+                            break;
+                        }
+                    }
+                    if (entry) {
+                        bool exact_same = entry->exact_size == (size_t)exact.size &&
+                                          (exact.size == 0 || memcmp(entry->exact, exact.ptr, (size_t)exact.size) == 0);
+                        bool witness_same =
+                            entry->witness_size == (size_t)witness.size &&
+                            (witness.size == 0 || memcmp(entry->witness, witness.ptr, (size_t)witness.size) == 0);
+                        compared++;
+                        moved += exact_same ? 0 : 1;
+                        if (exact_same != witness_same) {
+                            fprintf(
+                                stderr,
+                                "projection_witness_agrees: stream %zu (%s) at byte %zu: %s id %llu is %s by its exact "
+                                "projection and %s by its witness\n",
+                                t,
+                                mode ? "per line" : "per byte",
+                                offset,
+                                markdown_core_node_kind_name(markdown_core_node_get_kind(node)),
+                                (unsigned long long)id,
+                                exact_same ? "unchanged" : "changed",
+                                witness_same ? "unchanged" : "changed"
+                            );
+                            result = -1;
+                        }
+                        free(entry->exact);
+                        free(entry->witness);
+                    } else {
+                        if (seen_count == seen_capacity) {
+                            size_t grown_capacity = seen_capacity ? seen_capacity * 2 : 16;
+                            struct seen *grown = (struct seen *)realloc(seen, grown_capacity * sizeof(*grown));
+                            if (!grown) {
+                                markdown_core_strbuf_free(&exact);
+                                markdown_core_strbuf_free(&witness);
+                                result = -1;
+                                break;
+                            }
+                            seen = grown;
+                            seen_capacity = grown_capacity;
+                        }
+                        entry = &seen[seen_count++];
+                        entry->node = node;
+                        entry->id = id;
+                    }
+                    entry->alive = true;
+                    entry->exact_size = (size_t)exact.size;
+                    entry->exact = markdown_core_strbuf_detach(&exact);
+                    entry->witness_size = (size_t)witness.size;
+                    entry->witness = markdown_core_strbuf_detach(&witness);
+                    if (!entry->exact || !entry->witness) {
+                        result = -1;
+                    }
+                }
+                /* A block that left the spine on this tick — the chunk
+                 * closed it — is compared by the engine on exactly this
+                 * tick, against its record, so it is compared here too: by
+                 * id, in the tree as it stands (a leaf that vanished or was
+                 * replaced is not in it, and pairs by the frontier's exact
+                 * comparison, not by witness). Then its record is done with. */
+                for (k = 0; k < seen_count && result == 0;) {
+                    if (!seen[k].alive) {
+                        const markdown_core_node *closed =
+                            pwa_find_by_id(markdown_core_document_root(document), seen[k].id);
+                        if (closed) {
+                            markdown_core_strbuf exact = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                            markdown_core_strbuf witness = MARKDOWN_CORE_BUF_INIT(markdown_core_mem_default());
+                            bool exact_same;
+                            bool witness_same;
+                            markdown_core_ast_projection_write(closed, &exact);
+                            markdown_core_ast_projection_witness(closed, &witness);
+                            if (exact.oom || witness.oom) {
+                                result = -1;
+                            }
+                            exact_same = seen[k].exact_size == (size_t)exact.size &&
+                                         (exact.size == 0 || memcmp(seen[k].exact, exact.ptr, (size_t)exact.size) == 0);
+                            witness_same =
+                                seen[k].witness_size == (size_t)witness.size &&
+                                (witness.size == 0 || memcmp(seen[k].witness, witness.ptr, (size_t)witness.size) == 0);
+                            markdown_core_strbuf_free(&exact);
+                            markdown_core_strbuf_free(&witness);
+                            compared++;
+                            moved += exact_same ? 0 : 1;
+                            if (exact_same != witness_same) {
+                                fprintf(
+                                    stderr,
+                                    "projection_witness_agrees: stream %zu (%s) at byte %zu: %s id %llu, closed by "
+                                    "this "
+                                    "append, is %s by its exact projection and %s by its witness\n",
+                                    t,
+                                    mode ? "per line" : "per byte",
+                                    offset,
+                                    markdown_core_node_kind_name(markdown_core_node_get_kind(closed)),
+                                    (unsigned long long)seen[k].id,
+                                    exact_same ? "unchanged" : "changed",
+                                    witness_same ? "unchanged" : "changed"
+                                );
+                                result = -1;
+                            }
+                        }
+                        free(seen[k].exact);
+                        free(seen[k].witness);
+                        seen[k] = seen[--seen_count];
+                    } else {
+                        k++;
+                    }
+                }
+            }
+            markdown_core_document_free(document);
+        }
+    }
+    for (t = 0; t < seen_count; t++) {
+        free(seen[t].exact);
+        free(seen[t].witness);
+    }
+    free(seen);
+    if (result == 0 && (compared < 400 || moved < 100)) {
+        fprintf(
+            stderr,
+            "projection_witness_agrees: only %zu comparisons and %zu moves — the streams reach too little\n",
+            compared,
+            moved
+        );
+        result = -1;
+    }
+    if (result == 0) {
+        printf("projection_witness_agrees: %zu spine-block comparisons, %zu moved, witness agrees\n", compared, moved);
+    }
     return result;
 }
 
@@ -4312,6 +4820,16 @@ static int case_chain_poison(void) {
      * one's to the record's free, and the ledger sees a leak that a
      * one-copy spine cannot show. */
     static const char *const nested_copies[] = {":::note\n```\nx", "y\n", "```\n:::\n", NULL};
+    /* A RUN CHANGED AT BOTH ENDS IN ONE TICK: a definition flips the link at
+     * the paragraph's front while its tail grows, so the frontier's middle
+     * is aligned and its plan is longer than a frame holds inline — the
+     * one allocation the pairing itself makes, plus the walk's scratch. A
+     * plan lost half way must leave neither behind. */
+    static const char *const both_ends[] = {"[a] *b* `c` d\ne\nf", "g\nh\n\n[a]: /u\n", "", NULL};
+    /* The same, with the emphasis GROWING in the same tick, so a paired
+     * child has a middle of its own to align under a frame that already
+     * holds a plan on the heap. */
+    static const char *const both_ends_nested[] = {"[a] *b `c` d", "e* f\ng\n\n[a]: /u\n", "", NULL};
     /* A held line whose block open closes a definitions-only paragraph:
      * the close harvests inside the publish, and a harvest that loses an
      * allocation once left the parser's cursor on the paragraph it had
@@ -4333,6 +4851,14 @@ static int case_chain_poison(void) {
     }
     if (chain_poison_sweep(nested_copies, "nested copies, pooled", true) != 0 ||
         chain_poison_sweep(nested_copies, "nested copies", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(both_ends, "both ends, pooled", true) != 0 ||
+        chain_poison_sweep(both_ends, "both ends", false) != 0) {
+        return -1;
+    }
+    if (chain_poison_sweep(both_ends_nested, "both ends nested, pooled", true) != 0 ||
+        chain_poison_sweep(both_ends_nested, "both ends nested", false) != 0) {
         return -1;
     }
     return chain_poison_sweep(directive, "directive, pooled", true) != 0
@@ -5839,7 +6365,9 @@ static const concrete_case CASES[] = {
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_living_tree", case_warm_tick_living_tree},
     {"warm_identity_pins", case_warm_identity_pins},
+    {"warm_identity_reach", case_warm_identity_reach},
     {"projection_write_agrees", case_projection_write_agrees},
+    {"projection_witness_agrees", case_projection_witness_agrees},
     {"warm_append_stream", case_warm_append_stream},
     {"chain_poison", case_chain_poison},
     {"capture_growth_ceiling", case_capture_growth_ceiling},

@@ -33,10 +33,23 @@ promised to remain compatible between releases.
   cost of a tick is the chunk, the units it closed, the units a definition
   in it flipped, and the open leaf — flat across document size for prose,
   lists, quotes and definition-dense text (a footnote per two lines streams
-  at 1–2 µs a tick from 256 KiB to 4 MiB); a leaf that is the whole
-  document (one paragraph, one fence, one paragraph of definitions) costs
-  the leaf. An append never rebuilds: there is no other kind of tick, and a
-  failed append leaves the head answering for no tree.
+  at 1–2 µs a tick from 256 KiB to 4 MiB), and flat for a growing fence or
+  HTML block too (the block's literal borrows its own content buffer, which
+  therefore never moves, and its record witnesses that buffer by length:
+  0.19 µs a tick at every size from 256 KiB to 4 MiB, against 21 µs and
+  396 µs before); a leaf that is the whole document and is re-derived (one
+  paragraph, one paragraph of definitions) costs the leaf. The pairing at
+  the frontier aligns what its sweeps leave, so a run changed at both ends
+  in one chunk — a definition flipping a link at its front while its tail
+  grows — keeps the unchanged siblings between. Neither what a chunk BRINGS
+  nor the length of the run it lands in is charged to the pairing: a chunk
+  of three hundred lines and a paragraph of two hundred thousand keep every
+  id alike, so no document's size decides an identity. What is bounded is
+  the CHANGES, at 64 unmatched children per run; past that the run is being
+  rewritten rather than edited and it pairs positionally, as it always did.
+  An append never rebuilds:
+  there is no other kind of tick, and a failed append leaves the head
+  answering for no tree.
 - Breaking (C extension API): an extension that opens blocks
   (`try_opening_block`) and allocates payloads (`alloc_opaque`) must also
   provide `opaque_size` — the size of the plain-data payload behind a

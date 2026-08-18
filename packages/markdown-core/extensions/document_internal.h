@@ -109,6 +109,14 @@ typedef struct markdown_core_chain {
     /* Whether builds pool their allocations in an arena. Fixed at birth, so
      * a generation is released the same way it was taken. */
     bool pooled;
+    /* THE PAIRING'S SCRATCH, kept on the chain because every tick's pairing
+     * wants it and none of them wants to allocate it: the frontier diff
+     * walks its runs in it (extensions/diff.c) and hands it back grown.
+     * Owned; released with the chain. Legal as one buffer per chain because
+     * mutations on a chain are externally serialized by contract, and no
+     * pairing outlives the call that borrowed it. */
+    void *pairing_scratch;
+    size_t pairing_scratch_size;
     /* THE HEAD'S GENERATION. The first build produces a tree and the
      * diagnostics that describe it, out of one arena, and swaps the whole
      * thing in; every append grows it in place (document_tick_warm), and it
@@ -151,12 +159,27 @@ markdown_core_document *markdown_core_document_open_with_mem(
 bool markdown_core_ast_projection_changed(const markdown_core_node *a, const markdown_core_node *b);
 
 /** The same projection, written to `out` as bytes: two nodes whose bytes
- * are equal are nodes the comparison above calls unchanged. What a
- * streaming tick keeps of a spine block's PUBLISHED projection, so the
- * next publish can be compared against it exactly — the block is the same
- * object, so there is no second node to compare — with no hash trusted
- * for a revision. Answers false when the buffer lost an allocation. */
+ * are equal are nodes the comparison above calls unchanged. Answers false
+ * when the buffer lost an allocation. */
 bool markdown_core_ast_projection_write(const markdown_core_node *node, markdown_core_strbuf *out);
+
+/** A WITNESS of one block's own projection across the publishes of a
+ * stream: the bytes above, except that a text which is the block's own
+ * content buffer — a code block's literal, an HTML block's — is witnessed
+ * by its length. What a streaming tick keeps of a spine block's PUBLISHED
+ * projection, so the next publish can be compared against it — the block
+ * is the same object, so there is no second node to compare — with no hash
+ * trusted for a revision. The length suffices because the buffer only
+ * grows for the block's life: its close moves it into the literal whole
+ * and its retract moves it back (core/parser.h, MARKDOWN_CORE_WARM_CONTENT_MOVED),
+ * so for ONE block across two publishes equal length is equal bytes, and a
+ * growing fence costs its record nothing per byte it already holds. Two
+ * different nodes have no such relation, and are compared by the exact
+ * writer or markdown_core_ast_projection_changed; the concrete runner's
+ * projection_witness_agrees holds the witness to the exact bytes over
+ * every spine block of every tick of its streams. Answers false when the
+ * buffer lost an allocation. */
+bool markdown_core_ast_projection_witness(const markdown_core_node *node, markdown_core_strbuf *out);
 
 /** Mints fresh identities over one subtree — every node id from the chain's
  * counter, every revision `rev` — for a subtree nothing pairs against. */
@@ -167,8 +190,8 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * appended and what this close appended, in that order — and `retired` is
  * the run the previous close had appended there, detached at the retract and
  * owning its bytes. The two are diffed as two child lists — hash sweeps,
- * positional middle by type, residue minted, each pair classified by its
- * fields and its children — so a paired node keeps its id,
+ * the middle aligned, residue minted, each pair classified by its fields
+ * and its children — so a paired node keeps its id,
  * keeps its revision if nothing about it changed and takes `rev` otherwise,
  * and unpaired retired ids are never minted again. `*changed` is SET when
  * the runs differ at all — never cleared, so a block's two runs accumulate
@@ -177,6 +200,9 @@ void markdown_core_diff_mint(markdown_core_chain *chain, markdown_core_node *roo
  * list). Requires the fresh run to be stamped. Frees nothing. Returns false
  * on allocation failure with the fresh run partly assigned — the caller
  * discards the tick. */
+/* Frees whatever a chain's pairings left in `pairing_scratch`. */
+void markdown_core_diff_scratch_release(markdown_core_chain *chain);
+
 bool markdown_core_diff_frontier(
     markdown_core_chain *chain,
     markdown_core_mem *mem,

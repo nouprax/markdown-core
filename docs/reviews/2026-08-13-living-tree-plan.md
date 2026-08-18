@@ -236,6 +236,10 @@ child lists and the subtree hash it sweeps on, because the tail a tick
 re-derives from the held line must PAIR against the tail it replaces (the
 contract's "an empty append moves no revision"), and that is the frontier
 diff, stamped on exactly what it pairs. See `2026-08-14-l1-slices.md` §4–5.
+After the funeral (2026-08-17) the pairing's middle became an alignment
+and the growing fence left the honest ladder — its buffer moves instead
+of being copied and its record witnesses it by length; see
+`2026-08-14-l1-slices.md` §6.
 
 ## 7 · Non-goals (inherited verbatim)
 
