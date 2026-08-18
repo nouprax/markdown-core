@@ -124,6 +124,9 @@ jobs:
         name: Build Test - Repository / Package Contents
         needs: builds-ready
         runs-on: ubuntu-latest
+        # Apt against Azure Ubuntu mirrors has stalled after Ign: until GitHub's
+        # 6h hosted-runner cancellation, which skipped every Test / benchmark job.
+        timeout-minutes: 15
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -144,8 +147,11 @@ jobs:
                   version: 4.0.23
             - name: Install package-audit dependencies
               run: |
-                  sudo apt-get update
-                  sudo apt-get install --yes pkg-config
+                  if ! command -v pkg-config >/dev/null 2>&1; then
+                      sudo timeout --kill-after=10s 90s apt-get update
+                      sudo timeout --kill-after=10s 90s env DEBIAN_FRONTEND=noninteractive \
+                          apt-get install --yes pkg-config
+                  fi
                   sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
                   pnpm install --frozen-lockfile
             - name: Check prepared package-audit environment
