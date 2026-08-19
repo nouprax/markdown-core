@@ -6592,22 +6592,24 @@ static int case_inline_frontier(void) {
     return frontier_sweep(1, 8);
 }
 
-
 /* What a node was at the checkpoint, so the retract can be held to it. */
 typedef struct {
     markdown_core_node *node;
     unsigned char bytes[sizeof(markdown_core_node)];
     unsigned char *content;
     size_t content_size;
-    size_t concrete_count;      /* what the pointed-to vectors held: a node
-                                 * snapshot restores the POINTER, never the
-                                 * count behind it. */
+    size_t concrete_count; /* what the pointed-to vectors held: a node
+                            * snapshot restores the POINTER, never the
+                            * count behind it. */
     size_t inline_concrete_count;
     size_t probe_count;
     int seen;
 } cm_snap;
 
-static const struct { const char *name; size_t off, len; } CM_FIELDS[] = {
+static const struct {
+    const char *name;
+    size_t off, len;
+} CM_FIELDS[] = {
     {"content", offsetof(markdown_core_node, content), sizeof(markdown_core_strbuf)},
     {"next", offsetof(markdown_core_node, next), sizeof(void *)},
     {"prev", offsetof(markdown_core_node, prev), sizeof(void *)},
@@ -6785,8 +6787,14 @@ static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *labe
                     named |= b >= CM_FIELDS[f].off && b < CM_FIELDS[f].off + CM_FIELDS[f].len;
                 }
                 if (!named) {
-                    fprintf(stderr, "  %s cut %zu: %s byte %zu is in no named field — a node grew\n", label, cut,
-                            markdown_core_node_get_type_string(node), b);
+                    fprintf(
+                        stderr,
+                        "  %s cut %zu: %s byte %zu is in no named field — a node grew\n",
+                        label,
+                        cut,
+                        markdown_core_node_get_type_string(node),
+                        b
+                    );
                     wrong++;
                 }
             }
@@ -6799,12 +6807,12 @@ static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *labe
             for (chain = current; chain; chain = chain->parent) {
                 owns_tentative |= chain == node;
             }
-            if (owns_tentative && (strcmp(CM_FIELDS[f].name, "first_child") == 0 ||
-                                   strcmp(CM_FIELDS[f].name, "last_child") == 0)) {
+            if (owns_tentative &&
+                (strcmp(CM_FIELDS[f].name, "first_child") == 0 || strcmp(CM_FIELDS[f].name, "last_child") == 0)) {
                 continue;
             }
-            if (node == frontier && (strcmp(CM_FIELDS[f].name, "inline_concrete") == 0 ||
-                                     strcmp(CM_FIELDS[f].name, "probes") == 0)) {
+            if (node == frontier &&
+                (strcmp(CM_FIELDS[f].name, "inline_concrete") == 0 || strcmp(CM_FIELDS[f].name, "probes") == 0)) {
                 continue;
             }
             if (strcmp(CM_FIELDS[f].name, "flags") == 0) {
@@ -6818,54 +6826,95 @@ static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *labe
                  * a node whose LAST_LINE_BLANK already says yes — which is
                  * the memo agreeing with the state it memoizes. */
                 uint16_t was = 0, now = (uint16_t)node->flags;
-                const uint16_t memo = (uint16_t)(MARKDOWN_CORE_NODE__LAST_LINE_CHECKED |
-                                                 MARKDOWN_CORE_NODE__ENDS_BLANK |
-                                                 MARKDOWN_CORE_NODE__TIGHT_SCANNED |
-                                                 MARKDOWN_CORE_NODE__LOOSE_AT);
+                const uint16_t memo =
+                    (uint16_t)(MARKDOWN_CORE_NODE__LAST_LINE_CHECKED | MARKDOWN_CORE_NODE__ENDS_BLANK |
+                               MARKDOWN_CORE_NODE__TIGHT_SCANNED | MARKDOWN_CORE_NODE__LOOSE_AT);
                 memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
                 if ((uint16_t)(was & ~memo) == (uint16_t)(now & ~memo)) {
                     continue;
                 }
             }
-            if (memcmp(hit->bytes + CM_FIELDS[f].off, (const unsigned char *)node + CM_FIELDS[f].off,
-                       CM_FIELDS[f].len) != 0) {
+            if (memcmp(
+                    hit->bytes + CM_FIELDS[f].off,
+                    (const unsigned char *)node + CM_FIELDS[f].off,
+                    CM_FIELDS[f].len
+                ) != 0) {
                 if (strcmp(CM_FIELDS[f].name, "flags") == 0) {
                     uint16_t was = 0;
                     memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
-                    fprintf(stderr, "  %s cut %zu: %s.flags 0x%04x -> 0x%04x (delta 0x%04x)\n", label, cut,
-                            markdown_core_node_get_type_string(node), (unsigned)was, (unsigned)node->flags,
-                            (unsigned)(was ^ node->flags));
+                    fprintf(
+                        stderr,
+                        "  %s cut %zu: %s.flags 0x%04x -> 0x%04x (delta 0x%04x)\n",
+                        label,
+                        cut,
+                        markdown_core_node_get_type_string(node),
+                        (unsigned)was,
+                        (unsigned)node->flags,
+                        (unsigned)(was ^ node->flags)
+                    );
                 } else if (strcmp(CM_FIELDS[f].name, "inline_concrete") == 0) {
                     void *was = NULL;
                     memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
-                    fprintf(stderr,
-                            "  %s cut %zu: %s(line %d).inline_concrete %p(%zu records) -> %p(%zu records)\n",
-                            label, cut, markdown_core_node_get_type_string(node), node->start_line, was,
-                            hit->inline_concrete_count, (void *)node->inline_concrete,
-                            node->inline_concrete ? node->inline_concrete->count : (size_t)0);
+                    fprintf(
+                        stderr,
+                        "  %s cut %zu: %s(line %d).inline_concrete %p(%zu records) -> %p(%zu records)\n",
+                        label,
+                        cut,
+                        markdown_core_node_get_type_string(node),
+                        node->start_line,
+                        was,
+                        hit->inline_concrete_count,
+                        (void *)node->inline_concrete,
+                        node->inline_concrete ? node->inline_concrete->count : (size_t)0
+                    );
                 } else {
-                    fprintf(stderr, "  %s cut %zu: %s.%s did not come back\n", label, cut,
-                            markdown_core_node_get_type_string(node), CM_FIELDS[f].name);
+                    fprintf(
+                        stderr,
+                        "  %s cut %zu: %s.%s did not come back\n",
+                        label,
+                        cut,
+                        markdown_core_node_get_type_string(node),
+                        CM_FIELDS[f].name
+                    );
                 }
                 wrong++;
             }
         }
         if ((node->concrete ? node->concrete->count : 0) != hit->concrete_count) {
-            fprintf(stderr, "  %s cut %zu: %s.concrete[] count %zu, was %zu\n", label, cut,
-                    markdown_core_node_get_type_string(node), node->concrete ? node->concrete->count : 0,
-                    hit->concrete_count);
+            fprintf(
+                stderr,
+                "  %s cut %zu: %s.concrete[] count %zu, was %zu\n",
+                label,
+                cut,
+                markdown_core_node_get_type_string(node),
+                node->concrete ? node->concrete->count : 0,
+                hit->concrete_count
+            );
             wrong++;
         }
-        if (node != frontier && (node->inline_concrete ? node->inline_concrete->count : 0) != hit->inline_concrete_count) {
-            fprintf(stderr, "  %s cut %zu: %s.inline_concrete[] count %zu, was %zu\n", label, cut,
-                    markdown_core_node_get_type_string(node),
-                    node->inline_concrete ? node->inline_concrete->count : 0, hit->inline_concrete_count);
+        if (node != frontier &&
+            (node->inline_concrete ? node->inline_concrete->count : 0) != hit->inline_concrete_count) {
+            fprintf(
+                stderr,
+                "  %s cut %zu: %s.inline_concrete[] count %zu, was %zu\n",
+                label,
+                cut,
+                markdown_core_node_get_type_string(node),
+                node->inline_concrete ? node->inline_concrete->count : 0,
+                hit->inline_concrete_count
+            );
             wrong++;
         }
         if (node != frontier && (node->probes ? node->probes->count : 0) != hit->probe_count) {
-            fprintf(stderr, "  %s cut %zu: %s.probes[] count %zu, was %zu\n", label, cut,
-                    markdown_core_node_get_type_string(node), node->probes ? node->probes->count : 0,
-                    hit->probe_count);
+            fprintf(
+                stderr,
+                "  %s cut %zu: %s.probes[] count %zu, was %zu\n",
+                label,
+                cut,
+                markdown_core_node_get_type_string(node),
+                node->probes ? node->probes->count : 0,
+                hit->probe_count
+            );
             wrong++;
         }
     }
@@ -6893,8 +6942,13 @@ static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *labe
     }
     for (i = 0; i < count; i++) {
         if (!snap[i].seen && !cm_flipped(flip_units, flip_count, snap[i].node)) {
-            fprintf(stderr, "  %s cut %zu: a %s alive at the checkpoint did not come back\n", label, cut,
-                    markdown_core_node_get_type_string(snap[i].node));
+            fprintf(
+                stderr,
+                "  %s cut %zu: a %s alive at the checkpoint did not come back\n",
+                label,
+                cut,
+                markdown_core_node_get_type_string(snap[i].node)
+            );
             wrong++;
         }
     }
@@ -6955,7 +7009,6 @@ static const concrete_case CASES[] = {
     {"recovery_island_boundary", case_recovery_island_boundary},
     {"inline_frontier", case_inline_frontier},
 };
-
 
 int main(int argc, char **argv) {
     size_t i;

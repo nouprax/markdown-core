@@ -3267,7 +3267,8 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
                 }
                 if (from < node->content.size) {
                     entry->content_copy_size = node->content.size - from;
-                    entry->content_copy = (unsigned char *)parser->mem->calloc(parser->mem, entry->content_copy_size, 1);
+                    entry->content_copy =
+                        (unsigned char *)parser->mem->calloc(parser->mem, entry->content_copy_size, 1);
                     if (!entry->content_copy) {
                         return false;
                     }
