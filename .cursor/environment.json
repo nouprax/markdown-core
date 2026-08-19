@@ -1,0 +1,9 @@
+{
+    "name": "Markdown Core",
+    "user": "ubuntu",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "install": "scripts/init-environment.sh --install emscripten dependencies tools && scripts/init-environment.sh --check core node java wrappers android emscripten dependencies tools"
+}
