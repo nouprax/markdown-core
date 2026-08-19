@@ -6952,6 +6952,39 @@ static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *labe
             wrong++;
         }
     }
+    /* A RETRACT THAT GIVES NOTHING BACK MUST TAKE NOTHING EITHER. Both
+     * refusals — nothing published, and a retracted record the caller has
+     * not committed — promise the parser is untouched, and the byte that
+     * proves it is the open leaf's settled inline prefix: clearing that on a
+     * call that did nothing would make the next refine rebuild children that
+     * never moved, retiring ids over an operation that did not happen. */
+    {
+        markdown_core_inline_frontier held = parser->inline_frontier;
+        if (markdown_core_parser_warm_retract(parser)) {
+            fprintf(stderr, "  %s cut %zu: a second retract, with nothing published, said yes\n", label, cut);
+            wrong++;
+        } else if (memcmp(&held, &parser->inline_frontier, sizeof(held)) != 0) {
+            fprintf(stderr, "  %s cut %zu: a refused retract moved the inline frontier\n", label, cut);
+            wrong++;
+        }
+        /* The other arm: published again, but the record from the last
+         * retract is still uncommitted. */
+        if (markdown_core_parser_warm_publish(parser)) {
+            held = parser->inline_frontier;
+            if (markdown_core_parser_warm_retract(parser)) {
+                fprintf(stderr, "  %s cut %zu: a retract over an uncommitted record said yes\n", label, cut);
+                wrong++;
+            } else if (memcmp(&held, &parser->inline_frontier, sizeof(held)) != 0) {
+                fprintf(
+                    stderr,
+                    "  %s cut %zu: a retract refused for an uncommitted record moved the frontier\n",
+                    label,
+                    cut
+                );
+                wrong++;
+            }
+        }
+    }
     free(snap);
     return wrong;
 }

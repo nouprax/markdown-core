@@ -3505,22 +3505,24 @@ static void warm_restore_extension(markdown_core_node *node, const markdown_core
 bool markdown_core_parser_warm_retract(markdown_core_parser *parser) {
     markdown_core_warm_undo *undo = parser->warm_published;
     markdown_core_inline_frontier frontier;
-    /* From here the record is the tick's, and a step that takes one of the
-     * nodes it names out of the tree says so (drop_inline_prefix). What the
-     * LAST tick dropped is now unreachable from anywhere, and goes. */
+    size_t i;
+
+    /* FIRST, BEFORE ANYTHING MOVES. Nothing published is nothing to give
+     * back, and a record the caller has not committed yet would be dropped
+     * on the floor by the move at the end. A refusal must leave the parser
+     * exactly where it stood — the checkpoint below is the open leaf's
+     * settled inline prefix, and clearing it on a call that gives nothing
+     * back would make the next refine rebuild children that never moved,
+     * retiring ids over an operation that did not happen. */
+    if (!undo || parser->warm_retracted) {
+        return false;
+    }
     /* WHAT THE LAST PUBLISH SETTLED, for the identity step to pair after:
      * the live checkpoint still holds it here, and this tick's refine is
      * about to move it. */
     parser->inline_published = parser->inline_frontier;
     memset(&frontier, 0, sizeof(frontier));
     memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
-    size_t i;
-
-    /* Nothing published is nothing to give back; a record the caller has
-     * not committed yet would be dropped on the floor by the move below. */
-    if (!undo || parser->warm_retracted) {
-        return false;
-    }
     /* Before anything moves: what is about to be retired must own its bytes,
      * and if it cannot, nothing has changed and the record is still the
      * published one. The run a block will retire begins after its saved
