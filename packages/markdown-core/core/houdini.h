@@ -31,6 +31,12 @@ extern "C" {
 #define HOUDINI_UNESCAPED_SIZE(x) (x)
 
 MARKDOWN_CORE_EXPORT
+/* The furthest byte past `&` that markdown_core_houdini_unescape_ent can read
+ * before giving up. A caller that must know whether a failed entity scan was
+ * cut short by the end of its buffer — rather than decided by a byte it could
+ * see — compares this window against what it had. */
+markdown_core_bufsize markdown_core_houdini_entity_window(void);
+
 markdown_core_bufsize markdown_core_houdini_unescape_ent(
     markdown_core_strbuf *ob,
     const uint8_t *src,

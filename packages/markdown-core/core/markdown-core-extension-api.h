@@ -103,7 +103,7 @@ struct markdown_core_chunk;
  * match its syntax rules.
  *
  */
-typedef struct subject markdown_core_inline_parser;
+typedef struct markdown_core_inline_parser markdown_core_inline_parser;
 
 /*
  * Source trigger bytes, delimiter rule identity, and extension ownership are
@@ -501,6 +501,44 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_set_extension(markdown_core_node *no
 /** Get the current inline parsing offset */
 MARKDOWN_CORE_EXPORT
 int markdown_core_inline_parser_get_offset(markdown_core_inline_parser *parser);
+
+/** HOW FAR THIS MATCH LOOKED: the offset after the last byte it examined,
+ * in the same coordinates as markdown_core_inline_parser_get_offset.
+ *
+ * An inline handler may scan past what it consumes — for a closing `$`, a
+ * `]]`, the end of a host — and a scan that runs to the END of the buffer
+ * answers differently once more bytes arrive, while one that stopped short
+ * answered on bytes it could all see and answered for good. The engine
+ * cannot see an extension's scanners, so a handler that wants its unit's
+ * inline stream to SETTLE (and with it the ids, revisions and work of every
+ * child before this point) says how far it read, on every path it returns
+ * by, before it returns.
+ *
+ * Saying nothing is safe and costs precision: a handler that never calls
+ * this is read as having looked to the end of the buffer, which is what the
+ * engine assumed of every handler before this existed. Calling it with more
+ * than the truth is not safe — that is the promise, as `opaque_size` is a
+ * promise about a payload's size. */
+MARKDOWN_CORE_EXPORT
+void markdown_core_inline_parser_note_read(markdown_core_inline_parser *parser, int end);
+
+/** THE UNIT'S SETTLED INLINE PREFIX, for a hook that walks children. A unit
+ * that is still growing has a prefix no arriving byte can change, and a
+ * refine derives only what follows it; a `postprocess_block` that walks the
+ * whole child list every time undoes that saving on its own. This answers
+ * the last child of that prefix — everything from its successor on is what
+ * this refine made — or NULL for a unit that has none, which is every unit
+ * but the one still growing.
+ *
+ * A hook that ignores this is correct and pays the whole unit per tick,
+ * which is what every hook did before this existed. A hook that uses it
+ * promises the other half: it does not change what lies before that child,
+ * and it does not need to — the prefix was walked when it settled. */
+MARKDOWN_CORE_EXPORT
+markdown_core_node *markdown_core_parser_settled_inline_child(
+    const markdown_core_parser *parser,
+    const markdown_core_node *unit
+);
 
 /** Gets the markdown_core_chunk being operated on by the given inline parser.
  * Use markdown_core_inline_parser_get_offset to get our current position in the chunk.
