@@ -262,8 +262,15 @@ markdown_core_parser *markdown_core_parser_new(int options) {
     return markdown_core_parser_new_with_mem(options, markdown_core_mem_default());
 }
 
+static void warm_free_run(markdown_core_node *run);
+static void warm_undo_free(markdown_core_parser *parser, markdown_core_warm_undo *undo, bool retracted);
+
 void markdown_core_parser_free(markdown_core_parser *parser) {
     markdown_core_mem *mem = parser->mem;
+    /* Whichever close the parser was inside dies with it: a record is its
+     * state, so there is no caller left to give it back to. */
+    warm_undo_free(parser, parser->warm_published, false);
+    warm_undo_free(parser, parser->warm_retracted, true);
     markdown_core_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
     markdown_core_strbuf_free(&parser->linebuf);
@@ -354,11 +361,21 @@ static void S_record_line_mark(markdown_core_parser *parser, const markdown_core
     parser->line_mark_count++;
 }
 
+/* The definitions at the front of an open paragraph that no arriving byte
+ * can still change, taken off it as soon as the line that proves them final
+ * arrives (below, beside the harvest they share a pass with). */
+static void S_settle_definition_prefix(markdown_core_parser *parser, markdown_core_node *node);
+
 static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
     int chars_to_tab;
     int i;
+    markdown_core_bufsize line_start;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
     S_record_line_mark(parser, node);
+    /* Where this line begins in the buffer — the same offset the mark just
+     * took, so the pad spaces below belong to the line and not to the one
+     * before it. */
+    line_start = node->content.size;
     if (parser->partially_consumed_tab) {
         parser->offset += 1; // skip over tab
         // add space characters:
@@ -370,6 +387,26 @@ static void add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content.oom) {
         parser->oom = true;
+        return;
+    }
+    /* A DEFINITION SETTLES WHEN THE NEXT ONE OPENS. A paragraph that begins
+     * with `[` may be a run of link reference definitions, and the close
+     * harvests the whole run every time it is asked — which is once per tick
+     * for as long as the run is the open leaf. Nothing about a definition
+     * that a later `[` already follows can change, so it is taken off here
+     * instead, once, and the close is left with the last one alone.
+     *
+     * Asked only of a line that can prove something, which the harvest
+     * cannot tell for itself: the byte that settles a definition is the `[`
+     * of the next one and it stands at a line start, so a line that does not
+     * begin with `[` settles nothing, and the paragraph's first line has
+     * nothing in front of it to settle. That is why a paragraph whose tail is
+     * an unterminated title is never rescanned and a run of one-definition
+     * paragraphs is never scanned twice. Whether the paragraph is a
+     * definition run at all is the harvest's own first question. */
+    if (S_type(node) == MARKDOWN_CORE_NODE_PARAGRAPH && line_start > 0 && node->content.size > line_start &&
+        node->content.ptr[line_start] == '[') {
+        S_settle_definition_prefix(parser, node);
     }
 }
 
@@ -763,7 +800,6 @@ static void S_emit_definition(
     }
 }
 
-// returns true if content remains after link defs are resolved.
 /* A definition just registered: if it is its label's first — the one a
  * lookup now answers with — the label is pending a flip, and the next settle
  * or publish re-refines the units that asked about it. A definition that
@@ -789,12 +825,28 @@ static void S_pend_flip(markdown_core_parser *parser, markdown_core_map *map, co
     }
 }
 
-static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_bufsize pos;
+/* One pass of the harvest over the front of a paragraph's content, front to
+ * back, emitting a ReferenceDefinition before the paragraph for each and
+ * answering with the bytes it took. The caller drops them.
+ *
+ * `settled_only` keeps just the definitions NO ARRIVING BYTE CAN CHANGE, and
+ * that is exactly the ones a `[` already follows. Everything the parse read
+ * to produce a definition lies before its end but for the title attempt,
+ * which starts after the destination and at most one line end; a title opens
+ * with `"`, `'` or `(` and never with `[`, so against a `[` the attempt fails
+ * on the single byte it looked at, and no later byte can revive it. The last
+ * definition of a run is therefore always tentative — its registration is
+ * taken back here for the close to make again, since the close is the step
+ * that may see the rest of it. */
+static markdown_core_bufsize S_harvest_definitions(
+    markdown_core_parser *parser,
+    markdown_core_node *b,
+    bool settled_only,
+    size_t *mark_cursor
+) {
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_bufsize consumed = 0;
-    size_t mark_cursor = 0;
     while (chunk.len && chunk.data[0] == '[') {
         /* The harvest pushes its entry at the head of the live chain, so the
          * head is this definition's exactly when the chain moved. A parse
@@ -804,9 +856,18 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
         const markdown_core_map_entry *before = parser->refmap ? parser->refmap->refs : NULL;
         const markdown_core_map_entry *after;
         markdown_core_reference_spans spans;
+        size_t registered = parser->refmap ? parser->refmap->size : 0;
+        markdown_core_bufsize pos;
 
         pos = markdown_core_parse_reference_inline(parser->mem, &chunk, parser->refmap, &spans);
         if (!pos) {
+            break;
+        }
+        if (settled_only && (pos >= chunk.len || chunk.data[pos] != '[')) {
+            /* Not yet provable: the parse looked at the buffer's own end, so
+             * the definition is the close's to make. Its registration goes
+             * back the way a retract takes one back. */
+            markdown_core_map_truncate(parser->refmap, registered);
             break;
         }
         after = parser->refmap ? parser->refmap->refs : NULL;
@@ -817,13 +878,60 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
             consumed,
             consumed + pos,
             after != before ? (const markdown_core_reference *)after : NULL,
-            &mark_cursor,
+            mark_cursor,
             &spans
         );
         consumed += pos;
         chunk.data += pos;
         chunk.len -= pos;
     }
+    return consumed;
+}
+
+/* The marks the settled bytes came from go with them, and the marks that
+ * remain speak of the buffer as it now is: a mark is an offset into the
+ * paragraph's content, and the content just lost a prefix. The mark AT the
+ * cut survives as the buffer's new first line — a settle always leaves the
+ * `[` that proved it, so there is always one. */
+static void S_settle_line_marks(markdown_core_parser *parser, markdown_core_bufsize consumed) {
+    size_t settled = 0;
+    size_t i;
+    while (settled < parser->line_mark_count && parser->line_marks[settled].content_offset < consumed) {
+        settled++;
+    }
+    if (settled) {
+        parser->line_mark_count -= settled;
+        memmove(
+            parser->line_marks,
+            parser->line_marks + settled,
+            parser->line_mark_count * sizeof(*parser->line_marks)
+        );
+    }
+    for (i = 0; i < parser->line_mark_count; i++) {
+        parser->line_marks[i].content_offset -= consumed;
+    }
+}
+
+static void S_settle_definition_prefix(markdown_core_parser *parser, markdown_core_node *b) {
+    size_t mark_cursor = 0;
+    markdown_core_bufsize consumed;
+
+    if (parser->oom || parser->internal_error) {
+        return;
+    }
+    consumed = S_harvest_definitions(parser, b, true, &mark_cursor);
+    if (!consumed) {
+        return;
+    }
+    S_content_position(parser, b, consumed, &mark_cursor, &b->start_line, &b->start_column);
+    S_settle_line_marks(parser, consumed);
+    markdown_core_strbuf_drop(&b->content, consumed);
+}
+
+// returns true if content remains after link defs are resolved.
+static bool resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
+    size_t mark_cursor = 0;
+    markdown_core_bufsize consumed = S_harvest_definitions(parser, b, false, &mark_cursor);
     /* The harvested bytes left the content, so the paragraph no longer starts
      * where it opened: its first surviving byte does. Without this the
      * paragraph claims source the definitions occupy — and every inline
@@ -836,7 +944,7 @@ static bool resolve_reference_link_definitions(markdown_core_parser *parser, mar
     if (consumed) {
         S_content_position(parser, b, consumed, &mark_cursor, &b->start_line, &b->start_column);
     }
-    markdown_core_strbuf_drop(node_content, (node_content->size - chunk.len));
+    markdown_core_strbuf_drop(&b->content, consumed);
     return !is_blank(&b->content, 0);
 }
 
@@ -1261,9 +1369,12 @@ static uint64_t fp_map(uint64_t hash, const struct markdown_core_map *map) {
     return fp_mix(hash, (uint64_t)map->size);
 }
 
+static bool warm_on_chain(const markdown_core_parser *parser, const markdown_core_node *node);
+
 uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parser) {
     uint64_t hash = UINT64_C(0x5eed) ^ (uint64_t)parser->options;
     markdown_core_iter *iter;
+    const markdown_core_node *skipping = NULL;
     size_t i;
 
     /* The line counters, the sticky failure bits, and the two pieces of the
@@ -1285,7 +1396,17 @@ uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parse
      * tick reaches closed nodes too (a spine flag cleared on an ancestor, a
      * look-back stamp on a paragraph that stayed a paragraph), and a
      * fingerprint that could not see them would pass while the journal
-     * leaked. */
+     * leaked.
+     *
+     * With one exception, and it is a change of what this fingerprint
+     * claims: the inline children of a unit that is STILL GROWING are its
+     * settled prefix (the living tree plan §8), which an uninterrupted
+     * parse does not have — it refines no open unit — and which the block
+     * phase never reads. They are derived from bytes already in the buffer,
+     * they are hashed by every publish through the tree the tick produces,
+     * and the streaming oracles compare that tree against the one-shot
+     * parse tick by tick. So the claim here is the state a LATER LINE
+     * READS, and the prefix is not part of it. */
     iter = markdown_core_iter_new(parser->root);
     if (!iter) {
         return fp_mix(hash, UINT64_C(0xdead));
@@ -1296,10 +1417,19 @@ uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parse
         if (event == MARKDOWN_CORE_EVENT_DONE) {
             break;
         }
+        if (event == MARKDOWN_CORE_EVENT_EXIT) {
+            if (skipping == markdown_core_iter_get_node(iter)) {
+                skipping = NULL;
+            }
+            continue;
+        }
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
         node = markdown_core_iter_get_node(iter);
+        if (skipping) {
+            continue;
+        }
         hash = fp_mix(hash, (uint64_t)S_type(node));
         /* Not the memos of "ends with a blank line" and of a list's weighed
          * items: caches a list's finalize fills on settled nodes, whose
@@ -1313,6 +1443,9 @@ uint64_t markdown_core_parser_warm_fingerprint(const markdown_core_parser *parse
         hash = fp_mix(hash, ((uint64_t)(uint32_t)node->start_line << 32) | (uint32_t)node->start_column);
         hash = fp_mix(hash, ((uint64_t)(uint32_t)node->end_line << 32) | (uint32_t)node->end_column);
         hash = fp_bytes(hash, (const unsigned char *)node->content.ptr, node->content.size);
+        if (contains_inlines(node) && warm_on_chain(parser, node)) {
+            skipping = node;
+        }
     }
     markdown_core_iter_free(iter);
 
@@ -2443,15 +2576,23 @@ static markdown_core_node *S_postprocess_unit(
     markdown_core_node **replaced
 ) {
     markdown_core_llist *extensions;
+    /* THE FRONTIER, NOT THE CHILD LIST. A refine that kept a settled prefix
+     * has already run both of these walks over it, on the tick that settled
+     * it, and running them again is what keeps a tick proportional to the
+     * whole leaf instead of to what arrived. */
+    markdown_core_node *settled = markdown_core_parser_settled_inline_child(parser, unit);
 
     *replaced = NULL;
 
-    if (owns_inlines && !markdown_core_node_consolidate_texts(unit)) {
+    if (owns_inlines && !markdown_core_node_consolidate_texts_from(unit, settled)) {
         parser->oom = true;
     }
 
     if (owns_inlines) {
-        markdown_core_node *node = unit;
+        markdown_core_node *node = settled ? settled->next : unit;
+        if (!node) {
+            node = unit;
+        }
         for (;;) {
             if (node->extension && node->extension->materialize_inline &&
                 !node->extension->materialize_inline(node->extension, parser, node)) {
@@ -2683,7 +2824,10 @@ static void warm_refine_region(
     while (i-- > 0) {
         markdown_core_warm_open_block *entry = &spine[i];
         markdown_core_node *node = entry->node;
-        markdown_core_node *child = markdown_core_warm_run_first(entry);
+        /* A unit that owns inlines has nothing here to settle: its children
+         * are its own refine's, below, and never a subtree this walk
+         * descends into. */
+        markdown_core_node *child = contains_inlines(node) ? NULL : markdown_core_warm_run_first(entry);
         while (child) {
             markdown_core_node *survivor = warm_settle_subtree(parser, child);
             child = markdown_core_warm_run_next(entry, survivor);
@@ -2693,6 +2837,17 @@ static void warm_refine_region(
         if (i > 0 && !warm_on_chain(parser, node)) {
             markdown_core_node *replaced = NULL;
             markdown_core_node *survivor = markdown_core_parser_warm_refine_settled(parser, node, &replaced);
+            /* THE DEEPEST BLOCK OF THE REGION was the one still growing when
+             * the record was taken, so its refine — and no other in this
+             * walk — leaves the checkpoint this tick's retract keeps and the
+             * next tick's refine resumes from. */
+            if (i + 1 == count) {
+                if (parser->inline_refine.unit == survivor) {
+                    parser->inline_frontier = parser->inline_refine;
+                } else {
+                    memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
+                }
+            }
             if (survivor != node) {
                 /* The survivor sits where the block sat, so its parent's
                  * saved youngest child — this very block — is repointed too,
@@ -2743,11 +2898,12 @@ static struct markdown_core_warm_flip *warm_log_flipped(markdown_core_parser *pa
     return &parser->flipped[parser->flipped_count++];
 }
 
-static struct markdown_core_warm_flip *warm_record_flip(markdown_core_warm_undo *undo) {
+static struct markdown_core_warm_flip *warm_record_flip(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
     if (undo->flip_count == undo->flip_capacity) {
+        markdown_core_mem *mem = parser->mem;
         size_t capacity = undo->flip_capacity ? undo->flip_capacity * 2 : 4;
         struct markdown_core_warm_flip *grown =
-            (struct markdown_core_warm_flip *)undo->mem->realloc(undo->mem, undo->flips, capacity * sizeof(*grown));
+            (struct markdown_core_warm_flip *)mem->realloc(mem, undo->flips, capacity * sizeof(*grown));
         if (!grown) {
             return NULL;
         }
@@ -2784,7 +2940,7 @@ void markdown_core_parser_warm_flipped_free(markdown_core_parser *parser) {
  * identity; its children are new objects. */
 static void warm_flip_unit(markdown_core_parser *parser, markdown_core_node *unit, markdown_core_warm_undo *undo) {
     markdown_core_node *replaced = NULL;
-    struct markdown_core_warm_flip *flip = undo ? warm_record_flip(undo) : warm_log_flipped(parser);
+    struct markdown_core_warm_flip *flip = undo ? warm_record_flip(parser, undo) : warm_log_flipped(parser);
     markdown_core_node *child;
     if (!flip) {
         parser->oom = true;
@@ -2798,6 +2954,16 @@ static void warm_flip_unit(markdown_core_parser *parser, markdown_core_node *uni
     }
     unit->first_child = NULL;
     unit->last_child = NULL;
+    /* Its settled prefix goes with them: a definition changes what the
+     * prefix ANSWERS, which no arriving byte could, so the unit is derived
+     * again from zero — and no record may still name the children the flip
+     * just took. */
+    if (parser->inline_frontier.unit == unit) {
+        memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
+    }
+    if (parser->inline_published.unit == unit) {
+        memset(&parser->inline_published, 0, sizeof(parser->inline_published));
+    }
     /* The records, the probes and the diagnostics go with the refine they
      * belong to. */
     markdown_core_inline_concrete_records_free(markdown_core_node_mem(unit), unit->inline_concrete);
@@ -2808,6 +2974,15 @@ static void warm_flip_unit(markdown_core_parser *parser, markdown_core_node *uni
     /* Same bytes, same postprocess: what did not replace the unit before does
      * not now, and what would have was never a unit that asked. */
     markdown_core_parser_warm_refine_settled(parser, unit, &replaced);
+    /* AND IT LEAVES NO FRONTIER. A flipped unit may be refined again in the
+     * same step — the region walk settles whatever the close closed, this
+     * unit included — and a second refine that resumed from this one's
+     * frontier would append its tail a second time. Refined from zero, that
+     * second refine drops what this one built and derives the unit whole,
+     * which is what a flip costs anyway. */
+    if (parser->inline_frontier.unit == unit) {
+        memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
+    }
     if (replaced) {
         markdown_core_node_free(replaced);
     }
@@ -2827,6 +3002,18 @@ static int warm_unit_order(const void *a, const void *b) {
  * the same, and its record would hold children that were never published.
  * The units are gathered before any is flipped: a flip rethreads its unit's
  * probes, and the chains are not walked while they move. */
+/* Whether a record's spine names this unit — every one of them is refined
+ * by the region walk that follows the flips. */
+static bool warm_spine_holds(const markdown_core_warm_undo *undo, const markdown_core_node *unit) {
+    size_t i;
+    for (i = 0; undo && i < undo->spine_count; i++) {
+        if (undo->spine[i].node == unit) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void warm_flip_pending(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
     markdown_core_node **units = NULL;
     size_t count = 0;
@@ -2859,17 +3046,23 @@ static void warm_flip_pending(markdown_core_parser *parser, markdown_core_warm_u
         if (i > 0 && units[i - 1] == unit) {
             continue;
         }
-        /* A unit that asked, is refined, and is not still open: an open
-         * unit's refine is the close's, and comes with the tables as they
-         * are then. */
-        if (contains_inlines(unit) && !warm_on_chain(parser, unit)) {
+        /* A unit that asked, is refined, and is not one this step is about
+         * to refine anyway. Two ways it can be: still open (a feed's flip —
+         * an open unit's refine is the close's, with the tables as they are
+         * then), or ON THE SPINE THIS PUBLISH IS CLOSING, where the close
+         * has already left the chain but the region refine below still owes
+         * it a refine. Flipping it there refines it TWICE, and a second
+         * refine of a unit that keeps a settled prefix resumes from the
+         * first one's frontier and appends its tail a second time. */
+        if (contains_inlines(unit) && !warm_on_chain(parser, unit) && !warm_spine_holds(undo, unit)) {
             warm_flip_unit(parser, unit, undo);
         }
     }
     parser->mem->free(parser->mem, units);
 }
 
-bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_core_warm_undo *before) {
+bool markdown_core_parser_warm_settle(markdown_core_parser *parser) {
+    markdown_core_warm_undo *before = parser->warm_retracted;
     if (!parser->root || parser->oom || parser->internal_error) {
         return false;
     }
@@ -2879,6 +3072,8 @@ bool markdown_core_parser_warm_settle(markdown_core_parser *parser, markdown_cor
          * feed closed is refined against the tables as they are now. */
         warm_flip_pending(parser, NULL);
         warm_refine_region(parser, before->spine, before->spine_count, false);
+        /* The record's saved pointers have been read; the caller may commit
+         * from here, so nothing on the parser may still name it. */
         return true;
     }
     /* No record: a fresh parser, whose whole settled part is unrefined —
@@ -2911,13 +3106,59 @@ static void warm_free_run(markdown_core_node *run) {
     }
 }
 
-void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
+markdown_core_node *markdown_core_parser_settled_inline_child(
+    const markdown_core_parser *parser,
+    const markdown_core_node *unit
+) {
+    return parser && parser->inline_refine.unit == unit ? parser->inline_refine.begin_child : NULL;
+}
+
+void markdown_core_parser_drop_inline_prefix(markdown_core_parser *parser, markdown_core_node *unit) {
+    markdown_core_node *children = unit->first_child;
+    markdown_core_node *child;
+
+    if (!children) {
+        if (parser->inline_frontier.unit == unit) {
+            memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
+        }
+        return;
+    }
+    for (child = children; child; child = child->next) {
+        child->parent = NULL;
+    }
+    unit->first_child = NULL;
+    unit->last_child = NULL;
+    if (parser->inline_frontier.unit == unit) {
+        memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
+    }
+    if (parser->inline_published.unit == unit) {
+        memset(&parser->inline_published, 0, sizeof(parser->inline_published));
+    }
+    markdown_core_inline_concrete_records_free(markdown_core_node_mem(unit), unit->inline_concrete);
+    unit->inline_concrete = NULL;
+    markdown_core_probes_free(unit->probes);
+    unit->probes = NULL;
+    /* The children are DERIVED, so losing them costs work and not
+     * correctness: an uninterrupted parse has none on a unit still growing,
+     * and the next refine builds them from the bytes, which are untouched.
+     * Their ids retire, which is what a kind change means.
+     *
+     * AND NOTHING ELSE HOLDS A POINTER INTO THEM: the parser's two
+     * checkpoints are cleared just above, and a record names no inline child
+     * at all, so these go now rather than having to outlive the tick against
+     * a reader that might still ask about them. */
+    warm_free_run(children);
+}
+
+/* `retracted` says which slot the record is being freed out of, and so
+ * whether the parser has already been given back what the record holds. */
+static void warm_undo_free(markdown_core_parser *parser, markdown_core_warm_undo *undo, bool retracted) {
     markdown_core_mem *mem;
     size_t i;
     if (!undo) {
         return;
     }
-    mem = undo->mem;
+    mem = parser->mem;
     for (i = 0; i < undo->spine_count; i++) {
         warm_free_run(undo->spine[i].retired);
         warm_free_run(undo->spine[i].retired_inserted);
@@ -2931,7 +3172,7 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
         }
         /* A vanished paragraph the record still holds — never put back —
          * is nobody else's. */
-        if (undo->spine[i].vanished && !undo->retracted) {
+        if (undo->spine[i].vanished && !retracted) {
             markdown_core_node_free(undo->spine[i].node);
         }
         mem->free(mem, undo->spine[i].content_copy);
@@ -2951,6 +3192,11 @@ void markdown_core_parser_warm_undo_free(markdown_core_warm_undo *undo) {
     mem->free(mem, undo);
 }
 
+void markdown_core_parser_warm_commit(markdown_core_parser *parser) {
+    warm_undo_free(parser, parser->warm_retracted, true);
+    parser->warm_retracted = NULL;
+}
+
 /* The open chain, root down, plus everything on the parser that outlives a
  * line. Taken before the close so the close has something to be undone to. */
 static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
@@ -2966,33 +3212,36 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
     }
     if (depth) {
         size_t i = 0;
-        undo->spine = (markdown_core_warm_open_block *)undo->mem->calloc(undo->mem, depth, sizeof(*undo->spine));
+        undo->spine = (markdown_core_warm_open_block *)parser->mem->calloc(parser->mem, depth, sizeof(*undo->spine));
         if (!undo->spine) {
             return false;
         }
         /* The count advances with the entries, so a copy lost on a later
-         * entry leaves the earlier entries' copies to markdown_core_parser_warm_undo_free. */
+         * entry leaves the earlier entries' copies to the record's free. */
         for (node = parser->root; i < depth; node = node->last_child) {
             markdown_core_warm_open_block *entry = &undo->spine[i++];
             undo->spine_count = i;
             entry->node = node;
-            entry->last_child = node->last_child;
-            entry->prev = node->last_child ? node->last_child->prev : NULL;
-            entry->type = node->type;
-            entry->flags = node->flags;
-            entry->end_line = node->end_line;
-            entry->end_column = node->end_column;
+            /* A block that owns inlines has no youngest child here: its
+             * children are derived, and the parser's checkpoint says which
+             * of them are settled (parser.h). Nothing else may hold a
+             * pointer into them, which is what made every step that takes a
+             * unit's children owe a correction to a record. */
+            entry->last_child = contains_inlines(node) ? NULL : node->last_child;
+            entry->prev = entry->last_child ? entry->last_child->prev : NULL;
+            memcpy(entry->saved, node, sizeof(*node));
+            if (node->last_child) {
+                memcpy(entry->saved_last_child, node->last_child, sizeof(*node->last_child));
+            }
             entry->content_size = node->content.size;
-            entry->payload = node->as;
             entry->concrete_count = node->concrete ? node->concrete->count : 0;
-            entry->last_child_flags = node->last_child ? node->last_child->flags : 0;
-            entry->extension = node->extension;
-            entry->start_line = node->start_line;
-            entry->start_column = node->start_column;
             if (node->extension && node->extension->opaque_size && node->as.opaque) {
                 size_t size = node->extension->opaque_size(node->extension, node);
+                /* The one thing a snapshot of the node cannot hold: what the
+                 * payload POINTS AT is the extension's memory, not the
+                 * node's. */
                 if (size) {
-                    entry->opaque_copy = undo->mem->calloc(undo->mem, size, 1);
+                    entry->opaque_copy = parser->mem->calloc(parser->mem, size, 1);
                     if (!entry->opaque_copy) {
                         return false;
                     }
@@ -3018,7 +3267,7 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
                 }
                 if (from < node->content.size) {
                     entry->content_copy_size = node->content.size - from;
-                    entry->content_copy = (unsigned char *)undo->mem->calloc(undo->mem, entry->content_copy_size, 1);
+                    entry->content_copy = (unsigned char *)parser->mem->calloc(parser->mem, entry->content_copy_size, 1);
                     if (!entry->content_copy) {
                         return false;
                     }
@@ -3029,7 +3278,7 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
     }
     if (parser->line_mark_count) {
         undo->marks = (struct markdown_core_line_mark *)
-                          undo->mem->calloc(undo->mem, parser->line_mark_count, sizeof(*undo->marks));
+                          parser->mem->calloc(parser->mem, parser->line_mark_count, sizeof(*undo->marks));
         if (!undo->marks) {
             return false;
         }
@@ -3037,7 +3286,7 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
     }
     undo->mark_count = parser->line_mark_count;
     if (parser->linebuf.size) {
-        undo->held = (unsigned char *)undo->mem->calloc(undo->mem, parser->linebuf.size, 1);
+        undo->held = (unsigned char *)parser->mem->calloc(parser->mem, parser->linebuf.size, 1);
         if (!undo->held) {
             return false;
         }
@@ -3052,28 +3301,32 @@ static bool warm_undo_save(markdown_core_parser *parser, markdown_core_warm_undo
     return true;
 }
 
-markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser *parser) {
+bool markdown_core_parser_warm_publish(markdown_core_parser *parser) {
     markdown_core_warm_undo *undo;
 
     /* A parser that has failed is not closed: a lost allocation inside a
      * block open can leave `current` on a block the open had already
-     * finalized — even unlinked — and there is nothing to publish from it. */
-    if (!parser->root || parser->oom || parser->internal_error) {
-        return NULL;
+     * finalized — even unlinked — and there is nothing to publish from it.
+     * Nor is one that is closed already: a second close would record what
+     * the first left, and the first would never be given back. */
+    if (!parser->root || parser->oom || parser->internal_error || parser->warm_published) {
+        return false;
     }
     undo = (markdown_core_warm_undo *)parser->mem->calloc(parser->mem, 1, sizeof(*undo));
     if (!undo) {
-        return NULL;
+        return false;
     }
-    undo->mem = parser->mem;
     if (!warm_undo_save(parser, undo)) {
-        markdown_core_parser_warm_undo_free(undo);
-        return NULL;
+        warm_undo_free(parser, undo, false);
+        return false;
     }
     {
         undo->definitions = parser->refmap ? parser->refmap->size : 0;
         undo->footnotes = parser->footnote_defs ? parser->footnote_defs->size : 0;
-        /* This close is the one the next tick takes back (parser.h). */
+        /* This close is the one the next tick takes back (parser.h), and
+         * from here THIS record is the one whose pointers a step may
+         * invalidate: the held line it is about to process can retype a
+         * block and take the children the record just named. */
         parser->retractable_close = true;
         markdown_core_parser_finalize_blocks(parser);
         parser->retractable_close = false;
@@ -3106,7 +3359,17 @@ markdown_core_warm_undo *markdown_core_parser_warm_publish(markdown_core_parser 
     /* Only what the close closed: the spine, and whatever the held line put
      * under it. Units the feed closed are the caller's to settle, and were. */
     warm_refine_region(parser, undo->spine, undo->spine_count, true);
-    return undo;
+    /* THE DIAGNOSTICS OF WHAT THIS CLOSE SETTLED STAY. The watermark was
+     * taken before the refine, so a retract would truncate back past the
+     * diagnostics the refine raised — including the ones belonging to
+     * children it SETTLED, which the retract keeps. Those come first among
+     * the refine's (the scan raises them in order), so the watermark moves
+     * up to exactly the count at the settle point. */
+    if (parser->inline_frontier.content > 0 && parser->inline_frontier.diagnostics > undo->diagnostic_count) {
+        undo->diagnostic_count = parser->inline_frontier.diagnostics;
+    }
+    parser->warm_published = undo;
+    return true;
 }
 
 /* Makes every node of a subtree own its bytes: the retired frontier outlives
@@ -3156,10 +3419,105 @@ static bool warm_own_subtree(markdown_core_node *root) {
     }
 }
 
-bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_core_warm_undo *undo) {
+/* PUTS BACK THE BYTES THE SNAPSHOT OWNS, and only those. What it leaves
+ * alone has another owner, named in the record's `saved` comment: the links
+ * (the list surgery around this call computes them), the content buffer (the
+ * content taxonomy below), the three vectors a node points at (freed or
+ * truncated by their own steps), the extension payload (the extension's to
+ * restore), and the facade's id, revision and hash, which no close writes.
+ * `as` is not here: the content taxonomy writes into it, so it goes back
+ * after, through warm_restore_payload. */
+static void warm_restore_node(markdown_core_node *node, const unsigned char *saved) {
+    /* THE WHOLE NODE COMES BACK, AND THEN THE BYTES SOMEONE ELSE OWNS ARE
+     * PUT BACK TO WHAT THE CLOSE LEFT — because this list is the EXCEPTIONS,
+     * not the restores. A field added to markdown_core_node tomorrow is
+     * restored by the memcpy without anybody remembering to say so, which is
+     * the whole point: the safe answer is the default, and only a field with
+     * a second owner has to be named here. */
+    markdown_core_node keep = *node;
+    memcpy(node, saved, sizeof(*node));
+    /* The content buffer: the close may have grown it, moved it whole into a
+     * literal, or consumed it, and the taxonomy at the end of the retract
+     * says which and puts it back. Restoring a stale `ptr` here would hand
+     * back memory a realloc has already freed. */
+    node->content = keep.content;
+    /* The links: the retract's own list surgery has just computed them —
+     * what it retired, what it put back, and the inline prefix §8 keeps. */
+    node->next = keep.next;
+    node->prev = keep.prev;
+    node->parent = keep.parent;
+    node->first_child = keep.first_child;
+    node->last_child = keep.last_child;
+    /* The three vectors a node only POINTS at: a snapshot holds the address,
+     * never the count behind it, so each is freed or truncated by its own
+     * step. */
+    node->concrete = keep.concrete;
+    node->inline_concrete = keep.inline_concrete;
+    node->probes = keep.probes;
+    /* The extension's, restored with the bytes behind the payload pointer
+     * (warm_restore_extension), and the payload itself after the content
+     * taxonomy has written into it (warm_restore_payload). */
+    node->extension = keep.extension;
+    node->as = keep.as;
+    /* The type, last of the three, so an extension's free_opaque still reads
+     * the node as what the close made it (warm_restore_type). */
+    node->type = keep.type;
+    /* THE FACADE'S, and never a close's: the identity a build stamped after
+     * the last publish is younger than this snapshot, and putting the
+     * snapshot's back would retire ids the caller is still holding. */
+    node->id = keep.id;
+    node->last_changed_rev = keep.last_changed_rev;
+    node->subtree_hash = keep.subtree_hash;
+}
+
+/* Last, as it always was: an extension's free_opaque is handed the node while
+ * it still reads as what the close made it. */
+static void warm_restore_type(markdown_core_node *node, const unsigned char *saved) {
+    memcpy(&node->type, saved + offsetof(markdown_core_node, type), sizeof(node->type));
+}
+
+static void warm_restore_payload(markdown_core_node *node, const unsigned char *saved) {
+    memcpy(&node->as, saved + offsetof(markdown_core_node, as), sizeof(node->as));
+}
+
+/* The extension pointer, and with it the payload's fate: a retype that
+ * attached an extension (a paragraph turned table) minted a payload the
+ * extension frees; a block that had one keeps it and gets its bytes back. */
+static void warm_restore_extension(markdown_core_node *node, const markdown_core_warm_open_block *entry) {
+    markdown_core_extension *was = NULL;
+    memcpy(&was, entry->saved + offsetof(markdown_core_node, extension), sizeof(was));
+    if (node->extension != was) {
+        if (node->extension && node->extension->free_opaque && node->as.opaque) {
+            node->extension->free_opaque(node->extension, markdown_core_node_mem(node), node);
+        }
+        node->as.opaque = NULL;
+        node->extension = was;
+    } else if (entry->opaque_copy && node->as.opaque) {
+        if (node->extension->restore_opaque) {
+            node->extension->restore_opaque(node->extension, markdown_core_node_mem(node), node, entry->opaque_copy);
+        } else {
+            memcpy(node->as.opaque, entry->opaque_copy, entry->opaque_copy_size);
+        }
+    }
+}
+
+bool markdown_core_parser_warm_retract(markdown_core_parser *parser) {
+    markdown_core_warm_undo *undo = parser->warm_published;
+    markdown_core_inline_frontier frontier;
+    /* From here the record is the tick's, and a step that takes one of the
+     * nodes it names out of the tree says so (drop_inline_prefix). What the
+     * LAST tick dropped is now unreachable from anywhere, and goes. */
+    /* WHAT THE LAST PUBLISH SETTLED, for the identity step to pair after:
+     * the live checkpoint still holds it here, and this tick's refine is
+     * about to move it. */
+    parser->inline_published = parser->inline_frontier;
+    memset(&frontier, 0, sizeof(frontier));
+    memset(&parser->inline_frontier, 0, sizeof(parser->inline_frontier));
     size_t i;
 
-    if (!undo || undo->retracted) {
+    /* Nothing published is nothing to give back; a record the caller has
+     * not committed yet would be dropped on the floor by the move below. */
+    if (!undo || parser->warm_retracted) {
         return false;
     }
     /* Before anything moves: what is about to be retired must own its bytes,
@@ -3175,6 +3533,13 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             undo->spine[i + 1].node == entry->last_child) {
             child =
                 undo->spine[i + 1].vanished_prev ? undo->spine[i + 1].vanished_prev->next : entry->node->first_child;
+        } else if (parser->inline_published.unit == entry->node) {
+            /* A settled child already owns its bytes — it took them when it
+             * settled — so only the tail this retract retires is walked. Walk
+             * the prefix too and the tick is proportional to the whole leaf
+             * again, which is the thing this milestone removes. */
+            child = parser->inline_published.last_child ? parser->inline_published.last_child->next
+                                                        : entry->node->first_child;
         } else {
             child = entry->last_child ? entry->last_child->next : entry->node->first_child;
         }
@@ -3267,7 +3632,14 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             }
             entry->vanished = false;
         }
-        run = entry->last_child ? entry->last_child->next : node->first_child;
+        /* After the unit's settled inline prefix when it has one — those
+         * children are the last close's and stay, with their records, their
+         * probes and their diagnostics — and after the saved youngest child
+         * otherwise. */
+        run =
+            parser->inline_published.unit == node
+                ? (parser->inline_published.last_child ? parser->inline_published.last_child->next : node->first_child)
+                : markdown_core_warm_appended_first(entry);
         inserted = entry->prev ? entry->prev->next : node->first_child;
         /* What the close INSERTED before the youngest child — the definitions
          * harvested out of it, a paragraph split off a table — is retired
@@ -3296,14 +3668,26 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             }
             entry->last_child->prev = entry->prev;
         }
-        if (entry->last_child) {
-            entry->last_child->next = NULL;
-        } else {
-            node->first_child = NULL;
+        /* WHAT THE BLOCK KEEPS. Its settled inline prefix when the parser's
+         * checkpoint names this unit — those children stay, with their ids,
+         * their bytes and their records — and otherwise the youngest child
+         * the record saved, everything past which this retract retires. */
+        {
+            markdown_core_node *keep =
+                parser->inline_published.unit == node ? parser->inline_published.last_child : entry->last_child;
+            if (keep) {
+                keep->next = NULL;
+            } else {
+                node->first_child = NULL;
+            }
+            node->last_child = keep;
         }
-        node->last_child = entry->last_child;
         if (entry->last_child) {
-            entry->last_child->flags = entry->last_child_flags;
+            /* The settled node a blank line at the close writes onto. It is
+             * put back the same way as the block, so a close reaching a
+             * second field of it needs nothing said here. */
+            warm_restore_node(entry->last_child, entry->saved_last_child);
+            warm_restore_type(entry->last_child, entry->saved_last_child);
         }
         if (run) {
             run->prev = NULL;
@@ -3333,37 +3717,29 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             entry->survivor = NULL;
         }
         entry->retired = run;
-        if (node->inline_concrete) {
-            markdown_core_inline_concrete_records_free(markdown_core_node_mem(node), node->inline_concrete);
-            node->inline_concrete = NULL;
-        }
-        /* The close's refine of this block asked the tables; that refine is
-         * retired with its children, and so is what it asked. */
-        markdown_core_probes_free(node->probes);
-        node->probes = NULL;
-        node->flags = entry->flags;
-        node->end_line = entry->end_line;
-        node->end_column = entry->end_column;
-        node->start_line = entry->start_line;
-        node->start_column = entry->start_column;
-        /* A retype that attached an extension (a paragraph turned table)
-         * minted a payload the extension frees; a block that had one keeps
-         * it and gets its bytes back. */
-        if (node->extension != entry->extension) {
-            if (node->extension && node->extension->free_opaque && node->as.opaque) {
-                node->extension->free_opaque(node->extension, markdown_core_node_mem(node), node);
+        if (parser->inline_published.unit == node && parser->inline_published.content > 0) {
+            /* The prefix keeps what it owns: its records TRUNCATE to their
+             * settled count rather than being thrown away, and its probes
+             * stay for the next refine to ask again in the unit's name (it
+             * reads the first `probes` of them and re-attaches the union, so
+             * the tail's asks leave with the tail). */
+            if (node->inline_concrete && node->inline_concrete->count > parser->inline_published.concrete) {
+                node->inline_concrete->count = parser->inline_published.concrete;
             }
-            node->as.opaque = NULL;
-            node->extension = entry->extension;
-        } else if (entry->opaque_copy && node->as.opaque) {
-            if (node->extension->restore_opaque) {
-                node->extension
-                    ->restore_opaque(node->extension, markdown_core_node_mem(node), node, entry->opaque_copy);
-            } else {
-                memcpy(node->as.opaque, entry->opaque_copy, entry->opaque_copy_size);
+            frontier = parser->inline_published;
+        } else {
+            if (node->inline_concrete) {
+                markdown_core_inline_concrete_records_free(markdown_core_node_mem(node), node->inline_concrete);
+                node->inline_concrete = NULL;
             }
+            /* The close's refine of this block asked the tables; that refine
+             * is retired with its children, and so is what it asked. */
+            markdown_core_probes_free(node->probes);
+            node->probes = NULL;
         }
-        node->type = entry->type;
+        warm_restore_node(node, entry->saved);
+        warm_restore_extension(node, entry);
+        warm_restore_type(node, entry->saved);
         switch (entry->content) {
         case MARKDOWN_CORE_WARM_CONTENT_MOVED: {
             /* The close published the buffer as the block's literal (see
@@ -3422,7 +3798,7 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             markdown_core_strbuf_truncate(&node->content, entry->content_size);
             break;
         }
-        node->as = entry->payload;
+        warm_restore_payload(node, entry->saved);
         if (node->concrete) {
             if (entry->concrete_count == 0) {
                 markdown_core_concrete_records_free(markdown_core_node_mem(node), node->concrete);
@@ -3464,7 +3840,14 @@ bool markdown_core_parser_warm_retract(markdown_core_parser *parser, markdown_co
             markdown_core_node_free(replaced);
         }
     }
-    undo->retracted = true;
+    /* LAST OF ALL, the frontier the open leaf may resume from. Every refine
+     * leaves its own behind — the flips above each refine a unit of their
+     * own — so a frontier handed over any earlier is the wrong unit's by the
+     * time the tick's refine asks for it, and the leaf rebuilds a prefix it
+     * was holding. */
+    parser->inline_frontier = frontier;
+    parser->warm_published = NULL;
+    parser->warm_retracted = undo;
     return true;
 }
 

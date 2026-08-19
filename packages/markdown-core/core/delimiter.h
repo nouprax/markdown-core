@@ -142,6 +142,11 @@ typedef struct {
     size_t capacity;
     size_t lane_count;
     size_t lane_capacity;
+    /* Both ends of the live chain. The tail is where a push links on; the
+     * head is where a pass that must see every live record begins, and it is
+     * not slot one — a record removed by a reduction stays in its slot with
+     * the links it had when it left. */
+    markdown_core_delimiter_id head;
     markdown_core_delimiter_id tail;
     uint64_t last_claim_order;
     uint32_t process_epoch;
@@ -219,6 +224,12 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
     markdown_core_inline_parser *inline_parser,
     markdown_core_delimiter_mark mark
 );
+markdown_core_delimiter_result markdown_core_delimiter_engine_settle(
+    markdown_core_delimiter_engine *engine,
+    markdown_core_parser *parser,
+    markdown_core_inline_parser *inline_parser
+);
+
 markdown_core_delimiter_result markdown_core_delimiter_engine_truncate(
     markdown_core_delimiter_engine *engine,
     markdown_core_delimiter_mark mark

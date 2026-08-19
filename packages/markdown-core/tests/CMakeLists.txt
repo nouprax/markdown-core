@@ -287,6 +287,7 @@ if(MARKDOWN_CORE_STATIC)
               capture_oom_sweep
               warm_fingerprint
               warm_close_undo
+              close_retract_exact
               warm_tick_stream
               warm_tick_living_tree
               warm_identity_pins
@@ -302,7 +303,8 @@ if(MARKDOWN_CORE_STATIC)
               inline_equivalence
               inline_growth_ceiling
               recovery_literal_fallback
-              recovery_island_boundary)
+              recovery_island_boundary
+              inline_frontier)
         markdown_core_add_test(regression_concrete_${case} regression 240 concrete_runner --case ${case})
     endforeach()
 endif()

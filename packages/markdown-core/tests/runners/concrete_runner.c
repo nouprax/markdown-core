@@ -3079,7 +3079,7 @@ static int case_warm_tick_living_tree(void) {
     }
     parser = document->chain->head.parser;
     root = markdown_core_document_root(document);
-    if (!parser || !root || !document->chain->head.undo) {
+    if (!parser || !root || !parser->warm_published) {
         fprintf(stderr, "warm_tick_living_tree: a fresh document has no parser, root or record\n");
         markdown_core_document_free(document);
         return -1;
@@ -3105,7 +3105,7 @@ static int case_warm_tick_living_tree(void) {
             result = -1;
             break;
         }
-        if (document->chain->head.undo == NULL || document->chain->head.undo->retracted) {
+        if (document->chain->head.parser->warm_published == NULL) {
             fprintf(
                 stderr,
                 "warm_tick_living_tree: after append %zu (%s) the head holds no record to reopen\n",
@@ -3785,7 +3785,7 @@ static int case_projection_witness_agrees(void) {
                 markdown_core_document_free(document);
                 document = successor;
                 offset += step;
-                record = document->chain->head.undo;
+                record = document->chain->head.parser->warm_published;
                 for (k = 0; k < seen_count; k++) {
                     seen[k].alive = false;
                 }
@@ -4104,7 +4104,6 @@ static int case_warm_close_undo(void) {
         for (cut = 0; cut <= length; cut++) {
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
-            markdown_core_warm_undo *undo;
             uint64_t before, after, continued, uninterrupted;
             int result = 0;
 
@@ -4128,12 +4127,11 @@ static int case_warm_close_undo(void) {
             /* Whatever the feed settled is refined once, here, and is the
              * tick's PERMANENT work: the state the undo has to restore is the
              * one after it. A fresh parser settles its whole closed part. */
-            markdown_core_parser_warm_settle(parser, NULL);
+            markdown_core_parser_warm_settle(parser);
             before = markdown_core_parser_warm_fingerprint(parser);
             /* The engine's own tick: publish a projection, check it against
              * a one-shot parse of the same bytes, and give it back. */
-            undo = markdown_core_parser_warm_publish(parser);
-            if (!undo) {
+            if (!markdown_core_parser_warm_publish(parser)) {
                 fprintf(stderr, "warm_close_undo: text %zu cut %zu could not publish\n", text_index, cut);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
@@ -4142,13 +4140,11 @@ static int case_warm_close_undo(void) {
             eligible++;
             if (wc_projection_matches(parser, text, cut) != 0) {
                 fprintf(stderr, "warm_close_undo: text %zu cut %zu published a wrong projection\n", text_index, cut);
-                markdown_core_parser_warm_retract(parser, undo);
-                markdown_core_parser_warm_undo_free(undo);
                 markdown_core_parser_free(parser);
                 markdown_core_parser_free(twin);
                 return -1;
             }
-            markdown_core_parser_warm_retract(parser, undo);
+            markdown_core_parser_warm_retract(parser);
             after = markdown_core_parser_warm_fingerprint(parser);
             if (before != after) {
                 fprintf(
@@ -4169,10 +4165,10 @@ static int case_warm_close_undo(void) {
              * Refining unit by unit as a stream settles them must leave
              * exactly the state that refining everything at the end would. */
             markdown_core_parser_feed(parser, text + cut, length - cut);
-            markdown_core_parser_warm_settle(parser, undo);
-            markdown_core_parser_warm_undo_free(undo);
+            markdown_core_parser_warm_settle(parser);
+            markdown_core_parser_warm_commit(parser);
             markdown_core_parser_feed(twin, text, length);
-            markdown_core_parser_warm_settle(twin, NULL);
+            markdown_core_parser_warm_settle(twin);
             continued = markdown_core_parser_warm_fingerprint(parser);
             uninterrupted = markdown_core_parser_warm_fingerprint(twin);
             if (result == 0 && continued != uninterrupted) {
@@ -4237,7 +4233,6 @@ static int case_warm_tick_stream(void) {
             size_t stride = strides[stride_index];
             markdown_core_parser *parser = sweep_parser_new(NULL);
             markdown_core_parser *twin = sweep_parser_new(NULL);
-            markdown_core_warm_undo *previous = NULL;
             size_t fed = 0;
             int failed = 0;
 
@@ -4249,7 +4244,6 @@ static int case_warm_tick_stream(void) {
             }
             while (fed < length && !failed) {
                 size_t piece = length - fed < stride ? length - fed : stride;
-                markdown_core_warm_undo *undo;
                 uint64_t before, after;
 
                 /* The tick, in the engine's own order: feed, settle what the
@@ -4258,9 +4252,8 @@ static int case_warm_tick_stream(void) {
                  * settles as a fresh parser does. */
                 markdown_core_parser_feed(parser, text + fed, piece);
                 fed += piece;
-                markdown_core_parser_warm_settle(parser, previous);
-                markdown_core_parser_warm_undo_free(previous);
-                previous = NULL;
+                markdown_core_parser_warm_settle(parser);
+                markdown_core_parser_warm_commit(parser);
                 if (!markdown_core_parser_warm_eligible_at_eof(parser)) {
                     /* Every state a feed leaves can publish; a parser that
                      * cannot has failed, and this fails loudly instead of
@@ -4287,8 +4280,7 @@ static int case_warm_tick_stream(void) {
 
                 /* THE ENGINE'S OWN TICK: publish a projection, check it, and
                  * give it back. */
-                undo = markdown_core_parser_warm_publish(parser);
-                if (!undo || wc_projection_matches(parser, text, fed) != 0) {
+                if (!markdown_core_parser_warm_publish(parser) || wc_projection_matches(parser, text, fed) != 0) {
                     fprintf(
                         stderr,
                         "warm_tick_stream: text %zu stride %zu published a wrong projection at %zu bytes\n",
@@ -4296,14 +4288,10 @@ static int case_warm_tick_stream(void) {
                         stride,
                         fed
                     );
-                    if (undo) {
-                        markdown_core_parser_warm_retract(parser, undo);
-                        markdown_core_parser_warm_undo_free(undo);
-                    }
                     failed = 1;
                     break;
                 }
-                markdown_core_parser_warm_retract(parser, undo);
+                markdown_core_parser_warm_retract(parser);
                 after = markdown_core_parser_warm_fingerprint(parser);
                 if (before != after) {
                     fprintf(
@@ -4315,18 +4303,17 @@ static int case_warm_tick_stream(void) {
                     );
                     failed = 1;
                 }
-                /* The retracted record is what the NEXT tick settles over, and
-                 * what carries the retired frontier it will pair against. */
-                previous = undo;
+                /* The record the parser keeps retracted is what the NEXT tick
+                 * settles over, and what carries the retired frontier it will
+                 * pair against. */
             }
-            markdown_core_parser_warm_undo_free(previous);
             if (!failed) {
                 /* The twin is fed once and settled once, which is the
                  * comparison that matters: refining unit by unit as a stream
                  * settles them must leave exactly the state that refining the
                  * same units at the end would. */
                 markdown_core_parser_feed(twin, text, length);
-                markdown_core_parser_warm_settle(twin, NULL);
+                markdown_core_parser_warm_settle(twin);
                 if (markdown_core_parser_warm_fingerprint(parser) != markdown_core_parser_warm_fingerprint(twin)) {
                     fprintf(
                         stderr,
@@ -4594,10 +4581,8 @@ static int case_warm_append_stream(void) {
                 } else {
                     markdown_core_parser_feed(twin, text, length);
                     {
-                        markdown_core_warm_undo *undo;
-                        markdown_core_parser_warm_settle(twin, NULL);
-                        undo = markdown_core_parser_warm_publish(twin);
-                        markdown_core_parser_warm_undo_free(undo);
+                        markdown_core_parser_warm_settle(twin);
+                        markdown_core_parser_warm_publish(twin);
                     }
                     if (markdown_core_parser_warm_fingerprint(document->chain->head.parser) !=
                         markdown_core_parser_warm_fingerprint(twin)) {
@@ -6353,6 +6338,595 @@ static int case_recovery_island_boundary(void) {
     return failed ? -1 : 0;
 }
 
+/* --- the inline frontier ---------------------------------------------------
+ *
+ * THE CLAIM under `inline_frontier.content` (inlines.c subject_settle_delimiters):
+ * what a unit's inline scan built before that offset is what the scan builds
+ * over ANY LONGER BUFFER beginning with these bytes. So a refine of a unit
+ * still growing may start there instead of at zero.
+ *
+ * THE PROOF has to quantify over longer buffers, and that is the whole
+ * difficulty: comparing the prefix against the SAME bytes proves nothing,
+ * because a construct left open — an unclosed backtick, a `<` with no `>`,
+ * a `[` with no destination yet — reads the same in both and only parts
+ * company once the byte that completes it arrives. So each text is extended
+ * by every byte that could complete something, and the settled prefix must
+ * survive all of them:
+ *
+ *     parse(content[0 .. settle_at))   is a prefix of   parse(content + X)
+ *
+ * for every X below. The short parse is one child shorter by construction —
+ * its content ends at a line start whose newline the right trim removes — so
+ * this is a prefix check and not an equality one. */
+
+/* Every extension attached: an extension's inline handler scans forward the
+ * way `$`, `[[` and `:name{}` do, and an engine that cannot see how far is
+ * the reason the frontier closes over a handler that merely declined. With a
+ * bare parser those buckets are empty and that arm is never reached. */
+static markdown_core_parser *frontier_parser(int with_extensions) {
+    markdown_core_parse_options options;
+    markdown_core_error *error = NULL;
+    markdown_core_parser *parser;
+    if (!with_extensions) {
+        return markdown_core_parser_new(MARKDOWN_CORE_OPT_FOOTNOTES);
+    }
+    markdown_core_parse_options_init(&options);
+    parser = markdown_core_document_new_parser(&options, markdown_core_mem_default(), &error);
+    markdown_core_error_free(error);
+    return parser;
+}
+
+static markdown_core_node *frontier_unit(markdown_core_parser *parser, const char *bytes, size_t length) {
+    markdown_core_node *unit = markdown_core_node_new_with_mem(MARKDOWN_CORE_NODE_PARAGRAPH, parser->mem);
+    if (!unit) {
+        return NULL;
+    }
+    unit->start_line = 1;
+    unit->start_column = 1;
+    markdown_core_strbuf_put(&unit->content, (const unsigned char *)bytes, (markdown_core_bufsize)length);
+    if (unit->content.oom) {
+        markdown_core_node_free(unit);
+        return NULL;
+    }
+    return unit;
+}
+
+static int frontier_is_prefix(markdown_core_mem *mem, markdown_core_node *shorter, markdown_core_node *longer) {
+    markdown_core_strbuf a = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_strbuf b = MARKDOWN_CORE_BUF_INIT(mem);
+    markdown_core_node *x = markdown_core_node_first_child(shorter);
+    markdown_core_node *y = markdown_core_node_first_child(longer);
+    int agree = 1;
+    for (; x && agree; x = markdown_core_node_next(x), y = markdown_core_node_next(y)) {
+        if (!y || markdown_core_node_get_type(x) != markdown_core_node_get_type(y)) {
+            agree = 0;
+            break;
+        }
+        markdown_core_strbuf_clear(&a);
+        markdown_core_strbuf_clear(&b);
+        markdown_core_ast_projection_write(x, &a);
+        markdown_core_ast_projection_write(y, &b);
+        if (a.oom || b.oom || a.size != b.size || (a.size && memcmp(a.ptr, b.ptr, (size_t)a.size) != 0)) {
+            agree = 0;
+        }
+    }
+    markdown_core_strbuf_free(&a);
+    markdown_core_strbuf_free(&b);
+    return agree;
+}
+
+/* Refines `bytes` as a paragraph of its own and answers the unit; the
+ * settle point of that refine goes to `*settle` when asked for. */
+static markdown_core_node *frontier_refine(
+    markdown_core_parser *parser,
+    const char *bytes,
+    size_t length,
+    markdown_core_bufsize *settle
+) {
+    markdown_core_node *unit = frontier_unit(parser, bytes, length);
+    if (!unit) {
+        return NULL;
+    }
+    markdown_core_parse_inlines(parser, unit, parser->refmap, MARKDOWN_CORE_OPT_FOOTNOTES);
+    if (settle) {
+        /* What the refine just proved — the gate drives one refine at a
+         * time, where the engine's own checkpoint is promoted only for the
+         * unit still growing (parser.h). */
+        *settle = parser->inline_refine.content;
+    }
+    return unit;
+}
+
+static int frontier_sweep(int with_extensions, size_t floor) {
+    static const char *const TEXTS[] = {
+        "alpha beta gamma\ndelta epsilon zeta\neta theta iota\n",
+        "words *keep* arriving\nand the _paragraph_ goes on\nfurther still\n",
+        "**bold _and italic_ here**\nplus ~~struck~~ text\ntail line\n",
+        "a `code span` here\nand `another one` there\nlast line\n",
+        "see [text](/url) and [more](/x)\nthen [shortcut] here\ntail\n",
+        "tom & jerry and salt & pepper\nmore &amp; entities\ntail\n",
+        "see <https://example.com/a> now\nand <b@c.com> too\ntail\n",
+        "an *unclosed opener starts here\nand runs on\nand on\n",
+        "a `unclosed tick starts here\nand runs on\nand on\n",
+        "text with a < stray angle\nand more after it\ntail\n",
+        "an &unfinished entity here\nand more after it\ntail\n",
+        "a [bracket with no target\nand more after it\ntail\n",
+        "x [a](/url unclosed here\nsecond line\nthird line\n",
+        "x [a](/url \"title starts\nsecond line\nthird line\n",
+        "x [a](/url 'title starts\nsecond line\nthird line\n",
+        "x [a][label starts\nsecond line\nthird line\n",
+        "x $formula starts\nsecond line\nthird line\n",
+        "x :dir{a=b\nsecond line\nthird line\n",
+        "x [[cross starts\nsecond line\nthird line\n",
+        "x ![[embed starts\nsecond line\nthird line\n",
+        "an <!-- unfinished comment\nsecond line\nthird line\n",
+        "an <span class=\"x\nsecond line\nthird line\n",
+        "escapes \\* and \\_ and \\`\nsecond line here\nthird line\n",
+        "line one ends in a backslash \\\nline two here\nline three\n",
+        "trailing spaces here   \nhard break above\nlast\n",
+        "caf\xc3\xa9 na\xc3\xafve \xe2\x80\x94 dashes\nsecond line\nthird\n",
+        "$formula$ and :dir{a=b}\nsecond line\nthird line\n",
+        "an $unclosed formula here\nsecond line\nthird line\n",
+        "[[cross]] and ![[embed]]\nsecond line\nthird\n",
+        "an [[unclosed cross link\nsecond line\nthird\n",
+        "a [link *with emph*](/u)\nsecond line here\nthird\n",
+        "***triple*** and **double**\nand *single* here\ntail\n",
+        NULL,
+    };
+    /* Every byte that can complete something left open, and a few that can
+     * only extend what is already closed. */
+    static const char *const SUFFIXES[] = {
+        "",    "`",  ">",   "*",      "_",      "~~",      ";",        "$",  "}",          ")",
+        "\"",  "]]", "-->", "](/u)",  "(/url)", "[label]", "\ntail\n", "x",  "  \nmore\n", "\n`code`\n",
+        "\")", "')", "]",   "\"t\")", "b}",     "]]c",     "$",        NULL,
+    };
+    size_t i;
+    size_t proven = 0;
+    int failed = 0;
+
+    for (i = 0; TEXTS[i] && !failed; i++) {
+        size_t length = strlen(TEXTS[i]);
+        markdown_core_parser *parser = frontier_parser(with_extensions);
+        markdown_core_node *whole;
+        markdown_core_node *prefix = NULL;
+        markdown_core_bufsize settle = 0;
+        size_t j;
+
+        if (!parser) {
+            fprintf(stderr, "inline_frontier: parser allocation failed\n");
+            return -1;
+        }
+        whole = frontier_refine(parser, TEXTS[i], length, &settle);
+        if (!whole) {
+            markdown_core_parser_free(parser);
+            fprintf(stderr, "inline_frontier: unit allocation failed\n");
+            return -1;
+        }
+        markdown_core_node_free(whole);
+        if (settle <= 0) {
+            /* A text whose scan never stood in its starting state proves
+             * nothing, and the count below refuses a corpus of them. */
+            markdown_core_parser_free(parser);
+            continue;
+        }
+        prefix = frontier_refine(parser, TEXTS[i], (size_t)settle, NULL);
+        if (!prefix || !markdown_core_node_first_child(prefix)) {
+            fprintf(stderr, "inline_frontier: text %zu settled at %d with nothing before it\n", i, (int)settle);
+            markdown_core_node_free(prefix);
+            markdown_core_parser_free(parser);
+            return -1;
+        }
+        for (j = 0; SUFFIXES[j] && !failed; j++) {
+            size_t grown_length = length + strlen(SUFFIXES[j]);
+            char *grown = (char *)malloc(grown_length + 1);
+            markdown_core_node *longer;
+            if (!grown) {
+                fprintf(stderr, "inline_frontier: allocation failed\n");
+                failed = 1;
+                break;
+            }
+            memcpy(grown, TEXTS[i], length);
+            memcpy(grown + length, SUFFIXES[j], strlen(SUFFIXES[j]) + 1);
+            longer = frontier_refine(parser, grown, grown_length, NULL);
+            if (!longer) {
+                free(grown);
+                fprintf(stderr, "inline_frontier: unit allocation failed\n");
+                failed = 1;
+                break;
+            }
+            if (!frontier_is_prefix(parser->mem, prefix, longer)) {
+                fprintf(
+                    stderr,
+                    "inline_frontier: text %zu settled at %d, and appending \"%s\" changed what stood before it\n",
+                    i,
+                    (int)settle,
+                    SUFFIXES[j]
+                );
+                failed = 1;
+            }
+            markdown_core_node_free(longer);
+            free(grown);
+        }
+        if (!failed) {
+            proven++;
+        }
+        markdown_core_node_free(prefix);
+        markdown_core_parser_free(parser);
+    }
+    if (!failed && proven < floor) {
+        fprintf(
+            stderr,
+            "inline_frontier: %s, only %zu texts reached a settle point; the corpus proves too little\n",
+            with_extensions ? "with extensions" : "core only",
+            proven
+        );
+        failed = 1;
+    }
+    if (!failed) {
+        printf(
+            "inline_frontier: %s, %zu of %zu texts settled and held under every extension of their bytes\n",
+            with_extensions ? "with extensions" : "core only",
+            proven,
+            i - 1
+        );
+    }
+    return failed ? -1 : 0;
+}
+
+/* Both parsers, because they prove different halves. CORE ONLY is where the
+ * frontier reaches: no extension handler is consulted, so only the core's own
+ * open-ended scans hold it back, and most texts settle. WITH EXTENSIONS is
+ * where it is honest: `try_extensions` cannot see how far a handler looked,
+ * so a handler that merely DECLINED closes the frontier from that byte on,
+ * and any `[`, `!`, `~`, `$`, `:` or `\` in the text costs the rest of it.
+ * That is why the floor differs — the reach is a measurement, the prefix
+ * holding is the proof, and only the second is a correctness claim.
+ *
+ * The reach with extensions is what the next step buys back: an inline
+ * handler that can look past what it consumes has to say so, the way a block
+ * extension has to declare `opaque_size`, and then a decline says nothing. */
+static int case_inline_frontier(void) {
+    if (frontier_sweep(0, 16) != 0) {
+        return -1;
+    }
+    return frontier_sweep(1, 8);
+}
+
+
+/* What a node was at the checkpoint, so the retract can be held to it. */
+typedef struct {
+    markdown_core_node *node;
+    unsigned char bytes[sizeof(markdown_core_node)];
+    unsigned char *content;
+    size_t content_size;
+    size_t concrete_count;      /* what the pointed-to vectors held: a node
+                                 * snapshot restores the POINTER, never the
+                                 * count behind it. */
+    size_t inline_concrete_count;
+    size_t probe_count;
+    int seen;
+} cm_snap;
+
+static const struct { const char *name; size_t off, len; } CM_FIELDS[] = {
+    {"content", offsetof(markdown_core_node, content), sizeof(markdown_core_strbuf)},
+    {"next", offsetof(markdown_core_node, next), sizeof(void *)},
+    {"prev", offsetof(markdown_core_node, prev), sizeof(void *)},
+    {"parent", offsetof(markdown_core_node, parent), sizeof(void *)},
+    {"first_child", offsetof(markdown_core_node, first_child), sizeof(void *)},
+    {"last_child", offsetof(markdown_core_node, last_child), sizeof(void *)},
+    {"id", offsetof(markdown_core_node, id), sizeof(uint64_t)},
+    {"last_changed_rev", offsetof(markdown_core_node, last_changed_rev), sizeof(uint64_t)},
+    {"subtree_hash", offsetof(markdown_core_node, subtree_hash), sizeof(uint64_t)},
+    {"concrete", offsetof(markdown_core_node, concrete), sizeof(void *)},
+    {"inline_concrete", offsetof(markdown_core_node, inline_concrete), sizeof(void *)},
+    {"probes", offsetof(markdown_core_node, probes), sizeof(void *)},
+    {"start_line", offsetof(markdown_core_node, start_line), sizeof(int)},
+    {"start_column", offsetof(markdown_core_node, start_column), sizeof(int)},
+    {"end_line", offsetof(markdown_core_node, end_line), sizeof(int)},
+    {"end_column", offsetof(markdown_core_node, end_column), sizeof(int)},
+    {"internal_offset", offsetof(markdown_core_node, internal_offset), sizeof(int)},
+    {"type", offsetof(markdown_core_node, type), sizeof(uint16_t)},
+    {"flags", offsetof(markdown_core_node, flags), sizeof(markdown_core_node_internal_flags)},
+    {"extension", offsetof(markdown_core_node, extension), sizeof(void *)},
+    {"as", offsetof(markdown_core_node, as), sizeof(union markdown_core_node_payload)}
+};
+#define CM_FIELD_COUNT (sizeof(CM_FIELDS) / sizeof(CM_FIELDS[0]))
+#define CM_TYPE_MAX 64
+
+static int cm_cmp(const void *a, const void *b) {
+    markdown_core_node *x = ((const cm_snap *)a)->node;
+    markdown_core_node *y = ((const cm_snap *)b)->node;
+    return x < y ? -1 : (x > y ? 1 : 0);
+}
+
+static markdown_core_node *cm_next(markdown_core_node *node, markdown_core_node *root) {
+    if (node->first_child) {
+        return node->first_child;
+    }
+    while (node != root && !node->next) {
+        node = node->parent;
+    }
+    return node == root ? NULL : node->next;
+}
+
+static size_t cm_count(markdown_core_node *root) {
+    size_t n = 0;
+    markdown_core_node *node = root;
+    while (node) {
+        n++;
+        node = cm_next(node, root);
+    }
+    return n;
+}
+
+/* THE STRONGER GATE. markdown_core_parser_warm_fingerprint proves the retract
+ * put back what it ENUMERATES — type, flags, coordinates, content bytes, the
+ * definition tables, the marks — and its own comment says a field nobody adds
+ * to it is a field it goes blind to. This asks the whole question instead:
+ * every node alive at the checkpoint, all 200 bytes of it, bit for bit, plus
+ * the counts behind the three vectors a node only points at. Returns the
+ * number of nodes that came back wrong. */
+/* THE ONE THING THE DESIGN LETS A CLOSE KEEP: the tentative inline children
+ * of a block still open. The close derives them, the retract retires them,
+ * and the next tick derives them again — so they are not a restore question,
+ * and markdown_core_parser_warm_fingerprint skips them for the same reason.
+ * Everything else in the tree is fair game for this gate. */
+static int cm_tentative_inline(markdown_core_node *node, markdown_core_node *current) {
+    markdown_core_node *block;
+    if ((node->type & MARKDOWN_CORE_NODE_TYPE_INLINE) != MARKDOWN_CORE_NODE_TYPE_INLINE) {
+        return 0;
+    }
+    for (block = node->parent; block; block = block->parent) {
+        if ((block->type & MARKDOWN_CORE_NODE_TYPE_INLINE) == MARKDOWN_CORE_NODE_TYPE_INLINE) {
+            continue;
+        }
+        break;
+    }
+    for (; current; current = current->parent) {
+        if (current == block) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* A unit the close flipped, or anything under it. */
+static int cm_flipped(markdown_core_node *const *units, size_t count, markdown_core_node *node) {
+    size_t i;
+    markdown_core_node *up;
+    for (up = node; up; up = up->parent) {
+        for (i = 0; i < count && i < 64; i++) {
+            if (units[i] == up) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static size_t cm_retract_is_exact(markdown_core_parser *parser, const char *label, size_t cut) {
+    markdown_core_node *root = parser->root;
+    markdown_core_node *current = parser->current;
+    markdown_core_node *node;
+    cm_snap *snap;
+    const struct markdown_core_warm_flip *flips = NULL;
+    markdown_core_node *flip_units[64];
+    markdown_core_node *frontier = NULL;
+    size_t flip_count = 0;
+    size_t count = cm_count(root), i = 0, wrong = 0;
+
+    snap = (cm_snap *)calloc(count, sizeof(*snap));
+    if (!snap) {
+        return 0;
+    }
+    for (node = root; node; node = cm_next(node, root)) {
+        if (cm_tentative_inline(node, current)) {
+            continue;
+        }
+        snap[i].node = node;
+        memcpy(snap[i].bytes, node, sizeof(markdown_core_node));
+        snap[i].concrete_count = node->concrete ? node->concrete->count : 0;
+        snap[i].inline_concrete_count = node->inline_concrete ? node->inline_concrete->count : 0;
+        snap[i].probe_count = node->probes ? node->probes->count : 0;
+        i++;
+    }
+    count = i;
+    qsort(snap, count, sizeof(*snap), cm_cmp);
+    if (!markdown_core_parser_warm_publish(parser)) {
+        free(snap);
+        return 0;
+    }
+    flips = parser->warm_published->flips;
+    flip_count = parser->warm_published->flip_count;
+    for (i = 0; i < flip_count; i++) {
+        flip_units[i < 64 ? i : 63] = flips[i].unit;
+    }
+    if (!markdown_core_parser_warm_retract(parser)) {
+        free(snap);
+        return 0;
+    }
+    /* The block still open KEEPS the inline prefix this close settled on it
+     * (the living tree plan, §8): the storage that prefix owns — its token
+     * records and the labels it asked about — is the prefix's, not a trace,
+     * and the next refine appends to it. */
+    frontier = parser->inline_frontier.unit;
+    for (node = parser->root; node; node = cm_next(node, parser->root)) {
+        cm_snap key, *hit;
+        size_t f;
+        key.node = node;
+        hit = (cm_snap *)bsearch(&key, snap, count, sizeof(*snap), cm_cmp);
+        if (!hit) {
+            continue; /* born inside the close and kept: not a restore question */
+        }
+        hit->seen = 1;
+        if (cm_flipped(flip_units, flip_count, node)) {
+            /* A definition the close REGISTERED changed what this settled
+             * unit answered, so the close re-read it and the retract read it
+             * back — same bytes, new inline nodes. Equivalent, not identical:
+             * the record keeps the old children for the caller to pair
+             * against, which is the contract for a flip. */
+            continue;
+        }
+        /* WHOLE NODES, NOT A LIST OF FIELDS. The table below names the
+         * difference when there is one and carries the exemptions; the
+         * question itself is asked of all sizeof(markdown_core_node) bytes,
+         * so a field added to a node is covered here the day it is added —
+         * and if it falls outside the table, this says so rather than going
+         * quietly blind, which is the failure mode the record's hand-kept
+         * field list had. */
+        if (memcmp(hit->bytes, node, sizeof(markdown_core_node)) != 0) {
+            size_t b;
+            for (b = 0; b < sizeof(markdown_core_node); b++) {
+                int named = 0;
+                if (hit->bytes[b] == ((const unsigned char *)node)[b]) {
+                    continue;
+                }
+                for (f = 0; f < CM_FIELD_COUNT; f++) {
+                    named |= b >= CM_FIELDS[f].off && b < CM_FIELDS[f].off + CM_FIELDS[f].len;
+                }
+                if (!named) {
+                    fprintf(stderr, "  %s cut %zu: %s byte %zu is in no named field — a node grew\n", label, cut,
+                            markdown_core_node_get_type_string(node), b);
+                    wrong++;
+                }
+            }
+        }
+        for (f = 0; f < CM_FIELD_COUNT; f++) {
+            /* A block still open owns the tentative children above: its own
+             * child links are theirs to move, and the same exemption. */
+            int owns_tentative = 0;
+            markdown_core_node *chain;
+            for (chain = current; chain; chain = chain->parent) {
+                owns_tentative |= chain == node;
+            }
+            if (owns_tentative && (strcmp(CM_FIELDS[f].name, "first_child") == 0 ||
+                                   strcmp(CM_FIELDS[f].name, "last_child") == 0)) {
+                continue;
+            }
+            if (node == frontier && (strcmp(CM_FIELDS[f].name, "inline_concrete") == 0 ||
+                                     strcmp(CM_FIELDS[f].name, "probes") == 0)) {
+                continue;
+            }
+            if (strcmp(CM_FIELDS[f].name, "flags") == 0) {
+                /* The memos a finalize fills on settled nodes — "ends with a
+                 * blank line", and a list's weighed items. Recomputation
+                 * gives the same answers back, which is why the fingerprint
+                 * masks them too, and warm_close_undo's continuation half
+                 * proves it: the bytes after the cut land where they would
+                 * have. Dropping ENDS_BLANK from this mask over the corpus
+                 * leaves exactly one shape — CHECKED|ENDS_BLANK arriving on
+                 * a node whose LAST_LINE_BLANK already says yes — which is
+                 * the memo agreeing with the state it memoizes. */
+                uint16_t was = 0, now = (uint16_t)node->flags;
+                const uint16_t memo = (uint16_t)(MARKDOWN_CORE_NODE__LAST_LINE_CHECKED |
+                                                 MARKDOWN_CORE_NODE__ENDS_BLANK |
+                                                 MARKDOWN_CORE_NODE__TIGHT_SCANNED |
+                                                 MARKDOWN_CORE_NODE__LOOSE_AT);
+                memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
+                if ((uint16_t)(was & ~memo) == (uint16_t)(now & ~memo)) {
+                    continue;
+                }
+            }
+            if (memcmp(hit->bytes + CM_FIELDS[f].off, (const unsigned char *)node + CM_FIELDS[f].off,
+                       CM_FIELDS[f].len) != 0) {
+                if (strcmp(CM_FIELDS[f].name, "flags") == 0) {
+                    uint16_t was = 0;
+                    memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
+                    fprintf(stderr, "  %s cut %zu: %s.flags 0x%04x -> 0x%04x (delta 0x%04x)\n", label, cut,
+                            markdown_core_node_get_type_string(node), (unsigned)was, (unsigned)node->flags,
+                            (unsigned)(was ^ node->flags));
+                } else if (strcmp(CM_FIELDS[f].name, "inline_concrete") == 0) {
+                    void *was = NULL;
+                    memcpy(&was, hit->bytes + CM_FIELDS[f].off, sizeof(was));
+                    fprintf(stderr,
+                            "  %s cut %zu: %s(line %d).inline_concrete %p(%zu records) -> %p(%zu records)\n",
+                            label, cut, markdown_core_node_get_type_string(node), node->start_line, was,
+                            hit->inline_concrete_count, (void *)node->inline_concrete,
+                            node->inline_concrete ? node->inline_concrete->count : (size_t)0);
+                } else {
+                    fprintf(stderr, "  %s cut %zu: %s.%s did not come back\n", label, cut,
+                            markdown_core_node_get_type_string(node), CM_FIELDS[f].name);
+                }
+                wrong++;
+            }
+        }
+        if ((node->concrete ? node->concrete->count : 0) != hit->concrete_count) {
+            fprintf(stderr, "  %s cut %zu: %s.concrete[] count %zu, was %zu\n", label, cut,
+                    markdown_core_node_get_type_string(node), node->concrete ? node->concrete->count : 0,
+                    hit->concrete_count);
+            wrong++;
+        }
+        if (node != frontier && (node->inline_concrete ? node->inline_concrete->count : 0) != hit->inline_concrete_count) {
+            fprintf(stderr, "  %s cut %zu: %s.inline_concrete[] count %zu, was %zu\n", label, cut,
+                    markdown_core_node_get_type_string(node),
+                    node->inline_concrete ? node->inline_concrete->count : 0, hit->inline_concrete_count);
+            wrong++;
+        }
+        if (node != frontier && (node->probes ? node->probes->count : 0) != hit->probe_count) {
+            fprintf(stderr, "  %s cut %zu: %s.probes[] count %zu, was %zu\n", label, cut,
+                    markdown_core_node_get_type_string(node), node->probes ? node->probes->count : 0,
+                    hit->probe_count);
+            wrong++;
+        }
+    }
+    /* The old children a flip took off its unit: alive, detached, kept on the
+     * record for the caller to pair against — and never put back, because the
+     * retract re-reads the unit rather than reattaching them. */
+    for (i = 0; i < flip_count && i < 64; i++) {
+        markdown_core_node *run;
+        for (run = flips[i].children; run; run = run->next) {
+            markdown_core_node *sub = run;
+            markdown_core_node *stop = run->next;
+            while (sub && sub != stop) {
+                cm_snap key, *hit;
+                key.node = sub;
+                hit = (cm_snap *)bsearch(&key, snap, count, sizeof(*snap), cm_cmp);
+                if (hit) {
+                    hit->seen = 1;
+                }
+                sub = cm_next(sub, run);
+                if (!sub) {
+                    break;
+                }
+            }
+        }
+    }
+    for (i = 0; i < count; i++) {
+        if (!snap[i].seen && !cm_flipped(flip_units, flip_count, snap[i].node)) {
+            fprintf(stderr, "  %s cut %zu: a %s alive at the checkpoint did not come back\n", label, cut,
+                    markdown_core_node_get_type_string(snap[i].node));
+            wrong++;
+        }
+    }
+    free(snap);
+    return wrong;
+}
+
+static int close_retract_exact(void) {
+    size_t text_index, checked = 0, wrong = 0;
+    for (text_index = 0; WC_TEXTS[text_index]; text_index++) {
+        const char *text = WC_TEXTS[text_index];
+        size_t length = strlen(text), cut;
+        for (cut = 0; cut <= length; cut++) {
+            char label[32];
+            markdown_core_parser *parser = sweep_parser_new(NULL);
+            if (!parser) {
+                return -1;
+            }
+            snprintf(label, sizeof(label), "text %zu", text_index);
+            markdown_core_parser_feed(parser, text, cut);
+            markdown_core_parser_warm_settle(parser);
+            if (markdown_core_parser_warm_eligible_at_eof(parser)) {
+                wrong += cm_retract_is_exact(parser, label, cut);
+                checked++;
+            }
+            markdown_core_parser_free(parser);
+        }
+    }
+    printf("close_retract_exact: %zu closes checked byte for byte, %zu nodes came back wrong\n", checked, wrong);
+    return wrong == 0 ? 0 : -1;
+}
+
 static const concrete_case CASES[] = {
     {"region_partition", case_region_partition},
     {"region_of_walk", case_region_of_walk},
@@ -6362,6 +6936,7 @@ static const concrete_case CASES[] = {
     {"capture_oom_sweep", case_capture_oom_sweep},
     {"warm_fingerprint", case_warm_fingerprint},
     {"warm_close_undo", case_warm_close_undo},
+    {"close_retract_exact", close_retract_exact},
     {"warm_tick_stream", case_warm_tick_stream},
     {"warm_tick_living_tree", case_warm_tick_living_tree},
     {"warm_identity_pins", case_warm_identity_pins},
@@ -6378,7 +6953,9 @@ static const concrete_case CASES[] = {
     {"inline_growth_ceiling", case_inline_growth_ceiling},
     {"recovery_literal_fallback", case_recovery_literal_fallback},
     {"recovery_island_boundary", case_recovery_island_boundary},
+    {"inline_frontier", case_inline_frontier},
 };
+
 
 int main(int argc, char **argv) {
     size_t i;

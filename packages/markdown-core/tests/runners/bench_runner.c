@@ -396,16 +396,23 @@ static int workload_adversarial(const bench_options *options) {
  * checkpoints with a burst of token-sized, non-line-aligned ticks (3-8 byte
  * strides). Every tick is warm; each shape carries the bound its open leaf
  * implies: a bounded leaf must not grow with the document at all (`prose`,
- * `nested_list`, `footnote_dense` — a definition every other line, whose
- * flips reach into settled territory and must not cost it; and `fence`,
+ * `nested_list`, `table`, `footnote_dense` — a definition every other line,
+ * whose flips reach into settled territory and must not cost it; `fence`,
  * one growing fence, whose buffer the close moves into the literal whole
  * and the retract moves back, and whose record witnesses it by length —
  * so a leaf that is the document costs the tick nothing per byte it
- * already holds), and a leaf that IS the document and is re-derived grows
- * linearly — one paragraph (`giant_paragraph`, the honest ladder's prose
- * wall), one paragraph of consecutive definitions (`references_appendix`,
- * harvested whole at every close). The flat bound is slice 8's gate in its
- * per-tick form; the amortized form is the workload below. */
+ * already holds; `references_appendix`, one paragraph of consecutive
+ * definitions, which the feed settles one definition behind the `[` that
+ * proves it, leaving the close the last one alone; `definitions_spaced`,
+ * the same definitions a paragraph each, where there is nothing to settle
+ * and the settle must therefore cost nothing; and `cited_article`, all of
+ * it at once in an assistant's proportions), and a leaf that IS the
+ * document and is re-derived grows linearly — one paragraph
+ * (`giant_paragraph`, the honest ladder's prose wall). The flat bound is
+ * slice 8's gate in its per-tick form; the amortized form is the workload
+ * below, which additionally carries `flip_storm`, the ladder's third
+ * entry, whose tick cost depends on where in the text a checkpoint lands
+ * and so has no per-tick form. */
 
 typedef char *(*append_shape_build)(size_t target, size_t *length);
 
@@ -502,6 +509,149 @@ static char *build_append_references_appendix(size_t target, size_t *length) {
     return input;
 }
 
+/* The same definitions with a blank line between them, so each is its own
+ * one-line paragraph and the settle has nothing in front of a line to take.
+ * Flat here and flat in `references_appendix` is what says the settle pays
+ * for itself only where there is something to settle. */
+static char *build_append_definitions_spaced(size_t target, size_t *length) {
+    size_t capacity = target + 128;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    if (!input) {
+        return NULL;
+    }
+    while (used < target) {
+        int wrote = snprintf(input + used, capacity - used, "[r%zu]: /url/%zu\n\n", n, n);
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n++;
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
+/* One growing table: every row is a bounded leaf under a block the stream
+ * never closes, and the cells are the units. */
+static char *build_append_table(size_t target, size_t *length) {
+    size_t capacity = target + 256;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    if (!input) {
+        return NULL;
+    }
+    used += (size_t)snprintf(input, capacity, "| name | value | note |\n| --- | --- | --- |\n");
+    while (used < target) {
+        int wrote = snprintf(input + used, capacity - used, "| row %zu | value %zu | a short note |\n", n, n);
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n++;
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
+/* What an assistant streams: headings, prose carrying reference links and
+ * footnote mentions, a list, a fence, a table, and at the end the references
+ * written the way people write them — one definition per line, no blank
+ * lines. Every mechanism the ladder names at once, and the shape whose whole
+ * cost the settled harvest moved from quadratic to linear. */
+static char *build_append_cited_article(size_t target, size_t *length) {
+    size_t capacity = target * 2 + 8192;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    used += (size_t)snprintf(input, capacity, "# Streaming report\n\n");
+    while (used < target) {
+        int wrote = snprintf(
+            input + used,
+            capacity - used,
+            "## Section %zu\n\n"
+            "Lorem ipsum dolor sit amet [r%zu], consectetur adipiscing elit[^f%zu]. Sed do\n"
+            "eiusmod tempor incididunt ut labore et dolore magna aliqua [r%zu].\n\n"
+            "- first point about %zu\n- second point about %zu\n- third point\n\n"
+            "```c\nint value_%zu(void) { return %zu; }\n```\n\n"
+            "| name | value |\n| --- | --- |\n| row %zu | %zu |\n\n",
+            n,
+            n,
+            n,
+            n + 1,
+            n,
+            n,
+            n,
+            n,
+            n,
+            n
+        );
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n += 2;
+    }
+    used += (size_t)snprintf(input + used, capacity - used, "## References\n\n");
+    for (i = 0; i < n && used + 64 < capacity; i++) {
+        used += (size_t)snprintf(input + used, capacity - used, "[r%zu]: https://example.com/%zu\n", i, i);
+    }
+    used += (size_t)snprintf(input + used, capacity - used, "\n");
+    for (i = 0; i < n && used + 64 < capacity; i += 2) {
+        used += (size_t)snprintf(input + used, capacity - used, "[^f%zu]: the note body for %zu\n", i, i);
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
+/* THE FLIP STORM, the ladder's third entry and the one nothing measured.
+ * ONE paragraph mentions every label, and every definition arrives later, on
+ * its own: each one re-derives the whole unit, so the unit is re-derived once
+ * per label it holds. The cost is the invariant's, not the mechanism's — a
+ * tick's tree must equal a one-shot parse of its bytes, and the trees really
+ * do differ — so this shape is declared LINEAR per tick and gated there,
+ * where a regression would show as something worse than linear.
+ *
+ * Only the amortized workload runs it: the per-tick workload measures at
+ * checkpoints of one fixed text, and this shape's tick cost depends on which
+ * half of the text the checkpoint lands in, which measures the mention
+ * paragraph rather than the flips. */
+static char *build_append_flip_storm(size_t target, size_t *length) {
+    size_t capacity = target * 2 + 4096;
+    char *input = (char *)malloc(capacity + 1);
+    size_t used = 0;
+    size_t n = 0;
+    size_t i;
+    if (!input) {
+        return NULL;
+    }
+    used += (size_t)snprintf(input, capacity, "Body ");
+    while (used < target / 2) {
+        int wrote = snprintf(input + used, capacity - used, "[r%zu] ", n);
+        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
+            break;
+        }
+        used += (size_t)wrote;
+        n++;
+    }
+    used += (size_t)snprintf(input + used, capacity - used, "end.\n\n");
+    for (i = 0; i < n && used + 64 < capacity; i++) {
+        used += (size_t)snprintf(input + used, capacity - used, "[r%zu]: /u/%zu\n\n", i, i);
+    }
+    input[used] = 0;
+    *length = used;
+    return input;
+}
+
 /* One measured append tick through the REAL mutation: hand only the chunk
  * over and swap the handle. Only `append` is timed; releasing the
  * predecessor stays outside the window. */
@@ -543,6 +693,13 @@ static int append_tick(markdown_core_document **document, const char *chunk, siz
  * room for the allocator and the cache without admitting a linear term
  * (which doubles). */
 static const double APPEND_FLAT_DOUBLING_RATIO = 1.5;
+
+/* The bound for the ladder's declared walls — a shape whose tick is allowed
+ * to see the document, so K doubles when N does. Gating them at all is what
+ * keeps an accepted degradation from quietly becoming a worse one: 2.75
+ * admits the doubling and the fixed cost of the one-shot baseline it is
+ * measured against, and nothing steeper. */
+static const double APPEND_LINEAR_DOUBLING_RATIO = 2.75;
 
 static int bench_append_shape(
     const char *name,
@@ -725,15 +882,45 @@ static int workload_append_baseline(const bench_options *options) {
                   APPEND_BURSTS,
                   APPEND_WARM_TICKS_PER_BURST
               ) != 0;
-    /* Warm, the leaf is one paragraph of every definition so far, harvested
-     * whole at every close: linear, the ladder's appendix entry. */
+    /* Warm, the leaf is one paragraph of definitions and the tick takes one
+     * of them: flat. This was the ladder's appendix entry, harvested whole at
+     * every close, until the settle made a definition final as soon as the
+     * `[` of the next one stood behind it. */
     failed |= bench_append_shape(
                   "references_appendix",
                   build_append_references_appendix,
                   options,
-                  BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_WALL_BURSTS,
-                  APPEND_WALL_TICKS_PER_BURST
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
+              ) != 0;
+    /* The same definitions one paragraph each: nothing to settle, and the
+     * settle must therefore cost nothing. Flat. */
+    failed |= bench_append_shape(
+                  "definitions_spaced",
+                  build_append_definitions_spaced,
+                  options,
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
+              ) != 0;
+    /* Warm, a growing table whose rows are bounded leaves: flat. */
+    failed |= bench_append_shape(
+                  "table",
+                  build_append_table,
+                  options,
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
+              ) != 0;
+    /* Every mechanism at once, in an assistant's proportions: flat. */
+    failed |= bench_append_shape(
+                  "cited_article",
+                  build_append_cited_article,
+                  options,
+                  APPEND_FLAT_DOUBLING_RATIO,
+                  APPEND_BURSTS,
+                  APPEND_WARM_TICKS_PER_BURST
               ) != 0;
     if (!failed) {
         printf("append_baseline peak_rss_kib=%ld\n", peak_rss_kib());
@@ -759,11 +946,9 @@ static int bench_append_amortized(
     append_shape_build build,
     const bench_options *options,
     size_t base,
-    bool gated
+    double bound
 ) {
     size_t sizes[AMORTIZED_STEPS];
-    size_t text_length = 0;
-    char *text;
     double k[AMORTIZED_STEPS];
     size_t step;
     int failed = 0;
@@ -772,15 +957,23 @@ static int bench_append_amortized(
     for (step = 0; step < AMORTIZED_STEPS; step++) {
         sizes[step] = base << step;
     }
-    text = build(sizes[AMORTIZED_STEPS - 1] + 4096, &text_length);
-    if (!text || text_length < sizes[AMORTIZED_STEPS - 1]) {
-        fprintf(stderr, "%s: cannot build input\n", name);
-        free(text);
-        return -1;
-    }
+    /* A TEXT OF ITS OWN AT EVERY SIZE, not a prefix of the largest. A shape
+     * whose parts are not uniform — a body and then its references, mentions
+     * and then their definitions — has none of its second part in a prefix,
+     * so prefixes would measure the first part four times and call the
+     * result a bound on the whole shape. */
     for (step = 0; step < AMORTIZED_STEPS && !failed; step++) {
-        size_t n = sizes[step];
+        size_t text_length = 0;
+        char *text = build(sizes[step], &text_length);
+        size_t n;
         markdown_core_error *error = NULL;
+
+        if (!text || text_length == 0) {
+            fprintf(stderr, "%s: cannot build input\n", name);
+            free(text);
+            return -1;
+        }
+        n = text_length;
         markdown_core_document *document = markdown_core_document_new(mc_sv(NULL, 0), NULL, &error);
         ts_prng prng;
         uint64_t streamed_ns = 0;
@@ -811,6 +1004,7 @@ static int bench_append_amortized(
         }
         markdown_core_document_free(document);
         if (failed) {
+            free(text);
             break;
         }
         for (repeat = 0; repeat < 3; repeat++) {
@@ -825,6 +1019,7 @@ static int bench_append_amortized(
             markdown_core_document_free(once);
         }
         if (failed) {
+            free(text);
             break;
         }
         qsort(parsed_ns, 3, sizeof(parsed_ns[0]), compare_u64);
@@ -839,8 +1034,9 @@ static int bench_append_amortized(
             (double)parsed_ns[1] / 1e6,
             k[step]
         );
+        free(text);
     }
-    if (!failed && gated) {
+    if (!failed && bound > 0.0) {
         /* The median of the adjacent-doubling ratios of K, as the per-tick
          * gate does: an isolated allocator transition cannot move it, a
          * linear term in K moves every interval. */
@@ -852,31 +1048,90 @@ static int bench_append_amortized(
         }
         qsort(ratios, AMORTIZED_STEPS - 1, sizeof(ratios[0]), compare_double);
         median_ratio = ratios[(AMORTIZED_STEPS - 1) / 2];
-        printf(
-            "append_amortized_%s k_doubling_ratio=%.2f bound=%.2f\n",
-            name,
-            median_ratio,
-            APPEND_FLAT_DOUBLING_RATIO
-        );
-        if (median_ratio > APPEND_FLAT_DOUBLING_RATIO) {
+        printf("append_amortized_%s k_doubling_ratio=%.2f bound=%.2f\n", name, median_ratio, bound);
+        if (median_ratio > bound) {
             fprintf(
                 stderr,
-                "%s: the price of streaming in parses grows %.2fx per doubling; the bound is flat (%.2f)\n",
+                "%s: the price of streaming in parses grows %.2fx per doubling; the bound is %s (%.2f)\n",
                 name,
                 median_ratio,
-                APPEND_FLAT_DOUBLING_RATIO
+                bound <= APPEND_FLAT_DOUBLING_RATIO ? "flat" : "linear",
+                bound
             );
             failed = 1;
         }
     }
-    free(text);
     return failed ? -1 : 0;
 }
 
+/* EVERY SHAPE THE LADDER NAMES, EACH UNDER THE BOUND ITS TICK CLASS IMPLIES.
+ * A shape whose tick does not see the document is gated FLAT; the two the
+ * plan declares walls are gated LINEAR, so the degradation stays the one
+ * that was accepted and cannot deepen unnoticed. The walls start from a
+ * smaller base because their own quadratic decides how long the gate takes
+ * to run. */
 static int workload_append_amortized(const bench_options *options) {
     int failed = 0;
-    failed |= bench_append_amortized("prose", build_append_prose, options, 32 * 1024, true) != 0;
-    failed |= bench_append_amortized("nested_list", build_append_nested_list, options, 32 * 1024, true) != 0;
+    /* Bounded leaves: the tick is the chunk, whatever the document holds. */
+    failed |= bench_append_amortized("prose", build_append_prose, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
+    failed |= bench_append_amortized(
+                  "nested_list",
+                  build_append_nested_list,
+                  options,
+                  32 * 1024,
+                  APPEND_FLAT_DOUBLING_RATIO
+              ) != 0;
+    failed |= bench_append_amortized("table", build_append_table, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
+    /* The leaf IS the document and the tick still does not copy it. */
+    failed |= bench_append_amortized("fence", build_append_fence, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
+    /* Definitions: a flip that reaches settled territory, a run the settle
+     * takes one definition at a time, and the same run written with blank
+     * lines, where there is nothing to settle and the settle must cost
+     * nothing. */
+    failed |= bench_append_amortized(
+                  "footnote_dense",
+                  build_append_footnote_dense,
+                  options,
+                  32 * 1024,
+                  APPEND_FLAT_DOUBLING_RATIO
+              ) != 0;
+    failed |= bench_append_amortized(
+                  "references_appendix",
+                  build_append_references_appendix,
+                  options,
+                  32 * 1024,
+                  APPEND_FLAT_DOUBLING_RATIO
+              ) != 0;
+    failed |= bench_append_amortized(
+                  "definitions_spaced",
+                  build_append_definitions_spaced,
+                  options,
+                  32 * 1024,
+                  APPEND_FLAT_DOUBLING_RATIO
+              ) != 0;
+    /* All of it at once, in the proportions an assistant streams. */
+    failed |= bench_append_amortized(
+                  "cited_article",
+                  build_append_cited_article,
+                  options,
+                  32 * 1024,
+                  APPEND_FLAT_DOUBLING_RATIO
+              ) != 0;
+    /* The declared walls. */
+    failed |= bench_append_amortized(
+                  "giant_paragraph",
+                  build_append_giant_paragraph,
+                  options,
+                  8 * 1024,
+                  APPEND_LINEAR_DOUBLING_RATIO
+              ) != 0;
+    failed |= bench_append_amortized(
+                  "flip_storm",
+                  build_append_flip_storm,
+                  options,
+                  4 * 1024,
+                  APPEND_LINEAR_DOUBLING_RATIO
+              ) != 0;
     return failed ? -1 : 0;
 }
 

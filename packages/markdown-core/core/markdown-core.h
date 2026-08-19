@@ -384,6 +384,10 @@ MARKDOWN_CORE_EXPORT int markdown_core_node_append_child(markdown_core_node *nod
  *  materialized because an allocation failed; the tree stays valid. */
 MARKDOWN_CORE_EXPORT int markdown_core_node_consolidate_texts(markdown_core_node *root);
 
+/** Consolidates only the children after `after` (NULL for all of them):
+ * what a refine that kept a settled inline prefix has to look at. */
+MARKDOWN_CORE_EXPORT int markdown_core_node_consolidate_texts_from(markdown_core_node *root, markdown_core_node *after);
+
 /** Ensures a node and all its children own their own chunk memory.
  */
 

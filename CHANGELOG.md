@@ -37,8 +37,19 @@ promised to remain compatible between releases.
   HTML block too (the block's literal borrows its own content buffer, which
   therefore never moves, and its record witnesses that buffer by length:
   0.19 µs a tick at every size from 256 KiB to 4 MiB, against 21 µs and
-  396 µs before); a leaf that is the whole document and is re-derived (one
-  paragraph, one paragraph of definitions) costs the leaf. The pairing at
+  396 µs before), and flat for a run of link reference definitions, which
+  settles as it is fed: a definition is final as soon as a `[` stands where
+  its title would have begun, so `add_line` takes it off the paragraph
+  there and the close is left the last one alone (2.0 µs a tick at every
+  size, against 87 µs rising to 713 µs before; a 340 KiB article carrying a
+  references section streams in 74 ms, against 8.6 s), and flat for a leaf
+  that is the whole document: a block still open KEEPS the inline children
+  a tick settled under it, and the next tick's refine resumes after them
+  rather than deriving the leaf again (a 4 MiB paragraph with every
+  extension on costs 0.055 ms a tick, against 14.4 ms; 1 MiB costs 0.024 ms
+  a tick against 2.837 ms). What a refine may keep is what the handlers
+  that ran say they READ, so a handler that looks past what it consumed
+  says so and the prefix stops there. The pairing at
   the frontier aligns what its sweeps leave, so a run changed at both ends
   in one chunk — a definition flipping a link at its front while its tail
   grows — keeps the unchanged siblings between. Neither what a chunk BRINGS
@@ -50,6 +61,15 @@ promised to remain compatible between releases.
   An append never rebuilds:
   there is no other kind of tick, and a failed append leaves the head
   answering for no tree.
+- Added (C extension API): `markdown_core_inline_parser_note_read`, for an
+  inline handler to say how far past its match it looked, and
+  `markdown_core_parser_settled_inline_child`, for a block postprocessor to
+  begin after the children a previous tick settled. Both are optional and
+  silence is the old answer: a handler that says nothing is assumed to have
+  read to the end of the buffer, which stops the settled prefix where it
+  always stopped, and a postprocessor that does not ask walks every child
+  as it always did. An extension needs neither unless it wants a streaming
+  tick to cost what changed rather than what the block holds.
 - Breaking (C extension API): an extension that opens blocks
   (`try_opening_block`) and allocates payloads (`alloc_opaque`) must also
   provide `opaque_size` — the size of the plain-data payload behind a

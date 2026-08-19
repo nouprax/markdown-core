@@ -256,22 +256,42 @@ static markdown_core_node *www_match(
     size_t link_end;
 
     if (max_rewind > 0 && strchr("*_~(", data[-1]) == NULL && !markdown_core_isspace(data[-1])) {
+        /* One byte BEHIND decided it; nothing ahead was looked at. */
+        markdown_core_inline_parser_note_read(inline_parser, (int)max_rewind);
         return 0;
     }
 
-    if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
+    if (size < 4) {
+        /* Fewer than four bytes to compare: the comparison reached the end
+         * of the buffer, and four more could spell `www.`. */
+        markdown_core_inline_parser_note_read(inline_parser, (int)chunk->len);
+        return 0;
+    }
+    if (memcmp(data, "www.", strlen("www.")) != 0) {
+        /* Four bytes, all present, all read: this is not a `www.` and no
+         * later byte can make it one. THE COMMON CASE IN PROSE — every `w`
+         * of every word ends here — and the reason a paragraph of words can
+         * settle at all. */
+        markdown_core_inline_parser_note_read(inline_parser, (int)(max_rewind + 4));
         return 0;
     }
 
     link_end = check_domain(data, size, 0);
 
     if (link_end == 0) {
+        /* The domain scan stops at the first byte that cannot be one, or at
+         * the end; which of the two it was is not reported back, so read it
+         * as the end. */
+        markdown_core_inline_parser_note_read(inline_parser, (int)chunk->len);
         return NULL;
     }
 
     while (link_end < size && !markdown_core_isspace(data[link_end]) && data[link_end] != '<') {
         link_end++;
     }
+    /* Everything up to what stopped the walk — the byte after the link when
+     * one stopped it, the buffer's end when nothing did. */
+    markdown_core_inline_parser_note_read(inline_parser, (int)(max_rewind + link_end + (link_end < size ? 1 : 0)));
 
     link_end = autolink_delim(data, link_end);
 
@@ -689,6 +709,15 @@ static markdown_core_node *postprocess_block(
     if (!iter) {
         parser->oom = true;
         return block;
+    }
+    {
+        /* The children before the unit's inline frontier were walked when
+         * they settled, and a link cannot span the line break that stands at
+         * a settle point, so this walk begins where that refine did. */
+        markdown_core_node *settled = markdown_core_parser_settled_inline_child(parser, block);
+        if (settled) {
+            markdown_core_iter_reset(iter, settled, MARKDOWN_CORE_EVENT_EXIT);
+        }
     }
 
     while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {

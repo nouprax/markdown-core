@@ -207,19 +207,20 @@ static void set_parse_error(const markdown_core_parser *parser, markdown_core_er
  * markdown_core_ast_projection_changed; its past is these bytes. Written
  * at the end of every build — the first build's close and each tick — so a
  * lost allocation here is the tick's, not the record's. */
-static bool record_published_projections(markdown_core_warm_undo *record, markdown_core_parser *parser) {
+static bool record_published_projections(markdown_core_parser *parser) {
+    markdown_core_warm_undo *record = parser->warm_published;
     size_t i;
     for (i = 0; i < record->spine_count; i++) {
         markdown_core_warm_open_block *entry = &record->spine[i];
         markdown_core_strbuf out;
-        markdown_core_strbuf_init(record->mem, &out, 32);
+        markdown_core_strbuf_init(parser->mem, &out, 32);
         markdown_core_ast_projection_witness(entry->node, &out);
         if (out.oom) {
             markdown_core_strbuf_free(&out);
             parser->oom = true;
             return false;
         }
-        record->mem->free(record->mem, entry->published_projection);
+        parser->mem->free(parser->mem, entry->published_projection);
         entry->published_projection_size = (size_t)out.size;
         entry->published_projection = markdown_core_strbuf_detach(&out);
     }
@@ -262,9 +263,8 @@ static bool generation_close(document_generation *generation, markdown_core_erro
      * the feed left them, and what the close's own harvest changes about
      * that — a definitions paragraph open at end of feed — the publish's
      * flips re-refine, for this projection. */
-    markdown_core_parser_warm_settle(parser, NULL);
-    generation->undo = markdown_core_parser_warm_publish(parser);
-    if (!generation->undo) {
+    markdown_core_parser_warm_settle(parser);
+    if (!markdown_core_parser_warm_publish(parser)) {
         markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_ALLOCATION_FAILED, "could not parse the document text");
         return false;
     }
@@ -279,12 +279,20 @@ static bool generation_close(document_generation *generation, markdown_core_erro
      * in such a run, or as a flipped unit's old child, and the tick stamps
      * both when it pairs them. */
     {
-        markdown_core_warm_undo *record = generation->undo;
+        markdown_core_warm_undo *record = parser->warm_published;
         size_t i;
         for (i = 0; i < record->spine_count; i++) {
+            markdown_core_node *node = record->spine[i].node;
             markdown_core_node *child;
-            for (child = markdown_core_warm_run_first(&record->spine[i]); child;
-                 child = markdown_core_warm_run_next(&record->spine[i], child)) {
+            /* What this close appended, which for a unit that owns inlines
+             * begins after the prefix the parser's checkpoint names: a
+             * settled child was stamped when it settled. */
+            child = generation->parser->inline_frontier.unit == node
+                        ? (generation->parser->inline_frontier.last_child
+                               ? generation->parser->inline_frontier.last_child->next
+                               : node->first_child)
+                        : markdown_core_warm_run_first(&record->spine[i]);
+            for (; child; child = markdown_core_warm_run_next(&record->spine[i], child)) {
                 markdown_core_node_stamp_tree(child);
             }
             /* A leaf this close's refine replaced: the block that stands in
@@ -301,7 +309,7 @@ static bool generation_close(document_generation *generation, markdown_core_erro
                 markdown_core_node_stamp_tree(child);
             }
         }
-        if (!record_published_projections(record, parser)) {
+        if (!record_published_projections(parser)) {
             set_parse_error(parser, error);
             return false;
         }
@@ -376,7 +384,7 @@ static bool document_tick_warm(
 ) {
     document_generation *generation = &chain->head;
     markdown_core_parser *parser = generation->parser;
-    markdown_core_warm_undo *before = generation->undo;
+    markdown_core_warm_undo *before;
     markdown_core_warm_undo *after = NULL;
     bool ok = false;
     bool revived = false;
@@ -385,7 +393,7 @@ static bool document_tick_warm(
     size_t i;
 
     markdown_core_strbuf_init(generation->mem, &projection, 64);
-    generation->undo = NULL;
+    before = parser->warm_published;
     /* A leaf paragraph the last close took (nothing but definitions), or
      * replaced (promoted to a formula block), is put back by the retract —
      * the same object, but to the identity ledger it left the tree when the
@@ -393,9 +401,10 @@ static bool document_tick_warm(
      * publishes it, it is a new node. */
     revived = before->spine_count > 0 && (before->spine[before->spine_count - 1].vanished ||
                                           before->spine[before->spine_count - 1].replaced != NULL);
-    if (!markdown_core_parser_warm_retract(parser, before)) {
-        /* Refused: a record already retracted (the engine contradicting
-         * itself, since the caller read it), or an allocation lost while the
+    if (!markdown_core_parser_warm_retract(parser)) {
+        /* Refused: a parser with nothing published, or with a record it was
+         * never told to commit (the engine contradicting itself, since the
+         * tick below always commits), or an allocation lost while the
          * frontier took ownership of its bytes or a block got its bytes
          * back, which the parser's sticky bit already says. */
         if (!parser->oom) {
@@ -408,11 +417,11 @@ static bool document_tick_warm(
     if (parser_failed(parser)) {
         goto done;
     }
-    markdown_core_parser_warm_settle(parser, before);
-    after = markdown_core_parser_warm_publish(parser);
-    if (!after || parser_failed(parser)) {
+    markdown_core_parser_warm_settle(parser);
+    if (!markdown_core_parser_warm_publish(parser) || parser_failed(parser)) {
         goto done;
     }
+    after = parser->warm_published;
     /* Identity and revision, deepest block first. The run a block gained is
      * stamped, then diffed against the block's retired frontier — hash
      * sweeps front and back, the middle aligned, residue minted,
@@ -473,8 +482,15 @@ static bool document_tick_warm(
                 changed_below = changed_below || !revived;
                 continue;
             }
-            appended =
-                entry->last_child ? entry->last_child->next : (entry->prev ? entry->prev->next : node->first_child);
+            /* What the last close appended, which is what this tick's
+             * pairing is over: for a unit that owns inlines that is after
+             * the prefix THAT close settled — those children were minted
+             * when it settled them — and the parser is where that
+             * checkpoint lives (parser.h, `inline_published`). */
+            appended = parser->inline_published.unit == node
+                           ? (parser->inline_published.last_child ? parser->inline_published.last_child->next
+                                                                  : node->first_child)
+                           : markdown_core_warm_appended_first(entry);
             /* A leaf the retract revived is a new object IF this close
              * published it (as itself, or as the block that replaced it
              * again); one that vanished again (the same definitions, an
@@ -492,7 +508,7 @@ static bool document_tick_warm(
                 markdown_core_diff_mint(chain, node, revision);
                 changed_below = true;
             }
-            run = markdown_core_warm_run_first(entry);
+            run = parser->inline_published.unit == node ? appended : markdown_core_warm_run_first(entry);
             inserted = run != appended;
             /* Stamped here and nowhere else: these are the subtrees the
              * next tick's frontier diff will pair against. */
@@ -619,20 +635,16 @@ static bool document_tick_warm(
         markdown_core_parser_warm_flipped_free(parser);
         markdown_core_parser_warm_vanished_free(parser);
     }
-    if (!record_published_projections(after, parser)) {
+    if (!record_published_projections(parser)) {
         goto done;
     }
     generation_take_diagnostics(generation, parser);
-    generation->undo = after;
-    after = NULL;
     ok = true;
 
 done:
     markdown_core_strbuf_free(&projection);
     if (!ok) {
-        if (after) {
-            set_parse_error(parser, error);
-        } else if (parser_failed(parser)) {
+        if (parser_failed(parser)) {
             set_parse_error(parser, error);
         } else {
             markdown_core_ast_set_error(
@@ -641,9 +653,12 @@ done:
                 "could not parse the document text"
             );
         }
-        markdown_core_parser_warm_undo_free(after);
     }
-    markdown_core_parser_warm_undo_free(before);
+    /* The last close has been paired against, so the record of it goes —
+     * on the way out too, since a failed tick poisons the chain and no
+     * later tick will ask. A parser that kept it could not be published
+     * from again. */
+    markdown_core_parser_warm_commit(parser);
     return ok;
 }
 
@@ -730,13 +745,12 @@ static bool generation_open(markdown_core_chain *chain, document_generation *gen
 /* Releases a generation whole. Pooled, that is one arena release and the
  * parser, the tree, the record and the diagnostics go with it; unpooled, it
  * is the per-structure teardown the sanitizer builds need in order to see
- * each free: the record first (it may hold a retired frontier, detached
- * from the tree), then the parser, which frees the tree it owns. */
+ * each free — and the parser takes the record of its own close with it,
+ * retired frontier included. */
 static void generation_release(document_generation *generation) {
     if (generation->arena) {
         markdown_core_arena_release(generation->arena);
     } else {
-        markdown_core_parser_warm_undo_free(generation->undo);
         if (generation->parser) {
             markdown_core_parser_free(generation->parser);
         }
@@ -861,7 +875,7 @@ static markdown_core_document *document_build(
          * leaves a record that can be reopened, and a chain whose head has
          * none is one no mutation may reach (a failed tick poisons it), so
          * a head without a record is the engine contradicting itself. */
-        if (!chain->head.parser || !chain->head.undo || chain->head.undo->retracted) {
+        if (!chain->head.parser || !chain->head.parser->warm_published) {
             markdown_core_ast_set_error(error, MARKDOWN_CORE_ERROR_INTERNAL, "the head has no record to reopen");
             markdown_core_document_free(doc);
             return NULL;
