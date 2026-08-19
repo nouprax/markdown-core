@@ -49,8 +49,7 @@ static inline uint64_t markdown_core_mix64(uint64_t x) {
 typedef struct document_generation {
     markdown_core_arena *arena;
     markdown_core_mem *mem;
-    markdown_core_parser *parser; /* owns the tree: parser->root */
-    markdown_core_warm_undo *undo;
+    markdown_core_parser *parser; /* owns the tree, and the record of its close */
     markdown_core_diagnostic *diagnostics;
     size_t diagnostic_count;
 } document_generation;

@@ -275,7 +275,7 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_begin(
     size_t lane_count,
     markdown_core_concrete_capture *capture
 ) {
-    if (!engine || !engine->mem || engine->count || engine->tail || !lane_count || !capture) {
+    if (!engine || !engine->mem || engine->count || engine->tail || engine->head || !lane_count || !capture) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
     /* Lane storage is begin's alone: a successful begin is the one writer
@@ -353,9 +353,16 @@ static int ensure_record_capacity(markdown_core_delimiter_engine *engine) {
 
 markdown_core_delimiter_mark markdown_core_delimiter_engine_mark(const markdown_core_delimiter_engine *engine) {
     markdown_core_delimiter_mark mark;
-    mark.count = (uint32_t)engine->count;
+    /* The LIVE TAIL's ordinal, not the slot count. They part company the
+     * moment a reduction removes a record without a truncation to reclaim
+     * its slot, and the mark's own validity test compares the two — so a
+     * mark built from the slot count would be born invalid. What a mark
+     * means is "everything pushed after this record", and that is the live
+     * tail whatever dead slots stand above it. */
+    uint32_t ordinal = delimiter_id_ordinal(engine->tail);
+    mark.count = ordinal;
     mark.tail = engine->tail;
-    mark.generation = engine->count ? engine->records[engine->count - 1].generation : 0;
+    mark.generation = ordinal ? engine->records[ordinal - 1].generation : 0;
     return mark;
 }
 
@@ -431,6 +438,8 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_push(
     record->previous = engine->tail;
     if (engine->tail) {
         record_at(engine, engine->tail)->next = id;
+    } else {
+        engine->head = id;
     }
     engine->tail = id;
 
@@ -514,6 +523,8 @@ static void remove_record(markdown_core_delimiter_engine *engine, markdown_core_
 
     if (record->previous) {
         record_at(engine, record->previous)->next = record->next;
+    } else {
+        engine->head = record->next;
     }
     if (record->next) {
         record_at(engine, record->next)->previous = record->previous;
@@ -685,6 +696,12 @@ static void truncate_to_mark(markdown_core_delimiter_engine *engine, markdown_co
     if (engine->tail) {
         record_at(engine, engine->tail)->next = 0;
     }
+    /* The head is the LOWEST live record, so it survives a truncation
+     * exactly when its slot does. When it does not, nothing below the mark
+     * was live and the chain is empty. */
+    if (delimiter_id_ordinal(engine->head) > (uint32_t)mark.count) {
+        engine->head = 0;
+    }
     /* The rule chains need the same forward clamp as the main chain: a
      * surviving lane tail's next_rule still names the reclaimed record
      * that pushed after it, and a later removal of that survivor would
@@ -729,7 +746,19 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_truncate(
     return MARKDOWN_CORE_DELIMITER_OK;
 }
 
-markdown_core_delimiter_result markdown_core_delimiter_engine_process(
+/* REDUCES EVERY PAIR ABOVE `mark`, and nothing else. `mark` is where the
+ * region begins: the walk starts at the first record after it, and no opener
+ * below it may be matched.
+ *
+ * What this does NOT do is end the region — that is `truncate_to_mark`, and
+ * it is a different question with a different answer. CLOSING a region means
+ * both: reduce what pairs, and what is left ceases to exist. SETTLING a
+ * region that is still open means only the first: a delimiter that found no
+ * partner keeps its place, because its partner may still arrive. The pairs
+ * are the same either way — a closer's opener is the nearest eligible one
+ * before it, and nothing scanned later stands before it — which is why a
+ * region this leaves empty is a region no later byte can restructure. */
+static markdown_core_delimiter_result engine_reduce(
     markdown_core_delimiter_engine *engine,
     markdown_core_parser *parser,
     markdown_core_inline_parser *inline_parser,
@@ -742,7 +771,10 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
     if (!mark_is_valid(engine, mark)) {
         return MARKDOWN_CORE_DELIMITER_INVALID;
     }
-    if (!engine->count || mark.count == engine->count) {
+    /* Nothing live, or the mark already stands at the live tail: the region
+     * is empty. Asked of the SLOT count instead, a region made only of dead
+     * slots would look non-empty and be walked again. */
+    if (!engine->head || mark.tail == engine->tail) {
         return MARKDOWN_CORE_DELIMITER_OK;
     }
     epoch = ++engine->process_epoch;
@@ -754,7 +786,14 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
         epoch = ++engine->process_epoch;
     }
 
-    closer = mark.tail ? next_after(engine, mark.tail) : delimiter_id_pack(1, engine->records[0].generation);
+    /* From the live chain's head, not from slot one. They are the same only
+     * while nothing below the mark has been removed — which is true of every
+     * pass that clears its residue, because the clearing reclaims the slots.
+     * A pass that KEEPS its residue leaves removed records in place, and a
+     * removed record's `next` still names what stood after it when it left:
+     * nothing. Starting at slot one would then walk into that stale end and
+     * see none of the records pushed since. */
+    closer = mark.tail ? next_after(engine, mark.tail) : engine->head;
     while (closer) {
         markdown_core_delimiter_record *closer_record = record_at(engine, closer);
         markdown_core_delimiter_id next = closer_record->next;
@@ -801,6 +840,31 @@ markdown_core_delimiter_result markdown_core_delimiter_engine_process(
         }
         closer = next;
     }
+    return result;
+}
+
+/* Closing a region is the two of them in order. The truncation runs whatever
+ * the reduce answered: a region that held no pair may still hold the dead
+ * slots of one reduced earlier, and reclaiming them is what returns the slot
+ * count to the mark — which the next unit's `begin` requires to be zero. */
+markdown_core_delimiter_result markdown_core_delimiter_engine_process(
+    markdown_core_delimiter_engine *engine,
+    markdown_core_parser *parser,
+    markdown_core_inline_parser *inline_parser,
+    markdown_core_delimiter_mark mark
+) {
+    markdown_core_delimiter_result result = engine_reduce(engine, parser, inline_parser, mark);
     truncate_to_mark(engine, mark);
     return result;
+}
+
+/* Settling is the first of them alone: the region is still open, so what
+ * found no partner keeps its place. */
+markdown_core_delimiter_result markdown_core_delimiter_engine_settle(
+    markdown_core_delimiter_engine *engine,
+    markdown_core_parser *parser,
+    markdown_core_inline_parser *inline_parser
+) {
+    markdown_core_delimiter_mark bottom = {0, 0, 0};
+    return engine_reduce(engine, parser, inline_parser, bottom);
 }

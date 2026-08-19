@@ -35,6 +35,8 @@ static const unsigned char *S_lookup_entity(const unsigned char *s, int len) {
     return S_lookup(MARKDOWN_CORE_NUM_ENTITIES / 2, 0, MARKDOWN_CORE_NUM_ENTITIES - 1, s, len);
 }
 
+markdown_core_bufsize markdown_core_houdini_entity_window(void) { return MARKDOWN_CORE_ENTITY_MAX_LENGTH; }
+
 markdown_core_bufsize markdown_core_houdini_unescape_ent(
     markdown_core_strbuf *ob,
     const uint8_t *src,

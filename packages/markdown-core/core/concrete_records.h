@@ -327,6 +327,15 @@ typedef struct markdown_core_concrete_capture {
 /** Engages `capture` for one parse; `mem` may be NULL to leave it inert. */
 void markdown_core_concrete_capture_init(markdown_core_concrete_capture *capture, markdown_core_mem *mem);
 
+/** Continues a vector a previous parse left on a node: the capture takes
+ * ownership of `records` and appends after them, so a refine that keeps a
+ * unit's settled prefix keeps that prefix's records too rather than
+ * building them again. The caller gives up its pointer. */
+void markdown_core_concrete_capture_adopt(
+    markdown_core_concrete_capture *capture,
+    markdown_core_inline_concrete_records *records
+);
+
 /** Appends one record, growing under the same ceiling discipline as the
  * block append. Returns false on allocator failure or at the doubling
  * wrap point, leaving the vector valid; the caller owns folding that

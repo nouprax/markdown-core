@@ -536,6 +536,9 @@ static markdown_core_node *try_opening_table_header(
         return NULL;
     }
 
+    /* The paragraph's settled inline children read these bytes as prose;
+     * as a table's they are read again, row by row (parser.h). */
+    markdown_core_parser_drop_inline_prefix(parser, parent_container);
     if (!markdown_core_node_set_type(parent_container, MARKDOWN_CORE_NODE_TABLE)) {
         free_table_row(parser->mem, header_row);
         free_table_row(parser->mem, delimiter_row);

@@ -100,6 +100,15 @@ void markdown_core_concrete_capture_init(markdown_core_concrete_capture *capture
     capture->dirty = false;
 }
 
+void markdown_core_concrete_capture_adopt(
+    markdown_core_concrete_capture *capture,
+    markdown_core_inline_concrete_records *records
+) {
+    if (capture->mem) {
+        capture->records = records;
+    }
+}
+
 bool markdown_core_concrete_capture_append(
     markdown_core_concrete_capture *capture,
     uint8_t kind,
