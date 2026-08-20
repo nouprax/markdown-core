@@ -176,6 +176,23 @@ revisions, diagnostics, concrete records, the delimiter engine,
     raw column-arithmetic slice the `noMatch:` path takes. The same path emits
     impossible positions — `[^~~x~~] tail` yields `Text scope=0:0..0:13`, line
     zero with column thirteen. Closed by Step 9 (see §5.7).
+11. **A duplicate footnote definition can delete a block of content.**
+    Definitions register on the iterator's `EXIT` event (`blocks.c:578`), which
+    is post-order CLOSE order, and the map's tie-break is registration `age`
+    (`map.c:189`). A duplicate nested inside another therefore closes first and
+    wins over the one that opened earlier. The outer then has no reference, so
+    the unreferenced drop (`blocks.c:668-671`) unlinks and frees it:
+
+    ```
+    Ref [^dup].
+
+    [^dup]: OUTER opens first
+
+        [^dup]: INNER closes first
+    ```
+
+    `"OUTER opens first"` is in no node. Closed by Step 9, which must also move
+    registration to document order — see the falsifier in §5.8.
 
 ---
 
@@ -332,14 +349,23 @@ footnote definition's payload is exactly `{label}`, the link definition's is
 Association. The relation is extension, not alternation.
 
 ```c
-/* mdast's Association mixin — the only thing all five reference kinds have.
- * `label` is the bytes between the delimiters exactly as written: character
- * escapes and character references are NOT resolved, internal whitespace is
- * NOT collapsed, case is NOT folded. The normalized form that matching runs
- * on is a pure function of these bytes and belongs to the reference map, not
- * to the node. */
+/* The association every reference and definition carries. TWO values, and
+ * neither derives the other in either direction.
+ *
+ * `label` is the bytes between the delimiters exactly as written: escapes and
+ * character references unresolved, whitespace uncollapsed, case unfolded.
+ * `key` is the match key: full Unicode case fold, trim, collapse internal
+ * whitespace — and for a footnote it KEEPS its leading `^`, so that a link
+ * definition and a footnote definition of the same name cannot collide in a
+ * consumer's single map.
+ *
+ * NORMATIVE: `key` is compared with memcmp over its bytes. It is never case
+ * mapped, never NFC/NFD normalized, never re-encoded, and never used as a key
+ * in a language map whose `==` has an opinion about Unicode. Bindings expose
+ * it as an opaque byte-hashable, not as a string. */
 typedef struct {
     markdown_core_chunk label;
+    markdown_core_chunk key;
 } markdown_core_association;
 
 /* A link reference definition: Association + mdast's Resource. A leaf; its
@@ -457,6 +483,73 @@ flattening consistent.
 
 The definition side is untouched: a label is never inline content, so
 `[^*y*]: b` still has the label `*y*`.
+
+### 5.8 D4 is settled: both kinds carry the match key
+
+Derived, not inherited. The ecosystem argument that first suggested this was
+circular — `identifier` is mdast's only required field, so of course every
+consumer reads it; that is a consequence of the schema, not evidence for it.
+And mdast's own asymmetry is a 2016/2018 back-compat artifact. Both were barred
+from the reasoning.
+
+**Around one reference there are three strings, not one.** The authored bytes;
+the match key (fold, trim, collapse); and the display form (escapes and
+character references resolved), which is the reference's children. `[a\_b]`
+matches `[a\_b]` and not `[a_b]`, while its children read `a_b`.
+
+**The derivability lattice decides it.** `raw → key` needs the 1,401-case fold
+table, 104 arms multi-codepoint. `key → raw` is impossible — the fold is
+many-to-one, and `[ß]` and `[ss]` are two definitions with one key. `display →
+raw` is impossible; escape resolution is lossy. The producer computes the key
+at **zero marginal cost** — it already builds one per occurrence for its own
+map, then throws the reference's away at lookup time.
+
+**The engine already ships a pairing token, and it is the worst of the three.**
+`markdown_core_node_footnote_id` returns, for a *reference*, the winning
+DEFINITION's raw literal — so `[^FOO]` with `[^foo]:` reports `id="foo"` and the
+author's spelling is unrecoverable. Verified. The question was never whether a
+reference carries an identifier; it is which one. `label` + `key` replaces both
+that and the 8-byte-per-node `parent_footnote_def` back-pointer.
+
+**The relation could be an edge, and must not be.** A pointer does not survive
+the copy into value types, and there are no node ids. At the copy the binding
+must mint *some* value, and its whole menu is the key, an ordinal, or the
+denormalized payload — so the edge does not decide, it re-asks the question in
+three languages. Two of the three answers are silently wrong: an ordinal shifts
+under `filter` and goes out of range under `slice`; a position **collides**
+under `merge`, because both documents have a definition at 1:1. The key
+retargets to the merged document's first-wins winner, which is exactly what
+re-parsing the concatenation produces. **The key makes resolution late-bound and
+re-parse-equivalent**, which no locator can be.
+
+**Cost: the node struct gets smaller.** A reference `{label, key, form}` is 40
+bytes — exactly the width of the widest existing payload arm (`code`), so the
+union does not grow. The definition is boxed. Deleting `parent_footnote_def`
+removes 8 bytes from *every* node: −800 KB on a 100,000-node document. The key
+bytes are an ownership move, not a new allocation — the parser already
+allocates exactly one per occurrence, and today frees them with the refmap at
+teardown while the document keeps only `root`.
+
+**Against mdast, checked afterwards:** convergent on the key, on keeping the
+label, on the form discriminator, and on the reference holding no destination.
+Divergent in three places, and mdast is wrong in one of them: **`label` must not
+be optional.** A consumer written against an optional label writes
+`label ?? identifier`, and re-emitting the folded key writes `[straße]` where
+the author wrote `[Straße]` — a silent authorial rewrite on every round-trip. A
+field whose absence forces a lossy substitute should not be declarable absent.
+mdast is also merely *lucky* on the comparison domain: JS string equality is
+code-unit equality, so byte-faithful; Swift's `String ==` is canonical
+equivalence, which collapses the NFC and NFD spellings of `[café]` that this
+parser deliberately keeps apart. Hence the normative memcmp rule above.
+
+**The falsifier, and it has already fired once.** The case against an edge rests
+on the winner being derivable as "group by key, first in document order". Today
+it is not: registration is on the iterator's `EXIT` event, so close order beats
+document order (defect 11). **Step 9 must move registration to document order**,
+and the gate is: for every reference in the corpus, the definition selected by
+that derivation is the definition the engine matched. If that proves
+unfixable, the key is insufficient to identify a node and the definition needs a
+`winner` bit.
 
 ### 5.6 What the oracles cannot see
 
@@ -603,9 +696,9 @@ repository owner before Step 9 is written.
 | ID | Question | Recommendation |
 |---|---|---|
 | D1 | Is an unreferenced definition kept? | **Keep both kinds.** Dropping requires the post-parse rewrite Step 9 exists to delete. |
-| **D2** | Is the interior of a failed footnote call reparsed? | **Adopt remark's reparse.** `x[^*y*] tail` yields text + emphasis + text, where the current spec synthesizes one flat literal. The recorded "no difference here" is over-claimed: it holds only for the single corpus input, whose label contains no markup. Flattening needs a second mechanism whose only purpose is to defend the flattening. |
+| ~~D2~~ | Is the interior of a failed footnote call reparsed? | **SETTLED — yes.** Not by analogy: the construct that fails is an unmatched `[`, which CommonMark specifies normatively, and nothing authorizes an extension to free children core already built. The flattening also loses source bytes (defect 10). See §5.7. |
 | D3 | Do footnote references carry a form? | **No.** mdast gives `footnoteReference` Association and not Reference; one call syntax means a field with one value. |
-| **D4** | Does the node carry a normalized `identifier`? | **Export the normalizer instead of storing it.** mdast needs the field because mdast trees exist without a parser; this engine always has the map. This is the one place the step deliberately diverges from mdast, so it is flagged rather than buried. |
+| ~~D4~~ | Does the node carry a normalized `identifier`? | **SETTLED — yes, on both kinds, plus the exported fold.** Derived from the lattice, not from mdast. The "export the normalizer instead" answer was wrong: the consumer has no engine to call, because every binding frees the handle and copies into value types. See §5.8. |
 | D5 | Does the dump keep `id=` for footnotes? | **Rename to `label=`.** Two names for one field after unifying the field is the failure mode that produced three accessors. |
 | D6 | Where does a footnote definition's scope start? | **At `[^`.** It is the only block in the engine opened past its own marker, and the binding docs already promise otherwise. |
 | D7 | Is a definition's destination optional? | **Required.** The null is reachable only through allocation loss, where C and Swift currently disagree. Set the failure bit and emit no node rather than a node that lies. |
