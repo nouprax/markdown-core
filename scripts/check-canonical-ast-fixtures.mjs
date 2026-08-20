@@ -19,34 +19,6 @@ const failures = [];
 const difference = (left, right) => [...left].filter((value) => !right.has(value)).sort();
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
-const parseDumpTree = (tree) => {
-    const roots = [];
-    const stack = [];
-    for (const line of tree.trimEnd().split("\n")) {
-        const branch = line.match(/^((?:│ {3}| {4})*)(?:├──|└──) (.*)$/);
-        const depth = branch === null ? 0 : branch[1].length / 4 + 1;
-        const payload = branch === null ? line : branch[2];
-        const match = payload.match(/^([A-Z][A-Za-z]+) .* children=(\d+)$/);
-        if (match === null) continue;
-        const node = { kind: match[1], declaredChildren: Number(match[2]), children: [] };
-        if (depth === 0) roots.push(node);
-        else stack[depth - 1]?.children.push(node);
-        stack.length = depth;
-        stack[depth] = node;
-    }
-    return roots;
-};
-const dumpNodes = (tree) => {
-    const nodes = [];
-    const stack = [...parseDumpTree(tree)];
-    while (stack.length > 0) {
-        const node = stack.pop();
-        nodes.push(node);
-        stack.push(...node.children);
-    }
-    return nodes;
-};
-const isDirective = (node) => node.kind === "Directive" || node.kind === "DirectiveBlock";
 
 const nodeTable = contract.match(/## Node inventory[\s\S]*?## ParseOptions/)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
@@ -61,14 +33,15 @@ const canonicalFields = rows.flatMap((match) => fieldsByKind[match[1]].map((fiel
 const optionNames = [
     "smartPunctuation",
     "footnotes",
+    "stripHTMLComments",
     "tables",
     "strikethrough",
     "autolinks",
     "taskLists",
     "formulas",
-    "directives",
-    "crossLinks",
-    "embeds"
+    "dollarFormulaDelimiters",
+    "latexFormulaDelimiters",
+    "directives"
 ];
 const stateValidators = {
     "placement.embedded": (tree) => / mode=embedded /.test(tree),
@@ -97,14 +70,11 @@ const stateValidators = {
     "tableRow.isHeader.false": (tree) => /^.*TableRow scope=.* isHeader=false /m.test(tree),
     "tableRow.isHeader.true": (tree) => /^.*TableRow scope=.* isHeader=true /m.test(tree),
     "directive.attributes.null": (tree) => /^.*Directive(?:Block)? scope=.* attributes=null /m.test(tree),
-    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[\] /m.test(tree),
-    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes=\[.+\] /m.test(tree),
-    "directive.label.null": (tree) =>
-        dumpNodes(tree).some((node) => isDirective(node) && node.children[0]?.kind !== "DirectiveLabel"),
-    "directive.label.empty": (tree) =>
-        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren === 0),
-    "directive.label.populated": (tree) =>
-        dumpNodes(tree).some((node) => node.kind === "DirectiveLabel" && node.declaredChildren > 0),
+    "directive.attributes.empty": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{\}" /m.test(tree),
+    "directive.attributes.value": (tree) => /^.*Directive(?:Block)? scope=.* attributes="\{.+\}" /m.test(tree),
+    "directive.label.null": (tree) => /^.*Directive(?:Block)? scope=.* label=null /m.test(tree),
+    "directive.label.empty": (tree) => /^.*Directive(?:Block)? scope=.* label=0 /m.test(tree),
+    "directive.label.populated": (tree) => /^.*Directive(?:Block)? scope=.* label=[1-9]\d* /m.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),
@@ -116,11 +86,7 @@ const stateValidators = {
     "children.populated": (tree) => / children=[1-9]\d*(?:\n|$)/.test(tree),
     "escaping.empty-string": (tree) => /=""/.test(tree),
     "escaping.newline": (tree) => /\\n/.test(tree),
-    // A value that happens to CONTAIN JSON still escapes as a quoted string;
-    // the dump itself no longer wraps the map in one.
-    "escaping.json": (tree) => /attributes=\[[^\]]*="\{\\"/.test(tree),
-    "htmlComment.true": (tree) => / comment=true literal=/.test(tree),
-    "htmlComment.false": (tree) => / comment=false literal=/.test(tree)
+    "escaping.json": (tree) => /attributes="\{\\"/.test(tree)
 };
 const orderValidators = {
     "document.source-order": (tree) => tree.startsWith("Document scope="),
@@ -129,10 +95,7 @@ const orderValidators = {
             tree
         ),
     "directive.label-before-content": (tree) =>
-        dumpNodes(tree).some(
-            (node) =>
-                node.kind === "DirectiveBlock" && node.children.length > 1 && node.children[0].kind === "DirectiveLabel"
-        ),
+        /DirectiveBlock scope=.*label=[1-9]\d* children=[2-9]\d*\n[\s\S]*Text scope=[\s\S]*Paragraph scope=/.test(tree),
     "inline.source-order": (tree) => /Paragraph scope=.* children=[2-9]\d*/.test(tree)
 };
 
@@ -229,10 +192,7 @@ for (const testCase of manifest.cases ?? []) {
         const kind = match[1];
         actualKinds.add(kind);
         for (const field of fieldsByKind[kind] ?? []) allObservedFields.add(`${kind}.${field}`);
-        // Strings first, then bracketed groups: a directive's attributes are
-        // ONE field whose contents are themselves `name="value"` pairs, and
-        // an attribute named `children` must not read as the record's own.
-        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""').replace(/=\[[^\]]*\]/g, "=[]");
+        const lineWithoutStrings = line.replace(/"(?:\\.|[^"\\])*"/g, '""');
         const fieldNames = [...lineWithoutStrings.matchAll(/ ([A-Za-z]+)=/g)].map((field) => field[1]);
         const dumpFields = {
             Document: [],
@@ -243,32 +203,26 @@ for (const testCase of manifest.cases ?? []) {
             List: ["flavor", "start", "tight"],
             ListItem: ["checked"],
             CodeBlock: ["mode", "info", "language", "literal", "fenced", "closed"],
-            HTMLBlock: ["comment", "literal"],
+            HTMLBlock: ["literal"],
             FormulaBlock: ["mode", "literal"],
             Table: ["alignments"],
             TableRow: ["isHeader"],
             TableCell: [],
-            DirectiveBlock: ["mode", "name", "attributes"],
-            DirectiveLabel: [],
+            DirectiveBlock: ["mode", "name", "attributes", "label"],
             FootnoteDefinition: ["id"],
             Text: ["literal"],
             SoftBreak: [],
             LineBreak: [],
             Code: ["mode", "literal"],
-            HTML: ["comment", "literal"],
+            HTML: ["literal"],
             Formula: ["mode", "literal"],
             Emphasis: [],
             Strong: [],
             Strikethrough: [],
             Link: ["destination", "title"],
             Image: ["source", "title"],
-            Directive: ["mode", "name", "attributes"],
-            FootnoteReference: ["id"],
-            CrossLink: ["reference"],
-            Embed: ["reference"],
-            ReferenceDefinition: ["label", "destination", "title"],
-            LinkReference: ["label", "form"],
-            ImageReference: ["label", "form"]
+            Directive: ["mode", "name", "attributes", "label"],
+            FootnoteReference: ["id"]
         };
         const expectedFieldNames = ["scope", ...(dumpFields[kind] ?? []), "children"];
         if (!sameArray(fieldNames, expectedFieldNames)) {

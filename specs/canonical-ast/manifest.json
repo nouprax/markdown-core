@@ -1,7 +1,7 @@
 {
     "schemaVersion": 1,
-    "contract": "docs/specs/canonical-ast.md",
-    "dumpGrammar": "docs/specs/canonical-ast-dump.md",
+    "contract": "docs/deprecated/specs/canonical-ast.md",
+    "dumpGrammar": "docs/deprecated/specs/canonical-ast-dump.md",
     "format": {
         "encoding": "UTF-8",
         "lineEndings": "LF",

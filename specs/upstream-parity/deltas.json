@@ -31,7 +31,7 @@
             "kind": "deliberate-difference",
             "summary": "Upstream moves every footnote definition to the document tail in first-reference order. Markdown Core's AST is source-faithful and leaves each definition where it was written.",
             "handling": "Both sides have their footnote definitions lifted out and re-attached in one deterministic order, so their content is compared and their position is not.",
-            "evidence": "docs/specs/canonical-ast.md, 'A footnote definition is an ordinary block at its source position: it is never moved to the document tail'."
+            "evidence": "docs/deprecated/specs/canonical-ast.md, 'A footnote definition is an ordinary block at its source position: it is never moved to the document tail'."
         },
         {
             "id": "reference-definition-node",

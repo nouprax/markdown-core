@@ -38,12 +38,19 @@ untouched — reordering `table` is a behaviour change that belongs to Step 3.
 
 ### Every gate, and how to run it
 
+The sanitizer presets have their OWN configure and build; building `default`
+does not prepare them.
+
 ```
 cmake --preset default && cmake --build --preset default --parallel
+cmake --preset asan    && cmake --build --preset asan    --parallel
+cmake --preset ubsan   && cmake --build --preset ubsan   --parallel
 
 ctest --preset correctness -j 8            # 65/65
 ctest --preset correctness-asan -j 8       # 57/57
 ctest --preset correctness-ubsan -j 8      # 57/57
+node scripts/check-canonical-ast-fixtures.mjs   # 28 kinds, 47 fields, 6 cases
+bash scripts/audit-public-surface.sh
 node scripts/check-upstream-parity.mjs     # 795/795 vs cmark-gfm 0.29.0.gfm.13
 node scripts/check-mdast-parity.mjs        # 46/46, backlog 23/23 still diverging
 node scripts/audit-scope-sanity.mjs        # 207 rows, only-shrink holds
@@ -52,6 +59,26 @@ node scripts/fuzz-parity.mjs --cases 300   # 300/300
 
 The upstream oracle needs a built cmark-gfm:
 `scripts/init-environment.sh --install upstream-cmark`.
+
+**Two checks are KNOWN-RED and owned, not forgotten** — the same pattern the
+mdast backlog and D9's oracle use:
+
+| Check | Why red | Owner |
+|---|---|---|
+| `scripts/audit-ast-projections.mjs` | Added at `26045be`; audits a kind/field table the baseline engine does not have. | Step 15 |
+| `scripts/check-generated-scanners.sh` | Added at `8926594`; the baseline build has no re2c invocation or version pin (R9). | R9's experiment, then Step 3 |
+| `node scripts/check-release-version.mjs --skip-swift` | Two independent causes: **D17** below, and an unexpected legacy tag (`codex-doc-pass-backup`) that is repo hygiene, not engine state. | 0a.0, then release |
+
+**`scripts/` IS NOT ONE THING, and Step 0 got this wrong.** It was restored
+from `main` wholesale. That is right for *infrastructure* — CI, environment,
+build and release plumbing, which carry the Action SHA pins — and wrong for any
+script that encodes a **contract about the engine**, because such a script
+asserts a contract the baseline engine has not got yet. Two were caught this way
+and restored to their baseline versions in 0a.0:
+`check-canonical-ast-fixtures.mjs` (main's expects a `comment` field that HTML
+comment classification only introduced at `9af16c9`) and `audit-public-surface.sh`.
+Both are green at their baseline version and were red at main's. **When a gate is
+red, ask which ERA it belongs to before assuming the engine is at fault.**
 
 `timeout` is not on the macOS PATH; guard long runs with a background job and a
 `kill`.
@@ -706,6 +733,26 @@ whose *statement* changes under a later step lands before that step.
 | 0a.7 | The two title defects | D5, D6 | 3 | 18 + 1 assertion | 1 regression example; activate `refdef-title-rewind` | ½ day |
 | 0a.8 | **D9 pinned, not fixed** | — | 0 | 0 | order-independence oracle (**registered red**), output-size bound (green) | ½ day |
 | | **total** | **10 fixed, 1 pinned** | **39** | **32 + 1 ledger** | **~13 examples, 4 oracles** | **~5 days** |
+
+**0a.0 — reconcile the gates before touching the engine.** No engine change
+except D17. Four items, all verified:
+
+1. **Repoint `specs/`.** The doc move to `docs/deprecated/` repointed `scripts/`
+   and `.github/` but NOT `specs/`, and the manifests are executable policy that
+   name doc paths. `specs/canonical-ast/manifest.json` named two files that no
+   longer existed, which is why the fixtures checker reported "manifest contract
+   paths drifted". Ten files repointed. *Done.*
+2. **Restore the two era-skewed checkers** to their baseline versions, per the
+   rule in §0. Both green at baseline, both red at main's. *Done.*
+3. **D17 — the version macro.** At `580d10c` the header declares
+   `MARKDOWN_CORE_VERSION ((1 << 16) | (0 << 8) | 0)` — **1.0.0** — beside
+   `MARKDOWN_CORE_VERSION_STRING "1.0.3"`. The shipped v1.0.3 tag therefore
+   answers 1.0.0 to any consumer doing a compile-time version check. `main` has
+   it consistent, so it was fixed later and the reset brought the defect back
+   with the rest of the baseline. One line. It does not wait for the 1.0.4 bump,
+   because it is wrong at 1.0.3 too.
+4. **Register the known-red checks** in §0 with their owner steps, so a red gate
+   is a statement rather than a surprise.
 
 **0a.1 — the two oracles that must exist before any position is touched.**
 Neither exists today and neither can be replaced by a corpus row.

@@ -32,4 +32,4 @@ Original copyright, attribution, and license notices remain in `LICENSE` and
 New work must preserve every applicable inherited notice.
 
 The detailed baseline commands and migration inventories are recorded in
-`docs/migration/2026-07-11-phase-0-baseline.md`.
+`docs/deprecated/migration/2026-07-11-phase-0-baseline.md`.

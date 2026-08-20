@@ -27,7 +27,7 @@ deliberate means:
 
 1. an entry in `deltas.json` with the input that shows it, both outputs, and
    the evidence for the decision;
-2. a row in the table in `docs/specs/canonical-ast.md`; and
+2. a row in the table in `docs/deprecated/specs/canonical-ast.md`; and
 3. review of both.
 
 A divergence is never accepted because this implementation looks obviously
