@@ -1,11 +1,12 @@
-MARKDOWN_CORE_3.0 {
+MARKDOWN_CORE_1.0 {
   global:
     markdown_core_parse_options_init;
-    markdown_core_document_new;
+    markdown_core_document_parse;
     markdown_core_document_free;
     markdown_core_document_root;
     markdown_core_error_get_code;
     markdown_core_error_get_message;
+    markdown_core_error_get_scope;
     markdown_core_error_free;
     markdown_core_node_get_kind;
     markdown_core_node_kind_name;
@@ -18,32 +19,18 @@ MARKDOWN_CORE_3.0 {
     markdown_core_node_list_item_checked;
     markdown_core_node_code_block_properties;
     markdown_core_node_literal;
-    markdown_core_node_html_comment;
     markdown_core_node_formula_properties;
     markdown_core_node_table_column_count;
     markdown_core_node_table_alignment_at;
     markdown_core_node_table_row_is_header;
     markdown_core_node_directive_properties;
-    markdown_core_node_directive_attribute_count;
-    markdown_core_node_directive_attribute_at;
-    markdown_core_node_directive_label;
-    markdown_core_node_reference_definition_properties;
-    markdown_core_node_reference_properties;
+    markdown_core_node_directive_first_label_child;
+    markdown_core_node_directive_first_content_child;
     markdown_core_node_link_properties;
     markdown_core_node_image_properties;
     markdown_core_node_footnote_id;
-    markdown_core_node_cross_link_reference;
-    markdown_core_node_embed_reference;
-    markdown_core_document_diagnostics;
     markdown_core_document_dump;
     markdown_core_dump_free;
-    markdown_core_document_append;
-    markdown_core_document_revision;
-    markdown_core_document_series;
-    markdown_core_document_length;
-    markdown_core_node_get_id;
-    markdown_core_node_get_revision;
-    markdown_core_node_get_parent;
   local:
     *;
 };

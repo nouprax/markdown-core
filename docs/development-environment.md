@@ -34,7 +34,7 @@ scripts/init-environment.sh --check emscripten
 | --- | --- | --- |
 | Git | current supported release | system package; `git --version` |
 | C/C++ compiler | C11/C++17-capable Clang or GCC | Xcode Command Line Tools or system package; `cc --version` |
-| CMake | 3.21 or later (the committed presets' floor) | system package; `cmake --version` |
+| CMake | 3.20 or later | system package; `cmake --version` |
 | pkg-config | current supported release | system package; `pkg-config --version` |
 | Node.js | 26.5.0 | `.node-version` and `package.json`; `node --version` |
 | pnpm | 11.7.0 | `packageManager` in `package.json`; `pnpm --version` |
@@ -58,9 +58,7 @@ distribution checksums. Do not install global `gradle` or `mvn`; use
 - The repository never installs Xcode. Select it with `xcode-select` before
   running `scripts/init-environment.sh --check swift`.
 - SwiftPM supports iOS 18/26 and macOS 15/26 deployment validation. The iOS test
-  tasks discover an installed iPhone simulator and iOS runtime through
-  `scripts/prepare-swift-ios-simulator.sh`, creating a temporary device when
-  the simulator device set is empty.
+  tasks use an `iPhone 17 Pro` simulator on the latest installed runtime.
 
 ### Kotlin, Android, and JVM
 
@@ -113,13 +111,6 @@ pnpm verify
 pnpm check:kotlin-consumers
 pnpm release:dry-run
 ```
-
-`pnpm verify` is the full macOS gate: it chains `pnpm verify:core` — the
-cross-platform static checks — with `pnpm verify:macos`, whose steps all need
-the Xcode Swift toolchain (Swift formatting and lint, the SwiftPM manifest
-assertions in `release:check-version`, and `audit:surface`). On Linux hosts
-run `pnpm verify:core`; required CI decomposes the same checks into
-per-platform health-check jobs, so nothing is silently skipped.
 
 The install step never reads Maven Central, npm, GitHub release, signing, or PGP
 credentials. Publishing remains isolated to the protected `release`

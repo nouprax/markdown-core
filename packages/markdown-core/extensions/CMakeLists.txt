@@ -1,29 +1,23 @@
 set(LIBRARY "libmarkdown-core-extensions")
 set(STATICLIBRARY "libmarkdown-core-extensions_static")
 set(PUBLIC_STATIC_LIBRARY "libmarkdown-core-public-static")
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+endif()
 set(LIBRARY_SOURCES
     ast.c
-    document.c
-    arena.c
-    source.c
-    source.h
-    concrete.c
-    concrete.h
-    diff.c
     core-extensions.c
     table.c
     strikethrough.c
     autolink.c
     formula.c
     directive.c
-    cross_reference.c
     ext_scanners.c
     ext_scanners.re
     ext_scanners.h
-    inline_util.h
     tasklist.c)
 
-include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_INCLUDE_DIR}
+include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR}
                     ${CMAKE_CURRENT_SOURCE_DIR}/../include)
 
 include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
@@ -36,13 +30,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 if(MARKDOWN_CORE_SHARED)
-    if(WIN32)
-        # The shared facade links the static engine, whose PUBLIC
-        # MARKDOWN_CORE_STATIC_DEFINE would neuter the facade's dllexport
-        # branch; no .def allowlist exists either. Fail closed until Windows
-        # DLL support is actually wired up.
-        message(FATAL_ERROR "MARKDOWN_CORE_SHARED is not supported on Windows yet; build with -DMARKDOWN_CORE_SHARED=0")
-    endif()
     add_library(${LIBRARY} SHARED ${LIBRARY_SOURCES})
 
     set_target_properties(
@@ -113,9 +100,12 @@ if(MARKDOWN_CORE_STATIC)
                    POSITION_INDEPENDENT_CODE ON)
     target_include_directories(
         ${PUBLIC_STATIC_LIBRARY}
-        PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
+        PRIVATE ${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    if(NOT WIN32)
+        target_link_libraries(${PUBLIC_STATIC_LIBRARY} PUBLIC Threads::Threads)
+    endif()
     list(APPEND MARKDOWN_CORE_INSTALL ${PUBLIC_STATIC_LIBRARY})
     if(NOT MARKDOWN_CORE_SHARED)
         set(MARKDOWN_CORE_EXPORT_TARGET ${PUBLIC_STATIC_LIBRARY})
@@ -143,6 +133,20 @@ if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
         NAMESPACE markdown-core::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/markdown-core)
 endif()
+
+# Feature tests
+include(CheckIncludeFile)
+include(CheckCSourceCompiles)
+include(CheckCSourceRuns)
+include(CheckSymbolExists)
+check_include_file(stdbool.h HAVE_STDBOOL_H)
+check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
+check_c_source_compiles(
+    "
+  int f(void) __attribute__ (());
+  int main() { return 0; }
+"
+    HAVE___ATTRIBUTE__)
 
 # Always compile with warnings
 if(MSVC)

@@ -23,9 +23,9 @@ Phase 21，不作为启用 quality gates 或搭建 release workflow 的前置条
 - [x] 让所有 blocking workflows 同时监听 `pull_request` 与 `merge_group`，使同一 required checks contract 可安全启用 GitHub merge queue。
 - [x] 提交可导入的 default-branch ruleset recipe，只要求 `Required gates` 与 `CodeQL gate`；禁止把 benchmark、binary size、coverage trend 或其他 informational pipeline 加入 required status checks。
 - [x] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
-- [x] 在主 CI Test phase 运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告 C shared library、Kotlin/JVM JAR 与 ES/WASM binary sizes；benchmark 执行失败阻塞 gate，metrics 缺失或数值回归只提示。
+- [x] 建立非阻塞 PR metrics workflow，运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告 C shared library、Kotlin/JVM JAR 与 ES/WASM binary sizes；任何 metrics 缺失或回归都只能提示，不能改变 required gate 结论。
 - [x] 使用 fork-safe 的两段式 PR comment：只读 `pull_request` workflow 执行不可信代码并上传纯数值 artifact，具有写权限的 `workflow_run` commenter 不 checkout、不执行 artifact/PR code，只校验 allowlist 数值并创建或更新单条 PR comment。
-- [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、benchmark no-build phase、metrics 非阻塞边界与 commenter 权限分离。
+- [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、metrics 非阻塞边界、commenter 权限分离与 scheduled benchmark 不进入 PR gate。
 
 ## Blocking gates
 
@@ -72,12 +72,12 @@ checks 必须成功才允许更新受保护 ref：
 [importing rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository#importing-a-ruleset)、
 [required status checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-status-checks-to-pass-before-merging)。
 
-## Required benchmark execution and non-blocking PR metrics
+## Non-blocking PR metrics
 
-`.github/workflows/ci.yml` 在只读 `pull_request` context 的 Test phase 中用四个独立 no-build
-jobs 运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark。benchmark 进程失败或 workload 缺失由
-`Benchmarks - Ready` 汇入 `Required gates`；标准化 median/memory 数值和 binary size 的收集与
-artifact upload 使用 non-blocking 步骤，不以 hosted-runner 的绝对数值阻塞合并。
+`.github/workflows/pr-metrics.yml` 在只读 `pull_request` context 中运行 C、Swift、
+Kotlin/JVM 与 ES/WASM benchmark，收集标准化 median/memory 数值，并报告 C shared
+library、Kotlin/JVM JAR 与 ES/WASM 的字节数。每个 workload、collection 与 artifact
+upload 都是 informational；它们不被 `Required gates`、`CodeQL gate` 或 ruleset 引用。
 
 GitHub 支持通过 issue-comment API 在 PR timeline 创建普通 comment。为支持 fork PR 且
 不把 write token 暴露给不可信代码，`.github/workflows/pr-metrics-comment.yml` 只在
@@ -93,10 +93,8 @@ workflow 不得 checkout 或执行 fork/PR code，下载的 artifact 也必须�
 [issue comments API](https://docs.github.com/en/rest/issues/comments)。
 
 当前报告是 hosted-runner 单次 snapshot，只供 review context，不是稳定 performance
-gate，也没有绝对时间阈值。报告使用 PR 精确 base SHA 的成功 main CI artifact 计算 size/perf
-diff；找不到精确 baseline 时不使用其他旧 run 代替。Size diff 是确定性字节差异，跨 runner 的
-perf/memory diff 只作方向性证据并保持 non-blocking；改变为 regression gate 必须另行修订
-Phase 19 contract。
+baseline，也没有阈值。若将来引入 base/head delta、历史趋势或 regression budget，它们
+仍默认 non-blocking；改变为 gate 必须另行修订 Phase 19 contract。
 
 ## Machine audit
 
@@ -104,11 +102,10 @@ Phase 19 contract。
 
 - stable gate names 与 ruleset required contexts 完全一致；
 - blocking workflows 包含 `merge_group`；
-- 主 CI benchmark consumers 只执行 Build Test 产物，不重新 build；
+- PR metrics workflow 没有 write permission；
 - privileged commenter 没有 checkout/fetch PR code；
-- benchmark leaves 通过 `Benchmarks - Ready` 与 `Tests - Ready` 并列进入 required gate，但不直接进入
-  ruleset；
-- metrics/binary-size collection failure 不改变 benchmark job 结论。
+- metrics/benchmark/binary-size jobs 不进入 required gate；
+- scheduled benchmark workflow 不监听 `pull_request`。
 
 ## Acceptance
 
@@ -171,7 +168,7 @@ branch、enforcement 为 `active`、required contexts 只有 `Required gates` �
 且 `strict_required_status_checks_policy=true`。唯一 bypass actor 是 repository role 5，作为仓库
 管理恢复路径保留，没有额外 team、integration 或 deploy-key bypass。
 
-CI metrics commenter 在后续提交中更新同一个带稳定 marker 的 comment，没有新增第二条；
+PR metrics workflow 在后续提交中更新同一个带稳定 marker 的 comment，没有新增第二条；
 metrics checks 不在 ruleset 中。Fork 安全性由权限和数据流本身保证：不可信 producer 只有
 read permission，privileged commenter 不 checkout、不执行 PR code 或 artifact，只解析大小
 受限且字段 allowlisted 的数值 JSON；`pnpm audit:ci` 对该边界 fail-closed。真实 fork PR 只会
@@ -225,21 +222,6 @@ unique-attributes hash 路径在两次运行中分别为 3.318× 与 2.753×，�
 旧 qsort 路径的 4.442×，也会拒绝首次远端 unclosed-backslash 的 9.850×；普通路径是否为
 expected-linear 则由共享 hash 实现、64-probe 上界、collision fallback tests 与 code review
 保证，timing gate 只负责捕获实际端到端退化。
-
-后续 first-principles review 删除了上述 1024-key / 0.5-ratio 采样策略：共享 key index
-现在只有按实际 distinct key 几何增长的一套算法，并由 unique-prefix/duplicate-tail 及反向
-排列的 adversarial capacity tests 约束。连续 backslash 解码也不再区分单 pair 与多 pair；
-所有完整 pair run 都借用等值 source prefix，零 transformed-payload allocation。delimiter
-arena 同时提升到 parser 生命周期，在 unit 边界只重置拓扑并复用 lane/record capacity。
-
-2026-07-30，PR #74 的 macOS shared correctness job 暴露了复杂度 gate 的测量模型缺陷：
-scope materialization 的相同线性实现，在 hosted runner 被 deschedule 时得到 6.460×
-normalized slowdown；本机 default/shared 的重复测量则稳定在约 1.2–1.5×。修复不增加
-macOS 分支、不重试失败样本，也不放宽 4.0× 拒绝线；complexity runner 的所有 case 统一改用
-process user+kernel CPU time（POSIX `CLOCK_PROCESS_CPUTIME_ID`、Windows
-`GetProcessTimes`），只测量进程实际消耗的计算时间。benchmark runner 继续使用 monotonic
-wall-clock，因为其职责是观察用户可见端到端耗时。复杂度的主要证明仍是数据结构、操作上界与
-adversarial deterministic tests，CPU timing 只是跨平台的二级 regression gate。
 
 同一验证 PR 还暴露了 push/PR SHA 去重的两个问题：被取消的 push run 仍运行 `always()`
 汇总并留下失败的 `Required gates`；两次 macOS runner teardown 又长期停在无 active step

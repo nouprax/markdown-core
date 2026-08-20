@@ -6,7 +6,7 @@ kotlin {
     jvm()
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:2.0.0")
+            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
         }
         commonTest.dependencies { implementation(kotlin("test")) }
     }

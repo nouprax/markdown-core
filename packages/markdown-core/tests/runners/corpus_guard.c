@@ -4,7 +4,7 @@
  * Pro Git checkout, loose generated benchmark input, or a vendored corpus
  * under packages/markdown-core/tests/corpora/ that lacks its manifest,
  * license, or checksum file.
- * Content hashes are additionally verified by scripts/audit-test-layout.sh;
+ * Content hashes are additionally verified by scripts/audit-test-topology.sh;
  * this guard keeps the invariant enforced from every test/bench run without
  * needing a shell.
  *
@@ -67,9 +67,8 @@ static void check_corpus_entry(const char *root, const char *name, size_t *failu
 static void check_corpora(const char *root, size_t *failures) {
     char corpora[1024];
     snprintf(corpora, sizeof(corpora), "%s/packages/markdown-core/tests/corpora", root);
-    if (!path_is_directory(corpora)) {
+    if (!path_is_directory(corpora))
         return;
-    }
 #if defined(_WIN32)
     {
         char pattern[1024];
@@ -77,14 +76,12 @@ static void check_corpora(const char *root, size_t *failures) {
         HANDLE handle;
         snprintf(pattern, sizeof(pattern), "%s\\*", corpora);
         handle = FindFirstFileA(pattern, &entry);
-        if (handle == INVALID_HANDLE_VALUE) {
+        if (handle == INVALID_HANDLE_VALUE)
             return;
-        }
         do {
             if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && strcmp(entry.cFileName, ".") != 0 &&
-                strcmp(entry.cFileName, "..") != 0) {
+                strcmp(entry.cFileName, "..") != 0)
                 check_corpus_entry(root, entry.cFileName, failures);
-            }
         } while (FindNextFileA(handle, &entry));
         FindClose(handle);
     }
@@ -92,15 +89,13 @@ static void check_corpora(const char *root, size_t *failures) {
     {
         DIR *directory = opendir(corpora);
         struct dirent *entry;
-        if (!directory) {
+        if (!directory)
             return;
-        }
         while ((entry = readdir(directory)) != NULL) {
             char *path;
             size_t path_size;
-            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 continue;
-            }
             path_size = strlen(corpora) + 1 + strlen(entry->d_name) + 1;
             path = malloc(path_size);
             if (!path) {
@@ -109,9 +104,8 @@ static void check_corpora(const char *root, size_t *failures) {
                 break;
             }
             snprintf(path, path_size, "%s/%s", corpora, entry->d_name);
-            if (path_is_directory(path)) {
+            if (path_is_directory(path))
                 check_corpus_entry(root, entry->d_name, failures);
-            }
             free(path);
         }
         closedir(directory);

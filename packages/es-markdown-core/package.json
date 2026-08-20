@@ -1,9 +1,8 @@
 {
     "name": "@nouprax/es-markdown-core",
-    "version": "2.0.0",
+    "version": "1.0.3",
     "private": false,
     "description": "ECMAScript and TypeScript bindings for Markdown Core",
-    "license": "MIT AND BSD-2-Clause",
     "type": "module",
     "sideEffects": false,
     "files": [
@@ -18,7 +17,7 @@
         "./markdown-core.wasm": "./dist/markdown-core.wasm"
     },
     "engines": {
-        "node": ">=24"
+        "node": ">=20"
     },
     "publishConfig": {
         "access": "public"

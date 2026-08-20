@@ -484,7 +484,6 @@ Markdown Core 中的 AST 只包含解析语义，不包含 `markdown-renderer` �
 - `FormulaBlock`
 - `Table` / `TableRow` / `TableCell`
 - `DirectiveBlock`
-- `DirectiveLabel`
 - `FootnoteDefinition`
 - `Text`
 - `SoftBreak`
@@ -510,14 +509,13 @@ Markdown Core 中的 AST 只包含解析语义，不包含 `markdown-renderer` �
 - link/image destination 与 title
 - code block info/language、literal 和 fence closed state
 
-`TableRow`、`TableCell` 和 `DirectiveLabel` 都是带完整 `Scope` 的
-`Markup`，通过强类型边拥有并参与 Visitor dispatch 与 Walker callback，
-但不要求 public generic `children`。`DirectiveLabel` 是 C 树中真实、常驻的
-canonical child，而不是 synthetic/hidden/transparent wrapper；其 scope 覆盖完整
-`[...]`，`content` 拥有完整 inline child-list。`Directive`/`DirectiveBlock`
-通过 typed、optional `label: DirectiveLabel?` 投影同一条真实边，并以“无子节点”
-和“存在但 content 为空的 label 节点”区分 label 缺失与显式 `[]`。标准 Walker
-按普通节点穿过这些 typed properties，consumer 不需要检查 node kind 来发现结构。
+`TableRow` 和 `TableCell` 是带完整 `Scope` 的 `Markup`，分别通过
+`Table.header`/`Table.rows` 和 `TableRow.cells` 强类型边拥有；它们参与
+Visitor dispatch 和 Walker callback，但不要求 public generic `children`。
+Directive label 不引入 synthetic `DirectiveLabel` Markup；
+`Directive`/`DirectiveBlock` 通过 typed、optional `label` Markup collection
+保留它，并区分 label 缺失与显式空 label。标准 Walker 负责穿过这些 typed
+properties，consumer 不需要检查 node kind 来发现结构。
 
 Directive attributes 的 Markdown source grammar 使用 generic key-value attribute-list
 语义：支持 `{key=value}`、bare attributes 和 single/double quoted values；不支持
@@ -639,8 +637,9 @@ Document.parse(markdownSource, options = ParseOptions.default)
 - strikethrough
 - autolink
 - task list
-- formulas, including dollar delimiters, LaTeX delimiters, and `formula`
-  fenced code
+- formula extension
+- dollar formula delimiters
+- LaTeX formula delimiters
 - directive extension
 
 Consumer 可以通过 `ParseOptions` 分别启用或关闭上述 AST-affecting 能力。任何 options 组合都必须在三端产生相同 AST。
@@ -1214,7 +1213,7 @@ Tasks：
 - [x] 删除继承的 Pro Git benchmark 实现及全部痕迹：移除 Makefile 的 `progit` target、runtime `git clone` recipe、`BENCHFILE`/`benchinput.md` generation/dependency/cleanup rules、root checkout/generated input、相关 cache/temp/output、operational docs 和 `.gitignore` entries；在完成此项前禁止执行 inherited `make bench`，完成后 Phase 7 不再引用或特殊处理该语料来源。
 - [x] 冻结历史根级 correctness-test 路由：曾以 `pnpm test` 作为全仓 correctness tests 聚合入口，并按固定名称委托语言入口；该历史模型已由本阶段后续的 execution-platform routing 修订取代。
 - [x] 根据全仓 audit 修订 test routing contract，使三个验证 task families 直接映射到具名 execution-platform native targets，并将 suite/case discovery 与 filtering ownership 保留在各平台原生 runner。
-- [x] 冻结独立 benchmark 路由：`benchmark:<platform>` family 只包含声明支持可信测量环境的 targets，不被 correctness 或普通 `verify` 隐式执行；CI 在 Test phase 通过独立 platform jobs 调度，不为未支持平台建立空 target。
+- [x] 冻结独立 benchmark 路由：`benchmark:<platform>` family 只包含声明支持可信测量环境的 targets，不被 correctness 或普通 `verify` 隐式执行；CI 通过独立 benchmark jobs/schedules 调度，不为未支持平台建立空 target。
 - [x] 冻结 runner ownership：C 的事实来源是 CTest，Swift 是 `swift test` + Swift Testing，Kotlin 是 Gradle/KMP test tasks，ES 是 package-native Node/browser/type test runner；不得用 pnpm、shell、Make 或另一平台 runner 重建第二份 suite graph。
 - [x] 冻结每个 platform target 的语义：`test:*` 运行完整 correctness，`conformance:*` 运行完整 contract/spec checks，`benchmark:*` 运行完整 performance workloads；三者都不能退化为 build/lint、静默 skip 或空/no-op target。
 - [x] 冻结跨端 suite/workload taxonomy 与命名规则。Correctness 类别至少包含 `api`、`ast`、`consumer`、`errors`、`ownership`、`unicode`、`robustness`、`pathological` 和 `packaging`；conformance 独立验证公开 contract/spec/schema mapping；performance 使用独立 `benchmark` workload/label。平台专属 suites 可以扩展，但相同语义不得使用互不相关的名称。
@@ -1250,7 +1249,7 @@ Acceptance：
 - [x] 根级 test routing 只暴露 `test:<platform>`、`conformance:<platform>`、`benchmark:<platform>` 三个并列 task families，platform id 同时标识语言与真实 execution destination。
 - [x] 不存在跨 host aggregate、中间 routing layer、language aggregation、suite 级 task、`:full`、公开 `stress` task 或通用 router；显式 maintenance task 不进入 test routing。
 - [x] 每个 platform task 直接调用具名原生 target，suite/case discovery/filter 只属于 CTest、SwiftPM/xcodebuild、Gradle/KMP/instrumentation 或 ES package-native runner。
-- [x] Correctness、contract/spec conformance 与 benchmark discovery 互斥，benchmark 在 CI Test phase 由独立 no-build jobs 调度，且所有入口不得 build-only、no-op 或静默 skip。
+- [x] Correctness、contract/spec conformance 与 benchmark discovery 互斥，benchmark 只由独立 workflow 调度，且所有入口不得 build-only、no-op 或静默 skip。
 - [x] Large、deep 与 repeated input 在 correctness 下以 robustness cases 验证结果，在 benchmark 下以独立 workload 测量性能。
 - [x] Android emulator 由 Pixel 10 Pro XL Gradle Managed Devices group provision API 36/4 KB 与 API 36/16 KB，本机与 CI 使用相同 platform tasks，GMD 自动管理 lifecycle，清理 task 仅按需执行。
 - [x] Linux x64 不提供本机 container/emulation 替代入口，实际运行归 Phase 19 CI 验收。
@@ -1545,7 +1544,7 @@ correctness corpus 复制给 bindings。C、Swift、Kotlin 和 ES 继续由各�
 Tasks：
 
 - [x] 建立根级 `specs/canonical-ast/`，迁移现有 canonical Markdown/`.ast` pairs、README 和 coverage manifest；删除 C package 私有副本，并禁止 Swift/Kotlin/ES 提交平台副本。
-- [x] 冻结 manifest discovery、parse options、排序、UTF-8/LF/final-newline 与 coverage schema，覆盖全部 29 种 Markup、所有 behavior-bearing fields、null states、scope、escaping 和 child order。
+- [x] 冻结 manifest discovery、parse options、排序、UTF-8/LF/final-newline 与 coverage schema，覆盖全部 28 种 Markup、所有 behavior-bearing fields、null states、scope、escaping 和 child order。
 - [x] 让 C conformance target 通过公开 C parse/document dump API 比较全部共享 cases；CommonMark、extensions、regression、pathological、fuzz 与 robustness correctness corpus 继续由 C package 独占。
 - [x] 让 Swift macOS/iOS Simulator conformance targets 通过公开 `Document.parse`、Visitor/Walker 与 `TreeDumper` 消费共享 spec，删除 package-local expected tree literals。
 - [x] 让 Kotlin JVM、Android host/emulator、macOS ARM64 与 Linux x64 conformance targets 消费同一共享 spec，删除 package-local expected tree literals。
@@ -1573,17 +1572,17 @@ Tasks：
 - [x] 添加 repo-owned Maven Wrapper 与最小 JVM Maven consumer，从同一隔离 local Maven repository 运行 `verify` 并实际调用 `Document.parse`；required CI 必须执行该真实 Maven smoke，且不得要求开发机预装全局 `mvn`。
 - [x] 为 blocking CI 与 CodeQL 分别建立稳定、唯一的 `Required gates` 与 `CodeQL gate` 汇总 checks；汇总 job 必须在任一依赖失败、取消或跳过时失败，ruleset 不直接依赖易变的 matrix job names。
 - [x] 让所有 blocking workflows 同时监听 `pull_request` 与 `merge_group`，使同一 required checks contract 可安全启用 GitHub merge queue。
-- [x] 提交可导入的 default-branch ruleset recipe，只要求 `Required gates` 与 `CodeQL gate`；禁止把 benchmark leaf、binary size、coverage trend 或其他易变 context 直接加入 ruleset。
+- [x] 提交可导入的 default-branch ruleset recipe，只要求 `Required gates` 与 `CodeQL gate`；禁止把 benchmark、binary size、coverage trend 或其他 informational pipeline 加入 required status checks。
 - [x] 在 GitHub repository 导入并启用 ruleset，验证失败 gate 会阻止 PR merge、最新 base revision policy 生效，并记录最小 bypass ownership；仓库外设置的实际启用状态不能仅以 committed JSON 代替。
-- [x] 在 required CI Test phase 运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告耗时、内存和 binary size；benchmark 执行失败进入 gate，任何 metrics 缺失或数值回归只提示。
+- [x] 建立非阻塞 PR metrics workflow，运行 C、Swift、Kotlin/JVM 与 ES/WASM benchmark，并报告 C shared library、Kotlin/JVM JAR 与 ES/WASM binary sizes；任何 metrics 缺失或回归都只能提示，不能改变 required gate 结论。
 - [x] 使用 fork-safe 的两段式 PR comment：只读 `pull_request` workflow 执行不可信代码并上传纯数值 artifact，具有写权限的 `workflow_run` commenter 不 checkout、不执行 artifact/PR code，只校验 allowlist 数值并创建或更新单条 PR comment。
-- [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、benchmark no-build phase、metrics 非阻塞边界与 commenter 权限分离。
+- [x] 添加 CI policy audit，机器校验 stable gate names、ruleset contexts、`merge_group`、metrics 非阻塞边界、commenter 权限分离与 scheduled benchmark 不进入 PR gate。
 
 Acceptance：
 
 - [x] Default branch ruleset 已启用，且只把 `Required gates` 与 `CodeQL gate` 作为 required status checks。
 - [x] 完整 correctness/conformance/sanitizer/consumer/package/security matrix 在 `pull_request` 与 `merge_group` 上 fail-closed，失败或缺失 checks 会阻止 merge。
-- [x] Benchmark 执行由 `Required gates` fail-closed，数值与 binary-size snapshot non-blocking，并能为同仓和 fork PR 安全更新一条 informational comment。
+- [x] Benchmark 与 binary-size pipeline 始终 non-blocking，并能为同仓和 fork PR 安全更新一条 informational comment。
 - [x] Privileged commenter 从不执行不可信代码或 artifact。
 
 配置、权限边界、required/non-required 清单与启用步骤见 `docs/migration/2026-07-13-phase-19-quality-gates.md`。
@@ -1660,7 +1659,7 @@ Acceptance：
 4. Swift、Kotlin、ES 的 `Document.parse` 都是同步 API；ES package 负责在该入口可用前完成 WASM 初始化，异步调度由 consumer 决定。
 5. AST 保留类型名 `List`；Kotlin consumer 使用 `com.nouprax.markdown.core.List` 或 import alias 解决标准集合重名。
 6. 每个 `Markup` 公开完整、非 optional 的 `Scope(start, end)`，不只公开 start position；坐标数值与语义原样继承同一 release 的 native C parser，binding 不建立额外解释层。
-7. Consumer 可逐次传入跨端一致的 immutable `ParseOptions`。默认启用 smart punctuation、footnotes、strip HTML comments、table、strikethrough、autolink、task list、formula（统一包含 dollar delimiters、LaTeX delimiters 与 `formula` fenced code）和 directive；source tracking 永远启用。`unsafe`、`github-pre-lang`、`full-info-string` 等 renderer-only flags 不进入新 options。
+7. Consumer 可逐次传入跨端一致的 immutable `ParseOptions`。默认启用 smart punctuation、footnotes、strip HTML comments、table、strikethrough、autolink、task list、formula、dollar/LaTeX formula delimiters 和 directive；source tracking 永远启用。`unsafe`、`github-pre-lang`、`full-info-string` 等 renderer-only flags 不进入新 options。
 8. 三端同时公开 typed Visitor 和只读 depth-first Walker API。
 9. TypeScript 使用递归 `readonly`，但不实施任何 runtime freeze。
 10. C facade 使用 length-delimited UTF-8 string view 与显式 error/free model；不承诺跨 release C binary ABI compatibility，每次 release clean rebuild，不提供兼容 shim。

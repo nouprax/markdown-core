@@ -62,18 +62,9 @@ target/
 # Node, pnpm, WASM, and test output
 .pnpm-store/
 coverage/
-# The coverage policy is reviewed contract data, not tool output, and the
-# pattern above would otherwise swallow it.
-!/specs/coverage/
 dist/
 node_modules/
 playwright-report/
 test-results/
 *.lcov
 *.log
-
-# Source-based coverage profiles. An instrumented binary run without
-# LLVM_PROFILE_FILE drops one of these in the working directory, and
-# audit:repository --clean fails on a dirty checkout.
-*.profdata
-*.profraw

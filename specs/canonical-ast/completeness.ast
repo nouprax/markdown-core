@@ -19,10 +19,9 @@ Document scope=1:1..18:8 children=6
 │   └── Image scope=9:31..9:40 source="/i" title=null children=1
 │       └── Text scope=9:33..9:35 literal="alt" children=0
 ├── Paragraph scope=11:1..11:17 children=3
-│   ├── Directive scope=11:1..11:6 mode=embedded name="plain" attributes=null children=0
+│   ├── Directive scope=11:1..11:6 mode=embedded name="plain" attributes=null label=null children=0
 │   ├── Text scope=11:7..11:7 literal=" " children=0
-│   └── Directive scope=11:8..11:17 mode=embedded name="empty" attributes=[] children=1
-│       └── DirectiveLabel scope=11:14..11:15 children=0
+│   └── Directive scope=11:8..11:17 mode=embedded name="empty" attributes="{}" label=0 children=0
 ├── Table scope=13:1..15:8 alignments=[none] children=2
 │   ├── TableRow scope=13:1..13:8 isHeader=true children=1
 │   │   └── TableCell scope=13:2..13:7 children=1

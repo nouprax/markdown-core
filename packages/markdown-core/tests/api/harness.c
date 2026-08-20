@@ -76,9 +76,7 @@ void STR_EQ(test_batch_runner *runner, const char *got, const char *expected, co
         char *expected_fn = write_tmp("expected\n", expected);
         char buf[1024];
         snprintf(buf, sizeof(buf), "git diff --no-index %s %s", expected_fn, got_fn);
-        if (system(buf) == -1) {
-            fprintf(stderr, "failed to launch git diff for string mismatch\n");
-        }
+        system(buf);
         remove(got_fn);
         remove(expected_fn);
         free(got_fn);

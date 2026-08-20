@@ -12,27 +12,11 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        manifestPlaceholders["consumerApplication"] = "consumer.ConsumerApplication"
-    }
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            // Deliberately do not inherit AGP's default ProGuard file: its
-            // broad native-method rule would hide a missing consumer rule in
-            // the published Markdown Core AAR.
-            proguardFiles("proguard-rules.pro")
-        }
-        create("unused") {
-            isMinifyEnabled = true
-            proguardFiles("proguard-rules.pro")
-            manifestPlaceholders["consumerApplication"] = "consumer.UnusedConsumerApplication"
-            matchingFallbacks += "release"
-        }
     }
 }
 
 dependencies {
-    implementation("com.nouprax:kotlin-markdown-core:2.0.0")
+    implementation("com.nouprax:kotlin-markdown-core:1.0.3")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
 }

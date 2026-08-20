@@ -19,7 +19,7 @@ serialization/transport format，也不得用于构造生产 AST。
 
 - [x] 将 `packages/markdown-core/tests/canonical-ast/` 的 Markdown/`.ast` pairs、README 和 coverage manifest 迁移到根级 `specs/canonical-ast/`，明确其唯一 owner 是跨产品公开 AST contract；C package 不再保留私有副本。
 - [x] 冻结 manifest schema 与 case discovery：每个 case 显式列出 Markdown input、expected dump、所需 parse options 和覆盖标签；路径、排序、UTF-8、LF 与 final newline 必须确定，runner 不得各自维护第二份 case 清单或 normalization。
-- [x] 使 corpus 覆盖全部 29 种 `Markup`（含 2026-07-29 纳入公开合同的 `DirectiveLabel`）、所有 behavior-bearing fields、enum/boolean/null states、scope coordinates、escaping、child order、empty/populated children 和 table/directive/footnote/formula 等结构；coverage audit 对缺失和未声明覆盖 fail closed。
+- [x] 使 corpus 覆盖全部 28 种 `Markup`、所有 behavior-bearing fields、enum/boolean/null states、scope coordinates、escaping、child order、empty/populated children 和 table/directive/footnote/formula 等结构；coverage audit 对缺失和未声明覆盖 fail closed。
 - [x] 将 C conformance target 改为读取共享 corpus，通过公开 C parse/document dump API 比较全部 cases；CommonMark/extension/regression correctness fixtures 仍留在 C package。
 - [x] 将 Swift conformance target 改为对全部共享 cases 调用公开 `Document.parse` 与 `Markup.dump()`/`TreeDumper.dump(_:)`，删除 package-local expected tree literals；macOS 与 iOS Simulator 必须消费同一物理 corpus。
 - [x] 将 Kotlin common conformance contract 接入全部共享 cases，删除 package-local expected tree literals；JVM、Android host、repo-managed Android emulator、macOS ARM64 与 Linux x64 原生 targets 必须消费同一物理 corpus。
@@ -32,7 +32,7 @@ serialization/transport format，也不得用于构造生产 AST。
 
 ## Acceptance
 
-- [x] 根级 `specs/canonical-ast/` 是唯一 canonical Markdown/`.ast` corpus；coverage manifest 完整覆盖 29 种 Markup 与冻结字段合同，仓库不存在平台副本或第二份 case list。
+- [x] 根级 `specs/canonical-ast/` 是唯一 canonical Markdown/`.ast` corpus；coverage manifest 完整覆盖 28 种 Markup 与冻结字段合同，仓库不存在平台副本或第二份 case list。
 - [x] C、Swift、Kotlin 和 ES 的现有原生 conformance targets 都枚举非空的同一 manifest，使用各自公开 parse/AST/Visitor/Walker/TreeDumper 路径，并对每个 case byte-for-byte 通过。
 - [x] Swift iOS Simulator 与 Kotlin Android emulator 的 test bundle 从同一 source 生成资源；clean CI 不依赖 repo cwd、本机 fixture、网络下载或手工复制。
 - [x] 普通 correctness targets 不发现共享 spec cases，benchmark 不读取它们；根 manifest 不提供 runner 或新的公共 task route。
@@ -42,9 +42,9 @@ serialization/transport format，也不得用于构造生产 AST。
 ## Implementation
 
 `specs/canonical-ast/manifest.json` 是唯一 discovery source。v1 schema 固定六个
-case 的 input、expected、9 个 parse options、manifest order、UTF-8、LF、final
+case 的 input、expected、11 个 parse options、manifest order、UTF-8、LF、final
 newline，以及 kind/state/order coverage tags。`check-canonical-ast-fixtures.mjs`
-从 AST contract 自动提取 29 kinds 和 48 个 behavior-bearing fields，并对缺失、
+从 AST contract 自动提取 28 kinds 和 47 个 behavior-bearing fields，并对缺失、
 未知、未清单文件、字段顺序和空 discovery fail closed。
 
 四端消费路径：

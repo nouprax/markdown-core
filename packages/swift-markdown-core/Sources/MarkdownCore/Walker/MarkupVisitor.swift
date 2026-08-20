@@ -1,12 +1,4 @@
-/// Typed double-dispatch over the closed set of markup node kinds.
-///
-/// One `visit` overload per concrete node type, selected by
-/// ``Markup/accept(_:)``.
 public protocol MarkupVisitor {
-    /// ``MarkupWalker``'s visitor walk requires this to be `Void`.
-    ///
-    /// A visitor that returns anything else is driven by calling
-    /// ``Markup/accept(_:)`` directly.
     associatedtype Result
     mutating func visit(_ node: Document) -> Result
     mutating func visit(_ node: BlockQuote) -> Result
@@ -19,10 +11,7 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: HTMLBlock) -> Result
     mutating func visit(_ node: FormulaBlock) -> Result
     mutating func visit(_ node: Table) -> Result
-    mutating func visit(_ node: TableRow) -> Result
-    mutating func visit(_ node: TableCell) -> Result
     mutating func visit(_ node: DirectiveBlock) -> Result
-    mutating func visit(_ node: DirectiveLabel) -> Result
     mutating func visit(_ node: FootnoteDefinition) -> Result
     mutating func visit(_ node: Text) -> Result
     mutating func visit(_ node: SoftBreak) -> Result
@@ -37,9 +26,6 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Image) -> Result
     mutating func visit(_ node: Directive) -> Result
     mutating func visit(_ node: FootnoteReference) -> Result
-    mutating func visit(_ node: ReferenceDefinition) -> Result
-    mutating func visit(_ node: LinkReference) -> Result
-    mutating func visit(_ node: ImageReference) -> Result
-    mutating func visit(_ node: CrossLink) -> Result
-    mutating func visit(_ node: Embed) -> Result
+    mutating func visit(_ node: TableRow) -> Result
+    mutating func visit(_ node: TableCell) -> Result
 }

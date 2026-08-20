@@ -17,20 +17,18 @@ divergence history, and license relationship.
 
 ## Usage
 
-All platform APIs have one synchronous entry point, and it is the document
-itself: `Document(markdown, options)` in Swift, Kotlin, and ECMAScript, and
-`markdown_core_document_new` in C. Parsing produces a complete AST. The Swift,
-Kotlin, and ECMAScript bindings copy that AST into platform values; the
-document keeps the native parse only so that `append` can hold identities
-stable across revisions, and releasing it never invalidates a value it
-produced.
+All platform APIs have one synchronous parse entry point: `Document.parse` in
+Swift, Kotlin, and ECMAScript, and `markdown_core_document_parse` in C. Parsing
+produces a complete AST. The Swift, Kotlin, and ECMAScript bindings copy that
+AST into platform values and retain no native parser handle after the parse
+returns; the C API exposes an owned document with borrowed node views.
 
 The default parse options enable smart punctuation, footnotes, HTML comment
 stripping, tables, strikethrough, autolinks, task lists, formulas (including
-dollar and LaTeX delimiters), directives, cross-links (`[[reference]]`), and
-embeds (`![[reference]]`). Each option can be disabled per parse. `TreeDumper`
-and `dump()` produce a canonical diagnostic representation for logs, tests,
-and debugging; dump text is not a persistence or interchange format.
+dollar and LaTeX delimiters), and directives. Each option can be disabled per
+parse. `TreeDumper` and `dump()` produce a canonical diagnostic representation
+for logs, tests, and debugging; dump text is not a persistence or interchange
+format.
 
 ### Swift
 
@@ -38,13 +36,13 @@ The root Swift package supports iOS 18 and macOS 15 or later and exports the
 `MarkdownCore` product and module:
 
 ```swift
-.package(url: "https://github.com/nouprax/markdown-core", from: "2.0.0")
+.package(url: "https://github.com/nouprax/markdown-core", from: "1.0.3")
 ```
 
 ```swift
 import MarkdownCore
 
-let document = try Document(
+let document = try Document.parse(
     "# Hello",
     options: ParseOptions(directives: false)
 )
@@ -62,7 +60,7 @@ Use the root Maven coordinate from a Kotlin Multiplatform source set:
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("com.nouprax:kotlin-markdown-core:2.0.0")
+            implementation("com.nouprax:kotlin-markdown-core:1.0.3")
         }
     }
 }
@@ -72,7 +70,7 @@ kotlin {
 import com.nouprax.markdown.core.Document
 import com.nouprax.markdown.core.ParseOptions
 
-val document = Document(
+val document = Document.parse(
     "# Hello",
     ParseOptions(directives = false),
 )
@@ -94,16 +92,16 @@ pnpm add @nouprax/es-markdown-core
 ```
 
 ```js
-import { Document, MarkupDumper, MarkupWalker } from "@nouprax/es-markdown-core";
+import { Document, TreeDumper, Walker } from "@nouprax/es-markdown-core";
 
-const document = Document("# Hello", { directives: false });
-new MarkupWalker().walk(document, (event, node, scope) => {
-  console.log(event, node.kind, scope.start.line);
+const document = Document.parse("# Hello", { directives: false });
+new Walker().walk(document, (event, node) => {
+  console.log(event, node.kind, node.scope);
 });
-console.log(MarkupDumper.dump(document));
+console.log(TreeDumper.dump(document));
 ```
 
-The package supports Node.js 24 or later and browser environments that can load
+The package supports Node.js 20 or later and browser environments that can load
 its WebAssembly asset. Module import completes WebAssembly initialization, so
 parsing is synchronous after the import resolves. The generated TypeScript
 surface is recursively readonly; JavaScript objects are not runtime-frozen.
@@ -120,11 +118,6 @@ find_package(markdown-core CONFIG REQUIRED)
 target_link_libraries(my-app PRIVATE markdown-core::markdown-core)
 ```
 
-The installed facade intentionally has no compile-time version macro or
-runtime version function. Discover its package version with
-`pkg-config --modversion markdown-core`, or request a compatible version in
-`find_package(markdown-core <version> CONFIG REQUIRED)`.
-
 Include the read-only facade as `#include <markdown_core.h>`. Pass `NULL` for
 parse options to use the defaults, and release every successful parse with
 `markdown_core_document_free`. Nodes and string views borrow from their owning
@@ -137,89 +130,6 @@ read-only access are safe; callers must ensure that a document is freed only
 after all access to that document has finished. The complete C contract is in
 [`markdown_core.h`](packages/markdown-core/include/markdown_core.h).
 
-## Streaming
-
-There is no session type. A document is the live head of a CHAIN, and the
-chain grows one way: `append` adds bytes at the end — an LLM stream is
-`document = document.append(chunk)` per tick, and any byte split is legal,
-mid-word or mid-character. One rule: the successor supersedes the receiver,
-the revision advances strictly by one on the chain's own counter, and
-mutating a superseded handle is a deterministic error, so history is
-linear. In one sentence: an append
-advances the chain, old heads stop mutating, decoded values live forever. There is
-no whole-text edit: replacing the text describes a different document, and
-the way to say so is constructing a new one — a new chain with a new
-series. Options are fixed for the chain's whole life — changing what the
-parser means is a new chain too.
-
-**The stability an application needs is on the TREE.** An id keeps naming the
-same node until that node is removed, an unchanged node keeps its exact
-revision, and a pure positional shift is not a change — so equality is O(1)
-over (id, revision) and an id goes unmodified into a SwiftUI `ForEach(id:)`,
-a Compose `key()`, or a React `key`. A node's revision is subtree-covering:
-it is the document revision at which the node's own fields, child list, or
-any descendant last changed, so a consumer holding values from the previous
-document walks the new tree top-down and stops descending wherever the
-(id, revision) pair is one it already has. That pair is the entire update
-protocol — there is no change list to read. After any sequence of appends
-the document is byte-for-byte dump-equal to a from-scratch parse of the
-same text.
-
-```swift
-let document = try Document("# Hello\n")
-let streamed = try document.append("world ")
-let another = try streamed.append("and more\n")
-```
-
-```kotlin
-Document("# Hello\nworld\n").use { document ->
-    document.append(" and more\n").use { next -> println(next.root) }
-}
-```
-
-```js
-let document = Document("# Hello\n");
-document = document.append("world");   // append supersedes and returns the next head
-document.close();
-```
-
-```c
-markdown_core_string text = {(const uint8_t *)"# Hello\n", 8};
-markdown_core_document *document = markdown_core_document_new(text, NULL, NULL);
-markdown_core_string chunk = {(const uint8_t *)"world", 5};
-markdown_core_document *next = markdown_core_document_append(document, chunk, NULL);
-/* The receiver is superseded: it keeps free (at any time) and its
- * revision, series and length, and answers for no tree. */
-markdown_core_document_free(document);
-markdown_core_document_free(next);
-```
-
-A mutation is an exclusive operation on its chain — two mutations must be
-externally serialized, and between them any number of threads may read the
-live head. Documents on different chains never share state, so any number of
-chains parse and mutate concurrently. A failed construction supersedes
-nothing; a failed `append` ends the chain ("the chain is done": only free
-remains, the caller still holds every byte it sent, recovery is a new
-chain).
-
-Every document also reports `diagnostics`: everything an editor should
-underline, which for Markdown is one thing — a directive's `{...}` attribute
-block that did not parse. Every other "wrong" construct is a defined outcome
-of the standard semantics rather than a failure, and reporting those would be
-reporting Markdown itself.
-
-The language-neutral AST contract is
-[`docs/specs/canonical-ast.md`](docs/specs/canonical-ast.md). The adopted
-plan for the streaming redesign — `append` as the hot path, documents as
-chain heads — is
-[`docs/reviews/2026-08-12-streaming-plan.md`](docs/reviews/2026-08-12-streaming-plan.md),
-and the engine mechanism that replaced its parser-tail fork — the living
-tree, one tick per append — is
-[`docs/reviews/2026-08-13-living-tree-plan.md`](docs/reviews/2026-08-13-living-tree-plan.md);
-[`docs/specs/incremental-canonical-ast.md`](docs/specs/incremental-canonical-ast.md)
-is a frozen earlier design that plan supersedes, and no current public API
-implements it.
-
 ## Repository layout
 
 - `packages/markdown-core`: C parser, public facade, CLI, extensions, and C tests.
@@ -227,6 +137,7 @@ implements it.
 - `packages/kotlin-markdown-core`: Kotlin binding, platform runtimes, tests, and consumer fixtures.
 - `packages/es-markdown-core`: ECMAScript/TypeScript package and WebAssembly runtime.
 - `specs/canonical-ast`: shared, platform-independent AST conformance fixtures.
+- `samples`: sample consumers and integration examples.
 - `scripts`: repository build, formatting, lint, audit, and consumer-check entry points.
 
 ## Build
@@ -307,7 +218,7 @@ There is intentionally no cross-host aggregate: required CI runs every
 supported platform target on an appropriate host, simulator, browser, or
 device.
 
-Run repository-wide formatting, lint, contract, test-layout, and public-surface
+Run repository-wide formatting, lint, contract, topology, and public-surface
 checks with:
 
 ```sh
@@ -340,9 +251,5 @@ attestation, and post-publication verification. Release notes start from
 
 ## License
 
-Markdown Core's own work is MIT. The cmark-derived engine it inherits remains
-BSD-2-Clause and the bundled CommonMark specification text remains CC-BY-SA
-4.0, so the combined work is `MIT AND BSD-2-Clause`. Every upstream copyright
-and license notice is preserved in [LICENSE](LICENSE); [COPYING](COPYING) is
-the same file under cmark's traditional name. [UPSTREAM.md](UPSTREAM.md)
-records the exact baseline this project forked from.
+Markdown Core preserves all applicable upstream copyright and license notices.
+See [LICENSE](LICENSE), [COPYING](COPYING), and [UPSTREAM.md](UPSTREAM.md).

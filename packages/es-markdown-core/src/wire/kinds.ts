@@ -10,10 +10,7 @@ export type NativeKind =
     | "htmlBlock"
     | "formulaBlock"
     | "table"
-    | "tableRow"
-    | "tableCell"
     | "directiveBlock"
-    | "directiveLabel"
     | "footnoteDefinition"
     | "text"
     | "softBreak"
@@ -28,11 +25,8 @@ export type NativeKind =
     | "image"
     | "directive"
     | "footnoteReference"
-    | "crossLink"
-    | "embed"
-    | "referenceDefinition"
-    | "linkReference"
-    | "imageReference";
+    | "tableRow"
+    | "tableCell";
 
 export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "none",
@@ -47,10 +41,7 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "htmlBlock",
     "formulaBlock",
     "table",
-    "tableRow",
-    "tableCell",
     "directiveBlock",
-    "directiveLabel",
     "footnoteDefinition",
     "text",
     "softBreak",
@@ -65,11 +56,6 @@ export const kinds: readonly (NativeKind | "none")[] = Object.freeze([
     "image",
     "directive",
     "footnoteReference",
-    "crossLink",
-    "embed",
-    // Appended: this array is indexed by the native kind value, so a kind
-    // inserted in the middle would renumber every kind after it.
-    "referenceDefinition",
-    "linkReference",
-    "imageReference"
+    "tableRow",
+    "tableCell"
 ]);

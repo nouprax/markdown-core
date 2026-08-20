@@ -65,7 +65,7 @@ on_enter/on_exit 是 renderer payload)。
    字节:除 spec.txt 删除 1 个 tagfilter 例子外全部一致。
 3. **语义抽查**:逐 kind 检查 dump(table alignments/header row、footnote
    id、formula mode standalone/embedded、directive attributes JSON 与
-   `DirectiveLabel` 节点的缺失/空/非空拓扑、full info string(含 NUL→U+FFFD)、smart punct、
+   label=null/label=N、full info string(含 NUL→U+FFFD)、smart punct、
    autolink 的空前导 Text 与 title=null/"" 区分、scope 坐标与原 XML sourcepos
    一致)。
 4. **异常扫描**:801 个启用例子的 expected block 全部以 `Document scope=`
@@ -74,8 +74,7 @@ on_enter/on_exit 是 renderer payload)。
 
 选项映射说明:legacy「extension 挂载但 option 关闭」的 option-gates 套件在
 facade 中等价于对应 `ParseOptions` 字段为 false;`-e footnotes`→`footnotes`
-字段;tagfilter 不进入 `ParseOptions`(无 AST 语义)。后续 formula 配置已收敛为
-单一 `formulas` 字段，formula option-gate 现在关闭完整 extension 与全部 delimiter。
+字段;tagfilter 不进入 `ParseOptions`(无 AST 语义)。
 
 ## 4. 测试基础设施变化
 

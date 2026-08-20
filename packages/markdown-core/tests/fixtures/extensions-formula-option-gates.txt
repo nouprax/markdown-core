@@ -8,8 +8,8 @@ license: '[CC-BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)'
 
 ## Formula option gates
 
-These examples leave the formula extension disabled. Every formula syntax
-remains ordinary Markdown.
+These examples attach the formula extension without enabling dollar formula
+delimiters. Dollar-delimited syntax remains ordinary Markdown.
 
 ```````````````````````````````` example
 Inline $x+y$ end.
@@ -33,23 +33,7 @@ Document scope=1:1..3:2 children=1
     └── Text scope=3:1..3:2 literal="$$" children=0
 ````````````````````````````````
 
-```````````````````````````````` example
-Inline \\(x+y\\) and \(a+b\).
-.
-Document scope=1:1..1:29 children=1
-└── Paragraph scope=1:1..1:29 children=1
-    └── Text scope=1:1..1:29 literal="Inline \\(x+y\\) and (a+b)." children=0
-````````````````````````````````
-
-```````````````````````````````` example
-Display \\[x+y\\] and \[a+b\].
-.
-Document scope=1:1..1:30 children=1
-└── Paragraph scope=1:1..1:30 children=1
-    └── Text scope=1:1..1:30 literal="Display \\[x+y\\] and [a+b]." children=0
-````````````````````````````````
-
-Formula fenced-code blocks remain ordinary code when formulas are disabled.
+Formula fenced-code blocks remain enabled by the formula extension.
 
 ```````````````````````````````` example
 ```formula
@@ -57,5 +41,5 @@ x+y
 ```
 .
 Document scope=1:1..3:3 children=1
-└── CodeBlock scope=1:1..3:3 mode=standalone info="formula" language="formula" literal="x+y\n" fenced=true closed=true children=0
+└── FormulaBlock scope=1:1..3:3 mode=standalone literal="x+y" children=0
 ````````````````````````````````

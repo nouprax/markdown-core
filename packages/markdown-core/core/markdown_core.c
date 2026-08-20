@@ -1,15 +1,19 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
+#include "registry.h"
+#include "node.h"
 #include "markdown-core.h"
+
+markdown_core_node_type MARKDOWN_CORE_NODE_LAST_BLOCK = MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION;
+markdown_core_node_type MARKDOWN_CORE_NODE_LAST_INLINE = MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE;
 
 int markdown_core_version(void) { return MARKDOWN_CORE_VERSION; }
 
 const char *markdown_core_version_string(void) { return MARKDOWN_CORE_VERSION_STRING; }
 
-static void *xcalloc(markdown_core_mem *mem, size_t nmem, size_t size) {
+static void *xcalloc(size_t nmem, size_t size) {
     void *ptr = calloc(nmem, size);
-    (void)mem;
     if (!ptr) {
         fprintf(stderr, "[markdown_core] calloc returned null pointer, aborting\n");
         abort();
@@ -17,9 +21,8 @@ static void *xcalloc(markdown_core_mem *mem, size_t nmem, size_t size) {
     return ptr;
 }
 
-static void *xrealloc(markdown_core_mem *mem, void *ptr, size_t size) {
+static void *xrealloc(void *ptr, size_t size) {
     void *new_ptr = realloc(ptr, size);
-    (void)mem;
     if (!new_ptr) {
         fprintf(stderr, "[markdown_core] realloc returned null pointer, aborting\n");
         abort();
@@ -27,15 +30,8 @@ static void *xrealloc(markdown_core_mem *mem, void *ptr, size_t size) {
     return new_ptr;
 }
 
-static void xfree(markdown_core_mem *mem, void *ptr) {
-    (void)mem;
-    free(ptr);
-}
+static void xfree(void *ptr) { free(ptr); }
 
-/* Immutable by contract: the engine has no process-level mutable state, so
- * the default allocator lives in read-only storage. Callers receive a
- * non-const pointer because markdown_core_mem flows through APIs that also
- * accept caller-owned allocators; writes through it would fault. */
-static const markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR = {xcalloc, xrealloc, xfree};
+markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR = {xcalloc, xrealloc, xfree};
 
-markdown_core_mem *markdown_core_mem_default(void) { return (markdown_core_mem *)&MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR; }
+markdown_core_mem *markdown_core_get_default_mem_allocator(void) { return &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR; }

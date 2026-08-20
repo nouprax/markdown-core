@@ -1,0 +1,100 @@
+name: PR metrics
+
+on:
+    pull_request:
+        types: [opened, reopened, synchronize]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: pr-metrics-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    linux:
+        name: PR metrics (Linux, non-blocking)
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - uses: pnpm/action-setup@v6
+              with:
+                  run_install: false
+                  version: 11.7.0
+            - uses: actions/setup-java@v5
+              with:
+                  cache: gradle
+                  distribution: temurin
+                  java-version: 26
+            - uses: android-actions/setup-android@v4
+            - uses: emscripten-core/setup-emsdk@v16
+              with:
+                  version: 4.0.23
+            - name: Install JavaScript dependencies
+              continue-on-error: true
+              run: pnpm install --frozen-lockfile
+            - name: Measure C performance
+              continue-on-error: true
+              run: |
+                  mkdir -p build/pr-metrics-logs
+                  pnpm benchmark:c-host
+                  build/cmake/packages/markdown-core/tests/bench_runner \
+                      --workload binding_baseline \
+                      --samples packages/markdown-core/benchmarks/samples \
+                      2>&1 | tee build/pr-metrics-logs/c.log
+            - name: Measure Kotlin/JVM performance
+              continue-on-error: true
+              run: pnpm benchmark:kotlin-jvm 2>&1 | tee build/pr-metrics-logs/kotlin.log
+            - name: Build Kotlin/JVM size artifact
+              continue-on-error: true
+              run: scripts/gradle.sh :packages:kotlin-markdown-core:jvmJar
+            - name: Measure ES/WASM performance and size
+              continue-on-error: true
+              run: pnpm benchmark:es-node 2>&1 | tee build/pr-metrics-logs/es.log
+            - name: Collect numeric metrics
+              if: ${{ always() }}
+              continue-on-error: true
+              run: node scripts/collect-pr-metrics.mjs --platform linux --logs build/pr-metrics-logs --output build/pr-metrics/linux.json
+            - name: Upload Linux metrics
+              if: ${{ always() }}
+              continue-on-error: true
+              uses: actions/upload-artifact@v7
+              with:
+                  name: pr-metrics-linux
+                  path: build/pr-metrics/linux.json
+                  if-no-files-found: warn
+                  retention-days: 14
+
+    macos:
+        name: PR metrics (macOS, non-blocking)
+        runs-on: macos-26
+        steps:
+            - uses: actions/checkout@v7
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26.6"
+            - uses: actions/setup-node@v7
+              with:
+                  node-version: 26.5.0
+            - name: Measure Swift performance
+              continue-on-error: true
+              run: |
+                  mkdir -p build/pr-metrics-logs
+                  swift run -c release MarkdownCoreBenchmarks 2>&1 | tee build/pr-metrics-logs/swift.log
+            - name: Collect numeric metrics
+              if: ${{ always() }}
+              continue-on-error: true
+              run: node scripts/collect-pr-metrics.mjs --platform macos --logs build/pr-metrics-logs --output build/pr-metrics/macos.json
+            - name: Upload macOS metrics
+              if: ${{ always() }}
+              continue-on-error: true
+              uses: actions/upload-artifact@v7
+              with:
+                  name: pr-metrics-macos
+                  path: build/pr-metrics/macos.json
+                  if-no-files-found: warn
+                  retention-days: 14

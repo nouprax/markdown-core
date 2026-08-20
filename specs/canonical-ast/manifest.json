@@ -24,9 +24,7 @@
             "TableRow",
             "TableCell",
             "DirectiveBlock",
-            "DirectiveLabel",
             "FootnoteDefinition",
-            "ReferenceDefinition",
             "Text",
             "SoftBreak",
             "LineBreak",
@@ -38,12 +36,8 @@
             "Strikethrough",
             "Link",
             "Image",
-            "LinkReference",
-            "ImageReference",
             "Directive",
-            "FootnoteReference",
-            "CrossLink",
-            "Embed"
+            "FootnoteReference"
         ],
         "states": [
             "placement.embedded",
@@ -88,9 +82,7 @@
             "children.populated",
             "escaping.empty-string",
             "escaping.newline",
-            "escaping.json",
-            "htmlComment.true",
-            "htmlComment.false"
+            "escaping.json"
         ],
         "orders": [
             "document.source-order",
@@ -107,14 +99,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": [
@@ -127,8 +120,7 @@
                     "List",
                     "ListItem",
                     "CodeBlock",
-                    "HTMLBlock",
-                    "FootnoteDefinition"
+                    "HTMLBlock"
                 ],
                 "states": [
                     "placement.standalone",
@@ -158,14 +150,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": [
@@ -178,7 +171,6 @@
                     "Link",
                     "Image",
                     "Directive",
-                    "DirectiveLabel",
                     "Table",
                     "TableRow",
                     "TableCell"
@@ -225,14 +217,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": ["Document", "Paragraph", "Text", "Formula", "FormulaBlock"],
@@ -253,14 +246,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": [
@@ -274,18 +268,12 @@
                     "Link",
                     "Image",
                     "Directive",
-                    "DirectiveLabel",
                     "Formula",
                     "FootnoteReference",
-                    "CrossLink",
-                    "Embed",
                     "LineBreak",
                     "HTML",
                     "SoftBreak",
-                    "FootnoteDefinition",
-                    "LinkReference",
-                    "ImageReference",
-                    "ReferenceDefinition"
+                    "FootnoteDefinition"
                 ],
                 "states": [
                     "placement.embedded",
@@ -297,7 +285,8 @@
                     "scope.zero",
                     "children.empty",
                     "children.populated",
-                    "escaping.empty-string"
+                    "escaping.empty-string",
+                    "escaping.json"
                 ],
                 "orders": ["document.source-order", "inline.source-order"]
             }
@@ -309,14 +298,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": ["Document", "ThematicBreak", "Paragraph", "Text"],
@@ -331,14 +321,15 @@
             "parseOptions": {
                 "smartPunctuation": true,
                 "footnotes": true,
+                "stripHTMLComments": true,
                 "tables": true,
                 "strikethrough": true,
                 "autolinks": true,
                 "taskLists": true,
                 "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
+                "dollarFormulaDelimiters": true,
+                "latexFormulaDelimiters": true,
+                "directives": true
             },
             "coverage": {
                 "kinds": [
@@ -349,7 +340,6 @@
                     "Text",
                     "Strong",
                     "DirectiveBlock",
-                    "DirectiveLabel",
                     "Paragraph"
                 ],
                 "states": [
@@ -367,56 +357,6 @@
                     "escaping.json"
                 ],
                 "orders": ["document.source-order", "table.header-rows-cells", "directive.label-before-content"]
-            }
-        },
-        {
-            "name": "multiline-spans",
-            "input": "multiline-spans.md",
-            "expected": "multiline-spans.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
-            },
-            "coverage": {
-                "kinds": ["Document", "Paragraph", "Text", "Code", "HTML", "Emphasis"],
-                "states": ["placement.embedded", "scope.positive", "children.empty", "children.populated"],
-                "orders": ["document.source-order"]
-            }
-        },
-        {
-            "name": "comments",
-            "input": "comments.md",
-            "expected": "comments.ast",
-            "parseOptions": {
-                "smartPunctuation": true,
-                "footnotes": true,
-                "tables": true,
-                "strikethrough": true,
-                "autolinks": true,
-                "taskLists": true,
-                "formulas": true,
-                "directives": true,
-                "crossLinks": true,
-                "embeds": true
-            },
-            "coverage": {
-                "kinds": ["Document", "Paragraph", "Text", "HTML", "HTMLBlock"],
-                "states": [
-                    "htmlComment.true",
-                    "htmlComment.false",
-                    "scope.positive",
-                    "children.empty",
-                    "children.populated"
-                ],
-                "orders": ["document.source-order"]
             }
         }
     ]

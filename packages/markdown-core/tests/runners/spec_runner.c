@@ -20,18 +20,13 @@
 #include "test_support.h"
 
 static void usage(FILE *stream) {
-    fputs(
-        "usage: spec_runner --spec FILE [--option NAME]...\n"
-        "                   [--list] [--example N] [--section TEXT] [--rewrite]\n",
-        stream
-    );
+    fputs("usage: spec_runner --spec FILE [--option NAME]...\n"
+          "                   [--list] [--example N] [--section TEXT] [--rewrite]\n",
+          stream);
 }
 
-static uint8_t *dump_example(
-    const ts_spec_case *test_case,
-    const markdown_core_parse_options *base,
-    size_t *dump_length
-) {
+static uint8_t *dump_example(const ts_spec_case *test_case, const markdown_core_parse_options *base,
+                             size_t *dump_length) {
     markdown_core_parse_options options = *base;
     markdown_core_document *document;
     markdown_core_error *error = NULL;
@@ -40,19 +35,14 @@ static uint8_t *dump_example(
 
     for (extension_index = 0; extension_index < test_case->extension_count; extension_index++) {
         if (ts_ast_enable(&options, test_case->extensions[extension_index]) != 0) {
-            fprintf(
-                stderr,
-                "example %d: unknown fixture tag %s\n",
-                test_case->example,
-                test_case->extensions[extension_index]
-            );
+            fprintf(stderr, "example %d: unknown fixture tag %s\n", test_case->example,
+                    test_case->extensions[extension_index]);
             return NULL;
         }
     }
     document = ts_ast_parse((const uint8_t *)test_case->markdown, test_case->markdown_length, &options);
-    if (!document) {
+    if (!document)
         return NULL;
-    }
     if (!markdown_core_document_dump(document, &dump, dump_length, &error)) {
         fprintf(stderr, "example %d: dump failed\n", test_case->example);
         markdown_core_error_free(error);
@@ -86,16 +76,13 @@ static int line_has_disabled_tag(const char *line, size_t line_length) {
     const char *end = line + line_length;
     while (cursor < end) {
         const char *word;
-        while (cursor < end && *cursor == ' ') {
+        while (cursor < end && *cursor == ' ')
             cursor++;
-        }
         word = cursor;
-        while (cursor < end && *cursor != ' ') {
+        while (cursor < end && *cursor != ' ')
             cursor++;
-        }
-        if (cursor - word == 8 && strncmp(word, "disabled", 8) == 0) {
+        if (cursor - word == 8 && strncmp(word, "disabled", 8) == 0)
             return 1;
-        }
     }
     return 0;
 }
@@ -115,9 +102,8 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
     size_t case_index = 0;
     int result = -1;
 
-    if (!bytes) {
+    if (!bytes)
         return -1;
-    }
     if (ts_spec_load(path, &spec) != 0) {
         free(bytes);
         return -1;
@@ -135,18 +121,15 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
         size_t raw_length;
         size_t content_end;
         size_t line_length;
-        while (line_end < length && bytes[line_end] != '\n') {
+        while (line_end < length && bytes[line_end] != '\n')
             line_end++;
-        }
-        if (line_start == length && line_end == length && line_start != 0 && bytes[line_start - 1] == '\n') {
+        if (line_start == length && line_end == length && line_start != 0 && bytes[line_start - 1] == '\n')
             break;
-        }
         raw_length = line_end - line_start;
         content_end = line_end;
         while (content_end > line_start &&
-               (bytes[content_end - 1] == '\r' || bytes[content_end - 1] == ' ' || bytes[content_end - 1] == '\t')) {
+               (bytes[content_end - 1] == '\r' || bytes[content_end - 1] == ' ' || bytes[content_end - 1] == '\t'))
             content_end--;
-        }
         line_length = content_end - line_start;
 
         if (line_length >= 40 && strncmp(line, "````````````````````````````````", 32) == 0 &&
@@ -170,21 +153,16 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
                 size_t dump_length = 0;
                 uint8_t *dump;
                 if (case_index >= spec.count || spec.cases[case_index].example != example_number + 1) {
-                    fprintf(
-                        stderr,
-                        "rewrite lost sync at example %d (case_index %zu of %zu, holds "
-                        "example %d)\n",
-                        example_number + 1,
-                        case_index,
-                        spec.count,
-                        case_index < spec.count ? spec.cases[case_index].example : -1
-                    );
+                    fprintf(stderr,
+                            "rewrite lost sync at example %d (case_index %zu of %zu, holds "
+                            "example %d)\n",
+                            example_number + 1, case_index, spec.count,
+                            case_index < spec.count ? spec.cases[case_index].example : -1);
                     goto done;
                 }
                 dump = dump_example(&spec.cases[case_index], base, &dump_length);
-                if (!dump) {
+                if (!dump)
                     goto done;
-                }
                 fwrite(dump, 1, dump_length, output);
                 markdown_core_dump_free(dump);
                 case_index++;
@@ -197,9 +175,8 @@ static int rewrite_fixture(const char *path, const markdown_core_parse_options *
             fputc('\n', output);
         }
 
-        if (line_end >= length) {
+        if (line_end >= length)
             break;
-        }
         line_start = line_end + 1;
     }
 
@@ -278,26 +255,15 @@ int main(int argc, char **argv) {
             continue;
         }
         if (list_only) {
-            printf(
-                "example %d (lines %d-%d) %s\n",
-                test_case->example,
-                test_case->start_line,
-                test_case->end_line,
-                test_case->section
-            );
+            printf("example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line, test_case->end_line,
+                   test_case->section);
             continue;
         }
 
         dump = dump_example(test_case, &base, &dump_length);
         if (!dump) {
-            fprintf(
-                stderr,
-                "example %d (lines %d-%d) %s: conversion failed\n",
-                test_case->example,
-                test_case->start_line,
-                test_case->end_line,
-                test_case->section
-            );
+            fprintf(stderr, "example %d (lines %d-%d) %s: conversion failed\n", test_case->example,
+                    test_case->start_line, test_case->end_line, test_case->section);
             errored++;
             continue;
         }
@@ -305,14 +271,8 @@ int main(int argc, char **argv) {
         if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
             passed++;
         } else {
-            fprintf(
-                stderr,
-                "FAILED example %d (lines %d-%d) %s\n",
-                test_case->example,
-                test_case->start_line,
-                test_case->end_line,
-                test_case->section
-            );
+            fprintf(stderr, "FAILED example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line,
+                    test_case->end_line, test_case->section);
             fputs(test_case->markdown, stderr);
             ts_print_line_diff(stderr, test_case->expected, (const char *)dump);
             fputc('\n', stderr);
@@ -322,9 +282,8 @@ int main(int argc, char **argv) {
     }
 
     ts_spec_free(&spec);
-    if (list_only) {
+    if (list_only)
         return 0;
-    }
     printf("%zu passed, %zu failed, %zu errored, %zu skipped\n", passed, failed, errored, skipped);
     return (failed + errored) ? 1 : 0;
 }

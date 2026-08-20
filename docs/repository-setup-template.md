@@ -13,19 +13,14 @@
 1. 所有 binding 都消费同一 commit 中的 core，不允许跨版本拼装。
 2. correctness、跨端 conformance、consumer 和 package-content 验证彼此独立且全部阻塞 PR。
 3. ruleset 只依赖两个稳定汇总 check：`Required gates` 与 `CodeQL gate`。
-4. feature branch 只运行 pull request gate；default-branch push、pull request 和 merge queue 使用独立
-   concurrency lane，main CI 不抢占 PR required check。
-5. 可重复、确定性的 benchmark 作为 Test phase 的 required leaf 执行；具体耗时、内存、binary
-   size 等数值只提供观测，不使用 hosted-runner 绝对阈值阻塞合并。
+4. push、pull request 和 merge queue 使用独立 concurrency lane；push 不抢占 PR required check。
+5. benchmark、coverage、binary size 和 PR metrics 只提供观测，不进入 required checks。
 6. release dry run 不读取 environment、repository secret 或长期 signing key。
 7. 正式发布只由不可变 `vX.Y.Z` tag 触发，并在 tag snapshot 上重新运行完整 CI。
 8. artifact 先构建、审计并经过 staged consumer，再获得发布权限；发布 job 使用最小权限。
 9. 所有生态 package 和 GitHub Release 来自相同 tag 和版本；各自发布的字节不从历史 CI run
    拼装。
 10. GitHub 控制面可由本文的 bootstrap 脚本重复、幂等地配置。
-11. 若仓库需要 owner veto，team approval 使用独立 ruleset；owner bypass 不得连带绕过 CI。
-12. Dependency graph 只把真实发布/runtime 依赖呈现为产品依赖；formatter、lint、emulator、
-    compiler plugin 等工具链依赖另行审计，不能被合成 manifest 误报成消费者依赖。
 
 本模板抽象自当前仓库的以下已运行结构：
 
@@ -33,10 +28,9 @@
 - [CodeQL workflow](../.github/workflows/codeql.yml)
 - [release dry run](../.github/workflows/release-dry-run.yml)
 - [tag release](../.github/workflows/release.yml)
-- [CI benchmark/metrics producers](../.github/workflows/ci.yml) 与
+- [PR metrics producer](../.github/workflows/pr-metrics.yml) 与
   [privileged commenter](../.github/workflows/pr-metrics-comment.yml)
 - [default-branch ruleset](../.github/rulesets/main.json)、
-  [owner approval ruleset](../.github/rulesets/owner-review.json)、
   [release-tag ruleset](../.github/rulesets/release-tags.json) 与
   [release environment policy](../.github/environments/release.json)
 
@@ -54,7 +48,7 @@ artifact 路径和发布顺序都属于当前仓库 adapter。
 | 每个平台都有真实 consumer | 单元测试不能证明 package metadata、link、loader 或 exports 可用 |
 | required check 使用稳定聚合名 | matrix、runner 和 binding 增减不应要求修改 ruleset |
 | 聚合 job 使用 `if: always()` 并显式要求全部依赖为 `success` | cancelled、skipped 和 failure 必须 fail closed |
-| PR/default-branch push/merge queue 分开 concurrency | main runner teardown 不得取消或饿死 PR check |
+| PR/push/merge queue 分开 concurrency | push runner teardown 不得取消或饿死 PR check |
 | dry run 与正式 release 使用相同 staging/audit adapter | 避免“测试了一套，发布了另一套” |
 | release 从 tag snapshot 自证，不查询旧 check-run | 避免发布正确性依赖可变的历史运行时序 |
 | build/stage job 无 publish 权限 | 被构建脚本入侵时仍不能直接发布 |
@@ -116,13 +110,13 @@ Adapter 的通用合同：
 │   │   └── release-tag-policy.json
 │   ├── rulesets/
 │   │   ├── main.json
-│   │   ├── owner-review.json            # 可选：owner veto，与 CI ruleset 隔离
 │   │   └── release-tags.json
 │   └── workflows/
-│       ├── ci.yml                       # reusable + PR/main push/merge_group
+│       ├── ci.yml                       # reusable + PR/push/merge_group
 │       ├── codeql.yml                   # 独立安全 gate
-│       ├── dependency-submission.yml    # default-branch/scheduled，受控 product graph
+│       ├── pr-metrics.yml               # untrusted producer，可选
 │       ├── pr-metrics-comment.yml       # privileged workflow_run consumer，可选
+│       ├── benchmark.yml                # schedule/manual，可选
 │       ├── release-dry-run.yml           # PR/manual，无 secret
 │       └── release.yml                   # protected tag only
 ├── docs/
@@ -186,21 +180,6 @@ Adapter 的通用合同：
 有意改变公共行为时，同一 reviewed commit 必须同时修改 schema、core、全部 binding、fixtures、
 goldens 和 consumer；不得提供静默吞掉 drift 的 normalization。
 
-### 4.4 Host-specific toolchain 与真实 runtime
-
-声明支持一个 target，不代表任意 host 都能构建或运行它。Binding adapter 必须显式记录：
-
-- 哪些 artifact 可以 cross compile，哪些 cinterop/JNI/FFI 步骤需要目标平台原生 toolchain；
-- CI runner 的 CPU architecture，以及 emulator/simulator system image 的 ABI、API、image source；
-- runtime acceleration 前置条件，例如 Linux Android Emulator 的 x86_64 image 与 KVM；
-- 不兼容 host 上是 fail、禁用该 target，还是把工作路由到兼容 runner；
-- release matrix 中由哪个原生 host 产出并 consumer-test 每个 native artifact。
-
-例如 KMP target 含 cinterop 时，不应让 Linux 假装生成 macOS klib；可以关闭 klib cross
-compilation，前提是 macOS runner 仍真实构建、测试并 stage macOS publication。Android managed
-device 也不能只写一个 device profile：workflow 必须安装 DSL 最终解析出的精确 system image，
-并在启动测试前验证 host architecture、ABI 和 acceleration。
-
 ## 5. PR quality gate
 
 ### 5.1 `ci.yml` 触发器与并发
@@ -212,7 +191,7 @@ on:
   workflow_call:
   pull_request:
   push:
-    branches: [main]
+    branches: ["**"]
   merge_group:
   workflow_dispatch:
 
@@ -224,211 +203,60 @@ concurrency:
   cancel-in-progress: true
 ```
 
-不要为了“提前验证”而在所有 feature branch 上同时启用 `push` 和 `pull_request`，否则同一个 PR
-commit 会完整验证两次。Main CI 只接受 default-branch push；PR 与 merge queue 使用各自事件。
-也不要按 SHA 跨事件去重：main、PR、merge queue 和 reusable release 是不同控制面，一个被取消或
-长时间 teardown 的 runner 不能阻止另一控制面启动。
+不要按 SHA 跨事件去重。相同 SHA 的 push 与 pull request 是不同控制面；一个被取消或长时间
+teardown 的 push runner 不能阻止 required PR run 启动。
 
 ### 5.2 Blocking job 分层
 
-建议将 blocking DAG 固定为 `Health Check → Build → Build Test → Test → Required Gate`。每层内部
-按平台并行，层间通过单一、可审计的 barrier 连接：
+建议将 job 分为：
 
 | 层 | 必须包含 |
 | --- | --- |
-| Health Check | frozen dependency install、format check、lint、contract audit、repo cleanliness；按 repository/C/ES/Kotlin/Swift 等 scope 并行 |
-| Build | 主要 host/compiler/build-mode matrix；只构建产品、deployment targets 与带 source SHA/manifest/digest 的不可变产品 artifact |
-| Build Test | 在 Build 后编译/链接 test suites、instrumentation APK、sanitizer trees、conformance fixtures，并验证真实 consumer 与 pack/archive/publication 内容 |
-| Test | 每个声明平台的 correctness/conformance/benchmark，以及 sanitizer、race、emulator、browser 等纯 no-build runtime suite |
-| Required Gate | fail-closed 聚合 Test 层；保持唯一稳定 ruleset context |
+| Hygiene | frozen dependency install、format check、lint、contract audit、repo cleanliness |
+| Core | 主要 host/compiler/build-mode matrix、correctness、conformance |
+| Binding | 每个声明平台的 correctness 与 conformance |
+| Deployment | 最低/最高 deployment target、ABI/loader/packaging target |
+| Consumer | 每个发行生态的 staged/installed consumer |
+| Package audit | 实际 pack/archive/publication 内容与 metadata |
+| Runtime safety | 与项目风险匹配的 sanitizer、race、emulator 或 browser runtime |
 
 matrix 使用 `fail-fast: false`，让一次 CI 提供完整故障面。runner 和 toolchain 必须在
 `docs/toolchains.md` 固定；升级工具链与修改产品行为应尽量分离。
 
-可见 job name 是 pipeline API，不应直接显示 `ubuntu-latest`、`shared=ON`、内部 suite key 或
-artifact key。所有 matrix entry 提供独立的 `label`，统一采用
-`<Phase> - <Platform> / <Environment> · <Variant> · <Suite>`；执行逻辑继续使用 `os`、`mode`、
-`artifact-label` 等机器字段。推荐 phase vocabulary 只有：`Health Check`、`Quality Gate`、`Build`、
-`Build Test`、`Test`、`Security Scan`、`Build Release`、
-`Assemble Release`、`Release Artifacts - Ready`、`Publish Release`、`Resume Release` 与 `Report`。
-稳定 ruleset gates 是兼容性例外，保留既有 API 名。policy audit 必须拒绝 visible name 引用
-`matrix.os`、`matrix.suite`、`matrix.compiler` 等实现字段。
-
-Build Test 从 Build artifact 恢复 build tree 时，必须显式覆盖产品阶段的 tests-off 配置，并在上传
-测试产物前断言 test inventory 非空。许多原生 runner（包括 CTest）会把“发现零个测试”视为成功；
-若不增加 inventory assertion，分层 pipeline 可能出现结构完整但实际没有测试的伪绿。
-
-Hygiene 不只检查空格：需要统一 control-flow braces、include/import 顺序或其他结构规则时，应写入
-版本化 formatter 配置并固定 formatter 版本。Runtime job 必须在执行前证明其环境：Android
-emulator 安装精确 system image、匹配 host ABI 并验证 KVM；Gradle/编译器等多层封装命令应默认输出
-stacktrace 或等价详细诊断，不能让远端失败只剩一行“device/image not found”。
-Apple simulator 同样不能硬编码 hosted image 上可能消失的预创建设备。Build Test 应对 generic
-simulator destination 构建，Test consumer 再从 `simctl` 发现已安装 runtime/设备；device set 为空时
-基于已安装 runtime 创建临时设备。`OS=latest` 和固定手机名称都不是稳定 CI contract。
-
-#### 5.2.1 完整 blocking DAG
-
-迁移时不要把下图压缩成一个不断复用的 runner。箭头表示 artifact/barrier 依赖，不表示后一个 job
-可以在 workspace 中继续前一个 job 的进程或缓存：
-
-```text
-Health Check - Repository/Core/Binding ...
-                    │
-                    ▼
-         Health Checks - Ready
-                    │
-       ┌────────────┼────────────┐
-       ▼            ▼            ▼
- Build - Core   Build - Binding  Build - deployment contracts
-       └────────────┼────────────┘
-                    ▼
-              Builds - Ready
-                    │
-  ┌─────────────────┼──────────────────┐
-  ▼                 ▼                  ▼
-Build Test - suites/APK   Build Test - sanitizer   Build Test - consumers/packages
-  └─────────────────┼──────────────────┘
-                    ▼
-           Build Tests - Ready
-                    │
-       ┌────────────┴────────────┐
-       ▼                         ▼
-Test - Correctness/       Test - Benchmark
-Conformance/Runtime              │
-       │                         ▼
-       ▼                  Benchmarks - Ready
- Tests - Ready                   │
-       └────────────┬────────────┘
-                    ▼
-             Required gates | Development branch gates
-```
-
-`Health Checks - Ready`、`Builds - Ready` 和 `Build Tests - Ready` 是 phase boundary。前一层的所有
-producer 全部成功后，下一层才启动；下一层内部所有 leaf 使用独立 runner 并行。`Tests - Ready` 与
-`Benchmarks - Ready` 是 Test phase 内并列的 fail-closed barrier，后者不是可跳过的观测 pipeline；
-最终的 `Required gates` 必须同时依赖二者。
-
-#### 5.2.2 完整 job inventory
-
-下表是当前多语言参考实现的完整职责清单。迁移者可删除目标仓库不存在的平台，但必须为仍声明
-支持的 host、ABI、deployment target 和 runtime 保留等价 leaf；`<...>` 表示内容无关的替换点。
-
-| Phase | 标准可见名称 | 产物或执行合同 |
-| --- | --- | --- |
-| Health Check | `Health Check - Repository`、`Health Check - <Core>`、`Health Check - <Binding>` | frozen install、format、lint、model/contract/policy audit；不构建 release artifact |
-| Health barrier | `Health Checks - Ready` | 要求每个 repository/platform health check 为 `success` |
-| Build core | `Build - <Core> / <OS> · <Compiler> · <Linkage>` | tests-off 的 immutable product tree、manifest、digest |
-| Build binding | `Build - <Binding> / <Host> · <Publication or Package>` | package/product tree；native payload 由兼容 host 产生 |
-| Build contract | `Build - <Binding> / <Deployment Target>` | 只证明声明的 deployment target 可构建，不混入 runtime suite |
-| Build barrier | `Builds - Ready` | 原子放行全部 immutable product artifacts |
-| Build Test repository | `Build Test - Repository / Package Contents` | 对真实 pack/archive/publication 做递归 allowlist/denylist 和 metadata audit |
-| Build Test core | `Build Test - <Core> / <OS> · <Compiler> · <Linkage>` | 从对应 product artifact 构建 correctness/conformance/benchmark test tree，并断言 inventory 非空 |
-| Build Test binding | `Build Test - <Binding> / Test Products` | 生成可直接运行且不需要编译器的 test bundle/binary |
-| Build Test device | `Build Test - <Binding> / <ABI> · Instrumentation APK` | 一次构建 instrumentation package，供多个独立 device consumers 复用 |
-| Build Test safety | `Build Test - <Core> Sanitizer / <ASan|UBSan|TSan>` | 生成已插桩 test tree；不在同一 job 执行 suite |
-| Build Test consumer | `Build Test - <Binding> / Consumers` | 从 staged package 验证真实外部 consumer，不允许 workspace fallback |
-| Build Test barrier | `Build Tests - Ready` | 要求 package、consumer、全部 test products 和 sanitizer products 为 `success` |
-| Test correctness | `Test - <Platform> / <Runtime> · Correctness` | 下载一个 test artifact，在 fresh runner 只运行该 suite |
-| Test conformance | `Test - <Platform> / <Runtime> · Conformance` | 对 shared canonical fixtures 运行一个 suite |
-| Test device | `Test - <Binding> / <Device Variant> · <ABI> · <Suite>` | 每个 page size/image/suite 一个 emulator lifecycle；禁止 Gradle build/publication |
-| Test safety | `Test - <Core> Sanitizer / <ASan|UBSan|TSan>` | 下载已插桩 tree 并执行；失败保留 stacktrace/process/runtime evidence |
-| Test benchmark | `Test - <Platform> / <Runtime> · Benchmark` | benchmark 进程 required；只运行预构建 benchmark executable |
-| Benchmark barrier | `Benchmarks - Ready` | 要求每个平台 benchmark leaf 成功；metrics JSON 上传失败可 non-blocking |
-| Test barrier | `Tests - Ready` | fail-closed 聚合全部 correctness/conformance/device/sanitizer 结果，不串联 benchmark barrier |
-| Ruleset API | `Required gates` | 只由 PR/merge queue 产生，ruleset 依赖此稳定 context |
-| Main summary | `Development branch gates` | 只由 default-branch push、manual/reusable 非 PR run 产生，不满足 PR ruleset |
-
-一个四端参考实例会展开成：
-
-- Core：Linux Clang shared、Linux GCC static、macOS Clang shared、Windows static；每个配置分别拥有
-  correctness/conformance consumers，Linux 另有 ASan/UBSan/TSan 和一个 benchmark consumer。
-- Apple binding：一个 product producer、声明的 iOS/macOS deployment-target producers、一个同时
-  生成 macOS/iOS test products 的 Build Test producer；macOS/iOS correctness/conformance 和 macOS
-  benchmark 分别运行。
-- Kotlin/KMP binding：Linux 与 macOS publication producers；Linux x64/macOS arm64 host-test producers；
-  JVM、Android host、Linux Native、macOS Native correctness/conformance consumers；一个 x86_64
-  instrumentation APK producer服务 `{4 KB,16 KB} × {correctness,conformance}` 四个独立 emulator
-  consumers；JVM benchmark 独立运行。
-- ES/WASM binding：一个 product package producer、一个 test bundle producer；Node correctness、Node
-  conformance、browser correctness 与 Node benchmark 分别运行。
-
-#### 5.2.3 Artifact handoff 合同
-
-Cache 只能加速相同命令，不能承担 phase handoff。每个 producer 上传的 artifact 至少包含：
-
-```text
-artifact-manifest.json
-  schemaVersion
-  sourceSha
-  producer
-  target/host/architecture
-  buildMode/toolchain
-  payloads[]
-  testInventory[]        # test artifact 必须非空
-SHA256SUMS
-<product-or-test-payload>
-```
-
-Build Test 下载 product artifact 后必须先验证 manifest、`sourceSha` 和 digest；Test 下载 test artifact
-后再次验证，并禁止调用 compiler、linker、package publication 或其他 suite。PR artifact 的身份使用
-`github.event.pull_request.head.sha`，其他事件使用 `github.sha`；GitHub 为 PR 生成的临时 merge SHA
-不能写成 metrics 的 source identity。Artifact name 可以包含 SHA 防止串线，但 concurrency 和 workflow
-授权不能只依赖 SHA。
-
-#### 5.2.4 Event 与 pipeline ownership
-
-| Event | 执行内容 | 最终可见 context | Concurrency lane |
-| --- | --- | --- | --- |
-| `pull_request` | 完整 Health Check → Build → Build Test → Test | `Required gates` | PR number |
-| `merge_group` | 与 PR 相同的完整图 | `Required gates` | merge-group ref |
-| default-branch `push` | 同一完整图，为 baseline/健康状态产证 | `Development branch gates` | default-branch ref |
-| `workflow_call` from release | 在 tag snapshot 上执行同一完整图 | `Development branch gates`，由 release 的 `Quality Gate - Release` 消费 | tag/reusable run |
-| feature-branch `push` | 不执行完整 CI | 无 | 无 |
-| `workflow_dispatch` | 诊断或显式演练，不得伪造 PR context | `Development branch gates` | dispatch ref |
-
-Release dry run、CodeQL、dependency submission 和 privileged metrics commenter 使用独立 workflow 和
-独立 concurrency；它们不能与 PR CI 共用 SHA lane，也不能冒充 `Required gates`。
-
 ### 5.3 唯一稳定聚合 check
 
 ```yaml
-  tests-ready:
-    name: Tests - Ready
-    if: ${{ always() }}
-    needs: [test-c, test-es, test-kotlin, test-swift]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every platform test
-        env:
-          C: ${{ needs.test-c.result }}
-          ES: ${{ needs.test-es.result }}
-          KOTLIN: ${{ needs.test-kotlin.result }}
-          SWIFT: ${{ needs.test-swift.result }}
-        run: |
-          for result in "$C" "$ES" "$KOTLIN" "$SWIFT"
-          do
-            test "$result" = success
-          done
-
   required-gates:
     name: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'Required gates' || 'Development branch gates' }}
     if: ${{ always() }}
-    needs: [tests-ready, benchmarks-ready]
+    needs:
+      - hygiene
+      - core
+      - bindings
+      - consumers
+      - package-audit
     runs-on: ubuntu-latest
     steps:
-      - name: Require the complete test and benchmark layers
+      - name: Require every blocking CI job
         env:
-          TESTS_READY: ${{ needs.tests-ready.result }}
-          BENCHMARKS_READY: ${{ needs.benchmarks-ready.result }}
+          HYGIENE: ${{ needs.hygiene.result }}
+          CORE: ${{ needs.core.result }}
+          BINDINGS: ${{ needs.bindings.result }}
+          CONSUMERS: ${{ needs.consumers.result }}
+          PACKAGE_AUDIT: ${{ needs.package-audit.result }}
         run: |
-          test "$TESTS_READY" = success
-          test "$BENCHMARKS_READY" = success
+          for result in "$HYGIENE" "$CORE" "$BINDINGS" "$CONSUMERS" "$PACKAGE_AUDIT"
+          do
+            if [ "$result" != success ]; then
+              echo "A required CI dependency concluded: $result" >&2
+              exit 1
+            fi
+          done
 ```
 
 规则：
 
-- 所有 blocking job 都必须可传递到 `Tests - Ready` 或 `Benchmarks - Ready`，两个并列 barrier 都必须
-  fail-closed；不能让 skipped job 被最终 gate 当成成功。
+- 所有 blocking job 都必须出现在 `needs` 和显式结果检查中。
 - 不使用 `contains(needs.*.result, 'failure')` 之类会漏掉 skipped/cancelled 的宽松表达式。
 - push 汇总名必须是 `Development branch gates`，不能产生 ruleset 所需的 `Required gates`。
 - ruleset 不直接引用 matrix 展开后的 job 名。
@@ -437,18 +265,6 @@ Release dry run、CodeQL、dependency submission 和 privileged metrics commente
 
 CodeQL 独立运行在 `main` PR、`main` push、merge queue 和 schedule。为每种实际产品语言选择
 正确的 build mode，并用同样的 fail-closed 聚合：
-
-- C/C++、Java/Kotlin、Swift 等 compiled language 使用 repo-owned manual build，只编译真实产品
-  target；必要时禁用 build cache 并强制 rerun，让 CodeQL tracer 看到编译。
-- JavaScript/TypeScript 等无需编译的语言使用 `none`。
-- GitHub Default Setup 与 repo-owned Advanced Setup 二选一，不能同时产生重复或互相冲突的 analysis。
-- 不让 CodeQL autobuild 猜测跨平台 aggregate task；它可能选中不兼容 host target 或只命中 cache。
-
-完整安全扫描参考 inventory 为：`Security Scan - C and C++`、
-`Security Scan - Java and Kotlin`、`Security Scan - JavaScript and TypeScript`、
-`Security Scan - Swift` → `CodeQL gate`。目标仓库只保留实际产品语言，但 compiled-language leaf
-必须各自使用兼容 runner 和明确的 product-only manual build；`CodeQL gate` 必须通过 matrix 的整体
-result fail closed，不能逐个把易变 leaf name 加入 ruleset。
 
 ```yaml
   codeql-gate:
@@ -480,47 +296,20 @@ result fail closed，不能逐个把易变 leaf name 加入 ruleset。
 - 禁止 non-fast-forward；
 - 所有变更必须通过 PR；
 - strict required status checks，即 PR 必须基于最新 default branch；
-- 可按团队政策增加通用 approval count、CODEOWNERS、last-push approval 和 thread resolution。
+- 可按团队政策增加 approvals、CODEOWNERS、last-push approval 和 thread resolution。
 
-不要把 benchmark leaf、metrics artifact、coverage、release dry run 或易变化的 matrix job 名加入
-ruleset；它们通过稳定的 `Required gates` 间接聚合，ruleset 不感知内部拓扑。
-
-### 5.6 可选的 owner approval gate
-
-如果安全目标是“普通协作者不能互相批准后合并，必须由 owner/核心维护者确认”，不要把指定 team
-reviewer 直接塞进 `main quality gates`。Ruleset bypass 对整条 ruleset 生效；owner 为了批准自己的
-PR 而 bypass 时，可能连同 required CI 一起绕过。
-
-使用独立的 `owner approval gate`：
-
-- 只包含 `pull_request.required_reviewers`；
-- `file_patterns: ["*"]` 覆盖所有变更，team 的 `minimum_approvals` 至少为 1；
-- reviewer team 必须对 repo 有显式 Write 权限，否则其批准不计数；
-- team 只包含真正拥有 veto 权限的人，不能把普通 contributor 加入；
-- bypass actor 使用明确的 owner `User`，并限制为 `pull_request`；
-- `main quality gates` 继续独立要求 `Required gates` 与 `CodeQL gate`。
-
-多条 ruleset 会叠加执行，所以 owner 只能绕过 approval gate，仍必须通过主 CI。普通 Write/Maintain
-成员即使互相 approve，也不能满足 owner team approval。Repository admin、organization owner 或
-拥有 edit-rules 权限的人仍能修改控制面；repo-level ruleset 不能防御最高权限账号本身。
+不要把 benchmark、metrics、coverage、release dry run 或易变化的 matrix job 名加入 ruleset。
 
 ## 6. Main CI 与非阻塞观测
 
-同一 `ci.yml` 同时服务 PR、merge queue、default-branch push 和 release 的 `workflow_call`，但不
-接受 feature-branch push。这样避免同一 PR commit 重复执行完整 CI，同时让本地命令、PR、main 和
-tag 不会形成四套互相漂移的测试定义。
+同一 `ci.yml` 同时服务 PR、merge queue、所有开发 branch push、default-branch push和 release 的
+`workflow_call`。这样本地命令、PR、main 和 tag 不会形成四套互相漂移的测试定义。
 
 Main CI 的职责是提供 default branch 健康状态和可追溯证据；正式 release 不查询或复用该 run。
 
-可重复且耗时受控的 benchmark 应在 `Build Test` 生成可执行产物，并在 `Test` 与
-correctness/conformance 并行执行。每个平台使用独立 runner，Test consumer 只下载并执行，禁止重新
-编译；四端汇入 `Benchmarks - Ready`，与 `Tests - Ready` 并列由最终 gate fail-closed 聚合。具体
-median、memory、binary size 是 informational data，benchmark 进程异常或 workload 缺失则属于
-required test failure。
-
 建议把以下任务放在独立 scheduled/manual workflow：
 
-- 长时间 benchmark campaign、长时间 fuzz；
+- benchmark、长时间 fuzz；
 - coverage trend、binary size；
 - dependency freshness；
 - 跨版本兼容扫描；
@@ -528,94 +317,15 @@ required test failure。
 
 ### 6.1 Fork-safe PR metrics
 
-需要在 PR 写 comment 时，必须保持 producer/consumer 权限分离：
+需要在 PR 写 comment 时，必须拆成两个 workflow：
 
-1. 主 `pull_request` CI 的 benchmark leaves：`contents: read`，运行不可信 PR 代码，benchmark
-   成功与否进入 Test gate；数值收集和小型 JSON upload 使用 `continue-on-error`。
-2. 监听主 CI 的 `workflow_run` consumer：可以 `pull-requests: write`，**不 checkout、不执行 PR
-   代码**，只把
+1. `pull_request` producer：`contents: read`，运行不可信 PR 代码，只上传小型 JSON artifact。
+2. `workflow_run` consumer：可以 `pull-requests: write`，**不 checkout、不执行 PR 代码**，只把
    artifact 当数据处理。
 
 Privileged consumer 下载前必须校验 artifact name、数量、单文件大小、总大小和 expiry；解析后
-还要校验 schema、PR 关联、source SHA、允许的平台/metric 枚举与数值范围。Size/perf diff 只能使用
-PR 精确 base SHA 对应的成功 default-branch CI artifact；找不到时明确报告 baseline unavailable，不能
-退化到任意“最新 main”。Size diff 可视为确定性字节差异；不同 hosted runner run 之间的 perf/memory
-diff 只能作为方向性证据。comment 使用隐藏 marker 更新同一条记录，不重复刷屏。任何 artifact 缺失
-或非法只产生 notice/warning，不能阻塞 PR。
-
-### 6.2 Dependency graph 与 Dependabot
-
-Dependency submission 是独立的 supply-chain pipeline，不属于 PR runtime gate，也不能直接把 Gradle
-解析到的每个 configuration 当成消费者依赖。GitHub 自动 Gradle submission 会把 build 中解析到的
-传递依赖提交到一个合成 manifest；Android lint、emulator/UTP、formatter、compiler plugin、Swift
-export 等 configuration 可能因此在 UI 中显示为 `settings.gradle.kts` 的 `direct` dependency。它们
-不是 release runtime dependency，但仍是 CI/开发机实际执行的工具代码，不能简单标记为历史残留或
-`inaccurate`。
-
-推荐把依赖治理拆为两份证据：
-
-1. **Product dependency graph**：由版本化的 `.github/workflows/dependency-submission.yml` 在
-   default branch push、schedule 和 manual dispatch 上生成；只 include 真实 publication/runtime
-   configurations，并提交给 GitHub Dependency Graph/Dependabot。
-2. **Build-tool dependency audit**：独立 scheduled/manual job 解析 plugin classpath、lint、formatter、
-   emulator、test platform 和 compiler/export configurations；输出报告并跟踪 advisory，但不把这些
-   组件伪装成发布包依赖。
-
-参考 workflow 骨架：
-
-```yaml
-name: Dependency Submission
-
-on:
-  push:
-    branches: [main]
-  schedule:
-    - cron: "20 13 * * 1"
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-concurrency:
-  group: dependency-submission-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  product-graph:
-    name: Security Scan - Dependencies / Product Graph
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@<approved-pin>
-      - uses: actions/setup-java@<approved-pin>
-        with:
-          distribution: temurin
-          java-version: "<version>"
-      - uses: gradle/actions/dependency-submission@<approved-pin>
-        with:
-          dependency-graph-include-projects: "<published-project-regex>"
-          dependency-graph-include-configurations: "<runtime-or-publication-config-regex>"
-
-  build-tool-audit:
-    name: Security Scan - Dependencies / Build Toolchain
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@<approved-pin>
-      - run: scripts/repo audit build-tool-dependencies
-```
-
-`include-projects`/`include-configurations` 必须从目标 repo 的实际 Gradle configuration inventory 推导，
-不能复制其他仓库的 regex。启用手工 submission 前，先在 GitHub Advanced Security 设置中关闭同生态
-的 Automatic Dependency Submission，避免两个 snapshot producer 互相覆盖。提交后下载 workflow
-生成的 snapshot JSON，确认 product graph 中没有 lint、test、emulator、formatter 或 plugin
-classpath，并确认真实 runtime dependency 没有被误删。
-
-告警处理顺序是：先确认 dependency 属于 product runtime、build tool 还是旧 snapshot；product
-runtime 按发布风险修复，build tool 优先升级产生它的 AGP/Kotlin/formatter/test-platform 等上游插件，
-不要未经兼容验证强制覆盖内部传递版本；只有 advisory-specific reachability 经过记录后，才使用
-`vulnerable code is not used` 或有期限的 tolerable-risk disposition。新 snapshot 已不包含且 lockfile/
-plugin graph 也不再解析的组件，才属于可关闭的残留。
+还要校验 schema、PR 关联、head SHA、允许的平台/metric 枚举与数值范围。comment 使用隐藏 marker
+更新同一条记录，不重复刷屏。任何 artifact 缺失或非法只产生 notice/warning，不能阻塞 PR。
 
 ## 7. Release dry run
 
@@ -629,23 +339,7 @@ plugin graph 也不再解析的组件，才属于可关闭的残留。
 4. 上传 artifact；聚合 job 只下载这些 artifact，不从 workspace 偷取已构建输出。
 5. 需要签名的生态使用 disposable key 完成 detached signature、checksum 和 bundle audit。
 6. 所有 consumer 从 staged artifact 运行。
-7. `Release Dry Run - Ready` 使用 `if: always()`，要求每个 stage/aggregate job 为 `success`。
-
-完整 dry-run inventory 应与正式 release 的 artifact graph 一一对应：
-
-| Job | `needs` | 合同 |
-| --- | --- | --- |
-| `Health Check - Release Dry Run / Version and Credentials` | 无 | 校验 coordinated version，并证明正式 secret/environment 不可见 |
-| `Build Release - <Core> / <Host> · Dry Run` | validate | 每个原生 host 独立 stage、audit product-only artifact |
-| `Build Release - <Binding> / <Package> · Dry Run` | validate | 真实 pack/archive/publication，并运行该生态 consumer |
-| `Assemble Release - <Registry> / Dry Run` | 该 registry 的跨 host producers | 合并 publication，使用 disposable key 签名，递归审计并再次 consumer-test |
-| `Release Dry Run - Ready` | validate + 全部 Build Release/Assemble jobs | `if: always()` 且逐项要求 `success` |
-
-参考四端实例包含 C/Linux、C/macOS、Swift product-only source、ES/npm、Kotlin/Linux publications、
-Kotlin/macOS publications 六组并行 producers；只有 Maven 一类需要跨 host 聚合的生态增加
-`Assemble Release - Maven Central / Dry Run`。不存在跨 host 合并的 artifact 直接进入最终 barrier，
-但仍必须在自己的 producer 内完成 package audit 与 consumer。Dry run artifact names、目录结构和
-审计 adapter 应与正式 release 相同，仅 signing identity 和 publish side effect 不同。
+7. `Release dry-run gate` 使用 `if: always()`，要求每个 stage/aggregate job 为 `success`。
 
 Dry run 可以证明 artifact graph、签名机械流程、consumer 和内容审计，但不能证明：
 
@@ -687,19 +381,16 @@ reusable full CI on tag snapshot
         │
         ├──────────────┬──────────────┐
         ▼              ▼              ▼
- Build Release A   Build Release B   Build Release registry packages
+ stage platform A  stage platform B  stage registry packages
         └──────────────┴──────────────┘
                        │
                        ▼
-       Assemble Release / sign / audit / consumers
-                       │
-                       ▼
-              Release Artifacts - Ready
+          aggregate/sign/audit/consumers
                        │
             protected release environment
                        │
                        ▼
-          Publish Release in explicit order
+          registry publish in explicit order
                        │
                        ▼
        checksums + provenance + GitHub Release
@@ -711,51 +402,22 @@ reusable full CI on tag snapshot
 - CodeQL 保持 PR/default-branch gate；release 不等待或查询历史 CodeQL run。
 - stage job 只有 `contents: read`，不进入 release environment。
 - 第一个需要 signing/publish credential 的 job 才进入 `release` environment。
-- 所有 registry upload 必须位于 `Release Artifacts - Ready` 之后；assemble job 不得产生外部写入。
 - npm/PyPI 等支持的生态优先使用 OIDC trusted publishing，不保存长期 write token。
 - 只有 npm publish job 获得 `id-token: write`；只有 GitHub Release job 获得
   `contents: write` 和 `attestations: write`。
 - release job 下载已 stage artifact，不能重新 build。
 - 先验证所有不可逆操作的输入，再开始第一个 publish。
 - 多 registry 无法原子提交，因此必须文档化顺序、partial failure 和 recovery。
-- release artifact 必须是 product-only：禁止包含 test/benchmark/fixture/consumer source、测试二进制、
-  conformance corpus、JUnit/kotlin-test 等测试依赖。source distribution 也不例外；若生态通过 tag
-  直接提供完整仓库源码，应将它与额外上传到 Release 的 product-only source artifact 明确区分。
-- JAR/AAR/KLIB/source JAR 等容器必须递归检查 entry；AAR 内嵌 JAR 也必须展开检查。只在顶层文件名
-  上搜索 `test` 不能证明产物纯净。
-
-完整 tag-release job inventory：
-
-| Phase | 标准 job | `needs` 与权限边界 |
-| --- | --- | --- |
-| Health Check | `Health Check - Release / Tag and Versions` | 仅 tag push；strict SemVer、coordinated versions、notes、default-branch ancestry |
-| Quality Gate | `Quality Gate - Release` | `needs: validate`；本地复用 `ci.yml`，在 tag snapshot 上完整重跑 |
-| Build Release | `Build Release - <Core> / <Host>` | `needs: quality`；并行、只读、product-only artifact |
-| Build Release | `Build Release - <Binding> / <Package or Publications>` | `needs: quality`；每个兼容 host 独立 stage 和 consumer-test |
-| Assemble Release | `Assemble Release - <Registry>` | 只依赖该 registry 的 host producers；合并、签名、递归审计、staged consumer；除签名 secret 外不得外部写入 |
-| Artifact barrier | `Release Artifacts - Ready` | `if: always()`；依赖全部独立 artifacts 与 assembled bundles，逐项要求 `success` |
-| Publish stage | `Publish Release - <Registry> / Stage` | barrier 后首次 registry 写入；上传并等待 server-side validation |
-| Publish OIDC | `Publish Release - <Binding> / <Registry>` | barrier 后，按显式顺序依赖前一不可逆操作；仅此 job 获取 `id-token: write` |
-| Publish commit | `Publish Release - <Registry> / Commit` | 发布已验证 deployment，不上传新字节 |
-| Publish GitHub | `Publish Release - GitHub` | 所有 registry 已公开后，聚合原 artifacts、checksums、attestation 和 curated notes |
-| Recovery | `Resume Release - Published Artifacts` | 只在独立 manual path；验证 protected tag、source run 和 artifact digests 后幂等补齐 |
-
-正式 release 的 phase boundary 是 `validate → quality → Build Release → Assemble Release →
-Release Artifacts - Ready → Publish Release`。Registry-specific publish 可以串行，但 Build Release
-必须并行；`Publish Release` 不得包含 compiler、test source 或重新打包步骤。若签名必须使用 protected
-secret，`Assemble Release` 可以进入 release environment，但首次外部 registry write 仍必须位于
-`Release Artifacts - Ready` 之后。
 
 ### 8.3 推荐发布顺序
 
-1. Build 全部 product-only artifacts。
-2. 聚合跨 host 产物，签名、递归审计 archive 内容和依赖 metadata，运行 staged consumers。
-3. 通过 fail-closed `Release Artifacts - Ready` barrier 后，才允许首次外部写入。
-4. 对支持“上传后验证、稍后发布”的 registry 先上传并等待 `VALIDATED`。
-5. 发布 OIDC registry package。
-6. 发布已验证但尚未公开的 deployment，并等待 `PUBLISHED`。
-7. 生成总 release checksum 与 provenance attestation。
-8. 使用人工维护的 release notes 创建 GitHub Release。
+1. Build/stage/audit 全部 artifacts。
+2. 聚合跨 host 产物，签名、生成生态要求的 checksum，运行 staged consumers。
+3. 对支持“上传后验证、稍后发布”的 registry 先上传并等待 `VALIDATED`。
+4. 发布 OIDC registry package。
+5. 发布已验证但尚未公开的 deployment，并等待 `PUBLISHED`。
+6. 生成总 release checksum 与 provenance attestation。
+7. 使用人工维护的 release notes 创建 GitHub Release。
 
 不要自动生成面向用户的 release notes，也不要把内部 phase、acceptance log 或 CI transcript
 写入 release notes。
@@ -798,8 +460,6 @@ secret，`Assemble Release` 可以进入 release environment，但首次外部 r
 | --- | --- |
 | build/test/stage | `contents: read` |
 | CodeQL analyze | `contents: read`, `actions: read`, `security-events: write` |
-| Product dependency submission | `contents: write`，仅 default branch/schedule/manual workflow |
-| Build-tool dependency audit | `contents: read` |
 | PR metrics commenter | `actions: read`, `contents: read`, `issues: write`, `pull-requests: write` |
 | OIDC registry publish | `contents: read`, `id-token: write` |
 | GitHub Release/attestation | `contents: write`, `id-token: write`, `attestations: write` |
@@ -822,18 +482,10 @@ secret，`Assemble Release` 可以进入 release environment，但首次外部 r
 ### 10.1 前置条件
 
 - 目标 repo 已创建，workflow 和 adapter 已通过至少一次手动/PR 验证。
-- 已提交 `ci.yml`、`codeql.yml`、`release-dry-run.yml`、`release.yml`；需要 dependency graph 或 PR
-  metrics 时，同时提交 `dependency-submission.yml`、`pr-metrics-comment.yml`。Bootstrap 只绑定这些
-  workflow 产生的稳定 contexts，不生成业务相关 YAML。
 - 执行者拥有 repo admin 权限，已安装并登录 `gh`，本机有 `jq`。
 - 已确定 release reviewer；若只有一个 release operator，不能同时开启 self-review prevention。
 - 下方脚本只配置 GitHub 控制面，不上传 secret，不配置外部 registry ownership/trusted publisher。
-- 可选 owner veto 只适用于 organization-owned repo；启用时必须确认 team 中每个人都应获得 repo
-  Write 权限和全仓 approval 权限。
-- 对 organization ruleset 或企业策略有额外要求时，应在脚本中扩展 actor 与 scope。
-- GitHub 尚无被本脚本依赖的跨 plan、稳定 API 用于安全切换 Automatic Dependency Submission；若
-  采用受控手工 submission，先按第 6.2 节在 Advanced Security 设置中关闭自动 submission，再激活
-  版本化 workflow，并把这一步记录在 live-policy 验收中。
+- 对 organization ruleset、team reviewer 或企业策略有额外要求时，应在脚本中替换 `User` actor。
 
 ### 10.2 Bootstrap 脚本
 
@@ -850,21 +502,10 @@ set -euo pipefail
 DEFAULT_BRANCH=${DEFAULT_BRANCH:-main}
 RELEASE_ENVIRONMENT=${RELEASE_ENVIRONMENT:-release}
 MAIN_RULESET_NAME=${MAIN_RULESET_NAME:-main quality gates}
-OWNER_REVIEW_TEAM=${OWNER_REVIEW_TEAM:-}
-OWNER_REVIEW_BYPASS_USER=${OWNER_REVIEW_BYPASS_USER:-$RELEASE_REVIEWER}
-OWNER_REVIEW_RULESET_NAME=${OWNER_REVIEW_RULESET_NAME:-owner approval gate}
 TAG_RULESET_NAME=${TAG_RULESET_NAME:-release tag protection}
 TAG_PATTERN=${TAG_PATTERN:-v*.*.*}
-# Mature-repository defaults: full enforcement, no standing bypass. A
-# re-run with only the required inputs must never weaken protections that
-# are already active; pass ALLOW_PROTECTION_DOWNGRADE=true explicitly to
-# downgrade a live ruleset (initial bootstrap of a fresh repository can
-# still opt into RULESET_ENFORCEMENT=evaluate while CI stabilizes).
-RULESET_ENFORCEMENT=${RULESET_ENFORCEMENT:-active}
+RULESET_ENFORCEMENT=${RULESET_ENFORCEMENT:-evaluate}
 PREVENT_SELF_REVIEW=${PREVENT_SELF_REVIEW:-false}
-MERGE_QUEUE=${MERGE_QUEUE:-true}
-MAIN_ADMIN_BYPASS=${MAIN_ADMIN_BYPASS:-false}
-ALLOW_PROTECTION_DOWNGRADE=${ALLOW_PROTECTION_DOWNGRADE:-false}
 
 case "$RULESET_ENFORCEMENT" in
   disabled|evaluate|active) ;;
@@ -876,37 +517,10 @@ case "$PREVENT_SELF_REVIEW" in
   *) echo "PREVENT_SELF_REVIEW must be true or false" >&2; exit 2 ;;
 esac
 
-for flag in MERGE_QUEUE MAIN_ADMIN_BYPASS; do
-  case "${!flag}" in
-    true|false) ;;
-    *)
-      echo "$flag must be true or false" >&2
-      exit 2
-      ;;
-  esac
-done
-
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 reviewer_id=$(gh api "users/$RELEASE_REVIEWER" --jq .id)
-repo_owner=${GH_REPO%%/*}
-if [ "$repo_owner" = "$GH_REPO" ]; then
-  echo "GH_REPO must use owner/repository form" >&2
-  exit 2
-fi
-
-owner_review_team_id=
-owner_review_bypass_id=
-if [ -n "$OWNER_REVIEW_TEAM" ]; then
-  owner_review_team_id=$(gh api "orgs/$repo_owner/teams/$OWNER_REVIEW_TEAM" --jq .id)
-  owner_review_bypass_id=$(gh api "users/$OWNER_REVIEW_BYPASS_USER" --jq .id)
-  # Required team approvals count only when the team has explicit Write access.
-  gh api --method PUT \
-    "orgs/$repo_owner/teams/$OWNER_REVIEW_TEAM/repos/$GH_REPO" \
-    -f permission=push >/dev/null
-fi
-
 encoded_environment=$(jq -rn --arg value "$RELEASE_ENVIRONMENT" '$value | @uri')
 actual_default=$(gh api "repos/$GH_REPO" --jq .default_branch)
 if [ "$actual_default" != "$DEFAULT_BRANCH" ]; then
@@ -914,34 +528,13 @@ if [ "$actual_default" != "$DEFAULT_BRANCH" ]; then
   exit 1
 fi
 
-# Linear history: squash is the only merge method. The title/message
-# settings are repository defaults — a direct merge can still edit them
-# before confirming — while merge-queue commits apply them mechanically
-# ("title (#N)" + description body).
-gh api --method PATCH "repos/$GH_REPO" \
-  -F allow_squash_merge=true \
-  -F allow_merge_commit=false \
-  -F allow_rebase_merge=false \
-  -f squash_merge_commit_title=PR_TITLE \
-  -f squash_merge_commit_message=PR_BODY >/dev/null
-echo "merge policy: squash-only; squash messages default to the PR title"
-
-enforcement_rank() {
-  case "$1" in
-    active) echo 2 ;;
-    evaluate) echo 1 ;;
-    *) echo 0 ;;
-  esac
-}
-
 upsert_ruleset() {
   local name=$1
   local payload=$2
   local ids
   local count
 
-  ids=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-    "repos/$GH_REPO/rulesets" --paginate \
+  ids=$(gh api "repos/$GH_REPO/rulesets" --paginate \
     --jq ".[] | select(.name == \"$name\") | .id")
   count=$(printf '%s\n' "$ids" | sed '/^$/d' | wc -l | tr -d ' ')
 
@@ -949,40 +542,9 @@ upsert_ruleset() {
     echo "multiple rulesets named '$name'; refusing ambiguous update" >&2
     exit 1
   elif [ "$count" -eq 1 ]; then
-    # Fail closed on protection downgrades: a maintenance re-run must
-    # not weaken a live ruleset (lowering enforcement, or granting a
-    # bypass to any actor that does not already hold one — including
-    # swapping one actor for another), unless the operator says so
-    # explicitly.
-    if [ "$ALLOW_PROTECTION_DOWNGRADE" != "true" ]; then
-      local current_enforcement requested_enforcement
-      local current_actors requested_actors new_bypasses
-      current_enforcement=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-        "repos/$GH_REPO/rulesets/$ids" --jq .enforcement)
-      requested_enforcement=$(jq -r .enforcement "$payload")
-      if [ "$(enforcement_rank "$requested_enforcement")" -lt "$(enforcement_rank "$current_enforcement")" ]; then
-        echo "refusing to downgrade '$name' from $current_enforcement to $requested_enforcement;" >&2
-        echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
-        exit 1
-      fi
-      current_actors=$(gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-        "repos/$GH_REPO/rulesets/$ids" \
-        --jq '[.bypass_actors[]? | {actor_id, actor_type, bypass_mode}]')
-      requested_actors=$(jq \
-        '[.bypass_actors[]? | {actor_id, actor_type, bypass_mode}]' "$payload")
-      new_bypasses=$(jq -n --argjson current "$current_actors" \
-        --argjson requested "$requested_actors" '$requested - $current | length')
-      if [ "$new_bypasses" -gt 0 ]; then
-        echo "refusing to grant bypass on '$name' to $new_bypasses actor(s) not currently granted;" >&2
-        echo "set ALLOW_PROTECTION_DOWNGRADE=true to override deliberately" >&2
-        exit 1
-      fi
-    fi
-    gh api -H "X-GitHub-Api-Version: 2026-03-10" --method PUT \
-      "repos/$GH_REPO/rulesets/$ids" --input "$payload" >/dev/null
+    gh api --method PUT "repos/$GH_REPO/rulesets/$ids" --input "$payload" >/dev/null
   else
-    gh api -H "X-GitHub-Api-Version: 2026-03-10" --method POST \
-      "repos/$GH_REPO/rulesets" --input "$payload" >/dev/null
+    gh api --method POST "repos/$GH_REPO/rulesets" --input "$payload" >/dev/null
   fi
 }
 
@@ -1032,20 +594,14 @@ if [ "$policy_count" -ne 1 ]; then
   exit 1
 fi
 
-# The merge queue keeps every PR's required checks green against the
-# latest default branch and squashes with the repository's message
-# defaults. The admin bypass mirrors the operator's standing exception;
-# disable either through its variable for the hardened shape.
 jq -n \
   --arg name "$MAIN_RULESET_NAME" \
-  --arg enforcement "$RULESET_ENFORCEMENT" \
-  --argjson queue "$MERGE_QUEUE" \
-  --argjson admin_bypass "$MAIN_ADMIN_BYPASS" '{
+  --arg enforcement "$RULESET_ENFORCEMENT" '{
     name: $name,
     target: "branch",
     enforcement: $enforcement,
     conditions: {ref_name: {exclude: [], include: ["~DEFAULT_BRANCH"]}},
-    rules: ([
+    rules: [
       {type: "deletion"},
       {type: "non_fast_forward"},
       {type: "pull_request", parameters: {
@@ -1053,7 +609,7 @@ jq -n \
         require_last_push_approval: false,
         dismiss_stale_reviews_on_push: false,
         required_approving_review_count: 0,
-        required_review_thread_resolution: true
+        required_review_thread_resolution: false
       }},
       {type: "required_status_checks", parameters: {
         do_not_enforce_on_create: true,
@@ -1063,53 +619,10 @@ jq -n \
           {context: "CodeQL gate"}
         ]
       }}
-    ] + (if $queue then [
-      {type: "merge_queue", parameters: {
-        merge_method: "SQUASH",
-        grouping_strategy: "ALLGREEN",
-        max_entries_to_build: 5,
-        min_entries_to_merge: 1,
-        max_entries_to_merge: 5,
-        min_entries_to_merge_wait_minutes: 5,
-        check_response_timeout_minutes: 60
-      }}
-    ] else [] end)),
-    bypass_actors: (if $admin_bypass then [
-      {actor_id: 5, actor_type: "RepositoryRole", bypass_mode: "always"}
-    ] else [] end)
+    ],
+    bypass_actors: []
   }' >"$tmp/main-ruleset.json"
 upsert_ruleset "$MAIN_RULESET_NAME" "$tmp/main-ruleset.json"
-
-if [ -n "$OWNER_REVIEW_TEAM" ]; then
-  jq -n \
-    --arg name "$OWNER_REVIEW_RULESET_NAME" \
-    --arg enforcement "$RULESET_ENFORCEMENT" \
-    --argjson team_id "$owner_review_team_id" \
-    --argjson owner_id "$owner_review_bypass_id" '{
-      name: $name,
-      target: "branch",
-      enforcement: $enforcement,
-      conditions: {ref_name: {exclude: [], include: ["~DEFAULT_BRANCH"]}},
-      rules: [{type: "pull_request", parameters: {
-        require_code_owner_review: false,
-        require_last_push_approval: false,
-        dismiss_stale_reviews_on_push: false,
-        required_approving_review_count: 0,
-        required_reviewers: [{
-          file_patterns: ["*"],
-          minimum_approvals: 1,
-          reviewer: {id: $team_id, type: "Team"}
-        }],
-        required_review_thread_resolution: false
-      }}],
-      bypass_actors: [{
-        actor_id: $owner_id,
-        actor_type: "User",
-        bypass_mode: "pull_request"
-      }]
-    }' >"$tmp/owner-review-ruleset.json"
-  upsert_ruleset "$OWNER_REVIEW_RULESET_NAME" "$tmp/owner-review-ruleset.json"
-fi
 
 jq -n \
   --arg name "$TAG_RULESET_NAME" \
@@ -1141,22 +654,15 @@ echo "Repository control plane reconciled with enforcement=$RULESET_ENFORCEMENT"
 ```sh
 GH_REPO=<owner/repo> \
 RELEASE_REVIEWER=<login> \
-OWNER_REVIEW_TEAM=<team-slug> \
-OWNER_REVIEW_BYPASS_USER=<owner-login> \
 RULESET_ENFORCEMENT=evaluate \
 scripts/bootstrap-repository.sh
 ```
 
-不需要 owner veto 时省略两个 `OWNER_REVIEW_*` 变量，脚本不会创建或删除 owner gate。提供 team
-slug 会显式授予该 team Write 权限；这不是只读 reviewer 标签，执行前必须审计 team membership。
-
-完成第 12 节的远端验证后，用同一命令把已配置 ruleset 切换到 active 目标状态：
+完成第 12 节的远端验证后，用同一命令把两个 ruleset 切换到 active 目标状态：
 
 ```sh
 GH_REPO=<owner/repo> \
 RELEASE_REVIEWER=<login> \
-OWNER_REVIEW_TEAM=<team-slug> \
-OWNER_REVIEW_BYPASS_USER=<owner-login> \
 RULESET_ENFORCEMENT=active \
 scripts/bootstrap-repository.sh
 ```
@@ -1165,11 +671,6 @@ scripts/bootstrap-repository.sh
 直接切换为 active。如果只有 reviewer 本人可以发布，`PREVENT_SELF_REVIEW=true` 会造成死锁；
 有独立 reviewer/team 后再开启。脚本不会删除未知 deployment policies，而是在发现额外策略时
 fail closed。
-
-脚本默认 `RULESET_ENFORCEMENT=active` 且 `MAIN_ADMIN_BYPASS=false`：维护性 re-run 不会把已
-active 的 ruleset 降级为 evaluate/disabled，也不会给现有 ruleset 新增 bypass actor；确需放宽时
-显式传 `ALLOW_PROTECTION_DOWNGRADE=true`。首次迁移按上文显式传 `RULESET_ENFORCEMENT=evaluate`
-即可。
 
 ## 11. 外部 registry 一次性设置
 
@@ -1207,38 +708,21 @@ secret name，不记录 value。
 - [ ] 填写 binding/target/artifact 清单。
 - [ ] 实现 `scripts/repo` 全部适用命令。
 - [ ] 固定 toolchain、wrapper、lockfile 和 runner。
-- [ ] 从 clean checkout 运行 format、lint、correctness、conformance 和 consumer；C/C++ formatter 若要求
-      control-statement braces，必须由 formatter 配置和 CI diff check 自动执行。
-- [ ] 记录每个 native/cinterop target 的兼容 host，并确认 release matrix 在原生 host 构建它。
+- [ ] 从 clean checkout 运行 format、lint、correctness、conformance 和 consumer。
 - [ ] 从 staged artifact 运行 consumer，证明没有 workspace fallback。
 - [ ] 运行 package audit，检查 licenses、metadata、allowlist/denylist。
 - [ ] 运行 release dry run，证明 release secrets 为空且 disposable signing 成功。
 - [ ] 审计 workflow permissions、trigger、concurrency、stable gate names 和 release DAG。
-- [ ] 枚举 product runtime/publication 与 build-tool Gradle configurations；若使用手工 dependency
-      submission，关闭同生态自动 submission 并检查 snapshot JSON。
 
 ### 12.2 远端 evaluate 验证
 
 - [ ] 以 `RULESET_ENFORCEMENT=evaluate` 执行 bootstrap。
 - [ ] 创建测试 PR，确认只有 PR run 产生 `Required gates`。
-- [ ] 向已打开 PR 的 feature branch push，确认只产生 `pull_request` CI，不产生 `push` CI。
-- [ ] 合并测试 PR，确认 default-branch push 产生 `Development branch gates`。
+- [ ] 同时 push 同一 branch，确认其汇总名为 `Development branch gates`。
 - [ ] 确认 `Required gates` 覆盖每个 blocking job，并在 job cancelled/skipped 时失败。
 - [ ] 确认全部 CodeQL language 成功后才产生绿色 `CodeQL gate`。
-- [ ] 对 compiled language 验证 CodeQL manual build 实际重编产品；关闭会重复或错误 autobuild 的
-      Default Setup，Java/Kotlin 不得只命中 build cache。
-- [ ] Android build producer 只生成目标 ABI APK、manifest 与 digest；四个独立 test consumers 分别覆盖
-      4K/16K correctness/conformance，只安装单一 image 并验证 architecture、KVM 与 acceleration，且
-      consumer 不含 Gradle/JDK/NDK/CMake/publication；失败时上传 emulator、adb 与 instrumentation evidence。
 - [ ] 若使用 merge queue，实际触发一次 `merge_group` 并确认两个 required contexts。
-- [ ] 若启用 owner gate，用非 owner PR 证明只有指定 team approval 能解锁；用 owner PR 证明只能
-      bypass approval gate，`Required gates` 与 `CodeQL gate` 仍然必须通过。
-- [ ] 确认 benchmark leaves 进入 `Benchmarks - Ready`，并与 `Tests - Ready` 并列汇入最终 gate；metrics
-      leaf 名和 dry-run 不在 ruleset 中。
-- [ ] 下载四端 metrics JSON，确认 `sourceSha` 是 PR head；基线只能来自 PR 精确 base SHA 的成功
-      default-branch CI，首次迁移没有 baseline 时必须明确报告 unavailable。
-- [ ] 确认 product dependency graph 不含 lint、formatter、emulator、test platform、compiler plugin，
-      build-tool audit 又能单独枚举并跟踪这些实际执行的工具依赖。
+- [ ] 确认 metrics/benchmark/dry-run 不在 ruleset 中。
 - [ ] 确认 fork PR 无 write token、environment secret 或 privileged code execution。
 - [ ] 运行远端 release dry run，下载并独立检查 artifact。
 
@@ -1246,7 +730,6 @@ secret name，不记录 value。
 
 - [ ] 用 `RULESET_ENFORCEMENT=active` 再执行 bootstrap。
 - [ ] 证明绕过 PR、缺失 required check、过期 branch 和 force-push 都被阻止。
-- [ ] 审计 owner-review team membership 与 repo 权限；确认普通 Write/Maintain actor 不在 bypass list。
 - [ ] 证明非 SemVer tag 即使匹配宽松 glob，也会在 validate job 失败。
 - [ ] 证明 release environment 只有一个 `v*.*.*` tag policy。
 - [ ] 证明普通 branch/manual workflow 不能获得 release environment。
@@ -1261,8 +744,6 @@ secret name，不记录 value。
 ```sh
 gh api repos/<owner>/<repo>/actions/permissions/workflow
 gh api repos/<owner>/<repo>/rulesets
-gh api repos/<owner>/<repo>/rules/branches/main
-gh api repos/<owner>/<repo>/teams
 gh api repos/<owner>/<repo>/environments/release
 gh api repos/<owner>/<repo>/environments/release/deployment-branch-policies
 gh secret list --repo <owner/repo> --env release
@@ -1275,19 +756,12 @@ workflow permission 或 secret name 变更，都应同步更新 recipe、CI poli
 
 `scripts/repo audit ci` 至少检查：
 
-- `ci.yml` 同时声明 `workflow_call`、`pull_request`、仅 default branch 的 push、`merge_group`。
+- `ci.yml` 同时声明 `workflow_call`、`pull_request`、push、`merge_group`。
 - concurrency 包含 event name 和 PR number/ref，且 `cancel-in-progress: true`。
 - PR/merge queue 的稳定名为 `Required gates`，push 名为 `Development branch gates`。
 - 聚合 job `if: always()` 且覆盖全部 blocking dependencies。
 - `CodeQL gate` 存在且 fail closed。
 - ruleset required contexts 精确等于 `Required gates`、`CodeQL gate`。
-- 若启用 owner veto，独立 ruleset 只含 team reviewer rule，team 至少要求一次全仓 approval，且
-  bypass actor 精确为 owner `User` 的 `pull_request` bypass；主 CI ruleset 不包含该 reviewer。
-- Android emulator job 固定 runner architecture，安装精确 system images，验证 acceleration，并让
-  Gradle device-test adapter 启用 stacktrace。
-- 含 cinterop 的 KMP target 禁止伪跨编译时，release/CI 必须在兼容原生 host 提供等价构建证据。
-- CodeQL compiled-language entry 使用与项目相符的 manual build；Default/Advanced Setup 不重复运行。
-- formatter policy 包含项目要求的结构规则，例如单行 `if/else/for/while` 自动补 braces。
 - release dry run 无 environment、无 write permission、无 secret reference。
 - release 只接受 tag push；若保留 recovery dispatch，其 job 与正常 publish DAG 严格隔离。
 - release validate 严格检查 tag/version/notes/default-branch ancestry。
@@ -1296,10 +770,6 @@ workflow permission 或 secret name 变更，都应同步更新 recipe、CI poli
 - OIDC、contents write、attestations write 只出现在需要的 job。
 - tag ruleset限制 creation/update/deletion，environment 只接受一个 SemVer tag policy。
 - workflow action 引用使用组织批准的 pinning 策略，并由依赖更新工具维护。
-- product dependency submission 只在 default branch/schedule/manual 运行，include 规则来自实际
-  publication/runtime configurations；同生态不存在互相竞争的自动与手工 snapshot producer。
-- metrics producer 的 `sourceSha` 使用 PR head 或当前非 PR SHA；privileged commenter 只接受精确 base
-  SHA baseline，不接受临时 merge SHA 或任意最新 main。
 
 策略 audit 应验证安全结果和数据流，不应僵化无关的 YAML 排版、job 顺序或当前 Action major。
 
@@ -1347,17 +817,15 @@ consumer；consumer 只能看到 staged/public artifact，不能看到 repo 私�
 
 - SHA 必须写入 artifact metadata、provenance、attestation 和日志，用于证明“验证了哪些字节”。
 - SHA 不得作为跨 event concurrency key；使用 `event_name + PR number/ref`。
-- Feature branch 不运行 push CI；该 commit 由 `pull_request` 或 `merge_group` 验证，避免重复计算。
 - PR/merge queue 才拥有 `Required gates`；push 使用不同的 `Development branch gates`。
 - Tag release 从该不可变 tag 直接调用 reusable CI，在当前 snapshot 上重新验证。
 - CodeQL 等 merge-time gate 可以留在 PR/main；release 不通过 SHA 查询或等待其历史 run。
 - Recovery 可以引用 source run，但必须验证 workflow、event、tag、head SHA、conclusion、artifact
   digest 和 allowlist，而不是“SHA 相同就信任”。
 
-**验证方法**：向已打开 PR 的 feature branch push，只应产生 `pull_request` run；合并后同一 workflow
-通过 default-branch push 产生 main CI。主动取消 main、PR、merge queue 或 reusable release 中的一条
-run，不应影响其他事件 lane。创建 release candidate 时，隐藏或删除历史 branch check 不应影响 tag
-snapshot 的完整 build/test，但 source tag、artifact provenance 仍必须显示精确 SHA。
+**验证方法**：对同一 commit 同时制造 push 与 PR run，主动取消其中一个；PR gate 必须仍能启动并
+独立结束。创建 release candidate 时，隐藏或删除历史 branch check 不应影响 tag snapshot 的完整
+build/test，但 source tag、artifact provenance 仍必须显示精确 SHA。
 
 ### 14.3 Stable gate name 是仓库的控制面 API
 
@@ -1448,88 +916,13 @@ operator 同时开启 prevent self-review，导致 default branch 或 release en
 再启用 active enforcement。Reviewer、bypass actor 和 self-review policy 必须保证至少存在一条经过
 审查的恢复路径。
 
-### 14.11 平台 CI 必须固定执行边界并留下可诊断证据
-
-**Android managed device**：曾出现 Gradle 只报告“找不到 image/device”，但 workflow 安装的 SDK
-package、managed-device DSL 最终选择的 ABI、runner architecture 和 AGP setup task 输入并不一致。
-设备名称存在不代表对应 image 存在。永久规则是显式映射 host architecture 到 tested ABI，安装精确
-API、image source、page-size variant 与 ABI，启动前验证 KVM/acceleration，并让 Gradle device-test
-adapter 带 `--stacktrace`。如果插件版本没有把 DSL 属性传入 setup task，只能使用版本受限、带注释
-和远端双设备回归的 workaround，不能靠反复 rerun 掩盖。
-
-更深一层的错误是只把两个 emulator 拆成 matrix，却仍让每个 leaf 重复 Gradle build、JNI/全部 ABI、
-publication、device setup、correctness 和 conformance。那只是移动故障，不是隔离故障域。永久规则是
-host-specific build producers 先并行生成带 manifest/digest 的不可变 test products；然后按
-一个显式 artifact-ready barrier 原子放行，再按 platform/device/image/page-size/suite 建独立
-`fail-fast: false` consumers。consumer 只能下载 artifact、
-启动运行环境并调用 no-build runner；不得出现 compiler、publication 或其他 suite。Android 应由一个
-x86_64 APK producer 服务 `{4K,16K} × {correctness,conformance}` 四个无 snapshot consumers；Swift
-使用 `--skip-build`/`test-without-building`，C 传递 CTest tree，Kotlin 直接运行 JVM/Native test
-products，ES 只运行预构建 dist。cache 不能代替 artifact，单一 runner 也不能跨 host 伪造 native
-build。失败后保存 emulator/process/logcat/instrumentation 或对应原生 runner evidence。Ruleset 仍只
-引用稳定聚合 gate，不直接引用可演进的 leaf names。
-
-**KMP cinterop**：Linux 配置阶段尝试为 macOS cinterop target 生成 klib 会产生 cross-compilation
-misconfiguration；这不等于 Android/JVM artifact 已损坏，也不能通过删除 macOS target“修复”。禁止
-不受支持的 klib cross compilation，并在 macOS runner 真实 build/test/stage 该 target；release
-consumer 必须证明聚合 publication 同时包含各 host 应负责的 payload。
-
-**CodeQL compiled language**：autobuild 可能选择错误 Gradle task、复用 cache，或触发与产品无关的
-cross-platform aggregate build。一个仓库只能有一套有意设计的 CodeQL setup；compiled language
-使用 manual build，Java/Kotlin 等需要 `--no-build-cache --rerun-tasks` 或等价机制证明 tracer 看到了
-真实编译，脚本语言才使用 `none`。Default Setup 与 repo-owned Advanced Setup 不应重复启用。
-
-**C/C++ hygiene**：只运行默认 clang-format 不会自动建立“所有单行控制语句必须有 braces”的结构
-规则。将 `InsertBraces: true` 或目标 formatter 的等价选项写入版本化配置，固定支持该选项的 formatter
-版本，对整个受管源码集机械格式化，并让 CI 运行 format check。不要依靠 reviewer 逐行指出漏掉的
-`if/else/for/while` braces。
-
-### 14.12 Owner veto 必须与主质量 gate 分离
-
-**走过的弯路**：把 owner team 直接设为主 ruleset 的 required reviewer。这样 owner 自己开的 PR
-无法自审；更危险的是，为 owner 添加 ruleset bypass 会同时允许其绕过同一 ruleset 中的 required
-CI、force-push 或其他保护。用 CODEOWNERS 代替也会把“安全 veto”误表达成文件 ownership。
-
-**形成的规则**：指定 team reviewer 放入只含 pull-request review 的独立 ruleset；team 获得显式
-Write 权限且只包含真正的 veto holders。Owner 以明确 `User` actor 获得 `pull_request` bypass，主
-ruleset 继续独立强制 stable CI contexts。Checked-in recipe、live API 和 policy audit 必须同时验证
-team ID、file pattern、minimum approvals、owner ID 与 bypass mode。
-
-**验证方法**：用普通 collaborator PR 证明任意非 owner approval 都不能解锁；用 owner PR 证明其可
-bypass reviewer gate，但失败或缺失的 `Required gates`/`CodeQL gate` 仍阻止 merge。再次回读所有
-作用于 default branch 的有效 rules，确认不是只检查单个 ruleset 的 JSON。
-
-### 14.13 Dependency snapshot 不是 release dependency manifest
-
-**走过的弯路**：启用 Gradle Automatic Dependency Submission 后，Dependabot 把 Netty、BouncyCastle、
-logging、HTTP client 等组件都显示为 `settings.gradle.kts` 的 direct dependency，看起来像产品发布包
-直接依赖了它们。实际追踪 lockfile/configuration 和提交的 snapshot 后，这些组件来自 Android
-lint、UTP/emulator、formatter、compiler/plugin 或 export classpath；最终 POM/module metadata 和
-JAR/AAR/archive 中并不存在它们。
-
-**形成的规则**：自动 dependency graph 证明“构建解析/执行过这些代码”，不自动证明“消费者会
-安装这些代码”。Product dependency submission 必须限定真实 publication/runtime configurations；
-build-tool dependencies 另行审计，不能为了让告警消失而完全隐藏。UI 中 synthetic manifest 或
-`direct` relationship 不能替代 configuration、lockfile、published metadata 和 archive entry 四层
-证据。
-
-**验证方法**：下载 submission snapshot JSON，逐项追踪到 configuration；扫描最终 POM/module/
-package metadata 与递归 archive entries；升级上游 toolchain 后重新提交 product graph。只有新的
-snapshot、当前 lockfile/plugin graph 和发布产物都不再出现该组件时，才能判断为已清理的残留。
-
-### 14.14 快速反模式索引
+### 14.11 快速反模式索引
 
 | 错误 | 后果 | 修复 |
 | --- | --- | --- |
 | 为了跨端一致而复制另一平台的构建/API 外形 | package、IDE 或 runtime 行为不符合生态 | 共享语义 spec，binding follow 平台最佳实践 |
 | ruleset 直接要求 matrix job 名 | 平台增减即破坏 merge | 只要求稳定聚合 gate |
-| owner team reviewer 与主 CI 放在同一 ruleset | owner bypass 会同时绕过 CI | reviewer 使用独立 ruleset，owner 仅 PR bypass |
-| feature branch 同时触发 push 与 PR CI | 同一 commit 重复执行完整 matrix | push 只匹配 default branch，feature branch 由 PR/merge queue 验证 |
 | push 和 PR 共用 SHA concurrency | push teardown 可饿死 PR | 按 event + PR/ref 分 lane |
-| Android device profile 存在就假设 image 可用 | runner 找不到 ABI/image 或无 acceleration | 安装精确 image，固定 ABI，验证 KVM 并输出 stacktrace |
-| Linux 强行 cross compile 含 cinterop 的 macOS klib | target 被禁用或产生误导 warning | 禁止伪跨编译，在 macOS host 真实构建 |
-| CodeQL autobuild 扫整个跨平台 aggregate | 选错 task、命中 cache 或构建失败 | compiled language 使用 repo-owned manual build |
-| clang-format 未配置结构性 braces | 单行控制语句持续漏 braces | 固定 formatter 并启用 InsertBraces/等价规则 |
 | 把 SHA 当成历史 check-run 的授权凭据 | 形成缺失 context 或验证循环 | tag snapshot 重新运行 reusable CI |
 | 聚合只检查 `failure` | skipped/cancelled 可能放行 | 要求每个结果精确为 `success` |
 | release 查询 main/PR check-run | 发布依赖历史时序和可变状态 | tag snapshot 重新调用 reusable CI |
@@ -1537,7 +930,6 @@ snapshot、当前 lockfile/plugin graph 和发布产物都不再出现该组件�
 | publish job 重新 build | 发布字节未被 consumer 验证 | 下载 stage artifact 原样发布 |
 | 只跑 workspace consumer | 无法发现 package/link/loader 问题 | clean temp project 消费 staged artifact |
 | privileged `workflow_run` checkout PR | 不可信代码获得 write token | privileged side 只解析严格校验的数据 |
-| 自动 Gradle dependency snapshot 当成发布 manifest | 工具依赖被误报为消费者依赖，或告警被错误忽略 | 过滤 product configurations，并单独审计 build toolchain |
 | `v*.*.*` 被当成 SemVer regex | 非法 tag 可能触发 workflow | validate job 做 exact parser + `vVERSION` |
 | tag 可移动或复用 | provenance 与 registry 不再可追溯 | ruleset 禁止 update/delete，新字节新版本 |
 | 从 main dispatch 后只在 step checkout tag | tag-only environment 仍看到 main ref | rerun tag run，或以受保护 tag 作为 dispatch ref |
@@ -1550,14 +942,8 @@ snapshot、当前 lockfile/plugin graph 和发布产物都不再出现该组件�
 
 - 本地 adapter、PR、main、merge queue 和 tag release 调用同一套可复现命令合同。
 - 每个声明支持的 binding/target 都有 correctness、shared conformance 和真实 consumer 证据。
-- Native/cinterop 与 emulator target 都在兼容 host/image/ABI 上取得真实执行证据，失败日志可诊断。
 - `Required gates` 与 `CodeQL gate` 是 active ruleset 的唯一 required contexts。
-- 若启用 owner veto，approval 使用独立 ruleset，owner bypass 不影响主 CI，team membership 已审计。
 - 非阻塞观测无法影响 merge，fork PR 无法跨越 trust boundary。
-- Benchmark execution 通过 `Benchmarks - Ready` 进入 required DAG；Size/Perf Diff 只比较精确
-  head/base SHA，hosted-runner 性能差异保持 informational。
-- Product dependency graph 与 build-tool inventory 分离；Dependabot 不把 CI 工具依赖冒充发布依赖，
-  工具链 advisory 也没有被静默隐藏。
 - Release dry run 不读取 credential，却完整复现 stage/sign/audit/consumer graph。
 - 正式 release 在不可变 tag snapshot 上自证，并只发布已验证字节。
 - Release environment、tag ruleset、OIDC/secret、signing 和 recovery 均经过实际演练。
@@ -1571,7 +957,7 @@ snapshot、当前 lockfile/plugin graph 和发布产物都不再出现该组件�
 | 通用职责 | 当前仓库实现 | 迁移规则 |
 | --- | --- | --- |
 | 根级 adapter | `package.json` 的 `pnpm` scripts 加 `scripts/*` | 收敛为目标 repo 的 `scripts/repo`，保留原生构建器 |
-| Health checks | `ci.yml` 的 repository/C/ES/Kotlin/Swift health checks | 替换 formatter/linter，保留 frozen install、contract 与 policy audits |
+| Hygiene | `ci.yml` 的 `hygiene` | 替换 formatter/linter，保留 frozen install 与 policy audits |
 | Package audit | `package-audit` | 对目标生态检查真实 pack/archive/publication 内容 |
 | Core matrix | Linux/macOS/Windows C、shared/static、GCC/Clang | 替换为目标 core 的 host/compiler/linkage 支持矩阵 |
 | Binding matrix | Swift、Kotlin/KMP/Android、ES/WASM | 只保留目标 repo 声明支持的 binding 和 deployment target |
@@ -1579,12 +965,10 @@ snapshot、当前 lockfile/plugin graph 和发布产物都不再出现该组件�
 | Stable PR gate | `Required gates` | 名称保持不变，内部 `needs` 随目标 repo 改变 |
 | Push summary | `Development branch gates` | 名称保持与 required context 隔离 |
 | Security gate | 四语言 CodeQL + `CodeQL gate` | matrix 改为目标产品语言，聚合名保持不变 |
-| Owner veto | 独立 `owner approval gate` + `nouprax-core` | team/owner ID 必须由目标组织解析；不得与主 CI ruleset 合并 |
 | PR observability | metrics producer + `workflow_run` commenter | 可删除；保留时必须维持不可信代码/写权限隔离 |
-| Dependency governance | GitHub automatic Gradle snapshot + lockfile/toolchain tracing | 迁移为受控 product graph + 独立 build-tool audit，避免 synthetic manifest 混淆 |
 | Dry run | C、Swift source、npm、Maven staged artifacts | 替换 artifact graph，继续禁止 secrets/environment |
 | Formal release | tag CI → stage → sign/audit/consumer → publish | registry 可变，tag snapshot 自证与发布已验证字节不变 |
-| GitHub policy | checked-in environment/ruleset JSON | actor/team ID、reviewer、repo、tag pattern 必须由 bootstrap 生成 |
+| GitHub policy | checked-in environment/ruleset JSON | actor ID、reviewer、repo、tag pattern 必须由 bootstrap 生成 |
 
 当前仓库 release 的具体 registry 顺序是：聚合并签名 Maven bundle、运行 staged consumers、上传
 Central 并等待验证、通过 npm OIDC 发布、发布已验证的 Central deployment，最后创建带 checksum

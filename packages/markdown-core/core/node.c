@@ -1,23 +1,51 @@
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "config.h"
-#include "concrete_records.h"
 #include "node.h"
-#include "extension.h"
+#include "syntax_extension.h"
+
+/**
+ * Expensive safety checks are off by default, but can be enabled
+ * by calling markdown_core_enable_safety_checks().
+ */
+static bool enable_safety_checks = false;
+
+void markdown_core_enable_safety_checks(bool enable) { enable_safety_checks = enable; }
 
 static void S_node_unlink(markdown_core_node *node);
 
 #define NODE_MEM(node) markdown_core_node_mem(node)
+
+void markdown_core_register_node_flag(markdown_core_node_internal_flags *flags) {
+    static markdown_core_node_internal_flags nextflag = MARKDOWN_CORE_NODE__REGISTER_FIRST;
+
+    // flags should be a pointer to a global variable and this function
+    // should only be called once to initialize its value.
+    if (*flags) {
+        fprintf(stderr, "flag initialization error in markdown_core_register_node_flag\n");
+        abort();
+    }
+
+    // Check that we haven't run out of bits.
+    if (nextflag == 0) {
+        fprintf(stderr, "too many flags in markdown_core_register_node_flag\n");
+        abort();
+    }
+
+    *flags = nextflag;
+    nextflag <<= 1;
+}
+
+void markdown_core_init_standard_node_flags(void) {}
 
 bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core_node_type child_type) {
     if (child_type == MARKDOWN_CORE_NODE_DOCUMENT) {
         return false;
     }
 
-    if (node->extension && node->extension->can_contain) {
-        return node->extension->can_contain(node->extension, node, child_type) != 0;
+    if (node->extension && node->extension->can_contain_func) {
+        return node->extension->can_contain_func(node->extension, node, child_type) != 0;
     }
 
     switch (node->type) {
@@ -36,8 +64,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     case MARKDOWN_CORE_NODE_STRONG:
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_IMAGE:
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
         return MARKDOWN_CORE_NODE_TYPE_INLINE_P(child_type);
 
     default:
@@ -45,16 +71,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     }
 
     return false;
-}
-
-bool markdown_core_node_owns_inlines(markdown_core_node *node) {
-    if (node->flags & MARKDOWN_CORE_NODE__OWNS_INLINE_SOURCE) {
-        return true;
-    }
-    if (node->extension && node->extension->contains_inlines) {
-        return node->extension->contains_inlines(node->extension, node) != 0;
-    }
-    return node->type == MARKDOWN_CORE_NODE_PARAGRAPH || node->type == MARKDOWN_CORE_NODE_HEADING;
 }
 
 static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
@@ -65,43 +81,25 @@ static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
         return 0;
     }
 
-    // Verify that child is not an ancestor of node or equal to node. This is
-    // O(depth) but only runs on the explicit node-mutation paths, never on
-    // the per-line parsing hot path.
-    for (markdown_core_node *cur = node; cur != NULL; cur = cur->parent) {
-        if (cur == child) {
-            return false;
-        }
+    if (enable_safety_checks) {
+        // Verify that child is not an ancestor of node or equal to node.
+        markdown_core_node *cur = node;
+        do {
+            if (cur == child) {
+                return false;
+            }
+            cur = cur->parent;
+        } while (cur != NULL);
     }
 
     return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->type);
 }
 
-#ifndef NDEBUG
-static void S_assert_same_node_domain(markdown_core_node *parent, markdown_core_node *child) {
-    markdown_core_node *ancestor;
-
-    assert(parent != NULL);
-    assert(child != NULL);
-    assert(parent != child);
-    assert(NODE_MEM(parent) == NODE_MEM(child));
-    assert(markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->type));
-
-    for (ancestor = parent; ancestor; ancestor = ancestor->parent) {
-        assert(ancestor != child);
-    }
-}
-#endif
-
-markdown_core_node *markdown_core_node_new_with_mem_and_ext(
-    markdown_core_node_type type,
-    markdown_core_mem *mem,
-    markdown_core_extension *extension
-) {
-    markdown_core_node *node = (markdown_core_node *)mem->calloc(mem, 1, sizeof(*node));
-    if (!node) {
+markdown_core_node *markdown_core_node_new_with_mem_and_ext(markdown_core_node_type type, markdown_core_mem *mem,
+                                                            markdown_core_syntax_extension *extension) {
+    markdown_core_node *node = (markdown_core_node *)mem->calloc(1, sizeof(*node));
+    if (!node)
         return NULL;
-    }
     markdown_core_strbuf_init(mem, &node->content, 0);
     node->type = (uint16_t)type;
     node->extension = extension;
@@ -123,11 +121,17 @@ markdown_core_node *markdown_core_node_new_with_mem_and_ext(
         break;
     }
 
-    if (node->extension && node->extension->alloc_opaque) {
-        node->extension->alloc_opaque(node->extension, mem, node);
+    if (node->extension && node->extension->opaque_alloc_func) {
+        node->extension->opaque_alloc_func(node->extension, mem, node);
     }
 
     return node;
+}
+
+markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type,
+                                                    markdown_core_syntax_extension *extension) {
+    extern markdown_core_mem MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR;
+    return markdown_core_node_new_with_mem_and_ext(type, &MARKDOWN_CORE_DEFAULT_MEM_ALLOCATOR, extension);
 }
 
 markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type, markdown_core_mem *mem) {
@@ -135,7 +139,7 @@ markdown_core_node *markdown_core_node_new_with_mem(markdown_core_node_type type
 }
 
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
-    return markdown_core_node_new_with_mem(type, markdown_core_mem_default());
+    return markdown_core_node_new_with_ext(type, NULL);
 }
 
 static void free_node_as(markdown_core_node *node) {
@@ -157,53 +161,8 @@ static void free_node_as(markdown_core_node *node) {
         markdown_core_chunk_free(NODE_MEM(node), &node->as.link.url);
         markdown_core_chunk_free(NODE_MEM(node), &node->as.link.title);
         break;
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.definition.label);
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.definition.url);
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.definition.title);
-        break;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        markdown_core_chunk_free(NODE_MEM(node), &node->as.reference.label);
-        break;
     default:
         break;
-    }
-}
-
-/* One chunk made its own. A chunk with no data is NOT WRITTEN — a link
- * without a title, a definition without one — and stays that way: giving it
- * an owned empty string would turn "not written" into "written and empty",
- * which is a different projection (view_optional_equal in the facade tells
- * them apart), and a retired node whose projection changed by being retired
- * would move a revision that nothing about the document moved. */
-static bool own_chunk(markdown_core_mem *mem, markdown_core_chunk *chunk) {
-    return chunk->data == NULL || markdown_core_chunk_to_cstr(mem, chunk) != NULL;
-}
-
-bool markdown_core_node_own_chunks(markdown_core_node *node) {
-    markdown_core_mem *mem = NODE_MEM(node);
-    switch (node->type) {
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        return own_chunk(mem, &node->as.code.info) && own_chunk(mem, &node->as.code.literal);
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_HTML:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return own_chunk(mem, &node->as.literal);
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        return own_chunk(mem, &node->as.link.url) && own_chunk(mem, &node->as.link.title);
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return own_chunk(mem, &node->as.definition.label) && own_chunk(mem, &node->as.definition.url) &&
-               own_chunk(mem, &node->as.definition.title);
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return own_chunk(mem, &node->as.reference.label);
-    default:
-        return true;
     }
 }
 
@@ -213,13 +172,11 @@ static void S_free_nodes(markdown_core_node *e) {
     while (e != NULL) {
         markdown_core_strbuf_free(&e->content);
 
-        if (e->as.opaque && e->extension && e->extension->free_opaque) {
-            e->extension->free_opaque(e->extension, NODE_MEM(e), e);
-        }
+        if (e->user_data && e->user_data_free_func)
+            e->user_data_free_func(NODE_MEM(e), e->user_data);
 
-        markdown_core_concrete_records_free(NODE_MEM(e), e->concrete);
-        markdown_core_inline_concrete_records_free(NODE_MEM(e), e->inline_concrete);
-        markdown_core_probes_free(e->probes);
+        if (e->as.opaque && e->extension && e->extension->opaque_free_func)
+            e->extension->opaque_free_func(e->extension, NODE_MEM(e), e);
 
         free_node_as(e);
 
@@ -229,7 +186,7 @@ static void S_free_nodes(markdown_core_node *e) {
             e->next = e->first_child;
         }
         next = e->next;
-        NODE_MEM(e)->free(NODE_MEM(e), e);
+        NODE_MEM(e)->free(e);
         e = next;
     }
 }
@@ -251,9 +208,8 @@ markdown_core_node_type markdown_core_node_get_type(markdown_core_node *node) {
 int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_type type) {
     markdown_core_node_type initial_type;
 
-    if (type == node->type) {
+    if (type == node->type)
         return 1;
-    }
 
     initial_type = (markdown_core_node_type)node->type;
     node->type = (uint16_t)type;
@@ -272,29 +228,13 @@ int markdown_core_node_set_type(markdown_core_node *node, markdown_core_node_typ
     return 1;
 }
 
-void markdown_core_node_set_type_unchecked(markdown_core_node *node, markdown_core_node_type type) {
-    assert(node != NULL);
-    assert(node->parent == NULL || NODE_MEM(node->parent) == NODE_MEM(node));
-    assert(
-        ((markdown_core_node_type)node->type & MARKDOWN_CORE_NODE_TYPE_MASK) == (type & MARKDOWN_CORE_NODE_TYPE_MASK)
-    );
-    assert(node->parent == NULL || markdown_core_node_can_contain_type(node->parent, type));
-
-    if (type == node->type) {
-        return;
-    }
-
-    free_node_as(node);
-    node->type = (uint16_t)type;
-}
-
 const char *markdown_core_node_get_type_string(markdown_core_node *node) {
     if (node == NULL) {
         return "NONE";
     }
 
-    if (node->extension && node->extension->get_type_string) {
-        return node->extension->get_type_string(node->extension, node);
+    if (node->extension && node->extension->get_type_string_func) {
+        return node->extension->get_type_string_func(node->extension, node);
     }
 
     switch (node->type) {
@@ -336,16 +276,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
         return "link";
     case MARKDOWN_CORE_NODE_IMAGE:
         return "image";
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-        return "footnote_definition";
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        return "footnote_reference";
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        return "reference_definition";
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-        return "link_reference";
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        return "image_reference";
     }
 
     return "<unknown>";
@@ -389,6 +319,38 @@ markdown_core_node *markdown_core_node_last_child(markdown_core_node *node) {
     } else {
         return node->last_child;
     }
+}
+
+markdown_core_node *markdown_core_node_parent_footnote_def(markdown_core_node *node) {
+    if (node == NULL) {
+        return NULL;
+    } else {
+        return node->parent_footnote_def;
+    }
+}
+
+void *markdown_core_node_get_user_data(markdown_core_node *node) {
+    if (node == NULL) {
+        return NULL;
+    } else {
+        return node->user_data;
+    }
+}
+
+int markdown_core_node_set_user_data(markdown_core_node *node, void *user_data) {
+    if (node == NULL) {
+        return 0;
+    }
+    node->user_data = user_data;
+    return 1;
+}
+
+int markdown_core_node_set_user_data_free_func(markdown_core_node *node, markdown_core_free_func free_func) {
+    if (node == NULL) {
+        return 0;
+    }
+    node->user_data_free_func = free_func;
+    return 1;
 }
 
 const char *markdown_core_node_get_literal(markdown_core_node *node) {
@@ -461,6 +423,23 @@ int markdown_core_node_get_heading_level(markdown_core_node *node) {
     return 0;
 }
 
+int markdown_core_node_set_heading_level(markdown_core_node *node, int level) {
+    if (node == NULL || level < 1 || level > 6) {
+        return 0;
+    }
+
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_HEADING:
+        node->as.heading.level = level;
+        return 1;
+
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *node) {
     if (node == NULL) {
         return MARKDOWN_CORE_NO_LIST;
@@ -470,6 +449,23 @@ markdown_core_list_type markdown_core_node_get_list_type(markdown_core_node *nod
         return node->as.list.list_type;
     } else {
         return MARKDOWN_CORE_NO_LIST;
+    }
+}
+
+int markdown_core_node_set_list_type(markdown_core_node *node, markdown_core_list_type type) {
+    if (!(type == MARKDOWN_CORE_BULLET_LIST || type == MARKDOWN_CORE_ORDERED_LIST)) {
+        return 0;
+    }
+
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+        node->as.list.list_type = type;
+        return 1;
+    } else {
+        return 0;
     }
 }
 
@@ -485,6 +481,23 @@ markdown_core_delim_type markdown_core_node_get_list_delim(markdown_core_node *n
     }
 }
 
+int markdown_core_node_set_list_delim(markdown_core_node *node, markdown_core_delim_type delim) {
+    if (!(delim == MARKDOWN_CORE_PERIOD_DELIM || delim == MARKDOWN_CORE_PAREN_DELIM)) {
+        return 0;
+    }
+
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+        node->as.list.delimiter = delim;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 int markdown_core_node_get_list_start(markdown_core_node *node) {
     if (node == NULL) {
         return 0;
@@ -492,6 +505,19 @@ int markdown_core_node_get_list_start(markdown_core_node *node) {
 
     if (node->type == MARKDOWN_CORE_NODE_LIST) {
         return node->as.list.start;
+    } else {
+        return 0;
+    }
+}
+
+int markdown_core_node_set_list_start(markdown_core_node *node, int start) {
+    if (node == NULL || start < 0) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+        node->as.list.start = start;
+        return 1;
     } else {
         return 0;
     }
@@ -509,6 +535,44 @@ int markdown_core_node_get_list_tight(markdown_core_node *node) {
     }
 }
 
+int markdown_core_node_set_list_tight(markdown_core_node *node, int tight) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST) {
+        node->as.list.tight = tight == 1;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+int markdown_core_node_get_list_item_index(markdown_core_node *node) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+        return node->as.list.start;
+    } else {
+        return 0;
+    }
+}
+
+int markdown_core_node_set_list_item_index(markdown_core_node *node, int idx) {
+    if (node == NULL || idx < 0) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_LIST_ITEM) {
+        node->as.list.start = idx;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
 const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -521,6 +585,18 @@ const char *markdown_core_node_get_fence_info(markdown_core_node *node) {
     }
 }
 
+int markdown_core_node_set_fence_info(markdown_core_node *node, const char *info) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.code.info, info);
+    } else {
+        return 0;
+    }
+}
+
 int markdown_core_node_get_fence_closed(markdown_core_node *node) {
     if (node == NULL) {
         return 0;
@@ -528,6 +604,37 @@ int markdown_core_node_get_fence_closed(markdown_core_node *node) {
 
     if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
         return node->as.code.fenced && node->as.code.fence_closed;
+    } else {
+        return 0;
+    }
+}
+
+int markdown_core_node_get_fenced(markdown_core_node *node, int *length, int *offset, char *character) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+        *length = node->as.code.fence_length;
+        *offset = node->as.code.fence_offset;
+        *character = node->as.code.fence_char;
+        return node->as.code.fenced;
+    } else {
+        return 0;
+    }
+}
+
+int markdown_core_node_set_fenced(markdown_core_node *node, int fenced, int length, int offset, char character) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    if (node->type == MARKDOWN_CORE_NODE_CODE_BLOCK) {
+        node->as.code.fenced = (int8_t)fenced;
+        node->as.code.fence_length = (uint8_t)length;
+        node->as.code.fence_offset = (uint8_t)offset;
+        node->as.code.fence_char = character;
+        return 1;
     } else {
         return 0;
     }
@@ -549,6 +656,22 @@ const char *markdown_core_node_get_url(markdown_core_node *node) {
     return NULL;
 }
 
+int markdown_core_node_set_url(markdown_core_node *node, const char *url) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.url, url);
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 const char *markdown_core_node_get_title(markdown_core_node *node) {
     if (node == NULL) {
         return NULL;
@@ -565,7 +688,31 @@ const char *markdown_core_node_get_title(markdown_core_node *node) {
     return NULL;
 }
 
-int markdown_core_node_set_extension(markdown_core_node *node, markdown_core_extension *extension) {
+int markdown_core_node_set_title(markdown_core_node *node, const char *title) {
+    if (node == NULL) {
+        return 0;
+    }
+
+    switch (node->type) {
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_IMAGE:
+        return markdown_core_chunk_set_cstr(NODE_MEM(node), &node->as.link.title, title);
+    default:
+        break;
+    }
+
+    return 0;
+}
+
+markdown_core_syntax_extension *markdown_core_node_get_syntax_extension(markdown_core_node *node) {
+    if (node == NULL) {
+        return NULL;
+    }
+
+    return node->extension;
+}
+
+int markdown_core_node_set_syntax_extension(markdown_core_node *node, markdown_core_syntax_extension *extension) {
     if (node == NULL) {
         return 0;
     }
@@ -668,63 +815,6 @@ int markdown_core_node_insert_before(markdown_core_node *node, markdown_core_nod
     return 1;
 }
 
-void markdown_core_node_insert_before_unchecked(markdown_core_node *node, markdown_core_node *sibling) {
-    markdown_core_node *old_prev;
-    markdown_core_node *parent;
-
-    assert(node != NULL);
-    assert(sibling != NULL);
-    assert(node != sibling);
-    assert(node->parent != NULL);
-    assert(NODE_MEM(node->parent) == NODE_MEM(node));
-    assert(markdown_core_node_can_contain_type(node->parent, (markdown_core_node_type)node->type));
-#ifndef NDEBUG
-    S_assert_same_node_domain(node->parent, sibling);
-#endif
-
-    S_node_unlink(sibling);
-    old_prev = node->prev;
-    parent = node->parent;
-    if (old_prev) {
-        old_prev->next = sibling;
-    }
-    sibling->prev = old_prev;
-    sibling->next = node;
-    sibling->parent = parent;
-    node->prev = sibling;
-    if (parent && !old_prev) {
-        parent->first_child = sibling;
-    }
-}
-
-void markdown_core_node_insert_after_unchecked(markdown_core_node *node, markdown_core_node *sibling) {
-    markdown_core_node *old_next;
-    markdown_core_node *parent;
-
-    assert(node != NULL);
-    assert(sibling != NULL);
-    assert(node != sibling);
-    assert(node->parent != NULL);
-    assert(NODE_MEM(node->parent) == NODE_MEM(node));
-    assert(markdown_core_node_can_contain_type(node->parent, (markdown_core_node_type)node->type));
-#ifndef NDEBUG
-    S_assert_same_node_domain(node->parent, sibling);
-#endif
-
-    S_node_unlink(sibling);
-    old_next = node->next;
-    parent = node->parent;
-    sibling->parent = parent;
-    sibling->prev = node;
-    sibling->next = old_next;
-    node->next = sibling;
-    if (old_next) {
-        old_next->prev = sibling;
-    } else {
-        parent->last_child = sibling;
-    }
-}
-
 int markdown_core_node_insert_after(markdown_core_node *node, markdown_core_node *sibling) {
     if (node == NULL || sibling == NULL) {
         return 0;
@@ -766,6 +856,30 @@ int markdown_core_node_replace(markdown_core_node *oldnode, markdown_core_node *
     return 1;
 }
 
+int markdown_core_node_prepend_child(markdown_core_node *node, markdown_core_node *child) {
+    if (!S_can_contain(node, child)) {
+        return 0;
+    }
+
+    S_node_unlink(child);
+
+    markdown_core_node *old_first_child = node->first_child;
+
+    child->next = old_first_child;
+    child->prev = NULL;
+    child->parent = node;
+    node->first_child = child;
+
+    if (old_first_child) {
+        old_first_child->prev = child;
+    } else {
+        // Also set last_child if node previously had no children.
+        node->last_child = child;
+    }
+
+    return 1;
+}
+
 int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child) {
     if (!S_can_contain(node, child)) {
         return 0;
@@ -790,38 +904,12 @@ int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node
     return 1;
 }
 
-void markdown_core_node_append_child_unchecked(markdown_core_node *node, markdown_core_node *child) {
-    markdown_core_node *old_last_child;
-
-#ifndef NDEBUG
-    S_assert_same_node_domain(node, child);
-#endif
-
-    S_node_unlink(child);
-    old_last_child = node->last_child;
-    child->next = NULL;
-    child->prev = old_last_child;
-    child->parent = node;
-    node->last_child = child;
-    if (old_last_child) {
-        old_last_child->next = child;
-    } else {
-        node->first_child = child;
-    }
-}
-
 static void S_print_error(FILE *out, markdown_core_node *node, const char *elem) {
     if (out == NULL) {
         return;
     }
-    fprintf(
-        out,
-        "Invalid '%s' in node type %s at %d:%d\n",
-        elem,
-        markdown_core_node_get_type_string(node),
-        node->start_line,
-        node->start_column
-    );
+    fprintf(out, "Invalid '%s' in node type %s at %d:%d\n", elem, markdown_core_node_get_type_string(node),
+            node->start_line, node->start_column);
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
@@ -878,169 +966,4 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     }
 
     return errors;
-}
-
-// FNV-1a. A literal enters as its LENGTH plus a bounded sample of its bytes,
-// not all of them: hashing every byte would make this O(document bytes), and
-// confusing two literals that share a length and both ends is affordable for
-// the reason stated on the field (node.h).
-#define MARKDOWN_CORE_HASH_SAMPLE 32u
-
-uint64_t markdown_core_hash_mix(uint64_t h, uint64_t value) {
-    h = (h ^ value) * 0x100000001b3ull;
-    return h ^ (h >> 29);
-}
-
-uint64_t markdown_core_hash_bytes(uint64_t h, const uint8_t *data, size_t length) {
-    size_t head;
-    size_t tail;
-    size_t i;
-
-    if (!data) {
-        return markdown_core_hash_mix(h, 0);
-    }
-    head = length < MARKDOWN_CORE_HASH_SAMPLE ? length : MARKDOWN_CORE_HASH_SAMPLE;
-    tail = length - head < MARKDOWN_CORE_HASH_SAMPLE ? length - head : MARKDOWN_CORE_HASH_SAMPLE;
-    h = (h ^ (uint64_t)length) * 0x100000001b3ull;
-    for (i = 0; i < head; i++) {
-        h ^= data[i];
-        h *= 0x100000001b3ull;
-    }
-    for (i = 0; i < tail; i++) {
-        h ^= data[length - tail + i];
-        h *= 0x100000001b3ull;
-    }
-    return h;
-}
-
-static uint64_t hash_chunk(uint64_t h, const markdown_core_chunk *chunk) {
-    if (!chunk->data || chunk->len < 0) {
-        return markdown_core_hash_mix(h, 0);
-    }
-    return markdown_core_hash_bytes(h, chunk->data, (size_t)chunk->len);
-}
-
-/* WHAT GOES IN, and why this list and not another: the scalars below are
- * exactly the ones markdown_core_ast_projection_changed (extensions/ast.c) reads
- * to decide that two nodes of the same kind differ in VALUE. A field it
- * compares and this omits is a field on which two different nodes hash
- * equal, and the prefix sweep in diff.c then PAIRS them -- which is how an
- * inserted `## Same` in front of an existing `# Same` took the H1's id and
- * left the surviving H1 to be minted fresh. The delta stayed honest, because
- * a paired node is still compared field by field; what was wrong was which
- * node the consumer's row state stayed attached to.
- *
- * Values core cannot reach are mixed by the extension that owns them,
- * through `hash_value` -- a directive's name and attributes, a table's
- * alignments, a row's header bit, a formula's mode. An extension that
- * registers a node type and does not implement it leaves its own nodes
- * pairing on type and children alone. */
-/* The fold over the node's own fields, where every stamp begins. */
-static uint64_t node_stamp_own(const markdown_core_node *node) {
-    uint64_t h = 0xcbf29ce484222325ull;
-
-    h = markdown_core_hash_mix(h, (uint64_t)node->type);
-    switch (node->type) {
-    // The raw type, not the facade kind: this runs on every node of every
-    // subtree the frontier stamps, and for these the union member IS the
-    // literal chunk.
-    case MARKDOWN_CORE_NODE_TEXT:
-    case MARKDOWN_CORE_NODE_CODE:
-    case MARKDOWN_CORE_NODE_HTML:
-    case MARKDOWN_CORE_NODE_HTML_BLOCK:
-    // A footnote's label is its own literal, and it is what tells two
-    // otherwise identical definitions apart.
-    case MARKDOWN_CORE_NODE_FOOTNOTE_DEFINITION:
-    case MARKDOWN_CORE_NODE_FOOTNOTE_REFERENCE:
-        h = hash_chunk(h, &node->as.literal);
-        break;
-    // `as.literal` aliases `as.code.info`, so reading it here hashed a code
-    // block's INFO STRING while meaning its body: two blocks sharing a fence
-    // language hashed equal however far apart their contents were.
-    case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        h = hash_chunk(h, &node->as.code.literal);
-        h = hash_chunk(h, &node->as.code.info);
-        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fenced != 0));
-        h = markdown_core_hash_mix(h, (uint64_t)(node->as.code.fence_closed != 0));
-        break;
-    case MARKDOWN_CORE_NODE_HEADING:
-        h = markdown_core_hash_mix(h, (uint64_t)node->as.heading.level);
-        break;
-    case MARKDOWN_CORE_NODE_LIST:
-        h = markdown_core_hash_mix(h, (uint64_t)node->as.list.list_type);
-        h = markdown_core_hash_mix(h, (uint64_t)(node->as.list.tight != 0));
-        // The start ordinal is the list's only when it is ordered; a bullet
-        // list has none, which is what the facade reports.
-        if (node->as.list.list_type == MARKDOWN_CORE_ORDERED_LIST) {
-            h = markdown_core_hash_mix(h, (uint64_t)node->as.list.start);
-        }
-        break;
-    // The checkbox is an extension's, present only where one claimed the
-    // item; `extension` is the same gate the facade uses, minus its strcmp.
-    case MARKDOWN_CORE_NODE_LIST_ITEM:
-        h = markdown_core_hash_mix(h, node->extension ? (uint64_t)(node->as.list.checked != 0) + 1u : 0u);
-        break;
-    case MARKDOWN_CORE_NODE_LINK:
-    case MARKDOWN_CORE_NODE_IMAGE:
-        h = hash_chunk(h, &node->as.link.url);
-        h = hash_chunk(h, &node->as.link.title);
-        break;
-    case MARKDOWN_CORE_NODE_REFERENCE_DEFINITION:
-        h = hash_chunk(h, &node->as.definition.label);
-        h = hash_chunk(h, &node->as.definition.url);
-        h = hash_chunk(h, &node->as.definition.title);
-        break;
-    case MARKDOWN_CORE_NODE_LINK_REFERENCE:
-    case MARKDOWN_CORE_NODE_IMAGE_REFERENCE:
-        h = hash_chunk(h, &node->as.reference.label);
-        h = markdown_core_hash_mix(h, (uint64_t)node->as.reference.form);
-        break;
-    default:
-        break;
-    }
-    // Whatever the core union cannot reach: a directive's name and
-    // attributes, a table's alignments, a row's header bit, a formula's
-    // mode. The extension that registered the type is the only thing that
-    // can read them, so it is the thing that mixes them.
-    if (node->extension && node->extension->hash_value) {
-        h = node->extension->hash_value(node->extension, (markdown_core_node *)node, h);
-    }
-    return h;
-}
-
-static uint64_t node_hash_children(const markdown_core_node *node, uint64_t h) {
-    const markdown_core_node *child;
-    for (child = node->first_child; child; child = child->next) {
-        h = markdown_core_hash_mix(h, child->subtree_hash);
-    }
-    return h;
-}
-
-static void node_stamp(markdown_core_node *node) {
-    node->subtree_hash = node_hash_children(node, node_stamp_own(node));
-}
-
-void markdown_core_node_stamp_tree(markdown_core_node *root) {
-    markdown_core_node *node = root;
-
-    /* Postorder, so a node is stamped only once its children carry their own
-     * hashes. Iterative and allocation-free: document depth costs no stack.
-     * The pass costs a traversal of the subtree, which is why it runs over
-     * exactly the subtrees the frontier will pair and never the tree. */
-    for (;;) {
-        while (node->first_child) {
-            node = node->first_child;
-        }
-        for (;;) {
-            node_stamp(node);
-            if (node == root) {
-                return;
-            }
-            if (node->next) {
-                node = node->next;
-                break;
-            }
-            node = node->parent;
-        }
-    }
 }

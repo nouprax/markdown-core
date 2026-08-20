@@ -17,13 +17,39 @@ typedef enum {
 } markdown_core_formula_mode;
 
 MARKDOWN_CORE_EXPORT
+void markdown_core_core_extensions_ensure_registered(void);
+
+MARKDOWN_CORE_EXPORT
 uint16_t markdown_core_extensions_get_table_columns(markdown_core_node *node);
+
+/** Sets the number of columns for the table, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_columns(markdown_core_node *node, uint16_t n_columns);
 
 MARKDOWN_CORE_EXPORT
 uint8_t *markdown_core_extensions_get_table_alignments(markdown_core_node *node);
 
+/** Sets the alignments for the table, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_alignments(markdown_core_node *node, uint16_t ncols, uint8_t *alignments);
+
 MARKDOWN_CORE_EXPORT
 int markdown_core_extensions_get_table_row_is_header(markdown_core_node *node);
+
+/** Sets whether the node is a table header row, returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_table_row_is_header(markdown_core_node *node, int is_header);
+
+MARKDOWN_CORE_EXPORT
+bool markdown_core_extensions_get_tasklist_item_checked(markdown_core_node *node);
+
+/** Sets whether a tasklist item is "checked" (completed), returning 1 on success and 0 on error.
+ */
+MARKDOWN_CORE_EXPORT
+int markdown_core_extensions_set_tasklist_item_checked(markdown_core_node *node, bool is_checked);
 
 /** Returns the literal formula payload for formula extension nodes, or NULL on error.
  */
@@ -66,26 +92,6 @@ int markdown_core_extensions_set_directive_name(markdown_core_node *node, const 
  */
 MARKDOWN_CORE_EXPORT
 const char *markdown_core_extensions_get_directive_attributes(markdown_core_node *node);
-
-/** A directive's attribute list as the node holds it: source order, one entry
- * per name, with the grammar's merge rules already applied by the parser.
- * `present` separates an absent `{...}` from an empty one, which a count of
- * zero cannot. The views borrow from the node. */
-MARKDOWN_CORE_EXPORT
-bool markdown_core_extensions_directive_attributes_present(const markdown_core_node *node);
-
-MARKDOWN_CORE_EXPORT
-size_t markdown_core_extensions_directive_attribute_count(const markdown_core_node *node);
-
-MARKDOWN_CORE_EXPORT
-bool markdown_core_extensions_directive_attribute_at(
-    const markdown_core_node *node,
-    size_t index,
-    const uint8_t **key,
-    size_t *key_length,
-    const uint8_t **value,
-    size_t *value_length
-);
 
 /** Sets directive attributes from a JSON object containing only string keys and string values.
  * The object is parsed and normalized. Returns 1 on success and 0 on error; failure leaves the

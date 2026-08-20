@@ -83,12 +83,10 @@ static char *build_sample_block(const bench_options *options, size_t *length) {
 static char *repeat_block(const char *block, size_t block_length, size_t times, size_t *length) {
     char *buffer = (char *)malloc(block_length * times + 1);
     size_t i;
-    if (!buffer) {
+    if (!buffer)
         return NULL;
-    }
-    for (i = 0; i < times; i++) {
+    for (i = 0; i < times; i++)
         memcpy(buffer + i * block_length, block, block_length);
-    }
     buffer[block_length * times] = 0;
     *length = block_length * times;
     return buffer;
@@ -98,7 +96,7 @@ static int bench_parse_once(const char *input, size_t length, uint64_t *nanoseco
     markdown_core_document *document;
     markdown_core_error *error = NULL;
     uint64_t started = ts_monotonic_ns();
-    document = markdown_core_document_new(mc_sv((const uint8_t *)input, length), NULL, &error);
+    document = markdown_core_document_parse((const uint8_t *)input, length, NULL, &error);
     *nanoseconds = ts_monotonic_ns() - started;
     if (!document) {
         markdown_core_error_free(error);
@@ -114,26 +112,14 @@ static int compare_u64(const void *left, const void *right) {
     return a < b ? -1 : (a > b ? 1 : 0);
 }
 
-static int compare_double(const void *left, const void *right) {
-    double a = *(const double *)left;
-    double b = *(const double *)right;
-    return a < b ? -1 : (a > b ? 1 : 0);
-}
-
-static int bench_measure(
-    const char *name,
-    const char *input,
-    size_t length,
-    const bench_options *options,
-    double *median_ms
-) {
+static int bench_measure(const char *name, const char *input, size_t length, const bench_options *options,
+                         double *median_ms) {
     uint64_t samples[BENCH_MAX_REPEATS];
     uint64_t elapsed;
     int i;
     int repeats = options->repeats;
-    if (repeats > BENCH_MAX_REPEATS) {
+    if (repeats > BENCH_MAX_REPEATS)
         repeats = BENCH_MAX_REPEATS;
-    }
     for (i = 0; i < options->warmup; i++) {
         if (bench_parse_once(input, length, &elapsed) != 0) {
             fprintf(stderr, "%s: parse failed\n", name);
@@ -148,26 +134,16 @@ static int bench_measure(
     }
     qsort(samples, (size_t)repeats, sizeof(samples[0]), compare_u64);
     *median_ms = (double)samples[repeats / 2] / 1e6;
-    printf(
-        "benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n",
-        name,
-        length,
-        repeats,
-        options->warmup,
-        *median_ms
-    );
+    printf("benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.3f\n", name, length, repeats, options->warmup,
+           *median_ms);
     return 0;
 }
 
 /* Measures the same generator at doubling scales and asserts the relative
  * growth stays under BENCH_MAX_DOUBLING_RATIO per step. */
-static int bench_doubling(
-    const char *name,
-    const bench_options *options,
-    char *(*build)(const bench_options *options, size_t scale, size_t *length),
-    const size_t *scales,
-    size_t steps
-) {
+static int bench_doubling(const char *name, const bench_options *options,
+                          char *(*build)(const bench_options *options, size_t scale, size_t *length),
+                          const size_t *scales, size_t steps) {
     double previous_ms = 0.0;
     size_t step;
     int failed = 0;
@@ -189,14 +165,8 @@ static int bench_doubling(
         if (step > 0) {
             double floor_ms = previous_ms > 0.0005 ? previous_ms : 0.0005;
             if (median_ms / floor_ms > BENCH_MAX_DOUBLING_RATIO) {
-                fprintf(
-                    stderr,
-                    "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n",
-                    name,
-                    median_ms / floor_ms,
-                    BENCH_MAX_DOUBLING_RATIO,
-                    scales[step]
-                );
+                fprintf(stderr, "%s: scaling ratio %.2f exceeds %.2f at scale %zu\n", name, median_ms / floor_ms,
+                        BENCH_MAX_DOUBLING_RATIO, scales[step]);
                 failed = 1;
             }
         }
@@ -222,14 +192,12 @@ static int workload_representative(const bench_options *options) {
         }
         input = repeat_block(sample, sample_length, 200, &input_length);
         free(sample);
-        if (!input) {
+        if (!input)
             return -1;
-        }
         result = bench_measure(BENCH_SAMPLES[i], input, input_length, options, &median_ms);
         free(input);
-        if (result != 0) {
+        if (result != 0)
             return -1;
-        }
     }
     return 0;
 }
@@ -237,9 +205,8 @@ static int workload_representative(const bench_options *options) {
 static long peak_rss_kib(void) {
 #ifndef _WIN32
     struct rusage usage;
-    if (getrusage(RUSAGE_SELF, &usage) != 0) {
+    if (getrusage(RUSAGE_SELF, &usage) != 0)
         return -1;
-    }
 #ifdef __APPLE__
     return usage.ru_maxrss / 1024;
 #else
@@ -256,22 +223,14 @@ static int workload_binding_baseline(const bench_options *options) {
     char *input = repeat_block(unit, sizeof(unit) - 1, 2000, &length);
     double median_ms = 0.0;
     int result;
-    if (!input) {
+    if (!input)
         return -1;
-    }
     result = bench_measure("binding_baseline", input, length, options, &median_ms);
     free(input);
-    if (result == 0) {
-        printf(
-            "baseline runtime=c boundary=native_parse workload=representative_large"
-            " workload_version=1 bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
-            length,
-            options->warmup,
-            options->repeats,
-            median_ms * 1e6,
-            peak_rss_kib()
-        );
-    }
+    if (result == 0)
+        printf("baseline runtime=c boundary=native_parse workload=representative_large"
+               " bytes=%zu warmup=%d repeats=%d median_ns=%.0f peak_rss_kib=%ld\n",
+               length, options->warmup, options->repeats, median_ms * 1e6, peak_rss_kib());
     return result;
 }
 
@@ -279,9 +238,8 @@ static char *build_large_document(const bench_options *options, size_t scale, si
     size_t block_length = 0;
     char *block = build_sample_block(options, &block_length);
     char *input;
-    if (!block) {
+    if (!block)
         return NULL;
-    }
     input = repeat_block(block, block_length, scale, length);
     free(block);
     return input;
@@ -298,9 +256,8 @@ static char *build_deep_nesting(const bench_options *options, size_t scale, size
     (void)options;
     char *quotes = ts_repeat("> ", scale, length);
     char *input;
-    if (!quotes) {
+    if (!quotes)
         return NULL;
-    }
     input = (char *)malloc(*length + 2);
     if (!input) {
         free(quotes);
@@ -323,9 +280,8 @@ static char *build_extension_document(const bench_options *options, size_t scale
     size_t sample_length = 0;
     char *sample = load_sample(options, "directive.md", &sample_length);
     char *input;
-    if (!sample) {
+    if (!sample)
         return NULL;
-    }
     input = repeat_block(sample, sample_length, scale, length);
     free(sample);
     return input;
@@ -334,37 +290,6 @@ static char *build_extension_document(const bench_options *options, size_t scale
 static int workload_extensions(const bench_options *options) {
     static const size_t scales[] = {100, 200, 400};
     return bench_doubling("extensions", options, build_extension_document, scales, 3);
-}
-
-static char *build_large_table(const bench_options *options, size_t scale, size_t *length) {
-    static const char prefix[] = "| h1 | h2 | h3 | h4 | h5 | h6 | h7 | h8 |\n"
-                                 "| --- | --- | --- | --- | --- | --- | --- | --- |\n";
-    static const char row[] = "| alpha \\| beta | gamma delta | epsilon zeta | eta theta | iota kappa |"
-                              " lambda mu | nu xi | omicron pi |\n";
-    const size_t prefix_length = sizeof(prefix) - 1;
-    const size_t row_length = sizeof(row) - 1;
-    char *input;
-    size_t i;
-    (void)options;
-    if (scale > (SIZE_MAX - prefix_length - 1) / row_length) {
-        return NULL;
-    }
-    *length = prefix_length + row_length * scale;
-    input = (char *)malloc(*length + 1);
-    if (!input) {
-        return NULL;
-    }
-    memcpy(input, prefix, prefix_length);
-    for (i = 0; i < scale; i++) {
-        memcpy(input + prefix_length + i * row_length, row, row_length);
-    }
-    input[*length] = 0;
-    return input;
-}
-
-static int workload_large_table(const bench_options *options) {
-    static const size_t scales[] = {10000, 20000, 40000};
-    return bench_doubling("large_table", options, build_large_table, scales, 3);
 }
 
 static char *build_adversarial_links(const bench_options *options, size_t scale, size_t *length) {
@@ -379,760 +304,9 @@ static char *build_adversarial_emphasis(const bench_options *options, size_t sca
 
 static int workload_adversarial(const bench_options *options) {
     static const size_t scales[] = {16384, 32768, 65536};
-    if (bench_doubling("adversarial_links", options, build_adversarial_links, scales, 3) != 0) {
+    if (bench_doubling("adversarial_links", options, build_adversarial_links, scales, 3) != 0)
         return -1;
-    }
     return bench_doubling("adversarial_emphasis", options, build_adversarial_emphasis, scales, 3);
-}
-
-/* --- append baseline (streaming plan P0.2; living tree L1 slice 8) --------
- *
- * The per-tick cost of consuming a stream. A tick grows the head's tree in
- * place (extensions/document.c) and costs the chunk, the units it closed,
- * the units a definition in it flipped and the open leaf — nothing of the
- * document's size unless the open leaf is the document.
- *
- * Shapes follow the plan's list; each is measured at doubling prefix
- * checkpoints with a burst of token-sized, non-line-aligned ticks (3-8 byte
- * strides). Every tick is warm; each shape carries the bound its open leaf
- * implies: a bounded leaf must not grow with the document at all (`prose`,
- * `nested_list`, `table`, `footnote_dense` — a definition every other line,
- * whose flips reach into settled territory and must not cost it; `fence`,
- * one growing fence, whose buffer the close moves into the literal whole
- * and the retract moves back, and whose record witnesses it by length —
- * so a leaf that is the document costs the tick nothing per byte it
- * already holds; `references_appendix`, one paragraph of consecutive
- * definitions, which the feed settles one definition behind the `[` that
- * proves it, leaving the close the last one alone; `definitions_spaced`,
- * the same definitions a paragraph each, where there is nothing to settle
- * and the settle must therefore cost nothing; and `cited_article`, all of
- * it at once in an assistant's proportions), and a leaf that IS the
- * document and is re-derived grows linearly — one paragraph
- * (`giant_paragraph`, the honest ladder's prose wall). The flat bound is
- * slice 8's gate in its per-tick form; the amortized form is the workload
- * below, which additionally carries `flip_storm`, the ladder's third
- * entry, whose tick cost depends on where in the text a checkpoint lands
- * and so has no per-tick form. */
-
-typedef char *(*append_shape_build)(size_t target, size_t *length);
-
-static char *build_append_prose(size_t target, size_t *length) {
-    static const char unit[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod\n"
-                               "tempor incididunt ut labore et dolore magna aliqua ut enim ad minim.\n\n";
-    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
-}
-
-static char *build_append_nested_list(size_t target, size_t *length) {
-    static const char unit[] = "- alpha item one\n  - beta item two\n    - gamma item three\n"
-                               "      - delta item four\n- epsilon item five\n\n";
-    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
-}
-
-static char *build_append_fence(size_t target, size_t *length) {
-    static const char unit[] = "let value = compute(index) + offset; // streamed code line\n";
-    char *body = ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
-    char *input;
-    if (!body) {
-        return NULL;
-    }
-    /* One growing, never-closed fence: the close moves its bytes into the
-     * literal and the retract moves them back, so the tick never touches a
-     * byte the fence already holds. */
-    input = (char *)malloc(*length + 5);
-    if (!input) {
-        free(body);
-        return NULL;
-    }
-    memcpy(input, "```\n", 4);
-    memcpy(input + 4, body, *length);
-    input[*length + 4] = 0;
-    *length += 4;
-    free(body);
-    return input;
-}
-
-static char *build_append_giant_paragraph(size_t target, size_t *length) {
-    /* No blank line anywhere: one paragraph that never closes. */
-    static const char unit[] = "words keep arriving and the paragraph never ends because no blank line\n";
-    return ts_repeat(unit, target / (sizeof(unit) - 1) + 1, length);
-}
-
-/* Distinct labels, so density stresses the definition table rather than one
- * bucket's duplicate chain. */
-static char *build_append_footnote_dense(size_t target, size_t *length) {
-    size_t capacity = target + 128;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    if (!input) {
-        return NULL;
-    }
-    while (used < target) {
-        int wrote = snprintf(
-            input + used,
-            capacity - used,
-            "Mention[^n%zu] rides along.\n\n[^n%zu]: The matching note body.\n\n",
-            n,
-            n
-        );
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n++;
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-static char *build_append_references_appendix(size_t target, size_t *length) {
-    size_t capacity = target + 128;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    if (!input) {
-        return NULL;
-    }
-    /* Consecutive definitions with no blank line: one growing paragraph the
-     * harvest re-consumes whole every tick — the plan's named quadratic. */
-    while (used < target) {
-        int wrote = snprintf(input + used, capacity - used, "[r%zu]: /url/%zu\n", n, n);
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n++;
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-/* The same definitions with a blank line between them, so each is its own
- * one-line paragraph and the settle has nothing in front of a line to take.
- * Flat here and flat in `references_appendix` is what says the settle pays
- * for itself only where there is something to settle. */
-static char *build_append_definitions_spaced(size_t target, size_t *length) {
-    size_t capacity = target + 128;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    if (!input) {
-        return NULL;
-    }
-    while (used < target) {
-        int wrote = snprintf(input + used, capacity - used, "[r%zu]: /url/%zu\n\n", n, n);
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n++;
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-/* One growing table: every row is a bounded leaf under a block the stream
- * never closes, and the cells are the units. */
-static char *build_append_table(size_t target, size_t *length) {
-    size_t capacity = target + 256;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    if (!input) {
-        return NULL;
-    }
-    used += (size_t)snprintf(input, capacity, "| name | value | note |\n| --- | --- | --- |\n");
-    while (used < target) {
-        int wrote = snprintf(input + used, capacity - used, "| row %zu | value %zu | a short note |\n", n, n);
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n++;
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-/* What an assistant streams: headings, prose carrying reference links and
- * footnote mentions, a list, a fence, a table, and at the end the references
- * written the way people write them — one definition per line, no blank
- * lines. Every mechanism the ladder names at once, and the shape whose whole
- * cost the settled harvest moved from quadratic to linear. */
-static char *build_append_cited_article(size_t target, size_t *length) {
-    size_t capacity = target * 2 + 8192;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    size_t i;
-    if (!input) {
-        return NULL;
-    }
-    used += (size_t)snprintf(input, capacity, "# Streaming report\n\n");
-    while (used < target) {
-        int wrote = snprintf(
-            input + used,
-            capacity - used,
-            "## Section %zu\n\n"
-            "Lorem ipsum dolor sit amet [r%zu], consectetur adipiscing elit[^f%zu]. Sed do\n"
-            "eiusmod tempor incididunt ut labore et dolore magna aliqua [r%zu].\n\n"
-            "- first point about %zu\n- second point about %zu\n- third point\n\n"
-            "```c\nint value_%zu(void) { return %zu; }\n```\n\n"
-            "| name | value |\n| --- | --- |\n| row %zu | %zu |\n\n",
-            n,
-            n,
-            n,
-            n + 1,
-            n,
-            n,
-            n,
-            n,
-            n,
-            n
-        );
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n += 2;
-    }
-    used += (size_t)snprintf(input + used, capacity - used, "## References\n\n");
-    for (i = 0; i < n && used + 64 < capacity; i++) {
-        used += (size_t)snprintf(input + used, capacity - used, "[r%zu]: https://example.com/%zu\n", i, i);
-    }
-    used += (size_t)snprintf(input + used, capacity - used, "\n");
-    for (i = 0; i < n && used + 64 < capacity; i += 2) {
-        used += (size_t)snprintf(input + used, capacity - used, "[^f%zu]: the note body for %zu\n", i, i);
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-/* THE FLIP STORM, the ladder's third entry and the one nothing measured.
- * ONE paragraph mentions every label, and every definition arrives later, on
- * its own: each one re-derives the whole unit, so the unit is re-derived once
- * per label it holds. The cost is the invariant's, not the mechanism's — a
- * tick's tree must equal a one-shot parse of its bytes, and the trees really
- * do differ — so this shape is declared LINEAR per tick and gated there,
- * where a regression would show as something worse than linear.
- *
- * Only the amortized workload runs it: the per-tick workload measures at
- * checkpoints of one fixed text, and this shape's tick cost depends on which
- * half of the text the checkpoint lands in, which measures the mention
- * paragraph rather than the flips. */
-static char *build_append_flip_storm(size_t target, size_t *length) {
-    size_t capacity = target * 2 + 4096;
-    char *input = (char *)malloc(capacity + 1);
-    size_t used = 0;
-    size_t n = 0;
-    size_t i;
-    if (!input) {
-        return NULL;
-    }
-    used += (size_t)snprintf(input, capacity, "Body ");
-    while (used < target / 2) {
-        int wrote = snprintf(input + used, capacity - used, "[r%zu] ", n);
-        if (wrote <= 0 || (size_t)wrote >= capacity - used) {
-            break;
-        }
-        used += (size_t)wrote;
-        n++;
-    }
-    used += (size_t)snprintf(input + used, capacity - used, "end.\n\n");
-    for (i = 0; i < n && used + 64 < capacity; i++) {
-        used += (size_t)snprintf(input + used, capacity - used, "[r%zu]: /u/%zu\n\n", i, i);
-    }
-    input[used] = 0;
-    *length = used;
-    return input;
-}
-
-/* One measured append tick through the REAL mutation: hand only the chunk
- * over and swap the handle. Only `append` is timed; releasing the
- * predecessor stays outside the window. */
-static int append_tick(markdown_core_document **document, const char *chunk, size_t length, uint64_t *nanoseconds) {
-    markdown_core_error *error = NULL;
-    uint64_t started = ts_monotonic_ns();
-    markdown_core_document *successor =
-        markdown_core_document_append(*document, mc_sv((const uint8_t *)chunk, length), &error);
-    uint64_t elapsed = ts_monotonic_ns() - started;
-    if (!successor) {
-        markdown_core_error_free(error);
-        return -1;
-    }
-    markdown_core_document_free(*document);
-    *document = successor;
-    if (nanoseconds) {
-        *nanoseconds = elapsed;
-    }
-    return 0;
-}
-
-/* A checkpoint's per-tick figure is the MEDIAN over bursts of a burst's
- * mean tick. A tick over a leaf that is the document is milliseconds at
- * 4 MiB, so a burst is one tick and five bursts are plenty; a tick over a
- * bounded leaf is a microsecond or less, below what CLOCK_MONOTONIC
- * resolves on every platform, so a burst is sixteen ticks timed together
- * and there are eight of them — enough that one burst carrying the source
- * buffer's growth cannot move the median. */
-#define APPEND_BURSTS 8
-#define APPEND_WALL_BURSTS 5
-#define APPEND_WALL_TICKS_PER_BURST 1
-#define APPEND_WARM_TICKS_PER_BURST 16
-#define APPEND_WARMUP_TICKS 1
-#define APPEND_CHECKPOINTS 5
-
-/* The bound a shape's tick class implies on the median adjacent-doubling
- * growth of its per-tick median. Flat means the tick does not see the
- * document; a warm tick that grows a bounded leaf must not, and 1.5 leaves
- * room for the allocator and the cache without admitting a linear term
- * (which doubles). */
-static const double APPEND_FLAT_DOUBLING_RATIO = 1.5;
-
-/* The bound for the ladder's declared walls — a shape whose tick is allowed
- * to see the document, so K doubles when N does. Gating them at all is what
- * keeps an accepted degradation from quietly becoming a worse one: 2.75
- * admits the doubling and the fixed cost of the one-shot baseline it is
- * measured against, and nothing steeper. */
-static const double APPEND_LINEAR_DOUBLING_RATIO = 2.75;
-
-static int bench_append_shape(
-    const char *name,
-    append_shape_build build,
-    const bench_options *options,
-    double max_doubling_ratio,
-    int bursts,
-    int ticks_per_burst
-) {
-    static const size_t checkpoints[APPEND_CHECKPOINTS] =
-        {256 * 1024, 512 * 1024, 1024 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024};
-    const size_t steps = APPEND_CHECKPOINTS;
-    size_t text_length = 0;
-    char *text = build(checkpoints[steps - 1] + 4096, &text_length);
-    markdown_core_document *document;
-    markdown_core_error *error = NULL;
-    ts_prng prng;
-    double medians_ms[APPEND_CHECKPOINTS];
-    double ratios[APPEND_CHECKPOINTS - 1];
-    size_t step;
-    int failed = 0;
-
-    (void)options;
-    if (!text || text_length < checkpoints[steps - 1]) {
-        fprintf(stderr, "%s: cannot build input\n", name);
-        free(text);
-        return -1;
-    }
-    ts_prng_seed(&prng, UINT64_C(0xa99e4dba5e11e5) ^ (uint64_t)name[0]);
-    document = markdown_core_document_new(mc_sv(NULL, 0), NULL, &error);
-    if (!document) {
-        markdown_core_error_free(error);
-        free(text);
-        return -1;
-    }
-
-    size_t sent = 0;
-    for (step = 0; step < steps && !failed; step++) {
-        uint64_t samples[APPEND_BURSTS];
-        size_t offset = checkpoints[step];
-        char case_name[128];
-        int burst;
-        int tick;
-
-        /* Fast-forward to the checkpoint with one jump chunk, then run the
-         * bursts: warmup ticks settle the allocator at this working-set size
-         * before anything is recorded. */
-        if (append_tick(&document, text + sent, offset - sent, NULL) != 0) {
-            failed = 1;
-            break;
-        }
-        sent = offset;
-        for (tick = 0; tick < APPEND_WARMUP_TICKS && !failed; tick++) {
-            size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
-            if (step_bytes > text_length - sent) {
-                step_bytes = text_length - sent;
-            }
-            failed = append_tick(&document, text + sent, step_bytes, NULL) != 0;
-            sent += step_bytes;
-        }
-        for (burst = 0; burst < bursts && !failed; burst++) {
-            uint64_t total = 0;
-            for (tick = 0; tick < ticks_per_burst; tick++) {
-                uint64_t elapsed = 0;
-                size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
-                if (step_bytes > text_length - sent) {
-                    step_bytes = text_length - sent;
-                }
-                if (append_tick(&document, text + sent, step_bytes, &elapsed) != 0) {
-                    failed = 1;
-                    break;
-                }
-                total += elapsed;
-                sent += step_bytes;
-            }
-            samples[burst] = total / (uint64_t)ticks_per_burst;
-        }
-        if (failed) {
-            break;
-        }
-        qsort(samples, (size_t)bursts, sizeof(samples[0]), compare_u64);
-        medians_ms[step] = (double)samples[bursts / 2] / 1e6;
-        snprintf(case_name, sizeof(case_name), "append_%s@%zu", name, checkpoints[step]);
-        /* Microsecond ticks need the extra places, or a warm tick prints as
-         * the same figure at every size and the flat gate looks unearned. */
-        printf(
-            "benchmark case=%s bytes=%zu repeats=%d warmup=%d median_ms=%.5f\n",
-            case_name,
-            checkpoints[step],
-            bursts * ticks_per_burst,
-            APPEND_WARMUP_TICKS,
-            medians_ms[step]
-        );
-    }
-
-    /* The gate is the MEDIAN of the adjacent-doubling growth ratios, not any
-     * single pair: an allocator size-class or cache-level transition puts one
-     * step's ratio far above its neighbours while every other interval stays
-     * linear, and a two-point ratio cannot tell that from an asymptote — the
-     * footnote-renumber complexity gate failed exactly this way before it
-     * moved to the same median form (docs/specs/test-architecture.md).
-     * Sustained super-linear growth moves every interval, so it moves the
-     * median; an isolated transition cannot. */
-    if (!failed) {
-        double sorted[APPEND_CHECKPOINTS - 1];
-        double median_ratio;
-        for (step = 1; step < steps; step++) {
-            double floor_ms = medians_ms[step - 1] > 0.0005 ? medians_ms[step - 1] : 0.0005;
-            ratios[step - 1] = medians_ms[step] / floor_ms;
-        }
-        memcpy(sorted, ratios, sizeof(sorted));
-        qsort(sorted, steps - 1, sizeof(sorted[0]), compare_double);
-        median_ratio = sorted[(steps - 1) / 2];
-        printf("append_%s per_tick_doubling_ratio=%.2f bound=%.2f\n", name, median_ratio, max_doubling_ratio);
-        if (median_ratio > max_doubling_ratio) {
-            fprintf(
-                stderr,
-                "%s: median per-tick doubling ratio %.2f exceeds %.2f\n",
-                name,
-                median_ratio,
-                max_doubling_ratio
-            );
-            failed = 1;
-        }
-    }
-
-    markdown_core_document_free(document);
-    free(text);
-    return failed ? -1 : 0;
-}
-
-static int workload_append_baseline(const bench_options *options) {
-    int failed = 0;
-    /* Warm, bounded leaf: flat. */
-    failed |= bench_append_shape(
-                  "prose",
-                  build_append_prose,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, but the open leaf is the document: linear, the prose wall. */
-    failed |= bench_append_shape(
-                  "giant_paragraph",
-                  build_append_giant_paragraph,
-                  options,
-                  BENCH_MAX_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, bounded leaf under a list of every item so far: flat — the
-     * list's tightness is weighed as it grows, not per tick. */
-    failed |= bench_append_shape(
-                  "nested_list",
-                  build_append_nested_list,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, the leaf is the whole fence, and the tick never copies it: the
-     * buffer moves into the literal and back, and its record witnesses it
-     * by length. Flat. */
-    failed |= bench_append_shape(
-                  "fence",
-                  build_append_fence,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, bounded leaf, a definition every other line that flips the
-     * unit before it: flat — the flip costs the unit and the depth. */
-    failed |= bench_append_shape(
-                  "footnote_dense",
-                  build_append_footnote_dense,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, the leaf is one paragraph of definitions and the tick takes one
-     * of them: flat. This was the ladder's appendix entry, harvested whole at
-     * every close, until the settle made a definition final as soon as the
-     * `[` of the next one stood behind it. */
-    failed |= bench_append_shape(
-                  "references_appendix",
-                  build_append_references_appendix,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* The same definitions one paragraph each: nothing to settle, and the
-     * settle must therefore cost nothing. Flat. */
-    failed |= bench_append_shape(
-                  "definitions_spaced",
-                  build_append_definitions_spaced,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Warm, a growing table whose rows are bounded leaves: flat. */
-    failed |= bench_append_shape(
-                  "table",
-                  build_append_table,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    /* Every mechanism at once, in an assistant's proportions: flat. */
-    failed |= bench_append_shape(
-                  "cited_article",
-                  build_append_cited_article,
-                  options,
-                  APPEND_FLAT_DOUBLING_RATIO,
-                  APPEND_BURSTS,
-                  APPEND_WARM_TICKS_PER_BURST
-              ) != 0;
-    if (!failed) {
-        printf("append_baseline peak_rss_kib=%ld\n", peak_rss_kib());
-    }
-    return failed ? -1 : 0;
-}
-
-/* --- the amortized bound (living tree plan §1, L1 slice 8) ----------------
- *
- * THE REQUIREMENT, EXECUTABLE: a stream's total must be the same order as
- * one full parse of the final text. Stream N bytes from an empty document
- * in token-sized pieces (3-8 bytes) and time the whole of it, T(N); parse
- * the same N bytes once, P(N); the ratio K(N) = T(N) / P(N) is the price
- * of streaming in units of one parse, and the bound says K is FLAT across
- * doublings of N — a K that doubles with N is the quadratic the plan
- * forbids. Prose and the nested list (a list of every item so far, loose,
- * with a bounded leaf) are gated flat. */
-
-#define AMORTIZED_STEPS 4
-
-static int bench_append_amortized(
-    const char *name,
-    append_shape_build build,
-    const bench_options *options,
-    size_t base,
-    double bound
-) {
-    size_t sizes[AMORTIZED_STEPS];
-    double k[AMORTIZED_STEPS];
-    size_t step;
-    int failed = 0;
-
-    (void)options;
-    for (step = 0; step < AMORTIZED_STEPS; step++) {
-        sizes[step] = base << step;
-    }
-    /* A TEXT OF ITS OWN AT EVERY SIZE, not a prefix of the largest. A shape
-     * whose parts are not uniform — a body and then its references, mentions
-     * and then their definitions — has none of its second part in a prefix,
-     * so prefixes would measure the first part four times and call the
-     * result a bound on the whole shape. */
-    for (step = 0; step < AMORTIZED_STEPS && !failed; step++) {
-        size_t text_length = 0;
-        char *text = build(sizes[step], &text_length);
-        size_t n;
-        markdown_core_error *error = NULL;
-
-        if (!text || text_length == 0) {
-            fprintf(stderr, "%s: cannot build input\n", name);
-            free(text);
-            return -1;
-        }
-        n = text_length;
-        markdown_core_document *document = markdown_core_document_new(mc_sv(NULL, 0), NULL, &error);
-        ts_prng prng;
-        uint64_t streamed_ns = 0;
-        uint64_t parsed_ns[3];
-        size_t sent = 0;
-        size_t ticks = 0;
-        int repeat;
-
-        if (!document) {
-            markdown_core_error_free(error);
-            free(text);
-            return -1;
-        }
-        ts_prng_seed(&prng, UINT64_C(0x5eed) ^ (uint64_t)n ^ (uint64_t)name[0]);
-        while (sent < n) {
-            size_t step_bytes = 3 + (size_t)(ts_prng_next(&prng) % 6);
-            uint64_t tick_ns = 0;
-            if (step_bytes > n - sent) {
-                step_bytes = n - sent;
-            }
-            if (append_tick(&document, text + sent, step_bytes, &tick_ns) != 0) {
-                failed = 1;
-                break;
-            }
-            streamed_ns += tick_ns;
-            sent += step_bytes;
-            ticks++;
-        }
-        markdown_core_document_free(document);
-        if (failed) {
-            free(text);
-            break;
-        }
-        for (repeat = 0; repeat < 3; repeat++) {
-            uint64_t started = ts_monotonic_ns();
-            markdown_core_document *once = markdown_core_document_new(mc_sv((const uint8_t *)text, n), NULL, &error);
-            parsed_ns[repeat] = ts_monotonic_ns() - started;
-            if (!once) {
-                markdown_core_error_free(error);
-                failed = 1;
-                break;
-            }
-            markdown_core_document_free(once);
-        }
-        if (failed) {
-            free(text);
-            break;
-        }
-        qsort(parsed_ns, 3, sizeof(parsed_ns[0]), compare_u64);
-        k[step] = parsed_ns[1] > 0 ? (double)streamed_ns / (double)parsed_ns[1] : 0.0;
-        printf(
-            "benchmark case=append_amortized_%s@%zu bytes=%zu ticks=%zu stream_ms=%.3f parse_ms=%.3f k=%.1f\n",
-            name,
-            n,
-            n,
-            ticks,
-            (double)streamed_ns / 1e6,
-            (double)parsed_ns[1] / 1e6,
-            k[step]
-        );
-        free(text);
-    }
-    if (!failed && bound > 0.0) {
-        /* The median of the adjacent-doubling ratios of K, as the per-tick
-         * gate does: an isolated allocator transition cannot move it, a
-         * linear term in K moves every interval. */
-        double ratios[AMORTIZED_STEPS - 1];
-        double median_ratio;
-        for (step = 1; step < AMORTIZED_STEPS; step++) {
-            double floor_k = k[step - 1] > 0.01 ? k[step - 1] : 0.01;
-            ratios[step - 1] = k[step] / floor_k;
-        }
-        qsort(ratios, AMORTIZED_STEPS - 1, sizeof(ratios[0]), compare_double);
-        median_ratio = ratios[(AMORTIZED_STEPS - 1) / 2];
-        printf("append_amortized_%s k_doubling_ratio=%.2f bound=%.2f\n", name, median_ratio, bound);
-        if (median_ratio > bound) {
-            fprintf(
-                stderr,
-                "%s: the price of streaming in parses grows %.2fx per doubling; the bound is %s (%.2f)\n",
-                name,
-                median_ratio,
-                bound <= APPEND_FLAT_DOUBLING_RATIO ? "flat" : "linear",
-                bound
-            );
-            failed = 1;
-        }
-    }
-    return failed ? -1 : 0;
-}
-
-/* EVERY SHAPE THE LADDER NAMES, EACH UNDER THE BOUND ITS TICK CLASS IMPLIES.
- * A shape whose tick does not see the document is gated FLAT; the two the
- * plan declares walls are gated LINEAR, so the degradation stays the one
- * that was accepted and cannot deepen unnoticed. The walls start from a
- * smaller base because their own quadratic decides how long the gate takes
- * to run. */
-static int workload_append_amortized(const bench_options *options) {
-    int failed = 0;
-    /* Bounded leaves: the tick is the chunk, whatever the document holds. */
-    failed |= bench_append_amortized("prose", build_append_prose, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
-    failed |= bench_append_amortized(
-                  "nested_list",
-                  build_append_nested_list,
-                  options,
-                  32 * 1024,
-                  APPEND_FLAT_DOUBLING_RATIO
-              ) != 0;
-    failed |= bench_append_amortized("table", build_append_table, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
-    /* The leaf IS the document and the tick still does not copy it. */
-    failed |= bench_append_amortized("fence", build_append_fence, options, 32 * 1024, APPEND_FLAT_DOUBLING_RATIO) != 0;
-    /* Definitions: a flip that reaches settled territory, a run the settle
-     * takes one definition at a time, and the same run written with blank
-     * lines, where there is nothing to settle and the settle must cost
-     * nothing. */
-    failed |= bench_append_amortized(
-                  "footnote_dense",
-                  build_append_footnote_dense,
-                  options,
-                  32 * 1024,
-                  APPEND_FLAT_DOUBLING_RATIO
-              ) != 0;
-    failed |= bench_append_amortized(
-                  "references_appendix",
-                  build_append_references_appendix,
-                  options,
-                  32 * 1024,
-                  APPEND_FLAT_DOUBLING_RATIO
-              ) != 0;
-    failed |= bench_append_amortized(
-                  "definitions_spaced",
-                  build_append_definitions_spaced,
-                  options,
-                  32 * 1024,
-                  APPEND_FLAT_DOUBLING_RATIO
-              ) != 0;
-    /* All of it at once, in the proportions an assistant streams. */
-    failed |= bench_append_amortized(
-                  "cited_article",
-                  build_append_cited_article,
-                  options,
-                  32 * 1024,
-                  APPEND_FLAT_DOUBLING_RATIO
-              ) != 0;
-    /* The declared walls. */
-    failed |= bench_append_amortized(
-                  "giant_paragraph",
-                  build_append_giant_paragraph,
-                  options,
-                  8 * 1024,
-                  APPEND_LINEAR_DOUBLING_RATIO
-              ) != 0;
-    failed |= bench_append_amortized(
-                  "flip_storm",
-                  build_append_flip_storm,
-                  options,
-                  4 * 1024,
-                  APPEND_LINEAR_DOUBLING_RATIO
-              ) != 0;
-    return failed ? -1 : 0;
 }
 
 typedef struct bench_workload {
@@ -1146,10 +320,7 @@ static const bench_workload WORKLOADS[] = {
     {"large_document", workload_large_document},
     {"deep_nesting", workload_deep_nesting},
     {"extensions", workload_extensions},
-    {"large_table", workload_large_table},
     {"adversarial", workload_adversarial},
-    {"append_baseline", workload_append_baseline},
-    {"append_amortized", workload_append_amortized},
 };
 
 int main(int argc, char **argv) {
@@ -1163,44 +334,38 @@ int main(int argc, char **argv) {
     options.warmup = BENCH_DEFAULT_WARMUP;
 
     for (i = 1; i < (size_t)argc; i++) {
-        if (strcmp(argv[i], "--list") == 0) {
+        if (strcmp(argv[i], "--list") == 0)
             list_only = 1;
-        } else if (strcmp(argv[i], "--workload") == 0 && i + 1 < (size_t)argc) {
+        else if (strcmp(argv[i], "--workload") == 0 && i + 1 < (size_t)argc)
             workload_name = argv[++i];
-        } else if (strcmp(argv[i], "--samples") == 0 && i + 1 < (size_t)argc) {
+        else if (strcmp(argv[i], "--samples") == 0 && i + 1 < (size_t)argc)
             options.samples_dir = argv[++i];
-        } else if (strcmp(argv[i], "--repeats") == 0 && i + 1 < (size_t)argc) {
+        else if (strcmp(argv[i], "--repeats") == 0 && i + 1 < (size_t)argc)
             options.repeats = atoi(argv[++i]);
-        } else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc) {
+        else if (strcmp(argv[i], "--warmup") == 0 && i + 1 < (size_t)argc)
             options.warmup = atoi(argv[++i]);
-        } else {
-            fputs(
-                "usage: bench_runner --list | --workload NAME [--samples DIR]"
-                " [--repeats N] [--warmup N]\n",
-                stderr
-            );
+        else {
+            fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
+                  " [--repeats N] [--warmup N]\n",
+                  stderr);
             return 2;
         }
     }
 
     if (list_only) {
-        for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {
+        for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++)
             puts(WORKLOADS[i].name);
-        }
         return 0;
     }
     if (!workload_name || !options.samples_dir || options.repeats < 1 || options.warmup < 0) {
-        fputs(
-            "usage: bench_runner --list | --workload NAME [--samples DIR]"
-            " [--repeats N] [--warmup N]\n",
-            stderr
-        );
+        fputs("usage: bench_runner --list | --workload NAME [--samples DIR]"
+              " [--repeats N] [--warmup N]\n",
+              stderr);
         return 2;
     }
     for (i = 0; i < sizeof(WORKLOADS) / sizeof(WORKLOADS[0]); i++) {
-        if (strcmp(WORKLOADS[i].name, workload_name) == 0) {
+        if (strcmp(WORKLOADS[i].name, workload_name) == 0)
             return WORKLOADS[i].run(&options) == 0 ? 0 : 1;
-        }
     }
     fprintf(stderr, "unknown workload: %s\n", workload_name);
     return 2;

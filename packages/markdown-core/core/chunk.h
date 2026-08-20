@@ -12,14 +12,13 @@
 
 typedef struct markdown_core_chunk {
     unsigned char *data;
-    markdown_core_bufsize len;
-    markdown_core_bufsize alloc; // also implies a NULL-terminated string
+    bufsize_t len;
+    bufsize_t alloc; // also implies a NULL-terminated string
 } markdown_core_chunk;
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_mem *mem, markdown_core_chunk *c) {
-    if (c->alloc) {
-        mem->free(mem, c->data);
-    }
+    if (c->alloc)
+        mem->free(c->data);
 
     c->data = NULL;
     c->alloc = 0;
@@ -39,9 +38,8 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_rtrim(markdown_core_chunk *
     assert(!c->alloc);
 
     while (c->len > 0) {
-        if (!markdown_core_isspace(c->data[c->len - 1])) {
+        if (!markdown_core_isspace(c->data[c->len - 1]))
             break;
-        }
 
         c->len--;
     }
@@ -52,10 +50,9 @@ static MARKDOWN_CORE_INLINE void markdown_core_chunk_trim(markdown_core_chunk *c
     markdown_core_chunk_rtrim(c);
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_bufsize
-markdown_core_chunk_strchr(markdown_core_chunk *ch, int c, markdown_core_bufsize offset) {
+static MARKDOWN_CORE_INLINE bufsize_t markdown_core_chunk_strchr(markdown_core_chunk *ch, int c, bufsize_t offset) {
     const unsigned char *p = (unsigned char *)memchr(ch->data + offset, c, ch->len - offset);
-    return p ? (markdown_core_bufsize)(p - ch->data) : ch->len;
+    return p ? (bufsize_t)(p - ch->data) : ch->len;
 }
 
 static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_core_mem *mem, markdown_core_chunk *c) {
@@ -64,11 +61,10 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
     if (c->alloc) {
         return (char *)c->data;
     }
-    str = (unsigned char *)mem->calloc(mem, c->len + 1, 1);
+    str = (unsigned char *)mem->calloc(c->len + 1, 1);
     /* NULL reports allocation failure; the chunk keeps its borrowed bytes. */
-    if (!str) {
+    if (!str)
         return NULL;
-    }
     if (c->len > 0) {
         memcpy(str, c->data, c->len);
     }
@@ -81,47 +77,37 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
 
 /* Returns 0 when the copy could not be allocated; the chunk then keeps its
  * previous value. */
-static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(
-    markdown_core_mem *mem,
-    markdown_core_chunk *c,
-    const char *str
-) {
+static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_mem *mem, markdown_core_chunk *c,
+                                                             const char *str) {
     unsigned char *old = c->alloc ? c->data : NULL;
     if (str == NULL) {
         c->len = 0;
         c->data = NULL;
         c->alloc = 0;
     } else {
-        markdown_core_bufsize len = (markdown_core_bufsize)strlen(str);
-        unsigned char *copy = (unsigned char *)mem->calloc(mem, (size_t)len + 1, 1);
-        if (!copy) {
+        bufsize_t len = (bufsize_t)strlen(str);
+        unsigned char *copy = (unsigned char *)mem->calloc((size_t)len + 1, 1);
+        if (!copy)
             return 0;
-        }
         c->len = len;
         c->data = copy;
         c->alloc = 1;
         memcpy(c->data, str, (size_t)len + 1);
     }
     if (old != NULL) {
-        mem->free(mem, old);
+        mem->free(old);
     }
     return 1;
 }
 
 static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(const char *data) {
-    markdown_core_bufsize len = data ? (markdown_core_bufsize)strlen(data) : 0;
+    bufsize_t len = data ? (bufsize_t)strlen(data) : 0;
     markdown_core_chunk c = {(unsigned char *)data, len, 0};
     return c;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_chunk
-/* Returns a chunk viewing `len` bytes of `ch` from `pos`. It copies nothing:
- * the result borrows `ch`'s storage and is valid only while that storage is,
- * which is why `alloc` stays 0 and freeing it is a no-op. A caller whose
- * chunk outlives the source — any chunk stored on a node — must follow this
- * with markdown_core_chunk_to_cstr to take ownership. It was called `_dup`
- * until 2026-08-02, which read as a copy and is not one. */
-markdown_core_chunk_borrow(const markdown_core_chunk *ch, markdown_core_bufsize pos, markdown_core_bufsize len) {
+static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_dup(const markdown_core_chunk *ch, bufsize_t pos,
+                                                                        bufsize_t len) {
     markdown_core_chunk c = {ch->data ? ch->data + pos : NULL, len, 0};
     return c;
 }
@@ -144,9 +130,9 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_buf_detach(m
 
 /* trim_new variants are to be used when the source chunk may or may not be
  * allocated; forces a newly allocated chunk. */
-static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_borrow(c, 0, c->len);
+static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_ltrim_new(markdown_core_mem *mem,
+                                                                              markdown_core_chunk *c) {
+    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
     markdown_core_chunk_ltrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {
         /* Callers rely on an owned copy; report the loss as empty instead of
@@ -157,9 +143,9 @@ markdown_core_chunk_ltrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
     return r;
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_chunk
-markdown_core_chunk_rtrim_new(markdown_core_mem *mem, markdown_core_chunk *c) {
-    markdown_core_chunk r = markdown_core_chunk_borrow(c, 0, c->len);
+static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_rtrim_new(markdown_core_mem *mem,
+                                                                              markdown_core_chunk *c) {
+    markdown_core_chunk r = markdown_core_chunk_dup(c, 0, c->len);
     markdown_core_chunk_rtrim(&r);
     if (!markdown_core_chunk_to_cstr(mem, &r)) {
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;

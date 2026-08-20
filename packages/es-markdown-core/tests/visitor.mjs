@@ -13,7 +13,6 @@ export const kindVisitor = {
     visitTableRow: (node) => node.kind,
     visitTableCell: (node) => node.kind,
     visitDirectiveBlock: (node) => node.kind,
-    visitDirectiveLabel: (node) => node.kind,
     visitFootnoteDefinition: (node) => node.kind,
     visitText: (node) => node.kind,
     visitSoftBreak: (node) => node.kind,
@@ -27,7 +26,5 @@ export const kindVisitor = {
     visitLink: (node) => node.kind,
     visitImage: (node) => node.kind,
     visitDirective: (node) => node.kind,
-    visitFootnoteReference: (node) => node.kind,
-    visitCrossLink: (node) => node.kind,
-    visitEmbed: (node) => node.kind
+    visitFootnoteReference: (node) => node.kind
 };

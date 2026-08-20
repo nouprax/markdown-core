@@ -3,10 +3,7 @@
 
 #include "markdown-core-extensions.h"
 
-// Compile-time extension node type; values continue the core inline range
-// in bundled-extension order (strikethrough, formula, directive).
-#define MARKDOWN_CORE_NODE_STRIKETHROUGH ((markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b))
-
-markdown_core_extension *markdown_core_strikethrough_extension(void);
+extern markdown_core_node_type MARKDOWN_CORE_NODE_STRIKETHROUGH;
+markdown_core_syntax_extension *create_strikethrough_extension(void);
 
 #endif

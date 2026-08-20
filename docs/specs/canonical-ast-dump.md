@@ -1,11 +1,6 @@
 # Canonical AST file-tree dump
 
-Status: frozen for Phase 5 on 2026-07-11; amended on 2026-07-29 for the
-public `DirectiveLabel` kind; amended on 2026-08-03 to add the field order of
-`ReferenceDefinition`, `LinkReference`, and `ImageReference`, which the
-reference-model unification of 2026-08-02 shipped into the golden corpus and
-the manifest without adding them here, and to record which coordinate profile
-the dump prints.
+Status: frozen for Phase 5 on 2026-07-11.
 
 The dump is a deterministic public diagnostic representation of the canonical
 AST and the reviewed expected representation used by parser tests. It is not
@@ -14,15 +9,11 @@ JSON, XML, a renderer, or a serialization/transport API.
 The complete reviewed `.ast` golden corpus and its v1 coverage manifest live
 only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each export
-`MarkupDumper` and implement this tree format independently over their public
+`TreeDumper` and implement this tree format independently over their public
 immutable AST; they never call the native C dump or another binding output.
-Every platform `Document` also offers `dump()` and a focused subtree form
-`dump(of: node)`, both delegating to `MarkupDumper`; dumping is
-document-mediated in v2 because node values carry no positions. A subtree
-dump prints scopes with the subtree as origin: the root's start line becomes
-line 1, later lines shift by the same amount, columns are line-local and
-unchanged, and position-free markers (`0:0..0:0`) print unchanged. Dump text
-is never used to construct production AST values.
+Every platform `Markup` also offers `dump()`, which delegates to
+`TreeDumper.dump(markup)` and therefore supports focused subtree diagnostics.
+Dump text is never used to construct production AST values.
 
 The API is public, but the text remains a human-readable diagnostic contract,
 not a persistence or interchange format. Consumers that need structured data
@@ -52,15 +43,14 @@ Connectors and prefixes are exact UTF-8:
 Output uses LF line endings and ends with exactly one LF. There is no trailing
 whitespace and no color or terminal-dependent output.
 
-`children` counts direct typed descendants. `TableRow`, `TableCell`, and
-`DirectiveLabel` are `Markup` kinds, produce MarkupVisitor/MarkupWalker
-callbacks, and own their descendants through `cells` or `content`.
+`children` counts direct typed descendants. `TableRow` and `TableCell` are
+`Markup` kinds, produce Visitor/Walker callbacks, and own their descendants
+through `cells` and `content` respectively.
 
 The dump deliberately carries no property or array-index edge labels. Parent
-kind, child kind, sibling order, `children`, and behavior-bearing fields such
-as `isHeader` preserve the complete public tree semantics without coupling
-the generic tree formatter to schema-specific edge names. Directive-label
-presence is structural: a `DirectiveLabel` child is either present or absent.
+kind, sibling order, `children`, and behavior-bearing fields such as
+`isHeader` and directive `label` preserve the complete public tree semantics
+without coupling the generic tree formatter to schema-specific edge names.
 
 ## Scalar encoding
 
@@ -78,26 +68,10 @@ presence is structural: a `DirectiveLabel` child is either present or absent.
   follow it, and `children` is always last.
 
 The dump prints the native C parser's public scope coordinates exactly, without
-normalizing or interpreting particular line/column combinations. Its
-coordinate profile is `LINE_COLUMN`, which is the one profile whose `Position`
-is a line/column pair (`incremental-canonical-ast.md` §7.2); the dump never
-prints a byte, scalar, UTF-16, or binding-native offset. Scopes are stored
-on the node in absolute coordinates and printed as stored; nothing is
-resolved on demand. A scope is not projection content: a node whose only
-difference is position keeps its revision.
+normalizing or interpreting particular line/column combinations.
 
-Directive parents have no `label=` scalar field. No `DirectiveLabel` child
-means the label is absent; a `DirectiveLabel` line with `children=0` means an
-explicit empty `[]`. A label node's scope covers the complete bracketed span,
-including both delimiters.
-
-The two footnote kinds print their label under the key `id=`, while the three
-reference kinds print theirs under `label=`. This is deliberate and frozen.
-The AST field is named `label` on all five (`canonical-ast.md`), because
-`track.identity` is what `id` names on a node; the footnote dump key predates
-that rename and is kept so the reviewed `.ast` corpus stays byte-stable. The
-asymmetry is only in the dump vocabulary, and all four implementations must
-reproduce it exactly.
+Directive `label` is a scalar presence field in the dump: `label=null` for no
+label, otherwise `label=<count>`, including `label=0` for explicit `[]`.
 
 ## Field order by record kind
 
@@ -105,40 +79,34 @@ Fields appear after `scope` and before `children` in exactly this order:
 
 | Kind | Ordered fields between `scope` and `children` |
 | --- | --- |
-| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `SoftBreak`, `LineBreak`, `DirectiveLabel` | none |
+| `Document`, `BlockQuote`, `Paragraph`, `ThematicBreak`, `TableCell`, `SoftBreak`, `LineBreak` | none |
 | `Heading` | `level` |
 | `List` | `flavor`, `start`, `tight` |
 | `ListItem` | `checked` |
 | `CodeBlock` | `mode`, `info`, `language`, `literal`, `fenced`, `closed` |
-| `HTMLBlock` | `comment`, `literal` |
+| `HTMLBlock` | `literal` |
 | `FormulaBlock` | `mode`, `literal` |
 | `Table` | `alignments` |
 | `TableRow` | `isHeader` |
-| `DirectiveBlock` | `mode`, `name`, `attributes` |
+| `DirectiveBlock` | `mode`, `name`, `attributes`, `label` |
 | `FootnoteDefinition` | `id` |
-| `ReferenceDefinition` | `label`, `destination`, `title` |
 | `Text` | `literal` |
 | `Code` | `mode`, `literal` |
-| `HTML` | `comment`, `literal` |
+| `HTML` | `literal` |
 | `Formula` | `mode`, `literal` |
 | `Emphasis`, `Strong`, `Strikethrough` | none |
 | `Link` | `destination`, `title` |
 | `Image` | `source`, `title` |
-| `LinkReference` | `label`, `form` |
-| `ImageReference` | `label`, `form` |
-| `Directive` | `mode`, `name`, `attributes` |
+| `Directive` | `mode`, `name`, `attributes`, `label` |
 | `FootnoteReference` | `id` |
-| `CrossLink` | `reference` |
-| `Embed` | `reference` |
 
 Example:
 
 ```text
 Document scope=1:1..1:10 children=1
 └── Paragraph scope=1:1..1:10 children=1
-    └── Directive scope=1:1..1:10 mode=embedded name="badge" attributes=null children=1
-        └── DirectiveLabel scope=1:7..1:10 children=1
-            └── Text scope=1:8..1:9 literal="ok" children=0
+    └── Directive scope=1:1..1:10 mode=embedded name="badge" attributes=null label=1 children=1
+        └── Text scope=1:8..1:9 literal="ok" children=0
 ```
 
 Any public behavior-bearing field added later must be added to this table, the

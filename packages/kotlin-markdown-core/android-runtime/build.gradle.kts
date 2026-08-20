@@ -15,11 +15,6 @@ val isIdeSync =
         .systemProperty("idea.sync.active")
         .map(String::toBoolean)
         .getOrElse(false)
-val requestedAndroidAbis =
-    providers.gradleProperty("markdownCore.android.abis").orNull
-        ?.split(',')
-        ?.map(String::trim)
-        ?.filter(String::isNotEmpty)
 
 dependencyLocking {
     lockAllConfigurations()
@@ -46,9 +41,6 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.android.min.sdk.get().toInt()
-        requestedAndroidAbis?.let { abis ->
-            ndk { abiFilters += abis }
-        }
         if (!isIdeSync) {
             externalNativeBuild {
                 cmake { arguments += "-DANDROID_STL=none" }
@@ -81,9 +73,40 @@ components.withType<SoftwareComponent>().matching { it.name == "release" }.all {
         artifactId = "kotlin-markdown-core-android-runtime"
         artifact(sourcesJar)
         artifact(javadocJar)
+
+        pom {
+            name.set("Kotlin Markdown Core Android runtime")
+            description.set("Android JNI runtime used by the Kotlin Multiplatform Android publication.")
+            url.set("https://github.com/nouprax/markdown-core")
+            licenses {
+                license {
+                    name.set("BSD-2-Clause")
+                    url.set("https://github.com/nouprax/markdown-core/blob/main/COPYING")
+                }
+            }
+            scm {
+                connection.set("scm:git:https://github.com/nouprax/markdown-core.git")
+                developerConnection.set("scm:git:ssh://git@github.com/nouprax/markdown-core.git")
+                url.set("https://github.com/nouprax/markdown-core")
+            }
+            developers {
+                developer {
+                    id.set("nouprax")
+                    name.set("Nouprax")
+                    url.set("https://github.com/nouprax")
+                }
+            }
+        }
     }
 }
 
-extra["markdownCorePomName"] = "Kotlin Markdown Core Android runtime"
-extra["markdownCorePomDescription"] = "Android JNI runtime used by the Kotlin Multiplatform Android publication."
-apply(from = "../maven-pom-conventions.gradle.kts")
+publishing {
+    repositories {
+        providers.gradleProperty("releaseRepositoryDir").orNull?.let { repositoryDirectory ->
+            maven {
+                name = "releaseStaging"
+                url = uri(repositoryDirectory)
+            }
+        }
+    }
+}

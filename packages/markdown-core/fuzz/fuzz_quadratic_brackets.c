@@ -10,13 +10,15 @@
 
 const char *extension_names[] = {
     "autolink",
-    "directive",
     "strikethrough",
     "table",
     NULL,
 };
 
-int LLVMFuzzerInitialize(int *argc, char ***argv) { return 0; }
+int LLVMFuzzerInitialize(int *argc, char ***argv) {
+    markdown_core_core_extensions_ensure_registered();
+    return 0;
+}
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     struct __attribute__((packed)) {
@@ -32,7 +34,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         memcpy(&fuzz_config, data, sizeof(fuzz_config));
 
         /* Test options that are used by GitHub. */
-        fuzz_config.options = MARKDOWN_CORE_OPT_DIRECTIVE | MARKDOWN_CORE_OPT_FOOTNOTES;
+        fuzz_config.options = MARKDOWN_CORE_OPT_FOOTNOTES | MARKDOWN_CORE_OPT_VALIDATE_UTF8;
         fuzz_config.openlen = fuzz_config.openlen & 0x7;
         fuzz_config.middlelen = fuzz_config.middlelen & 0x7;
         fuzz_config.closelen = fuzz_config.closelen & 0x7;
@@ -82,12 +84,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
 
             for (const char **it = extension_names; *it; ++it) {
                 const char *extension_name = *it;
-                markdown_core_extension *extension = markdown_core_extension_find(extension_name);
-                if (!extension) {
+                markdown_core_syntax_extension *syntax_extension = markdown_core_find_syntax_extension(extension_name);
+                if (!syntax_extension) {
                     fprintf(stderr, "%s is not a valid syntax extension\n", extension_name);
                     abort();
                 }
-                markdown_core_parser_attach_extension(parser, extension);
+                markdown_core_parser_attach_syntax_extension(parser, syntax_extension);
             }
 
             markdown_core_parser_feed(parser, markdown, markdown_size);

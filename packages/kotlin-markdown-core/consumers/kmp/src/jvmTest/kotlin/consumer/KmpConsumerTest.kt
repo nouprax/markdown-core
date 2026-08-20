@@ -1,16 +1,15 @@
 package consumer
 
 import com.nouprax.markdown.core.Document
-import com.nouprax.markdown.core.MarkupDumper
+import com.nouprax.markdown.core.TreeDumper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class KmpConsumerTest {
     @Test
     fun rootMetadataSelectsTheJvmVariant() {
-        Document("# KMP consumer\n").use { document ->
-            assertEquals(1, document.content.size)
-            assertEquals(document.dump(), MarkupDumper.dump(document))
-        }
+        val document = Document.parse("# KMP consumer\n")
+        assertEquals(1, document.content.size)
+        assertEquals(document.dump(), TreeDumper.dump(document))
     }
 }

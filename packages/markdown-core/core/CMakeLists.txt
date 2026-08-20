@@ -15,32 +15,38 @@ set(HEADERS
     iterator.h
     chunk.h
     references.h
+    footnotes.h
     map.h
     utf8.h
     scanners.h
     inlines.h
-    delimiter.h
     houdini.h
     markdown_core_ctype.h
-    extension.h
-    concrete_records.h)
+    once.h
+    registry.h
+    syntax_extension.h
+    plugin.h)
 set(LIBRARY_SOURCES
     markdown_core.c
     node.c
-    concrete_records.c
     iterator.c
     blocks.c
     inlines.c
-    delimiter.c
     scanners.c
     scanners.re
     utf8.c
     buffer.c
     references.c
+    footnotes.c
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
+    arena.c
     linked_list.c
+    once.c
+    syntax_extension.c
+    registry.c
+    plugin.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the
@@ -58,12 +64,21 @@ set(MARKDOWN_CORE_ENGINE_SOURCES
 set(PROGRAM "markdown-core")
 set(PROGRAM_SOURCES main.c)
 
-# The checked-in headers under include/ (config.h, markdown-core-export.h,
-# markdown-core-version.h) are the single source of truth shared with the
-# SwiftPM, Gradle, and Emscripten builds; check-release-version.mjs pins the
-# version header to VERSION.
-include_directories(. include ${CMAKE_CURRENT_BINARY_DIR})
+# The process-level once used for core-extension registration is pthread_once
+# on POSIX platforms; CMAKE_THREAD_LIBS_INIT stays a plain flag so the
+# installed export set carries no imported target dependency.
+if(NOT WIN32)
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+endif()
+
+include_directories(. ${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${MARKDOWN_CORE_EXTENSIONS_BINARY_DIR})
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core-version.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-version.h)
+
+include(GenerateExportHeader)
 
 add_executable(${PROGRAM} ${PROGRAM_SOURCES})
 
@@ -92,11 +107,18 @@ if(MARKDOWN_CORE_STATIC OR MARKDOWN_CORE_SHARED)
     target_compile_definitions(${STATICLIBRARY} PUBLIC MARKDOWN_CORE_STATIC_DEFINE)
     set_target_properties(${STATICLIBRARY} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+    if(NOT WIN32 AND CMAKE_THREAD_LIBS_INIT)
+        target_link_libraries(${STATICLIBRARY} ${CMAKE_THREAD_LIBS_INIT})
+    endif()
+
     if(MSVC)
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core_static" VERSION ${PROJECT_VERSION})
     else()
         set_target_properties(${STATICLIBRARY} PROPERTIES OUTPUT_NAME "markdown-core" VERSION ${PROJECT_VERSION})
     endif(MSVC)
+
+    generate_export_header(${STATICLIBRARY} BASE_NAME MARKDOWN_CORE EXPORT_FILE_NAME
+                           ${CMAKE_CURRENT_BINARY_DIR}/markdown-core-export.h)
 
 endif()
 
@@ -112,14 +134,32 @@ if(NOT MSVC OR CMAKE_HOST_SYSTEM_NAME STREQUAL Windows)
     include(InstallRequiredSystemLibraries)
 endif()
 
+set(libdir lib${LIB_SUFFIX})
+
 install(TARGETS ${PROGRAM} RUNTIME DESTINATION bin)
 
 if(MARKDOWN_CORE_SHARED OR MARKDOWN_CORE_STATIC)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/markdown-core.pc.in ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc @ONLY)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/markdown-core.pc DESTINATION ${libdir}/pkgconfig)
 
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../include/markdown_core.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()
+
+# Feature tests
+include(CheckIncludeFile)
+include(CheckCSourceCompiles)
+include(CheckCSourceRuns)
+include(CheckSymbolExists)
+check_include_file(stdbool.h HAVE_STDBOOL_H)
+check_c_source_compiles("int main() { __builtin_expect(0,0); return 0; }" HAVE___BUILTIN_EXPECT)
+check_c_source_compiles(
+    "
+  int f(void) __attribute__ (());
+  int main() { return 0; }
+"
+    HAVE___ATTRIBUTE__)
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
 
 # Always compile with warnings
 if(MSVC)

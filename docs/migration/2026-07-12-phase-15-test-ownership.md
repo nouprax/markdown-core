@@ -38,8 +38,7 @@ and ES `--suite conformance` use package-local focused Markdown strings. Each
 binding independently proves that the public C facade schema maps through its
 public API:
 
-- all 29 `Markup` node kinds, including `TableRow`, `TableCell`, and
-  `DirectiveLabel`;
+- all 28 `Markup` node kinds, including `TableRow` and `TableCell`;
 - behavior-bearing fields, enums, booleans, child order, and nullable values;
 - UTF-8 strings and start/end scope values;
 - binding-specific error and ownership behavior.

@@ -11,7 +11,6 @@ const correctnessSuites = [
     "errors",
     "ownership",
     "robustness",
-    "appends",
     "unicode",
     "types",
     "packaging"
@@ -34,7 +33,7 @@ function run(command, args) {
     if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-if (!process.argv.includes("--skip-build")) run("node", ["scripts/build.mjs"]);
+run("node", ["scripts/build.mjs"]);
 const selected = requested ? [requested] : suites;
 if (target === "browser") {
     run("node", ["tests/browser.mjs"]);
@@ -45,9 +44,6 @@ const selectedNodeSuites = selected.filter((suite) =>
 );
 if (selectedNodeSuites.length) {
     run("node", ["--test", `--test-name-pattern=^(${selectedNodeSuites.join("|")}):`, "tests/node.test.mjs"]);
-}
-if (selected.includes("appends")) {
-    run("node", ["--test", "tests/append.test.mjs"]);
 }
 const packageSuites = selected.filter((suite) => ["consumer", "types", "packaging"].includes(suite));
 if (packageSuites.length === 3) {
